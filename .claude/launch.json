@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "autoPort": true,
+  "configurations": [
+    {
+      "name": "editor-harness",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": ["editor/serve.py"],
+      "cwd": "/Users/sami/Documents/th-workspace",
+      "port": 5733,
+      "env": {
+        "TH_WORKSPACE_DIR": "/Users/sami/Documents/th-workspace"
+      },
+      "url": "/editor/?project=test-harness"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# OS / editor junk
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Trash / scratch
+.trash/
+**/.trash/
+
+# Local machine-specific Claude settings
+.claude/settings.local.json

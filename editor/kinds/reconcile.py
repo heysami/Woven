@@ -1,0 +1,779 @@
+"""editor/kinds/reconcile.py — drift detection + auto-heal.
+
+See WORKFLOW_TRUTHFULNESS_PLAN.md §7. Walks the project on demand
+(invoked from /__kinds/reconcile and on every /__workflow GET) and
+returns a list of drifts plus a per-node lineage manifest.
+
+Two classes of drift:
+
+  AUTO_HEALABLE — silently resolved on next refresh:
+    ORPHAN_VARIANT      — folder under producer's outputsRoot has no node
+    LYING_STATUS        — node claims queued but completion satisfied (or vice versa)
+    PHANTOM_DECISION    — DECISION points at a node that doesn't exist (self-resolves after orphan promote)
+    PREMATURE_STAGE     — .onboarding-pending lists stage complete but canvas disagrees
+
+  MANUAL_HEAL — surfaces a Heal button, no silent action:
+    UNHANDLED_OUTPUT    — consumer has unrouted upstream files
+    ABANDONED_STAGING   — *_staging/ folder exists with no completing commit
+
+Auto-heal applies its proposed mutations through the same /commit
+contract so the validator + folder convention all apply uniformly.
+"""
+import json
+import os
+import re
+
+from .registry import KINDS, kind_contract
+
+
+# ── Drift types ─────────────────────────────────────────────────────────
+ORPHAN_VARIANT     = "ORPHAN_VARIANT"
+LYING_STATUS       = "LYING_STATUS"
+PHANTOM_DECISION   = "PHANTOM_DECISION"
+PREMATURE_STAGE    = "PREMATURE_STAGE"
+UNHANDLED_OUTPUT   = "UNHANDLED_OUTPUT"
+ABANDONED_STAGING  = "ABANDONED_STAGING"
+COHERENCE_NOT_RUN  = "COHERENCE_NOT_RUN"
+DATA_DRIFT         = "DATA_DRIFT"      # any block-severity entry in COHERENCE_REPORT.json
+KIND_MIGRATION     = "KIND_MIGRATION"  # node's kind disagrees with registry's declared kind for that id
+
+
+def _load_workflow(project_root):
+    p = os.path.join(project_root, "workflow", "workflow.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _scan_producer_folders(project_root, kind_name, contract):
+    """For openEnded producer kinds (ds-brainstorm, iterator-remix), scan
+    the parent of outputsRoot and yield (variant_id, full_path) for each
+    candidate. Used by orphan detection.
+
+    Supports both the new folder convention (`_ds_brainstorm/{variant}/index.html`)
+    AND the legacy flat layout (`_ds_brainstorm/{variant}.html`) — so projects
+    that haven't yet migrated still get orphan detection. The migration
+    script normalizes to folder layout later."""
+    tmpl = contract.get("outputsRoot")
+    if not tmpl: return []
+    if "{variant}" not in tmpl: return []
+    parent_tmpl = tmpl.split("{variant}", 1)[0].rstrip("/")
+    parent_path = parent_tmpl.replace("{branch}", "main")
+    full_parent = os.path.join(project_root, parent_path.lstrip("/"))
+    if not os.path.isdir(full_parent):
+        return []
+    out = []
+    for entry in os.scandir(full_parent):
+        name = entry.name
+        if name.startswith("."): continue
+        if entry.is_dir():
+            # New folder layout — accept any non-suffixed subfolder.
+            # Skip *_assets / *_staging which are companion dirs, not variants.
+            if name.endswith("_assets") or name.endswith("_staging"):
+                continue
+            out.append((name, entry.path))
+        elif entry.is_file() and name.endswith(".html"):
+            # Legacy flat layout — a.html, b.html, d.html each = one variant.
+            variant_id = name[:-len(".html")]
+            out.append((variant_id, entry.path))
+    return out
+
+
+def _detect_orphan_variants(workflow, project_root, drifts):
+    """For every kind with openEnded=True and a {variant}-templated
+    outputsRoot, check the filesystem for folders that have no
+    corresponding node. Emit ORPHAN_VARIANT drift per missing node."""
+    nodes_by_id = {n.get("id"): n for n in (workflow.get("nodes") or []) if isinstance(n, dict)}
+    for kind_name, contract in KINDS.items():
+        if not contract.get("openEnded"): continue
+        if not contract.get("outputsRoot"): continue
+        if "{variant}" not in contract.get("outputsRoot", ""): continue
+        # Find existing variants represented in the workflow
+        existing_variants = {
+            (n.get("variant") or "")
+            for n in (workflow.get("nodes") or [])
+            if isinstance(n, dict) and n.get("kind") == kind_name and n.get("variant")
+        }
+        # Scan disk
+        for variant_id, candidate_path in _scan_producer_folders(project_root, kind_name, contract):
+            if variant_id in existing_variants:
+                continue
+            # Resolve the artifact:
+            #   - If candidate_path is a directory (new layout): look for index.html
+            #   - If candidate_path is a file (legacy flat): the file IS the artifact
+            artifact = None
+            if os.path.isdir(candidate_path):
+                for cand in ("index.html", f"{variant_id}.html"):
+                    p = os.path.join(candidate_path, cand)
+                    if os.path.isfile(p):
+                        artifact = p
+                        break
+            elif os.path.isfile(candidate_path):
+                artifact = candidate_path
+            if not artifact:
+                continue
+            # Try to extract variant-spec
+            spec = {}
+            try:
+                with open(artifact, "r", encoding="utf-8") as f:
+                    html = f.read()
+                m = re.search(r'<script[^>]+id=["\']variant-spec["\'][^>]*>(.*?)</script>',
+                              html, re.S | re.I)
+                if m:
+                    spec = json.loads(m.group(1).strip())
+            except Exception:
+                pass
+            drifts.append({
+                "type":     ORPHAN_VARIANT,
+                "kind":     kind_name,
+                "variant":  variant_id,
+                "folder":   os.path.relpath(candidate_path, project_root),
+                "artifact": os.path.relpath(artifact, project_root),
+                "spec":     spec,
+                "class":    "auto",
+                "suggest":  f"create {kind_name} node for variant {variant_id!r} with spec from {artifact}",
+            })
+
+
+def _detect_lying_status(workflow, project_root, drifts):
+    """A node claims runStatus done/queued that disagrees with disk reality."""
+    nodes = (workflow.get("nodes") or [])
+    for n in nodes:
+        if not isinstance(n, dict): continue
+        kind = n.get("kind")
+        if not kind: continue
+        # v2.50 — DO NOT touch agent-kind nodes. They own their own lifecycle:
+        # the subprocess completion hook flips runStatus on exit, and the
+        # editor's client-side polling state machine (WorkflowAgentNode) drives
+        # the downstream target upgrade (clear the asset's "Generating…"
+        # pending state + promote asset/html → prototype on done+file-exists).
+        # If the reconciler flips an agent to "done" out-of-band, the client
+        # reloads, sees "done", and EARLY-RETURNS before running settleTargets
+        # — stranding the asset at "Generating…" even though the file is on
+        # disk. That's the stuck-prototype bug. Agent status is the client's
+        # job, not the reconciler's. (The client also self-heals an orphaned
+        # agent whose runId is gone after a daemon restart.)
+        if kind == "agent": continue
+        contract = kind_contract(kind, n.get("id"))
+        if not contract: continue
+        # Only check kinds that have outputsRoot (the others are user-driven
+        # or have no disk artifact to check against)
+        if not contract.get("outputsRoot"): continue
+        # Skip kinds we can't autodetect completeness for (no completion requires
+        # or only freeform requirements).
+        requires = (contract.get("completion") or {}).get("requires") or []
+        file_reqs = [r for r in requires if isinstance(r, str) and r.startswith("files:")]
+        if not file_reqs: continue
+        # Compute the "actual" status by re-running the file checks
+        from . import validate as _v
+        outputs_root_full = _v._resolve_path_template(
+            contract.get("outputsRoot"), n, project_root)
+        if not outputs_root_full: continue
+        actual_satisfied = True
+        for req in file_reqs:
+            spec = req[len("files:"):].strip()
+            if outputs_root_full:
+                rel_outputs_root = contract.get("outputsRoot").replace("{branch}", "main").replace(
+                    "{variant}", n.get("variant") or "").replace("{dsId}", n.get("dsId") or "main").rstrip("/")
+                spec = spec.replace("outputsRoot", rel_outputs_root)
+            lower = spec.lower()
+            if " exists" in lower:
+                rel = spec.split(" ", 1)[0].strip()
+                full = os.path.join(project_root, rel)
+                if not os.path.exists(full):
+                    actual_satisfied = False
+                    break
+                if "non-empty" in lower and os.path.isfile(full) and os.path.getsize(full) == 0:
+                    actual_satisfied = False
+                    break
+            elif " contains at least one " in lower:
+                left, ext = spec.lower().split(" contains at least one ", 1)
+                dir_path = os.path.join(project_root, spec[:len(left)].strip())
+                ext = ext.strip().lstrip(".")
+                import glob
+                if not (os.path.isdir(dir_path) and glob.glob(os.path.join(dir_path, f"*.{ext}"))):
+                    actual_satisfied = False
+                    break
+        claimed = n.get("runStatus") or "queued"
+        if actual_satisfied and claimed == "queued":
+            drifts.append({
+                "type":     LYING_STATUS,
+                "nodeId":   n.get("id"),
+                "kind":     kind,
+                "claimed":  claimed,
+                "actual":   "done",
+                "class":    "auto",
+                "suggest":  f"flip {n.get('id')} runStatus to done — files exist on disk",
+            })
+        elif (not actual_satisfied) and claimed == "done":
+            drifts.append({
+                "type":     LYING_STATUS,
+                "nodeId":   n.get("id"),
+                "kind":     kind,
+                "claimed":  claimed,
+                "actual":   "queued",
+                "class":    "auto",
+                "suggest":  f"flip {n.get('id')} runStatus to queued — required files absent",
+            })
+
+
+def _detect_phantom_decisions(workflow, project_root, drifts):
+    """DECISION_*.json files reference a value that doesn't appear as a
+    variant on any node. Self-resolves once orphan-variant auto-heal runs."""
+    nodes = workflow.get("nodes") or []
+    for entry in os.scandir(project_root):
+        if not entry.is_file(): continue
+        if not entry.name.startswith("DECISION_"): continue
+        if not entry.name.endswith(".json"): continue
+        try:
+            with open(entry.path, "r", encoding="utf-8") as f:
+                dec = json.load(f)
+        except Exception:
+            continue
+        values = dec.get("values") or ([dec.get("value")] if dec.get("value") else [])
+        if not values: continue
+        # Heuristic: if the decision id ends with _ds_pick, the values are
+        # ds-brainstorm variant ids; if _remix_pick, iterator-remix.
+        dec_id = dec.get("id", "")
+        kind_hint = None
+        if "ds_pick" in dec_id: kind_hint = "ds-brainstorm"
+        elif "remix_pick" in dec_id: kind_hint = "iterator-remix"
+        if not kind_hint:
+            continue
+        existing = {
+            (n.get("variant") or "")
+            for n in nodes
+            if isinstance(n, dict) and n.get("kind") == kind_hint
+        }
+        for v in values:
+            if v and v not in existing:
+                drifts.append({
+                    "type":      PHANTOM_DECISION,
+                    "decision":  entry.name,
+                    "value":     v,
+                    "kindHint":  kind_hint,
+                    "class":     "auto",
+                    "suggest":   "auto-resolves once ORPHAN_VARIANT for this value is healed",
+                })
+
+
+def _detect_unhandled_outputs(workflow, project_root, drifts):
+    """For consumer kinds (design-system, iterator-remix), walk the upstream
+    folder and emit UNHANDLED_OUTPUT for any file no rule matches."""
+    from . import validate as _v
+    # Find consumer nodes that should be checking
+    for n in (workflow.get("nodes") or []):
+        if not isinstance(n, dict): continue
+        contract = kind_contract(n.get("kind"), n.get("id"))
+        if not contract: continue
+        cf = contract.get("consumeFrom")
+        if not cf: continue
+        # Determine upstream folder. For design-system, source = picked variant
+        # — resolve via DECISION_cp_ds_pick.json if it points at one.
+        upstream = None
+        src_tmpl = cf.get("source") or ""
+        if "{picked.outputsRoot}" in src_tmpl:
+            dec_path = os.path.join(project_root, "DECISION_cp_ds_pick.json")
+            if os.path.isfile(dec_path):
+                try:
+                    with open(dec_path) as f: dec = json.load(f)
+                    picked = (dec.get("values") or [dec.get("value")])[0] if (dec.get("values") or dec.get("value")) else None
+                    if picked:
+                        # Assume ds-brainstorm; reuse its outputsRoot
+                        ds_contract = KINDS.get("ds-brainstorm") or {}
+                        ds_tmpl = ds_contract.get("outputsRoot") or ""
+                        upstream = os.path.join(project_root,
+                            ds_tmpl.replace("{branch}", "main")
+                                   .replace("{variant}", picked)
+                                   .rstrip("/"))
+                except Exception:
+                    pass
+        if not upstream:
+            # Skip — we can't resolve the upstream without more context.
+            continue
+        viols = _v.validate_consume(n, upstream, project_root)
+        for v in viols:
+            drifts.append({
+                "type":         UNHANDLED_OUTPUT,
+                "nodeId":       n.get("id"),
+                "kind":         n.get("kind"),
+                "file":         v.get("file"),
+                "policy":       v.get("policy"),
+                "severity":     v.get("severity", "reject"),
+                "class":        "manual" if v.get("severity") != "warn" else "auto",
+                "suggest":      f"route {v.get('file')} per consumeFrom rules, or extend the contract",
+            })
+
+
+def _detect_abandoned_staging(workflow, project_root, drifts):
+    """*_staging folders that exist on disk indicate an interrupted
+    commit. The user should inspect."""
+    src_root = os.path.join(project_root, "source")
+    if not os.path.isdir(src_root): return
+    for dirpath, dirnames, filenames in os.walk(src_root):
+        for d in list(dirnames):
+            if d.endswith("_staging") or d.endswith(".staging"):
+                full = os.path.join(dirpath, d)
+                drifts.append({
+                    "type":     ABANDONED_STAGING,
+                    "folder":   os.path.relpath(full, project_root),
+                    "class":    "manual",
+                    "suggest":  "inspect staging folder; delete or rename to canonical name",
+                })
+                dirnames.remove(d)
+
+
+def _detect_kind_migration(workflow, project_root, drifts):
+    """Detect nodes whose `kind` disagrees with the registry's declared kind
+    for that id. v2.50 — when bs_html_* / bp_prd_* / etc. migrate from
+    skill·llm to agent kind in the scaffolder, existing projects' workflow.json
+    keeps the old kind. This drift surfaces those so they can auto-heal.
+
+    The signal: the per-id override declares an outputsRoot AND a completion
+    contract that only makes sense for one dispatch shape (agent). If the
+    node's current kind != the implied kind, migrate.
+
+    Currently auto-heals known kind transitions:
+      skill → agent  (for ids whose per-id override has `outputsRoot` set)
+    """
+    nodes = workflow.get("nodes") or []
+    # Heuristic: a node id with a per-id override that includes `outputsRoot`
+    # AND a completion.requires referencing files is meant to be agent kind.
+    # If the node's current kind is `skill`, propose migration.
+    agent_overrides = (KINDS.get("agent") or {}).get("perIdOverrides") or {}
+    for n in nodes:
+        if not isinstance(n, dict): continue
+        nid = n.get("id")
+        if not nid: continue
+        override = agent_overrides.get(nid)
+        if not override: continue
+        if not override.get("outputsRoot"): continue
+        current_kind = n.get("kind")
+        if current_kind == "agent": continue   # already correct
+        if current_kind not in ("skill", "prompt"): continue  # don't touch unknown kinds
+        drifts.append({
+            "type":       KIND_MIGRATION,
+            "nodeId":     nid,
+            "fromKind":   current_kind,
+            "toKind":     "agent",
+            "outputsRoot": override.get("outputsRoot"),
+            "class":      "auto",
+            "suggest":    f"migrate {nid} from {current_kind!r} to 'agent' per registry's per-id override",
+        })
+
+
+def _detect_coherence(workflow, project_root, drifts):
+    """Coherence-pass drift checks (Subagent 11 — see coherence-auditor.md):
+
+      • COHERENCE_NOT_RUN — all generation stages are done but
+        COHERENCE_REPORT.json doesn't exist yet. Manual-class — the user
+        decides whether to dispatch the audit now or skip it.
+
+      • DATA_DRIFT — COHERENCE_REPORT.json exists and contains
+        block-severity findings. Manual-class — block findings always
+        need a human choice (Retry / Patch / Accept-override).
+    """
+    nodes = workflow.get("nodes") or []
+    # The Coherence Pass applies once "prototype-shaped output exists on
+    # disk." Two triggers, OR-ed:
+    #   (a) all canonical generation nodes (bs_html_*, br_remix_*) report done — the
+    #       clean-pipeline path; OR
+    #   (b) the project has a data.js + ≥2 HTML pages under source/<branch>/ — the
+    #       legacy-or-out-of-band path (covers super where bs_html_* still show
+    #       queued because their outputs landed at pre-folder-convention paths).
+    # The reconciler can't tell from workflow.json alone whether generation
+    # actually completed; trigger (b) catches projects whose prototype was
+    # built before the registry contracts existed.
+    gen_nodes = [n for n in nodes
+                 if isinstance(n, dict) and (n.get("id", "").startswith("bs_html_")
+                                              or n.get("id", "").startswith("br_remix_"))]
+    all_done = bool(gen_nodes) and all((n.get("runStatus") or "queued") == "done" for n in gen_nodes)
+    # Trigger (b): prototype-shaped output on disk?
+    legacy_prototype = False
+    src_root = os.path.join(project_root, "source")
+    if os.path.isdir(src_root):
+        for entry in os.scandir(src_root):
+            if not entry.is_dir(): continue
+            branch_dir = entry.path
+            data_js = os.path.join(branch_dir, "data.js")
+            if not os.path.isfile(data_js): continue
+            # Count top-level .html files (excluding _ds_brainstorm, _pages, etc.)
+            html_count = 0
+            for e in os.scandir(branch_dir):
+                if e.is_file() and e.name.endswith(".html") and not e.name.startswith("_"):
+                    html_count += 1
+            if html_count >= 2:
+                legacy_prototype = True
+                break
+    has_output = all_done or legacy_prototype
+    if not has_output:
+        return   # No prototype-shaped output yet — Coherence doesn't apply.
+    # Repurpose all_done downstream for the report check
+    all_done = has_output
+    report_path = os.path.join(project_root, "source", "main", "COHERENCE_REPORT.json")
+    # Try other branches if main doesn't fit
+    if not os.path.isfile(report_path):
+        # Glob source/*/COHERENCE_REPORT.json
+        src_root = os.path.join(project_root, "source")
+        if os.path.isdir(src_root):
+            for entry in os.scandir(src_root):
+                if entry.is_dir():
+                    cand = os.path.join(entry.path, "COHERENCE_REPORT.json")
+                    if os.path.isfile(cand):
+                        report_path = cand
+                        break
+
+    if all_done and not os.path.isfile(report_path):
+        drifts.append({
+            "type":    COHERENCE_NOT_RUN,
+            "class":   "manual",
+            "suggest": ("dispatch Subagent 11 (Coherence) via the Task tool to audit "
+                        "data + chrome + asset coherence; see "
+                        "editor/.claude/agents/coherence-auditor.md"),
+        })
+        return
+
+    if os.path.isfile(report_path):
+        try:
+            with open(report_path, "r") as f:
+                report = json.load(f)
+        except Exception:
+            return
+        findings = report.get("findings") or []
+        block = [f for f in findings if f.get("severity") == "block"]
+        if block:
+            for f in block[:10]:   # cap surfaced drifts
+                drifts.append({
+                    "type":      DATA_DRIFT,
+                    "lint":      f.get("lint"),
+                    "rule":      f.get("rule"),
+                    "surface":   f.get("surface"),
+                    "entity":    f.get("entity"),
+                    "expected":  f.get("expected"),
+                    "found":     f.get("found"),
+                    "class":     "manual",
+                    "suggest":   ("Retry the generator with the finding fed back, OR "
+                                  "Patch the page to match the model, OR "
+                                  "Accept-override (recorded as waived in DECISION_cp_coherence.json)"),
+                })
+
+
+def _detect_premature_stage(workflow, project_root, drifts):
+    """`.onboarding-pending.completedStages` lists stage X complete, but the
+    nodes for stage X aren't all done."""
+    pending = os.path.join(project_root, ".onboarding-pending")
+    if not os.path.isfile(pending): return
+    try:
+        with open(pending) as f:
+            ob = json.load(f)
+    except Exception:
+        return
+    completed = ob.get("completedStages") or []
+    if not completed: return
+    # Map stage codes to id prefixes (rough heuristic)
+    stage_prefixes = {
+        "A": ["cp_ctx_"],
+        "B": ["bp_brief_", "bp_prd_refine", "bp_prd_text"],
+        "C": ["bs_ds_"],
+        "D": ["bp_ds_gen", "cp_ds_pick"],
+        "E": ["bp_chunks", "bs_html_"],
+        "F": ["br_remix_"],
+        "G": ["bp_prd_final", "cp_remix_pick"],
+        "H": ["bp_ds_update"],
+        "I": ["bp_proto_build"],
+        "J": ["bp_design_brief"],
+    }
+    nodes = workflow.get("nodes") or []
+    for code in completed:
+        prefixes = stage_prefixes.get(code, [])
+        if not prefixes: continue
+        stage_nodes = [n for n in nodes if isinstance(n, dict) and any(n.get("id", "").startswith(p) for p in prefixes)]
+        if not stage_nodes: continue
+        not_done = [n for n in stage_nodes if (n.get("runStatus") or "queued") != "done"]
+        if not_done:
+            drifts.append({
+                "type":     PREMATURE_STAGE,
+                "stage":    code,
+                "queuedNodes": [n.get("id") for n in not_done],
+                "class":    "auto",
+                "suggest":  f"recompute .onboarding-pending.completedStages from canvas; stage {code} has unfinished nodes",
+            })
+
+
+def _autoheal_orphan_variant(workflow, drift, project_root):
+    """For an ORPHAN_VARIANT drift, append a new node + asset child to
+    workflow.json and wire it into the kind's existing checkpoint if
+    present. Returns True if mutation applied, False if the node already
+    exists (idempotent).
+
+    The new node id is built from the kind contract's `idTemplate`
+    (substituting {variant}). Kinds without an idTemplate are not
+    auto-healed — we don't guess the canonical id pattern from the
+    kind name (that's the "list of names" anti-pattern). Adding a new
+    openEnded kind to the registry with a clear idTemplate is the ONLY
+    code change needed to extend auto-heal coverage."""
+    kind_name = drift.get("kind")
+    variant_id = drift.get("variant")
+    if not kind_name or not variant_id: return False
+    contract = KINDS.get(kind_name) or {}
+    id_template = contract.get("idTemplate")
+    if not id_template:
+        # No declared id pattern — refuse to guess. Reconciler still
+        # reports the drift; user can heal manually by adding the node.
+        return False
+    new_node_id = id_template.replace("{variant}", variant_id)
+    nodes = workflow.get("nodes") or []
+    # Idempotency — already healed?
+    if any(isinstance(n, dict) and n.get("id") == new_node_id for n in nodes):
+        return False
+    # Compute placement: stack below existing siblings of the same kind.
+    siblings = [n for n in nodes
+                if isinstance(n, dict) and n.get("kind") == kind_name]
+    if siblings:
+        # Same column as the rightmost-bottommost sibling.
+        x = max(n.get("x", 0) for n in siblings)
+        y = max(n.get("y", 0) for n in siblings) + 280
+    else:
+        x, y = 1200, 0
+
+    # Try to extract the variant-spec script tag for richer initial state.
+    spec = drift.get("spec") or {}
+
+    new_node = {
+        "id":         new_node_id,
+        "kind":       kind_name,
+        "x":          x,
+        "y":          y,
+        "w":          320,
+        "h":          220,
+        "runStatus":  "done",          # The artifact already exists — truthful.
+        "title":      f"DS variant {variant_id.upper()}" if kind_name == "ds-brainstorm" else f"Variant {variant_id}",
+        "variant":    variant_id,
+        "spec":       spec,
+        "specProjectedFrom": drift.get("artifact"),
+        "commitRef":  {
+            "at":              _now_iso(),
+            "callerSessionId": "auto-heal",
+            "requestId":       "reconciler",
+        },
+        "healedBy":   "reconciler.orphan-variant",
+    }
+    # Asset-child node holds the HTML file as a first-class object.
+    asset_node_id = f"{new_node_id}_html"
+    asset_node = {
+        "id":        asset_node_id,
+        "kind":      "asset",
+        "x":         x + 380,
+        "y":         y,
+        "w":         320,
+        "h":         200,
+        "runStatus": "done",
+        "title":     f"Variant {variant_id.upper()} sample",
+        "assetKind": "html",
+        "path":      drift.get("artifact"),
+        "healedBy":  "reconciler.orphan-variant",
+    }
+    nodes.append(new_node)
+    nodes.append(asset_node)
+    workflow["nodes"] = nodes
+
+    # Wire edges: new variant ─► its asset child, asset child ─► checkpoint (if declared by contract)
+    edges = workflow.get("edges") or []
+    edges.append({"from": f"{new_node_id}.out", "to": f"{asset_node_id}.in"})
+    checkpoint_id = contract.get("checkpointNodeId")
+    if checkpoint_id and any(isinstance(n, dict) and n.get("id") == checkpoint_id for n in nodes):
+        edges.append({"from": f"{asset_node_id}.out", "to": f"{checkpoint_id}.in"})
+    workflow["edges"] = edges
+    return True
+
+
+def _autoheal_kind_migration(workflow, drift):
+    """Flip an existing node's kind to match the registry's per-id override.
+    Drops skill-only fields (skill / provider / model) and ensures the
+    agent-required fields (conversation) are present. Idempotent."""
+    nid = drift.get("nodeId")
+    to_kind = drift.get("toKind")
+    if not nid or not to_kind: return False
+    for n in (workflow.get("nodes") or []):
+        if not isinstance(n, dict) or n.get("id") != nid:
+            continue
+        if n.get("kind") == to_kind:
+            return False   # already migrated
+        n["kind"] = to_kind
+        if to_kind == "agent":
+            # Drop skill-only fields
+            for k in ("skill", "provider", "model"):
+                n.pop(k, None)
+            # Ensure conversation array exists (agent UI relies on it)
+            if "conversation" not in n:
+                n["conversation"] = []
+            n["healedBy"] = "reconciler.kind-migration"
+        return True
+    return False
+
+
+def _autoheal_lying_status(workflow, drift):
+    """For a LYING_STATUS drift, flip runStatus to match disk reality.
+    Returns True if applied."""
+    node_id = drift.get("nodeId")
+    actual = drift.get("actual")
+    if not node_id or not actual: return False
+    for n in (workflow.get("nodes") or []):
+        if isinstance(n, dict) and n.get("id") == node_id:
+            # v2.50 — never flip agent-kind status (it owns its lifecycle via
+            # the subprocess completion hook + client polling). Belt-and-
+            # suspenders: _detect_lying_status already skips agents so this
+            # branch shouldn't be reached for them, but guard anyway.
+            if n.get("kind") == "agent": return False
+            if (n.get("runStatus") or "queued") != actual:
+                n["runStatus"] = actual
+                n["healedBy"] = "reconciler.lying-status"
+                return True
+            return False
+    return False
+
+
+def _autoheal_premature_stage(workflow, drift, project_root):
+    """Recompute .onboarding-pending.completedStages from canvas truth."""
+    stage = drift.get("stage")
+    if not stage: return False
+    pending = os.path.join(project_root, ".onboarding-pending")
+    if not os.path.isfile(pending): return False
+    try:
+        with open(pending, "r") as f:
+            ob = json.load(f)
+    except Exception:
+        return False
+    completed = ob.get("completedStages") or []
+    if stage in completed:
+        completed.remove(stage)
+        ob["completedStages"] = completed
+        try:
+            with open(pending, "w") as f:
+                json.dump(ob, f, indent=2)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def _now_iso():
+    import datetime
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def apply_auto_heals(project_root):
+    """Run reconcile(), apply every class:"auto" drift, write the
+    workflow.json back atomically. Returns a list of summaries of
+    what got applied. Idempotent — calling twice in a row applies
+    nothing the second time.
+
+    This is what makes the canvas tell the truth WITHOUT a Heal click:
+    when a ds-brainstorm subagent drops a new `_ds_brainstorm/d.html`
+    on disk, the file watcher emits asset-changed; the watcher loop
+    calls this function; auto-heal creates the bs_ds_d card + wires
+    it into cp_ds_pick; the workflow.json write then fires
+    workflow-changed; the canvas refreshes and shows the new card.
+    All within ~1.5 s, no manual reload."""
+    out = []
+    report = reconcile(project_root)
+    drifts = report.get("drifts") or []
+    auto_drifts = [d for d in drifts if d.get("class") == "auto"]
+    if not auto_drifts:
+        return out
+
+    # Load workflow.json (under no lock — caller serialises).
+    wf_path = os.path.join(project_root, "workflow", "workflow.json")
+    if not os.path.isfile(wf_path):
+        return out
+    try:
+        with open(wf_path, "r", encoding="utf-8") as f:
+            workflow = json.load(f)
+    except Exception:
+        return out
+
+    mutated = False
+    for drift in auto_drifts:
+        t = drift.get("type")
+        applied = False
+        try:
+            if t == ORPHAN_VARIANT:
+                applied = _autoheal_orphan_variant(workflow, drift, project_root)
+            elif t == LYING_STATUS:
+                applied = _autoheal_lying_status(workflow, drift)
+            elif t == PREMATURE_STAGE:
+                applied = _autoheal_premature_stage(workflow, drift, project_root)
+            elif t == KIND_MIGRATION:
+                applied = _autoheal_kind_migration(workflow, drift)
+            # PHANTOM_DECISION auto-resolves once ORPHAN_VARIANT runs (same loop).
+            # COHERENCE_NOT_RUN is manual-class — never auto-heals.
+        except Exception as e:
+            out.append({"drift": t, "applied": False, "error": str(e)})
+            continue
+        if applied:
+            mutated = True
+            out.append({"drift": t, "applied": True,
+                        "detail": {k: drift.get(k) for k in ("nodeId","variant","kind","stage","claimed","actual")
+                                    if drift.get(k) is not None}})
+
+    if mutated:
+        try:
+            with open(wf_path, "w", encoding="utf-8") as f:
+                json.dump(workflow, f, indent=2)
+        except Exception as e:
+            out.append({"drift": "WRITE_BACK_FAILED", "applied": False, "error": str(e)})
+
+    return out
+
+
+def reconcile(project_root):
+    """Walk the project and return drift + lineage. Returns a dict:
+       { "drifts": [...], "lineage": {...} }"""
+    out = {"drifts": [], "lineage": {}}
+    wf = _load_workflow(project_root)
+    if not wf:
+        return out
+    drifts = out["drifts"]
+
+    # Order matters slightly: detect orphans first so phantom-decision
+    # checks see a more complete picture of "what variants exist."
+    try: _detect_orphan_variants(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"orphan"})
+
+    try: _detect_lying_status(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"status"})
+
+    try: _detect_phantom_decisions(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"decision"})
+
+    try: _detect_unhandled_outputs(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"unhandled"})
+
+    try: _detect_abandoned_staging(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"staging"})
+
+    try: _detect_premature_stage(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"stage"})
+
+    try: _detect_coherence(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"coherence"})
+
+    try: _detect_kind_migration(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"kind_migration"})
+
+    # Compute summary counts
+    out["summary"] = {
+        "total": len(drifts),
+        "autoHealable": len([d for d in drifts if d.get("class") == "auto"]),
+        "manualHeal":   len([d for d in drifts if d.get("class") == "manual"]),
+        "byType": {},
+    }
+    for d in drifts:
+        t = d.get("type", "unknown")
+        out["summary"]["byType"][t] = out["summary"]["byType"].get(t, 0) + 1
+
+    return out
