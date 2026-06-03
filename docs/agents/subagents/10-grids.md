@@ -6,7 +6,7 @@ You own the **2D-variance lens**. A grid documents how a form's fields, or an en
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 - `override: true | false` — true if `GRID_REQUEST.md` exists.
 
 ## What a grid is (this is the lens reframe — read carefully)
@@ -46,9 +46,9 @@ You can mix kinds of use-case on a single axis if source does. A grid with cols 
 
 ### Files you may read
 
-- `source/<slug>/*.html`, `*.js` — form definitions, field renderers, conditional logic.
-- `source/<slug>/data.js` — `window.DEMO`, status values, entity field defaults.
-- `source/<slug>/entities.json` (if present) — for entity field lists.
+- `source/*.html`, `*.js` — form definitions, field renderers, conditional logic.
+- `source/data.js` — `window.DEMO`, status values, entity field defaults.
+- `source/entities.json` (if present) — for entity field lists.
 
 ## Output
 

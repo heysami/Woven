@@ -6,7 +6,7 @@ You own the **canvas-cards lens**. Read source, enumerate what *you* see as a ca
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 - `defaultFrame: { w, h }` (default 1440×900)
 - `canvasGap` (default 120)
 
@@ -32,9 +32,9 @@ Include `label` so reconciliation has the same name across subagents.
 
 ### Files you may read
 
-- `source/<slug>/*.html` — what UI surfaces exist
-- `source/<slug>/*.js` — useState branches that produce distinct rendered states worth placing
-- Existing `source/<slug>/prototype.json` — **preserve any prior `col`/`row` for frame IDs that match the convention**. Users drag frames manually; positions must be stable across regens.
+- `source/*.html` — what UI surfaces exist
+- `source/*.js` — useState branches that produce distinct rendered states worth placing
+- Existing `source/prototype.json` — **preserve any prior `col`/`row` for frame IDs that match the convention**. Users drag frames manually; positions must be stable across regens.
 
 ## Enumerate through your lens
 
@@ -48,7 +48,7 @@ If you find yourself enumerating a frame whose source page is the storyboard, st
 
 ## Recipe
 
-1. **Read existing positions.** If `source/<slug>/prototype.json` has `frames[i].col` / `.row` for a frame ID matching the convention, preserve it.
+1. **Read existing positions.** If `source/prototype.json` has `frames[i].col` / `.row` for a frame ID matching the convention, preserve it.
 2. **Place new frames** (frames you enumerated that aren't already positioned):
    - You don't have a `parent` field handed to you; infer from source structure. Conventions: a frame whose source declares a useState branch (`if (submitted) return ...`) is a child of its declaring page. A modal whose render is conditional in another page is a child of that page.
    - Top-level (no inferred parent) → column 0, next free row.
@@ -57,7 +57,7 @@ If you find yourself enumerating a frame whose source page is the storyboard, st
 
 ## Render-verify your slice
 
-After producing your output (and after the planner has written `editor/branches/<slug>.js`), load the editor's **Canvas** view and verify:
+After producing your output (and after the planner has written `editor/data.js`), load the editor's **Canvas** view and verify:
 
 1. Every frame you enumerated is visible as a card on the canvas — no card stacked under another.
 2. Cards aren't cut off / off-screen at default zoom — pan to confirm.

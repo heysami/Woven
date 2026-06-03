@@ -6,7 +6,7 @@ You own the **sitemap lens**. Enumerate what *you* see as a sitemap node, and de
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 
 No planner-provided inventory or entity list. You enumerate. You'll cross-check entity assignments with Subagent 7's output during reconciliation — for now, identify entity IDs via the naming convention (singular PascalCase of `DEMO.<key>`).
 
@@ -37,10 +37,10 @@ Frame labels are a hint about purpose, not a substitute for grepping.
 
 ### Files you may read
 
-- `source/<slug>/*.html` — pages + their `DEMO.<name>` rendering patterns.
-- `source/<slug>/*.js` — included by HTML; same lens.
-- `source/<slug>/data.js` — `window.DEMO` shape (to know which `DEMO.<name>` keys are valid).
-- Existing `source/<slug>/prototype.json` — preserve prior `parent` / `entities` for unchanged frame IDs.
+- `source/*.html` — pages + their `DEMO.<name>` rendering patterns.
+- `source/*.js` — included by HTML; same lens.
+- `source/data.js` — `window.DEMO` shape (to know which `DEMO.<name>` keys are valid).
+- Existing `source/prototype.json` — preserve prior `parent` / `entities` for unchanged frame IDs.
 
 ## Enumerate through your lens
 
@@ -67,7 +67,7 @@ You don't have a pre-handed `lane` per frame — Subagent 4 (Flow) owns lanes. T
 For every frame you enumerate:
 
 ```
-grep -E 'DEMO\.\w+' source/<slug>/<frame.entry || sourceEntry>
+grep -E 'DEMO\.\w+' source/<frame.entry || sourceEntry>
 ```
 
 Map each `DEMO.<name>` to its entity ID per the naming convention:
@@ -83,7 +83,7 @@ Order entities by first appearance in the frame. Zero entities is fine (settings
 
 ## Render-verify your slice
 
-After producing your output (and after the planner has written `editor/branches/<slug>.js`), load the editor's **IA** view and verify:
+After producing your output (and after the planner has written `editor/data.js`), load the editor's **IA** view and verify:
 
 1. The sitemap renders as a tree, not a flat list — frames with `parent` actually nest under their parent.
 2. No frame is orphaned to a phantom parent (a `parent` value that doesn't exist in the inventory).

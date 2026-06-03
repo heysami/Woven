@@ -2,7 +2,7 @@
 
 **Trigger:** `edits.json` appears at repo root.
 
-Edits target the branch named in `edits.json → sourceRoot`. **Never cross branches.**
+Edits target the prototype whose source folder is named in `edits.json → sourceRoot` (per the per-prototype subfolder convention — `source/<slug>/`). **Never cross prototypes.**
 
 ## Shape
 
@@ -47,9 +47,9 @@ Edits target the branch named in `edits.json → sourceRoot`. **Never cross bran
 
 ## Model edit kinds (`target ≠ "dom"`)
 
-Mutate `editor/branches/<slug>.js`. Preserve `meta.branch`, `meta.branchLabel`, `meta.sourceRoot`, `meta.sourceEntry`, `meta.exploration` verbatim.
+Mutate `editor/data.js`. Preserve `meta.branch`, `meta.branchLabel`, `meta.sourceRoot`, `meta.sourceEntry`, `meta.exploration` verbatim.
 
-**Round-trip rule.** Every model edit also writes to `source/<slug>/prototype.json` so Workflow 1 re-runs don't undo it. If the manifest doesn't exist, create it from the current data file on the first model edit.
+**Round-trip rule.** Every model edit also writes to `source/prototype.json` so Workflow 1 re-runs don't undo it. If the manifest doesn't exist, create it from the current data file on the first model edit.
 
 | Edit `target` | Editor data path | Manifest path |
 |---|---|---|

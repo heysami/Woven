@@ -36,7 +36,7 @@ You are Subagent 1.V.vector-mark.
 
 **Style fidelity**: read `design-systems/<dsRef.id>/styles.css` for tokens (colors, font sizes, radii) and use them. Read `gallery.html` for adjacent illustration style if any exists. The mark should look like it belongs in the same visual family as the rest of the prototype.
 
-Write the SVG to `source/<branchSlug>/svg/<assetId>.svg` AND inline it into the source HTML at the slot's selector. RETURN both `promptText` (the brief — re-runs use this) and `skillCode` (the SVG markup — the canvas node's code panel surfaces this).
+Write the SVG to `source/svg/<assetId>.svg` AND inline it into the source HTML at the slot's selector. RETURN both `promptText` (the brief — re-runs use this) and `skillCode` (the SVG markup — the canvas node's code panel surfaces this).
 
 The skill node value is `svg-gen` (registered in `editor/prompts/media-models.js`).
 

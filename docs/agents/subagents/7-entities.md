@@ -6,7 +6,7 @@ You own the **data-shapes lens**. Enumerate what *you* see as an entity from `wi
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 
 No planner-provided entity list. You enumerate.
 
@@ -56,10 +56,10 @@ Per [`../data-schema.md`](../data-schema.md): `entities[]` with **`x`, `y`, `w` 
 
 ### Files you may read
 
-- `source/<slug>/entities.json` — preferred path; copy verbatim.
-- `source/<slug>/data.js` — `window.DEMO` shape.
-- `source/<slug>/*.html`, `*.js` — for inferring entity rendering patterns when manifest is absent.
-- **Existing `source/<slug>/prototype.json`** — preserve `x` / `y` / `w` for entity IDs already present. Users drag entity cards manually; positions must be stable across regens.
+- `source/entities.json` — preferred path; copy verbatim.
+- `source/data.js` — `window.DEMO` shape.
+- `source/*.html`, `*.js` — for inferring entity rendering patterns when manifest is absent.
+- **Existing `source/prototype.json`** — preserve `x` / `y` / `w` for entity IDs already present. Users drag entity cards manually; positions must be stable across regens.
 
 ## Enumerate through your lens
 
@@ -79,7 +79,7 @@ Per [`../data-schema.md`](../data-schema.md): `entities[]` with **`x`, `y`, `w` 
 
 The Entities canvas is a freeform 2D plane. Lay entities out so the rendered Entities view is readable, not a stack at origin.
 
-1. **Preserve prior positions.** For any entity ID already in `source/<slug>/prototype.json` with `x` / `y` / `w` set, copy those values verbatim. Don't shift placed cards across regens.
+1. **Preserve prior positions.** For any entity ID already in `source/prototype.json` with `x` / `y` / `w` set, copy those values verbatim. Don't shift placed cards across regens.
 2. **Place new entities in a grid pattern.** For each entity not already positioned, walk a 4-column grid:
    - `w`: default `280` (wider — e.g. `320` — only if the entity has long field names or `string[]` types that overflow the default).
    - `colWidth = w + 60` gap; `rowHeight = 38 + maxFields * 22 + 8 + 60` gap (use a row pitch of ~360 px as a safe default if mixed).

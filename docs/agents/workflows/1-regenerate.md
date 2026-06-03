@@ -14,7 +14,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
 
 | # | Subagent | Lens | Playbook | Spawned |
 |---|---|---|---|---|
-| 1 | Source | Build / update `source/<slug>/` | [`../subagents/1-source.md`](../subagents/1-source.md) | Only when user says "build" / "rebuild" / source missing. Runs alone, first. |
+| 1 | Source | Build / update `source/` | [`../subagents/1-source.md`](../subagents/1-source.md) | Only when user says "build" / "rebuild" / source missing. Runs alone, first. |
 | 2 | Canvas | Visual workspace cards | [`../subagents/2-canvas.md`](../subagents/2-canvas.md) | Always (parallel batch) |
 | 3 | Prototype | Iframe loadability | [`../subagents/3-prototype.md`](../subagents/3-prototype.md) | Always |
 | 4 | User flow | Task progression + lanes | [`../subagents/4-user-flow.md`](../subagents/4-user-flow.md) | Always |
@@ -33,7 +33,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
        ▼
 [ Planner — just hands files, no enumeration ]
        │
-       ▼  envelope: { branchSlug, sourceRoot, intent, overrides }
+       ▼  envelope: { slug, sourceRoot, intent, overrides }
        ▼
 ═══════ PARALLEL DISPATCH (all 9 view subagents) ══════════════
    2 Canvas    3 Prototype    4 User flow
@@ -57,7 +57,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
        │  • 4f: render check (post-write)
        │  • 4g: anomaly flags (storyboard leak, all-null setupScripts, wild count mismatches)
        ▼
-[ Planner — write editor/branches/<slug>.js + prototype.json ]
+[ Planner — write editor/data.js + prototype.json ]
        │     per docs/agents/data-schema.md
        ▼
 [ Render check + report ]
@@ -65,7 +65,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
 
 ## Why this shape
 
-**The planner doesn't scope.** It hands every subagent the same envelope: `branchSlug`, `sourceRoot`, `intent`, optional overrides. There is no canonical inventory, no extracted lanes, no "shared plan" of pre-decisions. The smart thinking lives in the subagent that has the lens-specific context to do it.
+**The planner doesn't scope.** It hands every subagent the same envelope: `slug`, `sourceRoot`, `intent`, optional overrides. There is no canonical inventory, no extracted lanes, no "shared plan" of pre-decisions. The smart thinking lives in the subagent that has the lens-specific context to do it.
 
 **Each subagent owns enumeration through its lens.** Flow decides what's a flow node *through the flow lens*. Canvas decides what's a canvas card *through the canvas lens*. They may legitimately disagree — Flow includes triggers/notifications/externals; Canvas excludes them. That's the architecture working correctly.
 

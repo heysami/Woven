@@ -996,10 +996,14 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* v3.2 — the secondary metadata column ("empty", "prompt → fan-out",
+   "totoro-feeder" repeated 20 times in the outputs list, etc.) was just
+   visual noise — every row already has a label + glyph, and the slug
+   redundancy in the outputs tab was telling the user the same thing 20
+   times in a row. Hidden via display:none so the spans stay in the JSX
+   (cheap to re-enable per-section if a specific list needs them back). */
 .workflow-library-item-id {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
-  font-size: 10.5px;
-  color: var(--text-faint);
+  display: none;
 }
 /* Phase 4c — delete-on-hover button for deletable library items
    (generated assets, saved prompts). */
@@ -1420,6 +1424,114 @@ button {
   color: var(--text-muted);
 }
 
+/* v3.2 — Empty-canvas quick-start composer. Same centred-card placement
+   as the static hint it replaced, but interactive: textarea + Send button
+   that spawns a workflow chat with the typed prompt. Unmounts the moment
+   the chat starts (chatActive) or any node lands on the canvas. */
+.workflow-empty-composer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px 28px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  text-align: center;
+  width: min(560px, calc(100% - 64px));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+}
+.workflow-empty-composer-icon {
+  font-size: 28px;
+  color: var(--accent);
+  line-height: 1;
+  display: inline-flex;
+}
+.workflow-empty-composer-icon svg { width: 24px; height: 24px; }
+.workflow-empty-composer-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.workflow-empty-composer-sub {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 460px;
+}
+.workflow-empty-composer-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  width: 100%;
+  align-items: stretch;
+  margin-top: 4px;
+}
+.workflow-empty-composer-input {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 64px;
+  font-family: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.workflow-empty-composer-input:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+}
+.workflow-empty-composer-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+}
+.workflow-empty-composer-send:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent) 92%, oklch(0% 0 0));
+}
+.workflow-empty-composer-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.workflow-empty-composer-send svg { width: 14px; height: 14px; }
+.workflow-empty-composer-spinner {
+  width: 13px; height: 13px;
+  border: 2px solid color-mix(in oklch, oklch(98% 0.002 250) 50%, transparent);
+  border-top-color: oklch(98% 0.002 250);
+  border-radius: 50%;
+  animation: workflowSpin 0.7s linear infinite;
+}
+.workflow-empty-composer-keys {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+.workflow-empty-composer-keys kbd {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
 /* Nodes */
 .workflow-node {
   position: absolute;
@@ -1514,6 +1626,25 @@ button {
   height: 100%;
   border: 0;
   background: var(--surface);
+}
+/* v3.2 — scale-to-fit wrapper. The iframe is rendered at the prototype's
+   natural viewport (e.g. 1440×900) and CSS-transformed to fit; this wrapper
+   clips the overflow so scaled-down content fills the node body exactly and
+   scaled-up content doesn't bleed past it. */
+.workflow-node-iframe-scale {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface);
+}
+.workflow-node-iframe-scale > .workflow-node-iframe {
+  /* The inline style sets the natural width/height; this rule just makes
+     sure the transform-origin lands at the wrapper's top-left and the
+     iframe paints flush against the wrapper edges. */
+  position: absolute;
+  top: 0; left: 0;
+  width: auto; height: auto;
 }
 
 /* Phase 3.5c — lock pin in the header, shown when a prototype is bound to a
@@ -1751,6 +1882,362 @@ button {
 .workflow-node-asset-replace:active {
   background: color-mix(in oklch, var(--accent) 20%, transparent);
 }
+/* v3.0 — auto-size affordance. Mirrors the replace-button shape so it sits
+   cleanly in the same chip row. Shown only when sizing is "custom". */
+.workflow-node-asset-autosize {
+  appearance: none; border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 13px; line-height: 1;
+  color: var(--text-muted);
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 4px; cursor: pointer; padding: 0; margin-left: 2px;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.workflow-node-asset-autosize:hover {
+  border-color: var(--accent); color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+.workflow-node-asset-autosize:active {
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   v3.0 — Asset versioning UI (dot strip, two-pane picker drawer).
+   See docs/features/asset-versioning.md §6.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Dot strip beneath the asset body. One dot per version (oldest left).
+   Active is enlarged; pinned gets a ring outline. */
+.workflow-node-asset-versions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 18px;
+  overflow: visible;   /* allow .tab-tip on each dot to escape upward */
+}
+/* Version-dot tooltip floats above the strip (the strip is at the bottom
+   of the card, so a below-button tip would clip the canvas). */
+.workflow-node-asset-version-dot .tab-tip {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.workflow-node-asset-version-dot .tab-tip::before {
+  top: auto;
+  bottom: -3px;
+}
+/* Same lift for the autosize + lineage-follow chips. */
+.workflow-node-asset-autosize .tab-tip,
+.workflow-node-asset-lineage-follow .tab-tip {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.workflow-node-asset-autosize .tab-tip::before,
+.workflow-node-asset-lineage-follow .tab-tip::before {
+  top: auto;
+  bottom: -3px;
+}
+.workflow-node-asset-version-dot {
+  appearance: none; border: 0; padding: 0; cursor: pointer;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.5;
+  transition: transform 80ms ease, opacity 80ms ease, box-shadow 80ms ease;
+}
+.workflow-node-asset-version-dot:hover { opacity: 1; }
+.workflow-node-asset-version-dot[data-active="true"] {
+  width: 9px; height: 9px; opacity: 1;
+  background: var(--accent);
+}
+.workflow-node-asset-version-dot[data-pinned="true"] {
+  box-shadow: 0 0 0 1.5px var(--text);
+}
+
+/* Lineage chip strip — one chip per upstream input on the active version.
+   Sits below the version dot strip; shows divergence in a warm color
+   without using the word "stale". */
+.workflow-node-asset-lineage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 22px;
+}
+.workflow-node-asset-lineage-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.workflow-node-asset-lineage-chip[data-diverged="true"] {
+  background: color-mix(in oklch, orange 18%, var(--bg));
+  border-color: color-mix(in oklch, orange 50%, var(--border));
+  color: var(--text);
+}
+.workflow-node-asset-lineage-chip[data-kind="non-asset"] {
+  font-style: italic;
+}
+.workflow-node-asset-lineage-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text-muted); opacity: 0.6;
+}
+.workflow-node-asset-lineage-follow {
+  appearance: none; border: 0; background: transparent;
+  padding: 0 2px; cursor: pointer; color: inherit;
+  font-size: 11px; line-height: 1;
+}
+.workflow-node-asset-lineage-follow:hover { color: var(--accent); }
+
+/* Picker drawer — full-screen scrim + centred two-pane card.
+   v3.0 — backdrop-filter blur removed; it triggered full-frame compositing
+   on every canvas pan/zoom tick, which made the editor visibly stutter.
+   A plain semi-transparent fill reads as "modal context" without the cost. */
+.workflow-version-picker-scrim {
+  position: fixed; inset: 0; z-index: 9000;
+  background: color-mix(in oklch, var(--bg) 65%, transparent);
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px;
+}
+.workflow-version-picker {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  width: min(960px, 100%); max-height: 80vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+}
+.workflow-version-picker-head {
+  display: flex; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.workflow-version-picker-title { flex: 1; }
+.workflow-version-picker-close {
+  appearance: none; border: 0; background: transparent;
+  font-size: 18px; line-height: 1; color: var(--text-muted);
+  cursor: pointer; padding: 4px 8px;
+}
+.workflow-version-picker-close:hover { color: var(--text); }
+.workflow-version-picker-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 1; min-height: 0; overflow: hidden;
+}
+.workflow-version-picker[data-has-subassets="true"] .workflow-version-picker-body {
+  grid-template-columns: 1fr 1fr;
+}
+.workflow-version-picker-pane {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.workflow-version-picker-pane-versions { border-right: 1px solid var(--border); }
+.workflow-version-picker-empty {
+  padding: 24px; color: var(--text-muted); font-size: 13px; text-align: center;
+}
+.workflow-version-picker-foot,
+.workflow-version-picker-footer {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted); font-size: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.workflow-version-picker-save-comp {
+  appearance: none; border: 1px solid var(--border); background: var(--bg);
+  font-size: 11px; padding: 4px 8px; border-radius: 3px; cursor: pointer;
+  color: var(--text); position: relative;
+}
+.workflow-version-picker-save-comp:hover {
+  border-color: var(--accent); color: var(--accent);
+}
+.workflow-version-picker-save-comp .tab-tip {
+  top: auto; bottom: calc(100% + 6px);
+}
+.workflow-version-picker-save-comp .tab-tip::before {
+  top: auto; bottom: -3px;
+}
+
+/* Version + composition rows — horizontal cards. v3.2 — the thumbnail
+   column was sized at 48×32 which was too small to actually preview the
+   version content; user couldn't tell two versions apart at a glance.
+   Bumped to 160×100 so each row leads with a real preview image. */
+.workflow-version-row,
+.workflow-composition-row {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  gap: 12px; align-items: center;
+  padding: 8px 10px; border-radius: 6px;
+  background: var(--surface); border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.workflow-version-row:hover,
+.workflow-composition-row:hover { background: var(--surface-hover, color-mix(in oklch, var(--accent) 8%, var(--surface))); }
+.workflow-version-row[data-selected="true"] { border-color: var(--accent); }
+.workflow-version-row[data-active="true"],
+.workflow-composition-row[data-active="true"] {
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+}
+
+.workflow-version-row-thumb,
+.workflow-composition-row-thumb {
+  width: 160px; height: 100px; overflow: hidden; border-radius: 5px;
+  background: var(--bg); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.workflow-version-row-thumb img,
+.workflow-composition-row-thumb img {
+  width: 100%; height: 100%; object-fit: cover;
+  /* Smoother re-scaling when versions are zoomed up; without this Chrome
+     uses NEAREST for downscaled PNGs and the previews look pixelated. */
+  image-rendering: auto;
+}
+.workflow-version-row-thumb-empty,
+.workflow-composition-row-thumb-empty {
+  color: var(--text-faint); font-size: 22px; font-family: var(--font-mono, monospace);
+  letter-spacing: -0.02em; font-weight: 600;
+}
+
+.workflow-version-row-line1,
+.workflow-composition-row-line1 {
+  font-size: 13px;
+  display: flex; gap: 6px; align-items: center;
+}
+.workflow-version-row-line2,
+.workflow-composition-row-line2 {
+  font-size: 11px; color: var(--text-muted);
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.workflow-version-row-label { font-weight: 600; }
+.workflow-version-row-id,
+.workflow-composition-row-id { font-family: var(--font-mono, monospace); color: var(--text-muted); }
+/* Sequence chip — primary identifier for each version row. Stable across
+   reverts (always reflects chronological order, not list order). */
+.workflow-version-row-seq {
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-weight: 600;
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  color: var(--text);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.workflow-version-row[data-active="true"] .workflow-version-row-seq {
+  background: var(--accent);
+  color: var(--bg);
+}
+.workflow-version-row-active-badge,
+.workflow-composition-row-active-badge {
+  background: var(--accent); color: var(--bg);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 1px 4px; border-radius: 3px;
+}
+.workflow-composition-row-empty { font-style: italic; }
+
+.workflow-version-row-actions,
+.workflow-composition-row-actions {
+  display: flex; gap: 2px;
+}
+.workflow-version-row-actions button,
+.workflow-composition-row-actions button {
+  appearance: none; border: 1px solid var(--border); background: var(--bg);
+  font-size: 12px; padding: 3px 6px; border-radius: 3px; cursor: pointer;
+  color: var(--text-muted);
+  transition: background 80ms ease, color 80ms ease;
+}
+.workflow-version-row-actions button:hover:not(:disabled),
+.workflow-composition-row-actions button:hover:not(:disabled) {
+  background: var(--surface); color: var(--text);
+}
+.workflow-version-row-actions button:disabled,
+.workflow-composition-row-actions button:disabled {
+  opacity: 0.4; cursor: not-allowed;
+}
+
+/* Portal-rendered tooltip used by HoverTip — lives at document.body so it
+   escapes any ancestor overflow:hidden / overflow:auto (notably the picker
+   panes). Positioned via fixed coords computed from the anchor's rect. */
+.th-portal-tip {
+  background: oklch(22% 0.01 250);
+  color: oklch(98% 0.002 250);
+  font: 500 11.5px/1.35 var(--font-ui, Inter, system-ui, sans-serif);
+  padding: 6px 9px;
+  border-radius: 5px;
+  /* Long descriptions wrap instead of bleeding off-screen. The viewport
+     fallback (40ch) gives us readable line-length on narrow nodes; the
+     hard cap (min(420px, ...)) keeps long tooltips from spanning the
+     whole canvas. */
+  max-width: min(420px, 40ch);
+  /* v3.2 — pre-line preserves explicit "\n" newlines in the tip text
+     (e.g. HistoryButton's multi-line summary) AND still wraps long lines
+     at the max-width. `normal` would collapse the \n into a single space. */
+  white-space: pre-line;
+  text-align: left;
+  pointer-events: none;
+  z-index: 11000;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+/* v3.2 — Arrow side flips when the bubble auto-flips placement (set on
+   the bubble's className by HoverTip when there's no headroom above the
+   anchor — top-nav buttons mostly). Default placement is `above` (arrow
+   on the bottom edge pointing down). Below placement flips to top edge. */
+.th-portal-tip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 6px; height: 6px;
+  background: inherit;
+}
+.th-portal-tip-above::before { bottom: -3px; }
+.th-portal-tip-below::before { top:    -3px; }
+/* v3.2 — Disabled HoverTip wrapper. The span carries the original button's
+   className (so layout / appearance still match the surrounding row); the
+   inner button is stripped of all visual chrome and just exists to keep the
+   `disabled` attribute + click semantics. We also re-enable pointer events
+   on the span itself so hover/focus fire reliably across browsers. */
+.th-disabled-wrap {
+  pointer-events: auto;
+  cursor: not-allowed;
+  opacity: 0.45;
+  /* Keep the layout box behaviour of a real button. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.th-disabled-inner {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: not-allowed;
+  pointer-events: none;  /* clicks land on the wrapper, no-op */
+  width: 100%;
+  height: 100%;
+}
+/* Tooltip chip for picker action buttons. Mirrors .tab-tip but positions
+   ABOVE the button (the action buttons sit near the bottom of the drawer,
+   so a below-button tooltip would clip or overflow the scroll area). */
+.workflow-version-row-actions button .tab-tip,
+.workflow-composition-row-actions button .tab-tip,
+.workflow-version-picker-close .tab-tip {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.workflow-version-row-actions button .tab-tip::before,
+.workflow-composition-row-actions button .tab-tip::before,
+.workflow-version-picker-close .tab-tip::before {
+  top: auto;
+  bottom: -3px;
+}
 .workflow-node-asset-bg-input {
   position: absolute;
   inset: 0;
@@ -1840,7 +2327,13 @@ button {
 /* Pin the Run button to the bottom of the skill body so older (taller)
    nodes from before the default-height shrink don't show a big empty
    gutter below the button. */
-.workflow-node-skill-run { margin-top: auto; }
+.workflow-node-skill-run {
+  margin-top: auto;
+  /* v3.2 — Never compress the Run button when body content is tight.
+     Was causing the rembg skill node (which has model chip + IO row + Run)
+     to crop the button when the auto-scaffolded h was too short. */
+  flex-shrink: 0;
+}
 
 /* Phase 4c — custom vertical resize handle. The node's outer height is
    driven by `style.height` set inline from node.h, so the native
@@ -4726,6 +5219,14 @@ a.ds-badge:hover {
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--accent-soft);
+}
+/* v3.2 — Wired-from-edge tag: distinct from the "css-bg" / "animated"
+   tags so users can tell at a glance which entries come from the
+   canvas edges vs which were detected in the live DOM. */
+.workflow-modal-tag-wired {
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
+  color: var(--accent);
+  border: 1px solid color-mix(in oklch, var(--accent) 32%, transparent);
 }
 .workflow-modal-foot {
   display: flex;
@@ -8710,21 +9211,63 @@ a.ds-badge:hover {
   white-space: nowrap;
 }
 .runs-trigger:hover { border-color: var(--border-strong); color: var(--text); }
+/* v3.2 — Open state is now visually distinctive: filled accent fill, light
+   text, inset press-down shadow. Reads as "currently selected" rather than
+   the previous subtle accent-soft + accent-border treatment, which the user
+   reported was indistinguishable from the closed hover state. */
 .runs-trigger[data-open="true"] {
   border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  box-shadow:
+    inset 0 1px 2px color-mix(in oklch, oklch(0% 0 0) 16%, transparent),
+    0 0 0 2px color-mix(in oklch, var(--accent) 25%, transparent);
+}
+.runs-trigger[data-open="true"]:hover {
+  background: color-mix(in oklch, var(--accent) 92%, oklch(0% 0 0));
+  border-color: var(--accent);
+}
+.runs-trigger[data-open="true"] .runs-label,
+.runs-trigger[data-open="true"] svg {
+  color: oklch(98% 0.002 250);
+}
+.runs-trigger[data-open="true"] .runs-count {
+  background: color-mix(in oklch, oklch(0% 0 0) 22%, transparent);
+  color: oklch(98% 0.002 250);
+}
+/* When the panel is open, the live-pulse needs a different ring colour to
+   stay visible against the now-saturated accent background. */
+.runs-trigger[data-open="true"] .runs-pulse {
+  background: oklch(98% 0.002 250);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 4px color-mix(in oklch, oklch(98% 0.002 250) 50%, transparent);
 }
 .runs-trigger[data-live="true"] {
   border-color: color-mix(in oklch, var(--accent) 40%, transparent);
   color: var(--accent-text);
 }
 .runs-trigger svg { width: 14px; height: 14px; }
+/* v3.2 — the chat icon now PERSISTS even when runs are live. The pulse
+   is overlaid as a small badge in the top-right corner of the icon, so
+   the button is always identifiable as "Chat / Runs" with the live
+   indicator as an additional signal — not a replacement for the icon. */
+.runs-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
 .runs-pulse {
-  width: 8px; height: 8px; border-radius: 50%;
+  position: absolute;
+  top: -3px; right: -3px;
+  width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent);
+  box-shadow: 0 0 0 2px var(--bg),
+              0 0 0 4px color-mix(in oklch, var(--accent) 30%, transparent);
   animation: chat-pulse 1.2s ease-in-out infinite;
+  pointer-events: none;
 }
 .runs-count {
   font-family: var(--font-mono);
@@ -9221,6 +9764,38 @@ a.ds-badge:hover {
   color: var(--text-muted);
   font-style: italic;
   white-space: pre-wrap;
+}
+/* v3.1 — Rolling thinking-tokens progress chip. Replaces the flood of
+   raw {type: system, subtype: thinking_tokens} frames with one row that
+   updates in place and disappears when the model emits its first reply. */
+.chat-thinking-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-style: normal;
+  font-size: 11.5px;
+}
+.chat-thinking-progress-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.chat-thinking-progress-dots > span {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.4;
+  animation: chat-thinking-dot-pulse 1.2s ease-in-out infinite;
+}
+.chat-thinking-progress-dots > span:nth-child(2) { animation-delay: 0.2s; }
+.chat-thinking-progress-dots > span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes chat-thinking-dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; }
+  40%           { opacity: 1; }
+}
+.chat-thinking-progress-count {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 .chat-tool {
   display: inline-flex;
@@ -9773,6 +10348,50 @@ a.ds-badge:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+
+/* v3.1 — Image content parts returned by tool calls (Read of a PNG, Bash
+   screenshot wrapped through an image-emitting shim, MCP browser
+   screenshot, etc.). Rendered inline as a thumbnail strip; each thumb is
+   a link to the full-size data URL so the user can click through. */
+.tool-result-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.tool-result-image-wrap {
+  display: inline-block;
+  line-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+  transition: border-color 0.12s, transform 0.08s;
+}
+.tool-result-image-wrap:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.tool-result-image {
+  display: block;
+  max-width: 280px;
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  /* Checker pattern shows through any transparent PNG areas — same
+     pattern used by the asset thumbnail cards on the workflow canvas. */
+  background:
+    linear-gradient(45deg, var(--border) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--border) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--border) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--border) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+.tool-result-imgcount {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 /* TodoWrite */
@@ -11374,26 +11993,15 @@ a.ds-badge:hover {
   color: var(--text);
 }
 
-/* Prototype DS link — read-only badge showing the DS that drives the
-   prototype (resolved from the branch's meta.dsRef). Not clickable —
-   the binding lives in the branch data file. */
-.workflow-node-action-dslabel {
-  font: 500 11px/1.2 var(--font-mono);
-  padding: 4px 8px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  cursor: help;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.workflow-node-action-dslabel.is-missing {
-  background: var(--surface-2);
-  color: var(--text-muted);
-  border-color: var(--border);
+/* v3.2 — DS-state icon merged into the audit shield. The standalone
+   `.workflow-node-action-dslabel` chip was redundant: when no DS was
+   linked, both it AND the audit shield communicated "no DS, can't audit",
+   just with different glyphs. Now the shield is the single source of
+   truth — disabled appearance + tooltip both surface the linked/unlinked
+   state. The .is-no-ds modifier tints the disabled shield grey so it
+   reads as "no DS" rather than ambiguously "generic disabled". */
+.workflow-node-action-audit-proto.is-no-ds {
+  color: var(--text-faint);
 }
 
 /* Audit-modal footer: Refine button + hint copy. Lives inside the modal
@@ -11802,61 +12410,68 @@ a.ds-badge:hover {
   cursor: not-allowed;
 }
 
-/* === History panel (Phase 2) === */
-.tbtn-history {
+/* === History panel (Phase 2) ===
+   v3.2 — Trio: undo / redo / open-panel. Wrapped in `.tbtn-history-group`
+   so the three sit visually as one chip with a divider but each is its
+   own click target with its own portaled tooltip. */
+.tbtn-history-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
   position: relative;
-  flex-wrap: nowrap;
-  white-space: nowrap;
 }
-.tbtn-history .tbtn-history-counts {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-faint);
-  margin-left: 2px;
-  flex-shrink: 0;
+.tbtn-history-group.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
-.tbtn-history .tbtn-history-counts > span {
+.tbtn-history-step,
+.tbtn-history {
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 0;
+  transition: background 0.12s, color 0.12s;
 }
-.tbtn-history .tbtn-history-counts span[data-disabled="true"] {
-  opacity: 0.3;
+.tbtn-history-step:hover:not(:disabled),
+.tbtn-history:hover {
+  background: var(--surface-2);
+  color: var(--text);
 }
-.tbtn-history.is-locked {
-  opacity: 0.55;
+.tbtn-history-step + .tbtn-history-step,
+.tbtn-history-step + .tbtn-history {
+  border-left: 1px solid var(--border);
+}
+.tbtn-history-step:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
+  pointer-events: auto;  /* still need hover for tooltip */
 }
 .tbtn-history.is-open {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
-/* Sit inline with the workflow toolbar's gear (30×30, 6px radius border).
-   Without this, .tbtn's editor-toolbar shape (no border, light padding) makes
-   the button look misaligned next to the bordered chrome of the workflow bar. */
-.workflow-bar .tbtn-history {
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 6px;
-  color: var(--text-muted);
+/* Workflow bar — keep the group sized to match the other 30px-tall chrome
+   (settings gear, etc.) and use the same border tone. */
+.workflow-bar .tbtn-history-group {
+  border-color: var(--border);
 }
-.workflow-bar .tbtn-history:hover {
-  background: var(--surface-2);
+.workflow-bar .tbtn-history-group:hover {
   border-color: var(--border-strong);
-  color: var(--text);
 }
-.workflow-bar .tbtn-history.is-open {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-text);
-}
+/* v3.2 — workflow-bar overrides for the single button were obsolete after
+   the trio split (group provides the border + background). The trio's
+   shared 30px height and inner border-left dividers match the gear chrome
+   already, no per-button override needed. */
 
 .history-panel-scrim {
   position: fixed; inset: 0;
@@ -12162,6 +12777,25 @@ a.ds-badge:hover {
   letter-spacing: 0.04em;
 }
 .wizard-preset-custom { grid-column: span 2; }
+
+/* v3.1 — Blank scope is the default and visually dominant. It spans both
+   columns at the top of the grid; the body uses more vertical padding and a
+   larger title so it reads as the primary affordance. The other presets
+   look like a denser secondary row underneath. */
+.wizard-preset-wide { grid-column: span 2; }
+.wizard-preset-blank {
+  padding: 22px 18px;
+  gap: 10px;
+  /* Subtle accent border ring even when not selected, so the default is
+     visually unambiguous. */
+  border-color: oklch(from var(--accent) l c h / 0.35);
+}
+.wizard-preset-blank .wizard-preset-title { font-size: 16px; }
+.wizard-preset-blank .wizard-preset-desc  { font-size: 13px; }
+.wizard-preset-blank.is-selected {
+  /* Keep the slightly stronger accent ring even after the soft fill kicks in. */
+  border-color: var(--accent);
+}
 
 /* Custom toggles */
 .wizard-custom { display: flex; flex-direction: column; gap: 6px; }

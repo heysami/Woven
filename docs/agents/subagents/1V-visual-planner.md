@@ -12,14 +12,49 @@ The most common failure mode here will be the same one Subagent 6 fights: *selec
 
 **Replace "what visuals did you notice?" with "enumerate this objective grep-derivable set, then classify every member with a medium and a reason."** Your output is NOT "here are the visuals I found." It is "here are the N candidate slots I enumerated; here's the medium + pipeline decision per slot; here's the rejection log for slots that resolved to `none`."
 
-## Input (envelope only)
+## Input modes (v3.1)
 
-- `branchSlug`, `sourceRoot`, `projectRoot`, `intent`
+You handle **two** dispatch shapes. Branch your behavior on the first words of your dispatch prompt.
+
+### Mode A — HTML enumeration (default)
+
+Dispatched by Subagent 1 / `bp_proto_build` after HTML is written. Envelope:
+
+- `slug`, `sourceRoot`, `projectRoot`, `intent`
 - `workflowJsonPath` = `<projectRoot>/workflow/workflow.json` (may not exist yet — create with `{ pan: { x:0, y:0 }, zoom: 1, nodes: [], edges: [] }`)
 - `genre` — the one-line genre commit from `app.js` line 1
 - `visualPlanPath` = `<projectRoot>/workflow/visual-plan.json` (you own this file)
 
-No planner-provided inventory. **You enumerate.**
+No planner-provided inventory. **You enumerate.** All the rest of this playbook assumes Mode A unless noted.
+
+### Mode B — Bare intent (v3.1)
+
+Dispatched when the user asks for a single image in freeform chat, or anywhere there's no HTML context to walk. Your prompt **starts with `BARE-INTENT MODE.`** and provides:
+
+- `intent`: one-line description (e.g. "wizard character in Studio Ghibli style").
+- Optional: `assetId`, `outputPath`, `aspect`, `parentVariant`.
+
+Mode B is a stripped-down version of Mode A — no enumeration, no `visual-plan.json` artifact. Steps:
+
+1. **Pick a medium** from the classifier table using the intent text. Cues are listed in the corresponding section of `.claude/agents/visual-planner.md` ("character / mascot / person / creature → raster-foreground", etc.). If the intent doesn't match any cue, default to `raster-foreground` for character-like nouns or `raster-photo` otherwise.
+2. **Synthesize an assetId** if the caller didn't supply one. Slug the intent: "wizard ghibli" → `wizard-ghibli`. Make sure it doesn't collide with an existing asset node id in `workflow.json`; suffix `_2`, `_3` on collision.
+3. **Scaffold the node trio** (or quartet for raster-foreground) per the Artifact 1 rules below — same node ids, same edges. Use `outputPath` if supplied, otherwise `source/images/<assetId>.png` (or `source/icons/<assetId>.svg` for vector kinds).
+4. **Dispatch the matching per-medium drawer** with the intent as its bare prompt. Drawer fills the prompt node's text.
+5. **Return JSON** `{ assetId, medium, nodeIds, outputPath }` to the caller. No further work.
+
+In Mode B you skip the §"You must read source" walk, the §"Recipe" enumeration, and the §"Render-verify your slice" check. Those are Mode-A-only.
+
+## ⚠ Wire each asset to the prototype (v3.1 — both modes)
+
+After scaffolding any asset's trio (`p_X → s_X → [r_X] → a_X`), you MUST also add an edge from the asset node to the prototype's `visual-assets` port. Otherwise the asset card on the canvas is a disconnected island.
+
+For each asset you scaffold:
+
+1. Find a `kind: "prototype"` node in `workflow.json`. Exactly one is expected. If zero, skip. If multiple, use the `prototypeNodeId` the dispatch supplied or pick the most recent.
+2. Append edge: `{ "from": "a_<assetId>.out", "to": "<prototypeNodeId>.visual-assets" }`.
+3. Update the prototype node's `exposedAssets[]` to include `{ id, path, intent }` for the new asset (initialise the array if missing).
+
+This is the step v3.1 made non-negotiable. A user reported asset trios being correctly scaffolded but never wired — the canvas looked like the asset had nothing to do with the prototype.
 
 ## Output
 
@@ -29,7 +64,7 @@ Two artifacts:
 
 ```jsonc
 {
-  "branchSlug": "main",
+  "slug": "main",
   "generatedAt": "2026-05-19T…",
   "genre": "Editorial — magazine / longform",
   "assets": [
@@ -69,9 +104,9 @@ Plus a decision log section appended to `NOTES.md`.
 
 ### Files you may read
 
-- All of `source/<slug>/*.html`, `source/<slug>/*.js`, `source/<slug>/styles.css` — the slot enumeration ground truth.
-- `source/<slug>/design-system.html` — the gallery, for icon catalog + illustration slots + brand marks.
-- `source/<slug>/prototype.json` — for the genre line and project description (feeds asset briefs with the right voice).
+- All of `source/*.html`, `source/*.js`, `source/styles.css` — the slot enumeration ground truth.
+- `source/design-system.html` — the gallery, for icon catalog + illustration slots + brand marks.
+- `source/prototype.json` — for the genre line and project description (feeds asset briefs with the right voice).
 - Existing `workflow/workflow.json` — so you don't clobber user-added nodes / edges. **Preserve every node whose id is not in your asset namespace** (`p_*`, `s_*`, `r_*`, `a_*` keyed to your asset ids).
 - Existing `workflow/visual-plan.json` — if a slot's `outputPath` already exists on disk AND its `brief` hasn't changed, mark `pipeline: ["skip"]` and don't regenerate. Stability matters: regenerating a hero on every Workflow 1 run wastes BYOK credits.
 - [`../../../PROTOTYPE.md`](../../../PROTOTYPE.md) §9 (Graphics) and §10 (Motion) — the genre × medium guardrail table.
@@ -80,13 +115,13 @@ Plus a decision log section appended to `NOTES.md`.
 
 - `workflow/visual-plan.json` — full ownership.
 - `workflow/workflow.json` — append-only for your asset namespace; never remove a node outside it.
-- `source/<slug>/*` — **only** to update slot markup (add `data-slot=…` annotations, swap `<div class="img-placeholder">` for `<img src="…">` once the output path is committed, attach `data-motion=…` modifiers). Anything semantic stays in Subagent 1's lane.
+- `source/*` — **only** to update slot markup (add `data-slot=…` annotations, swap `<div class="img-placeholder">` for `<img src="…">` once the output path is committed, attach `data-motion=…` modifiers). Anything semantic stays in Subagent 1's lane.
 
 ## Recipe
 
 ### Step 1 — Enumerate the candidate set (Enumerate-Decide-Log)
 
-Run **every one of these greps** across `source/<slug>/` and union the results. Selective recall is structurally impossible once the candidates are listed.
+Run **every one of these greps** across `source/` and union the results. Selective recall is structurally impossible once the candidates are listed.
 
 | # | Grep | What it captures |
 |---|---|---|

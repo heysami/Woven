@@ -19,7 +19,7 @@ The workflow validates the file, partitions entries by verdict, and dispatches.
 ## Inputs
 
 - `DS_PROPOSAL.md` at project root — emitted by Subagent 6 against `design-systems/<dsRef.id>/@<version>`
-- Branch context — `editor/branches/<active>.js → meta.dsRef`
+- Branch context — `<project>/editor/data.js → meta.dsRef`
 
 ## Recipe
 

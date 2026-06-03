@@ -142,6 +142,40 @@ The orchestrator's [AGENT_HARNESS.md](AGENT_HARNESS.md) translates this into har
 
 This is the structural fix for super's variant `d`: it existed on disk, was picked in `DECISION_cp_ds_pick.json`, but had no card. Under the new system it gets a card automatically.
 
+## Asset versioning (v3.0)
+
+The `asset` kind carries two extra contract blocks — `versioning` and `adaptiveSize` — that no other kind has. See [`../../docs/features/asset-versioning.md`](../../docs/features/asset-versioning.md) for the full design.
+
+```python
+"versioning": {
+    "enabled":                  True,
+    "maxUnpinnedVersions":      20,
+    "maxUnpinnedCompositions":  50,
+    "snapshotRoot":             "workflow/runs/{nodeId}/{versionId}/",
+    "viewRoot":                 "workflow/views/{nodeId}/{versionId}/{compositionId}/",
+    "thumbStrategy":            "canvas-html2canvas",
+},
+"adaptiveSize": {
+    "enabled": True, "scaleDefault": "fit-canvas",
+    "minW": 280, "maxW": 720,
+    "aspectFrom": "viewport|image|markdown",
+}
+```
+
+Each asset node carries:
+
+- `versions[]` — chronologically appended snapshots of the asset's canonical files. Capped at 20 unpinned per node; active version is always protected from eviction.
+- `compositions[]` per version — tuples of `(sub-asset → sub-versionId)` describing which upstream sub-asset versions this view is pinned against. Free-cost JSON entries + view-dir hardlinks. Capped at 50 unpinned per parent version.
+- `activeVersionId` + `activeCompositionId` — current head of each axis.
+- `consumedVersions` (version-level) — non-asset upstream lineage as `{nodeId: {outputHash}}`.
+- `consumedSubVersions` (composition-level) — asset upstream lineage as `{nodeId: versionId}`.
+
+The daemon snapshots an asset's files into `workflow/runs/<nodeId>/<vid>/` after every successful upstream producer run. View dirs are materialised into `workflow/views/<nodeId>/<vid>/<compId>/` via hardlinks (copy fallback) so iframes can load a per-composition tree without rewriting HTML. The live `source/` tree always mirrors the active version + active composition.
+
+Endpoint contract: see `docs/features/asset-versioning.md §7.2` for the complete list. Pattern is `/__workflow/node/<id>/version/<vid>/<action>` and `/__workflow/node/<id>/version/<vid>/composition/<cid>/<action>`.
+
+Adaptive sizing: card layout derives from `node.size.naturalAspect + scale` rather than fixed `w/h`. Drag-resize commits `scale: "custom"` so the user's pick survives re-render; a `↺` button restores adaptive mode.
+
 ## When in doubt
 
 If you're writing code that needs to know "what is `kind X`," call `kinds.kind_contract(kind, node_id)` and read what it returns. Do not hardcode. Do not duplicate. If the registry is wrong, fix the registry — not the call site.

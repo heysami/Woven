@@ -10,12 +10,12 @@ All paths are **project-root-relative**, never source-relative.
 
 - The user's request.
 - Active branch slug (default `main`).
-- `source/<slug>/` (may be absent if Subagent 1 needs to create it).
+- `source/` (may be absent if Subagent 1 needs to create it).
 - Optional override files at repo root: `STATEMACHINE_REQUEST.md` / `TIMELINE_REQUEST.md` / `GRID_REQUEST.md`.
 
 ## Step 1 — Source build (only if needed)
 
-If the user said "build / rebuild / update the design" *or* `source/<slug>/index.html` doesn't exist → spawn Subagent 1 first, wait for completion. Re-confirm `source/<slug>/` exists.
+If the user said "build / rebuild / update the design" *or* `source/index.html` doesn't exist → spawn Subagent 1 first, wait for completion. Re-confirm `source/` exists.
 
 Otherwise, skip.
 
@@ -28,7 +28,7 @@ The prompt for each subagent:
 > Read `docs/agents/subagents/N-<view>.md`.
 >
 > === ENVELOPE ===
-> `branchSlug`: "main"
+> `slug`: "main"
 > `sourceRoot`: "source/main"
 > `intent`: "regenerate" | "request-only" | …
 > `overrides`: { "stateMachine": <bool>, "timeline": <bool>, "grids": <bool> }
@@ -98,7 +98,7 @@ For each entity `E` that appears in `frames[].entities` for **two or more frames
 2. **Check for a notification mediator** — does Subagent 4 have a `kind: "notification"` frame in the receiver's lane whose label matches the handoff event? (Typical IDs: `<receiver>-notif-app-submitted`, `pxp-notif-run-proposed`.)
 3. **Resolve:**
    - **Notification mediator present** → wire two arrows: `sender-frame → notif-node` and `notif-node → receiver-frame`. The notification mediator must NOT be bypassed by a direct sender-→-receiver edge.
-   - **No mediator but source has notification copy at this handoff point** (re-grep `source/<slug>/` for "Notify <ReceiverLabel>" / push / email at the sender frame) → flag Subagent 4 as missing a notification node. Either re-spawn Subagent 4 with the diagnostic, or add the notification node here as reconciliation and note it in `NOTES.md`.
+   - **No mediator but source has notification copy at this handoff point** (re-grep `source/` for "Notify <ReceiverLabel>" / push / email at the sender frame) → flag Subagent 4 as missing a notification node. Either re-spawn Subagent 4 with the diagnostic, or add the notification node here as reconciliation and note it in `NOTES.md`.
    - **No mediator and no source notification copy** → add a direct forward arrow: `{ from: <sourceFrame>, to: <destFrame>, action: "<sourceLabel> → <destLabel> via <E>" }`. This is the bare cross-actor handoff case.
 4. **Source from a terminal/success state frame** if one exists (`<page>.submitted`), not the parent page.
 
@@ -177,7 +177,7 @@ shell:   /^(shell|chrome|appshell|sidebar|topbar|navbar|header|footer|rail)/i
 page:    /^(page|screen|view|layout|sample)/i
 ```
 
-Grep `source/<slug>/styles.css` for `^\.<bucket-regex>` selectors. If matches exist BUT Subagent 6's `primitives[]` has zero primitives matching that regex (by name OR `category`), **re-spawn Subagent 6** with the diagnostic: "Bucket `<bucket>` is non-empty in source (`styles.css` matches: <list>) but absent from your primitives output. Re-walk with the Enumerate-Decide-Log recipe; emit the decision log."
+Grep `source/styles.css` for `^\.<bucket-regex>` selectors. If matches exist BUT Subagent 6's `primitives[]` has zero primitives matching that regex (by name OR `category`), **re-spawn Subagent 6** with the diagnostic: "Bucket `<bucket>` is non-empty in source (`styles.css` matches: <list>) but absent from your primitives output. Re-walk with the Enumerate-Decide-Log recipe; emit the decision log."
 
 This is the structural check that catches the modals/drawers/toasts blind spot every run.
 
@@ -195,8 +195,8 @@ This is the structural check that catches the modals/drawers/toasts blind spot e
 
 Per `docs/agents/data-schema.md` — **this is the canonical schema, no improvisation:**
 
-- `editor/branches/<slug>.js` — `window.EDITOR_DATA = { meta, tokens, primitives, library, frames, arrows, entities, stateMachines, timelines, grids }`. `meta.lanes` lives inside `meta`, not at the top level (editor reads `D.meta.lanes` in `app.js:1083`). Preserve `meta.branch`, `meta.branchLabel`, `meta.exploration` verbatim.
-- `source/<slug>/prototype.json` — flatten `meta` to top-level; omit `tokens` / `primitives` / `library`.
+- `editor/data.js` — `window.EDITOR_DATA = { meta, tokens, primitives, library, frames, arrows, entities, stateMachines, timelines, grids }`. `meta.lanes` lives inside `meta`, not at the top level (editor reads `D.meta.lanes` in `app.js:1083`). Preserve `meta.branch`, `meta.branchLabel`, `meta.exploration` verbatim.
+- `source/prototype.json` — flatten `meta` to top-level; omit `tokens` / `primitives` / `library`.
 
 Delete any `<NAME>_REQUEST.md` files at repo root.
 
@@ -232,3 +232,4 @@ End with: "Reload the editor to see it."
 - Don't build a "shared plan" with canonical inventory + lanes. The whole architecture is "subagents own enumeration through their lens."
 - Don't pre-digest source. You hand over the folder. Subagents read it themselves.
 - Don't run gate checks for 8/9/10 — they own their own gates.
+- Don't manage asset versions. Asset outputs are versioned automatically by the daemon: every successful subagent run that lands files in a downstream asset's path triggers a snapshot under `workflow/runs/<assetId>/<vid>/`. You don't read or write `versions[]` — the daemon owns it. If your subagent writes multiple files for one asset (e.g. an html-set bundle), drop a `MANIFEST.json` in the write root listing `files[]` + `subAssetInputs[]` so the snapshot captures exactly what you produced. See [`docs/features/asset-versioning.md`](../features/asset-versioning.md).

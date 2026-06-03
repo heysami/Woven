@@ -1,12 +1,12 @@
 # Canonical data schema
 
-**This is the single source of truth for where every field lives in `editor/branches/<slug>.js` and `source/<slug>/prototype.json`.** Every subagent that writes a field must reference this doc to know where its output slots in. The planner uses this as the assembly spec in Step 11.
+**This is the single source of truth for where every field lives in `editor/data.js` and `source/prototype.json`.** Every subagent that writes a field must reference this doc to know where its output slots in. The planner uses this as the assembly spec in Step 11.
 
 If a subagent and this doc disagree, **this doc wins.** Surface the conflict to the planner.
 
 ---
 
-## `editor/branches/<slug>.js`
+## `editor/data.js`
 
 ```js
 window.EDITOR_DATA = {
@@ -202,7 +202,7 @@ The **design system is a first-class library asset**, owned by a separate workfl
 design-systems/
 └── <id>/                       ← e.g. "main", "dense-rows-experiment"
     ├── styles.css              ← Tokens (:root) + canonical class rules. Source of truth for tokens.
-    ├── gallery.html            ← The kitchen-sink page (formerly source/<slug>/design-system.html).
+    ├── gallery.html            ← The kitchen-sink page (formerly source/design-system.html).
     │                              Every primitive variant rendered in idle state, no behaviour gating.
     │                              Source of truth for primitives.
     ├── DESIGN.md               ← Human-readable rationale: YAML frontmatter + prose.
@@ -238,11 +238,11 @@ window.EDITOR_DS_<id> = {
 
 ### Why DS lives outside source/
 
-Today's `source/<slug>/styles.css` and `source/<slug>/design-system.html` co-locate the DS with feature pages, making them sibling files Subagent 1 has to keep in sync by hand. That's the drift mechanism. Moving the DS to `design-systems/<id>/` makes it a peer of `source/<slug>/`, not a child — so the DS workflow has its own ownership boundary and feature-page generation reads from it instead of writing it.
+Today's `source/styles.css` and `source/design-system.html` co-locate the DS with feature pages, making them sibling files Subagent 1 has to keep in sync by hand. That's the drift mechanism. Moving the DS to `design-systems/<id>/` makes it a peer of `source/`, not a child — so the DS workflow has its own ownership boundary and feature-page generation reads from it instead of writing it.
 
 ### How feature pages reference the DS
 
-Each `source/<slug>/index.html` (and every multi-HTML page) loads DS styles via a relative import:
+Each `source/index.html` (and every multi-HTML page) loads DS styles via a relative import:
 
 ```html
 <link rel="stylesheet" href="../../design-systems/<dsRef.id>/styles.css"/>
@@ -266,12 +266,12 @@ The DS library node is written exclusively by Workflows 0 and 6b. No view subage
 | `design-systems/<id>/DESIGN.md` | Workflow 3 (from styles.css + gallery.html) | Editor (DESIGN.md toggle) |
 | `design-systems/<id>/meta.json` | Workflow 0 / 6b | Planner (for `meta.dsRef.version`), editor |
 | `editor/design-systems/<id>.js` | Workflow 0 / 6b (runtime mirror) | Editor |
-| `editor/branches/<slug>.js → meta.dsRef` | Planner (Workflow 1) | Editor, Subagent 1, Subagent 6 |
+| `editor/data.js → meta.dsRef` | Planner (Workflow 1) | Editor, Subagent 1, Subagent 6 |
 | `DS_PROPOSAL.md` (at project root) | Subagent 6 (audit) | Workflow 6 (review) |
 
 ---
 
-## `source/<slug>/prototype.json`
+## `source/prototype.json`
 
 Same shape as above, minus `tokens` / `primitives` / `library` (those live in source CSS/JSX, not the manifest). `meta` is flattened — its fields become top-level in the manifest:
 
@@ -300,7 +300,7 @@ Use this table to know which subagent's output writes which field. The planner m
 | Subagent | Writes |
 |---|---|
 | 0 DS-builder | `design-systems/<id>/styles.css, gallery.html, meta.json`; `editor/design-systems/<id>.js` |
-| 1 Source | `source/<slug>/*.html, *.js, *.css, data.js` (NOT the data file, NOT `design-systems/`) |
+| 1 Source | `source/*.html, *.js, *.css, data.js` (NOT the data file, NOT `design-systems/`) |
 | 2 Canvas | `frames[i].col`, `frames[i].row` |
 | 3 Prototype | `frames[i].entry`, `frames[i].hash`, `frames[i].setupScript`, **`frames[i].w`**, **`frames[i].h`** |
 | 4 User flow | `frames[i].kind`, `frames[i].lane`, `arrows[]` |

@@ -6,7 +6,7 @@ You own the **iframe-loadability lens**. For each frame source can render in an 
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 
 No planner-provided inventory. You enumerate iframe-loadable frames yourself.
 
@@ -38,8 +38,8 @@ Per [`../data-schema.md`](../data-schema.md): `frames[i].entry`, `frames[i].hash
 ### Files you may read
 
 - **`editor/serve.py`** — read the `POKE_HELPER` block (around L176) once to confirm the injection contract.
-- `source/<slug>/*.html` — find `<a href>`, hash routes, useState declarations.
-- `source/<slug>/*.js` — find component-name + state-variable identifiers for `__pokeBy`.
+- `source/*.html` — find `<a href>`, hash routes, useState declarations.
+- `source/*.js` — find component-name + state-variable identifiers for `__pokeBy`.
 
 ## Enumerate through your lens
 

@@ -6,7 +6,7 @@ You own the **lifecycle lens**. Enumerate entities with branching statuses, deci
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 - `override: true | false` — true if `STATEMACHINE_REQUEST.md` exists at repo root
 
 You own the gate. No external decision about whether to spawn you — the planner spawns you always; you decide internally what to emit.
@@ -44,8 +44,8 @@ If `override: true` but nothing worth modelling → return `{ "stateMachines": [
 
 ### Files you may read
 
-- `source/<slug>/data.js` — actual status values in records.
-- `source/<slug>/*.html`, `*.js` — status-rendering patterns + `setStatus(...)` calls + status condition branches.
+- `source/data.js` — actual status values in records.
+- `source/*.html`, `*.js` — status-rendering patterns + `setStatus(...)` calls + status condition branches.
 
 ## Gate (you own this)
 
@@ -66,13 +66,13 @@ Three greps, union the results:
 
 ```bash
 # A. Every entity field whose DEMO values span ≥3 distinct strings (status/state/phase/kind/stage)
-grep -nE '"(status|state|phase|kind|stage|step|tier|status_[a-z]+)":\s*"[^"]+"' source/<slug>/data.js | sort -u
+grep -nE '"(status|state|phase|kind|stage|step|tier|status_[a-z]+)":\s*"[^"]+"' source/data.js | sort -u
 
 # B. Every setStatus / set<Field> call in source
-grep -nE 'set[A-Z][A-Za-z]*\(\s*[\"'][a-z_-]+[\"']\s*\)' source/<slug>/*.html source/<slug>/*.js 2>/dev/null
+grep -nE 'set[A-Z][A-Za-z]*\(\s*[\"'][a-z_-]+[\"']\s*\)' source/*.html source/*.js 2>/dev/null
 
 # C. Every status-comparison condition (drives different render paths)
-grep -nE '\.status\s*===|\.state\s*===|\.phase\s*===|\.kind\s*===' source/<slug>/*.html source/<slug>/*.js 2>/dev/null
+grep -nE '\.status\s*===|\.state\s*===|\.phase\s*===|\.kind\s*===' source/*.html source/*.js 2>/dev/null
 ```
 
 Union → candidate FSMs, one per (entity, field) pair surfaced.

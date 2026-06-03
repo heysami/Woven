@@ -13,7 +13,7 @@ You are Subagent 1.V.lottie.
 - Shared envelope: `branchSlug`, `sourceRoot`, `projectRoot`, `intent`, `genre`
 
 **Output**:
-- A Lottie JSON file written to `source/<branch>/lottie/<slot-name>.json`
+- A Lottie JSON file written to `source/lottie/<slot-name>.json`
 - A small inline player snippet (lottie-web) referencing the file at the slot's selector
 - A node entry in `workflow/workflow.json` if tracked
 

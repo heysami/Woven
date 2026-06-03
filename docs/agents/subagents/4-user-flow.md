@@ -6,7 +6,7 @@ You own the **task-progression lens**. Read source, enumerate what *you* see as 
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 
 No inventory. No shared plan. No lanes pre-extracted. You decide what's a node and what's a lane.
 
@@ -39,11 +39,11 @@ Include `label` on every frame — other subagents reuse it via reconciliation.
 
 ### Files you may read
 
-- `source/<slug>/*.html` — page bodies, persona switchers, `<a href>` arrows, useState declarations
-- `source/<slug>/*.js` — onClick handlers, location.href navigation, state machinery
-- `source/<slug>/data.js` — `window.DEMO` shape (for cross-checking entity-driven flows)
+- `source/*.html` — page bodies, persona switchers, `<a href>` arrows, useState declarations
+- `source/*.js` — onClick handlers, location.href navigation, state machinery
+- `source/data.js` — `window.DEMO` shape (for cross-checking entity-driven flows)
 - Any storyboard document (`index.html` titled Overview/Workflows, `STORYBOARD.md`, `PERSONAS.md`) — as **input**, never as data; see U-rules / storyboard lens decision
-- Existing `source/<slug>/prototype.json` — preserve `kind` / `lane` for unchanged frames (your prior enumeration)
+- Existing `source/prototype.json` — preserve `kind` / `lane` for unchanged frames (your prior enumeration)
 - `editor/serve.py` — only if you need to understand server-injected helpers (`__pokeBy`)
 
 ## Enumerate through your lens
@@ -69,7 +69,7 @@ You own lane identification. Walk this cascade:
 1. **Storyboard `personas: [...]` array** — copy verbatim, slug each persona per `conventions.md` lane naming.
 2. **Header persona switcher** in source DOM (`<button>View as TC</button>`).
 3. **Explicit persona tags** (`<span class="persona-tag">PXP</span>`, `data-persona="..."`).
-4. **Persona-named folders** under `source/<slug>/` (`tc/`, `pxp/`).
+4. **Persona-named folders** under `source/` (`tc/`, `pxp/`).
 5. **Nothing found** → emit a single default `[{ id: "user", label: "User", kind: "user" }]`. Don't fabricate from filename prefixes.
 
 If you find 2+ lanes via the storyboard or DOM evidence, **use them**. Don't collapse to one because "most frames look similar." The reconciliation step compares your lane output against IA's persona evidence — silent collapse will be caught.
@@ -101,7 +101,7 @@ For each pair of enumerated frames `A → B`, include in `arrows[]` if it's:
 - **Sequential** — user clicks something on A and source navigates to B. Action quotes the click ("Click Submit").
 - **Tab / substep switch under same parent** — clicking a tab on a page that swaps content within the same shell IS task progression. Emit `parent → tab` for each tab the user can switch to. Don't drop these because they're "nav-driven" — they're sequential.
 - **Dashboard / list → specific item / form** — clicking a task tile, a queue row, a list card, or a "Start application" tile that opens a specific item/form IS task progression. Emit it even though the dashboard is in the global nav.
-- **External page link** — `<a href>` pointing at a page that doesn't exist in `source/<slug>/`. Don't silently drop it; instead emit a `kind: "external"` frame for the destination (with that filename as the label) and arrow into it.
+- **External page link** — `<a href>` pointing at a page that doesn't exist in `source/`. Don't silently drop it; instead emit a `kind: "external"` frame for the destination (with that filename as the label) and arrow into it.
 
 Exclude only if it's:
 
@@ -141,7 +141,7 @@ Setting `kind: "start"` tells the Flow view to render them with the start glyph 
 
 ## Render-verify your slice
 
-After producing your output (and after the planner has written `editor/branches/<slug>.js`), load the editor's **Flow** view and verify:
+After producing your output (and after the planner has written `editor/data.js`), load the editor's **Flow** view and verify:
 
 1. Every lane in your `lanes[]` appears as a swimlane gutter with at least one frame in it. An empty lane is a fabrication.
 2. Every frame appears in its declared lane — no frame is in "Unknown" or a default lane it doesn't belong to.
@@ -167,7 +167,7 @@ Each item requires **evidence** — a Read / Bash / Grep / screenshot call. Don'
 - [ ] **I did NOT drop dashboard / list → task-item arrows** (clicking a task tile / queue row is task-driven, not nav).
 - [ ] **For each cross-actor handoff where source emits a notification (push, email, "Notify X" copy, named entry in a notification config page), I emitted a `kind: "notification"` frame in the receiver's lane.** A handoff with no notification mediator reads as a direct cross-actor jump — wrong.
 - [ ] **For nav-only landings** (settings, dashboards, profile, help) with no inbound flow arrow, I marked `kind: "start"` so the Flow view doesn't render them as orphans.
-- [ ] **For `<a href>` to a page not in `source/<slug>/`**, I emitted a `kind: "external"` destination frame (not just dropped the arrow).
+- [ ] **For `<a href>` to a page not in `source/`**, I emitted a `kind: "external"` destination frame (not just dropped the arrow).
 - [ ] **Notification settings page vs notification flow event are not conflated** — the settings page is a regular `kind: "page"`, the flow event is `kind: "notification"`, with distinct IDs.
 - [ ] I checked every `kind: "form"` frame for child frames; any form with descendants was promoted to `kind: "page"` (editor coupling rule).
 - [ ] **I rendered the Flow view in the editor and confirmed every lane has frames, every kind renders correctly, and the arrow set looks right.** (Screenshot required.)

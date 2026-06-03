@@ -1,18 +1,20 @@
 # Agent instructions
 
-This repo is a **branched prototype workspace**: one canonical `main` line plus zero or more exploration branches. Each branch has a `source/<slug>/` folder and an `editor/branches/<slug>.js` data file. The editor (under `editor/`) renders one as a Figma-style canvas, switched via a dropdown.
+This repo is a **prototype workspace**: one project = one source tree. The editor (under `editor/`) renders it as a Figma-style canvas.
 
-The **design system is a separate library asset** that lives at project root under `design-systems/<id>/`. Branches reference it via `meta.dsRef`. Prototype regeneration is **gated on a DS existing first** — Workflow 1 will not run against a branch whose `meta.dsRef` is unset. Build the DS via Workflow 0 first.
+The **design system is a separate library asset** that lives at project root under `design-systems/<id>/`. Each project references it via `meta.dsRef`. Prototype regeneration is **gated on a DS existing first** — Workflow 1 will not run against a project whose `meta.dsRef` is unset. Build the DS via Workflow 0 first.
 
-Your job: keep each branch's artifacts consistent — `source/<slug>/` (feature pages, constrained by DS) ↔ `editor/branches/<slug>.js` (with `meta.dsRef`) ↔ the DS library node it references. Drift between feature pages and DS is reconciled through the proposal flow (Workflows 6 / 6b).
+Your job: keep the project's artifacts consistent — `source/` (feature pages, constrained by DS) ↔ `editor/data.js` (with `meta.dsRef`) ↔ the DS library node it references. Drift between feature pages and DS is reconciled through the proposal flow (Workflows 6 / 6b).
+
+> **v3.1 — project-level branches deprecated.** Previously a project could carry multiple branches under `source/<slug>/` plus a fork/merge workflow. That feature is gone; one project = one source tree. The "explore alternatives without losing the current line" need is now served by **per-asset sibling-node branching** on the workflow canvas. See [`docs/features/deprecate-project-branches.md`](docs/features/deprecate-project-branches.md).
 
 ## Workspace mode (Phase 6 — multi-project)
 
-When the editor's daemon is launched with `TH_WORKSPACE_DIR=<path>`, the install is **multi-project**: one editor binary serves N independent projects under the workspace dir, each with its own `source/`, `editor/branches/`, and per-project docs. In that mode:
+When the editor's daemon is launched with `TH_WORKSPACE_DIR=<path>`, the install is **multi-project**: one editor binary serves N independent projects under the workspace dir, each with its own `source/`, `editor/data.js`, and per-project docs. In that mode:
 
-- **Your cwd is the active project's root**, not the install root. Read/write project-scoped files (`source/<branch>/`, `design-systems/<id>/`, `editor/branches/<slug>.js`, `editor/design-systems/<id>.js`, `editor/data.js`, `NOTES.md`, `prototype.json`, `MERGES.md`, `FORK_REQUEST.md`, `edits.json`, `DS_PROPOSAL.md`, `DS_ACCEPTED.json`, `DS_DEFERRED.md`) via relative paths — they live in cwd. **`DESIGN.md` lives inside each DS folder at `design-systems/<id>/DESIGN.md`, not at project root.**
+- **Your cwd is the active project's root**, not the install root. Read/write project-scoped files (`source/`, `design-systems/<id>/`, `editor/data.js`, `editor/design-systems/<id>.js`, `NOTES.md`, `prototype.json`, `edits.json`, `DS_PROPOSAL.md`, `DS_ACCEPTED.json`, `DS_DEFERRED.md`) via relative paths — they live in cwd. **`DESIGN.md` lives inside each DS folder at `design-systems/<id>/DESIGN.md`, not at project root.**
 - **The agent protocol lives at a separate read-only mount**, exposed via `--add-dir $TH_PROTOCOL_ROOT`: this `AGENTS.md`, `PROTOTYPE.md`, and every workflow/subagent under `docs/agents/**`. Read them from that mount; **never copy them into a project**.
-- **Useful env vars** set on every spawn: `TH_PROJECT_ROOT` (absolute path to cwd), `TH_PROTOCOL_ROOT` (the shared protocol mount), `TH_PROJECT_ID` (workspace id), `TH_BRANCH` (active branch slug), `TH_DAEMON_URL` (http://127.0.0.1:PORT), `TH_RUN_ID`.
+- **Useful env vars** set on every spawn: `TH_PROJECT_ROOT` (absolute path to cwd), `TH_PROTOCOL_ROOT` (the shared protocol mount), `TH_PROJECT_ID` (workspace id), `TH_DAEMON_URL` (http://127.0.0.1:PORT), `TH_RUN_ID`.
 - **Every daemon POST that writes into `source/` MUST include `?project=$TH_PROJECT_ID`** in the URL. `/__asset_generate`, `/__llm_run`, `/__write_text`, `/__copy_file`, `/__replace_exposed_svg`, `/__mkdir`, `/__rmdir`, `/__rename_dir` now 400 without it when more than one project exists. There used to be a silent fallback to the alphabetically-first project — that's gone because it caused subagent-generated assets to land in the wrong project's tree.
 - **Cross-project work is forbidden.** Stay within cwd. Don't read or write under sibling project dirs even if the workspace path is visible.
 
@@ -30,33 +32,30 @@ In single-project mode (no `TH_WORKSPACE_DIR`) the install root and the project 
 │       ├── 1-regenerate.md       ← parse source → editor data (requires meta.dsRef)
 │       ├── 2-edits.md            ← apply edits.json
 │       ├── 3-design-md.md        ← regenerate DESIGN.md inside a DS library node
-│       ├── 4-fork.md             ← FORK_REQUEST.md
-│       ├── 5-merge.md            ← MERGES.md
 │       ├── 6-ds-propose.md       ← review DS_PROPOSAL.md (accept / reject / defer per entry)
 │       └── 6b-ds-update.md       ← apply accepted proposals (atomic DS update)
 ├── edits.json                    ← appears after user clicks Submit
-├── MERGES.md                     ← appears after user clicks "↑ Main" on a frame
-├── FORK_REQUEST.md               ← appears after user clicks "↗ Fork"
 ├── DS_PROPOSAL.md                ← appears when Subagent 1 / Subagent 6 audit finds vocabulary drift
 ├── DS_ACCEPTED.json              ← Workflow 6 → Workflow 6b handoff (accepted proposals)
 ├── DS_DEFERRED.md                ← archive of deferred proposals (audit reads to avoid re-emitting)
 ├── design-systems/
-│   └── <id>/                     ← DS library node — first-class library asset, not a branch sibling
+│   └── <id>/                     ← DS library node — first-class library asset
 │       ├── styles.css            ← tokens (:root) + canonical class rules (source of truth for tokens)
 │       ├── gallery.html          ← kitchen sink (source of truth for primitives, every variant in idle state)
 │       ├── DESIGN.md             ← human-readable rationale (YAML + prose) — derived by Workflow 3
 │       └── meta.json             ← { id, version, label, genre, builtFrom, parentRef? }
-├── source/
-│   ├── main/                     ← canonical prototype line (links to design-systems/<dsRef.id>/styles.css)
-│   └── <slug>/                   ← exploration branches
+├── source/                       ← the one project source tree (links to design-systems/<dsRef.id>/styles.css)
+├── workflow/
+│   ├── workflow.json             ← canvas state (pan/zoom/nodes/edges; asset versions; compositions)
+│   ├── runs/<nodeId>/<vid>/      ← asset version snapshots (see asset-versioning.md)
+│   └── views/<nodeId>/<vid>/<compId>/  ← per-composition materialised view trees
 └── editor/
     ├── index.html
-    ├── data.js                   ← window.EDITOR_BRANCHES — registry + bootstrap
-    ├── branches/<slug>.js        ← window.EDITOR_DATA per branch (with meta.dsRef)
+    ├── data.js                   ← window.EDITOR_DATA (project data — frames, primitives, entities, meta.dsRef)
     ├── design-systems/<id>.js    ← window.EDITOR_DS_<id> runtime mirror per DS
     ├── styles.css
     ├── app.js
-    └── serve.py                  ← dev server (/__save /__branch /__promote /__promote_frame /__layout)
+    └── serve.py                  ← dev server (/__save /__layout /__workflow + asset-versioning endpoints)
 ```
 
 Every source folder follows `PROTOTYPE.md`: htm + React UMD, **no build, no Babel**, single page (or multi-HTML with a storyboard `index.html` — see Workflow 1). Feature pages **link** their DS's stylesheet rather than redeclaring tokens or primitives.
@@ -80,7 +79,7 @@ When the user asks for a quick visualization, demo, chart, mockup, illustration,
 
 All sandboxed previews (`html`/`svg`/`shader`/`three`/`p5`) run inside `<iframe sandbox="allow-scripts">` — null-origin isolation, full interactivity (click, mouse, scroll, hover, keyboard), zero access to the host page.
 
-**Rule of thumb:** render in chat unless the user explicitly says "prototype", "branch", "scaffold", or asks for something multi-page navigable. Reserve `source/<branch>/` writes for actual prototype work that lives in the canvas.
+**Rule of thumb:** render in chat unless the user explicitly says "prototype", "branch", "scaffold", or asks for something multi-page navigable. Reserve `source/` writes for actual prototype work that lives in the canvas.
 
 **Pick the lightest renderer that does the job.** A 3-row Markdown table beats a fenced HTML block. A `#hex` chip beats a `<div style="background:#hex">`. A simple SVG icon beats a three.js scene. Use the heavy hitters (shader / three / p5) when you genuinely need WebGL or canvas-based animation.
 
@@ -90,14 +89,12 @@ Match the trigger; read only the matching playbook.
 
 | Trigger | Playbook |
 |---|---|
-| "build design system" / "update DS" / DS spec nodes change / no DS exists for active branch | [`docs/agents/workflows/0-design-system.md`](docs/agents/workflows/0-design-system.md) → [`docs/agents/subagents/0-ds-builder.md`](docs/agents/subagents/0-ds-builder.md) |
+| "build design system" / "update DS" / DS spec nodes change / no DS exists | [`docs/agents/workflows/0-design-system.md`](docs/agents/workflows/0-design-system.md) → [`docs/agents/subagents/0-ds-builder.md`](docs/agents/subagents/0-ds-builder.md) |
 | "process the prototype" / "regenerate frames" / new source dropped in | [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) → [`docs/agents/planner.md`](docs/agents/planner.md) — **requires `meta.dsRef`; runs Workflow 0 first if absent** |
 | `edits.json` at repo root | [`docs/agents/workflows/2-edits.md`](docs/agents/workflows/2-edits.md) |
 | DS trio changed; "Export DESIGN.md" against a DS library node | [`docs/agents/workflows/3-design-md.md`](docs/agents/workflows/3-design-md.md) |
-| `FORK_REQUEST.md` at repo root | [`docs/agents/workflows/4-fork.md`](docs/agents/workflows/4-fork.md) |
-| `MERGES.md` at repo root | [`docs/agents/workflows/5-merge.md`](docs/agents/workflows/5-merge.md) |
 | `DS_PROPOSAL.md` at repo root | [`docs/agents/workflows/6-ds-propose.md`](docs/agents/workflows/6-ds-propose.md) — partitions by verdict; dispatches to 6b on accept |
-| `DS_ACCEPTED.json` at repo root | [`docs/agents/workflows/6b-ds-update.md`](docs/agents/workflows/6b-ds-update.md) — atomic DS trio update + version bump + branch re-stamp |
+| `DS_ACCEPTED.json` at repo root | [`docs/agents/workflows/6b-ds-update.md`](docs/agents/workflows/6b-ds-update.md) — atomic DS trio update + version bump |
 | `STATEMACHINE_REQUEST.md` / `TIMELINE_REQUEST.md` / `GRID_REQUEST.md` | [`docs/agents/planner.md`](docs/agents/planner.md) → spawn subagent 8 / 9 / 10 (gate override) |
 
 ### Workflow 1 is a planner + subagents
@@ -116,33 +113,20 @@ The same context-isolation rule applies one level deeper: 1.V reads its own play
 
 ## Design system
 
-The design system is **a first-class library asset** — not a sibling file inside any branch's source folder. It lives at `design-systems/<id>/` and is owned by Workflows 0 (build) and 6b (proposal-driven update). Branches reference it via `meta.dsRef = { id, version }`.
+The design system is **a first-class library asset**. It lives at `design-systems/<id>/` and is owned by Workflows 0 (build) and 6b (proposal-driven update). The project references it via `meta.dsRef = { id, version }`.
 
-- The DS is **canonical**. It has one mode: source of truth. There's no "draft" or "revising" state. Either a DS exists for the branch (its `meta.dsRef` resolves) or it doesn't.
+- The DS is **canonical**. It has one mode: source of truth. There's no "draft" or "revising" state. Either a DS exists for the project (its `meta.dsRef` resolves) or it doesn't.
 - The DS is **bootstrapped from workflow-mode spec nodes** (genre / reference / token-preference / persona-mode / primitive-preset), not from a prototype. Workflow 0 reads the spec and produces the trio (`styles.css` + `gallery.html` + `DESIGN.md`) before any feature page exists.
-- **Workflow 1 is gated on `meta.dsRef`.** If the active branch has no DS reference, Workflow 1 refuses to run and surfaces "Run Workflow 0 first, or set `meta.dsRef` to inherit from main."
-- **Feature pages consume the DS as a vocabulary.** Subagent 1 reads `design-systems/<dsRef.id>/styles.css` + `gallery.html` and references their classes. It never declares new tokens or primitive-shaped classes inside `source/<slug>/styles.css`.
+- **Workflow 1 is gated on `meta.dsRef`.** If the project has no DS reference, Workflow 1 refuses to run and surfaces "Run Workflow 0 first."
+- **Feature pages consume the DS as a vocabulary.** Subagent 1 reads `design-systems/<dsRef.id>/styles.css` + `gallery.html` and references their classes. It never declares new tokens or primitive-shaped classes inside `source/styles.css`.
 - **Drift goes through the proposal flow.** When a feature page needs something the DS doesn't cover, Subagent 1 (or the post-build Subagent 6 audit) emits a proposal entry to `DS_PROPOSAL.md` AND proceeds with closest-fit substitution. The user reviews via Workflow 6 (accept / reject / defer per entry); Workflow 6b applies accepted entries atomically.
-- **Cross-branch DS sharing.** Exploration branches default to `meta.dsRef = main.dsRef`. A branch only needs its own DS folder if its scope genuinely requires diverging from the parent's DS — and then it sets `meta.json.parentRef` so the inherited classes are still part of its vocabulary.
-- **Versioning.** `meta.json.version` is the content hash of `styles.css + gallery.html`. Workflow 6b bumps it when accepted proposals land; referencing branches get re-stamped automatically (unless pinned).
-
-## Branches
-
-A branch is **a scope + a prompt**, not a copy of Main. New branches enter the project via `FORK_REQUEST.md` (Workflow 4a).
-
-- **Main** (`source/main/` + `editor/branches/main.js`) always exists. `meta.branch === "main"`, no `meta.exploration`.
-- **Exploration branches** have `editor/branches/<slug>.js` with `meta.branch`, `meta.branchLabel`, `meta.exploration` set. Once built, `meta.sourceRoot` / `meta.sourceEntry` point at `source/<slug>/`.
-- Active branch via `?branch=<slug>`. Registry in `editor/data.js → window.EDITOR_BRANCHES`.
-- Main loads as a sidecar (`window.EDITOR_MAIN_DATA`) so the editor shows "Δ main" badges on diverged pieces.
-- **Never cross branches.** Read the slug from `edits.json → sourceRoot`, the request manifest, or `meta.sourceRoot` before reading/writing.
-
-"The source" means the active branch's source folder. Resolve via `meta.sourceRoot`.
+- **Versioning.** `meta.json.version` is the content hash of `styles.css + gallery.html`. Workflow 6b bumps it when accepted proposals land.
 
 ## Source manifests
 
-Each branch's source folder MAY include declarative sidecars that Workflow 1 reads directly instead of inferring from JSX. Authors keep them in sync; the editor consumes them via Workflow 1.
+The project's `source/` folder MAY include declarative sidecars that Workflow 1 reads directly instead of inferring from JSX. Authors keep them in sync; the editor consumes them via Workflow 1.
 
-**`source/<slug>/prototype.json`** — single source of truth for frames, arrows, lanes, entity-to-frame assignments, entity↔entity links, and the three optional views (state machines / timelines / grids). Optional but recommended — anything stateful or graph-shaped is fragile to infer.
+**`source/prototype.json`** — single source of truth for frames, arrows, lanes, entity-to-frame assignments, entity↔entity links, and the three optional views (state machines / timelines / grids). Optional but recommended — anything stateful or graph-shaped is fragile to infer.
 
 ```jsonc
 {
@@ -190,15 +174,15 @@ Each branch's source folder MAY include declarative sidecars that Workflow 1 rea
 
 Full schemas for `stateMachines` / `timelines` / `grids` live in the editor's empty-state cards (tabs 7 / 8 / 9) and in Workflow 1 Step 5d.
 
-**`source/<slug>/entities.json`** — declarative entity model when more developed than `window.DEMO`. Same per-entity shape as `editor/branches/<slug>.js → entities[]`:
+**`source/entities.json`** — declarative entity model when more developed than `window.DEMO`. Same per-entity shape as `editor/data.js → entities[]`:
 
 ```jsonc
 { "entities": [ { "id": "Reference", "tag": "base", "fields": [...] }, ... ] }
 ```
 
-**Not in any manifest** — tokens stay in `styles.css :root` (Workflow 1's token-diff check enforces parity); primitives + `from: { selector, hash?, entry? }` stay in `editor/branches/<slug>.js → primitives[]` (runtime DOM extraction needs them there).
+**Not in any manifest** — tokens stay in `styles.css :root` (Workflow 1's token-diff check enforces parity); primitives + `from: { selector, hash?, entry? }` stay in `editor/data.js → primitives[]` (runtime DOM extraction needs them there).
 
-**Round-trip rule.** When you apply *model edits* (Workflow 2, `target ≠ "dom"`), write the change to **both** `editor/branches/<slug>.js` AND `source/<slug>/prototype.json`. If the manifest doesn't exist yet, create it from the current data file on the first model edit.
+**Round-trip rule.** When you apply *model edits* (Workflow 2, `target ≠ "dom"`), write the change to **both** `editor/data.js` AND `source/prototype.json`. If the manifest doesn't exist yet, create it from the current data file on the first model edit.
 
 ## Arrows and kinds
 
@@ -278,6 +262,17 @@ In one line: **arrows describe how a task advances, not how the app is navigated
 - **All mock data** in `window.DEMO` (`data.js`). No `fetch`, no API.
 - **Voice set by genre, applied at every leaf** — see `PROTOTYPE.md`.
 
+## Asset versioning (v3.0)
+
+Asset nodes on the workflow canvas (`kind: asset`) carry per-node version history. **This is daemon-managed; you almost never touch it directly.** Quick rules:
+
+- **Every successful upstream producer run snapshots the downstream asset's files** into `workflow/runs/<nodeId>/<versionId>/` and appends a new entry to `node.versions[]`. Capped at 20 unpinned versions per node (pinned versions are exempt).
+- **Each version has compositions** — tuples of `(sub-asset → versionId)` recording which upstream sub-asset versions this view is pinned against. Auto-created on every run from the current sub-asset actives. Capped at 50 unpinned per parent version.
+- **Reverts and composition switches happen via daemon endpoints**, not by editing `source/` directly. The endpoints refresh `source/` from `workflow/views/<nodeId>/<vid>/<compId>/`. See [`docs/features/asset-versioning.md`](docs/features/asset-versioning.md) §7.2 for the full surface.
+- **Branches create new sibling asset nodes** positioned below the source, with a deep copy of the chosen version + composition. The sibling is disconnected; rewire edges as desired.
+- **If you produce asset content from a subagent**, optionally emit a `MANIFEST.json` in your write root with `files[]` + `subAssetInputs[]` so the daemon snapshots exactly what you produced and knows where sub-assets mount inside the view tree. Without a manifest the daemon falls back to scanning the asset's declared `path`/`paths`.
+- **Lineage chips on asset cards show which upstream versions a snapshot was built against.** Warm-colored chips signal divergence from upstream's current active. The user decides whether to re-run; there's no automatic cascade.
+
 ## Don't
 
 - No build step / TypeScript / Vite / Webpack / Babel / Tailwind.
@@ -285,9 +280,6 @@ In one line: **arrows describe how a task advances, not how the app is navigated
 - No auto-applying edits without reading the resulting diff into your reply.
 - No stub `DESIGN.md` if a DS's `styles.css` or `gallery.html` is empty — Workflow 3 reads the trio; if the trio is incomplete, surface to user.
 - Don't delete `edits.json` until every edit succeeded.
-- Don't cross branches. Frame-promotion goes through `MERGES.md` (Workflow 5) or "Promote whole branch".
-- Don't create branches by hand. Forks come through `FORK_REQUEST.md` (Workflow 4a) so `editor/data.js` stays consistent.
-- Don't delete `editor/branches/<slug>.js` or `source/<slug>/` to "clean up" — the user keeps explorations alive intentionally.
 - Don't author the design system from inside Subagent 1 (source build). DS lives at `design-systems/<id>/` and is owned by Workflow 0 / 6b. Feature pages consume; they don't co-author.
-- Don't run Workflow 1 against a branch with no `meta.dsRef`. Run Workflow 0 first, or set `meta.dsRef` to inherit from main.
+- Don't run Workflow 1 against a project with no `meta.dsRef`. Run Workflow 0 first.
 - Don't write inline `style="color: #abc"` or raw px / hex literals in feature pages. Every value references a DS token; gaps go through `DS_PROPOSAL.md`.

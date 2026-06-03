@@ -1,6 +1,6 @@
 # Subagent 1 — Source build (lens: PROTOTYPE.md, constrained by DS)
 
-You build or update `source/<slug>/` — the actual HTML / CSS / JS prototype. You do **not** touch `editor/branches/<slug>.js` or `prototype.json` — those are populated by the other subagents (2–10) after you finish. You also do **not** author the design system — the DS is a library asset owned by Workflow 0 / Subagent 0. You **consume** it.
+You build or update `source/` — the actual HTML / CSS / JS prototype. You do **not** touch `editor/data.js` or `prototype.json` — those are populated by the other subagents (2–10) after you finish. You also do **not** author the design system — the DS is a library asset owned by Workflow 0 / Subagent 0. You **consume** it.
 
 **Read [`../conventions.md`](../conventions.md) and `PROTOTYPE.md` before starting.** Then read the active DS's `design-systems/<dsRef.id>/styles.css` and `gallery.html` — this is your vocabulary.
 
@@ -10,19 +10,19 @@ The design system identified by `meta.dsRef` is your **closed vocabulary**. Ever
 
 **You do NOT:**
 - Write `design-systems/<id>/styles.css` or `design-systems/<id>/gallery.html` — those belong to Workflow 0 / 6b.
-- Declare new `:root` tokens in `source/<slug>/styles.css` — every token referenced must already exist in the DS.
-- Invent new primitive-shaped classes in `source/<slug>/styles.css`. If the brief truly requires a new primitive, that's a proposal.
+- Declare new `:root` tokens in `source/styles.css` — every token referenced must already exist in the DS.
+- Invent new primitive-shaped classes in `source/styles.css`. If the brief truly requires a new primitive, that's a proposal.
 
 **You DO:**
-- Write `source/<slug>/*.html`, `*.js`, `data.js` using DS classes and tokens.
-- Write `source/<slug>/styles.css` as a thin overlay — layout helpers / page-composition utilities specific to this branch's feature pages. Should be small or empty.
+- Write `source/*.html`, `*.js`, `data.js` using DS classes and tokens.
+- Write `source/styles.css` as a thin overlay — layout helpers / page-composition utilities specific to this branch's feature pages. Should be small or empty.
 - Emit `DS_PROPOSAL.md` entries when feature pages need something outside the DS vocabulary; proceed with closest-fit substitution.
 
 The genre committed in the DS (via `meta.json.genre` and the `// GENRE:` line at the top of `gallery.html`'s inline script) cascades into your feature pages — read it, but don't re-commit it.
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 - `prompt` — design brief / change request
 - `dsRef` — `{ id, version }` identifying the active DS library node (mandatory; the planner gates Workflow 1 on this being set)
 
@@ -39,7 +39,7 @@ You run *before* the other view subagents — they read whatever source you prod
 
 ## You must read source
 
-When updating: read existing `source/<slug>/*` first.
+When updating: read existing `source/*` first.
 When building from scratch: read `PROTOTYPE.md` end-to-end.
 Always: read the active DS — `design-systems/<dsRef.id>/styles.css`, `gallery.html`, and `meta.json` (for genre).
 
@@ -49,13 +49,22 @@ Always: read the active DS — `design-systems/<dsRef.id>/styles.css`, `gallery.
 - `design-systems/<dsRef.id>/*` — the active DS library node. Authoritative vocabulary.
 - If `meta.json.parentRef` is set, also read the parent DS's `styles.css` / `gallery.html` — inherited classes are part of your vocabulary.
 - User reference material linked in the prompt.
-- Existing `source/<slug>/*` (for updates).
+- Existing `source/*` (for updates).
 
 ## Allowed writes
 
-- `source/<slug>/*.html`, `*.js`, `data.js` — feature pages and demo data.
-- `source/<slug>/styles.css` — thin overlay only (layout helpers / page-composition utilities). NOT `:root` tokens, NOT primitive-shaped class declarations.
+- `source/*.html`, `*.js`, `data.js` — feature pages and demo data.
+- `source/styles.css` — thin overlay only (layout helpers / page-composition utilities). NOT `:root` tokens, NOT primitive-shaped class declarations.
 - `DS_PROPOSAL.md` at project root — to queue proposals for vocabulary gaps. Append-only during this run; if the file already exists from a prior audit, append your entries.
+- `source/MANIFEST.json` (optional, v3.0) — list the files you produced + any sub-asset upstream references, so the daemon's asset-versioning snapshotter captures exactly what changed. Without it, the daemon falls back to scanning the asset node's declared path/paths. Shape:
+  ```json
+  {
+    "nodeId": "<the wired asset node id, if you know it>",
+    "files": [{"path": "<rel/path/from/source>", "role": "entry|asset"}],
+    "subAssetInputs": [{"nodeId": "img_hero", "mountPath": "_assets/img_hero/"}]
+  }
+  ```
+  See [`docs/features/asset-versioning.md §9`](../../features/asset-versioning.md#9-subagent-contract-impact).
 
 **Not allowed:** writes to `editor/`, `design-systems/`, or other branches' source folders.
 
@@ -81,7 +90,7 @@ Before writing any class composition or token reference, check it against the DS
 
    ```markdown
    ## Proposal: Button — primary-icon-small variant
-   **Used in:** source/<slug>/lxp-apply.html:<line>, source/<slug>/lxp-dashboard.html:<line>
+   **Used in:** source/lxp-apply.html:<line>, source/lxp-dashboard.html:<line>
    **Class signature:** `.btn-primary.icon.small`
    **Closest existing in DS:** `Button.primary-icon` (delta: missing `.small` modifier)
    **Rationale:** <one-line reason the brief required this>
@@ -119,7 +128,7 @@ After §"Render-verify your slice" passes, spawn [`1V-visual-planner.md`](1V-vis
 
 ```
 === ENVELOPE ===
-branchSlug:        "<slug>"
+slug:        "<slug>"
 sourceRoot:        "source/<slug>"
 projectRoot:       <cwd>
 workflowJsonPath:  "<projectRoot>/workflow/workflow.json"
@@ -137,21 +146,21 @@ Return a summary of kept / dropped slots; the planner takes it from there.
 
 Wait for completion. If the planner reports drops with `drop:uncertain` or `drop:genre-forbidden`, mention them in your final report — they may indicate Subagent 1 (you) should iterate on a static equivalent (e.g. swap a `<canvas>` slot for a styled `<div>` if the genre forbids motion).
 
-**Subagent 1.V is mandatory.** Visual generation cannot be skipped to "save time" — the alternative is the previous failure mode (vector rendered as raster, no intelligence about medium). If `source/<slug>/` has zero visual slots, the planner returns `assets: []` and you continue; that's the only valid skip.
+**Subagent 1.V is mandatory.** Visual generation cannot be skipped to "save time" — the alternative is the previous failure mode (vector rendered as raster, no intelligence about medium). If `source/` has zero visual slots, the planner returns `assets: []` and you continue; that's the only valid skip.
 
 ## Self-audit
 
 - [ ] I read `design-systems/<dsRef.id>/styles.css` and `gallery.html` end-to-end before writing any feature page. (And the parent DS if `parentRef` is set.)
 - [ ] Every feature page `<link>`s the DS stylesheet first, then the optional branch overlay.
 - [ ] Every class composition used in feature pages comes from the DS vocabulary. Drift signatures (closest-fit substitutions) emitted as proposal entries to `DS_PROPOSAL.md`.
-- [ ] No `:root` declarations in `source/<slug>/styles.css`. No new primitive-shaped class declarations in the branch overlay. (Overlay is layout helpers only.)
+- [ ] No `:root` declarations in `source/styles.css`. No new primitive-shaped class declarations in the branch overlay. (Overlay is layout helpers only.)
 - [ ] No inline `style="color: #abc"` or raw hex / px literals. Every color and dimension references a DS token.
-- [ ] No new `design-system.html` file written under `source/<slug>/`. The DS gallery lives at `design-systems/<dsRef.id>/gallery.html` and is owned by Workflow 0 / 6b.
+- [ ] No new `design-system.html` file written under `source/`. The DS gallery lives at `design-systems/<dsRef.id>/gallery.html` and is owned by Workflow 0 / 6b.
 - [ ] All mock data in `window.DEMO` (no `fetch`, no API)?
 - [ ] No build step / Babel / Tailwind / icon library?
 - [ ] HTML filenames map cleanly to the frame-ID convention in `conventions.md`?
 - [ ] If the storyboard pattern applies, `index.html` is written as the storyboard (per `PROTOTYPE.md`), NOT a regular UI page?
-- [ ] All writes confined to `source/<slug>/` + (when emitting proposals) `DS_PROPOSAL.md` at project root.
+- [ ] All writes confined to `source/` + (when emitting proposals) `DS_PROPOSAL.md` at project root.
 - [ ] **I opened every HTML file in the browser, confirmed zero console errors, and clicked through at least one useState branch per page.** (Screenshot per file.)
 - [ ] **No `[object Object]` or `undefined` visible in any rendered surface.**
 - [ ] **No inline prototype-only switchers** — every view / persona / stage / time switcher is in a demo dock (§11), and the dock self-hides when iframed or `?demo=off`.
@@ -164,7 +173,7 @@ Specific failure modes to check before reporting done:
 
 - **Missing persona pages.** Storyboard references 3 personas but you only wrote pages for 2. Re-read the storyboard `personas: [...]` and confirm every persona has at least one page (or is explicitly out-of-prototype).
 - **Inline styles instead of tokens.** `style="color: #1a1a1a"` in JSX defeats the design system. Reference `var(--text)` (or whichever DS token applies) instead. If no token fits, emit a proposal entry — don't bake a literal.
-- **Silently inventing a class in `source/<slug>/styles.css`.** Treats the branch overlay as a DS extension. Wrong: anything primitive-shaped goes through `DS_PROPOSAL.md`. The overlay is for layout helpers like `.feature-grid` or `.toolbar-row`, not new `.card-variant`.
+- **Silently inventing a class in `source/styles.css`.** Treats the branch overlay as a DS extension. Wrong: anything primitive-shaped goes through `DS_PROPOSAL.md`. The overlay is for layout helpers like `.feature-grid` or `.toolbar-row`, not new `.card-variant`.
 - **Missing `dsRef` in the envelope.** If the planner spawned you without a `dsRef`, abort and surface — Workflow 1 was supposed to gate on this. The user needs Workflow 0 to run first.
 - **Hard-coded JSX data.** `<h3>Sami's Project</h3>` instead of `<h3>${row.title}</h3>` over `window.DEMO`. Other subagents grep `DEMO.` to find entities — hard-coded data is invisible to them.
 - **Real `fetch()` / API calls.** Anything that isn't `window.DEMO` is a no-go.
@@ -179,4 +188,4 @@ Specific failure modes to check before reporting done:
 - Don't write `design-systems/<id>/*`. That folder belongs to Workflow 0 (build) and Workflow 6b (proposal-driven update).
 - Don't pick "default median light-mode SaaS" — the DS already committed a genre; your feature pages inherit it.
 - Don't add a build step / TypeScript / Tailwind / icon library.
-- Don't write `prototype.json` or `editor/branches/<slug>.js`.
+- Don't write `prototype.json` or `editor/data.js`.

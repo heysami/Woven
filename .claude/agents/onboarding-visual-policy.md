@@ -106,11 +106,11 @@ Used by: Stage C (`bs_ds_a/b/c`), Stage E (`bs_html_*`), Stage F (`br_remix_p*` 
 > 3. Scaffolds a per-asset node trio into `workflow/workflow.json` — `prompt` (the creative brief), `skill` (the generator), `asset` (the file sink). The user SEES these nodes appear on their canvas.
 > 4. Dispatches the matching per-medium drawer subagent (e.g. raster-photo, vector-icon) per asset. Each drawer fills its trio's prompt + dispatches the generator.
 >
-> Result: every image in the prototype is a real asset under `source/<branch>/images/` (or `icons/`, `marks/`, `video/`, `lottie/`) generated through the proper pipeline. The user can re-run any asset individually from the canvas, edit the prompt, swap mediums, etc.
+> Result: every image in the prototype is a real asset under `source/images/` (or `icons/`, `marks/`, `video/`, `lottie/`) generated through the proper pipeline. The user can re-run any asset individually from the canvas, edit the prompt, swap mediums, etc.
 >
 > ### What stages C / E / F / I must do (v2.46 — uniform)
 >
-> 1. **Phase 1 — Source skeleton with slot markers.** Write the HTML with image SLOTS (not URLs). Use stable `assetId` slugs scoped to the stage: Stage C variants under `_ds_brainstorm/<x>_assets/`, Stage E pages under `_pages/page_<N>_assets/`, Stage F remix cells under `_remix/p<N>_<x>_assets/`, Stage I final source under `source/<branch>/images/` (and `icons/`, `marks/`, `video/`, `lottie/`). Honour the imagery list from the upstream spec.
+> 1. **Phase 1 — Source skeleton with slot markers.** Write the HTML with image SLOTS (not URLs). Use stable `assetId` slugs scoped to the stage: Stage C variants under `_ds_brainstorm/<x>_assets/`, Stage E pages under `_pages/page_<N>_assets/`, Stage F remix cells under `_remix/p<N>_<x>_assets/`, Stage I final source under `source/images/` (and `icons/`, `marks/`, `video/`, `lottie/`). Honour the imagery list from the upstream spec.
 > 2. **Phase 2 — Dispatch visual-planner.** Use the Task tool: `subagent_type: "visual-planner"`, prompt = "HTML at `<path>` is written; enumerate image slots and scaffold the per-asset node trios + generate assets." Wait for return.
 > 3. **Forbidden in ALL stages:** `picsum.photos`, `source.unsplash.com`, `placeholder.com`, base64 data URIs that aren't tiny icons (>200 chars), or any other "fake image" URL. If you find yourself reaching for these, STOP — the right answer is an asset slot + visual-planner dispatch.
 >

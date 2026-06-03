@@ -24,6 +24,7 @@ import os
 import re
 
 from .registry import KINDS, kind_contract
+from . import versioning as _vsn
 
 
 # ── Drift types ─────────────────────────────────────────────────────────
@@ -36,6 +37,8 @@ ABANDONED_STAGING  = "ABANDONED_STAGING"
 COHERENCE_NOT_RUN  = "COHERENCE_NOT_RUN"
 DATA_DRIFT         = "DATA_DRIFT"      # any block-severity entry in COHERENCE_REPORT.json
 KIND_MIGRATION     = "KIND_MIGRATION"  # node's kind disagrees with registry's declared kind for that id
+ORPHAN_ASSET_NO_PROTOTYPE_EDGE = "ORPHAN_ASSET_NO_PROTOTYPE_EDGE"  # v3.1 — asset has no edge to prototype
+ORPHAN_PROTOTYPE_FOLDER        = "ORPHAN_PROTOTYPE_FOLDER"        # v3.2 — source/<slug>/index.html on disk, no Prototype node
 
 
 def _load_workflow(project_root):
@@ -504,6 +507,95 @@ def _detect_premature_stage(workflow, project_root, drifts):
             })
 
 
+_VISUAL_ASSET_KINDS = ("image", "svg", "video", "audio", "3d", "shader")
+_SOURCE_WRITE_ASSET_KINDS = ("html", "html-set", "markdown", "text")
+
+
+def _asset_target_port(assetKind: str) -> str:
+    """Pick which prototype port an asset of a given kind should wire to:
+       visual-assets for images/SVG/etc., source-write for HTML/markdown/etc.
+       Default to visual-assets for anything we don't recognise (safer than
+       source-write, which is meant for tree-write producers)."""
+    if assetKind in _SOURCE_WRITE_ASSET_KINDS: return "source-write"
+    return "visual-assets"
+
+
+def _detect_orphan_asset_no_prototype_edge(workflow, project_root, drifts):
+    """v3.1 — every asset node in the workflow should have an edge to the
+    prototype. Routing branches by assetKind:
+      • image/svg/video/audio/3d/shader → prototype.visual-assets
+      • html/html-set/markdown/text      → prototype.source-write
+    If exactly ONE prototype exists and an asset is unwired to it on the
+    correct port, emit an auto-class drift. Multiple prototype nodes →
+    don't guess (skip silently)."""
+    nodes = workflow.get("nodes") or []
+    prototypes = [n for n in nodes if isinstance(n, dict) and n.get("kind") == "prototype"]
+    if len(prototypes) != 1:
+        return   # zero or many — don't auto-wire
+    proto_id = prototypes[0].get("id")
+    if not isinstance(proto_id, str): return
+    edges = workflow.get("edges") or []
+    assets = [n for n in nodes if isinstance(n, dict) and n.get("kind") == "asset"]
+    for a in assets:
+        aid = a.get("id")
+        if not isinstance(aid, str): continue
+        target_port = _asset_target_port(a.get("assetKind") or "image")
+        # Already wired to ANY port on this prototype?
+        wired = any(
+            (e.get("from") or "").split(".", 1)[0] == aid
+            and (e.get("to") or "").split(".", 1)[0] == proto_id
+            for e in edges if isinstance(e, dict)
+        ) or any(
+            (e.get("to") or "").split(".", 1)[0] == aid
+            and (e.get("from") or "").split(".", 1)[0] == proto_id
+            for e in edges if isinstance(e, dict)
+        )
+        if wired: continue
+        drifts.append({
+            "type": ORPHAN_ASSET_NO_PROTOTYPE_EDGE,
+            "class": "auto",
+            "assetNodeId": aid,
+            "prototypeNodeId": proto_id,
+            "targetPort": target_port,
+            "summary": f"asset {aid!r} ({a.get('assetKind') or '?'}) not wired to prototype "
+                       f"{proto_id!r}.{target_port}",
+        })
+
+
+def _autoheal_orphan_asset_no_prototype_edge(workflow, drift):
+    """Wire `<assetNodeId>.out → <prototypeNodeId>.<targetPort>` and append
+    the asset to the prototype's exposedAssets[]. targetPort comes from the
+    drift (branched by assetKind). Idempotent."""
+    aid = drift.get("assetNodeId")
+    pid = drift.get("prototypeNodeId")
+    port = drift.get("targetPort") or "visual-assets"
+    if not isinstance(aid, str) or not isinstance(pid, str): return False
+    edges = workflow.setdefault("edges", [])
+    # Re-check inside the heal to avoid TOCTOU duplicates.
+    for e in edges:
+        if not isinstance(e, dict): continue
+        if ((e.get("from") or "").split(".", 1)[0] == aid
+            and (e.get("to") or "").split(".", 1)[0] == pid):
+            return False
+    edges.append({"from": f"{aid}.out", "to": f"{pid}.{port}"})
+    # Update prototype.exposedAssets[].
+    nodes = workflow.get("nodes") or []
+    proto = next((n for n in nodes if isinstance(n, dict) and n.get("id") == pid), None)
+    asset = next((n for n in nodes if isinstance(n, dict) and n.get("id") == aid), None)
+    if proto and asset:
+        exposed = proto.setdefault("exposedAssets", [])
+        if not isinstance(exposed, list):
+            exposed = []
+            proto["exposedAssets"] = exposed
+        if not any(isinstance(x, dict) and x.get("id") == aid for x in exposed):
+            exposed.append({
+                "id":     aid,
+                "path":   asset.get("path") or "",
+                "intent": (asset.get("title") or "").strip(),
+            })
+    return True
+
+
 def _autoheal_orphan_variant(workflow, drift, project_root):
     """For an ORPHAN_VARIANT drift, append a new node + asset child to
     workflow.json and wire it into the kind's existing checkpoint if
@@ -666,6 +758,138 @@ def _now_iso():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+# v3.2 — Prototype-folder auto-detection.
+# When the agent (or a freeform Write) drops `source/<slug>/index.html` on
+# disk, the user expects a live Prototype node to appear on the canvas
+# WITHOUT dragging one in from the library. This detector + autoheal pair
+# closes the loop: file watcher → reconcile → auto-mount.
+
+# Subdirs that look like prototype folders but are project-level scratch
+# space — never get a prototype node. The leading underscore convention
+# matches what the orchestrator's bp_proto_build / bs_html_* / br_remix_*
+# scaffold under source/ (see registry.py outputsRoots).
+_PROTOTYPE_FOLDER_SKIP_PREFIXES = ("_",)
+_PROTOTYPE_FOLDER_SKIP_NAMES = {
+    "_attachments", "_coherence", "_pages", "_remix", "_ds_brainstorm",
+    "_staging", "_tmp", ".staging", ".trash",
+}
+
+
+def _detect_orphan_prototype_folder(workflow, project_root, drifts):
+    """For every `source/<slug>/index.html` (or `index.htm`) on disk where
+    `<slug>` doesn't start with `_` and isn't a known scratch directory,
+    check whether the workflow already has a `kind: "prototype"` node with
+    `branch === slug`. If not, emit an auto-class ORPHAN_PROTOTYPE_FOLDER
+    drift so the autoheal can mount one.
+
+    This makes the per-prototype subfolder convention (v3.2) feel
+    automatic: the agent writes `source/<slug>/...`, the user sees a
+    Prototype node appear within ~1.5 s, no drag-and-drop needed."""
+    source_dir = os.path.join(project_root, "source")
+    if not os.path.isdir(source_dir):
+        return
+    nodes = workflow.get("nodes") or []
+    existing_branches = {
+        (n.get("branch") or "").strip()
+        for n in nodes
+        if isinstance(n, dict) and n.get("kind") == "prototype"
+    }
+    try:
+        entries = sorted(os.scandir(source_dir), key=lambda e: e.name)
+    except OSError:
+        return
+    for entry in entries:
+        if not entry.is_dir(follow_symlinks=False):
+            continue
+        slug = entry.name
+        if slug in _PROTOTYPE_FOLDER_SKIP_NAMES:
+            continue
+        if any(slug.startswith(p) for p in _PROTOTYPE_FOLDER_SKIP_PREFIXES):
+            continue
+        if slug in existing_branches:
+            continue
+        # Require an index.html/htm to consider it a prototype root.
+        index_path = None
+        for cand in ("index.html", "index.htm"):
+            p = os.path.join(entry.path, cand)
+            if os.path.isfile(p):
+                index_path = os.path.relpath(p, project_root)
+                break
+        if not index_path:
+            continue
+        drifts.append({
+            "type":     ORPHAN_PROTOTYPE_FOLDER,
+            "class":    "auto",
+            "slug":     slug,
+            "indexPath": index_path,
+            "summary":  f"`source/{slug}/index.html` exists but no Prototype node "
+                        f"references branch={slug!r}; mounting one.",
+        })
+
+
+def _autoheal_orphan_prototype_folder(workflow, drift):
+    """Append a Prototype node anchored to `source/<slug>/`. Placement
+    stacks new prototypes in a column on the right side of the canvas so
+    they don't overlap with the agent / asset clusters typically growing
+    on the left. Returns True if mutation applied; False if a sibling
+    prototype with the same branch already exists (idempotent — TOCTOU
+    guard against the same drift being applied twice in one tick)."""
+    slug = (drift.get("slug") or "").strip()
+    if not slug: return False
+    nodes = workflow.get("nodes") or []
+    # Idempotency.
+    for n in nodes:
+        if isinstance(n, dict) and n.get("kind") == "prototype" \
+                and (n.get("branch") or "").strip() == slug:
+            return False
+    # Placement: stack vertically below existing prototype siblings to keep
+    # multi-prototype canvases tidy. If none yet, anchor at a comfortable
+    # right-side default.
+    siblings = [n for n in nodes
+                if isinstance(n, dict) and n.get("kind") == "prototype"]
+    if siblings:
+        x = max(n.get("x", 0) for n in siblings)
+        y = max(n.get("y", 0) for n in siblings) + 560
+    else:
+        x, y = 1600, 80
+    new_id = f"prototype_{slug}"
+    # Collision-safe id — if something already uses prototype_<slug>, append
+    # a short suffix. Rare, but possible if the user manually added a node
+    # with the same id without setting branch.
+    base = new_id
+    existing_ids = {n.get("id") for n in nodes if isinstance(n, dict)}
+    i = 2
+    while new_id in existing_ids:
+        new_id = f"{base}_{i}"
+        i += 1
+    # v3.2 — Default node size matches the prototype's natural viewport
+    # aspect ratio (1440×900 → 16:10). The iframe scale-to-fit transform in
+    # the frontend renders the prototype at its natural viewport size and
+    # CSS-scales to fit the node body — but choosing a node size with the
+    # same aspect means no letterbox. 720×482 = 16:10 (with +32 title bar
+    # → 720×450 body region, which has the same 16:10 ratio as 1440×900).
+    nodes.append({
+        "id":         new_id,
+        "kind":       "prototype",
+        "branch":     slug,
+        "x":          x,
+        "y":          y,
+        "w":          720,
+        "h":          482,
+        "viewport":   {"w": 1440, "h": 900},
+        "runStatus":  "done",
+        "title":      slug,
+        "healedBy":   "reconciler.orphan-prototype-folder",
+        "commitRef":  {
+            "at":              _now_iso(),
+            "callerSessionId": "auto-heal",
+            "requestId":       "reconciler",
+        },
+    })
+    workflow["nodes"] = nodes
+    return True
+
+
 def apply_auto_heals(project_root):
     """Run reconcile(), apply every class:"auto" drift, write the
     workflow.json back atomically. Returns a list of summaries of
@@ -709,6 +933,10 @@ def apply_auto_heals(project_root):
                 applied = _autoheal_premature_stage(workflow, drift, project_root)
             elif t == KIND_MIGRATION:
                 applied = _autoheal_kind_migration(workflow, drift)
+            elif t == ORPHAN_ASSET_NO_PROTOTYPE_EDGE:
+                applied = _autoheal_orphan_asset_no_prototype_edge(workflow, drift)
+            elif t == ORPHAN_PROTOTYPE_FOLDER:
+                applied = _autoheal_orphan_prototype_folder(workflow, drift)
             # PHANTOM_DECISION auto-resolves once ORPHAN_VARIANT runs (same loop).
             # COHERENCE_NOT_RUN is manual-class — never auto-heals.
         except Exception as e:
@@ -728,6 +956,52 @@ def apply_auto_heals(project_root):
             out.append({"drift": "WRITE_BACK_FAILED", "applied": False, "error": str(e)})
 
     return out
+
+
+def apply_versioning_migration(project_root):
+    """Idempotently bring asset nodes' versions[] into sync with disk state.
+    Two steps per asset node:
+      1. If no versions exist yet AND the canonical file is on disk → synthesize v0.
+      2. Walk workflow/runs/<nodeId>/ and append any orphan version dirs that
+         aren't already in versions[] (recovers snapshots whose entries were
+         stomped by a stale /__workflow POST race before v3.0 fixed it).
+
+    Returns a list of {nodeId, action} entries describing what changed.
+    """
+    wf_path = os.path.join(project_root, "workflow", "workflow.json")
+    if not os.path.isfile(wf_path):
+        return []
+    try:
+        with open(wf_path, "r", encoding="utf-8") as f:
+            workflow = json.load(f)
+    except Exception:
+        return []
+    nodes = workflow.get("nodes") or []
+    actions = []
+    for n in nodes:
+        if not isinstance(n, dict): continue
+        # v3.0 — versioning covers asset, prototype, design-system kinds.
+        if not _vsn.is_versionable(n): continue
+        try:
+            if _vsn.migrate_legacy_asset(project_root, n):
+                actions.append({"nodeId": n.get("id"), "action": "synthesize-v0"})
+        except Exception:
+            pass
+        try:
+            recovered = _vsn.reconcile_orphan_versions(project_root, n)
+            if recovered > 0:
+                actions.append({"nodeId": n.get("id"),
+                                "action": "recover-orphans",
+                                "count": recovered})
+        except Exception:
+            continue
+    if actions:
+        try:
+            with open(wf_path, "w", encoding="utf-8") as f:
+                json.dump(workflow, f, indent=2)
+        except Exception:
+            return []
+    return actions
 
 
 def reconcile(project_root):
@@ -764,6 +1038,17 @@ def reconcile(project_root):
 
     try: _detect_kind_migration(wf, project_root, drifts)
     except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"kind_migration"})
+
+    try: _detect_orphan_asset_no_prototype_edge(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"orphan_asset_prototype"})
+
+    # v3.2 — Detect source/<slug>/index.html with no Prototype node referencing
+    # it. Must run BEFORE the asset-no-prototype-edge detector noticed nothing
+    # to wire to (because there WAS no prototype yet); the autoheal in the
+    # same loop creates the prototype, and the asset-edge detector will fire
+    # again on the NEXT watcher tick to wire any unattached assets to it.
+    try: _detect_orphan_prototype_folder(wf, project_root, drifts)
+    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"orphan_prototype_folder"})
 
     # Compute summary counts
     out["summary"] = {

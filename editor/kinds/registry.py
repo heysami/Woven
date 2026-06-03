@@ -143,7 +143,7 @@ KINDS = {
             "output":   {"type": "text", "required": False},
             "runRunId": {"type": "text", "required": True},
         },
-        "outputsRoot":  "source/{branch}/",     # overridden per per-id
+        "outputsRoot":  "source/",     # overridden per per-id
         "consumeFrom":  None,
         "dispatch":     "single-subprocess",
         "fanOut":       None,
@@ -160,15 +160,15 @@ KINDS = {
         ),
         "perIdOverrides": {
             "bp_research": {
-                "outputsRoot": "source/{branch}/",
-                "completion": {"requires": ["files: source/{branch}/research.md exists"]},
-                "notes": "WebSearch + WebFetch + write source/{branch}/research.md.",
+                "outputsRoot": "source/",
+                "completion": {"requires": ["files: source/research.md exists"]},
+                "notes": "WebSearch + WebFetch + write source/research.md.",
             },
             "bp_proto_build": {
-                "outputsRoot": "source/{branch}/",
+                "outputsRoot": "source/",
                 "extendsGraph": True,
                 "graphExtensionScope": "per-image-slot subagent trios",
-                "completion": {"requires": ["files: source/{branch}/index.html exists"]},
+                "completion": {"requires": ["files: source/index.html exists"]},
             },
             "bp_design_brief": {
                 "outputsRoot": "DESIGN_BRIEF.html",
@@ -190,34 +190,34 @@ KINDS = {
             },
             # D6 migration targets — bs_html_* moves from skill·llm to agent.
             "bs_html_1": {
-                "outputsRoot": "source/{branch}/_pages/page_1/",
-                "completion": {"requires": ["files: source/{branch}/_pages/page_1/index.html exists, non-empty"]},
+                "outputsRoot": "source/_pages/page_1/",
+                "completion": {"requires": ["files: source/_pages/page_1/index.html exists, non-empty"]},
                 "downstreamLink": "br_remix_p1",
                 "notes": "Generates one full HTML page (Standing Brief). Visible subprocess. Dispatched in parallel with siblings bs_html_2/3.",
             },
             "bs_html_2": {
-                "outputsRoot": "source/{branch}/_pages/page_2/",
-                "completion": {"requires": ["files: source/{branch}/_pages/page_2/index.html exists, non-empty"]},
+                "outputsRoot": "source/_pages/page_2/",
+                "completion": {"requires": ["files: source/_pages/page_2/index.html exists, non-empty"]},
                 "downstreamLink": "br_remix_p2",
             },
             "bs_html_3": {
-                "outputsRoot": "source/{branch}/_pages/page_3/",
-                "completion": {"requires": ["files: source/{branch}/_pages/page_3/index.html exists, non-empty"]},
+                "outputsRoot": "source/_pages/page_3/",
+                "completion": {"requires": ["files: source/_pages/page_3/index.html exists, non-empty"]},
                 "downstreamLink": "br_remix_p3",
             },
             # Long-form PRD writes — complex artifact, must be agent-kind not skill·llm.
-            "bp_prd_refine":   {"outputsRoot": "source/{branch}/prd.md",         "completion": {"requires": ["files: source/{branch}/prd.md exists"]}},
-            "bp_prd_final":    {"outputsRoot": "source/{branch}/prd-final.md",   "completion": {"requires": ["files: source/{branch}/prd-final.md exists"]}},
-            "bp_prd_align":    {"outputsRoot": "source/{branch}/prd-aligned.md", "completion": {"requires": ["files: source/{branch}/prd-aligned.md exists"]}},
+            "bp_prd_refine":   {"outputsRoot": "source/prd.md",         "completion": {"requires": ["files: source/prd.md exists"]}},
+            "bp_prd_final":    {"outputsRoot": "source/prd-final.md",   "completion": {"requires": ["files: source/prd-final.md exists"]}},
+            "bp_prd_align":    {"outputsRoot": "source/prd-aligned.md", "completion": {"requires": ["files: source/prd-aligned.md exists"]}},
             # ── COHERENCE PASS (Subagent 11) — see COHERENCE_PHASE_PLAN.md ───────
             # Upstream contract producers: ONE source of truth before page generation.
             # cp_fixture canonicalises every numeric/named fact (entities) so pages
             # cannot drift (the `38` vs `312` super bug).
             "cp_fixture": {
-                "outputsRoot": "source/{branch}/_coherence/",
+                "outputsRoot": "source/_coherence/",
                 "completion": {"requires": [
-                    "files: source/{branch}/_coherence/model.json exists",
-                    "files: source/{branch}/data.js exists",
+                    "files: source/_coherence/model.json exists",
+                    "files: source/data.js exists",
                 ]},
                 "extendsGraph": False,
                 "notes": (
@@ -231,10 +231,10 @@ KINDS = {
             },
             # cp_chrome writes ONE chrome contract every page must include.
             "cp_chrome": {
-                "outputsRoot": "source/{branch}/_coherence/",
+                "outputsRoot": "source/_coherence/",
                 "completion": {"requires": [
-                    "files: source/{branch}/_coherence/chrome.html exists",
-                    "files: source/{branch}/_coherence/chrome.contract.json exists",
+                    "files: source/_coherence/chrome.html exists",
+                    "files: source/_coherence/chrome.contract.json exists",
                 ]},
                 "notes": (
                     "Reads the DS (shells + styles.css) + PRD page-to-shell map; writes "
@@ -247,9 +247,9 @@ KINDS = {
             },
             # Downstream auditors: read the canonical contracts + final pages, emit COHERENCE_REPORT.json.
             "lint_data_coherence": {
-                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
+                "outputsRoot": "source/COHERENCE_REPORT.json",
                 "completion": {"requires": [
-                    "files: source/{branch}/COHERENCE_REPORT.json exists",
+                    "files: source/COHERENCE_REPORT.json exists",
                 ]},
                 "notes": (
                     "Reads model.json + every final source/<branch>/*.html + data.js. "
@@ -263,9 +263,9 @@ KINDS = {
                 ),
             },
             "lint_chrome_consistency": {
-                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
+                "outputsRoot": "source/COHERENCE_REPORT.json",
                 "completion": {"requires": [
-                    "files: source/{branch}/COHERENCE_REPORT.json exists",
+                    "files: source/COHERENCE_REPORT.json exists",
                 ]},
                 "notes": (
                     "Reads chrome.contract.json + every final page. "
@@ -281,7 +281,7 @@ KINDS = {
             # We document the contract under a wildcard key the validator falls
             # back to when checking per-id.
             "v_": {
-                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
+                "outputsRoot": "source/COHERENCE_REPORT.json",
                 "completion": {"requires": [
                     # No file required beyond the appended verdict; the report
                     # accumulates entries from many v_<id> commits.
@@ -335,7 +335,7 @@ KINDS = {
             "primaryShell":     {"type": "text", "required": True},
             "compatibleShells": {"type": "array", "required": True},
         },
-        "outputsRoot":  "source/{branch}/_ds_brainstorm/{variant}/",
+        "outputsRoot":  "source/_ds_brainstorm/{variant}/",
         # v2.50 — idTemplate: when the reconciler finds an orphan variant
         # folder on disk that has no matching node, auto-heal substitutes
         # {variant} here to build the new node id. Without this, auto-heal
@@ -445,7 +445,11 @@ KINDS = {
         "category":     "container",
         "inputs": {
             "path":      {"type": "text", "label": "File path", "userEditable": True, "required": True},
-            "assetKind": {"type": "enum", "values": ["image","html","svg","video","audio","3d","shader"], "userEditable": False},
+            "paths":     {"type": "array", "label": "File paths (set)", "userEditable": False,
+                          "doc": "html-set / multi-file assets use this in addition to (or in place of) path."},
+            "assetKind": {"type": "enum",
+                          "values": ["image","html","html-set","svg","video","audio","3d","shader","markdown","text"],
+                          "userEditable": False},
             "boundTo":   {"type": "object", "userEditable": False},
             "title":     {"type": "text", "userEditable": True},
         },
@@ -459,7 +463,27 @@ KINDS = {
         "runStatusFlow": ["queued", "done", "error"],
         "completion":   {"requires": ["files: inputs.path exists on disk"]},
         "pauseAfter":   False,
-        "notes": "Display wrapper for a single file. Refresh on file change via SSE asset-changed (D1).",
+        # ── Asset-versioning contract (docs/features/asset-versioning.md §3, §8)
+        # The daemon snapshots an asset's referenced files after every
+        # upstream producer run completes. Each snapshot becomes a new
+        # version on the asset node; sub-asset upstream is captured per
+        # version as compositions (a tuple of sub-asset → sub-version).
+        "versioning": {
+            "enabled":                  True,
+            "maxUnpinnedVersions":      20,
+            "maxUnpinnedCompositions":  50,
+            "snapshotRoot":             "workflow/runs/{nodeId}/{versionId}/",
+            "viewRoot":                 "workflow/views/{nodeId}/{versionId}/{compositionId}/",
+            "thumbStrategy":            "canvas-html2canvas",   # or "daemon-direct" for image/svg
+        },
+        "adaptiveSize": {
+            "enabled":        True,
+            "scaleDefault":   "fit-canvas",
+            "minW":           280,
+            "maxW":           720,
+            "aspectFrom":     "viewport|image|markdown",
+        },
+        "notes": "Display wrapper. Refresh on file change via SSE asset-changed (D1). Versioned: every upstream-producer run snapshots the asset's files into workflow/runs/, with an auto-locked composition capturing sub-asset pins.",
     },
 
     # ── iterator-refiner ──────────────────────────────────────────────────
@@ -499,7 +523,7 @@ KINDS = {
             "model":    {"type": "text",   "default": "claude-opus-4-7", "userEditable": True},
         },
         "outputs":      {},
-        "outputsRoot":  "source/{branch}/_remix/p{pageIdx}/",
+        "outputsRoot":  "source/_remix/p{pageIdx}/",
         "consumeFrom": {
             "source": "{upstream.outputsRoot}",
             "rules": [
@@ -576,7 +600,7 @@ KINDS = {
             "model":      {"type": "text",   "userEditable": True},
         },
         "outputs":      {},
-        "outputsRoot":  "source/{branch}/_blend/{id}/",
+        "outputsRoot":  "source/_blend/{id}/",
         "consumeFrom": {
             "source": "{upstream[0..n].outputsRoot}",
             "rules":  [{"match": "**/*", "handler": "include-with-weight", "target": "(input)"}],

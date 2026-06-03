@@ -8,7 +8,7 @@ There is NO canonical inventory or lane list handed down by the planner. **You e
 
 ## U1. Read source, don't infer
 
-The envelope your planner hands you is a file pointer (`sourceRoot`, `branchSlug`), not source content. Use Read / Bash / Grep on the files your playbook authorises. A subagent that returns output without exercising the file-read tools is broken.
+The envelope your planner hands you is a file pointer (`sourceRoot`, `slug`), not source content. Use Read / Bash / Grep on the files your playbook authorises. A subagent that returns output without exercising the file-read tools is broken.
 
 ## U2. Read `editor/serve.py` once if your work touches runtime behaviour
 
@@ -16,7 +16,7 @@ The dev server injects helpers (notably `window.__poke` / `window.__pokeBy`) int
 
 ## U3. Project-root-relative paths
 
-All file paths in your playbook resolve against the project root, not against `source/<slug>/`. If you `cd source/main` in a Bash command, every subsequent relative path is wrong until you `cd` back.
+All file paths in your playbook resolve against the project root, not against `source/`. If you `cd source/main` in a Bash command, every subsequent relative path is wrong until you `cd` back.
 
 ## U4. Don't fabricate
 
@@ -168,7 +168,7 @@ Auto-generated unique IDs (`a1`, `a2`, …) are fine. Subagent 4 picks them at w
 
 ## `design-system.html` — the gallery page
 
-Every prototype with primitives ships `source/<slug>/design-system.html` (PROTOTYPE.md §12). It's a TOC-driven gallery rendering every primitive variant in idle state with real product class names. Subagent 1 owns it; Subagent 6 extracts from it exclusively; Workflow 3 derives DESIGN.md from it.
+Every prototype with primitives ships `source/design-system.html` (PROTOTYPE.md §12). It's a TOC-driven gallery rendering every primitive variant in idle state with real product class names. Subagent 1 owns it; Subagent 6 extracts from it exclusively; Workflow 3 derives DESIGN.md from it.
 
 - **Subagent 6**: every `primitive.from.<variant>.entry` is `"design-system.html"`. Selectors use **real product class names scoped by section anchor** (`#buttons .btn-primary`, `#cards .application-card[data-state="submitted"]`), NEVER `.ds-*` gallery chrome. Single-pass `querySelector` resolves all selectors on first paint.
 - **Subagents 3 / 4 / 5 / 7**: exclude `design-system.html` from frame / sitemap / entity enumeration. It's metadata (like the storyboard), not a UI screen the user dwells on.

@@ -50,7 +50,7 @@ Read [`.claude/agents/coherence-auditor.md`](coherence-auditor.md) for the full 
 
 **Upstream contract producers (write BEFORE page generation):**
 
-- `cp_fixture` — reads PRD's "System mechanics + data model" section; writes `source/<branch>/_coherence/model.json` (canonical entity store) + `source/<branch>/data.js` (per-surface `window.DEMO` views, every value REFERENCED from model.json never re-typed). `bs_html_*` generators MUST consume from `data.js`; they MUST NOT author numeric/named facts inline. If a fact isn't in the model, request it — don't invent it.
+- `cp_fixture` — reads PRD's "System mechanics + data model" section; writes `source/_coherence/model.json` (canonical entity store) + `source/data.js` (per-surface `window.DEMO` views, every value REFERENCED from model.json never re-typed). `bs_html_*` generators MUST consume from `data.js`; they MUST NOT author numeric/named facts inline. If a fact isn't in the model, request it — don't invent it.
 - `cp_chrome` — reads DS + PRD page-to-shell map; writes `chrome.html` (canonical partial: ONE brand `<symbol>`, ONE nav, ONE seal slot) + `chrome.contract.json` (machine-readable assertion target). Every page includes the partial verbatim; generators may set only the active nav item, never redefine brand/nav/seal/location.
 
 **Downstream audits (dispatch as parallel Task subagents — siblings-parallel, cold isolation):**
@@ -107,7 +107,7 @@ When you narrate progress to the user, write "starting **Refine PRD**" — not "
 | Code | Short name        | What it does                                                |
 |------|-------------------|-------------------------------------------------------------|
 | A    | Intake            | 3 questions + reference (done by wizard, not by you)        |
-| —    | Research          | **Infra node `bp_research` (v2.7b)** — agent subprocess that uses WebSearch + WebFetch to ground the intake in real signals: competitive landscape, audience research, visual references, open assumptions. Output: `source/<branch>/research.md`. Auto-scaffolded whenever stages is non-empty. The brief refiner reads from this. |
+| —    | Research          | **Infra node `bp_research` (v2.7b)** — agent subprocess that uses WebSearch + WebFetch to ground the intake in real signals: competitive landscape, audience research, visual references, open assumptions. Output: `source/research.md`. Auto-scaffolded whenever stages is non-empty. The brief refiner reads from this. |
 | —    | Refine brief      | **Infra TRIO (v2.10)** — `bp_brief_seed` (prompt, you populate) → `bp_brief_refine` (iterator-refiner, USER clicks ✦ Setup loop) → `bp_brief_output` (prompt, you copy refined text into). Downstream B/C/E read from `bp_brief_output`. See §5.6 for the lifecycle. |
 | B    | Refine PRD        | LLM produces structured PRD from the refined brief          |
 | C    | DS brainstorm     | 3 sample HTML variants for the user to pick a direction     |
@@ -134,27 +134,27 @@ When you narrate progress to the user, write "starting **Refine PRD**" — not "
 | Stage | Node id(s) | Pattern | Notes |
 |---|---|---|---|
 | A | `cp_ctx_brandspec`, `cp_ctx_reference`, `cp_ctx_prd_upload`, `cp_ctx_ds_ref` | A | Already written by wizard; `/run` returns file contents on demand. |
-| infra | `bp_research` (kind: `agent`) | **B** | **v2.7b** — dispatch FIRST, before the brief refiner. Spawns a research subprocess (WebSearch + WebFetch tools available) that writes `source/<branch>/research.md` grounding the intake in real signals. POST `/__workflow/node/bp_research/run` → poll until done. May take 30–90s. The brief refiner reads this output. |
+| infra | `bp_research` (kind: `agent`) | **B** | **v2.7b** — dispatch FIRST, before the brief refiner. Spawns a research subprocess (WebSearch + WebFetch tools available) that writes `source/research.md` grounding the intake in real signals. POST `/__workflow/node/bp_research/run` → poll until done. May take 30–90s. The brief refiner reads this output. |
 | infra | `bp_brief_seed` (kind: `prompt`) | **C** (manual) | **v2.10** — POST `/__workflow/node/bp_brief_seed/status` with `{text: "<intake aggregate>"}` once research is done. The aggregate concatenates brand-spec.md + reference.md (+ research.md if `runResearch`), formatted so the refiner has clean substrate to interview against. |
 | infra | `bp_brief_refine` (kind: `iterator-refiner`) | **USER-DRIVEN** | **v2.10** — NOT dispatchable from the daemon. Narrate to the user: *"Click ✦ Setup loop on `bp_brief_refine` to kick off the 2-agent refinement."* Then poll `GET /__workflow/node/bp_brief_refine` until the node carries an `outputPromptId` field AND its spawned output node has non-empty text. See §5.6 for the full lifecycle. |
 | infra | `bp_brief_output` (kind: `prompt`) | **C** (manual) | **v2.10** — after the refiner completes, GET the spawned output node `bp_brief_refine.outputPromptId`, read its `text`, then POST `/__workflow/node/bp_brief_output/status` with `{text: "<refined brief>"}`. Downstream stages read THIS one. |
-| B | `bp_prd_refine` | **B** | **v2.50 — migrated from skill·llm to agent kind.** A full structured PRD (with the mandatory `## System mechanics + data model` section) is a complex artifact; the inline dispatch path can't honor it. Dispatch via `/run` and poll until done. The per-id preamble in `node_agent_preambles.py` demands the data-model section so cp_fixture downstream can canonicalize the facts. The PRD output lands on `source/<branch>/prd.md` AND on the intermediary `bp_prd_text` data node. Reads from `bp_brief_refine`. |
+| B | `bp_prd_refine` | **B** | **v2.50 — migrated from skill·llm to agent kind.** A full structured PRD (with the mandatory `## System mechanics + data model` section) is a complex artifact; the inline dispatch path can't honor it. Dispatch via `/run` and poll until done. The per-id preamble in `node_agent_preambles.py` demands the data-model section so cp_fixture downstream can canonicalize the facts. The PRD output lands on `source/prd.md` AND on the intermediary `bp_prd_text` data node. Reads from `bp_brief_refine`. |
 | B-data | `bp_prd_text` | — | Auto-populated data node. Not dispatched; reads bp_prd_refine's output. POST `/status` is unnecessary — the upstream walk picks up the value. |
-| C | `bs_ds_a`, `bs_ds_b`, `bs_ds_c` | **C** | Write three HTML samples to `source/<branch>/_ds_brainstorm/<a\|b\|c>.html` **with image slot markers per IMAGERY_PIPELINE** (no `picsum.photos` / `unsplash` — v2.46). After writing, POST `/__workflow/node/bs_ds_<x>/status` `runStatus: "done"` + POST asset-child `text: "<path>"`. THEN dispatch visual-planner via the Task tool for each HTML so the slot markers become real assets + canvas node trios. |
-| C-pick | `cp_ds_pick` | **special — emit `<decision-request>`, do NOT call /run** | Use `preview="source/<branch>/_ds_brainstorm/<x>.html"` per option (v2.2 — chat renders iframes). Wait for `[decision:cp_ds_pick] <value>` user-message OR `DECISION_cp_ds_pick.json`. After consuming, POST `/status` with `done`. |
+| C | `bs_ds_a`, `bs_ds_b`, `bs_ds_c` | **C** | Write three HTML samples to `source/_ds_brainstorm/<a\|b\|c>.html` **with image slot markers per IMAGERY_PIPELINE** (no `picsum.photos` / `unsplash` — v2.46). After writing, POST `/__workflow/node/bs_ds_<x>/status` `runStatus: "done"` + POST asset-child `text: "<path>"`. THEN dispatch visual-planner via the Task tool for each HTML so the slot markers become real assets + canvas node trios. |
+| C-pick | `cp_ds_pick` | **special — emit `<decision-request>`, do NOT call /run** | Use `preview="source/_ds_brainstorm/<x>.html"` per option (v2.2 — chat renders iframes). Wait for `[decision:cp_ds_pick] <value>` user-message OR `DECISION_cp_ds_pick.json`. After consuming, POST `/status` with `done`. |
 | D | `bp_ds_gen` (kind: `design-system`) | **D** (USER-DRIVEN) | **v2.13** — pre-populate `spec.genre` (+ optionally `tokenPreference`, `extraBrief`) from the picked variant's variant-spec JSON via `POST /__workflow/node/bp_ds_gen/status` with `{spec: {...}}`. Then narrate "click ▶ Build on `bp_ds_gen`" and poll `lastRunId` until the spawned agent run is done. See §5.8 for the full lifecycle. |
-| E-prep | `cp_fixture` | **B** (v2.50) | **NEW — runs BEFORE bs_html_*.** Dispatch via `/run`. Reads the PRD's `## System mechanics + data model` section and writes `source/<branch>/_coherence/model.json` (canonical entities) + `source/<branch>/data.js` (per-surface `window.DEMO` views). Without this, bs_html_* will error out at startup because their preamble requires reading model.json. |
-| E-prep | `cp_chrome` | **B** (v2.50) | **NEW — runs BEFORE bs_html_*.** Dispatch via `/run`. Reads the DS + PRD page-to-shell map. Writes `source/<branch>/_coherence/chrome.html` (canonical partial) + `chrome.contract.json`. Each bs_html_* page must include the chrome partial verbatim. |
+| E-prep | `cp_fixture` | **B** (v2.50) | **NEW — runs BEFORE bs_html_*.** Dispatch via `/run`. Reads the PRD's `## System mechanics + data model` section and writes `source/_coherence/model.json` (canonical entities) + `source/data.js` (per-surface `window.DEMO` views). Without this, bs_html_* will error out at startup because their preamble requires reading model.json. |
+| E-prep | `cp_chrome` | **B** (v2.50) | **NEW — runs BEFORE bs_html_*.** Dispatch via `/run`. Reads the DS + PRD page-to-shell map. Writes `source/_coherence/chrome.html` (canonical partial) + `chrome.contract.json`. Each bs_html_* page must include the chrome partial verbatim. |
 | E | `bp_chunks`, `bs_html_1..3` | **A** + **B** | `bp_chunks` is still Pattern A (small text op — JSON spec of 3 pages). Its output lands on `bp_chunks_text`. Then `bs_html_1/2/3` are **Pattern B (v2.50 — migrated from skill·llm to agent kind)**. Dispatch all three IN PARALLEL via three `/run` calls; each is a visible Claude Code subprocess with its own chat panel and transcript. Each agent's preamble forbids inventing facts (must reference `window.DEMO` / `model.json`) and requires including `chrome.html` verbatim. **Order matters: cp_fixture + cp_chrome MUST complete before any bs_html_* dispatch.** Each html node has a downstream asset(html) child — the agent commits it via `/commit` or the legacy `/status` path. THEN dispatch visual-planner for each written HTML so slot markers become real assets + canvas node trios. |
-| E-lint | `lint_data_coherence`, `lint_chrome_consistency` | **B** (v2.50) | **NEW — runs AFTER bs_html_1/2/3 all done.** Dispatch both in parallel via `/run`. Each reads model.json/chrome.contract.json + every page; appends findings to `source/<branch>/COHERENCE_REPORT.json`. Per-asset `v_<assetId>` vision-verifies fan out from the visual-planner. |
+| E-lint | `lint_data_coherence`, `lint_chrome_consistency` | **B** (v2.50) | **NEW — runs AFTER bs_html_1/2/3 all done.** Dispatch both in parallel via `/run`. Each reads model.json/chrome.contract.json + every page; appends findings to `source/COHERENCE_REPORT.json`. Per-asset `v_<assetId>` vision-verifies fan out from the visual-planner. |
 | E-gate | `cp_coherence_gate` | **B** (v2.50) + decision-request on block | **NEW.** Dispatch via `/run` after lints + verifies complete. Reads COHERENCE_REPORT.json. Zero block-severity findings → commits `DECISION_cp_coherence.json` with `value: clear` and the canvas advances. Any block finding → emits `<decision-request>` with options Retry / Patch / Accept-override. Do NOT advance to F until this is clear. |
 | E-data | `bp_chunks_text`, `bs_html_<N>_asset` | — | Auto data nodes. |
-| F | `br_remix_p1`, `br_remix_p2`, `br_remix_p3` | **C** | **v2.4** — three iterator-remix nodes (one per page), each with `n: 3` (3 alternatives of ONE page). Write the 3 alts at `source/<branch>/_remix/p<N>_<a\|b\|c>.html` **with image slot markers per IMAGERY_PIPELINE** (no picsum/unsplash — v2.46). After all 3 alts are written, POST `/status` on the remix node + on the asset child `br_remix_p<N>_set`. THEN dispatch visual-planner for each alt so slot markers become real assets + canvas node trios. |
-| G-pick | `cp_remix_pick` | **special — grouped multi-pick `<decision-request>`** | Per v2.2: `multiSelect="true" groupBy="page" picksPerGroup="1"`; one option per cell with `group="page<N>"` + `preview="source/<branch>/_remix/p<N>_<x>.html"`. Pick one alt per page (3 picks total). After consuming, POST `/status` `done`. |
-| G | `bp_prd_final` | **B** | **v2.50 — migrated from skill·llm to agent kind.** Dispatch via `/run` and poll until done. The per-id preamble preserves the data-model section verbatim (deleting it breaks downstream coherence). Output lands on `source/<branch>/prd.md` AND on intermediary `bp_prd_final_text` — downstream H/I read THAT one. |
+| F | `br_remix_p1`, `br_remix_p2`, `br_remix_p3` | **C** | **v2.4** — three iterator-remix nodes (one per page), each with `n: 3` (3 alternatives of ONE page). Write the 3 alts at `source/_remix/p<N>_<a\|b\|c>.html` **with image slot markers per IMAGERY_PIPELINE** (no picsum/unsplash — v2.46). After all 3 alts are written, POST `/status` on the remix node + on the asset child `br_remix_p<N>_set`. THEN dispatch visual-planner for each alt so slot markers become real assets + canvas node trios. |
+| G-pick | `cp_remix_pick` | **special — grouped multi-pick `<decision-request>`** | Per v2.2: `multiSelect="true" groupBy="page" picksPerGroup="1"`; one option per cell with `group="page<N>"` + `preview="source/_remix/p<N>_<x>.html"`. Pick one alt per page (3 picks total). After consuming, POST `/status` `done`. |
+| G | `bp_prd_final` | **B** | **v2.50 — migrated from skill·llm to agent kind.** Dispatch via `/run` and poll until done. The per-id preamble preserves the data-model section verbatim (deleting it breaks downstream coherence). Output lands on `source/prd.md` AND on intermediary `bp_prd_final_text` — downstream H/I read THAT one. |
 | G-data | `bp_prd_final_text` | — | Auto data node. |
 | H | `bp_ds_update` | **B** | Dispatch via `/run`. The daemon spawns a Workflow 6+6b subagent that ALWAYS splits via Task subagents (per-section + per-shell). |
-| H2 | `bp_prd_align` | **B** | **v2.50 — migrated from skill·llm to agent kind.** Reads `bp_prd_final_text` + `bp_ds_update`'s output; rewrites the PRD so per-screen component refs / token names / page-to-shell map use the just-updated DS's canonical names. The per-id preamble preserves the data-model section verbatim. Writes `source/<branch>/prd.md` (overwrites the G output) and emits text to `bp_prd_align_text` for I/J consumers. |
+| H2 | `bp_prd_align` | **B** | **v2.50 — migrated from skill·llm to agent kind.** Reads `bp_prd_final_text` + `bp_ds_update`'s output; rewrites the PRD so per-screen component refs / token names / page-to-shell map use the just-updated DS's canonical names. The per-id preamble preserves the data-model section verbatim. Writes `source/prd.md` (overwrites the G output) and emits text to `bp_prd_align_text` for I/J consumers. |
 | H2-data | `bp_prd_align_text` | — | Auto data node. |
 | I | `bp_proto_build` | **B** | Dispatch via `/run`. The daemon spawns **only Subagent 1 (Source)** from Workflow 1 — not the full 9-subagent planner. Onboarding produces source HTML/CSS/JS only; the editor metadata views (Canvas, User flow, IA, Entities, etc.) stay empty until the user explicitly runs Regenerate later. Reads `bp_prd_align_text` when H is in scope, `bp_prd_final_text` otherwise. |
 | J | `bp_design_brief` | **B** | **v2.8** — optional trailing stage. Spawns a subagent that produces `DESIGN_BRIEF.html` at project root: 9-section convincing case for the design (hero / brief / audience truths / direction picked / storyboard / per-screen breakdown / DS rationale / rejected-and-why / what's next). Per-screen breakdowns fan out via Task subagents. ≤200 KB single self-contained HTML. |
@@ -259,7 +259,7 @@ The sequences below are the only orderings you should follow. Each step referenc
 **H2 dispatch detail (v2.15).** `bp_prd_align` is Pattern A (daemon skill/llm). Dispatch sequence:
 1. Confirm `bp_ds_update.runStatus == "done"` AND `bp_prd_final_text.text` is non-empty. If either is missing, do not dispatch — narrate the gap.
 2. `POST /__workflow/node/bp_prd_align/run` — daemon composes from upstream (refined PRD + DS update output) and runs the realignment prompt. The response lands on `bp_prd_align.output` (v2.12a: response goes to `.output`, NOT `.text`).
-3. Per §5.7: read `bp_prd_align.output.text` and Write it to `source/<branch>/prd.md` (overwrites the G version — the realigned PRD is the final one).
+3. Per §5.7: read `bp_prd_align.output.text` and Write it to `source/prd.md` (overwrites the G version — the realigned PRD is the final one).
 4. Optionally POST `bp_prd_align_text/status` with `{text: <response>}` to make the intermediary node show the content explicitly; the upstream walk already picks it up from `bp_prd_align.output`, but POSTing makes the canvas readable.
 5. Narrate: "**Realign PRD** done — N component refs updated to match the new DS. Starting **Build prototype** next."
 
@@ -328,6 +328,18 @@ There is NO push-notification mechanism. The daemon updates state on disk; you f
 
 ALWAYS use Bash with curl + sleep loops. The pattern above is the canonical shape; use it verbatim for every agent-kind dispatch, the iterator-refiner wait (§5.6), and any other case where you need to know "is this thing done yet."
 
+## 5.45 Asset versioning — reverts and branches (v3.0)
+
+Asset nodes (`kind: asset`) now carry per-node version history. The daemon snapshots an asset's files after every successful upstream producer run; you don't write to `versions[]` directly. Key implications for your flow:
+
+- **Never cache asset state across turns.** The user can revert or branch an asset version from the canvas independently of you. Re-fetch via `GET /__workflow/node/<id>` whenever you need current state, or re-read `workflow/workflow.json` from disk.
+- **`source/` always mirrors the active version + active composition.** When you Read a file under `source/`, you're reading whatever the user's latest revert/switch resolved to. That's the file the next downstream run will consume.
+- **Lineage chip color is informational.** A warm-colored chip on a downstream asset signals "this snapshot was built against an older version of an upstream sub-asset." That does NOT automatically invalidate the downstream — the user decides whether to re-run. Don't treat divergence as an error.
+- **Branching creates a new sibling asset node** with a fresh id (e.g. `bs_html_1_b`). It's disconnected by default; the user wires it. If you see a `_b` / `_b2` suffix node you don't recognize, it's a branch.
+- **If you spawn a subagent that produces asset content** (anything writing to `source/` that's wired to an asset node), have it drop a `MANIFEST.json` in its write root with `files[]` + `subAssetInputs[]` so the daemon snapshots exactly what got produced and knows where sub-assets mount. Without a manifest the daemon falls back to scanning the asset's declared path/paths — usually fine but fuzzier on multi-file builds.
+
+See [`docs/features/asset-versioning.md`](../../docs/features/asset-versioning.md) for the full design + endpoint contract.
+
 ## 5.5 Selection-context — when the user's chat carries a `<selected-nodes>` block (v2.9)
 
 If the user's first message (or any user message — same parser) starts with a `<selected-nodes count="N">…</selected-nodes>` block, the editor's workflow canvas had those nodes selected when the user pressed Send. The block lists each picked node with its id, kind, title, a text snippet (and provider/model + path/runStatus where relevant).
@@ -369,7 +381,7 @@ import json, os
 proj = os.environ['TH_PROJECT_ROOT']
 branch = os.environ.get('TH_BRANCH', 'main')
 def read(p):
-    try:    return open(f'{proj}/source/{branch}/{p}').read()
+    try:    return open(f'{proj}/source/{p}').read()
     except: return ''
 parts = []
 bs = read('brand-spec.md')
@@ -400,7 +412,7 @@ PY
 import json, os
 proj = os.environ['TH_PROJECT_ROOT']; branch = os.environ.get('TH_BRANCH','main')
 # Extract app/audience/emotion summary lines from brand-spec.md to weave in.
-bs = open(f'{proj}/source/{branch}/brand-spec.md').read()
+bs = open(f'{proj}/source/brand-spec.md').read()
 # (Pull "App", "Audience", "Emotion" sections — parse however; cheap version:
 # the wizard writes them under headings ## App / ## Audience / ## Emotion.)
 import re
@@ -459,7 +471,7 @@ import json, os
 proj = os.environ['TH_PROJECT_ROOT']
 branch = os.environ.get('TH_BRANCH', 'main')
 def read(p):
-    try:    return open(f'{proj}/source/{branch}/{p}').read()
+    try:    return open(f'{proj}/source/{p}').read()
     except: return ''
 parts = []
 bs = read('brand-spec.md');   parts.append(f'## Intake brand-spec\n\n{bs}')   if bs  else None
@@ -557,7 +569,7 @@ for i in 1 2 3; do
 done
 ```
 
-Then dispatch each `bs_html_<N>` via `/run` per Pattern A. Then Write each response to `source/<branch>/_pages/page_<N>.html` per §5.7. THEN proceed to F.
+Then dispatch each `bs_html_<N>` via `/run` per Pattern A. Then Write each response to `source/_pages/page_<N>.html` per §5.7. THEN proceed to F.
 
 ### F-stage — populate `br_remix_p<N>.variants` with picked-DS-aware direction guidance
 
@@ -620,14 +632,14 @@ import json, os, re
 proj = os.environ['TH_PROJECT_ROOT']
 branch = os.environ.get('TH_BRANCH', 'main')
 picked = '$PICKED'
-html = open(f'{proj}/source/{branch}/_ds_brainstorm/{picked}.html').read()
+html = open(f'{proj}/source/_ds_brainstorm/{picked}.html').read()
 m = re.search(r'<script[^>]+id=["\']variant-spec["\'][^>]*>(.*?)</script>', html, re.S)
 variant = json.loads(m.group(1)) if m else {}
 # v2.19c — populate ALL spec fields the orchestrator can influence, not just
 # genre. tokenPreference / personaModes / extraBrief shape what Workflow 0
 # produces; leaving them blank gives a generic DS. Pull project context from
 # brand-spec.md so the DS knows the audience + emotion + key affordances.
-brand = open(f'{proj}/source/{branch}/brand-spec.md').read()
+brand = open(f'{proj}/source/brand-spec.md').read()
 import re as _re
 def _sect(name):
     m = _re.search(rf'^##\s*{name}\s*\n(.+?)(?=\n##|\Z)', brand, _re.M|_re.S)
@@ -711,7 +723,7 @@ If `exists` is false, the agent's run errored or didn't commit. Surface the chat
 
 ## 5.7 Writing LLM responses to disk after skill dispatch (v2.12)
 
-**Critical:** the daemon's skill=llm dispatch stores the LLM response in `node["output"]` (NOT `node["text"]` — that stays the prompt). **The daemon does NOT write to disk.** If the node's prompt says "Save to source/<branch>/prd.md", YOU (the orchestrator) are responsible for the file write.
+**Critical:** the daemon's skill=llm dispatch stores the LLM response in `node["output"]` (NOT `node["text"]` — that stays the prompt). **The daemon does NOT write to disk.** If the node's prompt says "Save to source/prd.md", YOU (the orchestrator) are responsible for the file write.
 
 ### Pattern: dispatch → read `.output` → Write to disk
 
@@ -743,10 +755,10 @@ Alternative — for large responses use the Write tool directly instead of shell
 
 | Stage | Skill node | Response → file |
 |---|---|---|
-| B | `bp_prd_refine` | `source/<branch>/prd.md` |
-| E | `bp_chunks` | `source/<branch>/_chunks.json` (or just consumed inline by `bs_html_*`) |
-| E | `bs_html_<N>` | `source/<branch>/_pages/page_<N>.html` (then POST to `bs_html_<N>_asset/status` with the path) |
-| G | `bp_prd_final` | `source/<branch>/prd.md` (overwrite) |
+| B | `bp_prd_refine` | `source/prd.md` |
+| E | `bp_chunks` | `source/_chunks.json` (or just consumed inline by `bs_html_*`) |
+| E | `bs_html_<N>` | `source/_pages/page_<N>.html` (then POST to `bs_html_<N>_asset/status` with the path) |
+| G | `bp_prd_final` | `source/prd.md` (overwrite) |
 
 ### Why this can't be daemon-automatic
 

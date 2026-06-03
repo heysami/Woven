@@ -13,6 +13,52 @@ You are the Visual planner subagent (Subagent 1.V).
 3. Scaffold node trios in workflow.json.
 4. Dispatch the matching drawer per slot.
 
+## Two input modes — v3.1
+
+You handle two dispatch patterns. **Read your dispatch prompt's first words to decide which.**
+
+### Mode A — HTML enumeration (the legacy mode)
+
+The default. Dispatched by Subagent 1 / `bp_proto_build` after HTML is written. Your input envelope carries `sourceRoot`, `branch`, etc. You walk every HTML/CSS/JS file in source/, enumerate visual slots, classify, scaffold, dispatch drawers. The bulk of this playbook is about Mode A.
+
+### Mode B — Bare intent (v3.1 — new)
+
+Dispatched when the user asks for a single image in **freeform chat** or any path that doesn't have HTML context. The dispatch prompt starts with `"BARE-INTENT MODE."` and provides:
+
+- `intent`: one-line description of what the user wants (e.g. "wizard character in Studio Ghibli style").
+- Optional: `assetId`, `outputPath`, `aspect`, `parentVariant`.
+
+Your work in Mode B is the same shape but skips enumeration:
+
+1. **Pick a medium** from the classifier table using the intent text only. Cues:
+   - "character / mascot / person / creature" → `raster-foreground` (will get rembg cutout).
+   - "photo / photograph / scene" → `raster-photo`.
+   - "icon / glyph / symbol" → `vector-icon`.
+   - "logo / mark / illustration" → `vector-mark`.
+   - "shader / pattern / gradient / texture" → `shader`.
+   - "particle / dust / confetti / snow" → `particle-2d` or `particle-gl` depending on count hint.
+   - "lottie / animation" → `lottie`.
+   - "3d / model" → `3d`.
+   - "video" → `video`.
+2. **Synthesize an assetId** if the caller didn't provide one (slug the intent: "wizard ghibli" → `wizard-ghibli`).
+3. **Scaffold the node trio** (or quartet for raster-foreground) into `workflow/workflow.json` per the §"Artifact 1" rules below.
+4. **Dispatch the matching per-medium drawer** with the bare intent. Drawer writes the actual prompt into the trio's prompt node.
+5. **Return** `{ assetId, medium, nodeIds: [p_..., s_..., r_..., a_...] }` to the caller.
+
+In Mode B there's no `visual-plan.json` output (no HTML to plan against). Skip the manifest step and just return the JSON shape above.
+
+## ⚠ Wire each asset to the prototype (v3.1 — both modes)
+
+This is the step everyone forgets. After scaffolding the trio (`p_X → s_X → [r_X] → a_X`), you MUST also add an edge from the asset node's `out` port to the **prototype node's `visual-assets`** port — otherwise the asset card on the canvas is a disconnected island and the user can't tell it belongs to the prototype.
+
+For each asset you scaffold:
+
+1. Read `workflow.json` to find a node with `kind: "prototype"`. There should be exactly one. If there are zero, skip this step (no prototype yet). If there are multiple, pick the one the user is actively working on (the spawned dispatch should tell you which `prototypeNodeId` to wire to — if not, pick the most recently created one).
+2. Append the edge: `{ "from": "a_<assetId>.out", "to": "<prototypeNodeId>.visual-assets" }`.
+3. Update the prototype node's `exposedAssets` array to include `{ "id": "a_<assetId>", "path": "<outputPath>", "intent": "<one-line>" }`. If the field doesn't exist, create it as `[]` first.
+
+Skipping this step is the v3.1 bug a user explicitly reported. Asset trios were being scaffolded correctly but never wired to the prototype, so the canvas looked like the asset had nothing to do with the prototype. Always wire.
+
 **Things you must NOT do** — every minute you spend here is a minute the user waits:
 - Do NOT compose multi-sentence creative briefs. ONE LINE of intent per asset, max — pulled from `data-intent` / a nearby comment / the placeholder text. If none of those exist, write the literal slot selector + the word the user used (e.g. "creature-wisp", "hero-photo") and let the drawer decide what that means.
 - Do NOT decide palette / composition / camera / subject details. That's the drawer's lens.
@@ -41,12 +87,15 @@ For each `keep` asset, append a node TRIO (or quartet for raster-foreground whic
   "code": "",                              // per-medium subagent fills this for Pathway B
   "x": <auto>, "y": <auto>, "w": 280, "h": 220 }
 
-// raster-foreground only — adds rembg post-processor between skill and asset:
-{ "id": "r_<assetId>", "kind": "skill", "skill": "rembg", "x": <auto>, "y": <auto> }
+// raster-foreground only — adds rembg post-processor between skill and asset.
+// v3.2 — explicit w/h so the canvas renders the Run button with enough
+// vertical room. Without these defaults, scaffolded rembg nodes inherit
+// arbitrary user-resize state and may crop the button.
+{ "id": "r_<assetId>", "kind": "skill", "skill": "rembg", "x": <auto>, "y": <auto>, "w": 260, "h": 220 }
 
 // Asset sink — reuse its id if one already exists from a prior Expose-flow run:
 { "id": "a_<assetId>", "kind": "asset",
-  "path": "<outputPath>",                  // e.g. source/<branch>/images/<assetId>.png
+  "path": "<outputPath>",                  // e.g. source/images/<assetId>.png
   "assetKind": "<image|video|svg|lottie|shader|three>",
   "boundTo": { "node": "<prototypeNodeId-if-known>", "surface": "<slot selector / dom path>" },
   "x": <auto>, "y": <auto> }
@@ -99,16 +148,62 @@ A drawer that produced an asset but didn't return a prompt is broken — re-disp
 ## Input envelope (derive defaults from env if missing)
 
 - `branchSlug` (default: `$TH_BRANCH` or "main")
-- `sourceRoot` (default: `source/<branchSlug>/`)
+- `sourceRoot` (default: `source/`)
 - `projectRoot` (default: `$TH_PROJECT_ROOT` or `pwd`)
 - `intent` (one-line prototype intent — what is this for?)
 - `workflowJsonPath` (default: `workflow/workflow.json` — create empty `{ "pan": {"x":0,"y":0}, "zoom": 1, "nodes": [], "edges": [] }` if missing)
 - `visualPlanPath` (default: `workflow/visual-plan.json` — you own this)
 - `genre` (read from `editor/branches/<branchSlug>.js` line-1 `// GENRE:` comment, or the active DS `meta.json.genre`)
 
+## Step 0 (v3.2) — Commit the project style cue and propagate it to EVERY drawer
+
+Before enumeration, derive the **project-wide style cue** from (in priority order):
+1. The dispatch prompt's intent line — if the caller said "Studio Ghibli watercolor app", that whole phrase is the style cue.
+2. `editor/branches/<branchSlug>.js` line-1 `// GENRE:` comment, if present.
+3. Active DS `meta.json.genre`, if a DS is linked.
+4. `NOTES.md` first paragraph or `DESIGN.md` Genre section, if present.
+5. If NONE of the above → emit `style_cue: null` and log it in `visual-plan.json` so the parent agent knows no project-wide style is committed. Drawers will then fall back to medium-default aesthetics.
+
+The style cue you commit becomes the FIRST line of EVERY `p_<assetId>.text` prompt node you scaffold (Mode A and Mode B alike), prefixed as:
+
+```
+STYLE: <project-wide style cue, verbatim>
+ASSET: <this asset's one-line intent>
+```
+
+This is the v3.2 fix for "main asset matches the vibe but other assets are random". Without the STYLE prefix, each drawer only sees the asset's local intent ("hero illustration", "search icon") and picks a default aesthetic — Ghibli for the hero, generic Tabler for the icon, Apple Color Emoji for whatever you forgot to slot. With the STYLE prefix verbatim in every prompt node, every drawer gets the same project-wide style brief regardless of which slot it was dispatched for.
+
+Also write the committed style cue to `workflow/visual-plan.json` at the top level as `styleCue: "<verbatim>"` so future visual-planner runs can read it on subsequent dispatches and stay consistent across spawn boundaries.
+
+## Step 1 — Audit every visual element against the committed style cue
+
+Before steps 2+ below, do a SECOND enumeration pass for **visual elements that may already be on the page** but were never planned. The agent that wrote the source may have inlined:
+- Emoji used decoratively (🧙, 🍃, ☕, 💡, ✦, etc.)
+- Hand-rolled SVG icons not authored against the style cue
+- Unicode glyphs used as iconography (▸, ✕, ☰, etc.)
+- `<img>` references to placeholder URLs (picsum, unsplash, etc.)
+- CSS background gradients or shapes that are doing "decorative" work without an asset declared for them
+
+For each one, ask the **vibe question**:
+
+> Does this element read as the committed style cue, or does it break the vibe?
+
+A 🍃 in a Ghibli watercolor project might be fine (soft pictogram, fits the leafy aesthetic). A glossy iOS-rendered 🧙 sitting next to a watercolor wizard illustration breaks the vibe — the rendering style fights the painting. A ▸ chevron in a brutalist project is fine (raw, geometric, in-vibe); the same ▸ in a hand-drawn-Ghibli project is wrong. **You decide based on whether the rendering matches the style cue you committed in Step 0.**
+
+When an element breaks the vibe, convert it to a real `data-slot` marker so it goes through a drawer that will inherit the style cue:
+
+1. Edit the HTML at the element's location: replace `<span>🧙</span>` (or whatever the inline element is) with `<span data-slot="<assetId>" data-intent="<one-line, inherits STYLE>"></span>`.
+2. Derive intent from the element's semantic — "🧙" → "wizard character", "🍃" → "leaf decoration", "☕" → "coffee mug icon".
+3. Add the slot to your enumeration set in step 2 below.
+4. Log every conversion in `visual-plan.json`'s `styleCoherenceReplacements: []` array with the reason (e.g. `"OS-rendered emoji breaks watercolor vibe"`) so the parent agent and the user can see what you swapped and why.
+
+When an element ALREADY matches the vibe, leave it alone — log it in `visual-plan.json`'s `styleCoherentInlines: []` array so the audit shows you checked and approved it. Don't touch elements that pass.
+
+The key rule: **the vibe is a constraint on every visual choice**, not just on the hero illustration. One in-vibe hero surrounded by mismatched chrome is the bug the user reported. After this step every visual element on the page either passes your audit ("matches the vibe") or has a slot marker pointing at a drawer dispatch.
+
 ## Steps (do all of these MECHANICALLY, no creative deliberation)
 
-1. **Enumerate** every visual slot in source HTML/CSS/JS via grep — img tags, background-image, canvas, svg, declared shader/particle/lottie/3d/video paths. ONE grep pass per file type, not a per-slot read.
+1. **Enumerate** every visual slot in source HTML/CSS/JS via grep — img tags, background-image, canvas, svg, declared shader/particle/lottie/3d/video paths, AND every emoji-bearing element from Step 1 above. ONE grep pass per file type, not a per-slot read.
 2. **Classify** each slot's medium per the table (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / or `none`). Use the classifier table — don't second-guess.
 3. **Extract intent (one line)** from the slot itself. Priority order:
     - `data-intent="…"` attribute on the slot element
@@ -119,6 +214,73 @@ A drawer that produced an asset but didn't return a prompt is broken — re-disp
 5. **Annotate slot markup** with `data-slot="<assetId>"` so the drawer can locate it without re-grepping. One attribute per slot. No other edits.
 6. **Write visual-plan.json** — every kept asset's id, medium, pipeline, slot, nodeIds, intent. This file is the dispatch manifest the parent agent uses to fan out drawers (see "DISPATCH" below).
 7. **Return** a short summary to the parent: how many slots, how many kept, dispatch manifest at `workflow/visual-plan.json`.
+
+## Step 8 (v3.2) — QA pass: verify each asset in context, fix or regenerate
+
+**This is the missing piece a user just hit:** drawers generate assets, the assets land at `outputPath`, the HTML references them — and that's where the pipeline ended. There was no check that the asset actually FITS the slot, READS as the committed style, or makes the page LOOK right. Result: a watercolor hero next to a wrong-aspect raster icon next to a Tabler chevron. Visual-planner's job isn't done until each asset has been verified IN-CONTEXT and any mismatches resolved.
+
+Do this AFTER all drawers have returned (Mode A) or after the single drawer returns (Mode B):
+
+### 8a. Read the rendered prototype
+
+For each affected HTML file (Mode A: every file you enumerated; Mode B: the prototype's `index.html`), use the **`Read` tool** on:
+1. The HTML file itself.
+2. Every asset file the drawers produced. The `Read` tool returns image content (PNG/JPG/SVG/WebP) as multimodal input — you can SEE each asset.
+3. Take a screenshot of the rendered prototype if you have an MCP browser tool available (`mcp__preview_screenshot`, `mcp__browser_screenshot`, etc.). If no screenshot tool is wired, skip — the per-asset Read is the baseline check.
+
+### 8b. Per-asset QA checklist
+
+For each `keep` asset, score against:
+
+| Check | What you're looking for | Action on fail |
+|---|---|---|
+| **Style coherence** | Does this asset read as the committed `styleCue`? A Ghibli watercolor wisp passes; a glossy iOS-rendered emoji or a Tabler-default icon fails. | Regenerate via drawer with the style cue verbatim in the brief. |
+| **Subject match** | Does the asset depict what the intent said? "Wizard character" intent + a generated photo of a forest = subject mismatch. | Regenerate with sharper subject framing. |
+| **Aspect / shape fit** | Does the asset's natural aspect ratio match the slot's CSS expectation? A 16:9 panorama dropped into a square 1:1 slot will get cropped or letterboxed. Check the slot's CSS (`object-fit`, `aspect-ratio`, container `width × height`) against the asset's actual dimensions. | (i) If close (within ±20%), edit the slot's CSS to fit. (ii) If wildly off, regenerate the asset at the target aspect. |
+| **Composition / safe-area** | Is the subject centered enough that it survives the slot's CSS crop? A character whose head is at the top edge dies when `object-fit: cover` crops to a square. | Regenerate with composition guidance: "center the subject; leave 15% margin top/bottom". |
+| **Background / cutout** | If the slot expects transparency (alpha background), does the asset have it? Raster-foreground should have rembg-cleaned alpha; a stray sky/floor behind a "character cutout" is wrong. | Re-dispatch rembg on the existing asset (cheap), OR regenerate with explicit `transparent: true` in the params. |
+| **Slot placement** | Is the asset's `<img src=…>` actually pointing at the file the drawer wrote, with correct relative path? CSS background-image URLs broken? | Edit the HTML/CSS to fix the path. |
+| **Duplication** | Does the asset re-draw something the page already renders live (e.g. a baked PNG of a chart whose data the HTML already has)? | Either delete the slot (the live render is better) OR keep the asset and remove the live render. |
+| **Text/image contrast (v3.2 — critical)** | Does the asset sit BEHIND any text or interactive element? If so, does that text/element still have enough contrast against the asset's dominant colors? Example: page has light-yellow background + green text; you drop in a hero image with green leaves; the green text now sits over green leaves and disappears. This is the bug a user just hit and explicitly called out. Read the asset's dominant colour palette (Read returns the image; sample 6–10 representative pixels mentally), then compare against the foreground colours of ANY text/link/button on top of or adjacent to the asset. WCAG-AA contrast (~4.5:1 for normal text, ~3:1 for large) is the rough bar; if a colour collision is even close, treat it as a fail. | Fix options in priority order: (i) **Edit CSS** — add a semi-opaque overlay / scrim under the text (`background: rgba(0,0,0,0.35)`), or move the text out of the asset's footprint, or swap the text colour for a higher-contrast token from the DS. This is cheapest. (ii) **Regenerate asset** with explicit composition guidance: "leave a darker/lighter zone in the [region where text sits] — text overlaid will be `<colour>`". (iii) **Replace medium**: if the slot was raster-foreground but the page needs the text underneath to read, demote to a softer particle field or a low-opacity vector-mark watermark. |
+
+### 8c. Apply fixes — auto-retry once, then escalate
+
+For each failed check:
+
+1. **Edit-only fix** (style, slot placement, CSS aspect, transparent background tweak) — apply directly with Edit. No regeneration. Cheap, fast, deterministic.
+2. **Regenerate-asset fix** (style coherence, subject mismatch, aspect, composition) — re-dispatch the matching `raster-foreground` / `vector-icon` / etc. drawer with the **failure reason fed into the brief**, e.g.:
+   > "Previous output failed QA: subject was off-center (head clipped by square crop). Re-render with subject centered, 15% margin top, 15% margin bottom, same style cue: <styleCue>."
+3. **After regeneration**: re-Read the asset and re-run the checklist for that asset ONCE. If it passes, log to `visual-plan.json` `qa.fixed[]`. If it fails a second time, log to `qa.blocked[]` with the reason — escalate to the user via a `<question-form>` asking whether to accept the imperfect asset or take a different approach. Never silently ship a blocked asset.
+
+### 8d. Cross-asset QA — the page reads as one design
+
+After per-asset checks pass, look at the WHOLE prototype (all assets in context):
+
+- **Do the assets share a visual language?** A watercolor hero next to a flat-Bauhaus icon next to a glossy 3D mascot = three styles in one page. Even if each passed individually, the combination fails the style cue.
+- **Is there visual hierarchy?** Are the small icons actually smaller than the heroes? Is the busiest asset placed where the eye should land first?
+- **Are the colours coherent?** Do the asset palettes harmonize with each other and with the DS palette?
+
+If the cross-asset check fails, the fix is usually to re-dispatch ONE asset (the outlier) with adjusted guidance — not to regenerate everything. Log cross-asset findings in `visual-plan.json` `qa.crossAsset[]`.
+
+### 8e. QA log shape
+
+Append to `workflow/visual-plan.json`:
+
+```jsonc
+{
+  ...existing fields...,
+  "qa": {
+    "ranAt": "<iso8601>",
+    "checked": ["<assetId>", ...],
+    "fixed":   [{ "assetId": "...", "check": "aspect|composition|...", "fix": "regenerate|edit-css|...", "detail": "..." }],
+    "blocked": [{ "assetId": "...", "check": "...", "reason": "second attempt also failed: ..." }],
+    "crossAsset": [{ "finding": "...", "fix": "regenerated <assetId>" | "deferred" }],
+    "screenshot": "<path-if-captured>"
+  }
+}
+```
+
+This file is the auditable trail of what you checked, what you fixed, and what you left blocked — both for the user (so they can re-Run any blocked asset manually) and for any subsequent visual-planner runs.
 
 ## DISPATCH (read this carefully — important)
 

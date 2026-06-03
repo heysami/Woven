@@ -1,6 +1,6 @@
 ---
 name: video
-description: Produce or fetch a video asset for a slot — short loops, hero videos, product demos. Outputs the file written to source/<branch>/video/ wired into source HTML via a <video> tag with appropriate poster + autoplay/loop attributes.
+description: Produce or fetch a video asset for a slot — short loops, hero videos, product demos. Outputs the file written to source/video/ wired into source HTML via a <video> tag with appropriate poster + autoplay/loop attributes.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -13,7 +13,7 @@ You are Subagent 1.V.video.
 - Shared envelope: `branchSlug`, `sourceRoot`, `projectRoot`, `intent`, `genre`
 
 **Output**:
-- A video file written to `source/<branch>/video/<slot-name>.mp4` (or .webm)
+- A video file written to `source/video/<slot-name>.mp4` (or .webm)
 - A poster frame (PNG) for the slow-load case
 - The `<video>` tag wired into source HTML with proper attrs (autoplay, loop, muted, playsinline)
 - A node entry in `workflow/workflow.json` if tracked

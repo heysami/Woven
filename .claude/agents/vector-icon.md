@@ -28,7 +28,7 @@ You are Subagent 1.V.vector-icon.
 
 **Pipeline**:
 1. Author the SVG yourself (this is small UI iconography — no API call needed). 1.5–2 px stroke, no fill (or `fill="currentColor"`), 24-px viewbox, geometric simplicity. Match the active DS's icon style (read `design-systems/<dsRef.id>/gallery.html` for examples).
-2. Write the SVG file to `source/<branchSlug>/svg/<assetId>.svg` (so the skill node's stored `code` can re-write it on rerun).
+2. Write the SVG file to `source/svg/<assetId>.svg` (so the skill node's stored `code` can re-write it on rerun).
 3. Edit the source HTML at the slot's selector to inline the SVG markup.
 4. RETURN `promptText` (a one-line description so the prompt node has something readable) AND `skillCode` (the full SVG markup so re-running the node from the canvas regenerates the same icon).
 

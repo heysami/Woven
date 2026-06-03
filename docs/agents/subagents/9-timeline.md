@@ -6,7 +6,7 @@ You own the **time-axis lens**. Enumerate time-driven changes in source and deci
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
+- `slug`, `sourceRoot`, `intent`
 - `override: true | false` — true if `TIMELINE_REQUEST.md` exists.
 
 ## Output
@@ -37,7 +37,7 @@ If `override: true` and nothing found → `{ "timelines": [], "note": "..." }`.
 
 ### Files you may read
 
-- `source/<slug>/*.html`, `*.js` — scheduled-task definitions, deadline copy, auto-expire logic.
+- `source/*.html`, `*.js` — scheduled-task definitions, deadline copy, auto-expire logic.
 
 ## Gate (you own this)
 
@@ -56,13 +56,13 @@ Three greps, union the results:
 
 ```bash
 # A. Code-level scheduling / timeout / cron
-grep -nE 'setTimeout|setInterval|cron|schedule|setSchedule' source/<slug>/*.html source/<slug>/*.js 2>/dev/null
+grep -nE 'setTimeout|setInterval|cron|schedule|setSchedule' source/*.html source/*.js 2>/dev/null
 
 # B. Time-relative copy in source
-grep -onE '(after|in|within|every)\s+\d+\s*(min(utes?)?|h(ours?|rs?)?|d(ays?)?|w(eeks?|ks?)?|mo(nths?)?|y(ears?|rs?)?)' source/<slug>/*.html source/<slug>/*.js 2>/dev/null
+grep -onE '(after|in|within|every)\s+\d+\s*(min(utes?)?|h(ours?|rs?)?|d(ays?)?|w(eeks?|ks?)?|mo(nths?)?|y(ears?|rs?)?)' source/*.html source/*.js 2>/dev/null
 
 # C. Auto-* logic and deadline / expire / SLA keywords
-grep -nE 'auto-?(expire|archive|cancel|complete|approve|reject|close)|deadline|expir|SLA|reminder|due-?date' source/<slug>/*.html source/<slug>/*.js 2>/dev/null
+grep -nE 'auto-?(expire|archive|cancel|complete|approve|reject|close)|deadline|expir|SLA|reminder|due-?date' source/*.html source/*.js 2>/dev/null
 ```
 
 Union → candidate events. Each independent anchor field (e.g. `Application.submittedAt`, `Class.startsAt`) groups its candidates into one timeline.

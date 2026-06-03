@@ -86,7 +86,7 @@ The spec lives on the workflow canvas; the agent reads it as JSON via the daemon
 
 4. **Compute `version`.** Content hash of `styles.css + gallery.html` (DESIGN.md is derived, so it doesn't enter the hash). Write to `meta.json.version`.
 
-5. **Spawn Workflow 3** (`3-design-md.md`) to generate `design-systems/<id>/DESIGN.md` from the new `styles.css` + `gallery.html`. Workflow 3 runs in DS-aware mode: its source is the DS folder, not `source/<slug>/`.
+5. **Spawn Workflow 3** (`3-design-md.md`) to generate `design-systems/<id>/DESIGN.md` from the new `styles.css` + `gallery.html`. Workflow 3 runs in DS-aware mode: its source is the DS folder, not `source/`.
 
 6. **Build runtime mirror.** Write `editor/design-systems/<id>.js`:
    - Read the four files in `design-systems/<id>/`.
@@ -96,7 +96,7 @@ The spec lives on the workflow canvas; the agent reads it as JSON via the daemon
    - Inline `trio.tokensCss / galleryHtml / designMd` from the files.
    - Emit `window.EDITOR_DS_<id> = { … }`.
 
-7. **Update branches that reference this DS.** For every `editor/branches/<slug>.js` with `meta.dsRef.id === <id>`, planner re-stamps `meta.dsRef.version` to the new hash and re-mirrors `tokens` / `primitives` / `library` from the DS. This is the same mirror step the planner does in Workflow 1 — extracted as a function.
+7. **Update branches that reference this DS.** For every `editor/data.js` with `meta.dsRef.id === <id>`, planner re-stamps `meta.dsRef.version` to the new hash and re-mirrors `tokens` / `primitives` / `library` from the DS. This is the same mirror step the planner does in Workflow 1 — extracted as a function.
 
 8. **Render-verify.** Load `design-systems/<id>/gallery.html` in the browser via the dev server. Every section renders; no console errors; every primitive variant visible in idle state. Screenshot the page.
 
@@ -125,11 +125,11 @@ Both write the same artifacts and both bump `meta.json.version`. The difference 
 - [ ] Workflow 3 ran and `DESIGN.md` exists in the DS folder.
 - [ ] Every branch with `meta.dsRef.id === <id>` has been re-stamped to the new version.
 - [ ] Gallery renders without console errors. Screenshot captured.
-- [ ] No writes to `source/<slug>/` from this workflow.
+- [ ] No writes to `source/` from this workflow.
 
 ## Don't
 
 - Don't read feature pages as input. The DS is bootstrapped from the spec, not extracted from a prototype. (Workflow 6b is the path for "feature page revealed a missing variant"; this workflow is for foundational changes.)
-- Don't write `source/<slug>/styles.css` or `source/<slug>/design-system.html`. The latter no longer exists; the former is branch-specific overrides only.
+- Don't write `source/styles.css` or `source/design-system.html`. The latter no longer exists; the former is branch-specific overrides only.
 - Don't skip Workflow 3. The DS's `DESIGN.md` is part of its identity — without it, the library node is incomplete.
 - Don't manually edit `editor/design-systems/<id>.js`. It's a generated mirror; edits would be overwritten on the next Workflow 0 or 6b run.

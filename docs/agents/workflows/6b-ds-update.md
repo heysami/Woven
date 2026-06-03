@@ -27,7 +27,7 @@ This is the atomic write path. Either all accepted entries land cleanly and the 
     "generatedAt": "2026-05-19T14:32:00Z",
     "dsId": "main",
     "dsVersion": "<hash from time of audit>",
-    "branchSlug": "main"
+    "slug": "main"
   },
   "proposals": [
     {
@@ -103,7 +103,7 @@ Re-enumerate `tokens` / `primitives` / `library` from the updated trio and write
 
 ### Step 7 — Propagate to referencing branches
 
-For every `editor/branches/<slug>.js` with `meta.dsRef.id === <dsId>`:
+For every `editor/data.js` with `meta.dsRef.id === <dsId>`:
 
 - Re-stamp `meta.dsRef.version` to the new hash.
 - Re-mirror `tokens` / `primitives` / `library` from the new DS library node.
@@ -154,7 +154,7 @@ If Step 7 (propagate) fails partway, the DS is already updated but some branches
 
 ## Don't
 
-- Don't write to `source/<slug>/` from this workflow. (That's Workflow 6's rejection path, not 6b's job.)
+- Don't write to `source/` from this workflow. (That's Workflow 6's rejection path, not 6b's job.)
 - Don't bump `meta.json.version` until all accepted edits have landed in `styles.css` and `gallery.html`.
 - Don't propagate to pinned branches.
 - Don't proceed when stale-state guard fails; re-audit first.

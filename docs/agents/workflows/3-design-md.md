@@ -64,8 +64,8 @@ Both checks are cheap and prevent DESIGN.md from documenting a phantom design sy
 
 ## What this workflow does NOT touch
 
-- **Branch data files.** `editor/branches/<slug>.js` is not rewritten by this workflow. `meta.dsRef` already points at the DS; that reference is unchanged.
-- **`source/<slug>/`.** Feature pages don't reference `DESIGN.md` directly.
+- **Branch data files.** `editor/data.js` is not rewritten by this workflow. `meta.dsRef` already points at the DS; that reference is unchanged.
+- **`source/`.** Feature pages don't reference `DESIGN.md` directly.
 - **Project root `DESIGN.md`.** That file no longer exists in the DS-as-library architecture — `DESIGN.md` lives inside each DS folder.
 
 ## Self-audit
@@ -76,4 +76,4 @@ Both checks are cheap and prevent DESIGN.md from documenting a phantom design sy
 - [ ] `components` YAML enumerates every `<section class="ds-section">` from `gallery.html`.
 - [ ] Drift checks (gallery sections vs runtime mirror primitives; `:root` tokens vs runtime mirror tokens) both pass.
 - [ ] Prose references `gallery.html` as the rendered source of truth; doesn't duplicate variant lists.
-- [ ] Written to `design-systems/<id>/DESIGN.md` — not project root, not `source/<slug>/`.
+- [ ] Written to `design-systems/<id>/DESIGN.md` — not project root, not `source/`.

@@ -5,13 +5,15 @@ Serves the project root statically (so editor iframes can resolve `../source/…
 AND exposes a small JSON API for the editor:
 
   POST /__save?name=<file>            Write a whitelisted file at the repo root.
-  POST /__branch?from=<slug>&name=<x> Create a new exploration branch.
-  POST /__promote?from=<slug>         Promote a branch's source folder onto Main.
-  POST /__promote_frame?from=<slug>&frameId=<id>
-                                       Append a cherry-pick directive to MERGES.md.
+  POST /__layout                       Persist canvas layout state.
+  POST /__workflow                     Persist workflow.json.
 
-All writes are confined to the repo root; slugs must be safe; sources/targets
-can't escape via `..`.
+v3.1 — project-level branches deprecated. /__branch, /__promote,
+/__promote_frame removed. Asset-versioning's sibling-node branching
+(workflow/runs/<nodeId>/) is the replacement for "explore alternatives".
+See docs/features/deprecate-project-branches.md.
+
+All writes are confined to the repo root; sources/targets can't escape via `..`.
 """
 import atexit
 import datetime as _dt
@@ -143,7 +145,8 @@ NAME_OK = re.compile(r"^[A-Za-z0-9._-]+$")
 SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 PROJECT_ID_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 ALLOWED_NAMES = {
-    "edits.json", "DESIGN.md", "NOTES.md", "UPDATE_SOURCE.txt", "MERGES.md", "FORK_REQUEST.md",
+    # v3.1 — branches deprecated. MERGES.md / FORK_REQUEST.md no longer allowed.
+    "edits.json", "DESIGN.md", "NOTES.md", "UPDATE_SOURCE.txt",
     # Per-view "please-populate" requests. Each is written by clicking the
     # "Generate" button on the matching empty-state card. The agent reads it
     # on the next Workflow 1 run, runs the corresponding Step 5d sub-step,
@@ -551,9 +554,10 @@ def _extract_first_path_d(svg_html):
 
 
 def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_content):
-    src_root = os.path.join(project_root, "source", branch)
+    # v3.1 — branches deprecated. `branch` arg ignored; source/ is flat.
+    src_root = os.path.join(project_root, "source")
     if not os.path.isdir(src_root):
-        raise RuntimeError(f"source/{branch}/ not found")
+        raise RuntimeError("source/ not found")
     EXTS = (".html", ".htm", ".jsx", ".tsx", ".js", ".ts")
     files = []
     for dirpath, dirnames, filenames in os.walk(src_root):
@@ -1018,30 +1022,21 @@ def resolve_project_root(qs_or_body=None, *, require_explicit=False):
 
 
 def _project_paths(project_root: str) -> dict:
-    """Per-project derived paths. Use these helpers in route handlers instead
-    of the old module-level SOURCE_DIR/BRANCH_DIR/REGISTRY/MERGES."""
+    """Per-project derived paths. v3.1 — branches deprecated; `branch_dir`
+    and `merges` retained for legacy callers but no longer used."""
     return {
         "source_dir": os.path.join(project_root, "source"),
-        "branch_dir": os.path.join(project_root, "editor", "branches"),
+        "editor_dir": os.path.join(project_root, "editor"),
+        "branch_dir": os.path.join(project_root, "editor"),    # legacy alias → editor/
         "registry":   os.path.join(project_root, "editor", "data.js"),
-        "merges":     os.path.join(project_root, "MERGES.md"),
+        "merges":     os.path.join(project_root, ".archive", "MERGES.md"),
     }
 
 
-def _count_branches(project_root: str) -> int:
-    branch_dir = os.path.join(project_root, "editor", "branches")
-    if not os.path.isdir(branch_dir):
-        return 0
-    return sum(
-        1 for n in os.listdir(branch_dir)
-        if n.endswith(".js") and not n.endswith(".layout.js")
-    )
-
-
 def _last_activity(project_root: str):
-    """Most recent mtime under source/ and editor/branches/, as ISO string."""
+    """Most recent mtime under source/, as ISO string."""
     latest = 0.0
-    for sub in ("source", os.path.join("editor", "branches")):
+    for sub in ("source",):
         p = os.path.join(project_root, sub)
         if not os.path.isdir(p):
             continue
@@ -1081,7 +1076,6 @@ def _list_projects() -> list:
             "label": os.path.basename(DEFAULT_PROJECT_ROOT) or "default",
             "path": DEFAULT_PROJECT_ROOT,
             "hasSource": os.path.isdir(os.path.join(DEFAULT_PROJECT_ROOT, "source")),
-            "branchCount": _count_branches(DEFAULT_PROJECT_ROOT),
             "lastActivity": _last_activity(DEFAULT_PROJECT_ROOT),
         }]
     out: list = []
@@ -1116,7 +1110,6 @@ def _list_projects() -> list:
             "label": overrides.get(pid, pid),
             "path": p,
             "hasSource": os.path.isdir(os.path.join(p, "source")),
-            "branchCount": _count_branches(p),
             "lastActivity": _last_activity(p),
         })
     # Scan order: projects/ first (canonical), then root (legacy fallback).
@@ -1141,7 +1134,6 @@ def _list_projects() -> list:
                     "label": name,
                     "path": p,
                     "hasSource": True,
-                    "branchCount": _count_branches(p),
                     "lastActivity": _last_activity(p),
                 })
         except OSError:
@@ -1154,89 +1146,103 @@ def _first_project_id():
     return projs[0]["id"] if projs else None
 
 
-def _load_registry(project_root: str = None) -> dict:
-    """Parse the EDITOR_BRANCHES JS literal in <project_root>/editor/data.js
-    back into a dict. The file is hand-edited friendly + machine-written;
-    we round-trip via a permissive regex to pull out the JSON-ish block."""
-    if project_root is None:
-        project_root = DEFAULT_PROJECT_ROOT
-    registry = _project_paths(project_root)["registry"]
-    with open(registry, "r", encoding="utf-8") as f:
-        text = f.read()
-    m = re.search(r"window\.EDITOR_BRANCHES\s*=\s*(\{.*?\});", text, re.DOTALL)
-    if not m:
-        raise RuntimeError(f"EDITOR_BRANCHES block not found in {registry}")
-    # Phase 6 — opportunistically upgrade pre-Phase-6 bootstraps so existing
-    # data.js files start forwarding `?project=` to branches/*.js when loaded
-    # in workspace mode. Safe in single-project mode: the qs is empty and the
-    # forwarding is a no-op. We only rewrite when the marker is missing, so
-    # this is idempotent.
-    if WORKSPACE_DIR and 'params.get("project")' not in text:
+def _v31_migrate_data_js(project_root: str) -> bool:
+    """Lazy in-place migration to the v3.1 flat shape. Returns True if any
+    migration was applied this call.
+
+    The OLD shape:
+        editor/data.js                    ← EDITOR_BRANCHES + document.write
+        editor/branches/main.js           ← window.EDITOR_DATA = {...}
+
+    The NEW shape:
+        editor/data.js                    ← window.EDITOR_DATA = {...} directly
+        (no editor/branches/ directory needed)
+
+    Strategy: if editor/branches/main.js exists, promote it to editor/data.js
+    (overwriting). Then rename editor/branches/ → editor/.archive/branches/
+    so subsequent calls are no-ops. This is the most aggressive policy and
+    handles every state: old bootstrap shim, partial migrations, or already-
+    flat projects with a stale branches/ dir hanging around.
+    """
+    editor_dir = os.path.join(project_root, "editor")
+    data_js = os.path.join(editor_dir, "data.js")
+    branches_dir = os.path.join(editor_dir, "branches")
+    main_js = os.path.join(branches_dir, "main.js")
+    if not os.path.isdir(branches_dir):
+        return False
+    # Decide what to do: promote main.js if it exists, otherwise just archive.
+    applied = False
+    if os.path.isfile(main_js):
         try:
-            raw = m.group(1)
-            raw = re.sub(r",(\s*[}\]])", r"\1", raw)
-            raw = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', raw)
-            reg_for_rewrite = json.loads(raw)
-            _write_registry(reg_for_rewrite, project_root)
-        except Exception:
-            pass  # leave the user-edited file alone if anything looks off
-    # Strip trailing commas + quote unquoted keys → valid JSON.
-    raw = m.group(1)
-    raw = re.sub(r",(\s*[}\]])", r"\1", raw)
-    raw = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', raw)
-    return json.loads(raw)
+            with open(main_js, "r", encoding="utf-8") as f:
+                main_text = f.read()
+        except OSError:
+            main_text = None
+        if main_text and "window.EDITOR_DATA" in main_text:
+            tmp = data_js + ".v31-tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write("// v3.1 migrated from editor/branches/main.js\n"
+                            "// (project-level branches deprecated).\n"
+                            + main_text)
+                os.replace(tmp, data_js)
+                applied = True
+            except OSError:
+                try: os.remove(tmp)
+                except OSError: pass
+    # Ensure data.js exists in some usable form.
+    if not os.path.isfile(data_js):
+        try:
+            with open(data_js, "w", encoding="utf-8") as f:
+                f.write("// v3.1 migration: empty seed (no branches/main.js was promotable).\n"
+                        "window.EDITOR_DATA = { meta: {}, frames: [], lanes: [], "
+                        "arrows: [], entities: [], primitives: [], links: [] };\n")
+            applied = True
+        except OSError:
+            pass
+    # Archive the branches/ dir so this migration never fires again for
+    # this project. Move to editor/.archive/branches/.
+    try:
+        archive_root = os.path.join(editor_dir, ".archive")
+        os.makedirs(archive_root, exist_ok=True)
+        archived = os.path.join(archive_root, "branches")
+        if os.path.isdir(archived):
+            # Already migrated once; tag the second one with a timestamp.
+            import time as _t
+            archived = os.path.join(archive_root, f"branches.{int(_t.time())}")
+        os.rename(branches_dir, archived)
+        applied = True
+        print(f"[v3.1 migrate] {os.path.basename(project_root.rstrip('/'))}: "
+              f"editor/branches/ → {os.path.relpath(archived, project_root)}",
+              flush=True)
+    except OSError as e:
+        print(f"[v3.1 migrate] archive failed: {e}", flush=True)
+    return applied
 
 
 def _write_registry(reg: dict, project_root: str = None) -> None:
-    """Rewrite <project_root>/editor/data.js — registry block + bootstrap
-    (loads main as sidecar)."""
+    """v3.1 — branches deprecated. The "registry" file is now just a stub
+    bootstrap shim that document.write's the single editor/data.js carrying
+    the project's EDITOR_DATA. Kept for backward compat so old data.js
+    upgrade paths don't crash; `reg` is ignored (it described branch
+    listings that no longer exist).
+
+    The actual project data is in editor/data.js (formerly
+    editor/branches/main.js), written by Workflow 1 / orchestrator / user."""
     if project_root is None:
         project_root = DEFAULT_PROJECT_ROOT
-    body = json.dumps(reg, indent=2)
-    out = (
-        "// EDITOR_BRANCHES — registry of all canvas branches.\n"
-        "// One per design-exploration line; each has its own editor/branches/<slug>.js\n"
-        "// (window.EDITOR_DATA) and — once an exploration has been applied — its own\n"
-        "// source/<slug>/ folder. Unapplied branches share the parent's source.\n"
-        "//\n"
-        "// serve.py rewrites this file when the user clicks \"+ Explore new branch\".\n"
-        "//\n"
-        "// Bootstrap flow:\n"
-        "//   1. Always load branches/main.js → window.EDITOR_MAIN_DATA (for Δ-main badges).\n"
-        "//   2. If the active branch isn't main, load its data file → window.EDITOR_DATA\n"
-        "//      (overwrites the main copy).\n"
-        "//   3. app.js consumes window.EDITOR_DATA for the active branch and\n"
-        "//      window.EDITOR_MAIN_DATA for diffing.\n"
-        f"window.EDITOR_BRANCHES = {body};\n"
-        "\n"
-        "(function () {\n"
-        "  var params = new URLSearchParams(location.search);\n"
-        "  var slug = params.get(\"branch\") || window.EDITOR_BRANCHES.active;\n"
-        "  var branch =\n"
-        "    window.EDITOR_BRANCHES.branches.find(function (b) { return b.id === slug; }) ||\n"
-        "    window.EDITOR_BRANCHES.branches[0];\n"
-        "  window.EDITOR_ACTIVE_BRANCH = branch.id;\n"
-        "  // Phase 6 — forward ?project= so per-project branch files resolve\n"
-        "  // under the active project root in workspace mode.\n"
-        "  var pq = params.get(\"project\");\n"
-        "  var qs = pq ? \"?project=\" + encodeURIComponent(pq) : \"\";\n"
-        "\n"
-        "  document.write('<script src=\"branches/main.js' + qs + '\"><\\/script>');\n"
-        "  document.write(\n"
-        "    '<script>window.EDITOR_MAIN_DATA = window.EDITOR_DATA;' +\n"
-        "    (branch.id === \"main\" ? '' : ' window.EDITOR_DATA = null;') +\n"
-        "    '<\\/script>'\n"
-        "  );\n"
-        "\n"
-        "  if (branch.id !== \"main\") {\n"
-        "    document.write('<script src=\"' + branch.file + qs + '\"><\\/script>');\n"
-        "  }\n"
-        "})();\n"
-    )
+    # No-op in v3.1 — the editor/data.js file IS the project data file now,
+    # not a bootstrap shim. Leave it untouched if it already exists; create
+    # an empty placeholder if it doesn't (so `_load_registry` can re-read).
     registry = _project_paths(project_root)["registry"]
+    if os.path.isfile(registry):
+        return
     os.makedirs(os.path.dirname(registry), exist_ok=True)
     with open(registry, "w", encoding="utf-8") as f:
-        f.write(out)
+        f.write("// editor/data.js — project data (v3.1; branches deprecated).\n"
+                "// This file carries window.EDITOR_DATA directly. Workflow 1\n"
+                "// writes it after parsing source/.\n"
+                "window.EDITOR_DATA = { meta: {}, frames: [], primitives: [], entities: [] };\n")
 
 
 def _safe_join(base: str, *parts: str) -> str:
@@ -1247,16 +1253,21 @@ def _safe_join(base: str, *parts: str) -> str:
     return p
 
 
-def _branch_source_dir(slug: str, project_root: str = None) -> str:
+def _branch_source_dir(slug: str = "main", project_root: str = None) -> str:
+    """v3.1 — branches deprecated. Always returns source/. The slug arg is
+    kept for ABI compat; ignored."""
     if project_root is None:
         project_root = DEFAULT_PROJECT_ROOT
-    return _safe_join(_project_paths(project_root)["source_dir"], slug)
+    return _project_paths(project_root)["source_dir"]
 
 
-def _branch_data_file(slug: str, project_root: str = None) -> str:
+def _branch_data_file(slug: str = "main", project_root: str = None) -> str:
+    """v3.1 — branches deprecated. Always returns editor/data.js."""
     if project_root is None:
         project_root = DEFAULT_PROJECT_ROOT
-    return _safe_join(_project_paths(project_root)["branch_dir"], f"{slug}.js")
+    return os.path.join(_project_paths(project_root)["editor_dir"], "data.js") \
+        if "editor_dir" in _project_paths(project_root) \
+        else _safe_join(project_root, "editor", "data.js")
 
 
 # ── Onboarding workflow scaffold ─────────────────────────────────────────────
@@ -2415,7 +2426,8 @@ HISTORY_AGENT_SCOPE_DIRS = [
     "workflow",
 ]
 HISTORY_AGENT_SCOPE_ROOT_FILES = {
-    "NOTES.md", "MERGES.md", "FORK_REQUEST.md", "DESIGN.md",
+    # v3.1 — MERGES.md / FORK_REQUEST.md dropped with project-level branches.
+    "NOTES.md", "DESIGN.md",
     "DS_PROPOSAL.md", "DS_DEFERRED.md", "DS_ACCEPTED.json",
     "edits.json", "UPDATE_SOURCE.txt",
     "STATEMACHINE_REQUEST.md", "TIMELINE_REQUEST.md", "GRID_REQUEST.md",
@@ -3065,6 +3077,40 @@ def _file_watcher_loop():
                     if project_root:
                         try:
                             with _workflow_lock_timeout(project_id, timeout_sec=2.0):
+                                # v3.0 — asset-versioning hook. This is the
+                                # FOUNDATION: every file write that lands in
+                                # source/ triggers a snapshot for any asset
+                                # node referencing that path. Endpoint-level
+                                # hooks (_workflow_node_run, _asset_generate)
+                                # are kept for lineage tracking, but THIS is
+                                # what guarantees every visible asset has a
+                                # version, regardless of which endpoint or
+                                # subprocess wrote the bytes.
+                                try:
+                                    wf_path = os.path.join(project_root, "workflow", "workflow.json")
+                                    if os.path.isfile(wf_path):
+                                        with open(wf_path, "r", encoding="utf-8") as f:
+                                            wf_for_vsn = json.load(f)
+                                        from kinds.versioning import (
+                                            snapshot_changed_assets,
+                                            flush_pending_scope_snapshots,
+                                        )
+                                        snaps = snapshot_changed_assets(
+                                            project_root, wf_for_vsn, to_emit_assets)
+                                        # v3.2 — Also try any deferred scope
+                                        # snapshots (multi-file prototype /
+                                        # design-system writes that were
+                                        # waiting for quiescence).
+                                        snaps += flush_pending_scope_snapshots(
+                                            project_root, wf_for_vsn)
+                                        if snaps:
+                                            with open(wf_path, "w", encoding="utf-8") as f:
+                                                json.dump(wf_for_vsn, f, indent=2)
+                                            print(f"[asset-versioning] project={project_id} "
+                                                  f"snapshots={len(snaps)}", flush=True)
+                                except Exception as _vsn_err:
+                                    print(f"[asset-versioning] watcher snapshot error: {_vsn_err}", flush=True)
+
                                 from kinds.reconcile import apply_auto_heals
                                 applied = apply_auto_heals(project_root)
                                 if applied:
@@ -3075,6 +3121,39 @@ def _file_watcher_loop():
                             pass        # next tick will retry
                         except Exception as e:
                             print(f"[auto-heal] error: {e}", flush=True)
+                # v3.2 — Unconditional deferred-scope flush. The previous
+                # block above only runs when `to_emit_assets` is non-empty
+                # (i.e. when new files changed this tick). But the scope
+                # quiescence rule means a multi-file prototype burst that
+                # STOPS without further writes would never reach quiescence
+                # via the regular path. Flush every tick so a deferred
+                # snapshot fires once 15s of inactivity has passed, even if
+                # no new edits arrive.
+                project_root = next((pr for (pid, pr) in projects if pid == project_id), None)
+                if project_root:
+                    try:
+                        with _workflow_lock_timeout(project_id, timeout_sec=1.0):
+                            wf_path = os.path.join(project_root, "workflow", "workflow.json")
+                            if os.path.isfile(wf_path):
+                                with open(wf_path, "r", encoding="utf-8") as f:
+                                    wf_for_flush = json.load(f)
+                                from kinds.versioning import flush_pending_scope_snapshots
+                                deferred = flush_pending_scope_snapshots(
+                                    project_root, wf_for_flush)
+                                if deferred:
+                                    with open(wf_path, "w", encoding="utf-8") as f:
+                                        json.dump(wf_for_flush, f, indent=2)
+                                    print(f"[asset-versioning] project={project_id} "
+                                          f"deferred-flush={len(deferred)}", flush=True)
+                                    to_emit_workflow = True
+                    except LockTimeoutError:
+                        pass        # next tick
+                    except Exception as e:
+                        print(f"[asset-versioning] flush error: {e}", flush=True)
+                # If watcher snapshots ran, broadcast a workflow-changed too
+                # so the canvas refetches workflow.json and shows new dots.
+                if to_emit_assets:
+                    to_emit_workflow = True
                 if to_emit_workflow:
                     _broadcast_workflow_change(project_id)
                 if to_emit_assets:
@@ -3164,6 +3243,19 @@ def _request_semaphore(project_id: str) -> threading.BoundedSemaphore:
 class SemaphoreBusyError(Exception):
     """Per-project semaphore is full. Endpoint should 503."""
     pass
+
+
+class _VersioningHTTPError(Exception):
+    """Carry an HTTP status + JSON body up through the versioning endpoints.
+
+    Used by the v3.0 asset-versioning handlers (_workflow_version_*,
+    _workflow_composition_*, _workflow_node_size) so the shared open/find
+    helpers can bail out with a typed reply without dragging the response
+    object through every call site."""
+    def __init__(self, status: int, body: dict):
+        self.status = status
+        self.body = body
+        super().__init__(body.get("error") if isinstance(body, dict) else str(body))
 
 @contextlib.contextmanager
 def _project_request_slot(project_id: str, timeout_sec: float = 5.0):
@@ -3394,8 +3486,10 @@ _CHAT_JSONL_LOCKS: dict = {}
 _CHAT_JSONL_LOCKS_GUARD = threading.Lock()
 
 
-def _chat_jsonl_path(project_root: str, branch: str) -> str:
-    return os.path.join(project_root, "editor", "branches", f"{branch}.chat.jsonl")
+def _chat_jsonl_path(project_root: str, branch: str = "main") -> str:
+    """v3.1 — branches deprecated. All chat history collapses to one
+    file at editor/chat.jsonl. `branch` arg kept for ABI compat; ignored."""
+    return os.path.join(project_root, "editor", "chat.jsonl")
 
 
 def _chat_jsonl_lock(path: str) -> threading.Lock:
@@ -3438,22 +3532,23 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
 
 
 def _chat_jsonl_scan_historical(project_root: str) -> dict:
-    """Walk the branch JSONLs and return a `{runId: metadata}` map of every
-    run we've ever recorded for this project, regardless of whether the daemon
-    still has it in RUNS. Used by /__runs to surface chats from previous
-    daemon sessions so the user can reopen yesterday's conversation."""
+    """v3.1 — branches deprecated. Reads the single editor/chat.jsonl
+    (falling back to legacy editor/branches/*.chat.jsonl files if found,
+    so existing in-flight installs aren't lost on upgrade)."""
     out: dict = {}
+    candidate_files = []
+    flat = os.path.join(project_root, "editor", "chat.jsonl")
+    if os.path.isfile(flat):
+        candidate_files.append(flat)
     branches_dir = os.path.join(project_root, "editor", "branches")
-    if not os.path.isdir(branches_dir):
-        return out
-    try:
-        names = os.listdir(branches_dir)
-    except OSError:
-        return out
-    for name in names:
-        if not name.endswith(".chat.jsonl"):
-            continue
-        path = os.path.join(branches_dir, name)
+    if os.path.isdir(branches_dir):
+        try:
+            for name in os.listdir(branches_dir):
+                if name.endswith(".chat.jsonl"):
+                    candidate_files.append(os.path.join(branches_dir, name))
+        except OSError:
+            pass
+    for path in candidate_files:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 for raw in f:
@@ -3809,8 +3904,35 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
                 "model": frame.get("model"),
                 "sessionId": frame.get("session_id"),
             })
-        else:
-            out.append({"type": "raw", "subtype": sub or "system", "frame": frame})
+        elif sub == "thinking_tokens":
+            # v3.1 — thinking_tokens streams every ~50 tokens while the model
+            # is reasoning. Surface it as a structured event the frontend
+            # consolidates into ONE rolling progress chip (see buildBlocks /
+            # thinking_progress in app.js).
+            out.append({
+                "type":                   "system",
+                "subtype":                "thinking_tokens",
+                "estimated_tokens":       frame.get("estimated_tokens"),
+                "estimated_tokens_delta": frame.get("estimated_tokens_delta"),
+            })
+        elif sub == "task_progress":
+            # v3.2 — task_progress streams while a subagent is mid-tool-use
+            # ("Reading workflow/workflow.json", "Editing source/foo.html",
+            # etc.). Surface as a structured event the frontend consolidates
+            # into a single rolling chip per parent tool block.
+            out.append({
+                "type":           "system",
+                "subtype":        "task_progress",
+                "description":    frame.get("description"),
+                "subagent_type":  frame.get("subagent_type"),
+                "taskId":         frame.get("task_id"),
+                "toolUseId":      frame.get("tool_use_id"),
+            })
+        # v3.2 — any OTHER system subtype is SDK chatter (perms, mcp_status,
+        # post_tool_use diagnostics, etc.). Drop entirely — these events
+        # have no user-actionable content. Previously we wrapped them in a
+        # `raw` envelope, which dumped raw JSON into the chat (user reported:
+        # "still seeing all of these {type:system blah blah}").
         return out
 
     if ftype == "assistant":
@@ -3837,20 +3959,55 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
 
     if ftype == "user":
         # Tool results come back addressed to the assistant on `user` frames.
+        # v3.1 — preserve image parts. When Claude reads a PNG/JPG, or when a
+        # Bash command (e.g. screenshot) returns an image-typed content part,
+        # the SDK emits `content: [{type:"image", source:{type:"base64",
+        # media_type:"image/png", data:"…"}}, …]`. Previously we walked the
+        # list and concatenated only `.text` — image blocks were silently
+        # dropped because they have no `.text` field. Now we split the list:
+        # text parts go to `content` (unchanged), image parts go to a sibling
+        # `images: [{mediaType, data}]` array the frontend renders inline.
         msg = frame.get("message") or {}
         for part in (msg.get("content") or []):
             if part.get("type") == "tool_result":
                 content = part.get("content")
+                text_chunks = []
+                images = []
                 if isinstance(content, list):
-                    text = "".join(p.get("text") or "" for p in content if isinstance(p, dict))
+                    for p in content:
+                        if not isinstance(p, dict):
+                            continue
+                        ptype = p.get("type")
+                        if ptype == "text" and p.get("text"):
+                            text_chunks.append(p.get("text") or "")
+                        elif ptype == "image":
+                            src = p.get("source") or {}
+                            if src.get("type") == "base64" and src.get("data"):
+                                images.append({
+                                    "mediaType": src.get("media_type") or "image/png",
+                                    "data":      src.get("data"),
+                                })
+                            elif src.get("type") == "url" and src.get("url"):
+                                images.append({"url": src.get("url")})
+                        else:
+                            # Unknown content part — keep its raw JSON visible
+                            # so a future SDK addition doesn't disappear silently.
+                            try:
+                                text_chunks.append(json.dumps(p, ensure_ascii=False))
+                            except Exception:
+                                pass
+                    text = "".join(text_chunks)
                 else:
                     text = content if isinstance(content, str) else json.dumps(content)
-                out.append({
+                event = {
                     "type": "tool_result",
                     "toolUseId": part.get("tool_use_id"),
                     "content": text,
                     "isError": bool(part.get("is_error")),
-                })
+                }
+                if images:
+                    event["images"] = images
+                out.append(event)
         return out
 
     if ftype == "result":
@@ -3933,6 +4090,14 @@ def _fire_node_completion_hook(state, *, exit_code):
      # frontend reads.
      target["runId"]    = state.run_id
      target["runRunId"] = state.run_id
+     # v3.0 — asset-versioning snapshot hook for async agent runs. Only fires
+     # on success; failure leaves the run in error state with no snapshot.
+     if exit_code == 0:
+         try:
+             from kinds.versioning import snapshot_downstream_assets
+             snapshot_downstream_assets(state.project_root, wf, wf_node_id)
+         except Exception as _vsn_err:
+             print(f"[asset-versioning] async snapshot error on {wf_node_id}: {_vsn_err}", flush=True)
      with _history_bracket(state.project_root, ["workflow/workflow.json"],
                            kind="workflow-op",
                            label=f"Node finish: {target.get('title') or wf_node_id} → {target['runStatus']}",
@@ -4140,16 +4305,11 @@ def _claude_tool_result_frame(tool_use_id: str, content: str, is_error: bool = F
 # Workflow names are stable repo paths; the agent reads them with Read.
 TRIGGER_PROMPTS = {
     "edits-apply": (
-        "Apply edits.json on branch {branch}. Follow docs/agents/workflows/2-edits.md verbatim. "
+        "Apply edits.json. Follow docs/agents/workflows/2-edits.md verbatim. "
         "After applying, summarise what changed and which files were touched. "
         "Do NOT delete edits.json until every edit has succeeded."
     ),
-    "fork": (
-        "Apply the FORK_REQUEST.md at repo root. Follow docs/agents/workflows/4-fork.md."
-    ),
-    "merge": (
-        "Apply MERGES.md at repo root. Follow docs/agents/workflows/5-merge.md."
-    ),
+    # v3.1 — fork/merge triggers removed with project-level branches.
     "regenerate": (
         "Run Workflow 1 (regenerate) on branch {branch}. "
         "Read docs/agents/workflows/1-regenerate.md for the architecture. "
@@ -4258,6 +4418,64 @@ canvas animation.
 When in doubt: render in chat. Only write to `source/` when the user said the \
 word "prototype" or "branch" or asked for something multi-page.
 
+**Exception — visual ASSETS go through visual-planner.** The chat-rendering \
+rules above are for visualizations the user wants to *see in conversation* \
+("show me a chart of X", "draw what a Bauhaus poster looks like", \
+"preview an oklch palette"). When the user asks you to *create / produce / \
+generate / add* an image, illustration, mascot, character, icon, mark, \
+shader, particle field, 3D scene, lottie animation, or video that should \
+land on the workflow canvas as an asset — even if it's "just one" — you do \
+NOT render it inline as a fenced block. You dispatch \
+`Task(subagent_type: "visual-planner", …)` as your first action. See the \
+"Image creation: dispatch visual-planner FIRST" rule in the capabilities \
+section below for the exact decision table.
+
+## Prototype folder convention (v3.2 — multi-prototype)
+
+`source/` is a CONTAINER for many independent prototypes, not a single workspace. \
+Every prototype lives in its own subfolder: `source/<slug>/`. The bare `source/` \
+root is reserved for project-level artefacts (PRD, research notes, coherence \
+contracts) — **never** write `source/index.html` or any page directly under it.
+
+When the user asks you to build something:
+
+1. **List existing prototypes first.** Run `ls source/` (or `Bash` with that \
+command) to see which `<slug>/` folders already contain `index.html`. Show the \
+user a one-line summary ("Existing prototypes: `wizard-app/`, `landing-v1/`") \
+before you start writing.
+
+2. **Pick the right slug.**
+   - If the user said "extend / iterate on / fix the X one" and `source/X/` \
+     exists, write into that folder.
+   - If the user said "another one / a new one / a variant" — or if no \
+     existing prototype matches the brief — derive a NEW kebab-case slug from \
+     the brief (1–3 words, e.g. `wizard-onboarding`, `notes-app`, \
+     `landing-v2`). Confirm the slug with the user in one sentence: \
+     "I'll scaffold this as `source/<slug>/` — say so if you want a different \
+     name." Then proceed without waiting (unless they push back).
+   - If the user named a slug explicitly ("call it `studio`"), use it verbatim.
+
+3. **Never overwrite an existing prototype without explicit confirmation.** If \
+`source/<slug>/index.html` exists and the brief sounds like a fresh start, ask \
+via a `<question-form>` whether to overwrite OR pick a new slug — do not \
+silently clobber the previous prototype's work.
+
+4. **Every file the prototype needs goes under its `<slug>/` root** — \
+`source/<slug>/index.html`, `source/<slug>/styles.css`, \
+`source/<slug>/images/hero.png`, sub-pages at `source/<slug>/about/index.html`, \
+etc. The workflow canvas's prototype node iframe loads \
+`/source/<slug>/` directly, so anything outside that subtree is invisible to \
+the prototype.
+
+5. **Multi-page apps** are sub-folders WITHIN the prototype, e.g. \
+`source/<slug>/dashboard/index.html`, `source/<slug>/settings/index.html`. \
+The slug folder is the application root; the sub-folders are its pages.
+
+This convention is what makes the "branch" model work: the user can drag \
+multiple Prototype nodes onto the same workflow canvas and each renders a \
+different `source/<slug>/` in parallel. Writing to bare `source/` collapses \
+that into a single global prototype and destroys whatever was there before.
+
 ## Question-form protocol
 
 When you need a focused answer from the user before continuing (a fork in the \
@@ -4358,6 +4576,59 @@ _HOST_LEAK_ENV_VARS = (
 )
 
 
+# ── harness settings auto-install ──────────────────────────────────────────
+# v3.1.2 — Called from every spawn site (and from __main__ at boot). Ensures
+# `.claude/settings-harness.json` exists with the correct PreToolUse hook
+# registration BEFORE we hand --settings to the spawned `claude`. Idempotent:
+# generates the file if missing, leaves it alone if present and well-formed.
+# This is what makes the visual-planner enforcement self-installing — no
+# user step required beyond running the daemon.
+def _ensure_harness_settings() -> str | None:
+    """Generate INSTALL_ROOT/.claude/settings-harness.json on demand and
+    return its absolute path. Returns None if the hook script itself is
+    missing (in which case spawn sites silently skip --settings — the
+    enforcement is unavailable but the daemon keeps working)."""
+    hook_path     = os.path.join(INSTALL_ROOT, ".claude", "hooks",
+                                  "require-visual-planner.sh")
+    settings_path = os.path.join(INSTALL_ROOT, ".claude",
+                                  "settings-harness.json")
+    if not os.path.isfile(hook_path):
+        # Hook script absent — nothing to register. Spawn sites get None
+        # and skip --settings; visual-planner gating is unavailable but
+        # the daemon stays functional.
+        return None
+    # Build the canonical config every time so we self-heal if a stale or
+    # broken file sits there from a prior daemon version.
+    settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Write|Edit|MultiEdit",
+                    "hooks":   [{"type": "command", "command": hook_path}],
+                }
+            ]
+        }
+    }
+    # Short-circuit if the file already matches — avoid disk churn at every
+    # spawn (a typical session triggers many spawns).
+    try:
+        with open(settings_path, "r", encoding="utf-8") as f:
+            if json.load(f) == settings:
+                return settings_path
+    except (OSError, ValueError):
+        pass  # missing or unparseable — regenerate below
+    try:
+        os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except OSError as e:
+        # Surface but don't crash — visual-planner gating becomes
+        # advisory-only, which is the same fail-mode as a missing hook.
+        print(f"  [harness] failed to write {settings_path}: {e}", flush=True)
+        return None
+    return settings_path
+
+
 def _build_child_env(agent_id: str, branch: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
     env = dict(os.environ)
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
@@ -4392,6 +4663,14 @@ def _build_child_env(agent_id: str, branch: str, run_id: str, project_root: str 
         "TH_PROJECT_ROOT": project_root or DEFAULT_PROJECT_ROOT,
         "TH_PROTOCOL_ROOT": INSTALL_ROOT,
     })
+    # v3.1 — Skill isolation. The earlier approach of overriding
+    # CLAUDE_CONFIG_DIR broke macOS Keychain auth (different userID
+    # generated → Keychain tokens unreachable). The correct mechanism is
+    # the `--disable-slash-commands` CLI flag (added to spawn_args at
+    # dispatch time, see _spawn_node_agent and freeform spawn paths).
+    # That flag hides the user's ~/.claude/commands/ slash commands
+    # WITHOUT touching CLAUDE_CONFIG_DIR, so Keychain auth keeps working.
+    # No env override needed here.
     if project_id:
         env["TH_PROJECT_ID"] = project_id
     # If the user configured an Anthropic API key in the editor's Settings
@@ -4423,10 +4702,7 @@ def _default_run_title(kind: str, branch: str, body: dict) -> str:
         if ann:
             bits.append(f"{ann} annotation{'' if ann == 1 else 's'}")
         return f"Applying {', '.join(bits) or 'edits'} · {branch}"
-    if kind == "fork":
-        return f"Applying FORK_REQUEST · {branch}"
-    if kind == "merge":
-        return f"Applying MERGES.md · {branch}"
+    # v3.1 — fork/merge run-title cases removed with project-level branches.
     if kind == "regenerate":
         return f"Regenerating · {branch}"
     if kind.endswith("-request"):
@@ -4496,6 +4772,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         if parts[:2] == ["editor", "branches"]:
             return os.path.join(project_root, *parts)
         if parts == ["editor", "data.js"]:
+            # v3.1 — lazy migration: if editor/data.js is the old bootstrap
+            # shim (defines EDITOR_BRANCHES + document.write's branches/main.js)
+            # and editor/branches/main.js exists, replace data.js with that
+            # file's content so the browser gets EDITOR_DATA directly. Idempotent:
+            # once data.js carries EDITOR_DATA, subsequent calls skip the rewrite.
+            try:
+                _v31_migrate_data_js(project_root)
+            except Exception as e:
+                print(f"[v3.1 migrate] {project_root}: {e}", flush=True)
             return os.path.join(project_root, *parts)
         # Editor binary (shared).
         if parts[:1] == ["editor"]:
@@ -4535,12 +4820,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         try:
             if parsed.path == "/__save":
                 return self._save(qs)
-            if parsed.path == "/__branch":
-                return self._branch_create(qs)
-            if parsed.path == "/__promote":
-                return self._branch_promote(qs)
-            if parsed.path == "/__promote_frame":
-                return self._frame_promote(qs)
+            # v3.1 — /__branch, /__promote, /__promote_frame removed.
+            # Stubs at _branch_create / _branch_promote / _frame_promote still
+            # return 410 for any stale client that hits them directly, but the
+            # routes here are deleted so the do_POST table reads cleanly.
             if parsed.path == "/__layout":
                 return self._layout_save(qs)
             if parsed.path == "/__workflow":
@@ -4622,6 +4905,45 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_wncommit = re.match(r"^/__workflow/node/([A-Za-z0-9_.-]{1,80})/commit$", parsed.path)
             if m_wncommit:
                 return self._workflow_node_commit(qs, m_wncommit.group(1))
+            # ── v3.0 — Asset-versioning POST routes ─────────────────────
+            # Tight regexes per route so node-ids and version ulids land in
+            # named groups. ULIDs are 26-char [0-9A-Z]; we relax to a wider
+            # alphanumeric pattern to tolerate hand-written ids in tests.
+            _NID = r"[A-Za-z0-9_.-]{1,80}"
+            _VID = r"[A-Za-z0-9_-]{1,64}"
+            m = re.match(rf"^/__workflow/node/({_NID})/version/branch$", parsed.path)
+            if m:
+                return self._workflow_version_branch(qs, m.group(1))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/revert$", parsed.path)
+            if m:
+                return self._workflow_version_revert(qs, m.group(1), m.group(2))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/pin$", parsed.path)
+            if m:
+                return self._workflow_version_pin(qs, m.group(1), m.group(2))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/label$", parsed.path)
+            if m:
+                return self._workflow_version_label(qs, m.group(1), m.group(2))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/thumb$", parsed.path)
+            if m:
+                return self._workflow_version_thumb(qs, m.group(1), m.group(2))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/composition$", parsed.path)
+            if m:
+                return self._workflow_composition_save(qs, m.group(1), m.group(2))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/composition/({_VID})/switch$", parsed.path)
+            if m:
+                return self._workflow_composition_switch(qs, m.group(1), m.group(2), m.group(3))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/composition/({_VID})/pin$", parsed.path)
+            if m:
+                return self._workflow_composition_pin(qs, m.group(1), m.group(2), m.group(3))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/composition/({_VID})/label$", parsed.path)
+            if m:
+                return self._workflow_composition_label(qs, m.group(1), m.group(2), m.group(3))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/composition/({_VID})/thumb$", parsed.path)
+            if m:
+                return self._workflow_composition_thumb(qs, m.group(1), m.group(2), m.group(3))
+            m = re.match(rf"^/__workflow/node/({_NID})/size$", parsed.path)
+            if m:
+                return self._workflow_node_size(qs, m.group(1))
             m_dec = re.match(r"^/__decision/([A-Za-z0-9_.-]{1,80})$", parsed.path)
             if m_dec:
                 return self._decision_save(qs, m_dec.group(1))
@@ -4638,6 +4960,26 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if action == "resume":
                     return self._run_resume(run_id)
                 return self._run_user_message(run_id)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except Exception as e:
+            return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
+        self._reply(404, {"error": "unknown endpoint", "path": parsed.path})
+
+    # ── DELETE — v3.0 asset versioning manual prune ──────────────────────
+    def do_DELETE(self):
+        parsed = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(parsed.query)
+        self.request_id = _new_request_id()
+        try:
+            _NID = r"[A-Za-z0-9_.-]{1,80}"
+            _VID = r"[A-Za-z0-9_-]{1,64}"
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})/composition/({_VID})$", parsed.path)
+            if m:
+                return self._workflow_composition_delete(qs, m.group(1), m.group(2), m.group(3))
+            m = re.match(rf"^/__workflow/node/({_NID})/version/({_VID})$", parsed.path)
+            if m:
+                return self._workflow_version_delete(qs, m.group(1), m.group(2))
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         except Exception as e:
@@ -4928,9 +5270,25 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
+        # v3.0 — every workflow GET ensures the file watcher is running so
+        # the asset-versioning snapshot hook fires on subsequent writes.
+        # Previously only SSE subscribers started the watcher; loads that
+        # only hit GET /__workflow (e.g. integration tests, curl probes,
+        # browsers that briefly load without SSE) saw no snapshots and
+        # `versions[]` never accumulated past the first migration entry.
+        try: _file_watcher_ensure_started()
+        except Exception: pass
         path = os.path.join(project_root, "workflow", "workflow.json")
         if not os.path.isfile(path):
             return self._reply(200, {"pan": {"x": 0, "y": 0}, "zoom": 1, "nodes": [], "edges": []})
+        # v3.0 — asset-versioning migration. Idempotent; writes back only when
+        # an asset node was synthesized to carry versions[0] + activeVersionId.
+        # See docs/features/asset-versioning.md §11.
+        try:
+            from kinds.reconcile import apply_versioning_migration
+            apply_versioning_migration(project_root)
+        except Exception as e:
+            print(f"[asset-versioning] migration error: {e}", flush=True)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -5341,7 +5699,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # Always preserve daemon-owned status fields if disk has them.
                         # v2.20 — `runId` added alongside `runRunId` so the chat
                         # transcript pointer survives the editor's debounced save.
-                        for daemon_field in ("output", "runStatus", "runError", "runRunId", "runId"):
+                        # v3.0 — asset-versioning adds `versions`, `activeVersionId`
+                        # to the daemon-owned set. Both are mutated ONLY by the
+                        # daemon (snapshot_asset / revert / branch endpoints);
+                        # the frontend reads them but never re-posts authoritative
+                        # values. Without this preservation, the frontend's
+                        # debounced /__workflow POST (which echoes back the
+                        # asset node from React state at FETCH time) overwrites
+                        # the version history with a stale snapshot. Verified
+                        # against a real project where 4 snapshot dirs existed
+                        # under workflow/runs/<assetId>/ but workflow.json had
+                        # only one versions[] entry.
+                        for daemon_field in ("output", "runStatus", "runError",
+                                              "runRunId", "runId",
+                                              "versions", "activeVersionId"):
                             if daemon_field in disk_n:
                                 disk_val = disk_n.get(daemon_field)
                                 # Only override if the disk value is non-None;
@@ -5499,6 +5870,20 @@ class H(http.server.SimpleHTTPRequestHandler):
             spawn_args += ["--dangerously-skip-permissions"]
         elif defs.get("permission_flag"):
             spawn_args += [defs["permission_flag"], permission_mode]
+        # v3.1 — Hide user-level slash commands (~/.claude/commands/). The
+        # daemon's capabilities preamble + Limn subagents (visual-planner,
+        # raster-foreground, etc.) are the only image-pipeline path; the
+        # user's personal /prototype skill used to override visual-planner
+        # by telling the agent to use placeholder rectangles instead.
+        spawn_args += ["--disable-slash-commands"]
+        # v3.1 — Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
+        # *.html write until the agent has called Task with
+        # subagent_type='visual-planner'. Soft preamble rules ("you MUST
+        # dispatch visual-planner") were ignored; this is hard enforcement
+        # at the tool-call boundary.
+        _harness_settings = _ensure_harness_settings()
+        if _harness_settings:
+            spawn_args += ["--settings", _harness_settings]
         # The per-node preamble IS the full system prompt for this run. Plus
         # the question-form protocol so <decision-request> / <question-form>
         # still parses if the subagent emits one. Workspace layout block too
@@ -5883,6 +6268,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not async_dispatched:
                 node["runStatus"] = "done"
                 node.pop("runError", None)
+                # v3.0 — asset-versioning snapshot hook. Walk outgoing edges to
+                # asset nodes and snapshot their canonical files into
+                # workflow/runs/. Best-effort; failures don't fail the run.
+                try:
+                    from kinds.versioning import snapshot_downstream_assets
+                    snapshot_downstream_assets(project_root, wf, node_id)
+                except Exception as _vsn_err:
+                    print(f"[asset-versioning] sync snapshot error on {node_id}: {_vsn_err}", flush=True)
         except Exception as e:
             node["runStatus"] = "error"
             node["runError"] = f"{type(e).__name__}: {e}"
@@ -6310,6 +6703,36 @@ class H(http.server.SimpleHTTPRequestHandler):
                 os.replace(staging_dir, committed_dir)
                 staging_dir = None  # cleaned up
 
+                # v3.1 — MANIFEST.json auto-synthesis. If the subagent didn't
+                # ship one, synthesize from the committed file list so the
+                # versioning snapshotter can read subAssetInputs / files later.
+                # The contract is: every multi-file producer emits MANIFEST.
+                # We log a warning when synthesizing so subagent authors can
+                # see they should fix their output. See
+                # docs/features/asset-versioning.md §9.
+                manifest_path = os.path.join(committed_dir, "MANIFEST.json")
+                if not os.path.isfile(manifest_path):
+                    try:
+                        synthesized_files = []
+                        for w in files_written:
+                            rel = os.path.relpath(w, committed_dir)
+                            if rel == "MANIFEST.json": continue
+                            role = "entry" if rel.endswith(("index.html", "index.htm")) else "asset"
+                            synthesized_files.append({"path": rel, "role": role})
+                        manifest = {
+                            "nodeId": node_id,
+                            "synthesizedByDaemon": True,
+                            "synthesizedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "files": synthesized_files,
+                            "subAssetInputs": [],   # daemon can't infer; left empty
+                        }
+                        with open(manifest_path, "w", encoding="utf-8") as f:
+                            json.dump(manifest, f, indent=2)
+                        print(f"[manifest] synthesized for {node_id!r} (subagent should emit MANIFEST.json itself; "
+                              f"sub-asset lineage will be empty until it does)", flush=True)
+                    except Exception as e:
+                        print(f"[manifest] synthesis failed for {node_id!r}: {e}", flush=True)
+
             # Now validate the probe (after files are placed)
             viols = validate_node(probe, "commit" if run_status == "done" else "status:" + run_status,
                                   project_root=project_root)
@@ -6411,6 +6834,674 @@ class H(http.server.SimpleHTTPRequestHandler):
             _lk.release()
         finally:
           _sem.release()
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Asset-versioning endpoints (v3.0)
+    # See docs/features/asset-versioning.md §7.2.
+    # Every endpoint follows the same shape:
+    #   1. resolve project + body
+    #   2. acquire per-project semaphore + workflow lock (5s/2s timeouts)
+    #   3. read workflow.json, find target node/version/composition
+    #   4. mutate
+    #   5. persist + _broadcast_workflow_change
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _versioning_open(self, qs):
+        """Common boilerplate for all versioning endpoints. Resolves project,
+        acquires lock + sem, loads workflow.json, returns (project_root,
+        project_id, wf_path, wf, release_fn) or raises _VersioningHTTPError.
+
+        The release_fn MUST be called in a finally block (lock + sem release).
+        """
+        project_root = resolve_project_root(qs, require_explicit=True)
+        project_id = os.path.basename(project_root.rstrip("/"))
+        sem = _request_semaphore(project_id)
+        if not sem.acquire(timeout=5.0):
+            raise _VersioningHTTPError(503, {
+                "error": "project request queue full (cap=3)",
+                "hint": "retry in ~1s", "retryAfterMs": 1000,
+            })
+        try:
+            lk = _workflow_lock(project_id)
+            if not lk.acquire(timeout=2.0):
+                sem.release()
+                raise _VersioningHTTPError(503, {
+                    "error": "workflow locked (another write in progress)",
+                    "hint": "retry in ~1s", "retryAfterMs": 1000,
+                })
+        except _VersioningHTTPError:
+            raise
+        except Exception:
+            sem.release(); raise
+        wf_path = os.path.join(project_root, "workflow", "workflow.json")
+        if not os.path.isfile(wf_path):
+            lk.release(); sem.release()
+            raise _VersioningHTTPError(404, {"error": "workflow.json not found"})
+        try:
+            with open(wf_path, "r", encoding="utf-8") as f:
+                wf = json.load(f)
+        except Exception as e:
+            lk.release(); sem.release()
+            raise _VersioningHTTPError(500, {"error": f"failed to read workflow.json: {e}"})
+        def _release():
+            try: lk.release()
+            finally: sem.release()
+        return project_root, project_id, wf_path, wf, _release
+
+    def _versioning_persist(self, project_root, project_id, wf_path, wf, label):
+        """Persist workflow.json wrapped in a history bracket; broadcast SSE."""
+        with _history_bracket(project_root, ["workflow/workflow.json"],
+                              kind="workflow-op",
+                              label=label,
+                              source="versioning",
+                              extra={"requestId": getattr(self, "request_id", None)}):
+            with open(wf_path, "w", encoding="utf-8") as f:
+                json.dump(wf, f, indent=2)
+        _broadcast_workflow_change(project_id)
+
+    def _versioning_body(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
+        except Exception:
+            body = {}
+        if not isinstance(body, dict): body = {}
+        return body
+
+    def _versioning_find(self, wf, node_id, vid=None, cid=None):
+        """Locate (node, version, composition). Returns tuple with None for
+        unrequested levels. Raises _VersioningHTTPError on miss."""
+        nodes_by_id = {n.get("id"): n for n in (wf.get("nodes") or [])
+                       if isinstance(n, dict) and n.get("id")}
+        node = nodes_by_id.get(node_id)
+        if not node:
+            raise _VersioningHTTPError(404, {"error": f"node not found: {node_id!r}"})
+        # v3.1 — versioning covers asset + prototype + design-system kinds.
+        if node.get("kind") not in ("asset", "prototype", "design-system"):
+            raise _VersioningHTTPError(400, {"error": f"node {node_id!r} is not versionable (kind={node.get('kind')!r}; expected asset / prototype / design-system)"})
+        if vid is None: return node, None, None
+        version = next((v for v in (node.get("versions") or [])
+                        if isinstance(v, dict) and v.get("id") == vid), None)
+        if not version:
+            raise _VersioningHTTPError(404, {"error": f"version not found: {vid!r}"})
+        if cid is None: return node, version, None
+        comp = next((c for c in (version.get("compositions") or [])
+                     if isinstance(c, dict) and c.get("id") == cid), None)
+        if not comp:
+            raise _VersioningHTTPError(404, {"error": f"composition not found: {cid!r}"})
+        return node, version, comp
+
+    # ── POST /__workflow/node/<id>/version/<vid>/revert ────────────────────
+    def _workflow_version_revert(self, qs, node_id, vid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            node, version, _ = self._versioning_find(wf, node_id, vid)
+            node["activeVersionId"] = vid
+            # Refresh source/ from the version's active composition's view dir.
+            try:
+                from kinds.versioning import refresh_source_from_view
+                refresh_source_from_view(project_root, node)
+            except Exception as e:
+                print(f"[asset-versioning] revert refresh error: {e}", flush=True)
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Revert: {node.get('title') or node_id} → {vid[:8]}")
+            return self._reply(200, {"ok": True, "nodeId": node_id, "activeVersionId": vid,
+                                     "activeCompositionId": version.get("activeCompositionId")})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/pin ───────────────────────
+    def _workflow_version_pin(self, qs, node_id, vid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            _, version, _ = self._versioning_find(wf, node_id, vid)
+            body = self._versioning_body()
+            if "pinned" in body and isinstance(body["pinned"], bool):
+                version["pinned"] = body["pinned"]
+            else:
+                version["pinned"] = not bool(version.get("pinned"))
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Pin v={vid[:8]} pinned={version['pinned']}")
+            return self._reply(200, {"ok": True, "pinned": version["pinned"]})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/label ─────────────────────
+    def _workflow_version_label(self, qs, node_id, vid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            _, version, _ = self._versioning_find(wf, node_id, vid)
+            body = self._versioning_body()
+            label = body.get("label")
+            if label is not None and not isinstance(label, str):
+                return self._reply(400, {"error": "label must be a string or null"})
+            version["label"] = (label or None)
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Label v={vid[:8]} → {version['label']!r}")
+            return self._reply(200, {"ok": True, "label": version["label"]})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/thumb ─────────────────────
+    # Body: raw PNG bytes (Content-Type: image/png). Or, for compatibility,
+    # a JSON body { "dataUrl": "data:image/png;base64,..." }.
+    def _workflow_version_thumb(self, qs, node_id, vid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            node, version, _ = self._versioning_find(wf, node_id, vid)
+            png_bytes = self._read_png_body()
+            if not png_bytes:
+                return self._reply(400, {"error": "no PNG body"})
+            from kinds.versioning import runs_dir
+            thumb_path = os.path.join(runs_dir(project_root, node_id, vid), "thumb.png")
+            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+            with open(thumb_path, "wb") as f:
+                f.write(png_bytes)
+            # Path inside workflow.json stays as we declared in snapshot.
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Thumb v={vid[:8]} ({len(png_bytes)} bytes)")
+            return self._reply(200, {"ok": True, "bytes": len(png_bytes),
+                                     "path": version.get("thumbPath")})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── DELETE /__workflow/node/<id>/version/<vid> ─────────────────────────
+    def _workflow_version_delete(self, qs, node_id, vid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            node, version, _ = self._versioning_find(wf, node_id, vid)
+            if node.get("activeVersionId") == vid:
+                return self._reply(409, {"error": "cannot delete active version",
+                                         "hint": "revert to another version first"})
+            if version.get("pinned"):
+                return self._reply(409, {"error": "cannot delete pinned version",
+                                         "hint": "unpin first"})
+            from kinds.versioning import _purge_version_dirs
+            comp_ids = [c.get("id") for c in (version.get("compositions") or [])
+                        if isinstance(c, dict) and c.get("id")]
+            _purge_version_dirs(project_root, node_id, vid, comp_ids)
+            node["versions"] = [v for v in node.get("versions") or []
+                                if isinstance(v, dict) and v.get("id") != vid]
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Delete v={vid[:8]}")
+            return self._reply(200, {"ok": True, "deleted": vid})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/branch ──────────────────────────
+    # Body: { sourceVersionId: "...", sourceCompositionId?: "..." }
+    # Creates a new asset node positioned below the source, with v0 copied
+    # from the picked version + chosen composition.
+    def _workflow_version_branch(self, qs, node_id):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            body = self._versioning_body()
+            src_vid = body.get("sourceVersionId")
+            src_cid = body.get("sourceCompositionId")
+            if not isinstance(src_vid, str) or not src_vid:
+                return self._reply(400, {"error": "sourceVersionId required"})
+            node, version, _ = self._versioning_find(wf, node_id, src_vid)
+            comp = None
+            if src_cid:
+                _, _, comp = self._versioning_find(wf, node_id, src_vid, src_cid)
+            else:
+                # Use the version's active composition.
+                cid = version.get("activeCompositionId")
+                if cid:
+                    comp = next((c for c in (version.get("compositions") or [])
+                                 if isinstance(c, dict) and c.get("id") == cid), None)
+
+            from kinds.versioning import (make_ulid, runs_dir, view_dir,
+                                           copy_tree_into, materialise_view)
+            # Build new sibling node id (collision suffix _b, _b2, _b3, ...).
+            existing_ids = {n.get("id") for n in (wf.get("nodes") or [])
+                            if isinstance(n, dict) and n.get("id")}
+            base_id = f"{node_id}_b"
+            new_id = base_id
+            n = 2
+            while new_id in existing_ids:
+                new_id = f"{base_id}{n}"; n += 1
+
+            # Allocate new version + composition ids for the sibling.
+            new_vid = make_ulid()
+            new_cid = make_ulid()
+
+            # ── BUG FIX: sibling must own its OWN canonical path. ─────────
+            # If both nodes point at the same source/foo.png, the canvas
+            # asset card renders from the live tree — which always shows
+            # whatever the ORIGINAL's active version contains. Branching
+            # then "appears" to just clone the active version. Reuse the
+            # original's basename with a suffix derived from the new node id
+            # so the sibling has independent bytes on disk and the picker's
+            # picked-version content is what the user sees.
+            existing_paths = set()
+            for nn in (wf.get("nodes") or []):
+                if not isinstance(nn, dict): continue
+                p = nn.get("path")
+                if isinstance(p, str) and p: existing_paths.add(p)
+                ps = nn.get("paths")
+                if isinstance(ps, list):
+                    for x in ps:
+                        if isinstance(x, str) and x: existing_paths.add(x)
+            def _rename_path(orig: str) -> str:
+                """Insert a suffix before the file extension so the sibling
+                has a distinct path. Collision-shift if needed."""
+                if not isinstance(orig, str) or not orig:
+                    return orig
+                base, ext = os.path.splitext(orig)
+                # First try: just append "_b" (or _b2, _b3, ...) matching the
+                # new_id suffix the user already sees on the node.
+                suffix_n = new_id[len(node_id):] if new_id.startswith(node_id) else "_b"
+                cand = f"{base}{suffix_n}{ext}"
+                i = 2
+                while cand in existing_paths:
+                    cand = f"{base}{suffix_n}_{i}{ext}"
+                    i += 1
+                existing_paths.add(cand)
+                return cand
+            new_path  = _rename_path(node.get("path") or "")
+            new_paths = [_rename_path(p) for p in (node.get("paths") or [])]
+            # Build a rename map: original canonical → sibling canonical.
+            rename_map: dict = {}
+            if isinstance(node.get("path"), str) and node.get("path"):
+                rename_map[node["path"]] = new_path
+            if isinstance(node.get("paths"), list):
+                for orig, renamed in zip(node["paths"], new_paths):
+                    if isinstance(orig, str) and orig:
+                        rename_map[orig] = renamed
+
+            # Copy source version files → sibling's runs dir, RENAMING any
+            # file whose canonical path is being remapped. This is what makes
+            # the sibling's snap distinct from the original's.
+            src_dir = runs_dir(project_root, node_id, src_vid)
+            dst_dir = runs_dir(project_root, new_id, new_vid)
+            os.makedirs(dst_dir, exist_ok=True)
+            def _strip_source(p: str) -> str:
+                return p[len("source/"):] if p.startswith("source/") else p
+            # Build per-file rename within the runs dir layout.
+            src_files = []
+            for fe in (version.get("files") or []):
+                if not isinstance(fe, dict): continue
+                in_ver = fe.get("path")            # e.g. "main/images/foo.png"
+                canon  = fe.get("canonical")       # e.g. "source/main/images/foo.png"
+                if not in_ver: continue
+                new_canon = rename_map.get(canon, canon)
+                new_in_ver = _strip_source(new_canon) if isinstance(new_canon, str) else in_ver
+                src_files.append({"in_old": in_ver, "in_new": new_in_ver,
+                                  "canonical_new": new_canon})
+            for fe in src_files:
+                src_path = os.path.join(src_dir, fe["in_old"])
+                dst_path = os.path.join(dst_dir, fe["in_new"])
+                if not os.path.isfile(src_path): continue
+                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                shutil.copy2(src_path, dst_path)
+            # Wipe any composition subdir that got copied along (we'll recreate one).
+            shutil.rmtree(os.path.join(dst_dir, "compositions"), ignore_errors=True)
+            # Also materialise the live canonical bytes for the sibling so the
+            # asset card shows the PICKED version's image immediately, not the
+            # original's active content.
+            for fe in src_files:
+                if not fe.get("canonical_new"): continue
+                live = os.path.join(project_root, fe["canonical_new"].lstrip("/"))
+                snap_src = os.path.join(dst_dir, fe["in_new"])
+                if not os.path.isfile(snap_src): continue
+                os.makedirs(os.path.dirname(live), exist_ok=True)
+                shutil.copy2(snap_src, live)
+
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+            # Sibling's v0 entry — deep copy of the source version's files +
+            # canonical paths (REMAPPED) + non-asset consumedVersions.
+            renamed_files = [{"path": fe["in_new"], "canonical": fe["canonical_new"]}
+                             for fe in src_files]
+            renamed_canonical = [fe["canonical_new"] for fe in src_files]
+            new_version = {
+                "id":                  new_vid,
+                "createdAt":           now_iso,
+                "runId":               None,
+                "files":               renamed_files,
+                "canonicalPaths":      renamed_canonical,
+                "thumbPath":           f"workflow/runs/{new_id}/{new_vid}/thumb.png",
+                "label":               f"branched from {(node.get('title') or node_id)} v{src_vid[:6]}",
+                "pinned":              False,
+                "branchedFrom":        {"nodeId": node_id, "versionId": src_vid,
+                                         "compositionId": (comp or {}).get("id")},
+                "consumedVersions":    json.loads(json.dumps(version.get("consumedVersions") or {})),
+                "compositions":        [],
+                "activeCompositionId": new_cid,
+            }
+            # Sibling's c0 — deep copy of the chosen composition (or a fresh
+            # empty one if no comp was supplied).
+            new_composition = {
+                "id":                    new_cid,
+                "createdAt":             now_iso,
+                "consumedSubVersions":   json.loads(json.dumps((comp or {}).get("consumedSubVersions") or {})),
+                "subAssetMounts":        json.loads(json.dumps((comp or {}).get("subAssetMounts") or {})),
+                "thumbPath":             f"workflow/runs/{new_id}/{new_vid}/compositions/{new_cid}/thumb.png",
+                "label":                 None,
+                "pinned":                False,
+                "degraded":              False,
+            }
+            new_version["compositions"].append(new_composition)
+
+            # Compute placement: below source + collision shift.
+            src_x = float(node.get("x") or 0)
+            src_y = float(node.get("y") or 0)
+            src_w = float(node.get("w") or 320)
+            src_h = float(node.get("h") or 240)
+            new_x, new_y = src_x, src_y + src_h + 80
+            # Collision shift: scan existing nodes; bump right in 32px steps.
+            def _collides(x, y, w, h):
+                for nn in (wf.get("nodes") or []):
+                    if not isinstance(nn, dict): continue
+                    nx = float(nn.get("x") or 0); ny = float(nn.get("y") or 0)
+                    nw = float(nn.get("w") or 320); nh = float(nn.get("h") or 240)
+                    if (x < nx + nw and x + w > nx and y < ny + nh and y + h > ny):
+                        return True
+                return False
+            steps = 0
+            while _collides(new_x, new_y, src_w, src_h) and steps < 13:
+                new_x += 32; steps += 1
+
+            # Construct the sibling node — points at its OWN renamed paths.
+            new_node = {
+                "id":              new_id,
+                "kind":             "asset",
+                "assetKind":        node.get("assetKind"),
+                "title":            f"{node.get('title') or node_id} (branch)",
+                "x":                new_x,
+                "y":                new_y,
+                "w":                node.get("w"),
+                "h":                node.get("h"),
+                "size":             json.loads(json.dumps(node.get("size") or {})),
+                "path":             new_path or node.get("path"),
+                "paths":            new_paths or list(node.get("paths") or []),
+                "versions":         [new_version],
+                "activeVersionId":  new_vid,
+                "branchedFrom":     {"nodeId": node_id, "versionId": src_vid,
+                                      "compositionId": (comp or {}).get("id")},
+                "runStatus":        "done",
+            }
+            wf.setdefault("nodes", []).append(new_node)
+
+            # Materialise the sibling's view dir from its own runs/ snapshot.
+            try:
+                materialise_view(project_root, new_node, new_version, new_composition,
+                                 sub_asset_pins=new_composition.get("consumedSubVersions"),
+                                 sub_asset_mounts=new_composition.get("subAssetMounts"))
+            except Exception as e:
+                print(f"[asset-versioning] branch view materialise error: {e}", flush=True)
+
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Branch from {node_id} v={src_vid[:8]} → {new_id}")
+            return self._reply(200, {"ok": True, "newNodeId": new_id,
+                                     "newVersionId": new_vid,
+                                     "newCompositionId": new_cid,
+                                     "placement": {"x": new_x, "y": new_y}})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/composition/<cid>/switch ──
+    def _workflow_composition_switch(self, qs, node_id, vid, cid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            node, version, _ = self._versioning_find(wf, node_id, vid, cid)
+            version["activeCompositionId"] = cid
+            # Only switch source/ if this version is also the active one.
+            try:
+                if node.get("activeVersionId") == vid:
+                    from kinds.versioning import refresh_source_from_view
+                    refresh_source_from_view(project_root, node)
+            except Exception as e:
+                print(f"[asset-versioning] comp switch refresh error: {e}", flush=True)
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Switch comp v={vid[:8]} → {cid[:8]}")
+            return self._reply(200, {"ok": True, "activeCompositionId": cid})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/composition/<cid>/pin ─────
+    def _workflow_composition_pin(self, qs, node_id, vid, cid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            _, _, comp = self._versioning_find(wf, node_id, vid, cid)
+            body = self._versioning_body()
+            if "pinned" in body and isinstance(body["pinned"], bool):
+                comp["pinned"] = body["pinned"]
+            else:
+                comp["pinned"] = not bool(comp.get("pinned"))
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Pin comp v={vid[:8]} c={cid[:8]} → {comp['pinned']}")
+            return self._reply(200, {"ok": True, "pinned": comp["pinned"]})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/composition/<cid>/label ───
+    def _workflow_composition_label(self, qs, node_id, vid, cid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            _, _, comp = self._versioning_find(wf, node_id, vid, cid)
+            body = self._versioning_body()
+            label = body.get("label")
+            if label is not None and not isinstance(label, str):
+                return self._reply(400, {"error": "label must be a string or null"})
+            comp["label"] = (label or None)
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Label comp v={vid[:8]} c={cid[:8]} → {comp['label']!r}")
+            return self._reply(200, {"ok": True, "label": comp["label"]})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/composition/<cid>/thumb ───
+    def _workflow_composition_thumb(self, qs, node_id, vid, cid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            _, _, comp = self._versioning_find(wf, node_id, vid, cid)
+            png_bytes = self._read_png_body()
+            if not png_bytes:
+                return self._reply(400, {"error": "no PNG body"})
+            from kinds.versioning import runs_dir
+            thumb_path = os.path.join(
+                runs_dir(project_root, node_id, vid, cid), "thumb.png")
+            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+            with open(thumb_path, "wb") as f:
+                f.write(png_bytes)
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Comp thumb v={vid[:8]} c={cid[:8]} ({len(png_bytes)} bytes)")
+            return self._reply(200, {"ok": True, "bytes": len(png_bytes),
+                                     "path": comp.get("thumbPath")})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/version/<vid>/composition ───────────────
+    # Body: { subVersions: {subId: subVersionId, ...}, mounts?: {...},
+    #         label?: "..." }
+    def _workflow_composition_save(self, qs, node_id, vid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            node, version, _ = self._versioning_find(wf, node_id, vid)
+            body = self._versioning_body()
+            subv = body.get("subVersions") or {}
+            mounts = body.get("mounts") or {}
+            label = body.get("label")
+            if not isinstance(subv, dict):
+                return self._reply(400, {"error": "subVersions must be an object"})
+            from kinds.versioning import make_ulid, materialise_view
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            cid = make_ulid()
+            comp = {
+                "id":                    cid,
+                "createdAt":             now_iso,
+                "consumedSubVersions":   {k: v for k, v in subv.items() if isinstance(v, str)},
+                "subAssetMounts":        {k: v for k, v in mounts.items() if isinstance(v, str)},
+                "thumbPath":             f"workflow/runs/{node_id}/{vid}/compositions/{cid}/thumb.png",
+                "label":                 label if isinstance(label, str) else None,
+                "pinned":                False,
+                "degraded":              False,
+            }
+            version.setdefault("compositions", []).append(comp)
+            version["activeCompositionId"] = cid
+            # Materialise the view dir.
+            try:
+                materialise_view(project_root, node, version, comp,
+                                 sub_asset_pins=comp["consumedSubVersions"],
+                                 sub_asset_mounts=comp["subAssetMounts"])
+            except Exception as e:
+                print(f"[asset-versioning] comp-save view error: {e}", flush=True)
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Save comp v={vid[:8]} → {cid[:8]}")
+            return self._reply(200, {"ok": True, "compositionId": cid})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── DELETE /__workflow/node/<id>/version/<vid>/composition/<cid> ───────
+    def _workflow_composition_delete(self, qs, node_id, vid, cid):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            _, version, comp = self._versioning_find(wf, node_id, vid, cid)
+            if version.get("activeCompositionId") == cid:
+                return self._reply(409, {"error": "cannot delete active composition",
+                                         "hint": "switch to another composition first"})
+            if comp.get("pinned"):
+                return self._reply(409, {"error": "cannot delete pinned composition",
+                                         "hint": "unpin first"})
+            from kinds.versioning import _purge_composition_dirs
+            _purge_composition_dirs(project_root, node_id, vid, cid)
+            version["compositions"] = [c for c in (version.get("compositions") or [])
+                                       if isinstance(c, dict) and c.get("id") != cid]
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Delete comp v={vid[:8]} c={cid[:8]}")
+            return self._reply(200, {"ok": True, "deleted": cid})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__workflow/node/<id>/size ────────────────────────────────────
+    # Body: { w?: number, h?: number, auto?: true }
+    def _workflow_node_size(self, qs, node_id):
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            node, _, _ = self._versioning_find(wf, node_id)
+            body = self._versioning_body()
+            if body.get("auto") is True:
+                node.pop("w", None); node.pop("h", None)
+                sz = node.setdefault("size", {})
+                # Hard reset to fit-canvas. The previous `sz.get("scale") or
+                # "fit-canvas"` preserved whatever was set (typically "custom"
+                # from a prior drag), so "auto" never actually un-custom'd
+                # the size. Caught by step 12 of the e2e test.
+                sz["scale"] = "fit-canvas"
+                msg = "auto"
+            else:
+                w, h = body.get("w"), body.get("h")
+                if isinstance(w, (int, float)) and w > 0: node["w"] = float(w)
+                if isinstance(h, (int, float)) and h > 0: node["h"] = float(h)
+                sz = node.setdefault("size", {})
+                sz["scale"] = "custom"
+                msg = f"w={node.get('w')} h={node.get('h')}"
+            self._versioning_persist(project_root, project_id, wf_path, wf,
+                                     f"Size {node_id} → {msg}")
+            return self._reply(200, {"ok": True, "w": node.get("w"), "h": node.get("h"),
+                                     "size": node.get("size")})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    def _read_png_body(self):
+        """Read raw bytes from the POST body. Accepts either:
+          • Content-Type: image/png — raw bytes
+          • Content-Type: application/json {"dataUrl": "data:image/png;base64,..."}
+        Returns bytes (possibly empty)."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except Exception:
+            length = 0
+        if length <= 0: return b""
+        ctype = (self.headers.get("Content-Type") or "").lower()
+        raw = self.rfile.read(length)
+        if "image/png" in ctype:
+            return raw
+        # Else try to parse as JSON.
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return b""
+        if not isinstance(body, dict): return b""
+        url = body.get("dataUrl") or body.get("data") or ""
+        if not isinstance(url, str): return b""
+        if url.startswith("data:"):
+            try:
+                url = url.split(",", 1)[1]
+            except Exception:
+                return b""
+        try:
+            import base64 as _b64
+            return _b64.b64decode(url)
+        except Exception:
+            return b""
 
     # ── GET /__workflow/node/<id>/preview (v2.4) ─────────────────────────
     # Returns the prompt the daemon WOULD build right now for this node, by
@@ -7310,6 +8401,43 @@ class H(http.server.SimpleHTTPRequestHandler):
         output   = (body.get("output") or "").strip()
         aspect   = (body.get("aspect") or "1:1").strip()
         options  = body.get("options") or {}
+        # v3.1 — soft gate: every image-gen call SHOULD carry a `medium`
+        # classified by the visual-planner subagent (raster-foreground,
+        # raster-photo, vector-icon, vector-mark, shader, particle-2d,
+        # particle-gl, lottie, 3d, video). Without one, we log a warning
+        # so we can audit which call sites bypassed the planner. Don't
+        # reject — that would break inline agent-driven scaffolds. Tracked
+        # downstream by routing to the project's .asset-gen-audit.jsonl.
+        medium = (body.get("medium") or "").strip() or "unspecified"
+        _ALLOWED_MEDIA = {
+            "raster-foreground", "raster-photo", "vector-icon", "vector-mark",
+            "shader", "particle-2d", "particle-gl", "lottie", "3d", "video",
+            "unspecified",
+        }
+        if medium not in _ALLOWED_MEDIA:
+            medium = "unspecified"
+        if medium == "unspecified":
+            print(f"[asset-gen audit] {output!r}: medium NOT classified by visual-planner. "
+                  f"Caller should dispatch visual-planner (BARE-INTENT MODE) first.",
+                  flush=True)
+        # Append an audit entry so we can grep call sites later.
+        # v3.1 — bounded rotation: when the file exceeds 1 MB, rename it to
+        # .asset-gen-audit.jsonl.prev and start a fresh one. Two-file
+        # ring buffer caps disk usage at ~2 MB regardless of how long the
+        # project runs.
+        try:
+            audit_path = os.path.join(project_root, ".asset-gen-audit.jsonl")
+            if os.path.isfile(audit_path) and os.path.getsize(audit_path) > 1_000_000:
+                try: os.replace(audit_path, audit_path + ".prev")
+                except OSError: pass
+            with open(audit_path, "a", encoding="utf-8") as af:
+                af.write(json.dumps({
+                    "ts": time.time(), "output": output, "skill": skill,
+                    "provider": provider, "model": model, "medium": medium,
+                    "requestId": getattr(self, "request_id", None),
+                }) + "\n")
+        except Exception:
+            pass
 
         if not output:
             return self._reply(400, {"error": "output path required"})
@@ -7490,9 +8618,36 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     replace_error = str(e)
 
+        # v3.0 — asset-versioning snapshot. After a successful image / SVG
+        # generation, find the matching workflow asset node by output path
+        # and snapshot it so the user can revert. Best-effort: a snapshot
+        # failure must not fail the generation.
+        snapshot_info = None
+        try:
+            wf_path = os.path.join(project_root, "workflow", "workflow.json")
+            if os.path.isfile(wf_path):
+                project_id = os.path.basename(project_root.rstrip("/"))
+                with _workflow_lock_timeout(project_id, timeout_sec=2.0):
+                    with open(wf_path, "r", encoding="utf-8") as f:
+                        wf = json.load(f)
+                    from kinds.versioning import snapshot_asset_by_output_path
+                    snapshot_info = snapshot_asset_by_output_path(
+                        project_root, wf, output,
+                        run_id=getattr(self, "request_id", None),
+                    )
+                    if snapshot_info:
+                        with open(wf_path, "w", encoding="utf-8") as f:
+                            json.dump(wf, f, indent=2)
+                if snapshot_info:
+                    _broadcast_workflow_change(project_id)
+        except Exception as _vsn_err:
+            print(f"[asset-versioning] /__asset_generate snapshot error: {_vsn_err}", flush=True)
+
         return self._reply(200, {
             "ok": True, "path": output, "bytes": len(bytes_),
             "skill": skill, "provider": provider, "model": model,
+            "medium": medium,
+            "snapshot": snapshot_info,
             "inline_replace": (
                 {"ok": True, "files": replaced_files} if replaced_files
                 else ({"ok": False, "error": replace_error} if replace_error else None)
@@ -9004,294 +10159,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                 f.write(body)
         return self._reply(200, {"ok": True, "path": os.path.relpath(dest, project_root), "bytes": len(body)})
 
-    # ── POST /__branch  (JSON body: { name, prompt, scope: {frames:[…], primitives:[…]} }, ?from=<slug>) ──
-    # A branch is a *scope + prompt*, not a copy. We don't fork the source files
-    # on creation — we just record the exploration manifest. The branch's data
-    # file inherits frames/primitives/entities from its parent and points its
-    # `sourceRoot` at the parent's source folder. When Claude applies the
-    # exploration, it forks only the scoped components into source/<slug>/ and
-    # then re-points `sourceRoot` to the new folder.
+    # ── DEPRECATED in v3.1: project-level branches removed (see
+    # docs/features/deprecate-project-branches.md). The handlers below are
+    # left as 410 Gone stubs so any stale client gets a clear error rather
+    # than a hang. Asset-versioning's sibling-node branching (Phase 5) is
+    # the replacement for "explore alternatives without losing the line."
     def _branch_create(self, qs):
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-        src_slug = (qs.get("from") or ["main"])[0].strip().lower()
-        length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0 or length > 256 * 1024:
-            return self._reply(400, {"error": "missing or oversized JSON body"})
-        try:
-            body = json.loads(self.rfile.read(length))
-        except Exception as e:
-            return self._reply(400, {"error": f"invalid JSON body: {e}"})
-
-        label = (body.get("name") or "").strip()
-        prompt = (body.get("prompt") or "").strip()
-        scope = body.get("scope") or {}
-        scoped_frames = [s for s in (scope.get("frames") or []) if isinstance(s, str)]
-        scoped_primitives = [s for s in (scope.get("primitives") or []) if isinstance(s, str)]
-        # Selection forwarded from the editor when the fork started from a clicked
-        # element. We record it verbatim in EXPLORATION.md so the apply workflow
-        # forks JUST that subtree (not the entire frame).
-        selection = body.get("selection") or {}
-        sel_frame_id    = (selection.get("frameId") or "").strip()
-        sel_frame_label = (selection.get("frameLabel") or "").strip()
-        sel_selector    = (selection.get("selector") or "").strip()
-        sel_snippet     = (selection.get("snippet") or "")
-        has_selection   = bool(sel_selector)
-
-        if not label:
-            return self._reply(400, {"error": "missing branch name"})
-        if not prompt:
-            return self._reply(400, {"error": "missing exploration prompt"})
-        if not scoped_frames and not scoped_primitives:
-            return self._reply(400, {"error": "scope is empty — pick at least one frame or primitive variant"})
-
-        slug = _slugify(label)
-        if not slug or not SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid slug derived from name", "label": label, "slug": slug})
-        if slug == "main":
-            return self._reply(409, {"error": '"main" is reserved'})
-
-        reg = _load_registry(project_root)
-        existing = {b["id"] for b in reg["branches"]}
-        if slug in existing:
-            return self._reply(409, {"error": "branch slug already exists", "slug": slug})
-        if src_slug not in existing:
-            return self._reply(404, {"error": "source branch not found", "from": src_slug})
-
-        # Sparse source folder — just the manifest, no forked HTML/CSS/JS.
-        # Claude writes divergent files here when applying the exploration.
-        dst_src_dir = _branch_source_dir(slug, project_root)
-        os.makedirs(dst_src_dir, exist_ok=False)
-        selection_md = ""
-        if has_selection:
-            snippet_clip = sel_snippet if len(sel_snippet) < 4000 else (sel_snippet[:4000] + "\n…[truncated]")
-            selection_md = (
-                "\n## Selection (element-scoped)\n\n"
-                f"- **Frame:** `{sel_frame_id}`{(' · ' + sel_frame_label) if sel_frame_label else ''}\n"
-                f"- **Selector:** `{sel_selector}`\n\n"
-                "**Snippet at click time:**\n\n"
-                "```html\n"
-                f"{snippet_clip}\n"
-                "```\n\n"
-                "When applying, fork **only this subtree** — locate the element via the selector "
-                "(falling back to the snippet's distinctive class/text signature if the source has "
-                "drifted), diverge it per the prompt, and leave every other component byte-identical "
-                "to the parent.\n"
-            )
-        manifest = (
-            f"# Exploration: {label}\n\n"
-            f"- **Branch slug:** `{slug}`\n"
-            f"- **Forked from:** `{src_slug}`\n"
-            f"- **Created:** {_dt.datetime.now().isoformat(timespec='seconds')}\n\n"
-            f"## Prompt\n\n{prompt}\n\n"
-            f"## Scope\n\n"
-            f"**Frames ({len(scoped_frames)}):**\n"
-            + ("".join(f"- `{f}`\n" for f in scoped_frames) or "_(none)_\n")
-            + f"\n**Primitive variants ({len(scoped_primitives)}):**\n"
-            + ("".join(f"- `{p}`\n" for p in scoped_primitives) or "_(none)_\n")
-            + selection_md
-            + "\n## Apply\n\n"
-            + ("When asked to apply this exploration (element-scoped):\n"
-               f"1. Fork **only** the element matched by the selector under `Selection` above, taking it from `source/{src_slug}/` into `source/{slug}/`. Don't copy unrelated components.\n"
-               "2. Bring with it ONLY the CSS rules and `window.DEMO` entries that the element actually uses (transitive closure of class names + data keys it reads). Everything else stays inheriting from the parent.\n"
-               "3. Modify the forked subtree per the prompt above.\n"
-               f"4. Update `editor/branches/{slug}.js`: re-point `meta.sourceRoot` and `meta.sourceEntry` to `../source/{slug}/`, and re-run Workflow 1 against the new folder.\n"
-               if has_selection else
-               "When asked to apply this exploration:\n"
-               f"1. Fork only the scoped components from `source/{src_slug}/` into `source/{slug}/`.\n"
-               "2. Modify them per the prompt above. Leave everything else inheriting from the parent.\n"
-               f"3. Update `editor/branches/{slug}.js`: re-point `meta.sourceRoot` and `meta.sourceEntry`\n"
-               f"   to `../source/{slug}/`, and re-run Workflow 1 against the new folder.\n")
-        )
-        with open(os.path.join(dst_src_dir, "EXPLORATION.md"), "w", encoding="utf-8") as f:
-            f.write(manifest)
-
-        # Clone the parent's editor data file. Patch meta to record branch identity,
-        # exploration manifest, and (importantly) keep sourceRoot pointed at the
-        # PARENT folder until Claude forks the source. This way the iframe renders
-        # the parent's prototype as the "before" state — badges in DS/Entities flag
-        # what the user intends to diverge.
-        src_data = _branch_data_file(src_slug, project_root)
-        dst_data = _branch_data_file(slug, project_root)
-        if not os.path.isfile(src_data):
-            return self._reply(500, {"error": f"parent data file missing: {os.path.relpath(src_data, project_root)}"})
-        with open(src_data, "r", encoding="utf-8") as f:
-            data_text = f.read()
-
-        # Build the exploration block as JS literal so the data file stays evaluable.
-        def _js_str(s):
-            return json.dumps(s, ensure_ascii=False)
-        selection_js = ""
-        if has_selection:
-            selection_js = (
-                "      selection: {\n"
-                f"        frameId:    {_js_str(sel_frame_id)},\n"
-                f"        frameLabel: {_js_str(sel_frame_label)},\n"
-                f"        selector:   {_js_str(sel_selector)},\n"
-                f"        snippet:    {_js_str(sel_snippet)},\n"
-                "      },\n"
-            )
-        exploration_js = (
-            "exploration: {\n"
-            f"      prompt: {_js_str(prompt)},\n"
-            f"      forkedFrom: {_js_str(src_slug)},\n"
-            f"      createdAt: {_js_str(_dt.datetime.now().isoformat(timespec='seconds'))},\n"
-            "      scope: {\n"
-            f"        frames: {json.dumps(scoped_frames)},\n"
-            f"        primitives: {json.dumps(scoped_primitives)},\n"
-            "      },\n"
-            + selection_js +
-            "    },"
-        )
-
-        # Patch the meta block in place. The parent file's meta has a fixed shape;
-        # we replace the first occurrence of each field to be safe.
-        #
-        # IMPORTANT: re.sub interprets `\\1`, `\"`, `\n` etc. in the *replacement
-        # string*. Our payload contains JSON-encoded snippet HTML with escaped
-        # quotes — passing it through as a string would either raise re.error
-        # (modern Python) or silently mangle escapes (older Python), which is
-        # exactly the "fork produces blank page" bug. Pass a lambda so the
-        # replacement is taken verbatim.
-        slug_repl = f'"{slug}"'
-        label_repl = _js_str(label)
-        data_text = re.sub(r'(branch\s*:\s*)"[^"]*"',      lambda m: m.group(1) + slug_repl,  data_text, count=1)
-        data_text = re.sub(r'(branchLabel\s*:\s*)"[^"]*"', lambda m: m.group(1) + label_repl, data_text, count=1)
-        # NOTE: sourceRoot/Entry stay pointed at the parent until exploration is applied.
-        # Inject the exploration block after the branchLabel line.
-        if "exploration:" in data_text:
-            # Replace existing block (parent has none — only happens on fork-of-fork).
-            # The regex needs to absorb every nested brace level inside the block;
-            # match anything up to a closing brace followed by a comma at the same
-            # indent level so we don't accidentally swallow trailing fields.
-            data_text = re.sub(
-                r"exploration\s*:\s*\{(?:[^{}]|\{[^{}]*\})*\},",
-                lambda _m: exploration_js,
-                data_text, count=1, flags=re.DOTALL,
-            )
-        else:
-            data_text = re.sub(
-                r'(branchLabel\s*:\s*"[^"]*",\n)',
-                lambda m: m.group(1) + "    " + exploration_js + "\n",
-                data_text, count=1,
-            )
-
-        with open(dst_data, "w", encoding="utf-8") as f:
-            f.write(data_text)
-
-        # Register.
-        reg["branches"].append({
-            "id": slug,
-            "label": label,
-            "file": f"branches/{slug}.js",
-            "parent": src_slug,
-            "createdAt": _dt.datetime.now().isoformat(timespec="seconds"),
+        return self._reply(410, {
+            "error": "branch endpoints removed in v3.1",
+            "hint": "Project branches deprecated. Use asset-node sibling branching from the version picker on a workflow asset card.",
         })
-        _write_registry(reg, project_root)
-
-        return self._reply(200, {
-            "ok": True,
-            "id": slug,
-            "label": label,
-            "from": src_slug,
-            "scope": {"frames": scoped_frames, "primitives": scoped_primitives},
-            "prompt": prompt,
-        })
-
-    # ── POST /__promote?from=<slug> ──────────────────────────────────────
-    # Promote the WHOLE branch onto main. Only valid after the exploration has
-    # been applied (i.e., source/<slug>/index.html exists) — otherwise there's
-    # nothing to merge.
     def _branch_promote(self, qs):
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-        slug = (qs.get("from") or [""])[0].strip().lower()
-        if not slug or not SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid slug", "slug": slug})
-        if slug == "main":
-            return self._reply(400, {"error": "cannot promote main onto itself"})
-        src = _branch_source_dir(slug, project_root)
-        if not os.path.isdir(src):
-            return self._reply(404, {"error": f"source folder missing: {os.path.relpath(src, project_root)}"})
-        if not os.path.isfile(os.path.join(src, "index.html")):
-            return self._reply(409, {
-                "error": "exploration not yet applied",
-                "hint": f"source/{slug}/ only contains the manifest. Run Claude to apply the exploration first.",
-            })
-
-        main_dir = _branch_source_dir("main", project_root)
-        # Replace main/* with slug/* — but skip the EXPLORATION.md manifest.
-        if os.path.isdir(main_dir):
-            shutil.rmtree(main_dir)
-        os.makedirs(main_dir)
-        copied = []
-        for name in os.listdir(src):
-            if name == "EXPLORATION.md":
-                continue
-            s = os.path.join(src, name)
-            d = os.path.join(main_dir, name)
-            if os.path.isdir(s):
-                shutil.copytree(s, d)
-                for r, _, files in os.walk(d):
-                    for f in files:
-                        copied.append(os.path.relpath(os.path.join(r, f), main_dir))
-            else:
-                shutil.copy2(s, d)
-                copied.append(name)
-
-        return self._reply(200, {
-            "ok": True,
-            "from": slug,
-            "to": "main",
-            "copied": copied,
-        })
-
-    # ── POST /__promote_frame?from=<slug>&frameId=<id> ───────────────────
-    # The structural cherry-pick (which JSX/CSS/DEMO to bring across) is
-    # non-deterministic, so we record the request as a markdown directive for
-    # Claude to apply on the next CLI run. The exploration branch is untouched.
+        return self._reply(410, {"error": "branch endpoints removed in v3.1"})
     def _frame_promote(self, qs):
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-        slug = (qs.get("from") or [""])[0].strip().lower()
-        frame_id = (qs.get("frameId") or [""])[0].strip()
-        if not slug or not SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid slug", "slug": slug})
-        if slug == "main":
-            return self._reply(400, {"error": "frame promotions only apply to non-main branches"})
-        if not frame_id or not re.match(r"^[A-Za-z0-9._-]+$", frame_id):
-            return self._reply(400, {"error": "invalid frameId", "frameId": frame_id})
-        if not os.path.isdir(_branch_source_dir(slug, project_root)):
-            return self._reply(404, {"error": "branch source folder missing", "slug": slug})
+        return self._reply(410, {"error": "branch endpoints removed in v3.1"})
 
-        now = _dt.datetime.now().isoformat(timespec="seconds")
-        entry = (
-            f"## Promote frame `{frame_id}` from branch `{slug}` → Main\n"
-            f"_Requested {now}_\n\n"
-            f"- **Source branch:** `source/{slug}/`\n"
-            f"- **Target branch:** `source/main/`\n"
-            f"- **Frame:** `{frame_id}` — see `editor/branches/{slug}.js` for full label / hash / setupScript.\n\n"
-            f"Cherry-pick into Main:\n"
-            f"1. Diff `source/{slug}/index.html` against `source/main/index.html` for the components rendering this frame.\n"
-            f"2. Copy the components into `source/main/index.html`, preserving Main's existing tokens unless this frame's tokens are intentionally different.\n"
-            f"3. Bring across only the CSS rules and `window.DEMO` entries those components rely on.\n"
-            f"4. If `editor/branches/main.js` would shift (new entities/primitives), re-run Workflow 1 against the updated Main source.\n"
-            f"5. Leave `source/{slug}/` untouched — exploration stays alive.\n\n"
-            f"---\n\n"
-        )
-        merges_path = _project_paths(project_root)["merges"]
-        existed = os.path.isfile(merges_path)
-        with open(merges_path, "a", encoding="utf-8") as f:
-            if not existed:
-                f.write("# Pending merges\n\n_Editor-recorded promotions. Each section is a directive for Claude to apply on the next CLI run._\n\n")
-            f.write(entry)
-        return self._reply(200, {"ok": True, "path": "MERGES.md", "frameId": frame_id, "from": slug})
 
     # ── Liveness ─────────────────────────────────────────────────────────
 
@@ -9403,32 +10285,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         template = (body.get("template") or "blank").strip()
         if template != "blank":
             return self._reply(400, {"error": f"unknown template: {template!r}", "known": ["blank"]})
-        # Scaffold: empty source/main/, empty branches/, and a minimal data.js
-        # registry so the editor boots without complaining about a missing file.
+        # v3.1 — branches deprecated. Scaffold the flat shape:
+        #   source/                 ← single source tree (formerly source/main/)
+        #   editor/data.js          ← carries window.EDITOR_DATA directly
+        #                              (formerly editor/branches/main.js +
+        #                               editor/data.js bootstrap shim).
         try:
-            os.makedirs(os.path.join(dest, "source", "main"), exist_ok=False)
-            os.makedirs(os.path.join(dest, "editor", "branches"), exist_ok=False)
-            seed_reg = {
-                "active": "main",
-                "branches": [{
-                    "id": "main",
-                    "label": "Main",
-                    "file": "branches/main.js",
-                    "parent": None,
-                    "createdAt": _dt.datetime.now().isoformat(timespec="seconds"),
-                }],
-            }
-            _write_registry(seed_reg, dest)
-            # Stub branch data file — enough for app.js to render an empty canvas.
+            os.makedirs(os.path.join(dest, "source"), exist_ok=False)
+            os.makedirs(os.path.join(dest, "editor"), exist_ok=True)
             main_data = (
-                "// Auto-generated by /__projects/new — minimal seed for branch main.\n"
-                "// Replace by running Workflow 1 (regenerate) once source/main/ has content.\n"
+                "// Auto-generated by /__projects/new — minimal project seed.\n"
+                "// Replace by running Workflow 1 (regenerate) once source/ has content.\n"
                 "window.EDITOR_DATA = {\n"
-                f'  meta: {{ project: {json.dumps(label)}, branch: "main", sourceRoot: "../source/main/", sourceEntry: "index.html" }},\n'
+                f'  meta: {{ project: {json.dumps(label)}, sourceRoot: "../source/", sourceEntry: "index.html" }},\n'
                 "  frames: [], lanes: [], arrows: [], entities: [], primitives: [], links: [],\n"
                 "};\n"
             )
-            with open(os.path.join(dest, "editor", "branches", "main.js"), "w", encoding="utf-8") as f:
+            with open(os.path.join(dest, "editor", "data.js"), "w", encoding="utf-8") as f:
                 f.write(main_data)
         except OSError as e:
             return self._reply(500, {"error": f"scaffold failed: {type(e).__name__}: {e}"})
@@ -9793,7 +10666,8 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   the static-file mapping because the UI wants a structured response
     #   (so a 404 can be presented as "no notes yet" rather than a console
     #   error).
-    _BRANCH_DOC_NAMES = {"NOTES.md", "brand-spec.md", "DESIGN.md", "MERGES.md", "FORK_REQUEST.md"}
+    # v3.1 — branches deprecated. MERGES.md / FORK_REQUEST.md dropped.
+    _BRANCH_DOC_NAMES = {"NOTES.md", "brand-spec.md", "DESIGN.md"}
 
     def _branch_doc(self, qs):
         try:
@@ -10384,6 +11258,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             spawn_args += ["--dangerously-skip-permissions"]
         elif defs.get("permission_flag") and permission_mode:
             spawn_args += [defs["permission_flag"], permission_mode]
+        # v3.1 — Hide user-level slash commands so /prototype etc. don't
+        # auto-load and override the visual-planner pipeline. Subagents
+        # dispatched via the Task tool are unaffected.
+        spawn_args += ["--disable-slash-commands"]
+        # v3.1 — Hook gate: block *.html writes until visual-planner dispatched.
+        _harness_settings = _ensure_harness_settings()
+        if _harness_settings:
+            spawn_args += ["--settings", _harness_settings]
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability — see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
@@ -10811,6 +11693,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             spawn_args += ["--dangerously-skip-permissions"]
         elif defs.get("permission_flag") and state.permission_mode:
             spawn_args += [defs["permission_flag"], state.permission_mode]
+        # v3.1 — match the freeform / node-agent paths: hide user slash commands.
+        spawn_args += ["--disable-slash-commands"]
+        # v3.1 — Hook gate: block *.html writes until visual-planner dispatched.
+        _harness_settings = _ensure_harness_settings()
+        if _harness_settings:
+            spawn_args += ["--settings", _harness_settings]
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
         if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
             sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
@@ -11018,16 +11906,12 @@ if __name__ == "__main__":
         if projects:
             print(f"  {len(projects)} project(s):", flush=True)
             for p in projects:
-                print(f"    · {p['id']:<24}  {p['label']}  (branches={p['branchCount']})", flush=True)
-                # One-shot data.js bootstrap upgrade — _load_registry rewrites
-                # pre-Phase-6 bootstraps so document.write('branches/main.js')
-                # forwards the ?project= qs. Idempotent; no-op for already-
-                # upgraded files. Failures are silent (user-edited data.js
-                # may not be parsable; we don't want to crash the daemon).
-                try:
-                    _load_registry(p["path"])
-                except Exception:
-                    pass
+                print(f"    · {p['id']:<24}  {p['label']}", flush=True)
+                # v3.1 — _load_registry call removed. The data.js bootstrap
+                # shim used to be auto-upgraded on startup; the lazy
+                # migration shim _v31_migrate_data_js (in translate_path) now
+                # handles it on the first GET instead, so we don't need
+                # eager upgrade per project at boot.
         else:
             print("  no projects found — scaffold one with POST /__projects/new "
                   "or create a subdir with source/ inside", flush=True)
@@ -11036,11 +11920,43 @@ if __name__ == "__main__":
         print(f"serving {INSTALL_ROOT} on http://localhost:{PORT}/   (single-project mode)", flush=True)
         print("  to enable multi-project: set TH_WORKSPACE_DIR=<path> before launching", flush=True)
     print(
-        "  endpoints: /__save  /__branch  /__promote  /__promote_frame  /__layout\n"
+        "  endpoints: /__save  /__layout  /__workflow\n"
         "             /__agents  /__run  /__runs  /__stream\n"
         "             /__workspace  /__projects  /__projects/new  /__projects/rename  /__projects/delete",
         flush=True,
     )
+    # v3.1 — Skill isolation. Spawned `claude` gets `--disable-slash-commands`
+    # so user-level commands (~/.claude/commands/) can't auto-load and
+    # override the visual-planner pipeline. Auth via macOS Keychain stays
+    # intact (no CLAUDE_CONFIG_DIR override).
+    print("  agent isolation: spawned `claude` runs with --disable-slash-commands "
+          "(user-level slash commands at ~/.claude/commands/ hidden)", flush=True)
+
+    # v3.1.2 — Hook-gate auto-install. The real generation lives in
+    # `_ensure_harness_settings()` which is ALSO called at every claude
+    # spawn site (so a missing/deleted file self-heals without restarting
+    # the daemon). Calling it here at boot is just for the console banner
+    # — by the time the first spawn fires, the file would be regenerated
+    # anyway.
+    _settings_path = _ensure_harness_settings()
+    if _settings_path:
+        print(f"  hook gate: PreToolUse Write/Edit/MultiEdit blocks visual "
+              f"asset writes until visual-planner is dispatched", flush=True)
+        print(f"    settings: {_settings_path}", flush=True)
+    else:
+        _hook_path = os.path.join(INSTALL_ROOT, ".claude", "hooks",
+                                  "require-visual-planner.sh")
+        print(f"  hook gate: hook script missing at {_hook_path}; writes are NOT gated",
+              flush=True)
+    # If a stale symlink was left over from the earlier CLAUDE_CONFIG_DIR
+    # approach, clean it up so it doesn't shadow user state.
+    try:
+        _stale = os.path.join(INSTALL_ROOT, ".claude", ".claude.json")
+        if os.path.islink(_stale):
+            os.remove(_stale)
+            print("    cleaned up stale .claude.json symlink from earlier attempt", flush=True)
+    except OSError:
+        pass
     # Surface host-leak diagnostics so 401s from spawned `claude` are easy to
     # trace. See _HOST_LEAK_ENV_VARS for the rationale.
     leaked = [k for k in _HOST_LEAK_ENV_VARS if k in os.environ

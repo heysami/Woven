@@ -14,8 +14,8 @@ Auditing is a fundamentally easier task than the old "extract primitives from fe
 
 ## Input (envelope only)
 
-- `branchSlug`, `sourceRoot`, `intent`
-- `dsRef` — `{ id, version }` from `editor/branches/<slug>.js → meta.dsRef`
+- `slug`, `sourceRoot`, `intent`
+- `dsRef` — `{ id, version }` from `editor/data.js → meta.dsRef`
 
 ## Output
 
@@ -26,7 +26,7 @@ Appears only when drift exists. Format:
 ```markdown
 # DS proposals — generated <YYYY-MM-DDTHH:MM> against ds-<id>@<version>
 
-Branch: <branchSlug>
+Slug: <slug>
 DS: design-systems/<id>/ @ <version>
 Audited files: <count> HTML, <count> JS
 
@@ -36,7 +36,7 @@ Audited files: <count> HTML, <count> JS
 
 ## Proposal 1: Button — primary-icon-small variant
 
-**Used in:** source/<slug>/lxp-apply.html:142, source/<slug>/lxp-dashboard.html:87
+**Used in:** source/lxp-apply.html:142, source/lxp-dashboard.html:87
 **Class signature:** `.btn-primary.icon.small`
 **Closest existing in DS:** `Button.primary-icon` (delta: missing `.small` modifier — 32px → 24px size step)
 **Rationale (inferred):** dense-row contexts need a smaller icon button without losing primary affordance.
@@ -70,8 +70,8 @@ This is the audit summary that surfaces in the editor's status bar / library nod
 - `design-systems/<dsRef.id>/styles.css` — the DS's canonical class rules + `:root` tokens.
 - `design-systems/<dsRef.id>/gallery.html` — the variant matrix.
 - `design-systems/<dsRef.id>/meta.json` — to confirm `version` matches `dsRef.version`. If mismatch, surface "DS has drifted from the version this audit targets; re-stamp branch first".
-- `source/<branchSlug>/*.html`, `*.js`, `*.jsx` — every feature page in the branch.
-- `editor/branches/<branchSlug>.js` — for `meta.dsRef` only.
+- `source/*.html`, `*.js`, `*.jsx` — every feature page in the branch.
+- `<project>/editor/data.js` — for `meta.dsRef` only.
 
 ### Files you do NOT read
 
@@ -102,17 +102,17 @@ If `meta.json.parentRef` is set, recursively union the parent DS's vocabulary in
 
 ### Step 2 — Build the feature-page usage set
 
-Three grep passes against `source/<branchSlug>/`:
+Three grep passes against `source/`:
 
 ```bash
 # C. Every class composition used in feature pages
-grep -ohE 'class(?:Name)?="[^"]+"' source/<branchSlug>/*.html source/<branchSlug>/*.js 2>/dev/null | sort -u > /tmp/fp-classes.txt
+grep -ohE 'class(?:Name)?="[^"]+"' source/*.html source/*.js 2>/dev/null | sort -u > /tmp/fp-classes.txt
 
 # D. Every CSS custom property referenced in JSX / HTML (var(--foo) or directly)
-grep -ohE -- 'var\(\s*--[A-Za-z][A-Za-z0-9_-]*' source/<branchSlug>/*.html source/<branchSlug>/*.js source/<branchSlug>/styles.css 2>/dev/null | sort -u > /tmp/fp-tokens.txt
+grep -ohE -- 'var\(\s*--[A-Za-z][A-Za-z0-9_-]*' source/*.html source/*.js source/styles.css 2>/dev/null | sort -u > /tmp/fp-tokens.txt
 
 # E. Every inline hex / rgb / hsl / oklch literal in feature-page styles or inline style attrs (token bypass)
-grep -ohE '(#[0-9a-fA-F]{3,8}|rgb\([^)]+\)|hsl\([^)]+\)|oklch\([^)]+\))' source/<branchSlug>/*.html source/<branchSlug>/*.js source/<branchSlug>/styles.css 2>/dev/null | sort -u > /tmp/fp-inline-colors.txt
+grep -ohE '(#[0-9a-fA-F]{3,8}|rgb\([^)]+\)|hsl\([^)]+\)|oklch\([^)]+\))' source/*.html source/*.js source/styles.css 2>/dev/null | sort -u > /tmp/fp-inline-colors.txt
 ```
 
 The first two are *usages to check against the DS*. The third is *token bypass evidence* — inline colors mean a feature page is sidestepping the token system entirely.
@@ -167,7 +167,7 @@ Format per the template above. One section per proposal, numbered. If zero propo
 - **Treating utility classes as drift.** `.mt-2`, `.flex-1`, `.gap-3` are atomic helpers — not DS concerns. Skip them but log the count.
 - **Missing `meta.json.parentRef` inheritance.** If the active DS inherits from a parent, the parent's classes ARE part of the vocabulary. Failing to union them produces false-positive drift.
 - **Inline `style="color: #abc"` not caught.** Run grep E (inline color literals) — these bypass tokens and are a primary form of drift.
-- **Source-file scope.** The audit covers the active branch's `source/<slug>/` only. Other branches have their own audits.
+- **Source-file scope.** The audit covers the active branch's `source/` only. Other branches have their own audits.
 - **Grouping miss.** Five files using `.btn-primary.icon.small` should produce ONE proposal with five usage locations, not five identical proposals.
 - **Stale audit against an outdated DS.** Always check `dsRef.version === design-systems/<id>/meta.json.version`. If the DS bumped after the branch was last regen'd, the audit may be flagging things the new DS already handles.
 

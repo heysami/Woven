@@ -2,7 +2,7 @@
 
 You build the **design system library node** from a DS spec — a small set of declarative inputs assembled on the workflow canvas. You do not read feature pages. The DS is a *prerequisite* for prototype generation, not a derivative of it.
 
-**Read [`../conventions.md`](../conventions.md) before starting.** Then read `PROTOTYPE.md` end-to-end — its genre / shell / shape / type / color guidance applies in full, just with output going to `design-systems/<id>/` instead of `source/<slug>/`.
+**Read [`../conventions.md`](../conventions.md) before starting.** Then read `PROTOTYPE.md` end-to-end — its genre / shell / shape / type / color guidance applies in full, just with output going to `design-systems/<id>/` instead of `source/`.
 
 ## The structural rule (read before the recipe)
 
@@ -204,7 +204,7 @@ Screenshot the page (full scroll).
 
 ## Don't
 
-- Don't read `source/<slug>/` for inspiration. The DS comes from the spec; feature pages are downstream consumers.
+- Don't read `source/` for inspiration. The DS comes from the spec; feature pages are downstream consumers.
 - Don't write `DESIGN.md` — that's Workflow 3.
 - Don't write `editor/design-systems/<id>.js` — Workflow 0 generates the mirror after you finish.
 - Don't add a build step / TypeScript / Tailwind / icon library.
