@@ -707,10 +707,13 @@ button {
 .landing-card-action[disabled] { opacity: 0.4; cursor: not-allowed; }
 .landing-card-action-danger:hover:not([disabled]) { color: var(--danger, #c0392b); }
 
-/* Phase 3.5a — three doors per project card. */
+/* Phase 3.5a — door entries per project card. Used to be 2 (prototype +
+   editor); v3.4.30 the prototype door was replaced by the starred list,
+   leaving just the editor door. Kept as a single-column grid for layout
+   stability. */
 .landing-card-doors {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
   gap: 6px;
   margin-top: 4px;
 }
@@ -750,6 +753,171 @@ button {
   color: var(--text-faint);
 }
 .landing-card-door:hover .landing-card-door-icon { color: var(--accent); }
+
+/* v3.4.30 — Starred prototypes list on each project card. The prototype
+   door button was removed; starred prototypes take its place as a small
+   per-project list so the user can jump straight from the gallery into
+   the one bookmarked screen they care about. */
+.landing-card-stars {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.landing-card-stars-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.landing-card-stars-icon { color: var(--accent); display: inline-flex; }
+.landing-card-stars-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.landing-card-star-row {
+  display: flex;
+  align-items: stretch;
+}
+.landing-card-star-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.landing-card-star-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.landing-card-star-glyph {
+  display: inline-flex;
+  color: var(--text-faint);
+  width: 14px;
+  justify-content: center;
+}
+.landing-card-star-btn:hover .landing-card-star-glyph { color: var(--accent); }
+.landing-card-star-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.landing-card-star-slug {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.landing-card-star-row.is-missing .landing-card-star-btn {
+  opacity: 0.55;
+  cursor: not-allowed;
+  text-decoration: line-through;
+  text-decoration-color: var(--text-faint);
+}
+/* Editor button tied to each starred prototype. Sits flush against the
+   prototype-launch button so the row reads as "open prototype | open
+   editor on the same slug". */
+.landing-card-star-edit {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  margin-left: 2px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.landing-card-star-edit:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--accent);
+}
+.landing-card-star-row.is-missing .landing-card-star-edit { opacity: 0.55; }
+
+/* v3.4.30 — Star toggle on each prototype row in the workflow library.
+   Default: faint outlined star, no fill. Hover: darker outline. When the
+   prototype is starred → orange fill with white outline (the "selected"
+   affordance), so a glance across the prototype list shows which ones
+   surface on the projects landing. The two variants share the same base
+   styles; `-corner` floats over the grid-view thumbnail. */
+.workflow-library-star-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px;
+  margin-left: 4px;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  line-height: 0;
+  flex: 0 0 auto;
+}
+.workflow-library-star-btn:hover { color: var(--text); background: var(--surface-2); }
+.workflow-library-star-btn svg { display: block; }
+.workflow-library-star-btn.is-on,
+.workflow-library-star-btn.is-on:hover { color: var(--accent); background: transparent; }
+.workflow-library-star-btn.is-on svg path {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 1.25;
+  paint-order: stroke fill;
+}
+/* Grid-view variant — floats over the thumbnail's top-right corner with a
+   small backdrop pill so it stays legible on busy iframes. */
+.workflow-library-card-thumb { position: relative; }
+.workflow-library-star-btn-corner {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(2px);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  z-index: 2;
+}
+.workflow-library-star-btn-corner:hover { background: #fff; }
+.workflow-library-star-btn-corner.is-on,
+.workflow-library-star-btn-corner.is-on:hover {
+  background: #fff;
+  border-color: var(--accent);
+}
+/* When a prototype row IS starred, give a subtle tint to its container so
+   the star toggle isn't the only signal at scan distance. */
+.workflow-library-item-generated.is-starred,
+.workflow-library-card-generated.is-starred {
+  outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: -1px;
+}
 
 /* Phase 3.5a — Prototype door (full-page iframe of source/<branch>/). */
 .proto-door {
@@ -905,8 +1073,29 @@ button {
 }
 .workflow-body {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  /* Library column · 4px drag handle · canvas. Library width is driven by
+     --workflow-lib-width set on :root (240px default). */
+  grid-template-columns: var(--workflow-lib-width, 240px) 4px 1fr;
   min-height: 0;
+}
+/* Drag handles — left edge of canvas + left edge of chat panel. Subtle
+   neutral idle, accent-tinted on hover so the affordance is discoverable. */
+.workflow-resize-handle {
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.1s ease;
+  user-select: none;
+  z-index: 5;
+}
+.workflow-resize-handle:hover,
+.workflow-resize-handle:active {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
+}
+/* Reserve space on the right for the fixed chat panel when active so the
+   canvas doesn't render under it. */
+.workflow-body[data-chat-active="true"] .workflow-canvas-wrap {
+  margin-right: var(--workflow-chat-width, 644px);
+  transition: margin-right 0.12s ease;
 }
 
 /* Library rail */
@@ -1005,6 +1194,651 @@ button {
 .workflow-library-item-id {
   display: none;
 }
+
+/* v3.2 — Canvas right-click context menu. Portaled to document.body so it
+   escapes the canvas's transform; positioned with `position: fixed` from
+   the click coordinates and clamped to the viewport. */
+.canvas-ctxmenu {
+  position: fixed;
+  z-index: 11500;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  font-size: 12.5px;
+  user-select: none;
+}
+.canvas-ctxmenu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.canvas-ctxmenu-item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.canvas-ctxmenu-item.is-disabled,
+.canvas-ctxmenu-item:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+.canvas-ctxmenu-shortcut {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+.canvas-ctxmenu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.canvas-ctxmenu-danger:not(:disabled) { color: var(--danger, #c0392b); }
+.canvas-ctxmenu-danger:not(:disabled):hover {
+  background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
+}
+
+/* v3.2 — Phase 2: Sub-element select badge. Floats OUTSIDE the top-right
+   of the parent node so it's always visible without overlapping the node
+   chrome. The parent node has `position: absolute`; the badge uses
+   absolute too with a negative top to push above. Click toggles iframe
+   pick mode. */
+.workflow-node-select-badge {
+  /* v3.2.1 — Portaled to document.body with `position: fixed` set inline by
+     WorkflowNodeSelectBadge so it escapes `.workflow-node { overflow: hidden }`.
+     CSS owns the visuals (size, color, hover); the component owns the anchor. */
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
+}
+.workflow-node-select-badge:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.workflow-node-select-badge.is-active {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.workflow-node-select-badge:active { transform: translateY(1px); }
+
+/* v3.3 — Asset action bar. Portaled horizontal strip of 4 icon buttons
+   floating above a selected asset node. Each button opens a popover
+   (refine / refine-prompt / fork / remix). Position is fixed-by-the-parent
+   so we own only the look here. */
+.workflow-asset-action-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 6px 18px rgba(0, 0, 0, 0.06);
+}
+/* v3.4.2 — While the user is panning/zooming the canvas, hide the portaled
+   chrome (asset action bar, picked-element bar, select badge, popovers).
+   The rAF loops that track each node's screen rect are paused during the
+   gesture (see useEndlessCanvas), so without this rule the bars would
+   freeze at their last position — visually pinned to a stale screen
+   coordinate while the nodes underneath them drift. Hiding entirely is
+   cleaner: the bars re-show + re-anchor in the next frame after pan ends. */
+body[data-canvas-interacting="true"] .workflow-asset-action-bar,
+body[data-canvas-interacting="true"] .workflow-asset-action-popover,
+body[data-canvas-interacting="true"] .workflow-node-select-badge,
+body[data-canvas-interacting="true"] .th-portal-tip,
+body[data-canvas-interacting="true"] .workflow-asset-bg-popover {
+  display: none !important;
+}
+/* v3.3 — Picked-element variant: subtle accent ring so the user can tell
+   at a glance that the bar is scoped to the red-outlined sub-element
+   inside the iframe rather than the whole asset card. */
+.workflow-asset-action-bar-picked {
+  border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+  box-shadow:
+    0 0 0 2px color-mix(in oklch, var(--accent) 18%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 6px 18px rgba(0, 0, 0, 0.06);
+}
+.workflow-asset-action-btn {
+  width: 28px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s, transform 0.06s;
+}
+.workflow-asset-action-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.workflow-asset-action-btn.is-open {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  border-color: var(--accent);
+}
+.workflow-asset-action-btn.is-disabled,
+.workflow-asset-action-btn[disabled] {
+  opacity: 0.36;
+  cursor: not-allowed;
+  pointer-events: auto; /* keep hover so the tooltip can explain WHY */
+}
+.workflow-asset-action-btn:active { transform: translateY(1px); }
+
+/* Popover panel hanging off the action bar. Wide enough for the Remix
+   form (variant inputs) but compact enough for the 1-line refine input.
+   max-height + scroll so it doesn't overflow the viewport on small canvases. */
+.workflow-asset-action-popover {
+  width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.10),
+    0 16px 40px rgba(0, 0, 0, 0.10);
+  font-size: 13px;
+  color: var(--text);
+}
+.workflow-asset-action-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.workflow-asset-action-popover-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.workflow-asset-action-popover-close {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+.workflow-asset-action-popover-close:hover { background: var(--surface-2); color: var(--text); }
+.workflow-asset-action-popover-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.workflow-asset-action-popover-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+  min-height: 56px;
+}
+.workflow-asset-action-popover-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 22%, transparent);
+}
+.workflow-asset-action-popover-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+}
+.workflow-asset-action-popover-cancel,
+.workflow-asset-action-popover-submit {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.workflow-asset-action-popover-cancel:hover { background: var(--surface); }
+.workflow-asset-action-popover-submit {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+.workflow-asset-action-popover-submit:hover { filter: brightness(1.05); }
+.workflow-asset-action-popover-submit[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* v3.3.2 — Rules section in the popover. Each chip cycles
+   lock → free → encourage with distinct styling per state so the user
+   can scan the rule set at a glance. */
+.workflow-asset-action-rules {
+  margin: 4px 0 10px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--surface-2) 60%, transparent);
+}
+.workflow-asset-action-rules-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+.workflow-asset-action-rules-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.workflow-asset-action-rule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.workflow-asset-action-rule-chip:hover { background: var(--surface-2); }
+.workflow-asset-action-rule-icon { font-size: 11px; line-height: 1; }
+.workflow-asset-action-rule-chip.is-lock {
+  color: var(--text-muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.workflow-asset-action-rule-chip.is-free {
+  color: var(--text);
+  background: color-mix(in oklch, var(--surface-2) 90%, var(--accent));
+  border-color: color-mix(in oklch, var(--border) 60%, var(--accent));
+}
+.workflow-asset-action-rule-chip.is-encourage {
+  color: oklch(98% 0.002 250);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+.workflow-asset-action-rule-chip.is-pinned {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* v3.4.3 — Asset card kind chip + model chip. Sit in the asset bar
+   between the name and the spacer; give the user at-a-glance answers to
+   "what kind of asset is this?" and "what model produced it?". */
+.workflow-node-asset-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: color-mix(in oklch, var(--accent) 14%, var(--surface-2));
+  color: var(--text);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  flex-shrink: 0;
+}
+.workflow-node-asset-kind-chip-image  { background: color-mix(in oklch, oklch(70% 0.18 250) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(70% 0.18 250) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-vector,
+.workflow-node-asset-kind-chip-svg    { background: color-mix(in oklch, oklch(72% 0.18 150) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(72% 0.18 150) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-html,
+.workflow-node-asset-kind-chip-htmlset{ background: color-mix(in oklch, oklch(68% 0.18 60) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(68% 0.18 60) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-lottie { background: color-mix(in oklch, oklch(70% 0.18 320) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(70% 0.18 320) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-video  { background: color-mix(in oklch, oklch(60% 0.20 20) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(60% 0.20 20) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-text   { background: color-mix(in oklch, oklch(50% 0.04 250) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(50% 0.04 250) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-3d     { background: color-mix(in oklch, oklch(72% 0.18 200) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(72% 0.18 200) 28%, var(--border)); }
+
+/* Model chip — outlined button that opens a small dropdown. */
+.workflow-node-asset-model-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  flex-shrink: 1;
+  min-width: 0;
+}
+.workflow-node-asset-model-chip-btn {
+  max-width: 140px;
+  padding: 1px 6px 1px 6px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-family: ui-monospace, Menlo, monospace;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-asset-model-chip-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.workflow-node-asset-model-chip.has-override .workflow-node-asset-model-chip-btn {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+}
+.workflow-node-asset-model-chip-menu {
+  position: absolute;
+  top: 100%; left: 0;
+  margin-top: 4px;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.10),
+    0 14px 32px rgba(0, 0, 0, 0.10);
+  z-index: 50;
+  padding: 4px;
+}
+.workflow-node-asset-model-chip-item,
+.workflow-node-asset-model-chip-clear {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.workflow-node-asset-model-chip-item:hover,
+.workflow-node-asset-model-chip-clear:hover {
+  background: var(--surface-2);
+}
+.workflow-node-asset-model-chip-item.is-current {
+  background: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  font-weight: 600;
+}
+.workflow-node-asset-model-chip-clear {
+  color: var(--text-muted);
+  font-style: italic;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  padding-bottom: 6px;
+  font-size: 11px;
+}
+.workflow-node-asset-model-chip-empty {
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* v3.4 — Text-asset preview inside the asset card. Renders the first
+   ~2 KB of an LLM-output `.md` / `.txt` file as plain monospace. */
+.workflow-node-asset-text-preview {
+  margin: 0;
+  padding: 6px 8px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  background: var(--surface);
+  color: var(--text);
+  font: 10.5px/1.4 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* v3.4 — Asset bg-color popover. Anchored below the swatch via fixed
+   positioning. Three controls (color / alpha / CSS text) + a footer. */
+.workflow-asset-bg-popover {
+  width: 220px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.10),
+    0 12px 32px rgba(0, 0, 0, 0.10);
+  font-size: 12px;
+  color: var(--text);
+}
+.workflow-asset-bg-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+.workflow-asset-bg-row > span:first-child { color: var(--text-muted); }
+.workflow-asset-bg-row input[type="color"] {
+  width: 100%; height: 22px; padding: 0;
+  border: 1px solid var(--border); border-radius: 4px; background: transparent;
+}
+.workflow-asset-bg-row input[type="range"] { width: 100%; }
+.workflow-asset-bg-row input[type="text"] {
+  width: 100%; padding: 4px 6px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: 11.5px;
+}
+.workflow-asset-bg-alpha-pct {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  min-width: 32px;
+  text-align: right;
+}
+.workflow-asset-bg-foot {
+  display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px;
+}
+.workflow-asset-bg-clear,
+.workflow-asset-bg-done {
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+}
+.workflow-asset-bg-clear:hover { background: var(--surface); }
+.workflow-asset-bg-done {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  border-color: var(--accent);
+}
+.workflow-asset-bg-done:hover { filter: brightness(1.05); }
+
+/* v3.4 — Default-providers section in the settings dialog. One row per
+   capability with two side-by-side selects (provider + model). */
+.workflow-default-providers {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.workflow-settings-section-group-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 10px;
+  line-height: 1.45;
+}
+.workflow-default-provider-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+}
+.workflow-default-provider-label {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+.workflow-default-provider-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.workflow-default-provider-select {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.workflow-default-provider-select:focus { outline: none; border-color: var(--accent); }
+.workflow-default-provider-select[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* Remix form inside the popover — compact row layout. */
+.workflow-asset-action-remix-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workflow-asset-action-remix-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.workflow-asset-action-remix-row > span { color: var(--text-muted); }
+.workflow-asset-action-remix-row input[type="number"],
+.workflow-asset-action-remix-row select {
+  padding: 4px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+.workflow-asset-action-remix-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.workflow-asset-action-remix-variants input[type="text"] {
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+}
+.workflow-asset-action-remix-variants input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* v3.2 — Pick-op toast. Fixed bottom-center, three states matched by the
+   parent setting workflow-pick-toast-{pending|done|error}. */
+.workflow-pick-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 11600;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-width: 240px;
+  max-width: min(520px, calc(100vw - 32px));
+  border-radius: 8px;
+  background: oklch(22% 0.01 250);
+  color: oklch(98% 0.002 250);
+  font: 500 12.5px/1.3 var(--font-ui, Inter, system-ui, sans-serif);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  animation: workflow-pick-toast-in 0.16s ease-out;
+}
+.workflow-pick-toast-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 0;
+}
+.workflow-pick-toast-icon svg { width: 14px; height: 14px; }
+.workflow-pick-toast-spinner {
+  width: 13px; height: 13px;
+  border: 2px solid color-mix(in oklch, oklch(98% 0.002 250) 40%, transparent);
+  border-top-color: oklch(98% 0.002 250);
+  border-radius: 50%;
+  animation: workflowSpin 0.7s linear infinite;
+}
+.workflow-pick-toast-msg { letter-spacing: 0.005em; }
+.workflow-pick-toast-done {
+  background: linear-gradient(180deg, var(--accent) 0%, color-mix(in oklch, var(--accent) 85%, oklch(0% 0 0)) 100%);
+}
+.workflow-pick-toast-error {
+  background: linear-gradient(180deg, var(--danger, #c0392b) 0%, color-mix(in oklch, var(--danger, #c0392b) 85%, oklch(0% 0 0)) 100%);
+}
+@keyframes workflow-pick-toast-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0);    }
+}
+
+/* In-flight ring on the source iframe during the save round-trip. The
+   pending toast triggers this via a body-level `data-pick-op-pending`
+   attribute set by the WorkflowSurface render (see app.js). */
+body[data-pick-op-pending="true"] iframe[data-prototype-id],
+body[data-pick-op-pending="true"] iframe[data-asset-id] {
+  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline-offset: -2px;
+  animation: workflow-pick-op-pulse 1.2s ease-in-out infinite;
+}
+@keyframes workflow-pick-op-pulse {
+  0%, 100% { outline-color: color-mix(in oklch, var(--accent) 60%, transparent); }
+  50%      { outline-color: color-mix(in oklch, var(--accent) 95%, transparent); }
+}
+
 /* Phase 4c — delete-on-hover button for deletable library items
    (generated assets, saved prompts). */
 .workflow-library-item-deletable { grid-template-columns: 18px 1fr auto auto; }
@@ -1068,6 +1902,36 @@ button {
 }
 .workflow-library-tab.is-active .workflow-library-tab-count {
   color: var(--text);
+}
+/* v3.4.27 — Sub-tabs under Outputs (Prototypes & components / Visual assets).
+   Compacter than the top-level tabs so the hierarchy reads as parent/child:
+   slightly smaller font, narrower padding, secondary underline colour. */
+.workflow-library-subtabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 6px;
+  gap: 2px;
+}
+.workflow-library-subtab {
+  flex: 1;
+  padding: 6px 6px 7px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+.workflow-library-subtab:hover { color: var(--text); }
+.workflow-library-subtab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent, var(--text));
 }
 
 /* List/grid toggle for the Outputs tab. Two radio buttons styled as a
@@ -1535,6 +2399,16 @@ button {
 /* Nodes */
 .workflow-node {
   position: absolute;
+  /* v3.4.26 — Isolate the per-node stacking context. Without this, child
+     elements with explicit z-index (notably .workflow-port-zone at z-index:2)
+     escape the node's bounds and paint OVER neighbouring nodes that are
+     visually in front. The classic symptom: drag node B over node A's
+     edge, and A's port dots / port labels / drag handles keep poking
+     through B's body because B's body is at z-index:auto (=0) while A's
+     ports are at z-index:2. `isolation: isolate` scopes every child
+     z-index back inside this node, so DOM source order (= newer node on
+     top) cleanly determines what's painted above what. */
+  isolation: isolate;
   display: grid;
   grid-template-rows: 32px 1fr;
   /* v2.50 — graceful header→body transition. Instead of a tinted header +
@@ -1899,6 +2773,17 @@ button {
 }
 .workflow-node-asset-autosize:active {
   background: color-mix(in oklch, var(--accent) 20%, transparent);
+}
+/* v3.4.21 — Disabled state. Button stays in the toolbar (so the affordance
+   is always discoverable) but reads as inactive: low-opacity icon, no hover
+   accent, default cursor. Click is a no-op (the JS handler gates on
+   _isCustom too — belt + suspenders so a misclick can't accidentally fire). */
+.workflow-node-asset-autosize.is-disabled {
+  opacity: 0.4; cursor: default;
+}
+.workflow-node-asset-autosize.is-disabled:hover {
+  border-color: var(--border); color: var(--text-muted);
+  background: var(--surface);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -3489,8 +4374,9 @@ button {
   cursor: default;
   transition: background 0.08s, border-color 0.08s, color 0.08s;
 }
-a.ds-badge { cursor: pointer; }
-a.ds-badge:hover {
+a.ds-badge, button.ds-badge { cursor: pointer; }
+button.ds-badge { font-family: inherit; }
+a.ds-badge:hover, button.ds-badge:hover {
   border-color: var(--accent);
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -3535,6 +4421,120 @@ a.ds-badge:hover {
   color: oklch(58% 0.14 60);
   font-size: 9px;
   line-height: 1;
+}
+
+/* DS view router — two sub-tabs (Library / Prototype) sit above the body
+   so the user picks which DS to inspect without leaving the editor. */
+.ds-router {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.ds-router-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 18px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.ds-router-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 14px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12.5px/1.2 inherit;
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+}
+.ds-router-tab:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.ds-router-tab[data-active="true"] {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ds-router-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ds-router-tab-id {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text);
+}
+.ds-router-tab-state {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.ds-router-tab[data-active="true"] .ds-router-tab-state {
+  color: var(--text-muted);
+}
+
+/* Library pane — iframe of design-systems/<id>/gallery.html with a thin
+   bar above showing the path + open-in-new-tab escape hatch. */
+.ds-library {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+}
+.ds-library-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ds-library-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.ds-library-path code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.ds-library-open {
+  margin-left: auto;
+  color: var(--accent-text, var(--accent));
+  text-decoration: none;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.ds-library-open:hover {
+  background: var(--accent-soft);
+}
+.ds-library-iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  border: none;
+  background: var(--bg);
 }
 
 /* Phase 7 — DS proposal banner. Slim row that appears below the agent-busy
@@ -9426,37 +10426,59 @@ a.ds-badge:hover {
    panel chrome (hairline border + surface) so it reads as part of the editor
    rather than a foreign chat widget. */
 .chat-drawer {
+  /* Right-side sticky panel. Width comes from --workflow-chat-width on
+     :root (644px default minimum). Left-edge resize handle inside. */
   position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  max-width: 920px;
-  margin: 0 auto;
-  height: 480px;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--workflow-chat-width, 644px);
   display: grid;
   grid-template-rows: auto 1fr auto auto;   /* header · body · composer · footer */
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.06);
   z-index: 60;
   overflow: visible;                    /* perm-menu opens upward beyond drawer */
   font-size: 12.5px;
 }
 .chat-drawer[data-collapsed="true"] {
   grid-template-rows: auto auto auto;   /* header · composer · footer */
-  height: auto;
+}
+/* Chat panel's left-edge resize handle. 6px hit area, only ~1px visually
+   so it doesn't read like a border. Hidden in fullscreen. */
+.chat-drawer-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 1;
+  transition: background 0.1s ease;
+}
+.chat-drawer-resize-handle:hover,
+.chat-drawer-resize-handle:active {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
+}
+.chat-drawer[data-fullscreen="true"] .chat-drawer-resize-handle {
+  display: none;
 }
 .chat-drawer[data-fullscreen="true"] {
   left: 0;
   right: 0;
   top: 0;
   bottom: 0;
+  /* Override the right-panel width + border so the chat actually fills the
+     whole viewport instead of staying pinned at --workflow-chat-width. */
+  width: auto;
   margin: 0;
   max-width: none;
   height: 100vh;
-  border-radius: 0;
   border: 0;
+  border-radius: 0;
+  box-shadow: none;
   z-index: 80;
 }
 .chat-drawer[data-fullscreen="true"] > .chat-header,

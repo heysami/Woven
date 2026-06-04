@@ -284,7 +284,7 @@ def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, 
 
     Hand-rolled multipart so we don't pull in `requests`/`httpx`."""
     import uuid
-    model = model or "gpt-image-1"
+    model = model or "gpt-image-2"  # v3.4.7 — gpt-image-1 deprecates Oct 23, 2026
     boundary = "thMP" + uuid.uuid4().hex
     parts = []
     def add_field(name, value):
@@ -332,11 +332,13 @@ def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, 
 
 
 def _openai_generate_image(api_key, prompt, model, aspect, options):
-    """OpenAI Images. Handles gpt-image-1 (+ -mini), dall-e-3, dall-e-2.
-    gpt-image-1 family returns b64_json natively (no response_format param,
-    setting it actually 400s). dall-e-* needs response_format="b64_json"
-    explicitly to avoid getting a URL back."""
-    model = model or "gpt-image-1"
+    """OpenAI Images. Handles the gpt-image-2 / gpt-image-1.5 / gpt-image-1
+    family. The gpt-image-* models return b64_json natively (setting
+    response_format actually 400s). DALL·E 2 + DALL·E 3 were shut down
+    May 12, 2026 — their branches are kept below as dead code so legacy
+    workflow.json files with old model IDs return a clean error rather
+    than crashing."""
+    model = model or "gpt-image-2"
     body = {"model": model, "prompt": prompt, "n": 1}
     if isinstance(options, dict):
         if options.get("quality"):    body["quality"]    = options["quality"]
@@ -409,6 +411,31 @@ def _fal_extract_image_url(payload):
     raise RuntimeError(f"fal: no image url in response (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
 
 
+def _fal_extract_video_url(payload):
+    """fal video endpoints return one of:
+         { video:  { url } }
+         { videos: [{ url }] }
+         { url: "..." }  (some t2v wrappers)
+       Walk all shapes; raise if nothing usable."""
+    if isinstance(payload, dict):
+        vid = payload.get("video")
+        if isinstance(vid, dict) and isinstance(vid.get("url"), str):
+            return vid["url"]
+        if isinstance(vid, str):
+            return vid
+        vids = payload.get("videos")
+        if isinstance(vids, list) and vids:
+            first = vids[0]
+            if isinstance(first, dict) and isinstance(first.get("url"), str):
+                return first["url"]
+            if isinstance(first, str):
+                return first
+        u = payload.get("url")
+        if isinstance(u, str) and any(u.lower().endswith(ext) for ext in (".mp4", ".webm", ".mov")):
+            return u
+    raise RuntimeError(f"fal: no video url in response (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
+
+
 def _fal_generate_image(api_key, prompt, model, aspect, options):
     """fal.ai text-to-image. Works for fal-ai/flux/*, recraft-v3, ideogram, SD3.5."""
     body = {
@@ -423,6 +450,39 @@ def _fal_generate_image(api_key, prompt, model, aspect, options):
     payload = _fal_request(api_key, model, body)
     image_url = _fal_extract_image_url(payload)
     return _download_bytes(image_url)
+
+
+def _fal_generate_video(api_key, prompt, model, aspect, options):
+    """fal.ai text-to-video / image-to-video. Works for fal-ai/veo3.1,
+    fal-ai/luma-dream-machine/ray-2/text-to-video, fal-ai/kling-video/v2.5-turbo,
+    fal-ai/minimax/hailuo-2.3-fast, fal-ai/seedance-2.0, etc. Returns mp4
+    bytes downloaded from the response's video URL. Aspect ratios per
+    fal's vocabulary (16:9 / 9:16 / 1:1) — most models accept any of them.
+    NOTE: the bare `fal-ai/luma-dream-machine` endpoint was deprecated in
+    June 2026; use the ray-2 sub-paths instead."""
+    body = {"prompt": prompt}
+    # fal's video models use different param names per family; pass a
+    # superset of common knobs and rely on the model to ignore the ones
+    # it doesn't understand. Per-model overrides land via skill node options.
+    # v3.4.12 — 1:1 collapses to 16:9 because almost every video endpoint
+    # rejects square (Luma Ray, Veo 3.1, Kling 2.5, Hailuo all return
+    # `{"detail":[{"msg":"Input should be '16:9' or '9:16'"}]}` for 1:1).
+    # Square is meaningful for still images, not for video — so the safe
+    # default is landscape until the user explicitly picks a portrait.
+    ASPECT_MAP_VIDEO = {
+        "1:1":  "16:9",
+        "3:2":  "16:9",
+        "16:9": "16:9",
+        "2:3":  "9:16",
+        "9:16": "9:16",
+    }
+    body["aspect_ratio"] = ASPECT_MAP_VIDEO.get(aspect, "16:9")
+    if isinstance(options, dict):
+        for k in ("duration", "fps", "seed", "loop", "guidance_scale", "negative_prompt", "image_url"):
+            if k in options and options[k] is not None: body[k] = options[k]
+    payload = _fal_request(api_key, model, body, timeout=300)
+    video_url = _fal_extract_video_url(payload)
+    return _download_bytes(video_url)
 
 
 def _fal_transform_image(api_key, model, input_abs_path, options, input_data_uri=None):
@@ -628,6 +688,13 @@ _GENERATE_DISPATCH = {
     # node and a Quiver key is configured, the editor routes here instead
     # of falling back to Pathway B (Claude writing the SVG by hand).
     ("svg-gen",        "quiver"): "quiver_svg",
+    # Real video generation via fal. The skill catalog's `video-gen`
+    # declares `output: "video"` + `pathwayAFallback: { provider: "fal",
+    # model: "fal-ai/veo3.1" }` (was luma-dream-machine until June 2026 when
+    # that bare endpoint was deprecated). The dispatcher routes here, calls
+    # fal.run, parses the response with _fal_extract_video_url, and
+    # downloads the mp4 bytes to the spawned `.mp4` path.
+    ("video-gen",      "fal"):    "fal_video",
 }
 _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
@@ -888,7 +955,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
-def _anthropic_chat(api_key, messages, model="claude-sonnet-4-5-20250929", options=None, vision=False):
+def _anthropic_chat(api_key, messages, model="claude-sonnet-4-6", options=None, vision=False):
     """Anthropic Messages API. Accepts the same OpenAI-style `messages` array
     we use everywhere — system messages are folded into a top-level `system`
     field (Anthropic's API doesn't accept system in the messages list), and
@@ -930,7 +997,7 @@ def _anthropic_chat(api_key, messages, model="claude-sonnet-4-5-20250929", optio
         elif isinstance(content, str):
             msgs_out.append({"role": role, "content": content})
     body = {
-        "model": model or "claude-sonnet-4-5-20250929",
+        "model": model or "claude-sonnet-4-6",
         "max_tokens": (options or {}).get("max_tokens") or 4096,
         "messages": msgs_out,
     }
@@ -1065,6 +1132,50 @@ def _project_dir_candidates(pid: str) -> list:
     return out
 
 
+def _starred_for_project(project_root: str) -> list:
+    """Read <project>/.starred-prototypes.json and resolve each id to a
+    full {id, path, label, exists} entry. Module-level helper so
+    _list_projects() (which is also module-level) can call it."""
+    path = os.path.join(project_root, ".starred-prototypes.json")
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+        ids = [s for s in (data.get("starred") or []) if isinstance(s, str) and s]
+    except Exception:
+        return []
+    if not ids:
+        return []
+    src_root = os.path.join(project_root, "source")
+    found = {}
+    if os.path.isdir(src_root):
+        try:
+            for name in os.listdir(src_root):
+                if name.startswith("."): continue
+                lvl1 = os.path.join(src_root, name)
+                if not os.path.isdir(lvl1): continue
+                if os.path.isfile(os.path.join(lvl1, "index.html")):
+                    found[name] = {"id": name, "path": f"source/{name}/index.html", "label": name, "depth": 1}
+                for sub in os.listdir(lvl1):
+                    if sub.startswith(".") or sub == "index.html": continue
+                    lvl2 = os.path.join(lvl1, sub)
+                    if not os.path.isdir(lvl2): continue
+                    if os.path.isfile(os.path.join(lvl2, "index.html")):
+                        cid = f"{name}/{sub}"
+                        found[cid] = {"id": cid, "path": f"source/{name}/{sub}/index.html", "label": sub, "branch": name, "depth": 2}
+        except OSError:
+            pass
+    out = []
+    for sid in ids:
+        if sid in found:
+            e = dict(found[sid]); e["exists"] = True; out.append(e)
+        else:
+            label = sid.rsplit("/", 1)[-1] or sid
+            out.append({"id": sid, "path": f"source/{sid}/index.html", "label": label, "exists": False})
+    return out
+
+
 def _list_projects() -> list:
     """In workspace mode: subdirs of WORKSPACE_DIR/projects/ (or WORKSPACE_DIR
     itself as a fallback) with a source/ folder, augmented + ordered by
@@ -1077,6 +1188,7 @@ def _list_projects() -> list:
             "path": DEFAULT_PROJECT_ROOT,
             "hasSource": os.path.isdir(os.path.join(DEFAULT_PROJECT_ROOT, "source")),
             "lastActivity": _last_activity(DEFAULT_PROJECT_ROOT),
+            "starredPrototypes": _starred_for_project(DEFAULT_PROJECT_ROOT),
         }]
     out: list = []
     seen: set = set()
@@ -1111,6 +1223,7 @@ def _list_projects() -> list:
             "path": p,
             "hasSource": os.path.isdir(os.path.join(p, "source")),
             "lastActivity": _last_activity(p),
+            "starredPrototypes": _starred_for_project(p),
         })
     # Scan order: projects/ first (canonical), then root (legacy fallback).
     scan_dirs = []
@@ -1135,6 +1248,7 @@ def _list_projects() -> list:
                     "path": p,
                     "hasSource": True,
                     "lastActivity": _last_activity(p),
+                    "starredPrototypes": _starred_for_project(p),
                 })
         except OSError:
             pass
@@ -4309,36 +4423,35 @@ TRIGGER_PROMPTS = {
         "After applying, summarise what changed and which files were touched. "
         "Do NOT delete edits.json until every edit has succeeded."
     ),
-    # v3.1 — fork/merge triggers removed with project-level branches.
     "regenerate": (
-        "Run Workflow 1 (regenerate) on branch {branch}. "
+        "Run Workflow 1 (regenerate). "
         "Read docs/agents/workflows/1-regenerate.md for the architecture. "
         "Read docs/agents/planner.md as your orchestrator playbook. "
         "Read docs/agents/conventions.md before dispatching any subagent. "
-        "Whenever you write into editor/branches/{branch}.js, follow "
+        "Whenever you write into editor/data.js, follow "
         "docs/agents/data-schema.md.\n\n"
         "Render-check (Step 4f): no screenshot tool is wired in this version — "
         "surface 'render check skipped — no screenshot tool available' in your report."
     ),
     "statemachine-request": (
-        "Run Workflow 1 on branch {branch} with `overrides.stateMachine: true`. "
+        "Run Workflow 1 with `overrides.stateMachine: true`. "
         "Read docs/agents/planner.md and docs/agents/subagents/8-state-machine.md."
     ),
     "timeline-request": (
-        "Run Workflow 1 on branch {branch} with `overrides.timeline: true`. "
+        "Run Workflow 1 with `overrides.timeline: true`. "
         "Read docs/agents/planner.md and docs/agents/subagents/9-timeline.md."
     ),
     "grid-request": (
-        "Run Workflow 1 on branch {branch} with `overrides.grids: true`. "
+        "Run Workflow 1 with `overrides.grids: true`. "
         "Read docs/agents/planner.md and docs/agents/subagents/10-grids.md."
     ),
     "freeform": "{prompt}",
 }
 
 
-def _compose_initial_prompt(kind: str, branch: str, user_prompt: str = "") -> str:
+def _compose_initial_prompt(kind: str, user_prompt: str = "") -> str:
     template = TRIGGER_PROMPTS.get(kind) or TRIGGER_PROMPTS["freeform"]
-    return template.format(branch=branch or "main", prompt=user_prompt or "").strip()
+    return template.format(prompt=user_prompt or "").strip()
 
 
 # ── question-form protocol ──────────────────────────────────────────────────
@@ -4527,11 +4640,10 @@ WORKSPACE_LAYOUT_PROMPT = """
 Your cwd is the active project's root. Project-scoped artifacts live here \
 and you read/write them via relative paths:
 
-- `source/<branch>/` — prototype source (HTML, CSS, JS, prototype.json, …)
-- `editor/branches/<slug>.js` — per-branch editor data file
-- `editor/data.js` — the branch registry for this project
-- `DESIGN.md`, `NOTES.md`, `MERGES.md`, `FORK_REQUEST.md`, `edits.json` — \
-per-project docs and ephemeral handoff files
+- `source/` — prototype source (HTML, CSS, JS, prototype.json, …)
+- `editor/data.js` — editor data file for this project (window.EDITOR_DATA)
+- `DESIGN.md`, `NOTES.md`, `edits.json` — per-project docs and ephemeral \
+handoff files
 
 The **agent protocol** — the shared playbook every project follows — lives \
 at a separate read-only mount, exposed to you via `--add-dir $TH_PROTOCOL_ROOT`. \
@@ -4543,8 +4655,7 @@ Read it from there; do NOT copy these files into the project:
 
 Useful env vars set on every spawn: `TH_PROJECT_ROOT` (your cwd as an \
 absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
-`TH_PROJECT_ID` (the workspace id of the active project), `TH_BRANCH` \
-(the active branch slug).
+`TH_PROJECT_ID` (the workspace id of the active project).
 """
 
 
@@ -4629,7 +4740,7 @@ def _ensure_harness_settings() -> str | None:
     return settings_path
 
 
-def _build_child_env(agent_id: str, branch: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
+def _build_child_env(agent_id: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
     env = dict(os.environ)
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
     if not preserve or preserve == "0":
@@ -4653,7 +4764,6 @@ def _build_child_env(agent_id: str, branch: str, run_id: str, project_root: str 
             # answering on the other end of this spawn.
             env.pop(k, None)
     env.update({
-        "TH_BRANCH": branch,
         "TH_DAEMON_URL": f"http://127.0.0.1:{PORT}",
         "TH_RUN_ID": run_id,
         "TH_AGENT": agent_id,
@@ -4691,7 +4801,7 @@ def _build_child_env(agent_id: str, branch: str, run_id: str, project_root: str 
     return env
 
 
-def _default_run_title(kind: str, branch: str, body: dict) -> str:
+def _default_run_title(kind: str, body: dict) -> str:
     meta = body.get("meta") or {}
     if kind == "edits-apply":
         n = meta.get("editCount")
@@ -4701,14 +4811,13 @@ def _default_run_title(kind: str, branch: str, body: dict) -> str:
             bits.append(f"{n} edit{'' if n == 1 else 's'}")
         if ann:
             bits.append(f"{ann} annotation{'' if ann == 1 else 's'}")
-        return f"Applying {', '.join(bits) or 'edits'} · {branch}"
-    # v3.1 — fork/merge run-title cases removed with project-level branches.
+        return f"Applying {', '.join(bits) or 'edits'}"
     if kind == "regenerate":
-        return f"Regenerating · {branch}"
+        return "Regenerating"
     if kind.endswith("-request"):
-        return f"View request ({kind.replace('-request', '')}) · {branch}"
+        return f"View request ({kind.replace('-request', '')})"
     snippet = (body.get("prompt") or "").strip().splitlines()
-    return (snippet[0][:60] + "…") if snippet and len(snippet[0]) > 60 else (snippet[0] if snippet else f"Run · {branch}")
+    return (snippet[0][:60] + "…") if snippet and len(snippet[0]) > 60 else (snippet[0] if snippet else "Run")
 
 
 class H(http.server.SimpleHTTPRequestHandler):
@@ -4782,6 +4891,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"[v3.1 migrate] {project_root}: {e}", flush=True)
             return os.path.join(project_root, *parts)
+        # Per-project layout sidecar — editor/<slug>.layout.js. Written by
+        # /__layout, loaded by index.html before app.js so positions + grid
+        # meta survive reload.
+        if len(parts) == 2 and parts[0] == "editor" and parts[1].endswith(".layout.js"):
+            return os.path.join(project_root, *parts)
         # Editor binary (shared).
         if parts[:1] == ["editor"]:
             return os.path.join(INSTALL_ROOT, *parts)
@@ -4848,6 +4962,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._write_text(qs)
             if parsed.path == "/__html_save":
                 return self._html_save(qs)
+            if parsed.path == "/__starred_prototypes/toggle":
+                return self._starred_prototypes_toggle(qs)
             if parsed.path == "/__component_export":
                 return self._component_export(qs)
             if parsed.path == "/__copy_file":
@@ -4856,6 +4972,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._replace_exposed_svg(qs)
             if parsed.path == "/__rewrite_img_src":
                 return self._rewrite_img_src(qs)
+            if parsed.path == "/__rewrite_element_for_kind":
+                return self._rewrite_element_for_kind(qs)
             if parsed.path == "/__native_folder_picker":
                 return self._native_folder_picker()
             if parsed.path == "/__mkdir":
@@ -5047,6 +5165,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._list_files(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__source_prototypes":
             return self._source_prototypes(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__starred_prototypes":
+            return self._starred_prototypes_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__source_htmls":
             return self._source_htmls(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__local_status":
@@ -5202,14 +5322,21 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    # ── POST /__layout?branch=<slug> ─────────────────────────────────────
-    # Persist Canvas-view frame positions to a sidecar file the editor reloads
-    # on next boot. This is intentionally separate from the design-edits queue
-    # (edits.json + Workflow 2): rearranging frames is editor-organization,
-    # not a "design change" that should round-trip through an LLM run.
+    # ── POST /__layout ───────────────────────────────────────────────────
+    # Persist Canvas-view frame positions + meta overrides (default frame
+    # size, canvas gap) to a sidecar file the editor reloads on next boot.
+    # This is intentionally separate from the design-edits queue
+    # (edits.json + Workflow 2): rearranging frames and tweaking the grid
+    # are editor-organization, not "design changes" that should round-trip
+    # through an LLM run.
     #
-    # Body: { "positions": { "<frame-id>": { "col": <int>, "row": <int> }, ... } }
+    # Body: { "positions": { "<frame-id>": { "col": <int>, "row": <int> }, ... },
+    #         "meta":      { "defaultFrame": { "w": <int>, "h": <int> },
+    #                        "canvasGap":    <int> } }
     # Writes: editor/branches/<slug>.layout.js with `window.EDITOR_LAYOUT = …`.
+    #
+    # The sidecar shape is { positions: {...}, meta: {...} }. Legacy sidecars
+    # (flat id → {col,row}) are auto-upgraded on the next write.
     def _layout_save(self, qs):
         try:
             project_root = resolve_project_root(qs)
@@ -5228,8 +5355,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         positions = body.get("positions") or {}
         if not isinstance(positions, dict):
             return self._reply(400, {"error": "positions must be an object"})
-        # Sanitize — only id → { col:int, row:int } allowed; everything else dropped.
-        sanitized = {}
+        # Sanitize positions — only id → { col:int, row:int } allowed.
+        sanitized_positions = {}
         for fid, pos in positions.items():
             if not isinstance(fid, str) or not fid:
                 continue
@@ -5238,16 +5365,32 @@ class H(http.server.SimpleHTTPRequestHandler):
             col = pos.get("col"); row = pos.get("row")
             if not isinstance(col, int) or not isinstance(row, int):
                 continue
-            sanitized[fid] = {"col": col, "row": row}
+            sanitized_positions[fid] = {"col": col, "row": row}
+        # Sanitize meta — defaultFrame.{w,h} ints, canvasGap int.
+        sanitized_meta = {}
+        meta_in = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+        df = meta_in.get("defaultFrame") if isinstance(meta_in.get("defaultFrame"), dict) else None
+        if df:
+            w = df.get("w"); h = df.get("h")
+            if isinstance(w, int) and isinstance(h, int) and w >= 100 and h >= 100:
+                sanitized_meta["defaultFrame"] = {"w": w, "h": h}
+        gap = meta_in.get("canvasGap")
+        if isinstance(gap, int) and gap >= 0:
+            sanitized_meta["canvasGap"] = gap
         dest_dir = _project_paths(project_root)["branch_dir"]
         if not os.path.isdir(dest_dir):
             return self._reply(404, {"error": "branches dir missing", "dir": dest_dir})
         dest = os.path.join(dest_dir, slug + ".layout.js")
+        payload = {"positions": sanitized_positions}
+        if sanitized_meta:
+            payload["meta"] = sanitized_meta
         js = (
-            "// Auto-generated by /__layout. Maps frame.id → {col, row} for the\n"
-            "// Canvas view's grid layout. Hand-edits OK but the editor will\n"
-            "// overwrite on the next rearrange. Delete to reset positions.\n"
-            "window.EDITOR_LAYOUT = " + json.dumps(sanitized, indent=2, sort_keys=True) + ";\n"
+            "// Auto-generated by /__layout. Carries editor preferences:\n"
+            "//   positions — frame.id → { col, row } for the Canvas grid.\n"
+            "//   meta      — defaultFrame { w, h }, canvasGap (px).\n"
+            "// Hand-edits OK but the editor overwrites on next rearrange\n"
+            "// or frame-size change. Delete to reset everything.\n"
+            "window.EDITOR_LAYOUT = " + json.dumps(payload, indent=2, sort_keys=True) + ";\n"
         )
         rel_dest = os.path.relpath(dest, project_root)
         with _history_bracket(project_root, [rel_dest],
@@ -5710,8 +5853,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # against a real project where 4 snapshot dirs existed
                         # under workflow/runs/<assetId>/ but workflow.json had
                         # only one versions[] entry.
-                        for daemon_field in ("output", "runStatus", "runError",
-                                              "runRunId", "runId",
+                        for daemon_field in ("output", "runRunId", "runId",
                                               "versions", "activeVersionId"):
                             if daemon_field in disk_n:
                                 disk_val = disk_n.get(daemon_field)
@@ -5719,6 +5861,39 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 # let the editor clear (e.g. via "reset run") work.
                                 if disk_val is not None:
                                     n[daemon_field] = disk_val
+                        # v3.4.11 — runStatus + runError narrowed preservation.
+                        # The old broad preservation ("if disk has non-None,
+                        # override editor's POST") clobbered legitimate editor
+                        # clears. Concrete bug: runRemix spawns a variant card
+                        # with runStatus="pending", the first 350ms-debounced
+                        # save writes "pending" to disk, the variant LLM call
+                        # finishes ~2s later and the editor sets runStatus=null
+                        # in memory, the next save POSTs null — but the
+                        # preservation here saw disk still had "pending" and
+                        # rewrote it back. The card was permanently stuck on
+                        # the "Generating…" skeleton even though the file
+                        # landed on disk. Same root cause for runRepeater +
+                        # any other editor-managed pending state.
+                        #
+                        # The orchestrator race the broad preservation was
+                        # protecting against ONLY applies when disk has
+                        # "running" — that state is ONLY set by the per-node
+                        # /__workflow/node/<id>/status endpoint (atomic
+                        # daemon-side flip during an active agent run). Every
+                        # other runStatus value (pending / paused / error /
+                        # done / null) flows through the editor, so editor
+                        # wins. Narrow the preservation to just "running":
+                        disk_status = disk_n.get("runStatus")
+                        if disk_status == "running":
+                            n["runStatus"] = "running"
+                            disk_error = disk_n.get("runError")
+                            if disk_error is not None:
+                                n["runError"] = disk_error
+                        # else: trust editor's posted runStatus + runError —
+                        # editor is authoritative for pending → null clears
+                        # (variant succeeded), pending → error flips (variant
+                        # failed), and final-state cleanups (done/error → null
+                        # from the polling self-heal).
                         # v2.18d — kind-specific orchestrator-set fields.
                         # v2.25 — only preserve disk when the editor sends back
                         # EMPTY (the stomp pattern: stale React state lost the
@@ -5908,7 +6083,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # no longer trusts cwd implicitly even with bypassPermissions.
         spawn_args += ["--add-dir", project_root]
         run_id = uuid.uuid4().hex[:16]
-        env = _build_child_env(agent_id, branch, run_id,
+        env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id)
         try:
             proc = subprocess.Popen(
@@ -8263,15 +8438,27 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _media_config_get(self):
         cfg = _media_config_load()
         masked = {}
-        for provider, settings in cfg.items():
-            if not isinstance(settings, dict): continue
-            key = settings.get("api_key")
+        # v3.4.7 — Also mark providers whose key is in the env (TH_*) — the
+        # resolver checks env first, so a provider with an env key but
+        # nothing in media-config.json is still "available".
+        for provider in _PROVIDER_ENV_KEYS:
+            settings = cfg.get(provider, {}) if isinstance(cfg.get(provider), dict) else {}
+            key = settings.get("api_key") or os.environ.get(_PROVIDER_ENV_KEYS.get(provider) or "", "")
             masked[provider] = {
                 "has_key": bool(key),
+                "saved":   bool(settings.get("api_key")),
+                "from_env": bool(not settings.get("api_key") and key),
                 "last_test_ok": bool(settings.get("last_test_ok")),
                 "last_test_at": settings.get("last_test_at"),
             }
-        return self._reply(200, {"providers": masked})
+        # v3.4.7 — Surface CLI availability so the editor's "Auto" resolver
+        # can decide between API and CLI fallback without making the user
+        # guess. detect_agent_bin returns None when not on PATH.
+        cli_available = detect_agent_bin("claude") is not None
+        return self._reply(200, {
+            "providers": masked,
+            "claude_cli_available": cli_available,
+        })
 
     def _media_config_set(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -8326,7 +8513,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "Content-Type": "application/json",
                     },
                     data=json.dumps({
-                        "model": "claude-haiku-4-5-20251001",
+                        "model": "claude-haiku-4-5",
                         "max_tokens": 1,
                         "messages": [{"role": "user", "content": "hi"}],
                     }).encode("utf-8"),
@@ -8542,6 +8729,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                     bytes_ = _openai_edit_image(api_key, prompt, model, img_bytes, img_mime, aspect, options)
                 elif provider == "openai":
                     bytes_ = _openai_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "fal" and skill == "video-gen":
+                    # v3.4.1 — Real video. Dispatches to fal's text-to-video
+                    # endpoint and downloads the mp4 bytes. Unlike image
+                    # generation, this can take 30s–5min depending on
+                    # the model, so we extend timeout to 300s.
+                    bytes_ = _fal_generate_video(api_key, prompt, model, aspect, options)
                 elif provider == "fal":
                     bytes_ = _fal_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "quiver" and skill == "svg-gen":
@@ -8689,12 +8882,29 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
 
         api_key = _resolve_provider_key(provider)
-        # Phase 8 — CLI fallback. When the user has the Claude CLI
-        # authenticated but no API key configured in media-config (their
-        # /__run agent runs work, but raw /__llm_run can't reach the API),
-        # route anthropic LLM calls through `claude --print` instead.
-        # Same response shape so the frontend doesn't change.
-        if not api_key and provider == "anthropic" and skill == "llm":
+        # v3.4.6 — CLI fallback policy:
+        #   • CLI is ALWAYS preferred when authenticated, regardless of which
+        #     provider the user picked. The user's mental model is "I have
+        #     Claude Code installed; it should just work" — making them
+        #     paste an API key for a model they're not even using is
+        #     friction. The CLI uses their existing Claude subscription
+        #     (no per-token cost), so it's also the cheaper default.
+        #   • For provider=anthropic: trivial — the CLI IS the anthropic
+        #     model, just routed through Claude Code's auth instead of the
+        #     API directly.
+        #   • For provider=openai (or any other text provider with no key
+        #     configured): substitute Claude via the CLI. The user gets a
+        #     working response instead of an error; we annotate the
+        #     response with provider="claude-cli" so the UI can surface
+        #     "answered by Claude CLI instead of the picked model" if it
+        #     wants to.
+        # This block also covers skill="describe" for anthropic providers
+        # since the CLI's vision support handles images via @file paths.
+        # Restrict to skill="llm" for now — "describe" always carries an
+        # image payload that the one-shot CLI helper doesn't accept yet.
+        # Image fallback can come later via the CLI's `@path` syntax.
+        cli_available = detect_agent_bin("claude") is not None
+        if cli_available and not api_key and provider in ("anthropic", "openai") and skill == "llm":
             try:
                 msgs_in = body.get("messages")
                 if isinstance(msgs_in, list) and msgs_in:
@@ -8713,10 +8923,26 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if not p:
                         return self._reply(400, {"error": "prompt or messages required for llm skill"})
                     cli_msgs = [{"role": "user", "content": p}]
-                text = _claude_cli_complete(cli_msgs, model=model, timeout=600)
-                return self._reply(200, {"ok": True, "text": text, "skill": skill, "provider": "anthropic-cli", "model": model})
+                # When the user picked OpenAI but we're falling back to the
+                # Claude CLI, the actual model is whatever Claude resolves
+                # (likely sonnet) — pass the picked model through to the
+                # CLI's `--model` flag which is forgiving about aliases but
+                # ignores non-claude IDs. The response reports the
+                # substitution honestly via provider="claude-cli" so the
+                # UI can surface it if it wants.
+                effective_model = model if "claude" in (model or "").lower() else "sonnet"
+                text = _claude_cli_complete(cli_msgs, model=effective_model, timeout=600)
+                response_provider = "claude-cli" if provider == "openai" else "anthropic-cli"
+                return self._reply(200, {
+                    "ok": True, "text": text, "skill": skill,
+                    "provider": response_provider, "model": effective_model,
+                    "fallback_reason": (
+                        "openai API key not configured — answered by Claude CLI as fallback"
+                        if provider == "openai" else None
+                    ),
+                })
             except FileNotFoundError as e:
-                return self._reply(502, {"error": f"no anthropic API key AND claude CLI not on PATH ({e}). Open Settings (⚙ in the workflow toolbar) to paste an API key, or install the Claude CLI."})
+                return self._reply(502, {"error": f"no {provider} API key AND claude CLI not on PATH ({e}). Open Settings (⚙ in the workflow toolbar) to paste an API key, or install the Claude CLI."})
             except subprocess.TimeoutExpired:
                 return self._reply(504, {
                     "error":
@@ -9113,14 +9339,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         rel = (body.get("path") or "").strip()
+        # v3.4.1 — accept either `html` (legacy alias) or `content` for any
+        # text-payload export. The endpoint is now used by llm/describe text
+        # outputs, lottie-gen json, svg-gen svg, etc., not just HTML.
         html = body.get("html")
+        content = body.get("content")
+        payload = content if isinstance(content, str) and content.strip() else html
         overwrite = bool(body.get("overwrite"))
-        if not isinstance(html, str) or not html.strip():
-            return self._reply(400, {"error": "html must be a non-empty string"})
+        if not isinstance(payload, str) or not payload.strip():
+            return self._reply(400, {"error": "content (or html) must be a non-empty string"})
         if not rel.startswith("source/"):
             return self._reply(400, {"error": "path must start with source/"})
-        if not (rel.endswith(".html") or rel.endswith(".htm")):
-            return self._reply(400, {"error": "path must end in .html or .htm"})
+        ALLOWED_EXTS = (".html", ".htm", ".md", ".markdown", ".txt", ".svg",
+                        ".json", ".css", ".js", ".mjs", ".ts", ".tsx", ".jsx")
+        if not rel.lower().endswith(ALLOWED_EXTS):
+            return self._reply(400, {"error": "path must end in one of " + ", ".join(ALLOWED_EXTS)})
+        html = payload  # downstream write uses `html` var name
         try:
             abs_path = _safe_join(project_root, rel)
         except Exception as e:
@@ -9576,6 +9810,130 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"scan failed: {e}"})
         return self._reply(200, {"prototypes": found})
 
+    # ─────────────────────────────────────────────────────────────────────
+    # Starred prototypes — per-project bookmarks of specific prototype slugs
+    # that the user has chosen to surface on the projects landing + in the
+    # workflow library. Storage: <project>/.starred-prototypes.json with
+    # shape { "starred": ["<id1>", "<id2>", ...] } where each id matches
+    # the `id` returned by /__source_prototypes (e.g. "main", "main/sketches").
+    # ─────────────────────────────────────────────────────────────────────
+    def _starred_prototypes_path(self, project_root):
+        return os.path.join(project_root, ".starred-prototypes.json")
+
+    def _read_starred_ids(self, project_root):
+        path = self._starred_prototypes_path(project_root)
+        if not os.path.isfile(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f) or {}
+            arr = data.get("starred") if isinstance(data.get("starred"), list) else []
+            return [s for s in arr if isinstance(s, str) and s]
+        except Exception:
+            return []
+
+    def _write_starred_ids(self, project_root, ids):
+        path = self._starred_prototypes_path(project_root)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"starred": ids}, f, indent=2)
+                f.write("\n")
+            return True
+        except OSError:
+            return False
+
+    def _hydrate_starred(self, project_root, ids):
+        """Resolve each starred id to a full {id, path, label, exists} entry
+        by reusing the prototype-scan logic. ids that no longer match a real
+        prototype on disk still come back, marked exists=False, so the UI
+        can render them as broken without losing the bookmark."""
+        src_root = os.path.join(project_root, "source")
+        found_by_id = {}
+        if os.path.isdir(src_root):
+            try:
+                for name in sorted(os.listdir(src_root)):
+                    if name.startswith("."): continue
+                    lvl1 = os.path.join(src_root, name)
+                    if not os.path.isdir(lvl1): continue
+                    if os.path.isfile(os.path.join(lvl1, "index.html")):
+                        found_by_id[name] = {
+                            "id": name,
+                            "path": f"source/{name}/index.html",
+                            "label": name,
+                            "depth": 1,
+                        }
+                    for sub in sorted(os.listdir(lvl1)):
+                        if sub.startswith(".") or sub == "index.html": continue
+                        lvl2 = os.path.join(lvl1, sub)
+                        if not os.path.isdir(lvl2): continue
+                        if os.path.isfile(os.path.join(lvl2, "index.html")):
+                            cid = f"{name}/{sub}"
+                            found_by_id[cid] = {
+                                "id": cid,
+                                "path": f"source/{name}/{sub}/index.html",
+                                "label": sub,
+                                "branch": name,
+                                "depth": 2,
+                            }
+            except OSError:
+                pass
+        out = []
+        for sid in ids:
+            if sid in found_by_id:
+                e = dict(found_by_id[sid])
+                e["exists"] = True
+                out.append(e)
+            else:
+                # Bookmark lives on; we just couldn't find the prototype on disk.
+                label = sid.rsplit("/", 1)[-1] or sid
+                out.append({
+                    "id": sid,
+                    "path": f"source/{sid}/index.html",
+                    "label": label,
+                    "exists": False,
+                })
+        return out
+
+    # GET /__starred_prototypes?project=<id>
+    def _starred_prototypes_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        ids = self._read_starred_ids(project_root)
+        return self._reply(200, {"starred": self._hydrate_starred(project_root, ids)})
+
+    # POST /__starred_prototypes/toggle  body: { id, starred?: bool }
+    # If `starred` is omitted, flips the current state. Returns the new full list.
+    def _starred_prototypes_toggle(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body() or {}
+        sid = (body.get("id") or "").strip()
+        if not sid:
+            return self._reply(400, {"error": "missing id"})
+        # Sanity-bound the id — must look like the slugs we scan for.
+        if not re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", sid):
+            return self._reply(400, {"error": "invalid id shape", "id": sid})
+        ids = self._read_starred_ids(project_root)
+        want = body.get("starred")
+        if want is None:
+            want = sid not in ids
+        if want and sid not in ids:
+            ids.append(sid)
+        elif not want and sid in ids:
+            ids = [s for s in ids if s != sid]
+        if not self._write_starred_ids(project_root, ids):
+            return self._reply(500, {"error": "write failed"})
+        return self._reply(200, {
+            "starred": self._hydrate_starred(project_root, ids),
+            "ids": ids,
+            "toggled": sid,
+            "now": bool(want),
+        })
+
     # GET /__source_htmls?project=<id>
     # Walks source/ for every .html / .htm file EXCEPT the index.html files
     # picked up by /__source_prototypes (which already surface as Prototypes
@@ -9635,6 +9993,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                     fpath = os.path.join(root, fname)
                     if fpath in prototype_indexes: continue
                     if not os.path.isfile(fpath): continue
+                    # v3.4.16 — Skip HTML files living inside the asset
+                    # subdirs (images/, svg/, shaders/, viz/, models/,
+                    # video/, audio/). Those are skill outputs from
+                    # shader / threejs / canvas-gen / viz / motion-gen /
+                    # lottie-gen, already enumerated by /__assets with
+                    # the correct extension-based kind. Listing them
+                    # again here produced duplicate library entries —
+                    # the user sees the same scene twice, once as an
+                    # HTML page (renders fine) and once as an "image"
+                    # asset (broken when dragged).
+                    if len(segs) >= 2 and segs[1] in self._LIB_ASSET_SUBDIRS:
+                        continue
                     try: st = os.stat(fpath)
                     except Exception: continue
                     rel = os.path.relpath(fpath, project_root).replace("\\", "/")
@@ -9789,10 +10159,213 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except OSError as e:
                         return self._reply(500, {"error": f"write failed for {fname}: {e}"})
 
+        # v3.4.22 — Broadcast the rewritten file paths so the prototype
+        # iframe handler refreshes immediately (instead of waiting for the
+        # file-watcher's 1–2s polling cycle).
+        try:
+            project_id = os.path.basename(project_root.rstrip("/"))
+            changed_paths = [f["path"] for f in files_changed]
+            if changed_paths:
+                _broadcast_asset_change(project_id, changed_paths)
+        except Exception:
+            pass
         return self._reply(200, {
             "ok": True,
             "old_src": old_src,
             "new_src": new_src,
+            "files": files_changed,
+            "total_rewrites": sum(f["rewrites"] for f in files_changed),
+        })
+
+    # POST /__rewrite_element_for_kind?project=<id>
+    # Body: { branch, old_src, new_src, new_kind }
+    # Like /__rewrite_img_src but ALSO rewrites the HTML ELEMENT TYPE when
+    # the new file's kind doesn't match an <img>. Used by the Replace flow
+    # on exposed asset cards so the user can swap a raster <img> for a video
+    # / 3D scene / lottie animation in one click. Element mapping:
+    #
+    #   new_kind = "image" | "svg"  → keep <img>, just rewrite the src.
+    #   new_kind = "video"          → <video src="…" muted playsInline
+    #                                  autoplay loop preload="auto"></video>
+    #   new_kind = "html"           → <iframe src="…" sandbox="allow-scripts
+    #                                  allow-same-origin" frameborder="0"
+    #                                  style="width:100%;height:100%;
+    #                                  border:0"></iframe>
+    #     (covers shader / 3d / threejs / viz / canvas-gen / motion-gen —
+    #      every Pathway-B HTML scene)
+    #   new_kind = "lottie"         → <lottie-player src="…" autoplay loop
+    #                                  background="transparent"
+    #                                  style="width:100%;height:100%">
+    #                                </lottie-player>
+    #     (when no <script src="…lottie-player…"> exists in the file, the
+    #      endpoint also injects one before </head> so the web component
+    #      actually registers — silently noop if a player is already loaded)
+    #
+    # Width / height / class / id / style attributes on the original <img>
+    # are preserved on the new element so layout doesn't shift.
+    def _rewrite_element_for_kind(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        branch   = (body.get("branch") or "main").strip().lower()
+        old_src  = (body.get("old_src")  or "").strip()
+        new_src  = (body.get("new_src")  or "").strip()
+        new_kind = (body.get("new_kind") or "").strip().lower()
+        if not SLUG_OK.match(branch):
+            return self._reply(400, {"error": "invalid branch slug", "slug": branch})
+        if not old_src.startswith("source/") or not new_src.startswith("source/"):
+            return self._reply(400, {"error": "old_src/new_src must start with source/"})
+        ALLOWED_KINDS = ("image", "svg", "video", "html", "lottie")
+        if new_kind not in ALLOWED_KINDS:
+            return self._reply(400, {"error": f"unsupported new_kind: {new_kind}",
+                                      "allowed": list(ALLOWED_KINDS)})
+        try:
+            branch_root = _safe_join(project_root, "source", branch)
+        except Exception as e:
+            return self._reply(400, {"error": f"branch path resolution failed: {e}"})
+        if not os.path.isdir(branch_root):
+            return self._reply(404, {"error": f"branch not found: source/{branch}/"})
+
+        prefix = f"source/{branch}/"
+        old_tail = old_src[len(prefix):] if old_src.startswith(prefix) else old_src
+        new_tail = new_src[len(prefix):] if new_src.startswith(prefix) else new_src
+        old_base = os.path.basename(old_tail)
+        new_base = os.path.basename(new_tail)
+
+        # Match an entire <img …> tag whose src ends with the old basename.
+        # Used both to extract preserved attributes and to splice the new
+        # element in. Same /-boundary safeguard as /__rewrite_img_src.
+        img_tag_re = re.compile(
+            r'<img\b([^>]*?)\bsrc\s*=\s*["\']'    # 1: attrs BEFORE src
+            r'((?:[^"\']*/)?)'                     # 2: optional directory ending in /
+            + re.escape(old_base) +
+            r'["\']'                               # closing quote of src
+            r'([^>]*?)'                            # 3: attrs AFTER src
+            r'\s*/?>',                             # closing of the tag (self-closing or not)
+            re.IGNORECASE,
+        )
+
+        # Pull width / height / class / id / style off the original <img>
+        # so the replacement element keeps the same footprint. Anything else
+        # is dropped (alt / loading / decoding / etc. don't apply to video /
+        # iframe / lottie-player).
+        PRESERVE = ("width", "height", "class", "id", "style")
+        attr_re = re.compile(
+            r'\b(' + "|".join(PRESERVE) + r')\s*=\s*("([^"]*)"|\'([^\']*)\'|([^\s>]+))',
+            re.IGNORECASE,
+        )
+
+        def _build_replacement(attrs_before, dir_in_src, attrs_after):
+            preserved_pairs = []
+            for m in attr_re.finditer(attrs_before + " " + attrs_after):
+                name = m.group(1).lower()
+                val = m.group(3) if m.group(3) is not None else (m.group(4) if m.group(4) is not None else m.group(5))
+                preserved_pairs.append((name, val))
+            preserved_str = "".join(f' {k}="{v}"' for k, v in preserved_pairs)
+            new_url = (dir_in_src or "") + new_base
+            if new_kind in ("image", "svg"):
+                return f'<img src="{new_url}"{preserved_str}>'
+            if new_kind == "video":
+                return f'<video src="{new_url}" muted playsinline autoplay loop preload="auto"{preserved_str}></video>'
+            if new_kind == "html":
+                style_in_preserved = any(k == "style" for k, _ in preserved_pairs)
+                fallback_style = '' if style_in_preserved else ' style="width:100%;height:100%;border:0"'
+                return f'<iframe src="{new_url}" sandbox="allow-scripts allow-same-origin" frameborder="0"{preserved_str}{fallback_style}></iframe>'
+            if new_kind == "lottie":
+                style_in_preserved = any(k == "style" for k, _ in preserved_pairs)
+                fallback_style = '' if style_in_preserved else ' style="width:100%;height:100%"'
+                return (f'<lottie-player src="{new_url}" autoplay loop '
+                        f'background="transparent"{preserved_str}{fallback_style}></lottie-player>')
+            # Should not reach due to upfront ALLOWED_KINDS guard.
+            return f'<img src="{new_url}"{preserved_str}>'
+
+        # Lottie additionally needs the <lottie-player> custom element loader
+        # included once per page. We append a marker comment so re-runs don't
+        # double-inject. Idempotent.
+        LOTTIE_LOADER_MARKER = "<!-- limn:lottie-player-loaded -->"
+        LOTTIE_LOADER_BLOCK = (
+            '\n  ' + LOTTIE_LOADER_MARKER + '\n'
+            '  <script src="https://unpkg.com/@lottiefiles/lottie-player@2.0.8/dist/lottie-player.js" defer></script>\n'
+        )
+
+        EXTS = (".html", ".htm", ".jsx", ".tsx", ".js", ".ts")
+        files_changed = []
+
+        def _swap(text):
+            count = 0
+            def repl(m):
+                nonlocal count
+                count += 1
+                return _build_replacement(m.group(1), m.group(2), m.group(3))
+            new_text = img_tag_re.sub(repl, text)
+            if count == 0:
+                return text, 0
+            # Inject the lottie loader for lottie kind, once per file.
+            if new_kind == "lottie" and LOTTIE_LOADER_MARKER not in new_text:
+                # Insert just before </head>; fall back to before <body if no
+                # head closer exists; if neither, prepend at the top.
+                if re.search(r'</head\s*>', new_text, re.IGNORECASE):
+                    new_text = re.sub(r'</head\s*>', LOTTIE_LOADER_BLOCK + '</head>', new_text, count=1, flags=re.IGNORECASE)
+                elif re.search(r'<body\b', new_text, re.IGNORECASE):
+                    new_text = re.sub(r'<body\b', LOTTIE_LOADER_BLOCK + '<body', new_text, count=1, flags=re.IGNORECASE)
+                else:
+                    new_text = LOTTIE_LOADER_BLOCK + new_text
+            return new_text, count
+
+        with _history_scope_bracket(project_root, [f"source/{branch}"],
+                                     kind="asset-gen",
+                                     label=f"Rewrite element ({new_kind}): {old_base} → {new_base}",
+                                     source="asset",
+                                     extra={"branch": branch, "old": old_src,
+                                            "new": new_src, "new_kind": new_kind}):
+          for dirpath, dirnames, filenames in os.walk(branch_root):
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith(".") and d not in ("node_modules", "dist", "build")]
+            for fname in filenames:
+                if not fname.lower().endswith(EXTS):
+                    continue
+                fpath = os.path.join(dirpath, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        text = f.read()
+                except Exception:
+                    continue
+                new_text, count = _swap(text)
+                if count and new_text != text:
+                    try:
+                        with open(fpath, "w", encoding="utf-8") as f:
+                            f.write(new_text)
+                        files_changed.append({
+                            "path": os.path.relpath(fpath, project_root),
+                            "rewrites": count,
+                        })
+                    except OSError as e:
+                        return self._reply(500, {"error": f"write failed for {fname}: {e}"})
+
+        # v3.4.22 — Broadcast both an asset-change (for the rewritten HTML
+        # files) and a workflow-change so subscribers can re-fetch and
+        # re-render. Without this the rewrite SUCCEEDS server-side but the
+        # frontend iframe sometimes shows stale content because the file-
+        # watcher's 1–2s polling hadn't yet picked up the writes when the
+        # iframe was already trying to reload via the frontend's immediate
+        # th:asset-refresh dispatch.
+        try:
+            project_id = os.path.basename(project_root.rstrip("/"))
+            changed_paths = [f["path"] for f in files_changed]
+            if changed_paths:
+                _broadcast_asset_change(project_id, changed_paths)
+        except Exception:
+            pass
+        return self._reply(200, {
+            "ok": True,
+            "old_src": old_src,
+            "new_src": new_src,
+            "new_kind": new_kind,
             "files": files_changed,
             "total_rewrites": sum(f["rewrites"] for f in files_changed),
         })
@@ -9982,6 +10555,32 @@ class H(http.server.SimpleHTTPRequestHandler):
         "images": "image", "svg": "svg", "video": "video", "models": "3d",
         "shaders": "shader", "viz": "viz", "audio": "audio",
     }
+    # v3.4.16 — Extension → asset kind. Wins over the folder-derived default
+    # in `_LIB_KIND_FOR_DIR`. Background: skill outputs (shader / threejs /
+    # viz / lottie / svg-gen / video-gen / motion-gen) all land in
+    # source/<branch>/images/ regardless of file type. The folder default
+    # of "image" tagged every one of those as kind:"image", so the library's
+    # drag-payload was {assetKind:"image", path:"…/threejs-xxx.html"} →
+    # dropped onto the canvas it spawned an <img src=".html"> that rendered
+    # broken. AND the same files appeared again in /__source_htmls →
+    # duplicate library entries. Classifying by extension makes the
+    # library + drag-payload match the file's real kind.
+    _LIB_EXT_KIND = {
+        # raster
+        "png": "image", "jpg": "image", "jpeg": "image", "webp": "image", "gif": "image", "avif": "image",
+        # vector
+        "svg": "svg",
+        # video
+        "mp4": "video", "webm": "video", "mov": "video", "m4v": "video", "ogv": "video",
+        # audio
+        "mp3": "audio", "wav": "audio", "ogg": "audio", "flac": "audio", "aac": "audio", "m4a": "audio",
+        # 3d / scene
+        "glb": "3d", "gltf": "3d", "obj": "3d", "fbx": "3d", "usdz": "3d",
+        # html-driven scenes (shader / threejs / viz / canvas-gen / motion-gen)
+        "html": "html", "htm": "html",
+        # lottie JSON
+        "json": "lottie",
+    }
 
     def _assets_list(self, qs):
         try: project_root = resolve_project_root(qs)
@@ -10002,10 +10601,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                         try: st = os.stat(fpath)
                         except Exception: continue
                         rel = os.path.relpath(fpath, project_root).replace("\\", "/")
+                        # Prefer the file extension when it maps to a known
+                        # kind — that's the truth. Fall back to the folder
+                        # default only when the extension is unrecognised.
+                        ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+                        kind = self._LIB_EXT_KIND.get(ext) or self._LIB_KIND_FOR_DIR.get(sub, "image")
                         items.append({
                             "path":   rel,
                             "name":   fname,
-                            "kind":   self._LIB_KIND_FOR_DIR.get(sub, "image"),
+                            "kind":   kind,
                             "branch": branch,
                             "size":   st.st_size,
                             "mtime":  time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime)),
@@ -11235,16 +11839,27 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "hint": f"install it, or set ${env_key} to an absolute binary path",
             })
 
-        branch = (body.get("branch") or "main").strip().lower()
-        if not SLUG_OK.match(branch):
-            return self._reply(400, {"error": "invalid branch slug", "slug": branch})
+        # v3.4.31 — Per-prototype editor scope.
+        # In v3.1 branches collapsed into source/<slug>/ and this used to be
+        # hardcoded to "main" because there was no per-call slug carrier.
+        # The editor now passes ?branch=<slug> in the URL when the user
+        # picks a starred prototype, the chat dispatcher forwards that as
+        # `branch` in the body, so honor it here. We validate against the
+        # same alphabet _starred_prototypes_toggle accepts (one or two
+        # path segments, each [A-Za-z0-9_.-]) — malformed slugs silently
+        # fall back to "main" so the agent always gets a usable scope.
+        _raw_branch = (body.get("branch") or "main").strip()
+        if re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", _raw_branch):
+            branch = _raw_branch
+        else:
+            branch = "main"
         kind = (body.get("kind") or "freeform").strip()
         user_prompt = (body.get("prompt") or "").strip()
         if kind == "freeform" and not user_prompt:
             return self._reply(400, {"error": "freeform run requires a prompt"})
-        title = (body.get("title") or _default_run_title(kind, branch, body)).strip()
+        title = (body.get("title") or _default_run_title(kind, body)).strip()
 
-        prompt_text = _compose_initial_prompt(kind, branch, user_prompt)
+        prompt_text = _compose_initial_prompt(kind, user_prompt)
         defs = AGENT_DEFS[agent_id]
 
         # Resolve the permission mode (per-run override > daemon default).
@@ -11285,6 +11900,25 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
             if WORKSPACE_DIR and project_root != INSTALL_ROOT:
                 sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
+            # v3.4.31 — When the spawn carries a non-default branch slug
+            # (the user is editing a specific starred prototype), tell the
+            # agent which `source/<slug>/` subtree is "active" so file
+            # reads/writes default to that subtree. Only emitted for non-
+            # "main" slugs so legacy single-prototype projects keep their
+            # current behavior verbatim. The phrasing matches AGENTS.md /
+            # PROTOTYPE.md "scope" vocabulary the agent already knows.
+            if branch and branch != "main":
+                sys_prompt = sys_prompt + (
+                    "\n\n## Active prototype scope\n\n"
+                    f"The user is currently editing the `source/{branch}/` "
+                    "prototype. Default every file read, edit, and write to "
+                    f"that subtree unless the user explicitly names a different "
+                    "prototype. When a relative file path is ambiguous (e.g. "
+                    "`index.html`), resolve it under "
+                    f"`source/{branch}/`. Other `source/<slug>/` subtrees in "
+                    "this project belong to sibling prototypes — leave them "
+                    "alone unless the user asks for a cross-prototype change."
+                )
             # Phase 5 — orchestrator preamble (when present) takes precedence
             # over the discovery flow. The wizard already captured intent
             # (brand-spec.md is on disk); re-asking would be churn.
@@ -11329,10 +11963,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         spawn_args += ["--add-dir", project_root]
 
         run_id = uuid.uuid4().hex[:16]
-        # Env vars surfaced to the agent's tools. TH_BRANCH lets bash recipes
-        # in skill blocks (Phase 4+) resolve the active branch without the
-        # agent having to infer it.
-        env = _build_child_env(agent_id, branch, run_id,
+        env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id)
 
         try:
@@ -11715,7 +12346,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # v2.44 — explicitly allow writes inside the project root.
         spawn_args += ["--add-dir", state.project_root]
 
-        env = _build_child_env(state.agent_id, state.branch, run_id,
+        env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
 
         try:

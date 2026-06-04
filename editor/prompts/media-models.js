@@ -15,7 +15,7 @@
     openai: {
       id: "openai",
       label: "OpenAI",
-      hint: "gpt-image-1 · dall-e",
+      hint: "gpt-image-2 · gpt-image-1.5 · gpt-4.1",
       envKey: "TH_OPENAI_API_KEY",
       docsUrl: "https://platform.openai.com/api-keys",
       integrated: true,
@@ -24,7 +24,7 @@
     anthropic: {
       id: "anthropic",
       label: "Anthropic",
-      hint: "Claude Sonnet 4.5 · Haiku 4.5 (text models for `llm` / `describe`)",
+      hint: "Claude Opus 4.8 · Sonnet 4.6 · Haiku 4.5 (text models for `llm` / `describe`)",
       envKey: "TH_ANTHROPIC_API_KEY",
       docsUrl: "https://console.anthropic.com/settings/keys",
       integrated: true,
@@ -131,15 +131,30 @@
     },
   };
 
+  // v3.4.7 (June 2026) — Catalog refreshed against current provider APIs.
+  // DEPRECATIONS applied:
+  //   • DALL·E 2 + DALL·E 3 — shut down May 12, 2026 (removed entirely).
+  //   • gpt-image-1 — scheduled deprecation Oct 23, 2026 (kept with warning).
+  //   • Ideogram v2 → v3 (current flagship; v2 endpoint still works).
+  //   • Bare `fal-ai/luma-dream-machine` returns "endpoint deprecated"
+  //     errors — replaced by the ray-2 family.
+  //   • Kling v1 → v2.5 Turbo Pro (cheaper + sharper).
+  //   • MiniMax Hailuo 02 → Hailuo 2.3 Fast Pro (newer, faster).
+  //   • Sora 2 — deprecated April 26, 2026, API shutdown Sept 24, 2026 (skipped).
+  // Sources: OpenAI deprecation announcement (May 2026), fal.ai model docs
+  //   (Luma Ray 2, Veo 3.1, Kling 2.5/2.6, Hailuo 2.3, Ideogram V3,
+  //   Seedance 2.0), anthropic.com (Claude 4.6 / 4.7 / 4.8 / Haiku 4.5).
+  //
   // Image-generation models. provider points into PROVIDERS; integrated:true
   // models can be selected on a skill node. Non-integrated rows are reserved
   // for the future and don't appear in the dropdown.
   const IMAGE_MODELS = [
-    // OpenAI
-    { id: "gpt-image-1",       provider: "openai", label: "gpt-image-1",       hint: "OpenAI · current",       caps: ["t2i", "i2i", "inpaint"], integrated: true, default: true },
-    { id: "gpt-image-1-mini",  provider: "openai", label: "gpt-image-1-mini",  hint: "OpenAI · low-cost",      caps: ["t2i", "i2i"],            integrated: true },
-    { id: "dall-e-3",          provider: "openai", label: "dall-e-3",          hint: "OpenAI · classic",       caps: ["t2i"],                   integrated: true },
-    { id: "dall-e-2",          provider: "openai", label: "dall-e-2",          hint: "OpenAI · legacy",        caps: ["t2i"],                   integrated: true },
+    // OpenAI — gpt-image-2 is the current flagship (May 2026). gpt-image-1
+    // is on the deprecation list (Oct 23, 2026) but still callable.
+    { id: "gpt-image-2",       provider: "openai", label: "gpt-image-2",       hint: "OpenAI · current flagship",     caps: ["t2i", "i2i", "inpaint"], integrated: true, default: true },
+    { id: "gpt-image-1.5",     provider: "openai", label: "gpt-image-1.5",     hint: "OpenAI · mid-tier",             caps: ["t2i", "i2i", "inpaint"], integrated: true },
+    { id: "gpt-image-1",       provider: "openai", label: "gpt-image-1",       hint: "OpenAI · deprecates Oct 2026",  caps: ["t2i", "i2i", "inpaint"], integrated: true },
+    { id: "gpt-image-1-mini",  provider: "openai", label: "gpt-image-1-mini",  hint: "OpenAI · low-cost",             caps: ["t2i", "i2i"],            integrated: true },
 
     // fal.ai — sync endpoints at fal.run/<model-id>
     { id: "fal-ai/flux/schnell",      provider: "fal", label: "flux/schnell",      hint: "fal · FLUX fast (4-step)", caps: ["t2i"], integrated: true },
@@ -147,7 +162,7 @@
     { id: "fal-ai/flux-pro/v1.1",     provider: "fal", label: "flux-pro/v1.1",     hint: "fal · FLUX 1.1 Pro",       caps: ["t2i"], integrated: true },
     { id: "fal-ai/flux-pro/v1.1-ultra", provider: "fal", label: "flux-pro/ultra",  hint: "fal · FLUX 1.1 Ultra (high-res)", caps: ["t2i"], integrated: true },
     { id: "fal-ai/recraft-v3",        provider: "fal", label: "recraft-v3",        hint: "fal · Recraft (vector-friendly)", caps: ["t2i"], integrated: true },
-    { id: "fal-ai/ideogram/v2",       provider: "fal", label: "ideogram/v2",       hint: "fal · Ideogram (typography)", caps: ["t2i"], integrated: true },
+    { id: "fal-ai/ideogram/v3",       provider: "fal", label: "ideogram/v3",       hint: "fal · Ideogram V3 (typography · current)", caps: ["t2i"], integrated: true },
     { id: "fal-ai/stable-diffusion-v35-large", provider: "fal", label: "sd-3.5-large", hint: "fal · SD 3.5", caps: ["t2i"], integrated: true },
 
     // xAI Grok — not integrated yet (listed for the UI)
@@ -163,17 +178,50 @@
     { id: "gemini-3.1-flash-image-preview", provider: "nanobanana", label: "nano-banana", hint: "Google · t2i", caps: ["t2i"], integrated: false },
   ];
 
-  // Phase 4c — text models for the LLM / describe skills. Phase-4 finisher
-  // adds Anthropic Claude (Sonnet 4.5 / Haiku 4.5) as a second integrated
-  // text provider. Both providers use the same `/__llm_run` dispatch; the
-  // daemon picks the renderer by `provider`.
+  // Text models for the LLM / describe skills. Both OpenAI + Anthropic share
+  // /__llm_run dispatch; daemon picks renderer by `provider`. Refreshed June
+  // 2026 with current Anthropic flagship IDs (Opus 4.8 · Sonnet 4.6 · Haiku 4.5).
+  // Sonnet 4.5 + Haiku 4.5 (2025-09 / 2025-10 dated) still respond via the
+  // dated alias but show up as legacy.
   const TEXT_MODELS = [
     { id: "gpt-4o-mini",     provider: "openai",    label: "gpt-4o-mini",       hint: "OpenAI · fast + cheap",       caps: ["text", "vision"], integrated: true, default: true },
     { id: "gpt-4o",          provider: "openai",    label: "gpt-4o",            hint: "OpenAI · vision-capable",     caps: ["text", "vision"], integrated: true },
     { id: "gpt-4.1-mini",    provider: "openai",    label: "gpt-4.1-mini",      hint: "OpenAI · current generation", caps: ["text"],           integrated: true },
     { id: "gpt-4.1",         provider: "openai",    label: "gpt-4.1",           hint: "OpenAI · flagship text",      caps: ["text"],           integrated: true },
-    { id: "claude-sonnet-4-5-20250929", provider: "anthropic", label: "claude-sonnet-4.5", hint: "Anthropic · flagship",     caps: ["text", "vision"], integrated: true },
-    { id: "claude-haiku-4-5-20251001",  provider: "anthropic", label: "claude-haiku-4.5",  hint: "Anthropic · fast + cheap", caps: ["text", "vision"], integrated: true },
+    { id: "claude-opus-4-8",       provider: "anthropic", label: "claude-opus-4.8",    hint: "Anthropic · top reasoning",   caps: ["text", "vision"], integrated: true },
+    { id: "claude-opus-4-7",       provider: "anthropic", label: "claude-opus-4.7",    hint: "Anthropic · prior opus",      caps: ["text", "vision"], integrated: true },
+    { id: "claude-opus-4-6",       provider: "anthropic", label: "claude-opus-4.6",    hint: "Anthropic · 1M context",      caps: ["text", "vision"], integrated: true },
+    { id: "claude-sonnet-4-6",     provider: "anthropic", label: "claude-sonnet-4.6",  hint: "Anthropic · current sonnet",  caps: ["text", "vision"], integrated: true },
+    { id: "claude-haiku-4-5",      provider: "anthropic", label: "claude-haiku-4.5",   hint: "Anthropic · fast + cheap",    caps: ["text", "vision"], integrated: true },
+  ];
+
+  // Video models. Dispatched through fal's sync POST endpoint and parsed via
+  // _fal_extract_video_url (handles { video: { url } } / { videos: [{ url }] }
+  // / { url } shapes). Models that accept an input image carry the i2v cap;
+  // t2v means pure text-to-video. Refreshed June 2026 against fal model docs.
+  //
+  // The bare `fal-ai/luma-dream-machine` endpoint is DEPRECATED (returns
+  // {"detail":[{"msg":"This endpoint is deprecated…"}]}). Luma now ships
+  // under the `/ray-2/...` namespace. Google Veo 3.1 became the new default
+  // in May 2026 (best quality + native audio). Kling, Hailuo, Pika all
+  // bumped major versions.
+  const VIDEO_MODELS = [
+    // Default — Veo 3.1 is the current sota text-to-video (with native audio).
+    { id: "fal-ai/veo3.1",                                         provider: "fal", label: "veo-3.1",            hint: "fal · Google Veo 3.1 (t2v · native audio)",     caps: ["t2v"],         integrated: true, default: true },
+    { id: "fal-ai/veo3.1/fast/image-to-video",                     provider: "fal", label: "veo-3.1-fast-i2v",   hint: "fal · Veo 3.1 Fast (image → video)",            caps: ["i2v"],         integrated: true },
+    // Luma — Ray 2 family (the bare `luma-dream-machine` endpoint is deprecated).
+    { id: "fal-ai/luma-dream-machine/ray-2/text-to-video",         provider: "fal", label: "luma-ray-2",         hint: "fal · Luma Ray 2 (t2v)",                        caps: ["t2v"],         integrated: true },
+    { id: "fal-ai/luma-dream-machine/ray-2/image-to-video",        provider: "fal", label: "luma-ray-2-i2v",     hint: "fal · Luma Ray 2 (image → video)",              caps: ["i2v"],         integrated: true },
+    // Kling — v2.5 Turbo Pro is the current cinematic default; v2.6 i2v is newer.
+    { id: "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",       provider: "fal", label: "kling-2.5-pro",      hint: "fal · Kling 2.5 Turbo Pro (cinematic)",         caps: ["t2v"],         integrated: true },
+    { id: "fal-ai/kling-video/v2.6/pro/image-to-video",            provider: "fal", label: "kling-2.6-pro-i2v",  hint: "fal · Kling 2.6 Pro (image → video + audio)",   caps: ["i2v"],         integrated: true },
+    // MiniMax Hailuo — 2.3 Fast is the current entry.
+    { id: "fal-ai/minimax/hailuo-2.3-fast/pro/text-to-video",      provider: "fal", label: "hailuo-2.3-fast",    hint: "fal · MiniMax Hailuo 2.3 Fast (1080p)",         caps: ["t2v"],         integrated: true },
+    { id: "fal-ai/minimax/hailuo-2.3-fast/pro/image-to-video",     provider: "fal", label: "hailuo-2.3-fast-i2v", hint: "fal · Hailuo 2.3 Fast (image → video)",        caps: ["i2v"],         integrated: true },
+    // ByteDance Seedance 2.0 — launched April 2026.
+    { id: "fal-ai/seedance-2.0",                                   provider: "fal", label: "seedance-2.0",       hint: "fal · ByteDance Seedance 2.0",                  caps: ["t2v", "i2v"], integrated: true },
+    // Pika — v2 Turbo still current.
+    { id: "fal-ai/pika/v2/turbo/text-to-video",                    provider: "fal", label: "pika-v2",            hint: "fal · Pika v2 (animated)",                      caps: ["t2v"],         integrated: true },
   ];
 
   // Skill catalog — each entry is a draggable in the Library's Skills section
@@ -190,7 +238,7 @@
       output: "image",
       hasModelDropdown: true,
       modelsFilter: (m) => m.caps && m.caps.includes("t2i") && m.integrated,
-      defaultModel: "gpt-image-1",
+      defaultModel: "gpt-image-2",  // v3.4.7 — gpt-image-1 deprecates Oct 23, 2026
       hasAspect: true,
     },
     {
@@ -390,10 +438,52 @@
         "Output the file with Write to the path the user specifies (.json extension). Validate that your JSON parses — Lottie is strict. If the animation is complex enough that you can't hand-author it cleanly, simplify to a single hero motion (one path morph + one transform) rather than producing invalid JSON.",
     },
     {
+      // v3.4.1 — Real video output. The previous "video-gen" definition
+      // silently produced HTML motion pieces because no video API was
+      // wired in; that was misleading — picking a skill called "Video"
+      // should produce video. Now:
+      //   • pathwayAFallback dispatches to fal's image-to-video / text-to-
+      //     video endpoints first when the fal key is present. The output
+      //     extension is `.mp4`. Other providers (Replicate Veo / Runway
+      //     Gen-3 / Pika / Luma) can be slotted in here later — they all
+      //     return mp4 bytes.
+      //   • If NO video provider key is configured, the agent STOPs and
+      //     surfaces the limitation in chat (matching the universal
+      //     refinement-constraints contract). It does NOT silently fall
+      //     back to HTML — a user who wants the HTML motion-graphics path
+      //     should pick the separate `motion-gen` skill below.
       id: "video-gen",
-      label: "Video / motion",
-      hint: "prompt → .html (inline <video> with motion graphics / CSS animation fallback)",
+      label: "Video",
+      hint: "prompt → .mp4 (requires a video-gen API key — fal / replicate / runway / pika)",
       glyph: "🎬",
+      pathway: "A",
+      // v3.4.6 — defaultModel is the CRITICAL field that was missing.
+      // Without it, freshly-dropped video-gen nodes had empty model + empty
+      // provider, so Run failed with "Cannot resolve provider for model "
+      // (note the trailing blank). The dropdown also showed the first
+      // option visually but never fired onChange unless the user
+      // explicitly re-picked → looked saved, wasn't.
+      // v3.4.7 (June 2026) — Switched default from the deprecated
+      // `fal-ai/luma-dream-machine` bare endpoint to Veo 3.1 (current sota,
+      // native audio). The bare luma endpoint returns "deprecated" errors.
+      defaultModel: "fal-ai/veo3.1",
+      provider:     "fal",  // belt-and-suspenders: provider resolves even if VIDEO_MODELS isn't loaded yet
+      pathwayAFallback: { provider: "fal", model: "fal-ai/veo3.1", ext: "mp4" },
+      inputs: ["prompt"],
+      output: "video",
+      hasModelDropdown: true,
+      modelsFilter: (m) => m.caps && (m.caps.includes("t2v") || m.caps.includes("i2v")),
+      hasAspect: true,
+    },
+    {
+      // v3.4.1 — Web-native motion piece. This is the OLD "video-gen"
+      // intent under its honest name — Claude writes an HTML page that
+      // plays a looping motion piece using CSS keyframes, SMIL, or
+      // canvas/rAF. Same constraints, no video API needed.
+      id: "motion-gen",
+      label: "Motion (HTML)",
+      hint: "prompt → .html (looping motion piece via CSS / SMIL / canvas — no video API needed)",
+      glyph: "🎞",
       pathway: "B",
       inputs: ["prompt"],
       output: "image",
@@ -401,17 +491,17 @@
       hasAspect: false,
       pathwayBExt: "html",
       pathwayBSystem:
-        "You are a motion-graphics author producing a single self-contained HTML page that plays a short looping motion piece. We DON'T have a generative video API wired in; instead you compose motion using web primitives. Constraints:\n" +
+        "You are a motion-graphics author producing a single self-contained HTML page that plays a short looping motion piece using WEB-NATIVE primitives. Constraints:\n" +
         "1. ONE .html file with a full-window stage. Pick the right tool for the brief:\n" +
         "   - CSS keyframes + transforms / clip-paths for typography & layout motion (text reveals, banner loops, marquees).\n" +
         "   - Inline SVG with SMIL or CSS animation for vector motion (icons that animate, illustrated loops).\n" +
         "   - <canvas> + requestAnimationFrame for procedural / particle / generative motion.\n" +
         "2. The piece must LOOP cleanly. Match the start and end frames so playback is seamless.\n" +
         "3. Default duration ≈ 4–8 s. Cap at 12 s unless the brief asks for longer.\n" +
-        "4. NO external assets unless explicitly requested. NO video files (we can't generate them) — author everything inline.\n" +
+        "4. NO external assets unless explicitly requested. Author everything inline.\n" +
         "5. Performance: respect `prefers-reduced-motion` (pause / freeze when set), cap pixelRatio at 2, throttle rAF below 60fps if heavy.\n" +
         "6. Render full-window with `position: fixed; inset: 0` on the stage. Black or DS-palette background. No chrome.\n" +
-        "If the brief explicitly asks for a real video (mp4/webm), say in a small inline comment that no video-API is integrated and produce a CSS/SVG/canvas fallback that approximates the intent — the user can swap to a real .mp4 later.\n" +
+        "If the brief asks for a real video (mp4/webm), STOP and tell the user to use the `Video` skill instead — that one calls a true video API. Do not silently substitute an HTML fallback here.\n" +
         "Output the file with Write to the path the user specifies. Do not print code in chat; just write the file.",
     },
     {
@@ -448,5 +538,5 @@
     { value: "9:16", label: "9:16" },
   ];
 
-  window.TH_MEDIA = { providers: PROVIDERS, imageModels: IMAGE_MODELS, textModels: TEXT_MODELS, skills: SKILLS, aspects: ASPECTS };
+  window.TH_MEDIA = { providers: PROVIDERS, imageModels: IMAGE_MODELS, textModels: TEXT_MODELS, videoModels: VIDEO_MODELS, skills: SKILLS, aspects: ASPECTS };
 })();

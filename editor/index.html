@@ -36,6 +36,13 @@
     (function () {
       var qs = location.search || "";
       document.write('<script src="data.js' + qs + '"><\/script>');
+      // v3.2 — Layout sidecar (frame positions + grid meta). Written by
+      // /__layout on every layout edit, lives at <project>/editor/main.layout.js.
+      // Loaded after data.js (so EDITOR_DATA exists) and before app.js (so the
+      // bootstrap merger can apply positions + defaultFrame/canvasGap onto
+      // D.frames and D.meta before the React tree mounts). 404 is non-fatal
+      // (fresh project — no layout has been saved yet).
+      document.write('<script src="main.layout.js' + qs + '" onerror="void 0"><\/script>');
       // Phase 7 — Design system runtime mirrors. The daemon concatenates
       // every editor/design-systems/*.js for the active project and emits
       // a window.EDITOR_DS_REGISTRY of available ids. Loaded after data.js

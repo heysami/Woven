@@ -44,18 +44,91 @@ if (!window.EDITOR_DATA || !window.EDITOR_DATA.meta) {
   }
 }
 const D = window.EDITOR_DATA;
+// v3.4.31 — Per-prototype editor scope.
+// In v3.1 we collapsed branches into a flat `source/<slug>/` tree. The
+// editor's data.js historically points at ONE slug via
+// `meta.sourceRoot = "../source/<slug>/"`. The projects-landing now
+// surfaces multiple starred prototypes per project, and each star ships
+// with its own "Editor" affordance — clicking it sets `?branch=<slug>`
+// in the URL. Honor that override here, BEFORE any frame iframe URL is
+// computed, so different prototypes feel like different branches inside
+// the editor (frames load from the requested subtree, the chat panel
+// tags new turns with the active slug, etc.). When no `?branch=` is
+// present the slug baked into data.js wins, preserving the legacy
+// behavior.
+(() => {
+  if (!D || !D.meta) return;
+  let urlBranch = null;
+  try { urlBranch = new URLSearchParams(location.search).get("branch"); } catch {}
+  if (!urlBranch) return;
+  // Reject malformed slugs — only the same alphabet the daemon's
+  // _starred_prototypes_toggle endpoint accepts.
+  if (!/^[A-Za-z0-9_.-]{1,80}(?:\/[A-Za-z0-9_.-]{1,80})?$/.test(urlBranch)) return;
+  const cur = D.meta.sourceRoot || "../source/";
+  // Strip the trailing slug segment from the existing sourceRoot (if
+  // any) and append the URL one. Handles three shapes the daemon
+  // produces in projects today:
+  //   "../source/"                    (legacy flat, pre-per-slug)
+  //   "../source/<slug>/"             (single-prototype project)
+  //   "../source/<slug>/<sub>/"       (nested prototype, rare)
+  let prefix = cur.replace(/\/+$/, "");
+  // Drop one trailing path segment as long as we're still under source/.
+  // We don't want to strip past "../source" — that would land us in the
+  // project root.
+  const segs = prefix.split("/");
+  while (segs.length && segs[segs.length - 1] !== "source") {
+    if (segs.length === 1) break;
+    segs.pop();
+  }
+  prefix = segs.join("/");
+  if (!prefix.endsWith("source")) prefix = "../source";
+  D.meta.sourceRoot = `${prefix}/${urlBranch}/`;
+  // Stamp the active branch so downstream readers (chat, runs, layout
+  // sidecar fetches) can read it without parsing the URL again.
+  D.meta.activeBranch = urlBranch;
+  // If sourceEntry got blanked by a half-migrated data.js, fall back to
+  // index.html so the prototype's root page renders. Bare-name entries
+  // already pass through resolveEntry() correctly.
+  if (!D.meta.sourceEntry) D.meta.sourceEntry = "index.html";
+})();
 // Apply the layout sidecar (if loaded by data.js) BEFORE the editor reads
-// frame positions. window.EDITOR_LAYOUT shape: { [frameId]: { col, row } }.
-// Mutating D.frames in place is intentional — applyModelEdits clones frames
-// shallowly, so any frame whose col/row we set here flows into the model
-// without an explicit layout edit. This keeps in-memory layoutEdits empty
-// on a fresh load: positions come from disk, not from a queue replay.
+// frame positions or grid meta. EDITOR_LAYOUT shapes:
+//   new:    { positions: { [frameId]: { col, row } }, meta: { defaultFrame: {w,h}, canvasGap } }
+//   legacy: { [frameId]: { col, row } }              — pre-v3.2 flat map
+// Mutating D in place is intentional — applyModelEdits reads from D and
+// clones shallowly, so anything we set here flows into the model without
+// an explicit layout edit. This keeps in-memory layoutEdits empty on a
+// fresh load: positions + grid prefs come from disk, not from a queue replay.
 if (window.EDITOR_LAYOUT && typeof window.EDITOR_LAYOUT === "object") {
+  const L = window.EDITOR_LAYOUT;
+  const positions = (L.positions && typeof L.positions === "object") ? L.positions : L;
   for (const f of D.frames || []) {
-    const pos = window.EDITOR_LAYOUT[f.id];
+    const pos = positions[f.id];
     if (pos && pos.col != null && pos.row != null) {
       f.col = pos.col;
       f.row = pos.row;
+    }
+  }
+  if (L.meta && typeof L.meta === "object") {
+    D.meta = D.meta || {};
+    if (L.meta.defaultFrame && typeof L.meta.defaultFrame === "object") {
+      const w = L.meta.defaultFrame.w, h = L.meta.defaultFrame.h;
+      if (typeof w === "number" && typeof h === "number" && w >= 100 && h >= 100) {
+        D.meta.defaultFrame = { w, h };
+        // Per-frame w/h is baked into D.frames at write time. The
+        // frameSize.set edit (applied via layoutEdits) clobbers each
+        // frame's w/h in-session — replicate that here on boot so the
+        // resized frames render correctly after reload too. Without
+        // this, frames revert to whatever data.js had at last
+        // regenerate, and only the grid pitch reflects the saved size.
+        for (const f of D.frames || []) {
+          f.w = w;
+          f.h = h;
+        }
+      }
+    }
+    if (typeof L.meta.canvasGap === "number" && L.meta.canvasGap >= 0) {
+      D.meta.canvasGap = L.meta.canvasGap;
     }
   }
 }
@@ -114,11 +187,18 @@ function snapToCell(x, y, meta) {
 // the AGENTS.md Step 0 wording matches reality. Editor-relative paths
 // (`./`, `../`, `/`) and absolute URLs (`http(s)://`) pass through untouched.
 const resolveEntry = (entry) => {
-  if (!entry) return D.meta.sourceEntry || "";
-  if (/^(?:https?:)?\/\//.test(entry)) return entry;
-  if (entry.startsWith("/") || entry.startsWith("./") || entry.startsWith("../")) return entry;
+  // Fall back to the project's sourceEntry when no per-frame entry is set.
+  // Pass the resolved target through the SAME normalisation as a frame-level
+  // entry: a bare `sourceEntry: "index.html"` (planner output drift) must
+  // still get prefixed with sourceRoot — otherwise the browser resolves it
+  // against editor/index.html and loads the editor inside itself (infinite
+  // recursion). Was a real bug on single-HTML projects with trigger frames.
+  const target = entry || D.meta.sourceEntry || "";
+  if (!target) return "";
+  if (/^(?:https?:)?\/\//.test(target)) return target;
+  if (target.startsWith("/") || target.startsWith("./") || target.startsWith("../")) return target;
   const root = D.meta.sourceRoot || "";
-  return (root.endsWith("/") ? root : root + "/") + entry;
+  return (root.endsWith("/") ? root : root + "/") + target;
 };
 
 // Phase 6 workspace mode — iframes load relative paths like ../source/main/…
@@ -173,12 +253,17 @@ const IS_MULTI_HTML = (() => {
 
 // A frame should render a placeholder card (not an iframe) when:
 //   - there's no source at all (HAS_SOURCE === false), OR
-//   - kind === "external" — by definition out-of-prototype context, OR
+//   - kind is a non-screen flow node (external context, time trigger, signal
+//     notification) — these are flow-graph annotations, not navigable pages,
+//     so they have no entry to load, OR
 //   - we're in multi-HTML mode and the frame has no entry of its own (would
-//     otherwise iframe-load the storyboard as a fallback).
+//     otherwise iframe-load the storyboard as a fallback), OR
+//   - we're in single-HTML mode but the frame has no entry AND the project's
+//     sourceEntry is a bare filename (resolves against editor/ → recursion).
+const NON_SCREEN_FRAME_KINDS = new Set(["external", "trigger", "notification"]);
 const frameNeedsPlaceholder = (frame) => {
   if (!HAS_SOURCE) return true;
-  if (frame && frame.kind === "external") return true;
+  if (frame && NON_SCREEN_FRAME_KINDS.has(frame.kind)) return true;
   if (IS_MULTI_HTML && (!frame || !frame.entry)) return true;
   return false;
 };
@@ -486,6 +571,11 @@ const Icon = {
   //   Grid square that read like a generic content tile in small sizes.
   OpenExt:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M11 8.5V13a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1h4.5"/><path d="M9 2.5h4.5V7M13.5 2.5L8 8"/></svg>`,
   List:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="3.5" cy="4" r="0.7" fill="currentColor"/><circle cx="3.5" cy="8" r="0.7" fill="currentColor"/><circle cx="3.5" cy="12" r="0.7" fill="currentColor"/><path d="M6.5 4h7M6.5 8h7M6.5 12h7"/></svg>`,
+  // v3.2 — PickEl: crosshair-in-frame (classic element-inspector affordance).
+  // Mounted as a floating badge OUTSIDE the top-right of selected prototype +
+  // HTML asset nodes; click enters pick mode where the user picks a
+  // sub-element inside the iframe for copy/paste/delete operations.
+  PickEl:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 5.5V3a.5.5 0 01.5-.5h2.5M13.5 5.5V3a.5.5 0 00-.5-.5h-2.5M2.5 10.5V13a.5.5 0 00.5.5h2.5M13.5 10.5V13a.5.5 0 01-.5.5h-2.5"/><circle cx="8" cy="8" r="1.4"/><path d="M8 5.6V4M8 12V10.4M5.6 8H4M12 8h-1.6"/></svg>`,
 };
 
 // v2.51 — skill glyphs live as plain strings in media-models.js (a data-only
@@ -767,11 +857,47 @@ const ONBOARDING_CUSTOM_TOGGLES = [
 ];
 
 /* ────────── Endless canvas: pan + zoom ────────── */
+// v3.4.4 — Module-level helper. Lights the global canvas-interacting flag
+// for a short window (default 140ms) so any rAF-driven chrome (asset bar,
+// badges, picked-element bar) skips its rect query during the brief
+// wheel-zoom or trackpad-pan event. The drag-pan handler manages the flag
+// directly via mousedown/mouseup; this helper is for one-shot interactions
+// like wheel events that don't have a clear "end" signal.
+let _thInteractingTimeout = null;
+function pulseInteractingFlag(ms = 140) {
+  try { window.__thCanvasInteracting = true; } catch {}
+  try { document.body.setAttribute("data-canvas-interacting", "true"); } catch {}
+  if (_thInteractingTimeout) clearTimeout(_thInteractingTimeout);
+  _thInteractingTimeout = setTimeout(() => {
+    try { window.__thCanvasInteracting = false; } catch {}
+    try { document.body.removeAttribute("data-canvas-interacting"); } catch {}
+    _thInteractingTimeout = null;
+  }, ms);
+}
+
 function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScroll = false, disableEmptyDragPan = false } = {}) {
   const wrapRef = useRef(null);
   const [pan, setPan] = useState({ x: initial.x, y: initial.y });
   const [zoom, setZoom] = useState(initial.z);
   const [panning, setPanning] = useState(false);
+  // v3.4.2 — Expose pan/zoom-in-progress as a global flag + body attribute
+  // so portaled chrome (asset action bar, picked-element bar, select
+  // badge) can skip its per-frame `getBoundingClientRect` polling during
+  // the gesture. With many nodes, those rAF loops force layout flushes
+  // every frame on top of React's setPan re-renders, which compounds
+  // into a jerky pan. CSS rules also hide the bars while panning so the
+  // user doesn't see them lag-following the cursor.
+  useEffect(() => {
+    try { window.__thCanvasInteracting = panning; } catch {}
+    try {
+      if (panning) document.body.setAttribute("data-canvas-interacting", "true");
+      else         document.body.removeAttribute("data-canvas-interacting");
+    } catch {}
+    return () => {
+      try { window.__thCanvasInteracting = false; } catch {}
+      try { document.body.removeAttribute("data-canvas-interacting"); } catch {}
+    };
+  }, [panning]);
 
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
@@ -800,9 +926,18 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
         const mx = e.clientX - r.left;
         const my = e.clientY - r.top;
         const k = newZoom / zoom;
+        // v3.4.4 — Same synchronous flag for wheel-zoom. Each wheel event
+        // is a single transform; pulse the flag for ~120ms so any
+        // mid-flight rAF tick from the bars also skips its rect query.
+        // Without this, dolly-zoom while looking at many nodes shows the
+        // same jitter pan does.
+        pulseInteractingFlag();
         setPan({ x: mx - (mx - pan.x) * k, y: my - (my - pan.y) * k });
         setZoom(newZoom);
       } else {
+        // Wheel-scroll-pan (horizontal/vertical scroll without zoom modifier).
+        // Same treatment.
+        pulseInteractingFlag();
         setPan({ x: pan.x - e.deltaX, y: pan.y - e.deltaY });
       }
     };
@@ -828,6 +963,34 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
     let dragging = false, sx = 0, sy = 0, spx = 0, spy = 0;
+    // v3.4.13 — Pure imperative pan path. No React state updates during the
+    // drag itself; the imperative style.transform write IS the visual feed-
+    // back, and there's no React reconciliation happening between frames.
+    // Previously the rAF-throttled setPan kept firing during pan, which:
+    //   (a) re-rendered WorkflowCanvas every frame → every node child
+    //       re-reconciled (no React.memo on the node components) → frame
+    //       budget blown with many nodes → visible stutter.
+    //   (b) made React's render write style.transform from 1-frame-stale
+    //       pan state, stomping the imperative writes intermittently.
+    // Removing setPan from the hot path eliminates BOTH sources. One final
+    // setPan commits on mouseup so React state agrees with the DOM resting
+    // position. Same pattern Figma / tldraw use for canvas panning.
+    let pendingPan = null;
+    // v3.4.5b — Look for both `.canvas` (editor / flow / state-machine views)
+    // AND `.workflow-canvas` (workflow view) — the workflow div uses its own
+    // class. Without both selectors, the imperative pan path silently no-ops
+    // in workflow mode and pan still goes through React setState on every
+    // mousemove → jitter persists. This was the actual root cause.
+    const findCanvas = () =>
+         el.querySelector(":scope > .workflow-canvas")
+      || el.querySelector(":scope > .canvas")
+      || el.querySelector(".workflow-canvas")
+      || el.querySelector(".canvas");
+    let canvasEl = findCanvas();
+    const writeTransform = (x, y) => {
+      if (!canvasEl || !document.body.contains(canvasEl)) canvasEl = findCanvas();
+      if (canvasEl) canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    };
     const onDown = (e) => {
       // Pan if: middle-mouse · alt-drag · space+drag · (drag on empty canvas-wrap
       // background, UNLESS disableEmptyDragPan is set — workflow mode uses
@@ -835,15 +998,39 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       const isEmpty = e.target === el || e.target.classList?.contains("canvas");
       const emptyDragOk = !disableEmptyDragPan && e.button === 0 && isEmpty;
       if (e.button !== 1 && !e.altKey && !spaceHeld && !emptyDragOk) return;
-      dragging = true; setPanning(true);
+      dragging = true;
+      try { window.__thCanvasInteracting = true; } catch {}
+      try { document.body.setAttribute("data-canvas-interacting", "true"); } catch {}
+      setPanning(true);
       sx = e.clientX; sy = e.clientY; spx = pan.x; spy = pan.y;
+      canvasEl = findCanvas();
       e.preventDefault();
     };
     const onMove = (e) => {
       if (!dragging) return;
-      setPan({ x: spx + (e.clientX - sx), y: spy + (e.clientY - sy) });
+      const nx = spx + (e.clientX - sx);
+      const ny = spy + (e.clientY - sy);
+      pendingPan = { x: nx, y: ny };
+      // v3.4.13 — Imperative paint, NO setPan during drag. Previously a
+      // rAF-throttled setPan fired ~60×/sec → WorkflowCanvas re-rendered
+      // → every node child re-reconciled (none are memoised) → frame
+      // budget blown + React's render kept stomping the imperative
+      // style.transform with state-derived (1-frame-stale) values.
+      // Both jitter sources fixed by NOT touching React state during
+      // the drag — the imperative write owns the DOM transform until
+      // mouseup commits the final position with a single setPan.
+      writeTransform(nx, ny);
     };
-    const onUp = () => { dragging = false; setPanning(false); };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      try { window.__thCanvasInteracting = false; } catch {}
+      try { document.body.removeAttribute("data-canvas-interacting"); } catch {}
+      // Commit final position so React state matches the imperative DOM.
+      if (pendingPan) setPan(pendingPan);
+      pendingPan = null;
+      setPanning(false);
+    };
     el.addEventListener("mousedown", onDown);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -1011,7 +1198,6 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
         <span className="frame-label-kind" data-kind=${frame.kind}>${frame.kind}</span>
         <span>${frame.label}</span>
         <span className="frame-label-meta">${frame.hash || "—"}</span>
-        ${frameDiffsMain(frame.id) && html`<span className="delta-badge" title="In exploration scope or diverged from Main">Δ main</span>`}
         ${auditCount > 0 && html`<span className="audit-badge" title=${auditCount + " DS proposal" + (auditCount > 1 ? "s" : "") + " reference this frame's source — review them in the banner at the top."}>◐ ${auditCount}</span>`}
         ${selected && onStartArrow && html`
           <button className="frame-connect" title="Draw arrow from this frame — then click target frame"
@@ -1129,20 +1315,36 @@ function DrawLayer({ frame, active, strokes, onAddStroke }) {
 
 /* ────────── Placeholder rendered when no source prototype is wired yet ────────── */
 function FramePlaceholder({ frame }) {
-  // Three distinct "no iframe" reasons → three distinct messages. Don't lie:
+  // Four distinct "no iframe" reasons → four distinct messages. Don't lie:
   //   - HAS_SOURCE === false: the whole prototype is missing.
   //   - frame.kind === "external": this frame is deliberately out-of-prototype
   //     (context-only) and never had source. Show the label, no scary note.
+  //   - frame.kind === "trigger" / "notification": flow-graph signal node, not
+  //     a screen. Has no source page by design — show what kind of signal.
   //   - multi-HTML mode + no entry: the frame's source would fall back to the
   //     storyboard. Show the label + a hint that this surface isn't built yet.
   const isExternal     = frame && frame.kind === "external";
-  const isMissingEntry = HAS_SOURCE && !isExternal && IS_MULTI_HTML && (!frame || !frame.entry);
+  const isTrigger      = frame && frame.kind === "trigger";
+  const isNotification = frame && frame.kind === "notification";
+  const isSignal       = isTrigger || isNotification;
+  const isMissingEntry = HAS_SOURCE && !isExternal && !isSignal && IS_MULTI_HTML && (!frame || !frame.entry);
+  const reason = isExternal ? "external"
+               : isTrigger ? "trigger"
+               : isNotification ? "notification"
+               : isMissingEntry ? "missing-entry"
+               : "no-source";
   return html`
-    <div className="frame-empty" data-reason=${isExternal ? "external" : isMissingEntry ? "missing-entry" : "no-source"}>
+    <div className="frame-empty" data-reason=${reason}>
       <div className="frame-empty-card">
         <div className="frame-empty-label">${frame.label || frame.id || "Frame"}</div>
         ${isExternal && html`
           <div className="frame-empty-meta">External · out of prototype</div>
+        `}
+        ${isTrigger && html`
+          <div className="frame-empty-meta">Trigger · time- or event-driven signal (no screen)</div>
+        `}
+        ${isNotification && html`
+          <div className="frame-empty-meta">Notification · system-sent signal (no screen)</div>
         `}
         ${isMissingEntry && html`
           <div className="frame-empty-meta">No source page wired for this frame yet</div>
@@ -1338,7 +1540,7 @@ function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta,
      + (left)             … selected …          + (right)
      │                + (bottom)                   │
      └────────────────────────────────────────────┘ */
-function SlotPicker({ picked, onSide, onDelete, onReplace, onFork }) {
+function SlotPicker({ picked, onSide, onDelete, onReplace }) {
   if (!picked) return null;
   const stop = (e, fn) => { e.stopPropagation(); fn(); };
   return html`
@@ -1349,7 +1551,6 @@ function SlotPicker({ picked, onSide, onDelete, onReplace, onFork }) {
       <button className="slot-plus" data-side="right"  onClick=${(e) => stop(e, () => onSide("right"))}>+</button>
       <button className="slot-plus" data-side="bottom" onClick=${(e) => stop(e, () => onSide("bottom"))}>+</button>
       <button className="slot-plus" data-side="left"   onClick=${(e) => stop(e, () => onSide("left"))}>+</button>
-      ${/* v3.1 — fork-to-new-branch button removed (project branches deprecated). */ null}
     </div>
   `;
 }
@@ -1890,9 +2091,23 @@ function applyModelEdits(D, edits) {
       } else if (ed.kind === "lane.delete") {
         lanesById.delete(ed.laneId);
       } else if (ed.kind === "frameSize.set") {
+        // Update the default for any future frames…
         if (ed.w > 0) defaultFrame.w = ed.w;
         if (ed.h > 0) defaultFrame.h = ed.h;
         if (ed.gap != null && ed.gap >= 0) canvasGap = ed.gap;
+        // …AND resize every existing frame to match. Frames carry their own
+        // w/h (baked in at creation from the then-current defaultFrame), so
+        // without this clobber the dialog only changes grid pitch — making
+        // the spacing between frames grow while the frames themselves keep
+        // their old size. Bespoke per-frame overrides are rare; the dialog
+        // is a global "resize all frames" affordance.
+        if (ed.w > 0 || ed.h > 0) {
+          for (let i = 0; i < frames.length; i++) {
+            const f = frames[i];
+            if (ed.w > 0) f.w = ed.w;
+            if (ed.h > 0) f.h = ed.h;
+          }
+        }
       }
       return;
     }
@@ -2240,7 +2455,114 @@ const OVERLAY_CONTAINMENT_CSS = `
   }
 `;
 
+/* DSView is a two-pane router:
+   - LIBRARY pane  → iframes the canonical DS gallery at
+     design-systems/<dsRef.id>/gallery.html (the "main" DS — built by
+     Workflow 0, referenced by meta.dsRef).
+   - PROTOTYPE pane → renders DSViewPrototype, the tokens + primitives
+     extracted from the live source/ tree (often stale relative to the
+     library; that's the whole point of this view — to spot drift).
+   Both panes live under the same tab. The pane defaults to Library when
+   meta.dsRef is set, else Prototype. */
 function DSView({ model, setEdits }) {
+  const dsRef = (D.meta && D.meta.dsRef) || null;
+  const dsRefId = dsRef && dsRef.id;
+  const hasTokens = !!(D.tokens && (
+    (D.tokens.surfaces || []).length ||
+    (D.tokens.text || []).length ||
+    (D.tokens.semantic || []).length ||
+    (D.tokens.type || []).length ||
+    (D.tokens.radii || []).length ||
+    (D.tokens.shadows || []).length ||
+    (D.tokens.spacing || []).length
+  ));
+  const hasPrimitives = !!(D.primitives && D.primitives.length);
+  const hasPrototypeDs = hasTokens || hasPrimitives;
+  const [pane, setPane] = useState(dsRefId ? "library" : "prototype");
+
+  // Universal empty state — neither library nor prototype DS present.
+  if (!dsRefId && !hasPrototypeDs) {
+    return html`
+      <div className="empty-view">
+        <div className="empty-view-card">
+          <h2>No design system yet</h2>
+          <p>A design system anchors every prototype's tokens (color, type, spacing) and primitive components (buttons, cards, fields). It lives in two places, both shown here once they exist:</p>
+          <ul>
+            <li><strong>Library DS</strong> — the canonical, hand-curated source of truth under <code>design-systems/&lt;id&gt;/</code>. Built by Workflow 0; referenced from <code>editor/data.js</code> via <code>meta.dsRef</code>.</li>
+            <li><strong>Prototype DS</strong> — tokens and primitives auto-extracted from the live <code>source/</code> tree. Useful for spotting drift between what the library says and what the prototype actually renders.</li>
+          </ul>
+          <p>To populate this view, run <strong>Workflow 0</strong> (build a DS library) — the agent will scaffold <code>design-systems/&lt;id&gt;/</code> with tokens, gallery, and DESIGN.md, then wire <code>meta.dsRef</code> on this project.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div className="ds-router">
+      <div className="ds-router-tabs">
+        <button type="button"
+          className=${"ds-router-tab" + (pane === "library" ? " is-active" : "")}
+          data-active=${pane === "library"}
+          disabled=${!dsRefId}
+          onClick=${() => setPane("library")}
+          title=${dsRefId
+            ? "Canonical DS library — design-systems/" + dsRefId + "/"
+            : "No meta.dsRef set — run Workflow 0 first"}>
+          Library DS${dsRefId ? html` · <span className="ds-router-tab-id">${dsRefId}</span>` : html` · <span className="ds-router-tab-state">none</span>`}
+        </button>
+        <button type="button"
+          className=${"ds-router-tab" + (pane === "prototype" ? " is-active" : "")}
+          data-active=${pane === "prototype"}
+          onClick=${() => setPane("prototype")}
+          title="Tokens + primitives extracted from source/ — derived, may drift from the library">
+          Prototype DS <span className="ds-router-tab-state">from source · may be stale</span>
+        </button>
+      </div>
+      ${pane === "library"
+        ? html`<${DSViewLibrary} dsRefId=${dsRefId}/>`
+        : html`<${DSViewPrototype} model=${model} setEdits=${setEdits} hasContent=${hasPrototypeDs}/>`}
+    </div>
+  `;
+}
+
+/* Library pane — iframes the canonical gallery so the user never leaves
+   the editor. dsRefId is guaranteed truthy by the parent router; the
+   "none" disabled-tab state prevents this pane from being reachable
+   without a meta.dsRef. */
+function DSViewLibrary({ dsRefId }) {
+  const src = useMemo(() => {
+    const proj = activeProjectId();
+    const base = apiUrl("/design-systems/" + encodeURIComponent(dsRefId) + "/gallery.html");
+    return proj && !base.includes("project=") ? (base + (base.includes("?") ? "&" : "?") + "project=" + encodeURIComponent(proj)) : base;
+  }, [dsRefId]);
+  return html`
+    <div className="ds-library">
+      <div className="ds-library-bar">
+        <span className="ds-library-eyebrow">Canonical library</span>
+        <span className="ds-library-path"><code>design-systems/${dsRefId}/gallery.html</code></span>
+        <a className="ds-library-open" href=${src} target="_blank" rel="noopener" title="Open the gallery in a new tab">↗ Open in new tab</a>
+      </div>
+      <iframe className="ds-library-iframe"
+        src=${src}
+        title=${"Design system library · " + dsRefId}
+        sandbox="allow-scripts allow-same-origin"/>
+    </div>
+  `;
+}
+
+/* Prototype pane — tokens + primitives extracted live from source/. */
+function DSViewPrototype({ model, setEdits, hasContent }) {
+  if (!hasContent) {
+    return html`
+      <div className="empty-view">
+        <div className="empty-view-card">
+          <h2>Prototype DS not populated yet</h2>
+          <p>This pane mirrors what's actually rendered in <code>source/</code> — its tokens and primitives are extracted live from the prototype's CSS and component markup. It's empty because the editor data file doesn't carry <code>tokens</code> / <code>primitives</code> yet.</p>
+          <p>Run <strong>Workflow 1</strong> (Update from source) to populate it. The view will then show every color, type token, and primitive variant alongside the canonical library so you can spot drift.</p>
+        </div>
+      </div>
+    `;
+  }
   const t = D.tokens;
   const [active, setActive] = useState("overview");
   const scrollRef = useRef(null);
@@ -2618,7 +2940,6 @@ function DSView({ model, setEdits }) {
           const renderVariant = (p, v, category) => {
             const live = extracted[`${p.name}.${v}`];
             const hasFrom = !!p.from?.[v]?.selector;
-            const diffs = primVariantDiffsMain(p.name, v);
             const extraCss = category === "overlay" ? OVERLAY_CONTAINMENT_CSS : "";
             // Resolve the variant's source page so we can absolutize URLs in
             // the fallback `htmlByVariant` markup (live-extracted markup is
@@ -2637,9 +2958,8 @@ function DSView({ model, setEdits }) {
             }
             if (!markup) markup = `<em style="color:var(--text-faint);font-size:11px">no preview</em>`;
             return html`
-              <span className="primitive-variant" data-live=${!!live} data-stale=${hasFrom && !live} data-delta=${diffs} key=${v}>
+              <span className="primitive-variant" data-live=${!!live} data-stale=${hasFrom && !live} key=${v}>
                 <${ShadowPreview} markup=${markup} css=${sourceCss} extraCss=${extraCss}/>
-                ${diffs && html`<span className="primitive-tag" data-state="delta" title="Differs from Main, or in this branch's exploration scope">Δ main</span>`}
                 ${live && html`<span className="primitive-tag" data-state="live" title="Extracted live from source — guaranteed in sync">live</span>`}
                 ${hasFrom && !live && html`<span className="primitive-tag" data-state="stale" title="from.selector didn't match any rendered element — showing cached htmlByVariant">stale</span>`}
               </span>
@@ -3123,7 +3443,6 @@ function EntitiesView({ model, setEdits }) {
           return html`
             <div className="entity-card"
                  key=${e.id}
-                 data-delta=${entityDiffsMain(e.id)}
                  data-linking=${isLinkingTarget || isLinkingSource}
                  data-selected=${isSelected}
                  data-dimmed=${isDimmed}
@@ -3136,7 +3455,6 @@ function EntitiesView({ model, setEdits }) {
               <div className="entity-head">
                 <span className="entity-name">${e.id}</span>
                 <span className="entity-tag" data-tag=${e.tag}>${e.tag}${e.extends ? ` · ${e.extends}` : ""}${e.mergedFrom ? ` · ${e.mergedFrom.length}` : ""}</span>
-                ${entityDiffsMain(e.id) && html`<span className="delta-badge" title="Differs from Main">Δ main</span>`}
                 <div className="entity-head-actions">
                   <button title="Add property"  onClick=${(ev) => { ev.stopPropagation(); addProperty(e.id); }}>+</button>
                   <button title="Rename"        onClick=${(ev) => { ev.stopPropagation(); renameEntity(e.id); }}><${Icon.Pen}/></button>
@@ -3267,7 +3585,7 @@ function PrototypeView() {
       <div className="proto-empty">
         <div className="proto-empty-card">
           <h2>No source wired yet</h2>
-          <p>Drop a prototype under <code>source/${D.meta.branch || "main"}/</code> and run Workflow 1 to populate the editor.</p>
+          <p>Drop a prototype under <code>source/</code> and run Workflow 1 to populate the editor.</p>
         </div>
       </div>
     `;
@@ -4335,7 +4653,7 @@ function IAView({ model, setEdits }) {
   const ROOT_ID = "__app_root__";
   const rootLabel = (D.meta.project && D.meta.project !== "(no source yet)")
     ? D.meta.project
-    : (D.meta.branchLabel || "App");
+    : "App";
 
   // Start with nothing selected — the user explicitly picks a node. Auto-
   // selecting the first top-level page surprised users because it triggered
@@ -4677,7 +4995,6 @@ function IAView({ model, setEdits }) {
               <div>
                 <div className="ia-content-eyebrow">app root</div>
                 <h1 className="ia-content-title">${rootLabel}</h1>
-                <div className="ia-content-id">branch · ${D.meta.branch || "main"}</div>
               </div>
               <div className="ia-content-actions">
                 <button className="tbtn tbtn-primary" onClick=${addPage}><${Icon.Plus}/> Page</button>
@@ -5034,7 +5351,7 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   `;
 }
 
-function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke, onFork }) {
+function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke }) {
   // Read frames/arrows from the materialized model so col/row migration and
   // edit-time moves both flow through. D.frames (raw data) only carries x/y
   // until the migration shim inside applyModelEdits attaches col/row to the
@@ -5414,16 +5731,6 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
     setEdits(es => [...es, edit]);
     setPicked(null); setPopoverAt(null);
   };
-  const onForkClick = () => {
-    if (!picked) return;
-    const frame = D.frames.find(fr => fr.id === picked.frameId);
-    onFork && onFork({
-      frameId: picked.frameId,
-      frameLabel: frame?.label || picked.frameId,
-      selector: picked.selector,
-      snippet: picked.snippet,
-    });
-  };
   const onAddEdit = (payload) => {
     // Add (with side) vs Replace (no side, replaces the picked element)
     const isReplace = popoverAt?.action === "replace";
@@ -5641,7 +5948,7 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
                   outlineOffset: `${-1 * inv}px`,
                 }}
               />
-              ${tool === "select" && html`<${SlotPicker} picked=${picked} onSide=${onSide} onDelete=${onDelete} onReplace=${onReplace} onFork=${onForkClick}/>`}
+              ${tool === "select" && html`<${SlotPicker} picked=${picked} onSide=${onSide} onDelete=${onDelete} onReplace=${onReplace}/>`}
             </div>
           `;
         })()}
@@ -5752,37 +6059,6 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
    (intent to diverge, recorded at branch creation) or because the branch's data
    has actually diverged from main's (post-application). Both signals show the
    Δ-main badge in DS/Entities/Canvas views. */
-const M = window.EDITOR_MAIN_DATA || null;
-const IS_MAIN_BRANCH = !D.meta.branch || D.meta.branch === "main";
-const SCOPE = (D.meta && D.meta.exploration && D.meta.exploration.scope) || { frames: [], primitives: [] };
-
-function frameDiffsMain(frameId) {
-  if (IS_MAIN_BRANCH || !M) return false;
-  if (SCOPE.frames.includes(frameId)) return true;
-  const a = D.frames.find(f => f.id === frameId);
-  const b = M.frames.find(f => f.id === frameId);
-  if (!a || !b) return true;
-  return a.label !== b.label || a.hash !== b.hash || a.setupScript !== b.setupScript;
-}
-function primVariantDiffsMain(primName, variant) {
-  if (IS_MAIN_BRANCH || !M) return false;
-  if (SCOPE.primitives.includes(`${primName}.${variant}`)) return true;
-  const a = (D.primitives.find(p => p.name === primName) || {}).htmlByVariant || {};
-  const b = (M.primitives.find(p => p.name === primName) || {}).htmlByVariant || {};
-  return (a[variant] || "") !== (b[variant] || "");
-}
-function entityDiffsMain(id) {
-  if (IS_MAIN_BRANCH || !M) return false;
-  // Entities aren't directly scoped, but any frame/primitive in scope likely
-  // touches one — leave that mapping to the LLM and just compare structure here.
-  const a = D.entities.find(e => e.id === id);
-  const b = M.entities.find(e => e.id === id);
-  if (!a && b) return true;
-  if (a && !b) return true;
-  if (!a && !b) return false;
-  return JSON.stringify(a.fields) !== JSON.stringify(b.fields);
-}
-
 /* ────────── Agent run plumbing (Phase 1 of OPEN_DESIGN_MIGRATION_PLAN) ──────
    triggerRun() POSTs to /__run; ChatDrawer subscribes to /__stream as SSE.
    We don't use EventSource — it can't send custom headers and can't be cleanly
@@ -5800,6 +6076,163 @@ function saveSettings(patch) {
   const next = { ...cur, ...patch };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch {}
   return next;
+}
+
+/* v3.4 — Default-provider-per-capability map. The user picks ONE
+   provider+model combo per generation capability (agent / image / video /
+   svg / 3d / lottie); spawned nodes inherit those defaults but each
+   action-bar popover exposes the same dropdowns so they're still
+   overridable per-instance. Values are { provider, model } pairs, or
+   null = "follow whatever the system picks now" (Claude CLI for agent,
+   integrated default for media).
+
+   Storage is localStorage-only — same surface as the existing settings
+   blob. We do NOT round-trip through the daemon's media-config.json
+   because that file stores API KEYS, not preferences. */
+const DEFAULTS_KEY = "th.editor.default-providers.v1";
+const CAPABILITY_KEYS = ["agent","image","video","svg","3d","lottie"];
+const CAPABILITY_LABELS = {
+  agent:  "Chat / agent",
+  image:  "Image generation",
+  video:  "Video generation",
+  svg:    "Vector / SVG generation",
+  "3d":   "3D generation",
+  lottie: "Lottie animation",
+};
+function loadDefaultProviders() {
+  try { return JSON.parse(localStorage.getItem(DEFAULTS_KEY) || "{}"); }
+  catch { return {}; }
+}
+function saveDefaultProviders(patch) {
+  const cur = loadDefaultProviders();
+  const next = { ...cur, ...patch };
+  try { localStorage.setItem(DEFAULTS_KEY, JSON.stringify(next)); } catch {}
+  // Broadcast so any popover currently open re-reads the new default.
+  try { window.dispatchEvent(new CustomEvent("th:default-providers-changed", { detail: next })); } catch {}
+  return next;
+}
+function getDefaultForCapability(cap) {
+  const all = loadDefaultProviders();
+  const v = all && all[cap];
+  if (!v || !v.provider) return null;
+  return v;
+}
+/* Pull the per-capability model lists from the media catalog. svg / video /
+   3d / lottie aren't first-class lists in the catalog (yet) so we synthesize
+   them from the providers' capability tags. */
+/* v3.4 — Derive the right `{ext, assetKind, path}` triple for an auto-
+   spawned downstream asset based on the skill that produces it. The media
+   catalog already records each skill's real output via `pathwayBExt`
+   (svg / html / json / png) and `pathwayAFallback.ext` for the pre-fall-
+   through path. This helper consolidates both sources and maps the
+   resulting extension to the workflow's assetKind taxonomy.
+
+   Returns `{ assetKind, ext, path }`. The path lives under the standard
+   `source/<branch>/images/` location for now (consistent with prior
+   behaviour) but with the correct extension; subdirectory normalisation
+   (e.g. `/animations/`, `/vectors/`) can come later when downstream
+   tooling supports per-kind folders. */
+const EXT_TO_ASSET_KIND = {
+  png:  "image", jpg: "image", jpeg: "image", webp: "image", gif: "image", avif: "image",
+  svg:  "vector",
+  html: "html", htm: "html",
+  json: "lottie",
+  mp4:  "video", webm: "video", mov: "video",
+  glb:  "3d", gltf: "3d",
+  css:  "text", js: "text", txt: "text", md: "text",
+};
+// Logical output kind → file extension. The iterator nodes (remix / blend /
+// repeat) carry an `outputKind` field (set by the Quick-Remix popover or
+// auto-detected from upstream) and need a kind-only path lookup that
+// doesn't depend on a skill catalog entry. Order matches the kinds that
+// can flow through an iterator.
+const KIND_TO_EXT = {
+  image:  "png",
+  html:   "html",
+  text:   "md",
+  vector: "svg",
+  svg:    "svg",
+  lottie: "json",
+  video:  "mp4",
+  "3d":   "glb",
+};
+function pickAssetSpawnDefaults(skillSpec, branch, stamp) {
+  const skill = skillSpec || {};
+  // Preference order:
+  //   1. pathwayBExt — the canonical declared extension on the skill.
+  //   2. pathwayAFallback.ext — the upstream-provider fallback.
+  //   3. Map skill.output → ext (image→png, text→md) for skills that
+  //      don't declare an extension explicitly (llm, describe, rembg,
+  //      upscale, etc.).
+  //   4. "png" — last-resort default, matches the original behaviour.
+  let ext = (skill.pathwayBExt
+          || (skill.pathwayAFallback && skill.pathwayAFallback.ext)
+          || (skill.output && KIND_TO_EXT[skill.output])
+          || "png").toLowerCase().replace(/^\./, "");
+  // Map extension → assetKind. Unknown extensions default to "image" only
+  // for png-family extensions; everything else falls back to "html" since
+  // most skill outputs that aren't images are HTML wrappers.
+  let assetKind = EXT_TO_ASSET_KIND[ext]
+                 || (skill.output === "image" ? "image" : skill.output === "text" ? "text" : "html");
+  // Skill-specific overrides for cases where the extension is ambiguous.
+  // lottie-gen writes .json that's always Lottie; mark it explicitly so
+  // downstream renderers know to use a lottie player rather than treating
+  // it as text JSON.
+  if (skill.id === "lottie-gen" && ext === "json") assetKind = "lottie";
+  // svg-gen always produces vector regardless of extension.
+  if (skill.id === "svg-gen") { ext = "svg"; assetKind = "vector"; }
+  // llm / describe emit raw text — store as .md so the asset card can
+  // render markdown later, and rendering as plain text in the meantime
+  // still works without a custom renderer.
+  if ((skill.id === "llm" || skill.id === "describe") && skill.output === "text") {
+    ext = "md"; assetKind = "text";
+  }
+  const slug = skill.id || "asset";
+  const path = `source/${branch}/images/${slug}-${stamp}.${ext}`;
+  return { assetKind, ext, path };
+}
+
+/* v3.4 — Kind-only variant of pickAssetSpawnDefaults for iterator nodes.
+   Iterators (remix / blend / repeat) don't have a single skill spec; their
+   output kind is set on the iterator node itself (`outputKind` field) and
+   propagates from upstream's output. This helper takes that kind + a slug
+   and returns the matching path triple. */
+function pickAssetSpawnDefaultsForKind(outputKind, slug, branch, stamp) {
+  const ext = KIND_TO_EXT[outputKind] || "png";
+  let assetKind = EXT_TO_ASSET_KIND[ext] || "image";
+  if (outputKind === "lottie") assetKind = "lottie";
+  if (outputKind === "vector" || outputKind === "svg") assetKind = "vector";
+  if (outputKind === "text") assetKind = "text";
+  const path = `source/${branch}/images/${slug || "asset"}-${stamp}.${ext}`;
+  return { assetKind, ext, path };
+}
+
+function listModelsForCapability(cap) {
+  const M = (window.TH_MEDIA || {});
+  const providers = M.providers || {};
+  if (cap === "agent") return (M.textModels || []).filter(m => m.integrated !== false);
+  if (cap === "image") return (M.imageModels || []).filter(m => m.integrated !== false);
+  // v3.4.1 — Video catalog now has integrated rows (fal video models).
+  if (cap === "video") return (M.videoModels || []).filter(m => m.integrated !== false);
+  // Synthesized lists for capabilities the catalog doesn't enumerate yet.
+  // We expose every provider that *plausibly* serves the capability so the
+  // user can wire it up even if there's no integrated model row yet.
+  const PROVIDERS_BY_CAP = {
+    video: ["fal","runway","pika","luma","replicate"],
+    svg:   ["quiver","openai","anthropic","fal","recraft"],
+    "3d":  ["meshy","fal"],
+    lottie:["lottiefiles","fal"],
+  };
+  const allowed = new Set(PROVIDERS_BY_CAP[cap] || []);
+  const out = [];
+  for (const pid of Object.keys(providers)) {
+    if (allowed.size && !allowed.has(pid)) continue;
+    const p = providers[pid] || {};
+    // One generic row per provider with model="" — the per-node UI lets the
+    // user type a specific model id, or the daemon picks its default.
+    out.push({ id: "", provider: pid, label: p.label || pid, integrated: !!p.integrated });
+  }
+  return out;
 }
 
 /* ────────── Project-aware URL helper (Phase 6) ──────────
@@ -5827,12 +6260,125 @@ function apiUrl(path) {
   return path + sep + "project=" + encodeURIComponent(proj);
 }
 
-async function triggerRun({ branch, agentId, kind, prompt, title, meta }) {
+// v3.4.30 — Starred prototypes (cross-component cache + event bus).
+// One per-project list of prototype slugs the user has bookmarked. The
+// daemon owns persistence (<project>/.starred-prototypes.json); we
+// memoise the resolved list in `window.__TH_STARRED` keyed by project
+// id, and emit a CustomEvent("th:starred-prototypes-changed") whenever
+// it mutates so every listener (library, projects landing, prototype
+// node) re-renders in lockstep. The slug we save is the prototype's
+// `id` from /__source_prototypes — same shape (`"main"` or
+// `"main/sketches"`) used by every other reader, so this clicks
+// straight into the existing path schema.
+function _starredCache() {
+  if (typeof window === "undefined") return {};
+  if (!window.__TH_STARRED) window.__TH_STARRED = {};
+  return window.__TH_STARRED;
+}
+async function fetchStarredPrototypes(force) {
+  const proj = activeProjectId();
+  if (!proj) return [];
+  const cache = _starredCache();
+  if (!force && Array.isArray(cache[proj])) return cache[proj];
+  try {
+    const r = await fetch(apiUrl("/__starred_prototypes"));
+    if (!r.ok) return cache[proj] || [];
+    const j = await r.json();
+    const list = Array.isArray(j.starred) ? j.starred : [];
+    cache[proj] = list;
+    try { window.dispatchEvent(new CustomEvent("th:starred-prototypes-changed", { detail: { project: proj, starred: list } })); } catch {}
+    return list;
+  } catch {
+    return cache[proj] || [];
+  }
+}
+function getStarredPrototypesSync() {
+  const proj = activeProjectId();
+  if (!proj) return [];
+  return _starredCache()[proj] || [];
+}
+function isPrototypeStarredSync(slug) {
+  if (!slug) return false;
+  return getStarredPrototypesSync().some(s => s && s.id === slug);
+}
+async function togglePrototypeStar(slug, want) {
+  if (!slug) return null;
+  const proj = activeProjectId();
+  if (!proj) return null;
+  try {
+    const body = (typeof want === "boolean") ? { id: slug, starred: want } : { id: slug };
+    const r = await fetch(apiUrl("/__starred_prototypes/toggle"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const list = Array.isArray(j.starred) ? j.starred : [];
+    _starredCache()[proj] = list;
+    try { window.dispatchEvent(new CustomEvent("th:starred-prototypes-changed", { detail: { project: proj, starred: list, toggled: j.toggled, now: j.now } })); } catch {}
+    return j;
+  } catch {
+    return null;
+  }
+}
+// Derive the prototype slug ("main", "main/sketches", ...) for a
+// workflow prototype node. The node carries `branch` (level-1 dir) plus
+// an optional `subpath` for deep prototypes; if neither is present the
+// node is the root prototype on whatever branch it sits in.
+function prototypeSlugForNode(node) {
+  if (!node) return null;
+  const branch = (node.branch || "main").trim();
+  if (!branch) return null;
+  const sub = (node.subpath || "").replace(/^\/+|\/+$/g, "");
+  return sub ? `${branch}/${sub}` : branch;
+}
+
+// v3.4.24 — Shared Lottie player srcdoc. Loads the file, sets up the
+// animation with autoplay=false, and listens for postMessage commands
+// {type:"play"|"pause"} from the parent so the canvas card / library
+// grid / chooser can drive playback based on selection / hover state.
+// `withDiagnostics` toggles the small top-left status badge ("OK · N
+// layers · …" / explicit error). Used by:
+//   • WorkflowAssetNode canvas asset cards (diagnostics on)
+//   • WorkflowLibrary grid thumbs (diagnostics off)
+//   • WorkflowReplaceAssetChooser thumbs (diagnostics off)
+function buildLottieSrcDoc(fileUrl, withDiagnostics) {
+  const diagStyle = withDiagnostics
+    ? '#st{position:fixed;left:6px;top:6px;padding:3px 6px;border-radius:4px;background:rgba(255,255,255,.85);border:1px solid #e5e5e5;font:10px/1.2 system-ui;color:#444;pointer-events:none;z-index:10;max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#st.ok{color:#0a7;border-color:#cde}#st.err{color:#c33;border-color:#fbb;background:rgba(255,235,235,.95);white-space:normal;max-width:calc(100% - 12px)}'
+    : '';
+  const diagBadge = withDiagnostics ? '<div id="st">loading…</div>' : '';
+  const diagOk    = withDiagnostics ? 'function ok(m){var s=document.getElementById("st");if(s){s.className="ok";s.textContent=m;setTimeout(function(){s.style.opacity=0;s.style.transition="opacity .4s"},2000)}}' : 'function ok(){}';
+  const diagErr   = withDiagnostics ? 'function err(m){var s=document.getElementById("st");if(s){s.className="err";s.textContent=m}}' : 'function err(){}';
+  return '<!doctype html><html><head><style>' +
+    'html,body{margin:0;height:100%;background:#fff;font:11px/1.3 system-ui}#l{width:100%;height:100%}' + diagStyle +
+    '</style></head><body><div id="l"></div>' + diagBadge +
+    '<script src="https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie.min.js"></script>' +
+    '<script>(function(){var anim=null;' + diagOk + diagErr +
+    'if(typeof lottie==="undefined"){err("lottie-web CDN failed to load — check network");return}' +
+    'fetch(' + JSON.stringify(fileUrl) + ',{cache:"no-store"})' +
+    '.then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.text()})' +
+    '.then(function(t){if(/<\\!doctype|<html/i.test(t.slice(0,200)))throw new Error("got HTML, not JSON — file may not exist yet");try{return JSON.parse(t)}catch(e){throw new Error("invalid JSON: "+e.message.slice(0,80))}})' +
+    '.then(function(data){if(!data||typeof data!=="object")throw new Error("JSON is not an object");' +
+    'var layers=Array.isArray(data.layers)?data.layers.length:0;var ip=Number(data.ip||0),op=Number(data.op||0),fr=Number(data.fr||30);var w=data.w||0,h=data.h||0;' +
+    'if(layers===0)throw new Error("lottie JSON has 0 layers — animation would render empty");' +
+    'if(op<=ip)throw new Error("lottie duration is 0 (ip="+ip+", op="+op+")");' +
+    'try{anim=lottie.loadAnimation({container:document.getElementById("l"),renderer:"svg",loop:true,autoplay:false,animationData:data});' +
+    'anim.addEventListener("data_failed",function(){err("lottie-web rejected the JSON (SVG renderer failed)")});' +
+    'anim.addEventListener("DOMLoaded",function(){var dur=(op-ip)/fr;ok("OK · "+layers+" layer"+(layers===1?"":"s")+" · "+dur.toFixed(1)+"s @ "+fr+"fps · "+w+"×"+h)});' +
+    '}catch(e){err("lottie.loadAnimation crashed: "+e.message.slice(0,80))}})' +
+    '.catch(function(e){err("load failed: "+(e&&e.message||String(e)))});' +
+    // Listen for play/pause commands from parent (selection / hover driven).
+    'window.addEventListener("message",function(e){var d=e.data;if(!d||!anim)return;if(d.type==="play"){anim.play()}if(d.type==="pause"){anim.pause()}});' +
+    '})();</script></body></html>';
+}
+
+async function triggerRun({ branch, agentId, kind, prompt, title, meta, model }) {
   const project = activeProjectId();
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project }),
+    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -5925,7 +6471,7 @@ function composeModeAwarePrompt(mode, userText) {
     return [
       "[Context: you're chatting from WORKFLOW MODE of the prototype editor.]",
       "The user is looking at the workflow node canvas — a ComfyUI-style graph that connects prompt → skill → asset nodes to generate ideas and visual content. Bias your responses toward: node graph operations (add / remove / wire nodes), prompt engineering for visual generation, evaluating + remixing asset outputs, dispatching skills (generate-image, svg-gen, shader, threejs, rembg, etc.).",
-      "Editor data (frames, IA, user flow, entities) is secondary context — only touch editor/branches/*.js or source/<branch>/*.html if the user explicitly asks.",
+      "Editor data (frames, IA, user flow, entities) is secondary context — only touch editor/data.js or source/ files if the user explicitly asks.",
       "",
       text,
     ].join("\n");
@@ -5933,7 +6479,7 @@ function composeModeAwarePrompt(mode, userText) {
   if (mode === "editor") {
     return [
       "[Context: you're chatting from EDITOR MODE of the prototype editor.]",
-      "The user is looking at the multi-view design tool (Canvas / Prototype / User flow / IA / Design system / Entities / State machine / Timeline / Grid). Bias your responses toward: prototype source code (source/<branch>/), the branch data file (editor/branches/<branch>.js — frames, lanes, arrows, entities, primitives), the design-system trio (design-systems/<id>/), and Workflow 1/2/4/5 operations.",
+      "The user is looking at the multi-view design tool (Canvas / Prototype / User flow / IA / Design system / Entities / State machine / Timeline / Grid). Bias your responses toward: prototype source code (source/), the project data file (editor/data.js — frames, lanes, arrows, entities, primitives), the design-system trio (design-systems/<id>/), and Workflow 1/2 operations.",
       "Workflow node-graph operations (workflow/workflow.json, asset generation) are secondary context — only touch them if the user explicitly asks.",
       "",
       text,
@@ -5948,7 +6494,7 @@ function composeModeAwarePrompt(mode, userText) {
 // the daemon's /__history endpoint (Phase 1) and dispatches the right
 // reload strategy based on which files came back as changed.
 //
-//   editor/branches/*.js · editor/data.js · editor/design-systems/*.js
+//   editor/data.js · editor/design-systems/*.js
 //     → window.location.reload() (these load once at boot via <script src>)
 //   workflow/workflow.json (only)
 //     → dispatch "th:workflow-reload" so WorkflowCanvas refetches state
@@ -6868,7 +7414,7 @@ function AskUserQuestionCard({ ev, runId, answered, onAnswered }) {
   `;
 }
 
-function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount }) {
+function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart }) {
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("connecting");   // connecting | streaming | done | error
   const [error, setError] = useState(null);
@@ -6965,7 +7511,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     if (run.historical) {
       (async () => {
         try {
-          const url = apiUrl(`/__chat?branch=${encodeURIComponent(run.branch || "main")}&runId=${encodeURIComponent(run.runId)}`);
+          const url = apiUrl(`/__chat?runId=${encodeURIComponent(run.runId)}`);
           const r = await fetch(url, { signal: ctl.signal });
           if (!r.ok) throw new Error(`history ${r.status}`);
           const j = await r.json();
@@ -7023,7 +7569,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       // reliable floor. The live SSE then only tails events AFTER the last
       // persisted seq — no gap, no duplicates.
       try {
-        const histUrl = apiUrl(`/__chat?branch=${encodeURIComponent(run.branch || "main")}&runId=${encodeURIComponent(run.runId)}`);
+        const histUrl = apiUrl(`/__chat?runId=${encodeURIComponent(run.runId)}`);
         const hr = await fetch(histUrl, { signal: ctl.signal });
         if (hr.ok) {
           const hj = await hr.json();
@@ -7250,10 +7796,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
 
   return html`
     <div className="chat-drawer" data-collapsed=${collapsed} data-fullscreen=${fullscreen}>
+      <div className="chat-drawer-resize-handle" onMouseDown=${onResizeStart}/>
       <div className="chat-header">
         <div className="chat-title-group">
           <span className="chat-title">${run.title || "Agent run"}</span>
-          <span className="chat-meta">${run.agentId || "claude"} · ${run.branch || "main"}</span>
+          <span className="chat-meta">${run.agentId || "claude"}</span>
         </div>
         <div className="chat-status-group">
           <${ChatStatusChip} status=${status} error=${error}/>
@@ -7299,7 +7846,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
-        branch=${run?.branch || "main"}
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
@@ -7342,19 +7888,19 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
    resets state.turn_done so the chip flips back to streaming. Disabled
    while the agent is mid-turn (status === "streaming" / "connecting").
    Cmd/Ctrl+Enter sends; plain Enter inserts a newline. */
-function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   // Two distinct kinds of file the user can stage on a chat turn (Phase 5c):
   //
   //   • attachments — IMAGES bound to this single turn. Posted to
-  //     /__attachment (4d), land in source/<branch>/_attachments/. The
+  //     /__attachment (4d), land in source/_attachments/. The
   //     pre-amble tells the agent "use Read to inspect this image".
   //
   //   • uploads — ANY files the user wants the agent to use as long-lived
   //     project assets (img2img reference, brand-spec PDF, sketch, palette).
-  //     Posted multipart to /__upload (5c), land in source/<branch>/uploads/.
+  //     Posted multipart to /__upload (5c), land in source/uploads/.
   //     The pre-amble tells the agent the files exist; the agent decides
   //     whether to Read them, pass them to `--image`, etc.
   const [attachments, setAttachments] = useState([]);   // [{ path, mime, size }]
@@ -7382,7 +7928,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
       const resp = await fetch(apiUrl("/__attachment"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch: branch || "main", name: file.name, data_uri: dataUri }),
+        body: JSON.stringify({ name: file.name, data_uri: dataUri }),
       });
       const j = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
@@ -7392,7 +7938,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
     } finally {
       setAttachBusy(false);
     }
-  }, [branch]);
+  }, []);
 
   // Phase 5c — multi-file project-asset upload. Posts multipart/form-data so
   // we don't pay the 33% base64 tax and the daemon's stdlib email.parser path
@@ -7406,7 +7952,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
       for (let i = 0; i < files.length; i++) {
         fd.append(`file${i}`, files[i], files[i].name);
       }
-      const resp = await fetch(apiUrl(`/__upload?branch=${encodeURIComponent(branch || "main")}`), {
+      const resp = await fetch(apiUrl("/__upload"), {
         method: "POST",
         body: fd,
       });
@@ -7423,7 +7969,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
     } finally {
       setUploadBusy(false);
     }
-  }, [branch]);
+  }, []);
 
   const onPaste = useCallback((e) => {
     const items = e.clipboardData?.items || [];
@@ -7461,7 +8007,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
     }
     if (uploads.length) {
       if (attachments.length) lines.push("");
-      lines.push("User uploaded " + uploads.length + " project file" + (uploads.length === 1 ? "" : "s") + " (long-lived assets under source/" + (branch || "main") + "/):");
+      lines.push("User uploaded " + uploads.length + " project file" + (uploads.length === 1 ? "" : "s") + " (long-lived assets under source/uploads/):");
       for (const u of uploads) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
       lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + uploads[0].path + "` for img2img) or Read them if you need their contents.");
     }
@@ -7557,7 +8103,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
                   // Optimistic chip removal; daemon-side delete is best-effort.
                   setUploads(prev => prev.filter((_, j) => j !== i));
                   try {
-                    await fetch(apiUrl(`/__upload/delete?branch=${encodeURIComponent(branch || "main")}&name=${encodeURIComponent(u.name)}`), { method: "POST" });
+                    await fetch(apiUrl(`/__upload/delete?name=${encodeURIComponent(u.name)}`), { method: "POST" });
                   } catch { /* leaving the file on disk is fine; the chip is the user-facing thing */ }
                 }}
                 title="Remove and delete from uploads/"
@@ -7601,7 +8147,7 @@ function ChatComposer({ runId, isNew, branch, disabled, locked, onSent, onStartN
         type="button"
         onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
         disabled=${uploadBusy || busy}
-        title="Upload project files — multi-file, any type, lives in source/<branch>/uploads/"
+        title="Upload project files — multi-file, any type, lives in source/uploads/"
       >${uploadBusy ? "…" : html`<${Icon.Folder}/>`}</button>
       <textarea
         ref=${taRef}
@@ -7896,7 +8442,7 @@ function buildBlocks(events) {
    small enough that a few thousand chars per render is cheap. Inline order
    matters: code spans win first (they shouldn't be re-tokenised), then bold
    (** before *), then italic, then links, then bare URLs and file paths. */
-const MD_PATH_RE = /(?<![\w/.])((?:source|editor|docs|skills|prompt-templates|design-systems)\/[\w./@-]+|(?:AGENTS|PROTOTYPE|DESIGN|MERGES|NOTES|README|FORK_REQUEST)(?:\.md)?)/;
+const MD_PATH_RE = /(?<![\w/.])((?:source|editor|docs|skills|prompt-templates|design-systems)\/[\w./@-]+|(?:AGENTS|PROTOTYPE|DESIGN|NOTES|README)(?:\.md)?)/;
 const FILE_PATH_TEST = /\.(html|css|js|json|md|py|tsx?|jsx?|svg|png|jpe?g|webp|sh|toml|ya?ml|txt)$/i;
 
 // Color / gradient / asset detection. These render preview swatches inline.
@@ -9890,23 +10436,6 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
   return null;
 }
 
-/* ────────── New-branch dialog (modal) ──────────
-   Scope is implicit: the element the user picked with the Select tool seeds
-   `initialScope`. The dialog asks for a name + prompt only and shows the scope
-   as a read-only summary. On submit, POSTs to /__branch and reloads. Source
-   files are NOT copied — Claude forks the scoped components later. */
-function NewBranchDialog({ open, onClose, parentId, parentLabel, initialScope }) {
-  // v3.1 — project branches deprecated; this dialog never renders.
-  if (!open) return null;
-  return html`<div className="modal-backdrop" onClick=${onClose}>
-    <div className="modal-card" onClick=${(e) => e.stopPropagation()}>
-      <p>Project branches have been removed. Use the workflow canvas's
-         asset version picker (sibling-node branching) instead.</p>
-      <button onClick=${onClose}>OK</button>
-    </div>
-  </div>`;
-}
-
 function GenerateRequestButton({ kind, label, body }) {
   const [state, setState] = useState("idle"); // idle | sending | sent | error
   const onClick = async () => {
@@ -10003,9 +10532,9 @@ entity whose status/state/phase field has a non-trivial set of values
 binary statuses (\`active/inactive\`, \`deleted/not-deleted\`) — those aren't
 worth an FSM.
 
-Write the resulting array into \`source/<branch>/prototype.json\` under the
-\`stateMachines\` key and regenerate \`editor/branches/<branch>.js\` via the
-rest of Workflow 1. Delete this request file when done.
+Write the resulting array into \`source/prototype.json\` under the
+\`stateMachines\` key and regenerate \`editor/data.js\` via the rest of
+Workflow 1. Delete this request file when done.
 `;
     return html`
       <div className="empty-view">
@@ -10261,10 +10790,10 @@ without user input.
 
 For each independent time-driven flow, write a \`timelines[]\` entry with
 \`events[]\` whose \`at\` field is a relative offset (\`"T+0"\`, \`"T+5d"\`, etc.)
-into \`source/<branch>/prototype.json\`, then regenerate
-\`editor/branches/<branch>.js\` via the rest of Workflow 1. Delete this
-request file when done. If nothing is time-driven, write a single comment
-in \`NOTES.md\` saying so and delete this file anyway.
+into \`source/prototype.json\`, then regenerate \`editor/data.js\` via the
+rest of Workflow 1. Delete this request file when done. If nothing is
+time-driven, write a single comment in \`NOTES.md\` saying so and delete
+this file anyway.
 `;
     return html`
       <div className="empty-view">
@@ -10402,10 +10931,10 @@ of these — typically multiple per prototype:
 Multiple grids per prototype is the norm, not the exception. Read
 \`docs/agents/subagents/10-grids.md\` for the full lens.
 
-Write into \`source/<branch>/prototype.json\` and regenerate
-\`editor/branches/<branch>.js\` via the rest of Workflow 1. Delete this
-request file when done. If genuinely no form/entity has 2D variance,
-write a comment in \`NOTES.md\` saying so and delete this file anyway.
+Write into \`source/prototype.json\` and regenerate \`editor/data.js\` via
+the rest of Workflow 1. Delete this request file when done. If genuinely
+no form/entity has 2D variance, write a comment in \`NOTES.md\` saying so
+and delete this file anyway.
 `;
     return html`
       <div className="empty-view">
@@ -11336,25 +11865,55 @@ function ProjectsLanding({ info, projects, onReload }) {
                   ${/* v3.1 — branch count removed (project branches deprecated). */ null}
                   <span>edited ${fmtActivity(p.lastActivity)}</span>
                 </div>
-                <div className="landing-card-hint">Click anywhere to open the workflow · or pick:</div>
-                <div className="landing-card-doors">
-                  <button
-                    className="landing-card-door"
-                    title="Open the live prototype (source/main/)"
-                    onClick=${(e) => { e.stopPropagation(); openProject(p.id, "prototype"); }}
-                  >
-                    <span className="landing-card-door-icon"><${Icon.Play}/></span>
-                    <span>Prototype</span>
-                  </button>
-                  <button
-                    className="landing-card-door"
-                    title="Open the editor (canvas / flow / IA / DS / …)"
-                    onClick=${(e) => { e.stopPropagation(); openProject(p.id); }}
-                  >
-                    <span className="landing-card-door-icon"><${Icon.Canvas}/></span>
-                    <span>Editor</span>
-                  </button>
-                </div>
+                ${(p.starredPrototypes || []).length > 0 && html`
+                  <div className="landing-card-stars">
+                    <div className="landing-card-stars-head">
+                      <span className="landing-card-stars-icon"><${Icon.Star}/></span>
+                      <span>Starred prototypes</span>
+                    </div>
+                    <ul className="landing-card-stars-list">
+                      ${p.starredPrototypes.map(sp => html`
+                        <li key=${sp.id} className=${"landing-card-star-row" + (sp.exists ? "" : " is-missing")}>
+                          <button
+                            className="landing-card-star-btn"
+                            title=${sp.exists
+                              ? `Open ${sp.path} in the live prototype viewer`
+                              : `${sp.path} — file no longer on disk. Star kept so you can re-create it; click to unstar.`}
+                            onClick=${(e) => {
+                              e.stopPropagation();
+                              if (!sp.exists) return;
+                              const url = new URL(window.location.href);
+                              url.searchParams.set("project", p.id);
+                              url.searchParams.set("view", "prototype");
+                              url.searchParams.set("branch", sp.id);
+                              url.searchParams.delete("branch_slug");
+                              window.location.href = url.toString();
+                            }}
+                          >
+                            <span className="landing-card-star-glyph"><${Icon.Play}/></span>
+                            <span className="landing-card-star-label">${sp.label || sp.id}</span>
+                            <span className="landing-card-star-slug">${sp.id}</span>
+                          </button>
+                          <button
+                            className="landing-card-star-edit"
+                            title=${sp.exists
+                              ? `Open the editor on ${sp.path}`
+                              : `Try to open the editor on ${sp.path} (file no longer on disk)`}
+                            aria-label="Open editor"
+                            onClick=${(e) => {
+                              e.stopPropagation();
+                              const url = new URL(window.location.href);
+                              url.searchParams.set("project", p.id);
+                              url.searchParams.set("branch", sp.id);
+                              url.searchParams.delete("view");
+                              window.location.href = url.toString();
+                            }}
+                          ><${Icon.Canvas}/></button>
+                        </li>
+                      `)}
+                    </ul>
+                  </div>
+                `}
               </div>
             `)}
             ${filter && filtered.length === 0 && html`
@@ -11391,7 +11950,10 @@ function PrototypeDoor() {
   const params = new URL(window.location.href).searchParams;
   const branch = params.get("branch") || "main";
   const project = params.get("project") || "";
-  const src = apiUrl(`/source/${encodeURIComponent(branch)}/`);
+  // Slug may be nested ("main/sketches") — encode each segment so the
+  // path-separator survives the URL but everything else gets escaped.
+  const branchPath = branch.split("/").map(encodeURIComponent).join("/");
+  const src = apiUrl(`/source/${branchPath}/`);
   return html`
     <div className="proto-door">
       <div className="proto-door-bar">
@@ -11421,6 +11983,58 @@ function PrototypeDoor() {
    Expose flow + asset / skill / prompt nodes + edges arrive in 3.5c/3.5d.
    The lock semantics (instance pinned to its prototype-internal page) plug
    in then too — for 3.5b each instance is just a free-floating iframe. */
+// v3.4.10 — Deprecated model ID live-resolution.
+// Each row maps "model literal that no longer works at the provider's API"
+// → "the current replacement on the same provider that does the closest
+// thing." node.model is stored byte-identical to whatever the user picked,
+// but every READER resolves through _resolveLiveModel() so the chip, the
+// dropdown, and the run dispatcher all see the live ID. This is the
+// "linked" semantic — the catalog is the source of truth, not the saved
+// string. Picking a non-deprecated ID via the dropdown writes that literal;
+// the dropdown's "selected" highlight reflects the resolved value so
+// deprecated strings appear as their current replacement everywhere.
+// Hard-shutoff deprecations (the bare-luma 502, DALL·E 2/3 sunsets, etc.)
+// are the ONES THIS MAP MUST CATCH — otherwise dispatch hits a dead
+// endpoint. Soft deprecations are mapped for catalog hygiene.
+const _DEPRECATED_MODEL_MIGRATIONS = {
+  // OpenAI — DALL·E shut down May 12, 2026; gpt-image-1 deprecates Oct 23, 2026
+  "dall-e-2":                                              "gpt-image-2",
+  "dall-e-3":                                              "gpt-image-2",
+  "gpt-image-1":                                           "gpt-image-2",
+  // Anthropic — dated aliases → undated current (the dated ones still
+  // respond for now but the un-dated ID is what the catalog ships)
+  "claude-sonnet-4-5-20250929":                            "claude-sonnet-4-6",
+  "claude-haiku-4-5-20251001":                             "claude-haiku-4-5",
+  "claude-sonnet-4-5":                                     "claude-sonnet-4-6",
+  // fal.ai video — bare Luma is the URGENT one (returns 502 "deprecated")
+  "fal-ai/luma-dream-machine":                             "fal-ai/veo3.1",
+  "fal-ai/kling-video/v1/standard":                        "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",
+  "fal-ai/kling-video/v1/pro":                             "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",
+  "fal-ai/minimax/hailuo-02/standard/text-to-video":       "fal-ai/minimax/hailuo-2.3-fast/pro/text-to-video",
+  // fal.ai image — Ideogram v2 still works but v3 is current
+  "fal-ai/ideogram/v2":                                    "fal-ai/ideogram/v3",
+};
+// Provider migrations applied IN PARALLEL when a model's replacement
+// requires a different provider. None of our current rows cross providers,
+// so this is empty for now — kept as a hook for future cases.
+const _DEPRECATED_MODEL_PROVIDER = {};
+// Single source of truth for "saved model string → live model ID."
+// Pass any string (including empty/null); the function returns the live ID
+// the caller should DISPLAY and DISPATCH. Empty / falsy / unknown values
+// pass through unchanged so callers can OR-chain with their own defaults:
+//   const live = _resolveLiveModel(node.model) || skillSpec.defaultModel;
+function _resolveLiveModel(raw) {
+  if (typeof raw !== "string" || !raw) return raw;
+  const mapped = _DEPRECATED_MODEL_MIGRATIONS[raw];
+  return mapped || raw;
+}
+// Companion: did the resolver swap the input? Used by the UI to render a
+// "(was: <oldId>)" hint in tooltips so the user knows the chip is showing
+// the live ID rather than what's literally saved on the node.
+function _modelWasDeprecated(raw) {
+  return typeof raw === "string" && !!_DEPRECATED_MODEL_MIGRATIONS[raw];
+}
+
 // v2.33 — list of editable fields the user can mutate on each node kind.
 // The reload-merge consults a saved-snapshot map for these fields; a field
 // is DIRTY iff React state differs from snapshot (user has unsaved edit).
@@ -11486,12 +12100,81 @@ function WorkflowCanvas() {
   // single prompt/skill/asset node — this one is the "talk about the whole
   // canvas" entry point.
   const branch = useMemo(
-    () => (window.EDITOR_ACTIVE_BRANCH || (window.EDITOR_BRANCHES && window.EDITOR_BRANCHES.active) || "main"),
+    () => ("main"),
     [],
   );
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
   const [chatPermissionMode, setChatPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
+  // Resizable panels: library (left) + chat (right). Minimums baked in:
+  // 240px for the library, 644px for the chat (~70% of the old floating
+  // drawer max width). Widths persist to localStorage so the layout
+  // sticks across reloads. Refs mirror the latest values for the
+  // mouseup-time persist write (avoids stale-closure capture).
+  const LIB_MIN      = 240;
+  const CHAT_DEFAULT = 644;
+  // Drag floor = 500px; first-load default still 644px.
+  const CHAT_MIN     = 500;
+  const [libWidth, setLibWidth] = useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem("th-workflow-lib-width") || "0", 10);
+      return v >= LIB_MIN ? v : LIB_MIN;
+    } catch { return LIB_MIN; }
+  });
+  const [chatWidth, setChatWidth] = useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem("th-workflow-chat-width") || "0", 10);
+      return v >= CHAT_MIN ? v : CHAT_DEFAULT;
+    } catch { return CHAT_DEFAULT; }
+  });
+  const libWidthRef  = useRef(libWidth);
+  const chatWidthRef = useRef(chatWidth);
+  useEffect(() => { libWidthRef.current  = libWidth;  }, [libWidth]);
+  useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
+  const startLibResize = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = libWidth;
+    const onMove = (ev) => {
+      const w = Math.max(LIB_MIN, Math.min(window.innerWidth * 0.5, startW + (ev.clientX - startX)));
+      setLibWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem("th-workflow-lib-width", String(libWidthRef.current)); } catch {}
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [libWidth]);
+  const startChatResize = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = chatWidth;
+    const onMove = (ev) => {
+      const w = Math.max(CHAT_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
+      setChatWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem("th-workflow-chat-width", String(chatWidthRef.current)); } catch {}
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [chatWidth]);
+  // Publish widths as CSS custom properties on document.documentElement so
+  // .workflow-body grid + .chat-drawer width + canvas margin can all read
+  // them. No wrapper div needed.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--workflow-lib-width",  libWidth  + "px");
+    root.style.setProperty("--workflow-chat-width", chatWidth + "px");
+    return () => {
+      root.style.removeProperty("--workflow-lib-width");
+      root.style.removeProperty("--workflow-chat-width");
+    };
+  }, [libWidth, chatWidth]);
   // v2.50 — Truthfulness Principle 8 (status does not lie) applied to the
   // chat surface. On mount, if the daemon has an active (non-done, non-error)
   // run for this project, auto-attach to it. Without this, reloading the
@@ -11589,9 +12272,17 @@ function WorkflowCanvas() {
     // anchors its responses on the node-canvas surface (not the data files).
     const wrappedPrompt = composeModeAwarePrompt("workflow", userText);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    // v3.4 — Read the user's default agent model from settings, if any. The
+    // daemon's CLI invocation already maps "sonnet"/"opus"/"haiku" substrings
+    // onto Claude CLI --model flags (see serve.py:868–872), so passing the
+    // model id straight through is enough for Anthropic-family overrides.
+    // Other agentId backends (xai, openai-gpt) can pick it up too once the
+    // daemon honors them.
+    const agentDefault = getDefaultForCapability("agent");
     const run = await triggerRun({
       branch, agentId: "claude", kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode: chatPermissionMode,
+      model: agentDefault && agentDefault.model || undefined,
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -11831,17 +12522,41 @@ function WorkflowCanvas() {
             return next;
           }),
         };
+        // v3.4.10 — No on-load mutation. node.model stays byte-identical to
+        // disk; every READER resolves through _resolveLiveModel() which
+        // returns the current catalog ID (deprecated → replacement, current
+        // → unchanged). The chip displays the live ID; the dispatcher sends
+        // the live ID; the dropdown highlights the live ID as "selected"
+        // even when the underlying stored value is deprecated. Old strings
+        // in workflow.json don't break anything because nothing READS them
+        // directly — `_resolveLiveModel(node.model)` is the only entry point.
+        // See _DEPRECATED_MODEL_MIGRATIONS above.
         setData(sanitized);
         // v2.33 — seed the saved-snapshot map from the initial disk read.
         // Every editable field we track gets a baseline "last confirmed
         // saved value." The reload-merge uses this to decide if a field
         // is DIRTY (local ≠ snapshot → user has unsaved changes → skip
         // merge for this field). Causal, no time windows.
+        // v3.4.9 — Seed the snapshot from the RAW DISK values (j.nodes), not
+        // the post-sanitization / post-migration in-memory values. Reason:
+        // the sanitization (stale-pending → null) and the deprecated-model
+        // migration (gpt-image-1 → gpt-image-2 etc.) are unsaved changes
+        // until the debounced save flushes. Dirty-tracking compares local
+        // to snapshot; if we seeded with the new values, the check would say
+        // "clean" and the next SSE reload would pull disk's still-old values
+        // and clobber the in-memory upgrades. Seeding with disk's pre-change
+        // values makes the upgrade properly dirty until it persists.
+        const _diskNodes = j.nodes || [];
         savedSnapshotRef.current.clear();
-        for (const n of (sanitized.nodes || [])) {
-          for (const f of _editableFieldsForKind(n)) {
-            savedSnapshotRef.current.set(n.id + "|" + f, _stableClone(n[f]));
+        for (const dn of _diskNodes) {
+          for (const f of _editableFieldsForKind(dn)) {
+            savedSnapshotRef.current.set(dn.id + "|" + f, _stableClone(dn[f]));
           }
+          // v3.4.8 — runStatus / runError are dirty-tracked too (Bug B).
+          // Seed from RAW disk so a stale-pending → null sanitization
+          // counts as dirty until the save flushes.
+          savedSnapshotRef.current.set(dn.id + "|runStatus", _stableClone(dn.runStatus));
+          savedSnapshotRef.current.set(dn.id + "|runError",  _stableClone(dn.runError));
         }
       })
       .catch(e => { if (!cancelled) setErr(String(e?.message || e)); });
@@ -11894,9 +12609,18 @@ function WorkflowCanvas() {
       const deletedIds = Array.from(deletedIdsRef.current);
       const snapshotPayload = (data.nodes || []).map(n => ({
         id: n.id,
-        snap: Object.fromEntries(
-          _editableFieldsForKind(n).map(f => [f, _stableClone(n[f])])
-        ),
+        snap: {
+          ...Object.fromEntries(
+            _editableFieldsForKind(n).map(f => [f, _stableClone(n[f])])
+          ),
+          // v3.4.8 — runStatus / runError participate in the snapshot so
+          // dirty-tracking works for them too (Bug B). Once the save POST
+          // returns 200, savedSnapshotRef gets bumped to the latest local
+          // value, marking the field "clean" until the next client-side
+          // update.
+          runStatus: _stableClone(n.runStatus),
+          runError:  _stableClone(n.runError),
+        },
       }));
       const payload = { ...data, deletedIds };
       const attemptSave = (attemptNum) => {
@@ -12009,8 +12733,30 @@ function WorkflowCanvas() {
           }
           const memNodeIds = new Set((prev.nodes || []).map(n => n.id));
           const memEdgeKeys = new Set((prev.edges || []).map(e => `${e.from}→${e.to}`));
-          const addedNodes = (fresh.nodes || []).filter(n => !memNodeIds.has(n.id));
-          const addedEdges = (fresh.edges || []).filter(e => !memEdgeKeys.has(`${e.from}→${e.to}`));
+          // v3.2.4 — Respect user deletes in flight. deletedIdsRef tracks
+          // every id the user just removed but whose deletion hasn't
+          // round-tripped the 350ms debounced save yet. Without this filter,
+          // an SSE workflow-reload arriving during that window would pull
+          // the daemon's stale workflow (which still contains the deleted
+          // node) and re-add it via addedNodes — the "stubborn delete"
+          // resurrection the user reported. The ref is cleared per-id only
+          // after the corresponding save returns 200 (see line ~12032), so
+          // mid-flight resurrection is impossible. Human delete = truth.
+          const deletedSet = (deletedIdsRef && deletedIdsRef.current) || new Set();
+          const addedNodes = (fresh.nodes || []).filter(n =>
+            !memNodeIds.has(n.id) && !deletedSet.has(n.id)
+          );
+          // Edges into/out of a just-deleted node should also stay dropped
+          // — they'd dangle otherwise, and the cascade in removeNode
+          // already cleared them locally.
+          const edgeRefersToDeleted = (e) => {
+            const f = (e.from || "").split(".", 1)[0];
+            const t = (e.to   || "").split(".", 1)[0];
+            return deletedSet.has(f) || deletedSet.has(t);
+          };
+          const addedEdges = (fresh.edges || []).filter(e =>
+            !memEdgeKeys.has(`${e.from}→${e.to}`) && !edgeRefersToDeleted(e)
+          );
           // v2.1 — also merge daemon-owned status fields onto EXISTING nodes
           // so an orchestrator run's runStatus / runError / runRunId flips
           // appear live on the canvas. We only touch fields the daemon writes:
@@ -12026,9 +12772,20 @@ function WorkflowCanvas() {
           const mergedNodes = (prev.nodes || []).map(local => {
             const disk = freshById.get(local.id);
             if (!disk) return local;
+            // v3.4.8 — Bug B: runStatus / runError are written by BOTH the
+            // daemon (orchestrator agent runs flipping to "running" / "error")
+            // AND the client (runRemix / runRepeater / quick-action spawns
+            // setting "pending" → null on success). If the file watcher
+            // fires reload during the 350ms window between an in-memory
+            // `runStatus: null` set and the debounced save flushing it,
+            // disk still says "pending" and a naive merge clobbers memory
+            // back to "pending" → the "Generating…" label that never
+            // clears. Fix: dirty-check these two fields against the saved
+            // snapshot. If local differs from snapshot, the user/client has
+            // an unflushed write — skip the pull, keep memory.
+            const _dirtyStatus = !_stableEqual(local.runStatus, savedSnapshotRef.current.get(local.id + "|runStatus"));
+            const _dirtyError  = !_stableEqual(local.runError,  savedSnapshotRef.current.get(local.id + "|runError"));
             const dDaemon = {
-              runStatus: disk.runStatus,
-              runError:  disk.runError,
               runRunId:  disk.runRunId,
               // v2.20 — also pull `runId` (the canonical field WorkflowAgentNode
               // reads to find the SSE-backed transcript). Daemon now writes both
@@ -12071,6 +12828,20 @@ function WorkflowCanvas() {
               savedSnapshotRef.current.set(disk.id + "|" + key, _stableClone(disk[key]));
             };
             for (const f of editableFields) pullField(f);
+            // v3.4.8 — Bug B: conditional pull for runStatus / runError.
+            // Pull from disk ONLY when local matches the last-saved
+            // snapshot (i.e. no client-side change is in flight). If local
+            // diverges (we just set runStatus=null after a successful
+            // variant), we have an unflushed save and pulling disk would
+            // clobber it back to "pending".
+            if (!_dirtyStatus) {
+              dDaemon.runStatus = disk.runStatus;
+              savedSnapshotRef.current.set(disk.id + "|runStatus", _stableClone(disk.runStatus));
+            }
+            if (!_dirtyError) {
+              dDaemon.runError = disk.runError;
+              savedSnapshotRef.current.set(disk.id + "|runError", _stableClone(disk.runError));
+            }
             // Skip if every daemon field matches what's already in memory.
             // Use JSON.stringify for object/array fields so reference identity
             // doesn't make the check fail when content is equal.
@@ -12158,6 +12929,7 @@ function WorkflowCanvas() {
       onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
       onCloseHistory=${() => setHistoryOpen(false)}
       chatActive=${!!chatRun}
+      onLibResizeStart=${startLibResize}
       onOpenNewChat=${openWorkflowChat}
       onStartChatWithPrompt=${async (text) => {
         // v3.2 — Empty-canvas quick-start. Equivalent to clicking "+ New
@@ -12187,6 +12959,7 @@ function WorkflowCanvas() {
       onPermissionModeChange=${onChatPermissionModeChange}
       onStartNewChat=${spawnWorkflowChat}
       selectionCount=${selectionCount}
+      onResizeStart=${startChatResize}
     />
   `;
 }
@@ -12638,7 +13411,7 @@ function ScreenshotWorker({ branchId, setView }) {
     (async () => {
       while (!cancelled) {
         try {
-          const url = apiUrl(`/__screenshot/jobs?branch=${encodeURIComponent(branchId)}`);
+          const url = apiUrl(`/__screenshot/jobs`);
           const r = await fetch(url, { signal: ctl.signal });
           if (!r.ok) { await new Promise(res => setTimeout(res, 1500)); continue; }
           const j = await r.json();
@@ -12831,6 +13604,1165 @@ function scanIframeAssets(doc, opts) {
    minus the drawer-then-type round trip. Disappears the moment the
    project has any node OR an active chat (see render-site guard in
    WorkflowSurface). */
+/* v3.2 — Phase 2: Sub-element picker — install/teardown helpers.
+   Installs hover-highlight + click-capture inside an iframe's document.
+   Calls `onPick(targetEl)` with the picked element on click. Returns a
+   teardown fn that removes the injected style + listeners + classes.
+
+   Iframe must be same-origin (the daemon serves source/<slug>/ files
+   from its own origin, so prototype iframes qualify). For sandboxed
+   iframes with allow-same-origin we read contentDocument directly. */
+function installPickOverlay(iframeEl, onPick) {
+  if (!iframeEl) return null;
+  let doc;
+  try { doc = iframeEl.contentDocument; } catch { return null; }
+  if (!doc || !doc.body) return null;
+  // Inject styles.
+  const style = doc.createElement("style");
+  style.setAttribute("data-th-pick-style", "true");
+  style.textContent = `
+    .th-pick-hover    { outline: 2px solid #3b82f6 !important; outline-offset: -2px !important; cursor: crosshair !important; }
+    .th-pick-selected { outline: 2px solid #ef4444 !important; outline-offset: -2px !important; box-shadow: 0 0 0 4px rgba(239,68,68,0.18) !important; }
+    body.th-pick-mode, body.th-pick-mode * { cursor: crosshair !important; user-select: none !important; }
+  `;
+  doc.head.appendChild(style);
+  doc.body.classList.add("th-pick-mode");
+  let currentHover = null;
+  const onMove = (e) => {
+    const t = e.target;
+    if (currentHover && currentHover !== t) currentHover.classList.remove("th-pick-hover");
+    if (t && t !== currentHover && t !== doc.body && t !== doc.documentElement) {
+      t.classList.add("th-pick-hover");
+      currentHover = t;
+    }
+  };
+  const onClick = (e) => {
+    // Block link navigation, form submits, button clicks etc. so picking
+    // doesn't fire the prototype's own handlers.
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    const t = e.target;
+    if (!t || t === doc.body || t === doc.documentElement) return;
+    if (currentHover) { currentHover.classList.remove("th-pick-hover"); currentHover = null; }
+    doc.querySelectorAll(".th-pick-selected").forEach(el => el.classList.remove("th-pick-selected"));
+    t.classList.add("th-pick-selected");
+    try { onPick && onPick(t); } catch (err) { console.error("[pick]", err); }
+  };
+  doc.addEventListener("mousemove", onMove, true);
+  doc.addEventListener("click", onClick, true);
+  // Also block hover-driven nav (e.g. menu auto-expand on hover).
+  const onMouseDown = (e) => { e.preventDefault(); e.stopPropagation(); };
+  doc.addEventListener("mousedown", onMouseDown, true);
+  return () => {
+    try {
+      doc.removeEventListener("mousemove", onMove, true);
+      doc.removeEventListener("click",    onClick, true);
+      doc.removeEventListener("mousedown", onMouseDown, true);
+      doc.querySelectorAll(".th-pick-hover").forEach(el => el.classList.remove("th-pick-hover"));
+      doc.querySelectorAll(".th-pick-selected").forEach(el => el.classList.remove("th-pick-selected"));
+      doc.body.classList.remove("th-pick-mode");
+      style.remove();
+    } catch {}
+  };
+}
+
+/* Compute a CSS-ish path for an element (tagName chain with :nth-of-type).
+   Stops at body or after 8 levels — long enough to be unique without
+   becoming unreadable. Used as a stable handle the parent can later
+   re-locate to (for paste-as-sibling against the picked target). */
+function elementCssPath(el) {
+  if (!el || !el.tagName) return "";
+  const parts = [];
+  let cur = el;
+  let depth = 0;
+  while (cur && cur.nodeType === 1 && cur.tagName && depth < 8) {
+    const tag = cur.tagName.toLowerCase();
+    if (tag === "body" || tag === "html") break;
+    const parent = cur.parentElement;
+    let part = tag;
+    if (parent) {
+      const sibs = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
+      if (sibs.length > 1) {
+        const idx = sibs.indexOf(cur) + 1;
+        part += `:nth-of-type(${idx})`;
+      }
+    }
+    if (cur.id) part = `#${cur.id}`;
+    parts.unshift(part);
+    cur = cur.parentElement;
+    depth++;
+  }
+  return parts.join(" > ");
+}
+
+/* v3.3 — WorkflowAssetActionBar: floating horizontal action bar above a
+   selected asset node. Four tools:
+     1. Quick Refine  — opens a small text input, dispatches a chat run
+                        with "update this asset" instructions.
+     2. Refine Prompt — only enabled when an upstream prompt/skill node
+                        lives in this asset's lineage. Opens an input
+                        pre-filled with that node's current text; submit
+                        rewrites the prompt node and surfaces a toast
+                        telling the user to re-run upstream.
+     3. Quick Fork    — opens a text input; calls /__copy_file to clone
+                        the asset to a sibling path, spawns a new asset
+                        node, then dispatches a refine chat against the
+                        clone so the original is untouched.
+     4. Quick Remix   — opens a compact popover mirroring the Remix node's
+                        fields (n, outputKind, DS, strictness, variant
+                        prompts). Submit creates an iterator-remix node
+                        wired from `node.id.out → newId.in`.
+   The bar uses the same portal-positioning pattern as the pick badge:
+   a rAF poll on the node's `[data-node-id]` rect. Talks to the surface
+   via window events so the surface owns mutations + chat dispatch. */
+function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
+  const [rect, setRect] = useState(null);
+  const [openTool, setOpenTool] = useState(null);
+  const [tip, setTip] = useState({ on: null, pos: null });
+  const nodeId = node.id;
+  // rAF-tracked rect of the node container — same pattern as the pick badge.
+  useEffect(() => {
+    if (!selected) { setRect(null); return; }
+    let raf = 0;
+    let last = null;
+    const tick = () => {
+      // v3.4.2 — Skip the rect query while the user is panning the canvas.
+      // Pan triggers a setPan on every mousemove → React re-render of every
+      // mounted bar → rAF detects new screen rect → another re-render. With
+      // many nodes that cascade shows up as a jerk. CSS also hides the bar
+      // during pan, so users don't see it lag-following — when the gesture
+      // ends, the next tick snaps it back to the correct screen rect.
+      if (!window.__thCanvasInteracting) {
+        const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+        if (el) {
+          const r = el.getBoundingClientRect();
+          if (!last || last.top !== r.top || last.left !== r.left
+              || last.width !== r.width || last.height !== r.height) {
+            last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                     right: r.right, bottom: r.bottom };
+            setRect(last);
+          }
+        } else if (last) { last = null; setRect(null); }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeId, selected]);
+  // Walk the edge graph backwards from this asset's `in` port to find
+  // any upstream prompt / skill node whose `text` field the user could
+  // refine. BFS — first hit wins (closest ancestor).
+  const upstreamPromptNode = useMemo(() => {
+    if (!allEdges || !allNodes) return null;
+    const queue = [nodeId];
+    const seen = new Set([nodeId]);
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const e of allEdges) {
+        const t = (e.to || "").split(".", 1)[0];
+        if (t !== cur) continue;
+        const f = (e.from || "").split(".", 1)[0];
+        if (seen.has(f)) continue;
+        seen.add(f);
+        const fn = allNodes.find(nn => nn && nn.id === f);
+        if (!fn) continue;
+        // Prompt nodes have `text`; skill nodes also expose a user-editable
+        // instruction in `text`. Either is a valid refine target.
+        if ((fn.kind === "prompt" || fn.kind === "skill") && typeof fn.text === "string") return fn;
+        queue.push(f);
+      }
+    }
+    return null;
+  }, [nodeId, allNodes, allEdges]);
+  // Close popover on Esc anywhere.
+  useEffect(() => {
+    if (!openTool) return;
+    const onKey = (e) => { if (e.key === "Escape") setOpenTool(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openTool]);
+  if (!selected || !rect) return null;
+  // The 4-button strip floats above the node, anchored to its LEFT edge.
+  // The select-element pick badge (HTML assets only) sits at the right
+  // edge, so this placement keeps them from overlapping regardless of
+  // node width. Popover hangs below the bar, anchored to its left edge
+  // so wide remix forms stay aligned with the node.
+  const BAR_HEIGHT = 32, BAR_GAP = 8;
+  const BAR_WIDTH  = 4 * 28 + 3 * 4 + 8; // 4 buttons (28px) + 3 gaps (4px) + 8px padding
+  const barLeft = rect.left;
+  const barTop  = rect.top - BAR_HEIGHT - BAR_GAP;
+  const popoverTop = barTop + BAR_HEIGHT + 6;
+  const popoverLeft = rect.left + Math.min(rect.width / 2, 160); // anchor for translateX(-50%)
+  // Tooltip placement — small bubble above the hovered button.
+  const showTip = (id, el, text) => {
+    if (!el) { setTip({ on: null, pos: null }); return; }
+    const r = el.getBoundingClientRect();
+    setTip({ on: id, pos: { left: r.left + r.width / 2, top: r.top - 6, text } });
+  };
+  const clearTip = () => setTip({ on: null, pos: null });
+  const tools = [
+    { id: "refine", icon: html`<${Icon.Pen}/>`, tip: "Quick refine — update this asset with a prompt", enabled: true },
+    { id: "prompt", icon: html`<${Icon.ArrowUp}/>`, tip: upstreamPromptNode
+        ? "Refine upstream prompt — edit the prompt that produced this asset"
+        : "No upstream prompt node found in this asset's lineage",
+      enabled: !!upstreamPromptNode },
+    { id: "fork",   icon: html`<${Icon.Fork}/>`,    tip: "Quick fork — create a new asset with a refinement", enabled: true },
+    { id: "remix",  icon: html`<${Icon.Spark}/>`,   tip: "Quick remix — spawn a Remix iterator wired to this asset", enabled: true },
+  ];
+  const bar = html`
+    <div
+      className="workflow-asset-action-bar"
+      data-node-id=${nodeId}
+      style=${{
+        position: "fixed",
+        top: barTop + "px",
+        left: barLeft + "px",
+        height: BAR_HEIGHT + "px",
+        zIndex: 60,
+      }}
+      onMouseDown=${(e) => e.stopPropagation()}
+    >
+      ${tools.map(t => html`
+        <button
+          key=${t.id}
+          className=${"workflow-asset-action-btn" + (openTool === t.id ? " is-open" : "") + (!t.enabled ? " is-disabled" : "")}
+          disabled=${!t.enabled}
+          onMouseEnter=${(e) => showTip(t.id, e.currentTarget, t.tip)}
+          onMouseLeave=${clearTip}
+          onFocus=${(e) => showTip(t.id, e.currentTarget, t.tip)}
+          onBlur=${clearTip}
+          onClick=${(e) => {
+            e.stopPropagation();
+            if (!t.enabled) return;
+            clearTip();
+            setOpenTool(prev => prev === t.id ? null : t.id);
+          }}
+          aria-label=${t.tip}
+        >${t.icon}</button>
+      `)}
+    </div>
+  `;
+  const tipBubble = (tip.on && tip.pos) ? html`
+    <div
+      className="th-portal-tip th-portal-tip-above"
+      style=${{
+        position: "fixed",
+        left: tip.pos.left + "px",
+        top:  tip.pos.top  + "px",
+        transform: "translate(-50%, -100%)",
+        zIndex: 70,
+        pointerEvents: "none",
+      }}>${tip.pos.text}</div>
+  ` : null;
+  // Asset-scope submit handler — fires per-tool window events the surface
+  // listens for and routes to the appropriate mutation / chat dispatch.
+  // `rules` is forwarded verbatim so the surface can translate them into
+  // explicit agent constraints (chat body) and remix-node fields.
+  const onSubmit = ({ tool, text, remixForm, rules }) => {
+    if (tool === "refine") {
+      window.dispatchEvent(new CustomEvent("th:asset-quick-refine", {
+        detail: { nodeId: node.id, path: node.path, prompt: (text || "").trim(), rules }
+      }));
+    } else if (tool === "prompt") {
+      window.dispatchEvent(new CustomEvent("th:asset-refine-prompt", {
+        detail: { promptNodeId: upstreamPromptNode && upstreamPromptNode.id, newText: text }
+      }));
+    } else if (tool === "fork") {
+      window.dispatchEvent(new CustomEvent("th:asset-quick-fork", {
+        detail: { nodeId: node.id, path: node.path, prompt: (text || "").trim(), rules }
+      }));
+    } else if (tool === "remix") {
+      window.dispatchEvent(new CustomEvent("th:asset-quick-remix", {
+        detail: { nodeId: node.id, formData: remixForm, rules }
+      }));
+    }
+  };
+  const popover = openTool ? html`
+    <${AssetActionPopover}
+      tool=${openTool}
+      node=${node}
+      upstreamPromptNode=${upstreamPromptNode}
+      style=${{
+        position: "fixed",
+        top: popoverTop + "px",
+        left: popoverLeft + "px",
+        transform: "translateX(-50%)",
+        zIndex: 65,
+      }}
+      onClose=${() => setOpenTool(null)}
+      onSubmit=${onSubmit}
+    />
+  ` : null;
+  return createPortal(html`
+    <${React.Fragment}>
+      ${bar}
+      ${tipBubble}
+      ${popover}
+    <//>
+  `, document.body);
+}
+
+/* v3.3 — AssetActionPopover: the dropdown panel rendered by both
+   WorkflowAssetActionBar (selected asset node) and
+   WorkflowPickedElementActionBar (picked sub-element). UI is identical;
+   only the dispatch payload differs. The parent passes onSubmit so the
+   popover stays a pure UI component. */
+function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, onSubmit, scopeLabel }) {
+  const [busy, setBusy] = useState(false);
+  // Initialize fields based on tool.
+  const isPrompt = tool === "prompt";
+  const [text, setText] = useState(() => isPrompt && upstreamPromptNode ? (upstreamPromptNode.text || "") : "");
+  const initialN = 4;
+  const [remixForm, setRemixForm] = useState(() => {
+    const initialOutput = (node && (node.assetKind === "html" || node.assetKind === "html-set" || node.kind === "prototype")) ? "html" : "image";
+    // v3.4 — seed provider+model from the user's default for the initial
+    // capability. The AssetActionRemixProviderRow useEffect updates them
+    // again if the user changes outputKind to a different capability.
+    const initialCap = initialOutput === "image" ? "image" : "agent";
+    const def = getDefaultForCapability(initialCap);
+    return {
+      n: initialN,
+      variants: Array.from({ length: initialN }, () => ""),
+      outputKind: initialOutput,
+      dsRef: (node && node.dsRef) || (allDsIds()[0] || null),
+      dsStrictness: "loose",
+      provider: (def && def.provider) || null,
+      model:    (def && def.model)    || "",
+    };
+  });
+  // v3.3.3 — Grouped rules. Three buckets — `visual`, `layout`, `content`
+  // — that match the dimensions that typically move together inside a
+  // design system. Each cycles lock → free → encourage. Asset kind is a
+  // separate pinned-lock chip (always rendered, never togglable) because
+  // changing the file extension would orphan the canvas node.
+  //
+  // Grouping rationale (so we don't drift back into 7 toggles):
+  //   • visual  — color + typography + shape language + depth +
+  //               iconography + imagery treatment. These move together;
+  //               change one and you're changing brand expression.
+  //   • layout  — structure + spacing + density + hierarchy +
+  //               arrangement. Independent of brand — same brand, new
+  //               composition.
+  //   • content — copy/wording + imagery content + data shape.
+  //               Independent of both — same look + structure, new story.
+  //
+  // Defaults per tool reflect intent:
+  //   • refine: only layout free — refine = tweak in place, keep brand.
+  //   • fork:   layout + content free — fork = controlled variant.
+  //   • remix:  visual encouraged, layout free — remix = explore variants.
+  //   • prompt: rules not shown (no asset mutation).
+  const RULE_KEYS = ["visual", "layout", "content"];
+  const RULE_LABELS = {
+    visual:  "Visual style",
+    layout:  "Layout",
+    content: "Content",
+  };
+  const RULE_GROUP_DETAILS = {
+    visual:  "color, typography, shape, depth, imagery treatment",
+    layout:  "structure, spacing, density, hierarchy",
+    content: "copy, imagery content",
+  };
+  const defaultRules = ({
+    refine: { visual: "lock",      layout: "free", content: "lock" },
+    fork:   { visual: "lock",      layout: "free", content: "free" },
+    remix:  { visual: "encourage", layout: "free", content: "lock" },
+    prompt: null,
+  })[tool] || null;
+  const [rules, setRules] = useState(() => defaultRules ? { ...defaultRules } : null);
+  const cycleRule = (k) => setRules(r => {
+    if (!r) return r;
+    const cur = r[k] || "lock";
+    const next = cur === "lock" ? "free" : cur === "free" ? "encourage" : "lock";
+    return { ...r, [k]: next };
+  });
+  // assetKind is always pinned to lock — surfaced as a static chip so the
+  // user sees the rule is enforced rather than being surprised by it.
+  const assetKindLocked = true;
+  const inputRef = useRef(null);
+  // Autofocus the primary input when the popover opens.
+  useEffect(() => {
+    const t = setTimeout(() => { try { inputRef.current && inputRef.current.focus(); } catch {} }, 20);
+    return () => clearTimeout(t);
+  }, [tool]);
+  const submit = () => {
+    if (busy) return;
+    setBusy(true);
+    try { onSubmit && onSubmit({ tool, text, remixForm, rules }); } catch (err) { console.error("[popover submit]", err); }
+    onClose();
+  };
+  const canSubmit = (() => {
+    if (tool === "refine" || tool === "fork") return text.trim().length > 0;
+    if (tool === "prompt") return !!upstreamPromptNode && text.length > 0;
+    if (tool === "remix") return remixForm.n > 0;
+    return false;
+  })();
+  const onKeyDown = (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey || tool !== "remix")) {
+      e.preventDefault();
+      if (canSubmit) submit();
+    }
+  };
+  const title = ({
+    refine: "Quick refine",
+    prompt: "Refine upstream prompt",
+    fork:   "Quick fork",
+    remix:  "Quick remix",
+  })[tool] || "";
+  const hint = ({
+    refine: "Describe the change. The agent will update this asset in place.",
+    prompt: upstreamPromptNode
+      ? `Editing prompt: ${upstreamPromptNode.title || upstreamPromptNode.id}. After saving, re-run the upstream skill.`
+      : "No upstream prompt found.",
+    fork:   "Describe the change. A new asset will be created with this refinement applied.",
+    remix:  "Generate N variants from this asset. Optionally lock to a design system.",
+  })[tool] || "";
+  return html`
+    <div
+      className="workflow-asset-action-popover"
+      data-node-id=${node && node.id}
+      style=${style}
+      onMouseDown=${(e) => e.stopPropagation()}
+      onClick=${(e) => e.stopPropagation()}>
+      <div className="workflow-asset-action-popover-head">
+        <div className="workflow-asset-action-popover-title">${title}</div>
+        <button className="workflow-asset-action-popover-close" onClick=${onClose} aria-label="Close">×</button>
+      </div>
+      <div className="workflow-asset-action-popover-hint">${hint}</div>
+      ${rules && html`
+        <div className="workflow-asset-action-rules">
+          <div className="workflow-asset-action-rules-label">Rules — click to cycle</div>
+          <div className="workflow-asset-action-rules-chips">
+            ${RULE_KEYS.map(k => {
+              const state = rules[k] || "lock";
+              const stateText = state === "lock"      ? "Keep unchanged"
+                              : state === "free"      ? "Free to change"
+                                                      : "Actively explore variation";
+              const tip = RULE_LABELS[k] + " (" + RULE_GROUP_DETAILS[k] + ")  ·  " + stateText;
+              return html`
+                <button
+                  key=${k}
+                  type="button"
+                  className=${"workflow-asset-action-rule-chip is-" + state}
+                  title=${tip}
+                  onClick=${() => cycleRule(k)}>
+                  <span className="workflow-asset-action-rule-icon">${
+                    state === "lock"      ? "🔒" :
+                    state === "encourage" ? "✨" : "〜"
+                  }</span>
+                  <span>${RULE_LABELS[k]}</span>
+                </button>
+              `;
+            })}
+            ${assetKindLocked && html`
+              <button
+                type="button"
+                className="workflow-asset-action-rule-chip is-lock is-pinned"
+                disabled=${true}
+                title="File extension / asset kind is always locked — changing it would orphan the canvas node."
+                aria-label="Asset kind locked">
+                <span className="workflow-asset-action-rule-icon">🔒</span>
+                <span>Asset kind</span>
+              </button>
+            `}
+          </div>
+        </div>
+      `}
+      ${(tool === "refine" || tool === "fork") && html`
+        <textarea
+          ref=${inputRef}
+          className="workflow-asset-action-popover-input"
+          placeholder=${tool === "refine"
+            ? "e.g. make the button rounded and use the accent color"
+            : "e.g. try a darker background and bigger headline"}
+          value=${text}
+          onChange=${(e) => setText(e.target.value)}
+          onKeyDown=${onKeyDown}
+          rows=${3}/>
+      `}
+      ${tool === "prompt" && html`
+        <textarea
+          ref=${inputRef}
+          className="workflow-asset-action-popover-input"
+          placeholder="Prompt text"
+          disabled=${!upstreamPromptNode}
+          value=${text}
+          onChange=${(e) => setText(e.target.value)}
+          onKeyDown=${onKeyDown}
+          rows=${4}/>
+      `}
+      ${tool === "remix" && html`<${AssetActionRemixForm}
+        form=${remixForm}
+        setForm=${setRemixForm}
+        firstInputRef=${inputRef}
+      />`}
+      <div className="workflow-asset-action-popover-foot">
+        <button className="workflow-asset-action-popover-cancel" onClick=${onClose}>Cancel</button>
+        <button
+          className="workflow-asset-action-popover-submit"
+          disabled=${!canSubmit || busy}
+          onClick=${submit}>
+          ${tool === "remix" ? "Create Remix" : (tool === "prompt" ? "Save prompt" : "Refine")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/* v3.3 — AssetActionRemixForm: the form inside the Quick Remix popover.
+   Mirrors the canonical Remix node fields (n, variants[], outputKind,
+   dsRef, dsStrictness) at compact-form scale. */
+function AssetActionRemixForm({ form, setForm, firstInputRef }) {
+  const dsOptions = useMemo(() => {
+    try { return (typeof listDesignSystems === "function" ? listDesignSystems() : []); } catch { return []; }
+  }, []);
+  const setN = (n) => {
+    const clamped = Math.max(1, Math.min(8, n | 0));
+    setForm(f => {
+      const variants = f.variants.slice(0, clamped);
+      while (variants.length < clamped) variants.push("");
+      return { ...f, n: clamped, variants };
+    });
+  };
+  const setVariant = (i, val) => setForm(f => {
+    const v = f.variants.slice(); v[i] = val; return { ...f, variants: v };
+  });
+  return html`
+    <div className="workflow-asset-action-remix-form">
+      <label className="workflow-asset-action-remix-row">
+        <span>Variants</span>
+        <input
+          ref=${firstInputRef}
+          type="number"
+          min="1" max="8"
+          value=${form.n}
+          onChange=${(e) => setN(Number(e.target.value))}/>
+      </label>
+      <label className="workflow-asset-action-remix-row">
+        <span>Output</span>
+        <select
+          value=${form.outputKind}
+          onChange=${(e) => setForm(f => ({ ...f, outputKind: e.target.value }))}>
+          <option value="image">Image</option>
+          <option value="html">HTML</option>
+          <option value="text">Text</option>
+        </select>
+      </label>
+      <${AssetActionRemixProviderRow} form=${form} setForm=${setForm}/>
+      ${dsOptions.length > 0 && html`
+        <label className="workflow-asset-action-remix-row">
+          <span>Design system</span>
+          <select
+            value=${form.dsRef || ""}
+            onChange=${(e) => setForm(f => ({ ...f, dsRef: e.target.value || null }))}>
+            <option value="">— none —</option>
+            ${dsOptions.map(d => html`<option key=${d.id} value=${d.id}>${d.label || d.id}</option>`)}
+          </select>
+        </label>
+        <label className="workflow-asset-action-remix-row">
+          <span>DS rule</span>
+          <select
+            value=${form.dsStrictness}
+            onChange=${(e) => setForm(f => ({ ...f, dsStrictness: e.target.value }))}>
+            <option value="loose">Loose (suggest)</option>
+            <option value="strict">Strict (enforce)</option>
+          </select>
+        </label>
+      `}
+      <div className="workflow-asset-action-remix-variants">
+        ${form.variants.map((v, i) => html`
+          <input
+            key=${i}
+            type="text"
+            placeholder=${"Variant " + (i + 1) + " (blank → 'try another option')"}
+            value=${v}
+            onChange=${(e) => setVariant(i, e.target.value)}/>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+/* v3.4 — Provider + model dropdowns inside the Quick Remix popover.
+   Seeded from the user's default-providers settings; the user can override
+   per-call without changing the global default. The capability is derived
+   from the form's outputKind so swapping output → image/html/text auto-
+   reshapes the available models. */
+function AssetActionRemixProviderRow({ form, setForm }) {
+  const capability = form.outputKind === "image" ? "image"
+                    : form.outputKind === "html"  ? "agent"
+                                                  : "agent";
+  const models = useMemo(() => listModelsForCapability(capability), [capability]);
+  const providersInUse = useMemo(() => {
+    const set = new Set();
+    for (const m of models) if (m.provider) set.add(m.provider);
+    return Array.from(set);
+  }, [models]);
+  const providerCatalog = (window.TH_MEDIA && window.TH_MEDIA.providers) || {};
+  // Re-hydrate from the user's default whenever the capability changes and
+  // the form doesn't already have an explicit override.
+  useEffect(() => {
+    if (form.provider) return; // user already set one — keep it
+    const def = getDefaultForCapability(capability);
+    if (def && def.provider) {
+      setForm(f => ({ ...f, provider: def.provider, model: def.model || "" }));
+    }
+  }, [capability]);
+  const currentProvider = form.provider || "";
+  const currentModel    = form.model    || "";
+  const modelsForProvider = models.filter(m => !currentProvider || m.provider === currentProvider);
+  return html`
+    <label className="workflow-asset-action-remix-row">
+      <span>Provider</span>
+      <select
+        value=${currentProvider}
+        onChange=${(e) => {
+          const p = e.target.value;
+          if (!p) { setForm(f => ({ ...f, provider: null, model: "" })); return; }
+          const m = models.find(mm => mm.provider === p);
+          setForm(f => ({ ...f, provider: p, model: m ? m.id : "" }));
+        }}>
+        <option value="">— follow default —</option>
+        ${providersInUse.map(p => {
+          const pc = providerCatalog[p] || {};
+          return html`<option key=${p} value=${p}>${pc.label || p}</option>`;
+        })}
+      </select>
+    </label>
+    <label className="workflow-asset-action-remix-row">
+      <span>Model</span>
+      <select
+        value=${currentModel}
+        disabled=${!currentProvider}
+        onChange=${(e) => setForm(f => ({ ...f, model: e.target.value }))}>
+        ${!currentProvider && html`<option value="">— pick provider first —</option>`}
+        ${currentProvider && modelsForProvider.length === 0 && html`<option value="">(provider default)</option>`}
+        ${currentProvider && modelsForProvider.map(m => html`
+          <option key=${m.id || m.provider} value=${m.id}>${m.label || m.id || "(provider default)"}</option>
+        `)}
+      </select>
+    </label>
+  `;
+}
+
+/* Small helper used by the action bar's remix form to seed `dsRef` to
+   the first available DS if the asset doesn't already declare one. */
+function allDsIds() {
+  try {
+    const ds = (typeof listDesignSystems === "function" ? listDesignSystems() : []);
+    return ds.map(d => d.id);
+  } catch { return []; }
+}
+
+/* v3.3 — WorkflowPickedElementActionBar: same 4 quick-action buttons as
+   the asset action bar, but scoped to the currently picked sub-element
+   inside an iframe (pick-mode). Appears floating above the host iframe
+   whenever `pickedElement` is set. Handlers operate on the sub-element:
+
+     - Quick refine  → agent updates the single element in the host file,
+                       using the CSS selector path the picker captured.
+     - Refine prompt → walks upstream from the HOST node to find the
+                       prompt that generated the host asset/prototype.
+     - Quick fork    → writes a NEW standalone HTML file from the picked
+                       element + extracted CSS bundle (Path-B pattern),
+                       spawns an asset node, then dispatches a refine
+                       pass against the clone. The original host file is
+                       untouched.
+     - Quick remix   → same standalone-fork as above, then wires a Remix
+                       iterator from the new asset. The user clicks Run
+                       on the Remix to generate variants.
+
+   The bar mounts in WorkflowSurface (above all nodes) and follows the
+   host iframe's screen rect — so when the user clicks across iframes
+   in universal pick-mode, the bar follows the most recently picked
+   iframe. CSS extraction happens INSIDE this component (at the moment
+   the user submits) so the snapshot is always current. */
+function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, pickedDomRef, allNodes, allEdges }) {
+  const [rect, setRect] = useState(null);
+  const [openTool, setOpenTool] = useState(null);
+  const [tip, setTip] = useState({ on: null, pos: null });
+  const hostNodeId = pickedElement && pickedElement.nodeId;
+  // Track the host iframe's screen rect (rAF). We anchor the bar above
+  // the iframe rather than above the picked element so the position is
+  // stable when the user pans / scrolls the iframe content. The picked
+  // element gets a red outline inside the iframe — that's the visual
+  // anchor for "what does this bar act on".
+  useEffect(() => {
+    if (!hostNodeId) { setRect(null); return; }
+    let raf = 0; let last = null;
+    const tick = () => {
+      // v3.4.2 — Skip during canvas pan/zoom; CSS hides the bar anyway.
+      if (!window.__thCanvasInteracting) {
+        const sel = 'iframe[data-prototype-id="' + hostNodeId + '"], iframe[data-asset-id="' + hostNodeId + '"]';
+        const ifr = document.querySelector(sel);
+        if (ifr) {
+          const r = ifr.getBoundingClientRect();
+          if (!last || last.top !== r.top || last.left !== r.left
+              || last.width !== r.width || last.height !== r.height) {
+            last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                     right: r.right, bottom: r.bottom };
+            setRect(last);
+          }
+        } else if (last) { last = null; setRect(null); }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [hostNodeId]);
+  // Esc closes the popover (but not pick-mode itself — that's handled
+  // elsewhere). Pick-mode Esc handler will exit first if both are open.
+  useEffect(() => {
+    if (!openTool) return;
+    const onKey = (e) => { if (e.key === "Escape") setOpenTool(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openTool]);
+  // BFS upstream from the host node for a prompt/skill node — same logic
+  // as the asset bar, just scoped to the host.
+  const upstreamPromptNode = useMemo(() => {
+    if (!hostNodeId || !allEdges || !allNodes) return null;
+    const queue = [hostNodeId];
+    const seen = new Set([hostNodeId]);
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const e of allEdges) {
+        const t = (e.to || "").split(".", 1)[0];
+        if (t !== cur) continue;
+        const f = (e.from || "").split(".", 1)[0];
+        if (seen.has(f)) continue;
+        seen.add(f);
+        const fn = allNodes.find(nn => nn && nn.id === f);
+        if (!fn) continue;
+        if ((fn.kind === "prompt" || fn.kind === "skill") && typeof fn.text === "string") return fn;
+        queue.push(f);
+      }
+    }
+    return null;
+  }, [hostNodeId, allNodes, allEdges]);
+  if (!pickedElement || !rect) return null;
+  // Host node — used as `node` prop for the popover form so remix output
+  // defaults to HTML for prototype/HTML hosts.
+  const hostNode = (allNodes || []).find(n => n && n.id === hostNodeId) || { id: hostNodeId, assetKind: "html" };
+  // Position: anchored above the host iframe. Same geometry as the asset
+  // bar, just relative to the iframe rect instead of the node rect.
+  const BAR_HEIGHT = 32, BAR_GAP = 8;
+  const BAR_WIDTH  = 4 * 28 + 3 * 4 + 8;
+  const barLeft = rect.left;
+  const barTop  = rect.top - BAR_HEIGHT - BAR_GAP;
+  const popoverTop = barTop + BAR_HEIGHT + 6;
+  const popoverLeft = rect.left + Math.min(rect.width / 2, 160);
+  const showTip = (id, el, text) => {
+    if (!el) { setTip({ on: null, pos: null }); return; }
+    const r = el.getBoundingClientRect();
+    setTip({ on: id, pos: { left: r.left + r.width / 2, top: r.top - 6, text } });
+  };
+  const clearTip = () => setTip({ on: null, pos: null });
+  const tagLabel = pickedElement.tagName ? `<${pickedElement.tagName}>` : "element";
+  const tools = [
+    { id: "refine", icon: html`<${Icon.Pen}/>`,
+      tip: `Quick refine — update this ${tagLabel} in place`,
+      enabled: true },
+    { id: "prompt", icon: html`<${Icon.ArrowUp}/>`,
+      tip: upstreamPromptNode
+        ? "Refine upstream prompt — edit the prompt that produced the host file"
+        : "No upstream prompt node found in this host's lineage",
+      enabled: !!upstreamPromptNode },
+    { id: "fork",   icon: html`<${Icon.Fork}/>`,
+      tip: `Quick fork — export this ${tagLabel} to a NEW HTML asset and refine the copy`,
+      enabled: true },
+    { id: "remix",  icon: html`<${Icon.Spark}/>`,
+      tip: `Quick remix — export this ${tagLabel} + spawn a Remix iterator wired to it`,
+      enabled: true },
+  ];
+  const bar = html`
+    <div
+      className="workflow-asset-action-bar workflow-asset-action-bar-picked"
+      data-node-id=${hostNodeId}
+      style=${{
+        position: "fixed",
+        top: barTop + "px",
+        left: barLeft + "px",
+        height: BAR_HEIGHT + "px",
+        zIndex: 61,
+      }}
+      onMouseDown=${(e) => e.stopPropagation()}
+    >
+      ${tools.map(t => html`
+        <button
+          key=${t.id}
+          className=${"workflow-asset-action-btn" + (openTool === t.id ? " is-open" : "") + (!t.enabled ? " is-disabled" : "")}
+          disabled=${!t.enabled}
+          onMouseEnter=${(e) => showTip(t.id, e.currentTarget, t.tip)}
+          onMouseLeave=${clearTip}
+          onFocus=${(e) => showTip(t.id, e.currentTarget, t.tip)}
+          onBlur=${clearTip}
+          onClick=${(e) => {
+            e.stopPropagation();
+            if (!t.enabled) return;
+            clearTip();
+            setOpenTool(prev => prev === t.id ? null : t.id);
+          }}
+          aria-label=${t.tip}
+        >${t.icon}</button>
+      `)}
+    </div>
+  `;
+  const tipBubble = (tip.on && tip.pos) ? html`
+    <div
+      className="th-portal-tip th-portal-tip-above"
+      style=${{
+        position: "fixed",
+        left: tip.pos.left + "px",
+        top:  tip.pos.top  + "px",
+        transform: "translate(-50%, -100%)",
+        zIndex: 70,
+        pointerEvents: "none",
+      }}>${tip.pos.text}</div>
+  ` : null;
+  // Submit handler — dispatches th:picked-* events with the picked
+  // element's outerHTML + selector path, plus (for fork/remix) a CSS
+  // bundle extracted from the host iframe at submit time so the export
+  // ships with proper styling. The surface listens and routes.
+  const onSubmit = ({ tool, text, remixForm, rules }) => {
+    let cssBundle = null;
+    let outerHTML = pickedElement.outerHTML || "";
+    // CSS extraction is only needed for fork + remix (they write standalone
+    // files). For refine + prompt the host file's CSS is already there.
+    if ((tool === "fork" || tool === "remix") && pickerIframeRef && pickerIframeRef.current && pickedDomRef && pickedDomRef.current) {
+      try {
+        const ifr = pickerIframeRef.current;
+        // v3.4 — Re-query live DOM by CSS path so we capture post-reload
+        // content if the host file changed since the pick (same fix as
+        // copyPickedElement). Falls back to the cached ref if the live
+        // tree no longer has a matching node.
+        let el = pickedDomRef.current;
+        if (ifr.contentDocument && pickedElement && pickedElement.path) {
+          try {
+            const live = ifr.contentDocument.querySelector(pickedElement.path);
+            if (live) { el = live; pickedDomRef.current = live; }
+          } catch {}
+        }
+        if (ifr.contentDocument) {
+          const ext = zoomExtractCss(ifr.contentDocument, el, false);
+          cssBundle = {
+            css:             ext.css || "",
+            links:           ext.links || [],
+            rootInlineStyle: ext.rootInlineStyle || null,
+            skippedSheets:   ext.skippedSheets || 0,
+          };
+          // Re-snapshot outerHTML from the live DOM with absolutized URLs.
+          const cleanClone = el.cloneNode(true);
+          cleanClone.classList && cleanClone.classList.remove("th-pick-hover", "th-pick-selected");
+          cleanClone.querySelectorAll && cleanClone.querySelectorAll(".th-pick-hover, .th-pick-selected")
+            .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
+          try {
+            const base = ifr.contentDocument.baseURI
+              || (ifr.contentWindow && ifr.contentWindow.location && ifr.contentWindow.location.href)
+              || "";
+            const abs = (raw) => { try { return new URL(raw, base).href; } catch { return raw; } };
+            const URL_ATTRS = ["src", "href", "poster", "data"];
+            const nodes = [cleanClone, ...(cleanClone.querySelectorAll ? Array.from(cleanClone.querySelectorAll("*")) : [])];
+            for (const n of nodes) {
+              if (!n || !n.getAttribute) continue;
+              for (const a of URL_ATTRS) {
+                const v = n.getAttribute(a);
+                if (v && !/^(?:[a-z]+:|\/\/|data:|#)/i.test(v)) n.setAttribute(a, abs(v));
+              }
+              const srcset = n.getAttribute("srcset");
+              if (srcset) {
+                const rewritten = srcset.split(",").map(part => {
+                  const seg = part.trim();
+                  if (!seg) return seg;
+                  const space = seg.indexOf(" ");
+                  const url = space === -1 ? seg : seg.slice(0, space);
+                  const desc = space === -1 ? "" : seg.slice(space);
+                  if (/^(?:[a-z]+:|\/\/|data:|#)/i.test(url)) return seg;
+                  return abs(url) + desc;
+                }).join(", ");
+                n.setAttribute("srcset", rewritten);
+              }
+            }
+          } catch {}
+          outerHTML = cleanClone.outerHTML;
+        }
+      } catch (err) { console.warn("[picked submit] CSS extraction failed", err); }
+    }
+    if (tool === "refine") {
+      window.dispatchEvent(new CustomEvent("th:picked-quick-refine", {
+        detail: {
+          hostNodeId, selector: pickedElement.path || "",
+          outerHTML: pickedElement.outerHTML || "",
+          prompt: (text || "").trim(),
+          rules,
+        }
+      }));
+    } else if (tool === "prompt") {
+      window.dispatchEvent(new CustomEvent("th:asset-refine-prompt", {
+        detail: { promptNodeId: upstreamPromptNode && upstreamPromptNode.id, newText: text }
+      }));
+    } else if (tool === "fork") {
+      window.dispatchEvent(new CustomEvent("th:picked-quick-fork", {
+        detail: { hostNodeId, outerHTML, cssBundle, prompt: (text || "").trim(), rules }
+      }));
+    } else if (tool === "remix") {
+      window.dispatchEvent(new CustomEvent("th:picked-quick-remix", {
+        detail: { hostNodeId, outerHTML, cssBundle, formData: remixForm, rules }
+      }));
+    }
+  };
+  const popover = openTool ? html`
+    <${AssetActionPopover}
+      tool=${openTool}
+      node=${hostNode}
+      upstreamPromptNode=${upstreamPromptNode}
+      style=${{
+        position: "fixed",
+        top: popoverTop + "px",
+        left: popoverLeft + "px",
+        transform: "translateX(-50%)",
+        zIndex: 65,
+      }}
+      onClose=${() => setOpenTool(null)}
+      onSubmit=${onSubmit}
+      scopeLabel=${"picked " + tagLabel}
+    />
+  ` : null;
+  return createPortal(html`
+    <${React.Fragment}>
+      ${bar}
+      ${tipBubble}
+      ${popover}
+    <//>
+  `, document.body);
+}
+
+/* The floating select-element badge. Mounted outside a node's top-right
+   when the node is selected AND its kind supports picking. Click toggles
+   pick mode for that node — dispatches `th:enter-pick-mode` so
+   WorkflowSurface owns the single-pick-mode-at-a-time invariant. Badge
+   listens for `th:pick-mode-changed` to flip its `is-active` style. */
+/* v3.2.1 — Portal-mounted to document.body to escape `.workflow-node`'s
+   `overflow: hidden`. A rAF loop tracks the node's `[data-node-id=...]`
+   bounding rect and positions the badge fixed at its top-right, offset
+   above the node. This survives canvas pan/zoom because we read the
+   screen-space rect every frame — the badge follows the node exactly. */
+function WorkflowNodeSelectBadge({ nodeId, selected }) {
+  // v3.2.5 — Universal pick-mode. `active` is true when ANY node activated
+  // pick-mode, not just `nodeId`. The overlay now installs on every eligible
+  // iframe, so every badge is a valid toggle-off — visually, every eligible
+  // badge lights up so the user knows pick mode applies everywhere.
+  // `originatorId` keeps the activator's id for the (subtle) toggle-target
+  // semantics in the click handler.
+  const [active, setActive] = useState(false);
+  const [originatorId, setOriginatorId] = useState(null);
+  const [rect, setRect] = useState(null);
+  const [tipPos, setTipPos] = useState(null);
+  useEffect(() => {
+    const onChange = (e) => {
+      const aid = e && e.detail && e.detail.activeNodeId;
+      setActive(!!aid);
+      setOriginatorId(aid || null);
+    };
+    window.addEventListener("th:pick-mode-changed", onChange);
+    return () => window.removeEventListener("th:pick-mode-changed", onChange);
+  }, []);
+  // v3.2.2 — Visibility = selected OR pick-mode-active-for-this-node. Keeping
+  // the badge while pick-mode is on lets the user click around the canvas
+  // (which clears node selection) without losing the badge anchor. The
+  // pick-mode session is the source of truth, not the click selection.
+  const visible = selected || active;
+  // Poll the node's bounding rect each animation frame so the badge tracks
+  // pan/zoom/drag. Only run while visible so hidden badges don't churn rAF.
+  useEffect(() => {
+    if (!visible) { setRect(null); return; }
+    let raf = 0;
+    let last = null;
+    const tick = () => {
+      // v3.4.2 — Skip rect query during canvas pan/zoom (see useEndlessCanvas).
+      if (window.__thCanvasInteracting) { raf = requestAnimationFrame(tick); return; }
+      // `.workflow-node` scopes the lookup to the actual node container —
+      // the badge itself ALSO carries data-node-id (so canvas-level
+      // closest("[data-node-id]") can resolve it back to its owning node),
+      // and a bare attribute selector would match the badge too.
+      const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      if (node) {
+        const r = node.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                   right: r.right, bottom: r.bottom };
+          setRect(last);
+        }
+      } else if (last) {
+        last = null;
+        setRect(null);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeId, visible]);
+  const onClick = (e) => {
+    e.stopPropagation();
+    // v3.2.5 — Universal pick-mode toggle. While pick-mode is on globally,
+    // clicking ANY badge exits it (any badge can be the "off switch"). When
+    // off, the clicked badge becomes the activator. Exit dispatches the
+    // explicit th:exit-pick-mode that the surface already listens for.
+    if (active) {
+      window.dispatchEvent(new CustomEvent("th:exit-pick-mode"));
+    } else {
+      window.dispatchEvent(new CustomEvent("th:enter-pick-mode", { detail: { nodeId } }));
+    }
+  };
+  if (!visible || !rect) return null;
+  // Anchor at the node's top-right, offset 8px above the node and aligned
+  // to its right edge. Badge is 32×32 (see CSS), so left = right - 32.
+  const style = {
+    position: "fixed",
+    top: (rect.top - 40) + "px",
+    left: (rect.right - 32) + "px",
+    zIndex: 60,
+  };
+  const tipText = active
+    ? "Pick any element across iframes · Esc or click any badge to exit"
+    : "Pick element to copy, paste, or delete";
+  // Tooltip placement — auto-flip below if no headroom (same threshold as
+  // HoverTip uses for the top-nav case). The badge anchors at top: rect.top
+  // - 40 with height 32; bubble sits 6px above its top (or 6px below its
+  // bottom when flipped).
+  const placeTip = () => {
+    const anchorTop = rect.top - 40;
+    const anchorBottom = anchorTop + 32;
+    const anchorMid = (rect.right - 32) + 16;
+    const TIP_HEADROOM = 90;
+    const placement = (anchorTop < TIP_HEADROOM) ? "below" : "above";
+    setTipPos({
+      left: anchorMid,
+      top:  placement === "above" ? anchorTop - 6 : anchorBottom + 6,
+      placement,
+    });
+  };
+  const clearTip = () => setTipPos(null);
+  const tipBubble = tipPos ? html`
+    <div
+      className=${"th-portal-tip th-portal-tip-" + tipPos.placement}
+      style=${{
+        position: "fixed",
+        left: tipPos.left + "px",
+        top:  tipPos.top + "px",
+        transform: tipPos.placement === "above"
+          ? "translate(-50%, -100%)"
+          : "translate(-50%, 0)",
+        // The bubble must sit on top of the badge AND outrank other
+        // overlays; badge z-index is 60, so 70 keeps the bubble visible.
+        zIndex: 70,
+        pointerEvents: "none",
+      }}>
+      ${tipText}
+    </div>
+  ` : null;
+  // `data-node-id` on the badge is load-bearing: React portals preserve the
+  // component tree for event bubbling, so badge mousedown bubbles to the
+  // workflow-canvas-wrap's onMouseDownCapture. That handler calls
+  // `e.target.closest("[data-node-id]")` — without this attribute it would
+  // return null and the handler would treat the badge click as an
+  // empty-canvas click → start marquee + clear selection. Stamping the
+  // owning node's id here makes closest() resolve to the badge and the
+  // wrap correctly keeps the node selected.
+  return createPortal(html`
+    <${React.Fragment}>
+      <button
+        className=${"workflow-node-select-badge" + (active ? " is-active" : "")}
+        data-node-id=${nodeId}
+        style=${style}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${onClick}
+        onMouseEnter=${placeTip}
+        onMouseLeave=${clearTip}
+        onFocus=${placeTip}
+        onBlur=${clearTip}
+        aria-label="Pick element"
+      ><${Icon.PickEl}/></button>
+      ${tipBubble}
+    <//>
+  `, document.body);
+}
+
+/* v3.2 — Toast for pick-mode element ops (copy / paste / delete).
+   Portaled to document.body, fixed at bottom-center, auto-dismisses via
+   the flashPickOp dwell timer in WorkflowSurface. Three visual variants:
+   pending (spinner + neutral bg), done (check + accent), error (alert +
+   danger). The toast is the source of truth for "did my Cmd+V land".
+   Pending state surfaces while the daemon write is round-tripping. */
+function WorkflowPickOpToast({ state }) {
+  if (!state) return null;
+  const { phase, message } = state;
+  const cls = "workflow-pick-toast workflow-pick-toast-" + (phase || "done");
+  const icon = phase === "pending"
+    ? html`<span className="workflow-pick-toast-spinner"/>`
+    : phase === "error"
+      ? html`<${Icon.Alert}/>`
+      : html`<${Icon.Check}/>`;
+  return createPortal(html`
+    <div className=${cls} role="status" aria-live="polite">
+      <span className="workflow-pick-toast-icon">${icon}</span>
+      <span className="workflow-pick-toast-msg">${message}</span>
+    </div>
+  `, document.body);
+}
+
+/* v3.2 — Right-click context menu for the workflow canvas.
+   Three actions: Copy (active when ≥1 node is selected), Paste (active
+   when the in-session clipboard has something), Delete (active when
+   ≥1 node is selected). Portaled to document.body so the menu escapes
+   the canvas's transform / clipping context, then positioned via fixed
+   coords from the original click. Closes on outside-click, Escape, or
+   when the user picks an action. */
+function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onDown = (e) => {
+      // Close if the click landed outside the menu element (clicking
+      // outside any item — but a click ON an item bubbles to the same
+      // listener, so we ignore mousedowns inside .canvas-ctxmenu).
+      if (e.target && e.target.closest && e.target.closest(".canvas-ctxmenu")) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onClose]);
+  // Clamp inside viewport so the menu doesn't render off-screen.
+  const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+  const left = clamp(x, 6, window.innerWidth - 180);
+  const top  = clamp(y, 6, window.innerHeight - 140);
+  const itemCls = (disabled) => "canvas-ctxmenu-item" + (disabled ? " is-disabled" : "");
+  return createPortal(html`
+    <div className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+      <button
+        className=${itemCls(!hasSelection)}
+        disabled=${!hasSelection}
+        onClick=${onCopy}
+      ><span>Copy</span><span className="canvas-ctxmenu-shortcut">⌘C</span></button>
+      <button
+        className=${itemCls(!canPaste)}
+        disabled=${!canPaste}
+        onClick=${onPaste}
+      ><span>Paste</span><span className="canvas-ctxmenu-shortcut">⌘V</span></button>
+      <div className="canvas-ctxmenu-divider"/>
+      <button
+        className=${itemCls(!hasSelection) + " canvas-ctxmenu-danger"}
+        disabled=${!hasSelection}
+        onClick=${onDelete}
+      ><span>Delete</span><span className="canvas-ctxmenu-shortcut">⌫</span></button>
+    </div>
+  `, document.body);
+}
+
 function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -12890,7 +14822,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   `;
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, onOpenNewChat, onStartChatWithPrompt, onReopenRun, selectionRef, onSelectionCountChange }) {
+function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, onOpenNewChat, onStartChatWithPrompt, onReopenRun, selectionRef, onSelectionCountChange, onLibResizeStart }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -12908,6 +14840,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   //   3. Group drag: when >1 nodes are selected, dragging any one of them
   //      moves the whole group by the same delta.
   const [selectedNodeIds, setSelectedNodeIds] = useState(() => new Set());
+  // v3.2 — Right-click context menu for canvas copy/paste/delete. Position
+  // is in viewport (fixed) coords; world coords (for paste placement) are
+  // computed at click time from the canvas wrap's bounding rect + pan/zoom.
+  const [ctxMenu, setCtxMenu] = useState(null);
+  // Listen for "th:set-canvas-selection" so the parent's paste handler can
+  // replace the selection with the newly-pasted ids; keeps both
+  // selectionRef AND React state in sync without a full prop callback.
+  useEffect(() => {
+    const onSetSel = (e) => {
+      const ids = (e && e.detail && Array.isArray(e.detail.ids)) ? e.detail.ids : [];
+      setSelectedNodeIds(new Set(ids));
+    };
+    window.addEventListener("th:set-canvas-selection", onSetSel);
+    return () => window.removeEventListener("th:set-canvas-selection", onSetSel);
+  }, []);
   const selectedNodeId = useMemo(() => {
     for (const id of selectedNodeIds) return id;
     return null;
@@ -13220,14 +15167,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     if (!node.path || node.path.startsWith("inline:")) return;
     const branch = (() => {
       const m = (node.path || "").match(/^source\/([^/]+)\//);
-      return (m && m[1]) || (window.EDITOR_ACTIVE_BRANCH || "main");
+      return (m && m[1]) || "main";
     })();
     setZoomTarget({ filePath: node.path, branch, nodeId: node.id });
   }, []);
-
-  // Library list: every branch registered in data.js. Available globally
-  // because index.html loads data.js before the React root mounts.
-  const branches = (typeof window !== "undefined" && window.EDITOR_BRANCHES?.branches) || [];
 
   const screenToWorld = useCallback((clientX, clientY) => {
     const el = wrapRef.current;
@@ -13303,7 +15246,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // controls the path; the skill's Run writes bytes to that path on disk.
       // No boundTo → asset card renders an editable path input instead of
       // the read-only foot label.
-      const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+      const branch = "main";
       const path = payload.path || `source/${branch}/images/${id}.png`;
       // Auto-derive kind from extension when not explicitly set; so a path
       // like `source/main/svg/foo.svg` lands as kind=svg (rendered via <img>).
@@ -13311,6 +15254,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         const ext = (path.split(".").pop() || "").toLowerCase();
         if (ext === "svg" || ext === "svgz") return "svg";
         if (ext === "html" || ext === "htm") return "html";
+        if (ext === "json") return "lottie";  // v3.4.16 — bare .json defaults to lottie since that's the only JSON skill output
         if (["mp4", "webm", "mov", "m4v", "ogv"].includes(ext)) return "video";
         if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) return "audio";
         if (["glb", "gltf", "obj", "fbx"].includes(ext)) return "3d";
@@ -13355,7 +15299,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         // Resolve {{branch}} placeholder lazily — at drop time, against
         // the currently-active branch. The user can edit the field later
         // if they want a different folder.
-        const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+        const branch = "main";
         newNode.outputPath = payload.outputPath.replace(/\{\{branch\}\}/g, branch);
       }
       setData(d => ({ ...d, nodes: [...(d.nodes || []), newNode] }));
@@ -13485,7 +15429,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           w, h,
           n,
           variants: payload.variants || Array.from({ length: n }, () => ""),
-          model: payload.model || "gpt-image-1",
+          model: payload.model || "gpt-image-2",
         }],
       }));
     } else if (payload.kind === "iterator-blend") {
@@ -13503,7 +15447,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           n,
           slots: payload.slots || Array.from({ length: n }, () => ({ weight: 1, criteria: "" })),
           outputKind: payload.outputKind || "image",   // image | text
-          model: payload.model || "gpt-image-1",
+          model: payload.model || "gpt-image-2",
         }],
       }));
     } else if (payload.kind === "iterator-refiner") {
@@ -13658,10 +15602,1455 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     });
   }, [setData]);
 
+  // v3.2 — Bulk delete for the canvas selection. Wired into the Delete /
+  // Backspace key handler below and the right-click context menu.
+  const deleteSelectedNodes = useCallback(() => {
+    const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+    if (!sel.size) return 0;
+    let count = 0;
+    for (const id of Array.from(sel)) { removeNode(id); count++; }
+    return count;
+  }, [selectionRef, removeNode]);
+
   // Phase 4a — settings dialog open state + per-skill run states.
   // runStates is keyed by skill node id; each entry holds { status, error, ranAt }.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [runStates, setRunStates] = useState({});
+
+  // v3.2 — In-session clipboard for canvas node copy/paste. Lives in a ref
+  // (not state) because we never want it to trigger a re-render — paste
+  // reads it on demand. Payload shape: { nodes: [...], edges: [...] }
+  // where edges only include those internal to the selection (both
+  // endpoints in the copied set).
+  const nodeClipboardRef = useRef(null);
+  const lastCanvasCursorRef = useRef({ x: 200, y: 200 });
+  const _freshNodeId = () => "n" + Math.random().toString(36).slice(2, 10);
+
+  const copySelectedNodes = useCallback(() => {
+    const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+    if (!sel.size) return 0;
+    const picked = (data.nodes || []).filter(n => sel.has(n.id));
+    if (!picked.length) return 0;
+    const pickedIdSet = new Set(picked.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to   || "").split(".", 1)[0];
+      return pickedIdSet.has(f) && pickedIdSet.has(t);
+    });
+    let minX = Infinity, minY = Infinity;
+    for (const n of picked) {
+      if (typeof n.x === "number" && n.x < minX) minX = n.x;
+      if (typeof n.y === "number" && n.y < minY) minY = n.y;
+    }
+    if (!Number.isFinite(minX)) minX = 0;
+    if (!Number.isFinite(minY)) minY = 0;
+    nodeClipboardRef.current = {
+      nodes: picked.map(n => JSON.parse(JSON.stringify(n))),
+      edges: internalEdges.map(e => ({ ...e })),
+      originX: minX, originY: minY, ts: Date.now(),
+    };
+    return picked.length;
+  }, [selectionRef, data]);
+
+  const pasteNodesFromClipboard = useCallback((targetWorldX, targetWorldY) => {
+    const clip = nodeClipboardRef.current;
+    if (!clip || !clip.nodes || !clip.nodes.length) return 0;
+    const tx = (typeof targetWorldX === "number") ? targetWorldX : (lastCanvasCursorRef.current.x + 30);
+    const ty = (typeof targetWorldY === "number") ? targetWorldY : (lastCanvasCursorRef.current.y + 30);
+    const dx = tx - clip.originX;
+    const dy = ty - clip.originY;
+    const idMap = new Map();
+    for (const n of clip.nodes) idMap.set(n.id, _freshNodeId());
+    const newNodes = clip.nodes.map(n => ({
+      ...n,
+      id: idMap.get(n.id),
+      x: (typeof n.x === "number" ? n.x : 0) + dx,
+      y: (typeof n.y === "number" ? n.y : 0) + dy,
+      runStatus: undefined, runError: undefined, runRunId: undefined,
+      runId: undefined, versions: [], activeVersionId: null, lastRunId: undefined,
+    }));
+    const newEdges = clip.edges.map(e => {
+      const fromId = (e.from || "").split(".", 1)[0];
+      const fromPort = (e.from || "").split(".", 2)[1] || "out";
+      const toId = (e.to || "").split(".", 1)[0];
+      const toPort = (e.to || "").split(".", 2)[1] || "in";
+      const nf = idMap.get(fromId), nt = idMap.get(toId);
+      if (!nf || !nt) return null;
+      return { from: `${nf}.${fromPort}`, to: `${nt}.${toPort}` };
+    }).filter(Boolean);
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []), ...newNodes],
+      edges: [...(d.edges || []), ...newEdges],
+    }));
+    if (selectionRef && selectionRef.current) {
+      const newIds = new Set(newNodes.map(n => n.id));
+      selectionRef.current.selectedIds = newIds;
+      window.dispatchEvent(new CustomEvent("th:set-canvas-selection",
+        { detail: { ids: Array.from(newIds) } }));
+    }
+    return newNodes.length;
+  }, [setData, selectionRef]);
+
+  const hasNodeClipboard = useCallback(() => !!nodeClipboardRef.current, []);
+
+  // v3.2 — Phase 2: sub-element pick mode for prototype + HTML asset nodes.
+  // Only ONE node can be in pick mode at a time (clicking another node's
+  // select button moves the focus). `pickedElement` tracks the most
+  // recent pick within the active node's iframe: { nodeId, path, outerHTML }.
+  const [pickModeNodeId, setPickModeNodeId] = useState(null);
+  const [pickedElement, setPickedElement] = useState(null);
+  // Broadcast pick-mode changes so the select badges can update their
+  // `is-active` style without prop drilling.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("th:pick-mode-changed",
+      { detail: { activeNodeId: pickModeNodeId } }));
+  }, [pickModeNodeId]);
+  // Listen for badge clicks + window-level exit + Esc.
+  useEffect(() => {
+    const onEnter = (e) => {
+      const nid = e && e.detail && e.detail.nodeId;
+      if (!nid) return;
+      setPickModeNodeId(prev => (prev === nid ? null : nid));
+      setPickedElement(null);
+    };
+    const onExit = () => { setPickModeNodeId(null); setPickedElement(null); };
+    const onKey = (e) => { if (e.key === "Escape" && pickModeNodeId) { setPickModeNodeId(null); setPickedElement(null); } };
+    window.addEventListener("th:enter-pick-mode", onEnter);
+    window.addEventListener("th:exit-pick-mode", onExit);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("th:enter-pick-mode", onEnter);
+      window.removeEventListener("th:exit-pick-mode", onExit);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [pickModeNodeId]);
+  // Bridge for picked-element reports from inside the iframe.
+  useEffect(() => {
+    const onPicked = (e) => {
+      const det = e && e.detail;
+      if (!det || !det.nodeId) return;
+      setPickedElement({
+        nodeId:    det.nodeId,
+        path:      det.path || "",
+        outerHTML: det.outerHTML || "",
+        tagName:   det.tagName || "",
+      });
+    };
+    window.addEventListener("th:element-picked", onPicked);
+    return () => window.removeEventListener("th:element-picked", onPicked);
+  }, []);
+  // v3.3 — Quick-action listeners for WorkflowAssetActionBar. Each handler
+  // owns the mutation or chat-dispatch so the popover can stay a pure
+  // dispatch site. Wired into the same surface where setData / chat-spawn
+  // live, so a fresh agent run is one event away from any selected asset.
+  useEffect(() => {
+    // v3.3.1 — Kind-aware refine body. The naive single-template prompt
+    // ("update the file") fails predictably for raster assets where the
+    // agent has no way to mutate pixel bytes without an image-gen API key.
+    // The block below tells the agent (a) what kind of file this is, (b)
+    // what tools / fallback strategies are appropriate for that kind, and
+    // (c) NEVER to change the file extension — the canvas node would
+    // dangle pointing at the old path otherwise. The "extension lock" is
+    // load-bearing: it keeps the canvas node and the file on disk paired.
+    // v3.3.3 — Format the (grouped) rule set into a constraint block the
+    // agent reads. Each group is expanded into its constituent dimensions
+    // so vague prompts like "make it nicer" still respect the user's
+    // policy at the dimension level — e.g. "Visual style: KEEP unchanged"
+    // becomes a list the agent can act on (color, typography, etc.).
+    const formatRulesBlock = (rules) => {
+      if (!rules || typeof rules !== "object") return "";
+      const GROUPS = {
+        visual:  { label: "Visual style", details: "color, typography, shape language, depth, iconography, imagery treatment" },
+        layout:  { label: "Layout",       details: "structure, spacing, density, hierarchy, arrangement" },
+        content: { label: "Content",      details: "copy / wording, imagery content, data shape" },
+      };
+      const lines = [];
+      const labelFor = (state) => state === "lock"     ? "KEEP unchanged"
+                                : state === "encourage" ? "ACTIVELY EXPLORE variation"
+                                                        : "May change if the prompt implies it";
+      // Iterate in stable order so the agent sees the same block shape
+      // every time, regardless of property-order quirks.
+      for (const k of ["visual","layout","content"]) {
+        const v = rules[k];
+        if (!v || !GROUPS[k]) continue;
+        lines.push("  • " + GROUPS[k].label + " (" + GROUPS[k].details + "): " + labelFor(v));
+      }
+      if (!lines.length) return "";
+      return ["Style rules (user-set):", ...lines].join("\n");
+    };
+    const buildRefineBody = (path, kind, prompt, scopeNote, rules) => {
+      const ext = ((path || "").match(/\.[a-z0-9]+$/i) || [""])[0].toLowerCase();
+      // v3.3.4 — Per-kind tool spectrum. Each entry lists the FULL menu of
+      // ways the agent can produce this asset — primary subagent, generic
+      // model tools, MCPs, direct edits — in rough preference order. The
+      // agent should try ALTERNATIVES before giving up. The previous "STOP
+      // on missing API key" was too binary: many viable paths exist for
+      // each kind (stock-image MCPs for raster, Quiver-class tools for
+      // SVG, Lottie marketplaces, CSS-only fallbacks for video, etc.).
+      //
+      // The asset KIND is still locked (file extension can't change), but
+      // WITHIN that kind the agent is encouraged to find any viable path.
+      const guidance = ({
+        html:       "This is an HTML file. Edit markup + CSS directly. No API needed.",
+        "html-set": "This is an HTML component file. Edit markup + CSS directly. No API needed.",
+        text:       "This is a text/markdown/JSON file. Edit it directly.",
+        image: [
+          "This is a RASTER image (" + ext + "). Producing pixel content has SEVERAL viable paths — try them in this rough order before giving up:",
+          "  1. visual-planner with the raster-foreground or raster-photo subagent (needs an image-gen API key — OpenAI Images, Google Nano-Banana, Stable Diffusion, Replicate, etc.).",
+          "  2. Stock-image MCPs if connected (Unsplash, Pexels, etc.) — search by description, download, save to the same path.",
+          "  3. Any third-party image-gen MCP servers the environment exposes.",
+          "  4. Local image-gen tools / models if installed.",
+          "  5. Composite from existing project assets if the refinement allows it (combining, cropping, recoloring existing PNGs).",
+          "ONLY stop and report if NONE of the above are reachable. When stopping, list everything you tried so the user can wire up a missing key.",
+        ].join("\n"),
+        vector: [
+          "This is an SVG. Viable paths to produce it (try in order, escalate as needed):",
+          "  1. Edit the existing SVG markup directly (paths, fills, viewBox, transforms) — usually sufficient for small refinements, NO API needed.",
+          "  2. visual-planner with the vector-icon (simple symbolic) or vector-mark (illustrative) subagent for complex generation.",
+          "  3. Advanced SVG generation MCPs / tools if available — e.g. Quiver-class generators that produce sophisticated illustrations from prompts.",
+          "  4. Generic LLM SVG synthesis (you can write SVG markup directly without any image API).",
+          "ONLY stop if the refinement strictly requires an unavailable advanced tool AND markup edits + LLM-written SVG both fall short. Most SVG refinements need no external API at all.",
+        ].join("\n"),
+        lottie: [
+          "This is a Lottie animation JSON. Viable paths:",
+          "  1. Edit the JSON directly for simple changes (color overrides, timing, scale).",
+          "  2. visual-planner with the lottie subagent for new animations.",
+          "  3. LottieFiles or other Lottie marketplace MCPs if connected — search + download.",
+          "  4. Composite an SVG sequence into Lottie JSON manually for very simple cases.",
+          "Only stop if all paths fail; report what you tried.",
+        ].join("\n"),
+        shader:        "This is a GLSL shader. Edit the source directly OR dispatch the shader subagent for non-trivial regeneration.",
+        "particle-2d": "This is a 2D particle system module. Edit the JS directly OR dispatch the particle-2d subagent for substantive changes.",
+        "particle-gl": "This is a GPU particle system module. Edit the JS / GLSL directly OR dispatch the particle-gl subagent.",
+        "3d": [
+          "This is a 3D scene module (typically Three.js). Viable paths:",
+          "  1. Edit the JS source directly — adjust geometry, materials, lighting, camera, animation.",
+          "  2. visual-planner with the 3d subagent for scene-level regeneration.",
+          "  3. glTF/asset MCPs if connected for sourcing models.",
+          "Only stop if all paths fail.",
+        ].join("\n"),
+        video: [
+          "This is a video file (" + ext + "). Video generation typically needs a specific API key — try these paths in order:",
+          "  1. visual-planner with the video subagent (Replicate, Runway, Pika, Luma, etc. — needs the relevant API key).",
+          "  2. Stock-video MCPs if connected (Pexels Video, etc.) — search by description, download, save to the same path.",
+          "  3. Other video-gen MCP servers exposed in this environment.",
+          "  4. If the refinement is non-structural (cropping, trimming, simple compositing), use ffmpeg via Bash on the existing file.",
+          "ONLY stop after exhausting the above. When stopping, list each attempt and which key/tool was missing so the user can act.",
+        ].join("\n"),
+      })[kind] || ("Asset kind: " + (kind || "unknown") + ". Edit in place if you can. If the change needs an external tool, search your available subagents and MCPs for any viable path before stopping.");
+      const lines = [
+        "Refine an existing asset at:  `" + path + "`",
+        "Asset kind:  " + (kind || "unknown") + "   (file extension: `" + (ext || "—") + "`)",
+        "",
+        guidance,
+        "",
+      ];
+      if (scopeNote) { lines.push(scopeNote, ""); }
+      const rulesBlock = formatRulesBlock(rules);
+      if (rulesBlock) { lines.push(rulesBlock, ""); }
+      lines.push(
+        "Refinement requested:",
+        "",
+        prompt,
+        "",
+        "Constraints:",
+        "  • Apply the change IN PLACE — write the result back to the same path.",
+        "  • Do NOT change the file extension or asset kind. The workflow canvas points at this exact path; renaming the file orphans the node.",
+        "  • Find a path. Before stopping, try at least 2–3 alternative tools / subagents / MCPs that could produce this asset kind. Direct LLM authoring + stock-asset MCPs + composite-from-existing are usually viable when the primary generation API is missing.",
+        "  • Only STOP if every alternative was attempted and none worked. When stopping, list each attempt and exactly what was missing (which API key, which MCP server, etc.) so the user can wire up the gap.",
+        "  • Preserve the existing visual style + structure beyond what the refinement explicitly asks to change.",
+      );
+      return lines.join("\n");
+    };
+    // Quick Refine — chat-spawn a refine pass against the selected asset's
+    // file in place. Reuses the workflow-chat infrastructure the empty
+    // composer already uses (onStartChatWithPrompt → triggerRun).
+    const onRefine = (e) => {
+      const det = e && e.detail; if (!det) return;
+      const path = det.path || "(unknown path)";
+      const prompt = (det.prompt || "").trim();
+      if (!prompt) return;
+      const host = (data.nodes || []).find(n => n && n.id === det.nodeId);
+      const kind = host && host.assetKind;
+      const body = buildRefineBody(path, kind, prompt, null, det.rules);
+      try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[asset-quick-refine]", err); }
+    };
+    // Refine Prompt — rewrite an upstream prompt/skill node's text. After
+    // the edit the user re-runs the upstream skill to regenerate downstream
+    // assets. We don't trigger that run here; we surface a toast and let the
+    // user click Run on the upstream node when they're ready.
+    const onRefinePrompt = (e) => {
+      const det = e && e.detail; if (!det || !det.promptNodeId) return;
+      const promptNodeId = det.promptNodeId;
+      const newText = String(det.newText == null ? "" : det.newText);
+      setData(d => ({
+        ...d,
+        nodes: (d.nodes || []).map(n =>
+          n && n.id === promptNodeId ? { ...n, text: newText } : n
+        ),
+      }));
+      // Lightweight toast — reuses the pick-op flash channel so we don't
+      // need to add a separate channel. Phrasing nudges the user to run.
+      try { flashPickOp("done", "Prompt updated — re-run the upstream skill to regenerate"); } catch {}
+    };
+    // Quick Fork — copy the asset's file via /__copy_file (server-side
+    // byte-copy), spawn a sibling asset node on the canvas with the new
+    // path, then chat-spawn a refine pass against the clone so the
+    // original stays untouched.
+    const onFork = async (e) => {
+      const det = e && e.detail; if (!det) return;
+      const origin = (data.nodes || []).find(n => n && n.id === det.nodeId);
+      if (!origin) return;
+      const oldPath = det.path || origin.path;
+      const prompt = (det.prompt || "").trim();
+      if (!oldPath || !prompt) return;
+      const stamp = Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 5);
+      const dot = oldPath.lastIndexOf(".");
+      const base = dot > 0 ? oldPath.slice(0, dot) : oldPath;
+      const ext  = dot > 0 ? oldPath.slice(dot)    : "";
+      const newPath = `${base}-fork-${stamp}${ext}`;
+      const project = activeProjectId();
+      try {
+        const r = await fetch(apiUrl("/__copy_file") + "?project=" + encodeURIComponent(project), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: oldPath, to: newPath }),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          try { flashPickOp("error", "Fork failed: " + (j.error || `HTTP ${r.status}`)); } catch {}
+          return;
+        }
+      } catch (err) {
+        try { flashPickOp("error", "Fork failed: " + (err.message || err)); } catch {}
+        return;
+      }
+      const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id: newId,
+          kind: "asset",
+          assetKind: origin.assetKind,
+          x: (origin.x || 0) + (origin.w || 320) + 60,
+          y: origin.y || 0,
+          w: origin.w || 320,
+          h: origin.h || 240,
+          path: newPath,
+          spawnedBy: "quick-fork",
+        }],
+      }));
+      // Then dispatch the refine against the new path.
+      const body = buildRefineBody(newPath, origin.assetKind, prompt,
+        "Scope: This file is a FORK of `" + oldPath + "`. The original must remain unchanged.",
+        det.rules);
+      try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[asset-quick-fork]", err); }
+    };
+    // Quick Remix — spawn an iterator-remix node + edge from asset.out →
+    // remix.in. Mirrors the canonical Remix-node shape. The user clicks
+    // Run on the new node to generate. We don't auto-run because remix is
+    // a token-spend op + the user might want to tweak fields first.
+    const onRemix = (e) => {
+      const det = e && e.detail; if (!det) return;
+      const origin = (data.nodes || []).find(n => n && n.id === det.nodeId);
+      if (!origin) return;
+      const f = (det.formData || {});
+      const n = Math.max(1, Math.min(8, (f.n | 0) || 4));
+      const variants = Array.isArray(f.variants) ? f.variants.slice(0, n) : [];
+      while (variants.length < n) variants.push("");
+      const remixId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const remixX = (origin.x || 0) + (origin.w || 320) + 80;
+      const remixY = origin.y || 0;
+      // Model default — image-gen for image outputs, gpt-4o for html / text.
+      const outputKind = f.outputKind || "image";
+      // v3.4 — Per-call provider+model override from the popover wins; fall
+      // back to the user's default for this capability; fall back to the
+      // existing hard-coded defaults if neither is set.
+      const capForKind = outputKind === "image" ? "image" : "agent";
+      const def = getDefaultForCapability(capForKind) || {};
+      const provider = f.provider || def.provider || null;
+      const model    = f.model    || def.model    || (outputKind === "image" ? "gpt-image-2" : "gpt-4o");
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id: remixId, kind: "iterator-remix",
+          x: remixX, y: remixY, w: 360, h: 400,
+          n, variants, model,
+          provider,
+          outputKind,
+          dsRef: f.dsRef || null,
+          dsStrictness: f.dsStrictness || "loose",
+          // v3.3.2 — persist user-set rules so the remix run handler can
+          // inject them into the per-variant system prompt later. The
+          // existing runRemix path will pick these up on its next pass.
+          rules: det.rules || null,
+        }],
+        edges: [...(d.edges || []), { from: `${origin.id}.out`, to: `${remixId}.in` }],
+      }));
+      try { flashPickOp("done", "Remix node created — click Run to generate variants"); } catch {}
+    };
+    // v3.3 — Picked-element-scope handlers. Same shape as the asset
+    // handlers above but operate on a sub-element inside a picked host
+    // iframe instead of the whole asset file.
+    const onPickedRefine = (e) => {
+      const det = e && e.detail; if (!det) return;
+      const host = (data.nodes || []).find(n => n && n.id === det.hostNodeId);
+      if (!host) return;
+      const hostPath = host.path || (host.lockedState && host.lockedState.pathname) || "(unknown)";
+      const sel = det.selector || "(no selector)";
+      const outer = det.outerHTML || "";
+      const prompt = (det.prompt || "").trim();
+      if (!prompt) return;
+      // Picked-element refine is always within an HTML host file (only
+      // prototype + HTML asset iframes participate in pick mode), so we
+      // call buildRefineBody with kind:"html" and add a scope note that
+      // pins the change to one element via the CSS selector.
+      const scopeNote = [
+        "Scope: update ONLY the element matching this CSS path inside the host file.",
+        "  • Element CSS-path: `" + sel + "`",
+        "  • Element's current HTML:",
+        "    ```html",
+        "    " + outer.replace(/\n/g, "\n    "),
+        "    ```",
+        "Do not touch any other element in the document.",
+      ].join("\n");
+      const body = buildRefineBody(hostPath, "html", prompt, scopeNote, det.rules);
+      try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[picked-quick-refine]", err); }
+    };
+    // Picked-element fork — write standalone HTML asset from the picked
+    // sub-element + extracted CSS bundle, then chat-spawn a refine against
+    // the new file. Mirrors pastePickedElement Path B.
+    const onPickedFork = async (e) => {
+      const det = e && e.detail; if (!det) return;
+      const prompt = (det.prompt || "").trim();
+      if (!prompt) return;
+      const project = activeProjectId();
+      const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const branch = (data.nodes || []).find(n => n.kind === "prototype")?.branch || "main";
+      const newId = `n${stamp}`;
+      const relPath = `source/${branch}/components/snippet-${stamp}.html`;
+      const bundle = det.cssBundle || { css: "", links: [], rootInlineStyle: null };
+      const linkTags = (bundle.links || []).map(t => "  " + t).join("\n");
+      const wrapAttr = bundle.rootInlineStyle ? ` style="${bundle.rootInlineStyle}"` : "";
+      const standaloneHtml = [
+        "<!doctype html>",
+        '<html lang="en"><head>',
+        '  <meta charset="utf-8">',
+        `  <title>Snippet ${stamp}</title>`,
+        linkTags,
+        "  <style>",
+        "    body { margin: 0; background: #fff; }",
+        bundle.css || "",
+        "  </style>",
+        "</head>",
+        "<body>",
+        `  <div${wrapAttr}>`,
+        "    " + (det.outerHTML || ""),
+        "  </div>",
+        "</body></html>",
+        "",
+      ].join("\n");
+      try {
+        const r = await fetch(apiUrl("/__component_export"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: relPath, html: standaloneHtml, overwrite: false, project }),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          try { flashPickOp("error", "Fork failed: " + (j.error || `HTTP ${r.status}`)); } catch {}
+          return;
+        }
+      } catch (err) {
+        try { flashPickOp("error", "Fork failed: " + (err.message || err)); } catch {}
+        return;
+      }
+      const host = (data.nodes || []).find(n => n && n.id === det.hostNodeId) || {};
+      const tx = (host.x || lastCanvasCursorRef.current.x) + ((host.w || 320) + 60);
+      const ty = (host.y || lastCanvasCursorRef.current.y);
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id: newId, kind: "asset", assetKind: "html",
+          x: tx, y: ty, w: 320, h: 240,
+          path: relPath,
+          spawnedBy: "picked-quick-fork",
+        }],
+      }));
+      const body = buildRefineBody(relPath, "html", prompt,
+        "Scope: This file is a FORK of a sub-element picked from another HTML. The source it came from must remain unchanged.",
+        det.rules);
+      try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[picked-quick-fork]", err); }
+    };
+    // Picked-element remix — same fork as above, then spawn an
+    // iterator-remix node wired to the new asset.
+    const onPickedRemix = async (e) => {
+      const det = e && e.detail; if (!det) return;
+      const project = activeProjectId();
+      const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const branch = (data.nodes || []).find(n => n.kind === "prototype")?.branch || "main";
+      const newId = `n${stamp}`;
+      const relPath = `source/${branch}/components/snippet-${stamp}.html`;
+      const bundle = det.cssBundle || { css: "", links: [], rootInlineStyle: null };
+      const linkTags = (bundle.links || []).map(t => "  " + t).join("\n");
+      const wrapAttr = bundle.rootInlineStyle ? ` style="${bundle.rootInlineStyle}"` : "";
+      const standaloneHtml = [
+        "<!doctype html>",
+        '<html lang="en"><head>',
+        '  <meta charset="utf-8">',
+        `  <title>Snippet ${stamp}</title>`,
+        linkTags,
+        "  <style>",
+        "    body { margin: 0; background: #fff; }",
+        bundle.css || "",
+        "  </style>",
+        "</head>",
+        "<body>",
+        `  <div${wrapAttr}>`,
+        "    " + (det.outerHTML || ""),
+        "  </div>",
+        "</body></html>",
+        "",
+      ].join("\n");
+      try {
+        const r = await fetch(apiUrl("/__component_export"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: relPath, html: standaloneHtml, overwrite: false, project }),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          try { flashPickOp("error", "Remix fork failed: " + (j.error || `HTTP ${r.status}`)); } catch {}
+          return;
+        }
+      } catch (err) {
+        try { flashPickOp("error", "Remix fork failed: " + (err.message || err)); } catch {}
+        return;
+      }
+      const f = (det.formData || {});
+      const n = Math.max(1, Math.min(8, (f.n | 0) || 4));
+      const variants = Array.isArray(f.variants) ? f.variants.slice(0, n) : [];
+      while (variants.length < n) variants.push("");
+      const outputKind = f.outputKind || "html";
+      const model = outputKind === "image" ? "gpt-image-2" : "gpt-4o";
+      const host = (data.nodes || []).find(nn => nn && nn.id === det.hostNodeId) || {};
+      const baseX = (host.x || lastCanvasCursorRef.current.x);
+      const baseY = (host.y || lastCanvasCursorRef.current.y);
+      const remixId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + "r";
+      setData(d => ({
+        ...d,
+        nodes: [
+          ...(d.nodes || []),
+          // The new HTML asset spawned from the picked sub-element.
+          {
+            id: newId, kind: "asset", assetKind: "html",
+            x: baseX + ((host.w || 320) + 60), y: baseY,
+            w: 320, h: 240,
+            path: relPath,
+            spawnedBy: "picked-quick-remix",
+          },
+          // The remix iterator wired to the new asset.
+          {
+            id: remixId, kind: "iterator-remix",
+            x: baseX + ((host.w || 320) + 60) + 380, y: baseY,
+            w: 360, h: 400,
+            n, variants, model,
+            provider: f.provider || null,
+            outputKind,
+            dsRef: f.dsRef || null,
+            dsStrictness: f.dsStrictness || "loose",
+            rules: det.rules || null,
+          },
+        ],
+        edges: [...(d.edges || []), { from: `${newId}.out`, to: `${remixId}.in` }],
+      }));
+      try { flashPickOp("done", "Forked + Remix node created — click Run to generate variants"); } catch {}
+    };
+    window.addEventListener("th:asset-quick-refine",   onRefine);
+    window.addEventListener("th:asset-refine-prompt",  onRefinePrompt);
+    window.addEventListener("th:asset-quick-fork",     onFork);
+    window.addEventListener("th:asset-quick-remix",    onRemix);
+    window.addEventListener("th:picked-quick-refine",  onPickedRefine);
+    window.addEventListener("th:picked-quick-fork",    onPickedFork);
+    window.addEventListener("th:picked-quick-remix",   onPickedRemix);
+    return () => {
+      window.removeEventListener("th:asset-quick-refine",   onRefine);
+      window.removeEventListener("th:asset-refine-prompt",  onRefinePrompt);
+      window.removeEventListener("th:asset-quick-fork",     onFork);
+      window.removeEventListener("th:asset-quick-remix",    onRemix);
+      window.removeEventListener("th:picked-quick-refine",  onPickedRefine);
+      window.removeEventListener("th:picked-quick-fork",    onPickedFork);
+      window.removeEventListener("th:picked-quick-remix",   onPickedRemix);
+    };
+    // NOTE: flashPickOp is intentionally NOT in this dep array. It's a
+    // useCallback declared LATER in this same function (line ~15754), so
+    // referencing it here would hit a temporal-dead-zone error on every
+    // render — empty workflow canvas. The handlers above call it via
+    // closure, which resolves at fire time (well after flashPickOp is
+    // defined) so behavior is unaffected. The closure captures the latest
+    // binding lazily.
+  }, [data, setData, onStartChatWithPrompt]);
+  // v3.2.4 — While pick-mode is on, any mousedown OUTSIDE the picker iframe
+  // means the user has shifted focus away from "this exact sub-element".
+  // Clear the picked target so the next Cmd+V routes to Path B (standalone
+  // export to canvas) instead of pasting back as a sibling of the now-stale
+  // target inside the original iframe. Pick-mode itself stays on, so the
+  // badge stays visible.
+  //
+  // Why this is safe:
+  //   - Iframe-internal clicks DON'T bubble to the parent window, so they
+  //     never trigger this clear — only the overlay's onPick updates the
+  //     target, which re-sets it via the th:element-picked event.
+  //   - The badge button calls e.stopPropagation() in its own onMouseDown,
+  //     which React forwards to the native event, so clicking the badge
+  //     also doesn't trigger this clear.
+  //   - Clicking the canvas, another node, the prototype's own chrome
+  //     (header bar, toolbar), or anywhere outside the iframe DOES reach
+  //     this listener → target cleared → Cmd+V goes to Path B.
+  useEffect(() => {
+    if (!pickModeNodeId) return;
+    const onDown = () => {
+      if (!pickedDomRef.current && !pickedElement) return;
+      // Strip the red .th-pick-selected outline inside the source iframe so
+      // the user sees that no target is currently picked — Cmd+V will export
+      // to the canvas, not paste into the iframe.
+      try {
+        const ifr = pickerIframeRef.current;
+        const doc = ifr && ifr.contentDocument;
+        if (doc) {
+          doc.querySelectorAll(".th-pick-selected").forEach(el => el.classList.remove("th-pick-selected"));
+        }
+      } catch {}
+      pickedDomRef.current = null;
+      setPickedElement(null);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [pickModeNodeId, pickedElement]);
+  // v3.2.5 — Universal pick-mode. While pick-mode is on (pickModeNodeId
+  // is non-null), install the pick overlay on EVERY eligible iframe on the
+  // canvas — prototype iframes AND HTML asset iframes — so the user can
+  // hover/click sub-elements across any of them without first clicking
+  // that node's badge. The activating node's id (pickModeNodeId) is kept
+  // for the badge's "is-active" indicator and as the toggle-off target,
+  // but the overlay scope is global.
+  //
+  // pickerIframeRef tracks the iframe of the MOST RECENT pick so paste
+  // (Path A — sibling insert) lands in whichever HTML the user last
+  // clicked into. The mousedown clear listener above wipes pickedDomRef
+  // when the user clicks outside any iframe, so canvas Cmd+V then routes
+  // to Path B (standalone export) instead of pasting back into a stale
+  // target.
+  const pickerIframeRef = useRef(null);
+  const pickedDomRef    = useRef(null);
+  useEffect(() => {
+    if (!pickModeNodeId) { pickerIframeRef.current = null; pickedDomRef.current = null; return; }
+    let cancelled = false;
+    // Map<iframeEl, teardownFn> — one entry per attached iframe.
+    const teardowns = new Map();
+    // Best-effort match across iframes; ignore any that can't be reached
+    // (cross-origin, contentDocument null) — they simply won't participate
+    // in pick mode this session.
+    const findEligible = () => Array.from(
+      document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id]')
+    );
+    const installOn = (ifr) => {
+      if (cancelled || teardowns.has(ifr)) return;
+      const owningId = ifr.getAttribute("data-prototype-id")
+                    || ifr.getAttribute("data-asset-id")
+                    || "";
+      const tryInstall = () => {
+        if (cancelled) return;
+        try {
+          // Re-attach defensively if the doc was reloaded.
+          const prev = teardowns.get(ifr);
+          if (prev) { try { prev(); } catch {} teardowns.delete(ifr); }
+          const teardown = installPickOverlay(ifr, (el) => {
+            // Re-point refs to the iframe the user JUST clicked into.
+            // This is what makes paste route to the right destination
+            // when the user moves between iframes without re-clicking
+            // badges. Each pick wins over the previous one.
+            pickerIframeRef.current = ifr;
+            pickedDomRef.current = el;
+            window.dispatchEvent(new CustomEvent("th:element-picked", {
+              detail: {
+                nodeId:    owningId,
+                path:      elementCssPath(el),
+                outerHTML: el.outerHTML || "",
+                tagName:   (el.tagName || "").toLowerCase(),
+              },
+            }));
+          });
+          if (teardown) teardowns.set(ifr, teardown);
+        } catch (err) { console.error("[pick install]", err); }
+      };
+      // v3.4.3 — Re-install on EVERY iframe load, not just the first one.
+      // When the source file changes (Quick Refine, agent run, external
+      // edit, etc.) the iframe reloads and its contentDocument is replaced
+      // — the previously-installed overlay is attached to the now-detached
+      // doc and effectively dead. Without re-install, the user can't pick
+      // anything inside the reloaded iframe, so a subsequent Cmd+C keeps
+      // reading the old detached element via pickedDomRef → stale clipboard
+      // → paste shows the pre-modification design. Persistent load listener
+      // fixes it: each reload triggers tryInstall, which tears down the
+      // dead overlay and installs a fresh one on the new contentDocument.
+      const onLoad = () => {
+        // Also clear pickedDomRef if it was pointing at this iframe — the
+        // element no longer exists in the live tree.
+        if (pickerIframeRef.current === ifr) {
+          pickedDomRef.current = null;
+        }
+        tryInstall();
+      };
+      ifr.addEventListener("load", onLoad);
+      // Stash the listener on the iframe so the outer cleanup can remove it.
+      ifr.__thPickOnLoad = onLoad;
+      if (!ifr.contentDocument || ifr.contentDocument.readyState === "loading") {
+        // Initial install waits for first load — handled by onLoad above.
+      } else {
+        tryInstall();
+      }
+    };
+    // Initial sweep.
+    findEligible().forEach(installOn);
+    // Keep an eye out for iframes that mount AFTER pick mode starts
+    // (e.g. user just spawned a new asset card) — poll for 3s. The
+    // existing mounts are already covered by the sweep above; the
+    // polling layer just catches late arrivals without leaking work.
+    const intervalId = setInterval(() => {
+      if (cancelled) { clearInterval(intervalId); return; }
+      const current = new Set(findEligible());
+      // Attach to any iframe we haven't seen yet.
+      for (const ifr of current) if (!teardowns.has(ifr)) installOn(ifr);
+      // Detach from any iframe that's gone (DOM-removed mid-session).
+      for (const [ifr, td] of teardowns) {
+        if (!current.has(ifr)) {
+          try { td(); } catch {}
+          teardowns.delete(ifr);
+          if (pickerIframeRef.current === ifr) {
+            pickerIframeRef.current = null;
+            pickedDomRef.current = null;
+          }
+        }
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      for (const [ifr, td] of teardowns) {
+        try { td(); } catch {}
+        // v3.4.3 — Remove the persistent load listener we attached for
+        // re-install-on-reload so it doesn't keep firing after pick-mode
+        // exits.
+        try { if (ifr.__thPickOnLoad) { ifr.removeEventListener("load", ifr.__thPickOnLoad); delete ifr.__thPickOnLoad; } } catch {}
+      }
+      teardowns.clear();
+      pickerIframeRef.current = null;
+      pickedDomRef.current = null;
+    };
+  }, [pickModeNodeId]);
+
+  // Resolve the source file path the iframe is currently showing. For
+  // prototype iframes: iframe.contentWindow.location.pathname (handles
+  // sub-page navigation). For HTML asset iframes: node.path.
+  const resolveIframePath = useCallback(() => {
+    const ifr = pickerIframeRef.current;
+    if (!ifr) return null;
+    try {
+      const live = ifr.contentWindow && ifr.contentWindow.location;
+      if (live && live.pathname) {
+        let p = live.pathname.replace(/^\/+/, "");
+        if (p.endsWith("/")) p += "index.html";
+        if (p.startsWith("source/") && (p.endsWith(".html") || p.endsWith(".htm"))) return p;
+      }
+    } catch {}
+    const aid = ifr.getAttribute("data-asset-id");
+    if (aid) {
+      const nd = (data.nodes || []).find(n => n.id === aid);
+      if (nd && nd.path) return nd.path;
+    }
+    return null;
+  }, [data]);
+
+  // v3.2 — Phase 2 toast/status state. `pickOpState` tracks the in-flight
+  // status of element copy/paste/delete so the UI can surface:
+  //   • a spinner ring on the iframe during the network round-trip;
+  //   • a transient toast confirming success / surfacing the error.
+  // null → idle; { phase: "pending"|"done"|"error", message } otherwise.
+  const [pickOpState, setPickOpState] = useState(null);
+  const pickOpTimerRef = useRef(null);
+  const flashPickOp = useCallback((phase, message) => {
+    if (pickOpTimerRef.current) { clearTimeout(pickOpTimerRef.current); pickOpTimerRef.current = null; }
+    setPickOpState({ phase, message, ts: Date.now() });
+    if (phase === "pending") return;
+    const dwell = phase === "error" ? 4500 : 2400;
+    pickOpTimerRef.current = setTimeout(() => setPickOpState(null), dwell);
+  }, []);
+  // Drive the body-level data attribute so CSS can pulse a ring on the
+  // currently-saving iframe. Single attribute beats prop-drilling
+  // pendingness into every node component.
+  useEffect(() => {
+    const pending = !!(pickOpState && pickOpState.phase === "pending");
+    if (pending) document.body.setAttribute("data-pick-op-pending", "true");
+    else document.body.removeAttribute("data-pick-op-pending");
+    return () => { try { document.body.removeAttribute("data-pick-op-pending"); } catch {} };
+  }, [pickOpState]);
+
+  const copyPickedElement = useCallback(() => {
+    if (!pickedElement || !pickedElement.outerHTML) return 0;
+    // v3.2.3 — Extract the CSS bundle (matched rules + :root tokens +
+    // @font-face + same-origin link tags) at COPY TIME, while we still have
+    // a live handle on the source iframe's contentDocument. This lets Path B
+    // (standalone export) render the snippet with its original styling
+    // instead of degrading to bare browser defaults. Path A (sibling-paste
+    // in another iframe) ignores cssBundle because the destination iframe
+    // already owns the styles. zoomExtractCss is the same routine the
+    // zoom-mode "Export component" panel uses, so the visual fidelity
+    // matches that flow.
+    let cssBundle = null;
+    let cleanOuter = pickedElement.outerHTML;
+    try {
+      // v3.4.4 — THREE-step recovery of the live iframe + element, so copy
+      // works even after the host file changed and React re-mounted the
+      // iframe (which clears pickerIframeRef AND replaces the underlying
+      // iframe element):
+      //   1) Try the cached pickerIframeRef.current. Best case — still in
+      //      DOM, still pointing at the live iframe.
+      //   2) Find iframe by pickedElement.nodeId via querySelector against
+      //      [data-prototype-id] / [data-asset-id]. Catches nonce-bumped
+      //      re-mounts since the attribute persists across React key
+      //      changes.
+      //   3) Inside that iframe's CURRENT contentDocument, re-query the
+      //      stored CSS selector path. This is what guarantees we read the
+      //      LATEST bytes — not the pre-reload outerHTML snapshot.
+      // Each step is best-effort; fall back to the previous level if a
+      // step fails. Only if all three fail do we degrade to the stale
+      // pickedElement.outerHTML, and in that case we also surface a toast
+      // so the user knows to re-pick.
+      let ifr = pickerIframeRef.current;
+      // v3.4.5 — Also reject the cached ref if it's been DETACHED from the
+      // live document. React re-mounts the iframe on nonce bumps (it's
+      // the key change), the old `<iframe>` is removed from the DOM tree
+      // but its `contentDocument` property still resolves to an orphan
+      // doc — so the prior null-check passed and we read stale bytes.
+      // `document.body.contains(ifr)` is the truth: only a live, attached
+      // iframe wins. Detached → fall through to the by-nodeId lookup.
+      if (!ifr || !ifr.contentDocument || !document.body.contains(ifr)) {
+        try {
+          const sel = 'iframe[data-prototype-id="' + pickedElement.nodeId + '"], iframe[data-asset-id="' + pickedElement.nodeId + '"]';
+          const live = document.querySelector(sel);
+          if (live) { ifr = live; pickerIframeRef.current = live; }
+        } catch {}
+      }
+      let el = pickedDomRef.current;
+      if (ifr && ifr.contentDocument && pickedElement.path) {
+        try {
+          const live = ifr.contentDocument.querySelector(pickedElement.path);
+          if (live) {
+            el = live;
+            pickedDomRef.current = live; // keep the ref in sync for paste/delete
+          }
+        } catch { /* invalid selector — keep cached ref */ }
+      }
+      // If we still don't have a live element OR the element we have is
+      // detached from the iframe's CURRENT document, we cannot trust its
+      // outerHTML — bail to the stale snapshot AND flash a warning so the
+      // user knows to re-pick before relying on the clipboard.
+      if (!el || (ifr && ifr.contentDocument && !ifr.contentDocument.contains(el))) {
+        try { flashPickOp("error", "Source iframe reloaded — re-pick the element before copying for fresh content"); } catch {}
+      }
+      if (ifr && el && ifr.contentDocument) {
+        const ext = zoomExtractCss(ifr.contentDocument, el, false);
+        cssBundle = {
+          css:             ext.css || "",
+          links:           ext.links || [],
+          rootInlineStyle: ext.rootInlineStyle || null,
+          skippedSheets:   ext.skippedSheets || 0,
+        };
+        // Strip our pick-overlay highlight classes from the clone so the
+        // exported snippet doesn't ship blue/red outlines.
+        const cleanClone = el.cloneNode(true);
+        cleanClone.classList && cleanClone.classList.remove("th-pick-hover", "th-pick-selected");
+        cleanClone.querySelectorAll && cleanClone.querySelectorAll(".th-pick-hover, .th-pick-selected")
+          .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
+        // v3.2.4 — Absolutize relative URLs against the source page's base.
+        // The standalone export lives at source/<branch>/components/snippet-X
+        // .html so relative paths like `assets/hero.png` would 404 there.
+        // We rewrite to absolute URLs (same daemon origin) so the daemon
+        // serves the original asset regardless of where the snippet lands.
+        try {
+          // baseURI respects any <base> tag inside the doc; falls back to the
+          // window URL otherwise. Either way, relative paths resolve against
+          // the source page's actual location, so an `<img src="hero.jpg">`
+          // becomes the daemon URL that serves hero.jpg from the source dir.
+          const base = (ifr.contentDocument && ifr.contentDocument.baseURI)
+            || (ifr.contentWindow && ifr.contentWindow.location && ifr.contentWindow.location.href)
+            || "";
+          const abs = (raw) => {
+            if (!raw) return raw;
+            try { return new URL(raw, base).href; } catch { return raw; }
+          };
+          // Walk the clone (including the root itself) for elements with
+          // resolvable URL attributes. srcset gets per-candidate rewriting.
+          const URL_ATTRS = ["src", "href", "poster", "data"];
+          const nodes = [cleanClone, ...cleanClone.querySelectorAll ? Array.from(cleanClone.querySelectorAll("*")) : []];
+          for (const n of nodes) {
+            if (!n || !n.getAttribute) continue;
+            for (const a of URL_ATTRS) {
+              const v = n.getAttribute(a);
+              if (v && !/^(?:[a-z]+:|\/\/|data:|#)/i.test(v)) {
+                n.setAttribute(a, abs(v));
+              }
+            }
+            const srcset = n.getAttribute("srcset");
+            if (srcset) {
+              const rewritten = srcset.split(",").map(part => {
+                const seg = part.trim();
+                if (!seg) return seg;
+                // "url 2x" or "url 320w" — keep the descriptor
+                const space = seg.indexOf(" ");
+                const url = space === -1 ? seg : seg.slice(0, space);
+                const desc = space === -1 ? "" : seg.slice(space);
+                if (/^(?:[a-z]+:|\/\/|data:|#)/i.test(url)) return seg;
+                return abs(url) + desc;
+              }).join(", ");
+              n.setAttribute("srcset", rewritten);
+            }
+          }
+        } catch (err) {
+          console.warn("[copyPickedElement] URL absolutization failed — relative paths may break", err);
+        }
+        cleanOuter = cleanClone.outerHTML;
+      }
+    } catch (err) {
+      console.warn("[copyPickedElement] CSS extraction failed — falling back to bare outerHTML", err);
+    }
+    nodeClipboardRef.current = {
+      type: "html-element",
+      outerHTML: cleanOuter,
+      tagName:   pickedElement.tagName,
+      path:      pickedElement.path,
+      sourcePath: resolveIframePath(),
+      sourceNodeId: pickedElement.nodeId,
+      cssBundle,
+      ts: Date.now(),
+    };
+    flashPickOp("done", `Copied <${pickedElement.tagName || "element"}>`);
+    return 1;
+  }, [pickedElement, resolveIframePath, flashPickOp]);
+
+  const pastePickedElement = useCallback(async () => {
+    const clip = nodeClipboardRef.current;
+    if (!clip || clip.type !== "html-element") return 0;
+    // v3.2.4 — In-flight guard. Two keyboard handlers can both invoke this
+    // for a single Cmd+V (pick-mode capture + canvas-level bubble) — even
+    // with stopPropagation, the same-window other-phase listener can still
+    // race. Without this guard, Path A would fire AND Path B would fire,
+    // duplicating the prototype's source AND spawning a stray asset.
+    // Coalesces back-to-back invocations within the same async tick.
+    if (pastePickedElement._inFlight) return 0;
+    pastePickedElement._inFlight = true;
+    try {
+    const project = activeProjectId();
+    // Path A: there's a picked target inside an iframe → insert as sibling
+    if (pickedDomRef.current && pickerIframeRef.current) {
+      const ifr = pickerIframeRef.current;
+      // v3.4.4 — Same three-step recovery as copyPickedElement: cached
+      // ref → host iframe by nodeId → re-query selector in live doc. This
+      // makes Path A robust against iframe re-mounts (nonce bumps) that
+      // happen between picking the target and pressing Cmd+V.
+      // v3.4.5 — also reject detached iframes (see copyPickedElement).
+      let ifrLive = ifr;
+      if (!ifrLive || !ifrLive.contentDocument || !document.body.contains(ifrLive)) {
+        try {
+          const sel = 'iframe[data-prototype-id="' + (pickedElement && pickedElement.nodeId) + '"], iframe[data-asset-id="' + (pickedElement && pickedElement.nodeId) + '"]';
+          const found = document.querySelector(sel);
+          if (found) { ifrLive = found; pickerIframeRef.current = found; }
+        } catch {}
+      }
+      let targetEl = pickedDomRef.current;
+      if (ifrLive && ifrLive.contentDocument && pickedElement && pickedElement.path) {
+        try {
+          const live = ifrLive.contentDocument.querySelector(pickedElement.path);
+          if (live) { targetEl = live; pickedDomRef.current = live; }
+        } catch {}
+      }
+      const parent = targetEl.parentElement;
+      if (!parent) { flashPickOp("error", "Paste failed: target has no parent"); return 0; }
+      flashPickOp("pending", "Pasting as sibling…");
+      try {
+        const doc = ifr.contentDocument;
+        if (!doc) { flashPickOp("error", "Paste failed: iframe doc unavailable"); return 0; }
+        // v3.4.5 — Re-read the SOURCE element live at paste time, so the
+        // clipboard snapshot from copy time gets overridden by whatever
+        // the source iframe currently shows. This means the user can
+        // refine / edit the source between copy and paste and the latest
+        // bytes get pasted — no re-copy required. Falls back to
+        // clip.outerHTML when the source iframe is gone (host node
+        // deleted) or the selector no longer resolves.
+        let liveOuter = clip.outerHTML;
+        if (clip.sourceNodeId && clip.path) {
+          try {
+            const sourceSel = 'iframe[data-prototype-id="' + clip.sourceNodeId + '"], iframe[data-asset-id="' + clip.sourceNodeId + '"]';
+            const sourceIfr = document.querySelector(sourceSel);
+            if (sourceIfr && document.body.contains(sourceIfr) && sourceIfr.contentDocument) {
+              const liveSrcEl = sourceIfr.contentDocument.querySelector(clip.path);
+              if (liveSrcEl) {
+                const clean = liveSrcEl.cloneNode(true);
+                clean.classList && clean.classList.remove("th-pick-hover", "th-pick-selected");
+                clean.querySelectorAll && clean.querySelectorAll(".th-pick-hover, .th-pick-selected")
+                  .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
+                // v3.4.5d — Inline the SOURCE'S computed styles onto the
+                // clone before serialising. Without this, the inserted
+                // element inherits the DESTINATION'S stylesheets — which is
+                // why pasting into a prototype that has its own rules
+                // overriding what you just changed makes the paste "appear
+                // as the old design". Inline styles have higher specificity
+                // than external rules, so the element looks identical at
+                // the destination as it did in the source. We mirror styles
+                // from each LIVE source element onto its matching clone
+                // node (DOM-walked in parallel) so descendants get the
+                // same treatment.
+                try {
+                  const srcWin = sourceIfr.contentWindow;
+                  const liveTree  = [liveSrcEl, ...Array.from(liveSrcEl.querySelectorAll("*"))];
+                  const cloneTree = [clean,     ...Array.from(clean.querySelectorAll("*"))];
+                  const len = Math.min(liveTree.length, cloneTree.length);
+                  for (let i = 0; i < len; i++) {
+                    const live  = liveTree[i];
+                    const dst   = cloneTree[i];
+                    if (!live || !dst || !dst.setAttribute) continue;
+                    const cs = srcWin.getComputedStyle(live);
+                    // Build a `prop: value;` string for every computed
+                    // declaration. Big but reliable — every visual
+                    // property carries over.
+                    let css = "";
+                    for (let k = 0; k < cs.length; k++) {
+                      const prop = cs[k];
+                      const val  = cs.getPropertyValue(prop);
+                      if (val) css += prop + ":" + val + ";";
+                    }
+                    // Preserve any existing inline style declarations the
+                    // element already had — they go FIRST so the computed
+                    // ones don't get clobbered by a re-parse of cs values.
+                    const existing = dst.getAttribute("style") || "";
+                    dst.setAttribute("style", css + existing);
+                  }
+                } catch (err) {
+                  console.warn("[paste sibling] inline-style bake failed; falling back to markup-only paste", err);
+                }
+                liveOuter = clean.outerHTML;
+              }
+            }
+          } catch {}
+        }
+        const tmp = doc.createElement("div");
+        tmp.innerHTML = liveOuter;
+        let insertedCount = 0;
+        while (tmp.firstChild) {
+          const n = tmp.firstChild;
+          parent.insertBefore(n, targetEl.nextSibling);
+          insertedCount++;
+        }
+        doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
+          el.classList.remove("th-pick-hover");
+          el.classList.remove("th-pick-selected");
+        });
+        const path = resolveIframePath();
+        if (!path) { flashPickOp("error", "Paste failed: couldn't resolve target file"); return 0; }
+        const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+        const apiU = apiUrl("/__html_save");
+        const u = apiU + (apiU.includes("?") ? "&" : "?") + "_paste=" + Date.now();
+        const resp = await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, html: fullHtml, project }),
+        });
+        if (!resp.ok) {
+          const errBody = await resp.json().catch(() => ({}));
+          flashPickOp("error", "Paste failed: " + (errBody.error || `HTTP ${resp.status}`));
+          return 0;
+        }
+        flashPickOp("done", `Pasted as sibling in ${path.split("/").pop()}`);
+        return insertedCount;
+      } catch (err) {
+        console.error("[paste sibling]", err);
+        flashPickOp("error", "Paste failed: " + (err.message || err));
+        return 0;
+      }
+    }
+    // Path B: no target → spawn a new HTML asset node + write standalone file
+    flashPickOp("pending", "Pasting as new asset…");
+    try {
+      const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const branch = (data.nodes || []).find(n => n.kind === "prototype")?.branch || "main";
+      const assetId = `n${stamp}`;
+      const relPath = `source/${branch}/components/snippet-${stamp}.html`;
+      // v3.2.3 — Build the standalone document with the CSS bundle captured
+      // at copy time. This mirrors the zoom-mode export pattern: links +
+      // inline matched-rule <style> + base body reset + the element wrapped
+      // in a div that carries the inherited inline style fallback.
+      // Without this the export would just be bare <button> markup and the
+      // browser would render native defaults — what the user reported.
+      const bundle = clip.cssBundle || { css: "", links: [], rootInlineStyle: null };
+      const linkTags = (bundle.links || []).map(t => "  " + t).join("\n");
+      const wrapAttr = bundle.rootInlineStyle ? ` style="${bundle.rootInlineStyle}"` : "";
+      const standaloneHtml = [
+        "<!doctype html>",
+        '<html lang="en"><head>',
+        '  <meta charset="utf-8">',
+        `  <title>Snippet ${stamp}</title>`,
+        linkTags,
+        "  <style>",
+        "    body { margin: 0; background: #fff; }",
+        bundle.css || "",
+        "  </style>",
+        "</head>",
+        "<body>",
+        `  <div${wrapAttr}>`,
+        "    " + clip.outerHTML,
+        "  </div>",
+        "</body></html>",
+        "",
+      ].join("\n");
+      const resp = await fetch(apiUrl("/__component_export"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: relPath, html: standaloneHtml, overwrite: false, project }),
+      });
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}));
+        flashPickOp("error", "Paste failed: " + (errBody.error || `HTTP ${resp.status}`));
+        return 0;
+      }
+      const tx = lastCanvasCursorRef.current.x + 30;
+      const ty = lastCanvasCursorRef.current.y + 30;
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id: assetId, kind: "asset", assetKind: "html",
+          x: tx, y: ty, w: 320, h: 240,
+          path: relPath,
+          spawnedBy: "paste-element",
+        }],
+      }));
+      // v3.4.5c — Re-link the clipboard to the SNIPPET asset we just spawned.
+      // The user's mental model after Path B is "this card IS my copied
+      // element". So if they refine / edit the snippet and then Cmd+V again,
+      // they expect to paste the modified snippet, not the original source.
+      // Updating sourceNodeId here makes the live-source-re-read at the next
+      // Path A paste resolve to the snippet's iframe, not the original host.
+      // The path becomes "body > div > *:first-child" because Path B's
+      // template wraps the element in `<body><div style="…">…</div></body>`.
+      try {
+        const cur = nodeClipboardRef.current;
+        if (cur && cur.type === "html-element") {
+          nodeClipboardRef.current = {
+            ...cur,
+            sourceNodeId: assetId,
+            path: "body > div > *",
+            snippetAssetId: assetId,
+          };
+        }
+      } catch {}
+      const skipped = bundle.skippedSheets || 0;
+      const skipNote = skipped > 0
+        ? ` (skipped ${skipped} cross-origin sheet${skipped === 1 ? "" : "s"})`
+        : "";
+      flashPickOp("done", "Pasted as new HTML asset" + skipNote);
+      return 1;
+    } catch (err) {
+      console.error("[paste standalone]", err);
+      flashPickOp("error", "Paste failed: " + (err.message || err));
+      return 0;
+    }
+    } finally {
+      pastePickedElement._inFlight = false;
+    }
+  }, [data, setData, resolveIframePath, flashPickOp]);
+
+  // v3.4.20 — Cmd+R: replace the currently picked element with the clipboard's
+  // content. Same shape as pastePickedElement Path A (live-source re-read,
+  // computed-style baking, three-step recovery against iframe re-mounts),
+  // but uses `replaceWith` instead of `insertBefore` so the target gets
+  // SWAPPED, not duplicated. Skips the replace + flash-warns the user when
+  // there's no valid swap to make (no clipboard, no picked target, or the
+  // picked target IS the original source — replacing self-with-self is a
+  // no-op and almost certainly means the user wanted browser refresh).
+  // Cmd+R browser refresh is suppressed unconditionally while pick-mode is
+  // active so the user can't lose their selection state by accident.
+  const replacePickedElement = useCallback(async () => {
+    const clip = nodeClipboardRef.current;
+    if (!clip || clip.type !== "html-element") {
+      flashPickOp("error", "Cmd+R: nothing on the clipboard. Copy an element first (Cmd+C).");
+      return 0;
+    }
+    if (!pickedDomRef.current || !pickerIframeRef.current || !pickedElement) {
+      flashPickOp("error", "Cmd+R: pick a target element first (click one in the iframe).");
+      return 0;
+    }
+    // Same-element check: if the picked target IS the clipboard's source,
+    // a "replace" would copy the element onto itself. That's almost never
+    // the user's intent. Flash a hint instead of doing the no-op.
+    if (clip.sourceNodeId && clip.path
+        && clip.sourceNodeId === pickedElement.nodeId
+        && clip.path === pickedElement.path) {
+      flashPickOp("error", "Cmd+R: picked target is the same element you copied — pick a DIFFERENT element to replace.");
+      return 0;
+    }
+    if (replacePickedElement._inFlight) return 0;
+    replacePickedElement._inFlight = true;
+    try {
+      const project = activeProjectId();
+      const ifr = pickerIframeRef.current;
+      let ifrLive = ifr;
+      if (!ifrLive || !ifrLive.contentDocument || !document.body.contains(ifrLive)) {
+        try {
+          const sel = 'iframe[data-prototype-id="' + (pickedElement && pickedElement.nodeId) + '"], iframe[data-asset-id="' + (pickedElement && pickedElement.nodeId) + '"]';
+          const found = document.querySelector(sel);
+          if (found) { ifrLive = found; pickerIframeRef.current = found; }
+        } catch {}
+      }
+      let targetEl = pickedDomRef.current;
+      if (ifrLive && ifrLive.contentDocument && pickedElement && pickedElement.path) {
+        try {
+          const live = ifrLive.contentDocument.querySelector(pickedElement.path);
+          if (live) { targetEl = live; pickedDomRef.current = live; }
+        } catch {}
+      }
+      if (!targetEl || !targetEl.parentElement) {
+        flashPickOp("error", "Replace failed: target detached from the document");
+        return 0;
+      }
+      flashPickOp("pending", "Replacing…");
+      try {
+        const doc = ifrLive.contentDocument;
+        if (!doc) { flashPickOp("error", "Replace failed: iframe doc unavailable"); return 0; }
+        // Re-read the SOURCE element live (same logic as paste). Falls back
+        // to clip.outerHTML if the source iframe is gone.
+        let liveOuter = clip.outerHTML;
+        if (clip.sourceNodeId && clip.path) {
+          try {
+            const sourceSel = 'iframe[data-prototype-id="' + clip.sourceNodeId + '"], iframe[data-asset-id="' + clip.sourceNodeId + '"]';
+            const sourceIfr = document.querySelector(sourceSel);
+            if (sourceIfr && document.body.contains(sourceIfr) && sourceIfr.contentDocument) {
+              const liveSrcEl = sourceIfr.contentDocument.querySelector(clip.path);
+              if (liveSrcEl) {
+                const clean = liveSrcEl.cloneNode(true);
+                clean.classList && clean.classList.remove("th-pick-hover", "th-pick-selected");
+                clean.querySelectorAll && clean.querySelectorAll(".th-pick-hover, .th-pick-selected")
+                  .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
+                // Bake computed styles inline so the destination's stylesheets
+                // don't override the source's intended look. Same approach as
+                // pastePickedElement Path A.
+                try {
+                  const srcWin = sourceIfr.contentWindow;
+                  const liveTree  = [liveSrcEl, ...Array.from(liveSrcEl.querySelectorAll("*"))];
+                  const cloneTree = [clean,     ...Array.from(clean.querySelectorAll("*"))];
+                  const len = Math.min(liveTree.length, cloneTree.length);
+                  for (let i = 0; i < len; i++) {
+                    const live  = liveTree[i];
+                    const dst   = cloneTree[i];
+                    if (!live || !dst || !dst.setAttribute) continue;
+                    const cs = srcWin.getComputedStyle(live);
+                    let css = "";
+                    for (let k = 0; k < cs.length; k++) {
+                      const prop = cs[k];
+                      const val  = cs.getPropertyValue(prop);
+                      if (val) css += prop + ":" + val + ";";
+                    }
+                    const existing = dst.getAttribute("style") || "";
+                    dst.setAttribute("style", css + existing);
+                  }
+                } catch (err) {
+                  console.warn("[replace] inline-style bake failed; falling back to markup-only", err);
+                }
+                liveOuter = clean.outerHTML;
+              }
+            }
+          } catch {}
+        }
+        // Materialise the replacement element(s) from the markup. innerHTML
+        // can produce multiple top-level nodes when the snippet has siblings;
+        // replaceWith handles a variadic list of nodes so we pass them all.
+        const tmp = doc.createElement("div");
+        tmp.innerHTML = liveOuter;
+        const newNodes = Array.from(tmp.childNodes);
+        if (newNodes.length === 0) {
+          flashPickOp("error", "Replace failed: clipboard produced no DOM");
+          return 0;
+        }
+        targetEl.replaceWith(...newNodes);
+        // Clear any leftover picker hover/selected classes so the saved HTML
+        // is clean.
+        doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
+          el.classList.remove("th-pick-hover");
+          el.classList.remove("th-pick-selected");
+        });
+        const path = resolveIframePath();
+        if (!path) { flashPickOp("error", "Replace failed: couldn't resolve target file"); return 0; }
+        const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+        const apiU = apiUrl("/__html_save");
+        const u = apiU + (apiU.includes("?") ? "&" : "?") + "_replace=" + Date.now();
+        const resp = await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, html: fullHtml, project }),
+        });
+        if (!resp.ok) {
+          const errBody = await resp.json().catch(() => ({}));
+          flashPickOp("error", "Replace failed: " + (errBody.error || `HTTP ${resp.status}`));
+          return 0;
+        }
+        // Clear the picked target so the next Cmd+R requires a fresh pick
+        // (the old target is gone from the DOM; the pick state is stale).
+        setPickedElement(null);
+        pickedDomRef.current = null;
+        flashPickOp("done", `Replaced <${pickedElement.tagName || "element"}> in ${path.split("/").pop()}`);
+        return newNodes.length;
+      } catch (err) {
+        console.error("[replace]", err);
+        flashPickOp("error", "Replace failed: " + (err.message || err));
+        return 0;
+      }
+    } finally {
+      replacePickedElement._inFlight = false;
+    }
+  }, [pickedElement, resolveIframePath, flashPickOp]);
+
+  const deletePickedElement = useCallback(async () => {
+    const ifr = pickerIframeRef.current;
+    if (!ifr) return 0;
+    const doc = ifr.contentDocument;
+    if (!doc) { flashPickOp("error", "Delete failed: iframe doc unavailable"); return 0; }
+    // v3.4 — Same re-query as copy/paste: if the iframe reloaded since pick,
+    // pickedDomRef.current is detached and `.remove()` would no-op on a
+    // ghost element. Re-resolve via the saved CSS path so we delete from
+    // the live tree and the file write reflects an actual removal.
+    let targetEl = pickedDomRef.current;
+    if (pickedElement && pickedElement.path) {
+      try {
+        const live = doc.querySelector(pickedElement.path);
+        if (live) { targetEl = live; pickedDomRef.current = live; }
+      } catch {}
+    }
+    if (!targetEl) return 0;
+    const tagSnap = (targetEl.tagName || "").toLowerCase();
+    const project = activeProjectId();
+    flashPickOp("pending", `Deleting <${tagSnap}>…`);
+    try {
+      targetEl.remove();
+      doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
+        el.classList.remove("th-pick-hover");
+        el.classList.remove("th-pick-selected");
+      });
+      const path = resolveIframePath();
+      if (!path) { flashPickOp("error", "Delete failed: couldn't resolve target file"); return 0; }
+      const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+      const apiU = apiUrl("/__html_save");
+      const u = apiU + (apiU.includes("?") ? "&" : "?") + "_del=" + Date.now();
+      const resp = await fetch(u, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, html: fullHtml, project }),
+      });
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}));
+        flashPickOp("error", "Delete failed: " + (errBody.error || `HTTP ${resp.status}`));
+        return 0;
+      }
+      pickedDomRef.current = null;
+      setPickedElement(null);
+      flashPickOp("done", `Deleted <${tagSnap}>`);
+      return 1;
+    } catch (err) {
+      console.error("[delete element]", err);
+      flashPickOp("error", "Delete failed: " + (err.message || err));
+      return 0;
+    }
+  }, [resolveIframePath, flashPickOp]);
+
+  // Keyboard shortcuts active only while pickModeNodeId is set. Capture
+  // phase so they beat the canvas-level copy/paste/delete handler.
+  useEffect(() => {
+    if (!pickModeNodeId) return;
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && (e.key === "c" || e.key === "C")) {
+        if (pickedElement) { copyPickedElement(); e.preventDefault(); e.stopPropagation(); }
+      } else if (cmd && (e.key === "v" || e.key === "V")) {
+        const clip = nodeClipboardRef.current;
+        if (clip && clip.type === "html-element") {
+          pastePickedElement();
+          e.preventDefault(); e.stopPropagation();
+        }
+      } else if (cmd && (e.key === "r" || e.key === "R")) {
+        // v3.4.20 — Cmd+R = replace picked target with clipboard content.
+        // Browser refresh is suppressed UNCONDITIONALLY while pick-mode is
+        // active so the user doesn't reload the page (losing all canvas
+        // state) by reflex on a key they're now using for a canvas op.
+        // replacePickedElement itself flash-warns when there's no valid
+        // swap (no clipboard, no target, or target IS the original).
+        e.preventDefault(); e.stopPropagation();
+        replacePickedElement();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (pickedElement) { deletePickedElement(); e.preventDefault(); e.stopPropagation(); }
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [pickModeNodeId, pickedElement, copyPickedElement, pastePickedElement, replacePickedElement, deletePickedElement]);
+
+  // v3.2 — Window-level keyboard shortcuts for canvas copy/paste/delete.
+  // Skips when the user is typing in any form field so in-field
+  // copy/paste/backspace still works. Declared AFTER the callbacks above
+  // so the dependency array references valid bindings at hook-call time
+  // (const + useCallback create temporal-dead-zone bindings).
+  useEffect(() => {
+    const isEditingTarget = (t) => {
+      if (!t) return false;
+      const tag = (t.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    };
+    const onKey = (e) => {
+      if (isEditingTarget(e.target)) return;
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && (e.key === "c" || e.key === "C")) {
+        const n = copySelectedNodes();
+        if (n > 0) e.preventDefault();
+      } else if (cmd && (e.key === "v" || e.key === "V")) {
+        // v3.2.2 — Two clipboard types share Cmd+V. pasteNodesFromClipboard
+        // is for the {nodes,edges} payload from copySelectedNodes; html-
+        // element clipboards (from copyPickedElement) need pastePickedElement
+        // which spawns a standalone HTML asset (Path B inside that callback).
+        // v3.2.4 — Back off entirely if pick-mode is on. The pick-mode
+        // capture-phase handler is the unambiguous owner of Cmd+V while
+        // pick-mode is active (capture fires first + stops propagation);
+        // letting this bubble-phase handler also fire would cause Path A
+        // AND Path B to run for one keystroke, duplicating the prototype
+        // source AND spawning a stray asset.
+        if (pickModeNodeId) return;
+        const clip = nodeClipboardRef.current;
+        if (clip && clip.type === "html-element") {
+          pastePickedElement();
+          e.preventDefault();
+        } else {
+          const n = pasteNodesFromClipboard();
+          if (n > 0) e.preventDefault();
+        }
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        const n = deleteSelectedNodes();
+        if (n > 0) e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, pickModeNodeId]);
 
   // Walk edges that TERMINATE at nodeId.in — collect upstream prompt texts
   // and asset references. Skill nodes read this to assemble the actual API call.
@@ -13712,17 +17101,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const w = 220, h = 170;
       const offsetX = (sk.w || 280) + 60;
       const offsetY = ((sk.h || 200) - h) / 2;
-      const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+      const branch = "main";
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-      const path = `source/${branch}/images/asset-${stamp}.png`;
+      // v3.4 — Mirror the skill's declared output extension + kind via
+      // pickAssetSpawnDefaults so the auto-wired card matches the file
+      // the skill actually writes (svg-gen → .svg / vector, lottie-gen →
+      // .json / lottie, etc.) instead of always advertising .png + image.
+      const skillCatalog = ((window.TH_MEDIA && window.TH_MEDIA.skills) || []);
+      const skillSpec = skillCatalog.find(s => s && s.id === sk.skill) || {};
+      const spawned = pickAssetSpawnDefaults(skillSpec, branch, stamp);
       const newAsset = {
         id: newId, kind: "asset",
         x: Math.round(sk.x + offsetX),
         y: Math.round(sk.y + offsetY),
         w, h,
-        assetKind: "image",
-        path,
+        assetKind: spawned.assetKind,
+        path: spawned.path,
       };
       const newEdge = { from: `${skillNodeId}.out`, to: `${newId}.in` };
       return {
@@ -13752,7 +17147,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!origin) return d;
       newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       const offsetX = (origin.w || 280) + 60;
-      const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+      const branch = "main";
       let nextNode;
       if (kind === "prompt") {
         nextNode = {
@@ -13766,14 +17161,26 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       } else if (kind === "asset") {
         const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
         const isHtml = opt.assetKind === "html";
+        // v3.4 — Derive the spawn path from opt.assetKind so callers that
+        // supply only `assetKind: "vector"` (or lottie / html / video etc.)
+        // get the correct extension by default instead of `.png`.
+        const ak = opt.assetKind || "image";
+        const akExt = ak === "image" ? "png"
+                    : ak === "vector" ? "svg"
+                    : ak === "lottie" ? "json"
+                    : ak === "video"  ? "mp4"
+                    : ak === "3d"     ? "glb"
+                    : ak === "html"   ? "html"
+                    : ak === "text"   ? "md"
+                    : "png";
         nextNode = {
           id: newId, kind: "asset",
           x: Math.round(origin.x + offsetX),
           y: Math.round(origin.y + ((origin.h || 200) - (isHtml ? 240 : 170)) / 2),
           w: opt.w || (isHtml ? 320 : 220),
           h: opt.h || (isHtml ? 240 : 170),
-          assetKind: opt.assetKind || "image",
-          path: opt.path || `source/${branch}/images/asset-${stamp}.png`,
+          assetKind: ak,
+          path: opt.path || `source/${branch}/images/asset-${stamp}.${akExt}`,
         };
       } else if (kind === "color-palette") {
         nextNode = {
@@ -13836,8 +17243,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // (runSkill, triggerRun, /__asset_generate) instead of duplicating it.
   const runRepeater = useCallback(async (repeaterId, variantIdx = null) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     update(repeaterId, { status: "loading", error: null });
+    // v3.4.8 — see Bug A in runRemix. Hoist the spawned-card id map out of
+    // the try so the outer catch can sweep any cards still "pending" when
+    // a SHARED pre-step throws before Promise.allSettled.
+    const variantTargetIdsAll = {};
     try {
       const cur = data;
       const rep = (cur.nodes || []).find(n => n.id === repeaterId);
@@ -14012,7 +17423,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             return [
               `# ${k + 1}. ${label}`,
               `curl -sS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H 'Content-Type: application/json' --data-binary @- <<JSON`,
-              `{"skill":"generate-image","provider":"openai","model":"gpt-image-1","aspect":"3:2","prompt":"<photographic brief for ${label}, matching this cell's palette/mood from Step 1>","output":"source/${branch}/${folder}/_tmp/${slug}.png"}`,
+              `{"skill":"generate-image","provider":"openai","model":"gpt-image-2","aspect":"3:2","prompt":"<photographic brief for ${label}, matching this cell's palette/mood from Step 1>","output":"source/${branch}/${folder}/_tmp/${slug}.png"}`,
               `JSON`,
             ].join("\n");
           }).join("\n\n");
@@ -14374,7 +17785,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             variantTargetPathsObj[i] = target.path;
           } else {
             const newId = "n" + Date.now().toString(36) + "-rp" + i + Math.random().toString(36).slice(2, 5);
-            const path  = `source/${branch}/images/repeat-${Date.now().toString(36)}-${i}.png`;
+            // v3.4 — Derive ext + assetKind from the terminal upstream skill
+            // so a repeater feeding off shader / video-gen / svg-gen / etc.
+            // spawns variant cards with the correct extension instead of
+            // always `.png` + `image`.
+            const stampIter = Date.now().toString(36);
+            const repSpawn = pickAssetSpawnDefaults(terminalSpec, branch, stampIter + "-" + i);
+            const path = repSpawn.path.replace(`/${terminalSpec.id}-`, `/repeat-`);
             const offsetX = (rep.w || 360) + 60;
             const offsetY = (((rep.h - 32) / n) * (i + 0.5)) - 85;
             eagerNodes.push({
@@ -14382,7 +17799,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               x: Math.round(rep.x + offsetX),
               y: Math.round(rep.y + 32 + offsetY),
               w: 220, h: 170,
-              assetKind: "image", path,
+              assetKind: repSpawn.assetKind, path,
               runStatus: "pending",
             });
             eagerEdges.push({ from: `${repeaterId}.output-${i + 1}`, to: `${newId}.in` });
@@ -14415,6 +17832,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // sparse-keyed lookups so per-variant slots stay aligned by index).
       const variantTargetIds   = variantTargetIdsObj;
       const variantTargetPaths = variantTargetPathsObj;
+      // v3.4.8 — mirror onto the outer-scope sweep map so the catch can
+      // clean any cards still on "pending" after a fatal shared-step error.
+      for (const k of Object.keys(variantTargetIdsObj)) variantTargetIdsAll[k] = variantTargetIdsObj[k];
       // Commit eager spawn (newly created nodes) + mark pre-existing targets
       // as pending in one pass.
       const eagerIdSet = new Set(eagerNodes.map(en => en.id));
@@ -14474,7 +17894,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               const body = {
                 skill: stageSpec.id,
                 provider: guessedProvider,
-                model: stageNode.model || stageSpec.defaultModel || "gpt-image-1",
+                model: _resolveLiveModel(stageNode.model || stageSpec.defaultModel || "gpt-image-2"),
                 output: outPath,
                 aspect: stageNode.aspect || "1:1",
               };
@@ -14505,7 +17925,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 userMsg: composed,
                 dsRef: variantDsRef,
                 dsBlock,
-                model: (terminalSpec.id || "?") + " · " + (terminal.node.model || terminalSpec.defaultModel || "gpt-image-1"),
+                model: (terminalSpec.id || "?") + " · " + (terminal.node.model || terminalSpec.defaultModel || "gpt-image-2"),
                 variantIndex: i + 1, n,
               },
             });
@@ -14525,7 +17945,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               body: JSON.stringify({
                 skill: "llm",
                 provider: terminalSpec.provider || terminal.node.provider || "anthropic",
-                model: terminal.node.model || terminalSpec.defaultModel || "claude-opus-4-7",
+                model: _resolveLiveModel(terminal.node.model || terminalSpec.defaultModel || "claude-opus-4-7"),
                 prompt: composed,
               }),
             });
@@ -14554,7 +17974,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (firstReject) throw firstReject.reason;
       update(repeaterId, { status: "done", error: null, ranAt: Date.now() });
     } catch (e) {
-      update(repeaterId, { status: "error", error: String(e?.message || e) });
+      // v3.4.8 — Bug A: sweep orphan-pending variant cards (shared
+      // pre-step threw before per-variant Promise.allSettled started).
+      const msg = String(e?.message || e);
+      try {
+        for (const i of Object.keys(variantTargetIdsAll)) {
+          const vid = variantTargetIdsAll[i];
+          if (!vid) continue;
+          updateNode(vid, (n) => {
+            if (!n || n.runStatus !== "pending") return n;
+            return { ...n, runStatus: "error", runError: msg };
+          });
+        }
+      } catch {}
+      update(repeaterId, { status: "error", error: msg });
     }
   }, [data, setData, updateNode]);
 
@@ -14627,8 +18060,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
 
   const runRemix = useCallback(async (remixId, variantIdx = null) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     update(remixId, { status: "loading", error: null });
+    // v3.4.8 — spawned-card ids are hoisted OUT of the try-block so the
+    // outer catch can sweep any cards still stuck on runStatus:"pending"
+    // when a SHARED pre-step (describeImageRef, sourceHtml fetch) throws
+    // before Promise.allSettled gets a chance to run. Without the sweep,
+    // those eagerly-spawned cards would stay frozen on "Generating…"
+    // forever (the user's "even when generated still says generating" bug).
+    const variantIdsAll = {};
     try {
       const cur = data;
       const rmx = (cur.nodes || []).find(n => n.id === remixId);
@@ -14669,7 +18109,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // single-variant re-runs don't disturb the array indices used by
       // the all-variants case.
       const stampBase = Date.now().toString(36);
-      const variantIds = {};       // { [i]: newId }
+      const variantIds = variantIdsAll;  // alias — outer scope holds the same map for catch-sweep
       const variantPaths = {};     // { [i]: path }
       const spawnedNodes = [];
       const spawnedEdges = [];
@@ -14677,14 +18117,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         const newId = "n" + stampBase + "-r" + i + Math.random().toString(36).slice(2, 5);
         const offsetX = (rmx.w || 360) + 60;
         variantIds[i] = newId;
-        if (effectiveKind === "image") {
-          const path = `source/${branch}/images/remix-${stampBase}-${i}.png`;
+        if (effectiveKind === "image" || effectiveKind === "html" || effectiveKind === "text") {
+          // v3.4 — Use the remix's effectiveKind to pick ext + assetKind so
+          // a remix whose output is html / text / etc. spawns the right
+          // file kind instead of forcing `.png` + image.
+          const remixSpawn = pickAssetSpawnDefaultsForKind(effectiveKind, "remix-" + stampBase, branch, i);
+          const path = remixSpawn.path;
           variantPaths[i] = path;
           const offsetY = (((rmx.h - 32) / n) * (i + 0.5)) - 85;
           spawnedNodes.push({
             id: newId, kind: "asset",
             x: Math.round(rmx.x + offsetX), y: Math.round(rmx.y + 32 + offsetY),
-            w: 220, h: 170, assetKind: "image", path,
+            w: 220, h: 170, assetKind: remixSpawn.assetKind, path,
             runStatus: "pending",
           });
         } else if (effectiveKind === "html") {
@@ -14786,7 +18230,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             const r = await fetch(apiUrl("/__asset_generate"), {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                skill: "generate-image", provider: "openai", model: rmx.model || "gpt-image-1",
+                skill: "generate-image", provider: "openai", model: _resolveLiveModel(rmx.model || "gpt-image-2"),
                 output: variantPaths[i], aspect: sourceAspect, prompt: variantPrompt,
               }),
             });
@@ -14802,7 +18246,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 dsRef: variantDsRef,
                 dsBlock,
                 producedPrompt: variantPrompt,
-                model: "claude-opus-4-7 → " + (rmx.model || "gpt-image-1"),
+                model: "claude-opus-4-7 → " + (rmx.model || "gpt-image-2"),
                 variantIndex: i + 1, n,
               },
             });
@@ -15001,7 +18445,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       }
       update(remixId, { status: "done", error: null, ranAt: Date.now() });
     } catch (e) {
-      update(remixId, { status: "error", error: String(e?.message || e) });
+      // v3.4.8 — Bug A: sweep orphan-pending variant cards. If a SHARED
+      // pre-step (describeImageRef for image branch, sourceHtml fetch for
+      // html branch) threw before Promise.allSettled started, every
+      // eagerly-spawned card is still on runStatus:"pending" and would
+      // be stuck on "Generating…" forever. Mark each still-pending one
+      // as error so the user sees the failure on the cards, not on the
+      // iterator alone.
+      const msg = String(e?.message || e);
+      try {
+        for (const i of Object.keys(variantIdsAll)) {
+          const vid = variantIdsAll[i];
+          if (!vid) continue;
+          updateNode(vid, (n) => {
+            if (!n || n.runStatus !== "pending") return n;
+            return { ...n, runStatus: "error", runError: msg };
+          });
+        }
+      } catch {}
+      update(remixId, { status: "error", error: msg });
     }
   }, [data, setData, updateNode]);
 
@@ -15010,7 +18472,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // (outputKind:text). Auto-spawn the output card.
   const runBlend = useCallback(async (blendId) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     update(blendId, { status: "loading", error: null });
     try {
       const cur = data;
@@ -15099,13 +18561,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const blendOffsetX = (blend.w || 380) + 60;
       let blendOutPath = null;
       let blendSpawnedNode = null;
-      if (effectiveKind === "image") {
-        blendOutPath = `source/${branch}/images/blend-${blendStamp}.png`;
+      if (effectiveKind === "image" || effectiveKind === "vector" || effectiveKind === "svg"
+          || effectiveKind === "lottie" || effectiveKind === "video" || effectiveKind === "3d") {
+        // v3.4 — Use kind-aware spawn defaults so blend output kinds like
+        // vector / lottie / video write the right extension instead of
+        // forcing `.png`. effectiveKind === "image" still maps to .png.
+        const blendSpawn = pickAssetSpawnDefaultsForKind(effectiveKind, "blend", branch, blendStamp);
+        blendOutPath = blendSpawn.path;
         blendSpawnedNode = {
           id: blendOutId, kind: "asset",
           x: Math.round(blend.x + blendOffsetX),
           y: Math.round(blend.y + ((blend.h || 420) - 170) / 2),
-          w: 220, h: 170, assetKind: "image", path: blendOutPath,
+          w: 220, h: 170, assetKind: blendSpawn.assetKind, path: blendOutPath,
           runStatus: "pending",
         };
       } else if (effectiveKind === "html") {
@@ -15265,7 +18732,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           const r = await fetch(apiUrl("/__asset_generate"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              skill: "generate-image", provider: "openai", model: "gpt-image-1",
+              skill: "generate-image", provider: "openai", model: "gpt-image-2",
               output: blendOutPath, aspect: blendAspect, prompt: synthPrompt,
             }),
           });
@@ -15281,7 +18748,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               dsRef: blend.dsRef || null,
               dsBlock: blendDsBlock,
               producedPrompt: synthPrompt,
-              model: "claude-opus-4-7 → gpt-image-1",
+              model: "claude-opus-4-7 → gpt-image-2",
             },
           });
           window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [blendOutPath] } }));
@@ -15653,7 +19120,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   const runSkill = useCallback(async (clickedId) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
     const allSkills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     const tempPathFor = (skillId) => `source/${branch}/.workflow-tmp/${skillId}.png`;
 
     const nodes = data.nodes || [];
@@ -15797,6 +19264,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // Text-output targets are prompt nodes (set their text directly).
       const explicitImageTargets = [];  // [{ path, node? }] — node carries inline-svg metadata
       const promptTargets = [];
+      const textAssetTargets = [];      // [{ path, node }] — text-kind asset cards
       let hasSkillDownstream = false;
       for (const e of edges) {
         const f = workflowParseEdgeRef(e.from);
@@ -15806,14 +19274,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         const down = nodeById[t.node];
         if (!down) continue;
         if (down.kind === "asset" && typeof down.path === "string" && down.path.startsWith("source/")) {
-          explicitImageTargets.push({ path: down.path, node: down });
+          // v3.4.1 — split asset targets by kind. Text-kind assets are
+          // written via /__component_export (the endpoint accepts text
+          // payloads now) — image-kind goes through the existing pathway.
+          if (down.assetKind === "text") textAssetTargets.push({ path: down.path, node: down });
+          else explicitImageTargets.push({ path: down.path, node: down });
         } else if (down.kind === "asset" && typeof down.path === "string" && down.path.startsWith("inline:svg/") && typeof down.src === "string" && down.src.startsWith("<svg")) {
           // Inline-SVG output target: derive a file path so bytes live on disk,
           // then ask the daemon to swap the inline <svg> for <img src=…> in source.
           const protoBranch = (() => {
             const pid = down.boundTo && down.boundTo.node;
             const proto = pid ? nodeById[pid] : null;
-            return (proto && proto.branch) || (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+            return (proto && proto.branch) || "main";
           })();
           const hash = down.svgHash || (down.path.split("/").pop() || "asset");
           const derivedPath = `source/${protoBranch}/images/svg-${hash}.png`;
@@ -15840,10 +19312,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // field applies. Skipping the provider-required guard for them is
       // what lets the canvas Run button actually invoke Pathway B; the
       // optional pathwayAFallback brings its own provider/model.
+      // v3.4.1 — Video output → use videoModels catalog so dispatched
+      // model id matches what the daemon's video router expects.
       const allModels = skillSpec.modelKind === "text"
         ? (window.TH_MEDIA && window.TH_MEDIA.textModels) || []
-        : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
-      const model = skillSpec.model || skillNode.model || skillSpec.defaultModel || "";
+        : (skillSpec.output === "video"
+            ? (window.TH_MEDIA && window.TH_MEDIA.videoModels) || []
+            : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || []);
+      // v3.4.10 — dispatch the LIVE model (deprecated → current via the
+      // _DEPRECATED_MODEL_MIGRATIONS map). The saved node.model is never
+      // sent directly; the catalog is the source of truth.
+      const rawSkillModel = skillSpec.model || skillNode.model || skillSpec.defaultModel || "";
+      const model = _resolveLiveModel(rawSkillModel);
       const provider = skillSpec.provider
         || skillNode.provider
         || ((allModels.find(m => m.id === model) || {}).provider)
@@ -15857,7 +19337,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
 
       // ── Text output ──────────────────────────────────────────────
       if (outputKind === "text") {
-        if (promptTargets.length === 0) {
+        // v3.4.1 — Auto-spawn rules for text output:
+        //   • If a text-kind asset card is already wired, write the file
+        //     AND patch any wired prompt nodes (both can be downstream).
+        //   • If NO downstream target exists at all, auto-spawn a prompt
+        //     node (existing behaviour — quickest path for chaining).
+        //   • Users who explicitly want a file-backed text asset can use
+        //     the "+ output asset" button on the skill node now that
+        //     it's no longer image-only (see addOutputAsset gate fix).
+        if (promptTargets.length === 0 && textAssetTargets.length === 0) {
           // Auto-spawn a prompt text node to receive the generated text.
           // Same shape as the image auto-spawn above — pre-pick the new node
           // id so we can target the patch by id after the API call returns.
@@ -15913,6 +19401,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             ...d,
             nodes: (d.nodes || []).map(n => promptTargets.includes(n.id) ? { ...n, text } : n),
           }));
+          // v3.4.1 — Also persist text to any text-kind asset cards wired
+          // downstream. /__component_export now accepts text payloads via
+          // `content` (or legacy `html`), so the same write path works for
+          // .md / .txt as it does for .html. Fire asset-refresh per path
+          // so the WorkflowAssetTextPreview reloads with fresh bytes.
+          if (textAssetTargets.length) {
+            const projectId = activeProjectId();
+            for (const t of textAssetTargets) {
+              try {
+                const r = await fetch(apiUrl("/__component_export"), {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ path: t.path, content: text, overwrite: true, project: projectId }),
+                });
+                if (r.ok) {
+                  try {
+                    window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [t.path] } }));
+                  } catch {}
+                  allWrittenPaths.push(t.path);
+                } else {
+                  const j2 = await r.json().catch(() => ({}));
+                  console.warn("[llm/text → asset write]", t.path, j2.error || r.status);
+                }
+              } catch (err) {
+                console.warn("[llm/text → asset write]", t.path, err);
+              }
+            }
+          }
           update(skillId, { status: "done", error: null, ranAt: Date.now() });
         } catch (e) {
           update(skillId, { status: "error", error: String(e.message || e) });
@@ -15934,9 +19449,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         // node creation reference the same location. The setData spawn is
         // async, but the path is decided here so the write proceeds in
         // parallel; the asset card appears next render.
+        // v3.4 — Derive ext + assetKind from the skill's declared output
+        // instead of hard-coding `.png` + `image`. Every skill in the
+        // media-models catalog carries `pathwayBExt` (svg / html / json /
+        // png / etc.) — that's the file the skill actually writes. The
+        // previous hard-code meant a video-gen / lottie-gen / svg-gen /
+        // threejs skill spawned an asset node advertising `.png` + image,
+        // so when the real output landed at `.html` / `.json` / `.svg`
+        // the canvas card resolved to a 404 placeholder while the
+        // produced file sat orphaned. See mimiow project audit.
         const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-        const autoPath = `source/${branch}/images/${skillSpec.id || "asset"}-${stamp}.png`;
-        outputTargets = [{ path: autoPath }];
+        const spawned = pickAssetSpawnDefaults(skillSpec, branch, stamp);
+        outputTargets = [{ path: spawned.path }];
         setData(d => {
           const sk = (d.nodes || []).find(n => n.id === skillId);
           if (!sk) return d;
@@ -15949,8 +19473,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               id: newId, kind: "asset",
               x: Math.round(sk.x + offsetX), y: Math.round(sk.y + offsetY),
               w: 220, h: 170,
-              assetKind: "image",
-              path: autoPath,
+              assetKind: spawned.assetKind,
+              path: spawned.path,
             }],
             edges: [...(d.edges || []), { from: `${skillId}.out`, to: `${newId}.in` }],
           };
@@ -15972,6 +19496,54 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         const forceExt = (p) => p.replace(/\.[a-z0-9]+$/i, "." + (skillSpec.pathwayBExt || "html"));
         const htmlTargets = outputTargets.map(t => ({ ...t, path: forceExt(t.path) }));
         const outputPath = htmlTargets[0].path;
+        // v3.4.14 — Mark each connected asset card with runStatus:"pending"
+        // BEFORE the claude run starts. Without this the card eagerly tries
+        // to load the (not-yet-written) target file, the daemon returns a
+        // 404 HTML page, and the user sees "Lottie load failed: Unexpected
+        // token '<'" or "Error response · 404 File not found" while the
+        // skill is genuinely still generating. The pending state renders
+        // the same "Generating…" skeleton the remix variants use — honest
+        // signal that something is in progress, no scary error.
+        const pathwayBTargetIds = htmlTargets
+          .filter(t => t.node && t.node.id)
+          .map(t => t.node.id);
+        if (pathwayBTargetIds.length) {
+          const pendingSet = new Set(pathwayBTargetIds);
+          setData(d => ({
+            ...d,
+            nodes: (d.nodes || []).map(n =>
+              pendingSet.has(n.id) ? { ...n, runStatus: "pending", runError: null } : n
+            ),
+          }));
+        }
+        // Helper that clears the spawned cards' pending state — used both
+        // (a) the moment the output file appears on disk (so the asset card
+        // flips to the live preview even though the claude run is still
+        // polishing) and (b) the final success path. Idempotent.
+        const clearPathwayBPending = () => {
+          if (!pathwayBTargetIds.length) return;
+          const clearSet = new Set(pathwayBTargetIds);
+          setData(d => ({
+            ...d,
+            nodes: (d.nodes || []).map(n => {
+              if (!clearSet.has(n.id)) return n;
+              if (n.runStatus !== "pending") return n;
+              return { ...n, runStatus: null, runError: null };
+            }),
+          }));
+        };
+        const setPathwayBError = (msg) => {
+          if (!pathwayBTargetIds.length) return;
+          const errSet = new Set(pathwayBTargetIds);
+          setData(d => ({
+            ...d,
+            nodes: (d.nodes || []).map(n =>
+              errSet.has(n.id) && n.runStatus === "pending"
+                ? { ...n, runStatus: "error", runError: msg }
+                : n
+            ),
+          }));
+        };
 
         // Pathway-A fallback (e.g. svg-gen → Quiver AI). Try the daemon-side
         // renderer first — it's an order of magnitude faster than spawning
@@ -16004,13 +19576,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 if (t.node && t.node.id) idToNewPath.set(t.node.id, t.path);
               }
               if (idToNewPath.size) {
+                // v3.4.1 — Derive assetKind from the fallback extension via
+                // EXT_TO_ASSET_KIND. The earlier hardcode (svg → image, else
+                // → html) was wrong: svg should be "vector", json should be
+                // "lottie", etc. Falls back to "html" only when the ext
+                // doesn't map cleanly.
+                const fallKind = (typeof EXT_TO_ASSET_KIND === "object"
+                                  && EXT_TO_ASSET_KIND[fallback.ext]) || "html";
                 setData(d => ({
                   ...d,
                   nodes: (d.nodes || []).map(n => idToNewPath.has(n.id)
-                    ? { ...n, path: idToNewPath.get(n.id), assetKind: (fallback.ext === "svg" ? "image" : "html") }
+                    ? { ...n, path: idToNewPath.get(n.id), assetKind: fallKind }
                     : n),
                 }));
               }
+              // v3.4.14 — fallback succeeded (Quiver, etc.) → file is on
+              // disk. Clear the pending state we set earlier so the asset
+              // card flips to the live preview.
+              clearPathwayBPending();
               update(skillId, { status: "done", error: null, ranAt: Date.now() });
               continue;
             }
@@ -16019,7 +19602,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             const errMsg = String(j.error || "").toLowerCase();
             const isNoKey = r.status === 502 && errMsg.includes("no") && errMsg.includes("api key");
             if (!isNoKey) {
-              update(skillId, { status: "error", error: `${fallback.provider} error: ${j.error || ("HTTP " + r.status)}` });
+              const fallMsg = `${fallback.provider} error: ${j.error || ("HTTP " + r.status)}`;
+              setPathwayBError(fallMsg);
+              update(skillId, { status: "error", error: fallMsg });
               break;
             }
           } catch (e) {
@@ -16056,8 +19641,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           const start = Date.now();
           const maxMs = 30 * 60 * 1000;
           let finalState = null;
+          // v3.4.14 — Poll for BOTH (a) the run finishing AND (b) the
+          // output file landing on disk. Claude typically writes the file
+          // long before it finishes (verification, retries, polish all
+          // happen after the write), so as soon as the file appears with
+          // non-zero size we flip the asset card from "Generating…" → live
+          // preview. The skill node itself stays in "Running…" until the
+          // run truly exits, which is correct (the run might still produce
+          // additional asset edits).
+          let fileLanded = false;
           while (Date.now() - start < maxMs) {
             await new Promise(r => setTimeout(r, 1500));
+            if (!fileLanded) {
+              try {
+                const hr = await fetch(apiUrl("/" + outputPath), { method: "HEAD" });
+                if (hr.ok && parseInt(hr.headers.get("content-length") || "0", 10) > 0) {
+                  fileLanded = true;
+                  clearPathwayBPending();
+                  window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outputPath] } }));
+                }
+              } catch { /* daemon hiccup — try again next tick */ }
+            }
             const sr = await fetch(apiUrl(`/__run/${encodeURIComponent(run.runId)}`));
             if (!sr.ok) continue;
             const sj = await sr.json();
@@ -16101,11 +19705,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             if (t.node && t.node.id) idToNewPath.set(t.node.id, t.path);
           }
           if (idToNewPath.size) {
+            // v3.4.1 — Derive assetKind from the skill spec so svg-gen
+            // (.svg → vector) and lottie-gen (.json → lottie) don't get
+            // clobbered to "html" after the post-write patch. Pathway-B
+            // skills that genuinely produce HTML (shader/viz/threejs/etc.)
+            // still resolve to "html" via pickAssetSpawnDefaults.
+            const patchSpawn = pickAssetSpawnDefaults(skillSpec, branch, "patch");
+            const patchKind = patchSpawn.assetKind;
             setData(d => ({
               ...d,
               nodes: (d.nodes || []).map(n => {
                 if (idToNewPath.has(n.id)) {
-                  return { ...n, path: idToNewPath.get(n.id), assetKind: "html" };
+                  return { ...n, path: idToNewPath.get(n.id), assetKind: patchKind };
                 }
                 return n;
               }),
@@ -16150,10 +19761,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               }
             } catch { /* don't block on audit failure */ }
           }
+          // v3.4.14 — Final clear in case the file landed after the polling
+          // loop exited but before HEAD-probe noticed (e.g. claude finished
+          // in the same poll-tick as the write). Idempotent.
+          clearPathwayBPending();
           update(skillId, { status: "done", error: null, ranAt: Date.now() });
           continue;
         } catch (e) {
-          update(skillId, { status: "error", error: String(e.message || e) });
+          const msg = String(e.message || e);
+          setPathwayBError(msg);
+          update(skillId, { status: "error", error: msg });
           break;
         }
       }
@@ -16163,6 +19780,46 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // Nodes whose card needs promotion (inline-SVG → file-backed) after a
       // successful inline_replace. Applied via setData once the loop completes.
       const promoteToFileBacked = [];
+      // v3.4.14 — Pathway A (image / video / etc.) same UX treatment as
+      // pathway B: mark every connected asset card as runStatus:"pending"
+      // BEFORE the (often multi-second) /__asset_generate call so the card
+      // shows the "Generating…" skeleton, not the file's 404 / broken-image
+      // placeholder. Cleared per-target on success, flipped to error on
+      // failure with the actual error message.
+      const pathwayATargetIds = outputTargets
+        .filter(t => t.node && t.node.id)
+        .map(t => t.node.id);
+      if (pathwayATargetIds.length) {
+        const pendSet = new Set(pathwayATargetIds);
+        setData(d => ({
+          ...d,
+          nodes: (d.nodes || []).map(n =>
+            pendSet.has(n.id) ? { ...n, runStatus: "pending", runError: null } : n
+          ),
+        }));
+      }
+      const clearPathwayAPending = (nodeId) => {
+        if (!nodeId) return;
+        setData(d => ({
+          ...d,
+          nodes: (d.nodes || []).map(n => {
+            if (n.id !== nodeId) return n;
+            if (n.runStatus !== "pending") return n;
+            return { ...n, runStatus: null, runError: null };
+          }),
+        }));
+      };
+      const setPathwayANodeError = (nodeId, msg) => {
+        if (!nodeId) return;
+        setData(d => ({
+          ...d,
+          nodes: (d.nodes || []).map(n =>
+            n.id === nodeId && n.runStatus === "pending"
+              ? { ...n, runStatus: "error", runError: msg }
+              : n
+          ),
+        }));
+      };
       for (const target of outputTargets) {
         const outputPath = target.path;
         try {
@@ -16215,8 +19872,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           }
           skillWritten.push(outputPath);
           allWrittenPaths.push(outputPath);
+          // v3.4.14 — Per-target clear so multi-target runs flip each card
+          // to the live preview as ITS bytes land, not all-or-nothing at
+          // the end of the loop.
+          if (target.node && target.node.id) clearPathwayAPending(target.node.id);
         } catch (e) {
-          lastError = `${outputPath}: ${e.message || e}`;
+          const msg = `${outputPath}: ${e.message || e}`;
+          lastError = msg;
+          if (target.node && target.node.id) setPathwayANodeError(target.node.id, msg);
           break;
         }
       }
@@ -16268,7 +19931,26 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           if (!allWrittenPaths.includes(p.oldPath)) allWrittenPaths.push(p.oldPath);
         }
       }
-      if (lastError) { update(skillId, { status: "error", error: lastError }); break; }
+      if (lastError) {
+        // v3.4.14 — any targets that never got their per-target error
+        // (because the break happened on an earlier target in the loop)
+        // also need flipping out of "pending" so they don't sit forever
+        // on the "Generating…" skeleton. Idempotent: only flips nodes
+        // still in pending; nodes already on error / null are untouched.
+        if (pathwayATargetIds.length) {
+          const errSet = new Set(pathwayATargetIds);
+          setData(d => ({
+            ...d,
+            nodes: (d.nodes || []).map(n =>
+              errSet.has(n.id) && n.runStatus === "pending"
+                ? { ...n, runStatus: "error", runError: lastError }
+                : n
+            ),
+          }));
+        }
+        update(skillId, { status: "error", error: lastError });
+        break;
+      }
       writtenPathByskill[skillId] = skillWritten[0];
       update(skillId, { status: "done", error: null, ranAt: Date.now() });
     }
@@ -16605,22 +20287,38 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const srcExt = extOf(src.path);
       const dstExt = extOf(targetNode.path);
       const formatChanged = srcExt && dstExt && srcExt !== dstExt;
+      // v3.4.19 — Detect KIND change (not just ext). The source asset card
+      // carries its own assetKind ("video" / "lottie" / "html" / etc.) — if
+      // it differs from the target's, the prototype's <img> needs to be
+      // swapped for a <video> / <iframe> / <lottie-player> via the smart
+      // /__rewrite_element_for_kind endpoint. Same-kind format changes
+      // (e.g. .png → .svg, both "image"/"svg" → <img>) still go through the
+      // cheap /__rewrite_img_src path.
+      const srcKind = (src.assetKind || "image");
+      const dstKind = (targetNode.assetKind || "image");
+      const kindChanged = srcKind !== dstKind
+        && !(["image","svg"].includes(srcKind) && ["image","svg"].includes(dstKind));
 
       if (formatChanged) {
         // Build the new target path: same directory + filename stem, but
         // with the SOURCE's extension. e.g. `images/foo.png` → `images/foo.svg`.
         const newTargetPath = targetNode.path.replace(/\.[a-z0-9]+$/i, "." + srcExt);
-        const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
-        const ok = (typeof window !== "undefined" && window.confirm)
-          ? window.confirm(
-              `Format change detected (.${dstExt} → .${srcExt}).\n\n` +
-              `Will:\n` +
-              `  1. Copy ${src.path} → ${newTargetPath}\n` +
-              `  2. Rewrite the prototype's <img src="..."> tags to point at the new file\n` +
-              `  3. Update the asset card to the new path\n\n` +
-              `Proceed?`
-            )
-          : true;
+        const branch = "main";
+        const promptMsg = kindChanged
+          ? `Kind change detected (${dstKind} → ${srcKind}).\n\n` +
+            `Will:\n` +
+            `  1. Copy ${src.path} → ${newTargetPath}\n` +
+            `  2. Rewrite the prototype's <img> tag to the right element type ` +
+            `(${srcKind === "video" ? "<video>" : srcKind === "lottie" ? "<lottie-player>" : srcKind === "html" || srcKind === "3d" || srcKind === "shader" ? "<iframe>" : "<img>"})\n` +
+            `  3. Update the asset card to the new path + kind\n\n` +
+            `Proceed?`
+          : `Format change detected (.${dstExt} → .${srcExt}).\n\n` +
+            `Will:\n` +
+            `  1. Copy ${src.path} → ${newTargetPath}\n` +
+            `  2. Rewrite the prototype's <img src="..."> tags to point at the new file\n` +
+            `  3. Update the asset card to the new path\n\n` +
+            `Proceed?`;
+        const ok = (typeof window !== "undefined" && window.confirm) ? window.confirm(promptMsg) : true;
         if (!ok) return;
         try {
           // 1. Copy bytes to the new extension's path.
@@ -16633,14 +20331,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             if (typeof window !== "undefined" && window.alert) window.alert("Copy failed: " + (cj.error || ("HTTP " + cr.status)));
             return;
           }
-          // 2. Rewrite prototype HTML to point at the new file.
-          const rr = await fetch(apiUrl("/__rewrite_img_src"), {
+          // 2. Rewrite prototype HTML — kind change uses the smart endpoint
+          // that swaps the element type; same-kind format change keeps the
+          // <img> and just rewrites src.
+          const endpoint = kindChanged ? "/__rewrite_element_for_kind" : "/__rewrite_img_src";
+          const rewriteBody = kindChanged
+            ? { branch, old_src: targetNode.path, new_src: newTargetPath, new_kind: srcKind }
+            : { branch, old_src: targetNode.path, new_src: newTargetPath };
+          const rr = await fetch(apiUrl(endpoint), {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              branch,
-              old_src: targetNode.path,
-              new_src: newTargetPath,
-            }),
+            body: JSON.stringify(rewriteBody),
           });
           const rj = await rr.json().catch(() => ({}));
           if (!rr.ok) {
@@ -16648,14 +20348,32 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
               window.alert(
                 "Rewrite failed: " + (rj.error || ("HTTP " + rr.status)) + "\n\n" +
                 "The new file was copied to " + newTargetPath + " but the prototype HTML still " +
-                "references " + targetNode.path + ". You'll need to update the <img src=...> by hand."
+                "references " + targetNode.path + ". You'll need to update the prototype by hand."
               );
             }
             return;
           }
-          // 3. Patch the asset card so it points at the new file.
+          // v3.4.22 — Capture rewritten HTML file paths for the refresh
+          // dispatch below; lets the iframe handler match the actual
+          // prototype HTML file, not just the asset path.
+          var rewrittenHtmlPathsAO = (rj.files || []).map(f => f && f.path).filter(Boolean);
+          // 3. Patch the asset card so it points at the new file + kind.
+          // v3.4.19 — assetKind tracks the SOURCE's kind, not hardcoded
+          // "image". Without this, a video pushed into an image card would
+          // keep rendering as <img src=".mp4"> (broken) on the canvas
+          // preview, even though the prototype HTML was correctly swapped.
+          // v3.4.25 — Also clear activeVersionId so the card's preview
+          // falls through to node.path instead of the old version's
+          // canonicalPaths[0] (which points at the original extension).
+          // Without this, cross-kind pushes (e.g. wiring a video card →
+          // image target) would change node.path but the preview would
+          // still resolve to the OLD canonical path → "looks broken".
           const oldPath = targetNode.path;
-          updateNode(targetNode.id, { path: newTargetPath, assetKind: "image" });
+          updateNode(targetNode.id, {
+            path: newTargetPath,
+            assetKind: srcKind,
+            activeVersionId: null,
+          });
           // Also patch the bound prototype's exposedAssets list so the
           // iframe refresh handler matches on the new path.
           const protoNode = targetNode.boundTo && (data.nodes || []).find(n => n.id === targetNode.boundTo.node);
@@ -16667,8 +20385,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           }
           // 4. Fire refresh on BOTH old and new paths so the iframe nonce
           // bumps regardless of which one the prototype currently listens on.
+          // v3.4.22 — also include the rewritten HTML file paths so the
+          // iframe handler matches even when its scope check is narrow.
           window.dispatchEvent(new CustomEvent("th:asset-refresh", {
-            detail: { paths: [oldPath, newTargetPath] },
+            detail: {
+              paths: [oldPath, newTargetPath, ...(rewrittenHtmlPathsAO || [])].filter(Boolean),
+            },
           }));
         } catch (e) {
           if (typeof window !== "undefined" && window.alert) window.alert("Replace failed: " + String(e?.message || e));
@@ -16700,7 +20422,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     }
 
     if (targetIsExposedSvg) {
-      const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+      const branch = "main";
       const protoNode = (data.nodes || []).find(n => n.id === targetNode.boundTo.node);
       const ok = (typeof window !== "undefined" && window.confirm)
         ? window.confirm(
@@ -16771,6 +20493,156 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       );
     }
   }, [resolveReplaceTarget, data.nodes, updateNode]);
+
+  // v3.4.18 — Replace an exposed asset with a chosen library file.
+  // The "one-click" replace flow on a prototype's exposed asset card:
+  //   1. user clicks ↺ on an exposed image card (bound to a prototype)
+  //   2. a library chooser opens; user picks ANY asset (raster, svg, video,
+  //      3D-scene HTML, lottie JSON)
+  //   3. bytes get copied to a sibling path with the new file's extension
+  //   4. the prototype HTML is rewritten — same kind keeps <img> + rewrites
+  //      src; different kind swaps the element type (<video>, <iframe>,
+  //      <lottie-player>) via /__rewrite_element_for_kind
+  //   5. the asset card on canvas updates to the new path + assetKind so
+  //      its preview tracks the new bytes
+  //   6. exposedAssets on the bound prototype is patched to track the new
+  //      path, and a refresh nonce bumps both old + new paths so the
+  //      prototype iframe reloads.
+  // chooseFile is { path, kind } from the library. assetCardId is the
+  // exposed asset node being replaced.
+  const replaceExposedAssetWithFile = useCallback(async (assetCardId, chooseFile) => {
+    const target = (data.nodes || []).find(n => n.id === assetCardId);
+    if (!target || target.kind !== "asset") return;
+    if (!target.boundTo || !target.boundTo.node) {
+      if (typeof window !== "undefined" && window.alert) {
+        window.alert("This asset card isn't bound to a prototype, so there's no HTML to rewrite. " +
+                     "The Replace flow only works on cards that were exposed from a prototype.");
+      }
+      return;
+    }
+    if (!chooseFile || typeof chooseFile.path !== "string" || !chooseFile.path.startsWith("source/")) {
+      return;
+    }
+    const protoNode = (data.nodes || []).find(n => n.id === target.boundTo.node);
+    const branch = (protoNode && protoNode.branch) || "main";
+    const extOf = (p) => {
+      const m = String(p || "").match(/\.([a-z0-9]+)$/i);
+      return m ? m[1].toLowerCase() : "";
+    };
+    const srcExt = extOf(chooseFile.path);
+    const dstExt = extOf(target.path || "");
+    if (!srcExt) {
+      if (typeof window !== "undefined" && window.alert) {
+        window.alert("Picked file has no extension — can't determine its kind.");
+      }
+      return;
+    }
+    // New path = old basename's directory + (oldStem.newExt). When ext
+    // is unchanged, the new path equals the old one (in-place byte copy).
+    const newTargetPath = (target.path || "")
+      .replace(/\.[a-z0-9]+$/i, "." + srcExt) ||
+      `source/${branch}/images/${chooseFile.path.split("/").pop()}`;
+    const sameExt = srcExt === dstExt;
+    const newKind = chooseFile.kind || "image";
+    const oldKind = target.assetKind || "image";
+    const kindChanged = newKind !== oldKind;
+    try {
+      // 1. Byte-copy. When src and target are the same path (same ext, same
+      // location) the daemon overwrites in place; otherwise the new file
+      // lands next to the old one with the new extension.
+      if (chooseFile.path !== newTargetPath) {
+        const cr = await fetch(apiUrl("/__copy_file"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: chooseFile.path, to: newTargetPath }),
+        });
+        const cj = await cr.json().catch(() => ({}));
+        if (!cr.ok) {
+          if (typeof window !== "undefined" && window.alert) {
+            window.alert("Copy failed: " + (cj.error || ("HTTP " + cr.status)));
+          }
+          return;
+        }
+      }
+      // 2. Prototype HTML rewrite. If just the ext changed and the new
+      // kind is still image/svg, the cheap /__rewrite_img_src endpoint is
+      // enough. If the KIND changed (image → video / html / lottie), call
+      // the smarter /__rewrite_element_for_kind which swaps the tag.
+      let rewrittenHtmlPaths = [];
+      if (target.path !== newTargetPath || kindChanged) {
+        const endpoint = (kindChanged && newKind !== "image" && newKind !== "svg")
+          ? "/__rewrite_element_for_kind"
+          : "/__rewrite_img_src";
+        const body = (endpoint === "/__rewrite_element_for_kind")
+          ? { branch, old_src: target.path, new_src: newTargetPath, new_kind: newKind }
+          : { branch, old_src: target.path, new_src: newTargetPath };
+        const rr = await fetch(apiUrl(endpoint), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const rj = await rr.json().catch(() => ({}));
+        if (!rr.ok) {
+          if (typeof window !== "undefined" && window.alert) {
+            window.alert(
+              "Rewrite failed: " + (rj.error || ("HTTP " + rr.status)) + "\n\n" +
+              "The new file was copied to " + newTargetPath + " but the prototype HTML " +
+              "still references " + target.path + ". Edit the prototype by hand to fix it."
+            );
+          }
+          return;
+        }
+        // v3.4.22 — Capture the actual prototype HTML files the daemon
+        // rewrote. Including these in the refresh dispatch makes the
+        // iframe handler match unambiguously (it doesn't have to rely on
+        // the branchRoot wildcard) — even for prototypes whose iframe is
+        // currently loaded at a sub-page or whose refresh handler scopes
+        // narrowly. If the rewrite produced zero edits, files is empty
+        // and we just don't add anything to the path list.
+        rewrittenHtmlPaths = (rj.files || [])
+          .map(f => f && f.path)
+          .filter(Boolean);
+      }
+      // 3. Patch the asset card so it tracks the new bytes / extension / kind.
+      // v3.4.25 — Also clear activeVersionId. The asset card's preview
+      // resolves to activeVersion.canonicalPaths[0] when set, NOT node.path,
+      // so without this clear a cross-kind replace would keep displaying
+      // the OLD extension's file (the user's "doesn't work for image →
+      // svg / video" report). The file watcher will snapshot the new
+      // bytes within ~1–2s and set a fresh activeVersionId; in the
+      // meantime the display falls through to node.path = newTargetPath.
+      const oldPath = target.path;
+      updateNode(target.id, {
+        path: newTargetPath,
+        assetKind: newKind,
+        activeVersionId: null,
+      });
+      // 4. Patch the prototype's exposedAssets list so the next refresh
+      // matches on the new path.
+      if (protoNode && Array.isArray(protoNode.exposedAssets)) {
+        const next = protoNode.exposedAssets.map(p => p === oldPath ? newTargetPath : p);
+        if (next.some((p, i) => p !== protoNode.exposedAssets[i])) {
+          updateNode(protoNode.id, { exposedAssets: next });
+        }
+      }
+      // 5. Refresh ALL the affected paths so the prototype iframe nonce
+      // bumps regardless of which one it was listening on. v3.4.22 adds
+      // the rewritten HTML file paths so the iframe handler matches even
+      // when its scope check is narrow.
+      window.dispatchEvent(new CustomEvent("th:asset-refresh", {
+        detail: {
+          paths: [oldPath, newTargetPath, ...rewrittenHtmlPaths].filter(Boolean),
+        },
+      }));
+    } catch (e) {
+      if (typeof window !== "undefined" && window.alert) {
+        window.alert("Replace failed: " + String(e?.message || e));
+      }
+    }
+  }, [data.nodes, updateNode]);
+
+  // State for the always-visible Replace chooser. Open when the user clicks
+  // ↺ on an exposed asset card with no wired source. The chooser lists every
+  // file in /__assets; clicking a row calls replaceExposedAssetWithFile.
+  const [replacePickerForAssetId, setReplacePickerForAssetId] = useState(null);
 
   // Expose flow — replace any existing asset nodes bound to this prototype
   // with the new set, pin lockedState, persist via setData. Re-Expose at a
@@ -16929,7 +20801,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const enterPhaseA = needsPage || needsImages || !alreadyFitChecked;
     if (enterPhaseA) {
       const sysA = [
-        "You suggest or revise inputs for a DS-brainstorm node so the final design assets cohere. The user gives you a brief plus (optionally) a single sample page label and a comma-separated list of imagery subjects. The imagery subjects will be generated as REAL raster images via gpt-image-1 and then embedded as base64 `data:` URIs inside the HTML (no sibling .png files), so suggest photo-style subjects naturally — hero shots, product close-ups, portraits, scene photography are all fair game.",
+        "You suggest or revise inputs for a DS-brainstorm node so the final design assets cohere. The user gives you a brief plus (optionally) a single sample page label and a comma-separated list of imagery subjects. The imagery subjects will be generated as REAL raster images via gpt-image-2 and then embedded as base64 `data:` URIs inside the HTML (no sibling .png files), so suggest photo-style subjects naturally — hero shots, product close-ups, portraits, scene photography are all fair game.",
         "You decide:",
         "  1. If `samplePage` is empty, suggest ONE label.",
         "  2. If `sampleImages` is empty, suggest 2-4 imagery subjects (or [] if the genre genuinely doesn't need pictorial content — e.g. trading terminals, IDEs).",
@@ -17028,7 +20900,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       return;
     }
 
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     const slugify = (s) => String(s || "asset").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "asset";
 
     // Build the target list — ONLY HTML outputs. Any imagery the agent
@@ -17263,7 +21135,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             `curl -sS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" \\`,
             `  -H 'Content-Type: application/json' \\`,
             `  --data-binary @- <<JSON`,
-            `{"skill":"generate-image","provider":"openai","model":"gpt-image-1","aspect":"3:2","prompt":"<your detailed photographic brief for: ${subj} — reference the palette/mood you set in Step 1>","output":"source/${branch}/ds-brainstorm/_tmp/${slug}.png"}`,
+            `{"skill":"generate-image","provider":"openai","model":"gpt-image-2","aspect":"3:2","prompt":"<your detailed photographic brief for: ${subj} — reference the palette/mood you set in Step 1>","output":"source/${branch}/ds-brainstorm/_tmp/${slug}.png"}`,
             `JSON`,
           ].join("\n");
         }),
@@ -17629,13 +21501,58 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         </div>
       </div>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
-      <div className="workflow-body">
-        <${WorkflowLibrary} branches=${branches}/>
+      ${replacePickerForAssetId && html`<${WorkflowReplaceAssetChooser}
+        targetNode=${(data.nodes || []).find(n => n.id === replacePickerForAssetId)}
+        onCancel=${() => setReplacePickerForAssetId(null)}
+        onPick=${(file) => {
+          const id = replacePickerForAssetId;
+          setReplacePickerForAssetId(null);
+          replaceExposedAssetWithFile(id, file);
+        }}
+      />`}
+      <div className="workflow-body" data-chat-active=${chatActive ? "true" : "false"}>
+        <${WorkflowLibrary}/>
+        <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
         <div
           className="workflow-canvas-wrap"
           ref=${wrapRef}
           onDragOver=${(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
           onDrop=${onCanvasDrop}
+          onMouseMove=${(e) => {
+            // v3.2 — Track cursor in world coords for "paste under cursor"
+            // placement. The wrap element is the canvas viewport; pan/zoom
+            // map screen → world the same way the marquee code does.
+            if (!lastCanvasCursorRef || !lastCanvasCursorRef.current) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const sx = e.clientX - r.left;
+            const sy = e.clientY - r.top;
+            const worldX = (sx - pan.x) / zoom;
+            const worldY = (sy - pan.y) / zoom;
+            lastCanvasCursorRef.current.x = worldX;
+            lastCanvasCursorRef.current.y = worldY;
+          }}
+          onContextMenu=${(e) => {
+            // v3.2 — Right-click context menu. If the user right-clicks on
+            // a node and that node isn't already in the selection, replace
+            // selection with just that node so Copy/Delete operate on the
+            // expected target. Then open menu at the click coords.
+            e.preventDefault();
+            const nodeEl = e.target && e.target.closest && e.target.closest("[data-node-id]");
+            if (nodeEl) {
+              const id = nodeEl.getAttribute("data-node-id");
+              if (id && !selectedNodeIds.has(id)) selectNodeId(id);
+            }
+            // World coords at click for "paste here".
+            const r = e.currentTarget.getBoundingClientRect();
+            const worldX = (e.clientX - r.left - pan.x) / zoom;
+            const worldY = (e.clientY - r.top  - pan.y) / zoom;
+            setCtxMenu({
+              vpX: e.clientX,
+              vpY: e.clientY,
+              worldX, worldY,
+              onNode: !!nodeEl,
+            });
+          }}
           onMouseDownCapture=${(e) => {
             // SINGLE SOURCE OF TRUTH for node selection on the workflow
             // canvas. Capture-phase runs BEFORE child onMouseDown handlers,
@@ -17768,6 +21685,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onSelect=${() => setSelectedNodeId(n.id)}
                 replaceTarget=${assetReplaceMap[n.id] || null}
                 onReplace=${() => replaceAssetOutput(n.id)}
+                onOpenReplaceChooser=${() => setReplacePickerForAssetId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
@@ -18150,17 +22068,92 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           onSwitchTarget=${(filePath, branch) => setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || "main" }))}
         />
       `}
+      ${ctxMenu && html`<${CanvasContextMenu}
+        x=${ctxMenu.vpX}
+        y=${ctxMenu.vpY}
+        hasSelection=${selectedNodeIds.size > 0}
+        canPaste=${hasNodeClipboard()}
+        onCopy=${() => { copySelectedNodes(); setCtxMenu(null); }}
+        onPaste=${() => {
+          const clip = nodeClipboardRef.current;
+          if (clip && clip.type === "html-element") {
+            pastePickedElement();
+          } else {
+            pasteNodesFromClipboard(ctxMenu.worldX, ctxMenu.worldY);
+          }
+          setCtxMenu(null);
+        }}
+        onDelete=${() => { deleteSelectedNodes(); setCtxMenu(null); }}
+        onClose=${() => setCtxMenu(null)}
+      />`}
+      ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
+      ${pickedElement && html`<${WorkflowPickedElementActionBar}
+        pickedElement=${pickedElement}
+        pickerIframeRef=${pickerIframeRef}
+        pickedDomRef=${pickedDomRef}
+        allNodes=${data.nodes || []}
+        allEdges=${data.edges || []}
+      />`}
     </div>
   `;
 }
 
-function WorkflowLibrary({ branches }) {
+// v3.4.24 — Hover-controlled video thumbnail for the library grid. Starts
+// paused so a wall of N thumbnails doesn't auto-loop in parallel. Hovering
+// the thumb (not the whole card; the user might brush past) plays the
+// video; leaving pauses it. Browsers require muted+playsInline for non-
+// interactive playback, which is what we want anyway (no audio).
+function WorkflowLibraryHoverVideo({ src, alt }) {
+  const vref = useRef(null);
+  const onEnter = () => {
+    const v = vref.current; if (!v) return;
+    const p = v.play(); if (p && p.catch) p.catch(() => {});
+  };
+  const onLeave = () => {
+    const v = vref.current; if (!v) return;
+    try { v.pause(); } catch {}
+  };
+  return html`
+    <video
+      ref=${vref}
+      src=${src}
+      muted playsInline loop preload="metadata"
+      onMouseEnter=${onEnter}
+      onMouseLeave=${onLeave}
+      title=${"Hover to preview · " + (alt || "")}
+    />
+  `;
+}
+
+// v3.4.24 — Hover-controlled Lottie thumbnail. Same pattern: the iframe's
+// player starts with autoplay=false; we postMessage play/pause based on
+// the parent's hover state. The `key` prop on the iframe makes it remount
+// when fileUrl changes (so the right JSON loads).
+function WorkflowLibraryHoverLottie({ fileUrl, alt }) {
+  const iref = useRef(null);
+  const sendCmd = (type) => {
+    const ifr = iref.current; if (!ifr || !ifr.contentWindow) return;
+    try { ifr.contentWindow.postMessage({ type }, "*"); } catch {}
+  };
+  const onEnter = () => sendCmd("play");
+  const onLeave = () => sendCmd("pause");
+  return html`
+    <iframe
+      ref=${iref}
+      srcDoc=${buildLottieSrcDoc(fileUrl, false)}
+      sandbox="allow-scripts allow-same-origin"
+      title=${alt}
+      onMouseEnter=${onEnter}
+      onMouseLeave=${onLeave}
+    />
+  `;
+}
+
+function WorkflowLibrary() {
   const [assets, setAssets] = useState([]);
   const [savedPrompts, setSavedPrompts] = useState([]);
   // Discovered prototype folders — any `source/<dir>/index.html` (or one
-  // level deeper) that we find on disk. Lets agent-generated prototypes
-  // show up next to the registered branches without each agent run having
-  // to register its folder as a workspace branch.
+  // level deeper) that we find on disk.
   const [extraProtos, setExtraProtos] = useState([]);
   // Discovered HTML files OUTSIDE the prototype index.html set — DS
   // brainstorm outputs (page-*.html, ds-samples.html), iterator variants,
@@ -18178,36 +22171,92 @@ function WorkflowLibrary({ branches }) {
   // (image / svg / shader thumbs), so the user usually wants to scan the
   // grid first; the list view is the secondary, name-driven mode.
   const [outputsView, setOutputsView] = useState("grid");
+  // v3.4.27 — Two sub-tabs under Outputs:
+  //   "protos"  — Prototypes & components (combined extraProtos + htmlPages)
+  //   "visual"  — Visual assets, further split into scenes / video+motion /
+  //               image+svg sub-sections that hide when empty.
+  const [outputsSubTab, setOutputsSubTab] = useState("protos");
   // Re-fetch the library asset + saved-prompt lists. Wired to th:asset-refresh
   // (fires after any successful Run) and th:library-refresh (manual nudges).
+  const [starredProtos, setStarredProtos] = useState(() => getStarredPrototypesSync());
   const reload = useCallback(async () => {
     try {
-      const [a, p, pr, hp] = await Promise.all([
+      const [a, p, pr, hp, st] = await Promise.all([
         fetch(apiUrl("/__assets")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
         fetch(apiUrl("/__prompts")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
         fetch(apiUrl("/__source_prototypes")).then(r => r.ok ? r.json() : { prototypes: [] }).catch(() => ({ prototypes: [] })),
         fetch(apiUrl("/__source_htmls")).then(r => r.ok ? r.json() : { htmls: [] }).catch(() => ({ htmls: [] })),
+        fetchStarredPrototypes(true),
       ]);
       setAssets((a && a.items) || []);
       setSavedPrompts((p && p.items) || []);
-      // Filter out the entries already represented as a registered branch
-      // (compared by id) so we don't double-list "Main" etc. in the
-      // generated section.
-      const branchIds = new Set((branches || []).map(b => b.id));
-      setExtraProtos(((pr && pr.prototypes) || []).filter(p => !branchIds.has(p.id)));
+      setExtraProtos(((pr && pr.prototypes) || []));
       setHtmlPages((hp && hp.htmls) || []);
+      setStarredProtos(Array.isArray(st) ? st : []);
     } catch {}
-  }, [branches]);
+  }, []);
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
     const onRefresh = () => reload();
+    const onStars = () => setStarredProtos(getStarredPrototypesSync());
     window.addEventListener("th:asset-refresh", onRefresh);
     window.addEventListener("th:library-refresh", onRefresh);
+    window.addEventListener("th:starred-prototypes-changed", onStars);
     return () => {
       window.removeEventListener("th:asset-refresh", onRefresh);
       window.removeEventListener("th:library-refresh", onRefresh);
+      window.removeEventListener("th:starred-prototypes-changed", onStars);
     };
   }, [reload]);
+  // v3.4.27 — Visual-asset sub-grouping. Splits the flat `assets` list into
+  // three buckets the user asked for:
+  //   • scenes      — webgl/shader/dataviz/particles/3D scene HTMLs
+  //   • videoMotion — .mp4 etc + motion-gen HTML + lottie JSON (anything
+  //                   playback-based that isn't a Pathway-B scene)
+  //   • imageSvg    — .png / .jpg / .webp / .svg
+  // Categorisation reads (a) the file extension and (b) the filename prefix
+  // (every skill stamps its id into the output filename — `shader-…`,
+  // `threejs-…`, `motion-gen-…`, etc.) so html / json files end up in the
+  // right bucket without needing a separate registry call.
+  const assetGroups = useMemo(() => {
+    const scenes = [];
+    const videoMotion = [];
+    const imageSvg = [];
+    const other = [];
+    for (const a of assets) {
+      const name = (a.name || "").toLowerCase();
+      const ext = (name.split(".").pop() || "").toLowerCase();
+      // Video files always go in video/motion.
+      if (["mp4", "webm", "mov", "m4v", "ogv"].includes(ext)) {
+        videoMotion.push(a); continue;
+      }
+      // Lottie JSON → motion (it's animation playback).
+      if (ext === "json" || a.kind === "lottie") {
+        videoMotion.push(a); continue;
+      }
+      // motion-gen HTML → motion (motion-gen produces HTML loops).
+      if (name.startsWith("motion-gen") || name.startsWith("motion_gen")) {
+        videoMotion.push(a); continue;
+      }
+      // Other HTML scenes (shader / viz / threejs / canvas-gen / generic
+      // Pathway-B output) → scenes.
+      if (ext === "html" || ext === "htm") {
+        scenes.push(a); continue;
+      }
+      // SVG + raster image kinds → image/svg.
+      if (ext === "svg" || ["png", "jpg", "jpeg", "webp", "gif", "avif"].includes(ext)) {
+        imageSvg.push(a); continue;
+      }
+      // 3D model files → scenes (closest fit; can be split out later).
+      if (["glb", "gltf", "obj", "fbx", "usdz"].includes(ext)) {
+        scenes.push(a); continue;
+      }
+      // Everything else (audio, shaders source, …) falls into "other";
+      // currently rendered in the image/svg bucket as a glyph-fallback.
+      other.push(a);
+    }
+    return { scenes, videoMotion, imageSvg, other };
+  }, [assets]);
 
   const deleteAsset = async (path) => {
     if (!confirm(`Delete ${path} from disk?\nThis is destructive — nodes referencing it will show "missing".`)) return;
@@ -18303,11 +22352,41 @@ function WorkflowLibrary({ branches }) {
       `;
 
   // Same for raster/svg/video etc. assets. Grid shows a real image preview
-  // when the kind is image-ish (image/svg); otherwise the glyph fills the
-  // thumb area on a faint background.
+  // when the kind is image-ish (image/svg); video shows a tiny preview
+  // that plays on hover; html shows the live scene (kept playing since
+  // its own JS owns playback); lottie shows the player paused, playing
+  // on hover. Falls back to the glyph for kinds that can't be previewed
+  // (3d / shader source / viz raw / audio).
+  // v3.4.17 — Real previews for video / html / lottie so the library
+  // grid is visually scannable.
+  // v3.4.24 — Video + lottie default to PAUSED so a wall of thumbnails
+  // doesn't compete for attention. Hover activates playback (via the
+  // wrapping <div onMouseEnter/Leave + a ref/postMessage handler). HTML
+  // scenes keep their own animation since we can't pause their internal
+  // rAF loops generically.
   const renderAssetItem = (a, view) => {
     const glyph = glyphForAssetKind(a.kind);
-    const previewable = a.kind === "image" || a.kind === "svg";
+    const fileUrl = "/" + a.path + location.search;
+    const renderThumb = () => {
+      if (a.kind === "image" || a.kind === "svg") {
+        return html`<img src=${fileUrl} loading="lazy" alt=${a.name}/>`;
+      }
+      if (a.kind === "video") {
+        return html`<${WorkflowLibraryHoverVideo} src=${fileUrl} alt=${a.name}/>`;
+      }
+      if (a.kind === "html") {
+        return html`<iframe
+          src=${fileUrl}
+          loading="lazy"
+          scrolling="no"
+          title=${a.name}
+        />`;
+      }
+      if (a.kind === "lottie") {
+        return html`<${WorkflowLibraryHoverLottie} fileUrl=${fileUrl} alt=${a.name}/>`;
+      }
+      return html`<span className="workflow-library-card-thumb-glyph">${glyph}</span>`;
+    };
     return view === "grid"
       ? html`
           <div
@@ -18322,9 +22401,7 @@ function WorkflowLibrary({ branches }) {
             title=${"Drag onto canvas — " + a.path}
           >
             <div className="workflow-library-card-thumb">
-              ${previewable
-                ? html`<img src=${"/" + a.path + location.search} loading="lazy" alt=${a.name}/>`
-                : html`<span className="workflow-library-card-thumb-glyph">${glyph}</span>`}
+              ${renderThumb()}
             </div>
             <div className="workflow-library-card-label">${a.name}</div>
             <button
@@ -18376,11 +22453,95 @@ function WorkflowLibrary({ branches }) {
           aria-selected=${tab === "outputs" ? "true" : "false"}
           onClick=${() => setTab("outputs")}
           title="Generated files — HTML pages + visual assets"
-        >Outputs<span className="workflow-library-tab-count">${(branches.length || 0) + extraProtos.length + htmlPages.length + assets.length}</span></button>
+        >Outputs<span className="workflow-library-tab-count">${extraProtos.length + htmlPages.length + assets.length}</span></button>
       </div>
       ${tab === "nodes" ? html`
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Design systems</div>
+        <div className="workflow-library-section-head">Basic tools</div>
+        <div className="workflow-library-list">
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "section", title: "Section" }));
+            }}
+            title="Drag onto canvas — Figma-style section frame. Contained nodes (any node whose center is inside the section) move with it when dragged. The title text stays the same on-screen size at any zoom level."
+          >
+            <span className="workflow-library-item-glyph"><${Icon.Block}/></span>
+            <span className="workflow-library-item-label">Section</span>
+            <span className="workflow-library-item-id">frame</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "folder", path: "" }));
+            }}
+            title="Drag onto canvas — Folder pointer. Set a path (project-relative or absolute via the 📂 picker), then wire the right-side out port into: an Agent's folder-read port, a Prototype generator's read port, or a DS generator / DS brainstorm's input port. The downstream node will use this folder as its read scope (overrides any inline reference-folder field on the target)."
+          >
+            <span className="workflow-library-item-glyph"><${Icon.Folder}/></span>
+            <span className="workflow-library-item-label">Folder</span>
+            <span className="workflow-library-item-id">path → read scope</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "prompt", title: "", text: "" }));
+            }}
+            title="Drag onto canvas — empty prompt node. Type a brief, then wire its out port into an agent / skill / iterator input."
+          >
+            <span className="workflow-library-item-glyph">¶</span>
+            <span className="workflow-library-item-label">Prompt</span>
+            <span className="workflow-library-item-id">empty</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "agent" }));
+            }}
+            title="Drag onto canvas — an agent with system prompt, folder access, and chat. 3 in / 2 out."
+          >
+            <span className="workflow-library-item-glyph"><${Icon.Bot}/></span>
+            <span className="workflow-library-item-label">Agent</span>
+            <span className="workflow-library-item-id">3in · 2out</span>
+          </div>
+          ${savedPrompts.map(p => html`
+            <div
+              key=${p.slug}
+              className="workflow-library-item workflow-library-item-deletable"
+              draggable=${true}
+              onDragStart=${(e) => {
+                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.setData("application/x-th-workflow",
+                  JSON.stringify({ kind: "prompt", title: p.title, text: p.body || "" }));
+              }}
+              title=${"Drag onto canvas — saved prompt \"" + p.title + "\""}
+            >
+              <span className="workflow-library-item-glyph"><${Icon.Star}/></span>
+              <span className="workflow-library-item-label">${p.title}</span>
+              <span className="workflow-library-item-id">${p.slug}</span>
+              <button
+                className="workflow-library-item-del"
+                title=${"Delete saved prompt " + p.slug}
+                onClick=${(ev) => { ev.stopPropagation(); deletePrompt(p.slug); }}
+                onMouseDown=${(ev) => ev.stopPropagation()}
+              >×</button>
+            </div>
+          `)}
+        </div>
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Design systems · direction</div>
         <div className="workflow-library-list">
           <div
             className="workflow-library-item"
@@ -18389,7 +22550,7 @@ function WorkflowLibrary({ branches }) {
               e.dataTransfer.effectAllowed = "copy";
               // Default new DS id = active branch slug, so the per-branch
               // convention is preserved (one DS per branch unless inheriting).
-              const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+              const branch = "main";
               e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "design-system", dsId: branch }));
             }}
@@ -18407,7 +22568,7 @@ function WorkflowLibrary({ branches }) {
               e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "ds-brainstorm" }));
             }}
-            title="Drag onto canvas — DS brainstorm. Fill in genre / audience / emotion (and optionally a sample page + imagery subjects), then ▶ Brainstorm to spawn ONE sample HTML page + ONE DS sample-components page. Imagery subjects are generated via gpt-image-1 and embedded inline as base64 data URIs inside the HTML; no sibling raster files."
+            title="Drag onto canvas — DS brainstorm. Fill in genre / audience / emotion (and optionally a sample page + imagery subjects), then ▶ Brainstorm to spawn ONE sample HTML page + ONE DS sample-components page. Imagery subjects are generated via gpt-image-2 and embedded inline as base64 data URIs inside the HTML; no sibling raster files."
           >
             <span className="workflow-library-item-glyph"><${Icon.Spark}/></span>
             <span className="workflow-library-item-label">DS brainstorm</span>
@@ -18451,13 +22612,13 @@ function WorkflowLibrary({ branches }) {
                 "  - For THREE OR FEWER pages, do them yourself sequentially — the subagent overhead isn't worth it for a small set.",
                 "",
                 "Output — stop after the prototype files exist on disk:",
-                "  - Write to the folder configured on this node (default: source/<active-branch>/).",
+                "  - Write to the folder configured on this node (default: source/).",
                 "  - Include index.html plus any feature pages the brief requires.",
-                "  - Set meta.dsRef on the branch's editor/branches/<branch>.js so the editor view's \"Update from source\" button can later regenerate the editor data file without re-asking for the DS pointer. (DO NOT run Workflow 1 yourself — the user triggers that separately, after they've reviewed and iterated on the prototype.)",
+                "  - Set meta.dsRef on editor/data.js so the editor view's \"Update from source\" button can later regenerate the editor data file without re-asking for the DS pointer. (DO NOT run Workflow 1 yourself — the user triggers that separately, after they've reviewed and iterated on the prototype.)",
                 "  - End with a one-line summary: pages produced, files written, dsRef set (yes/no), parallelization used (N subagents or sequential). Do NOT call any further workflows.",
                 "",
                 "Iteration loop:",
-                "  - The user will likely come back with follow-up briefs to refine the prototype before they're ready to update the editor data. Treat each turn as another pass over source/<branch>/ — don't touch editor/branches/<branch>.js beyond the one-time meta.dsRef set, and don't read or write the workflows under docs/agents/.",
+                "  - The user will likely come back with follow-up briefs to refine the prototype before they're ready to update the editor data. Treat each turn as another pass over source/ — don't touch editor/data.js beyond the one-time meta.dsRef set, and don't read or write the workflows under docs/agents/.",
                 "  - On iteration, the parallelization rule still applies: if the user asks for changes that span many pages, dispatch parallel Tasks; if it's a single-page tweak, just do it inline.",
               ].join("\n");
               e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({
@@ -18476,39 +22637,69 @@ function WorkflowLibrary({ branches }) {
             <span className="workflow-library-item-label">Prototype generator</span>
             <span className="workflow-library-item-id">agent · DS-aware preset</span>
           </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "color-palette" }));
+            }}
+            title="Drag onto canvas — color swatches with name + value. Wire into a design-system node."
+          >
+            <span className="workflow-library-item-glyph">●</span>
+            <span className="workflow-library-item-label">Color palette</span>
+            <span className="workflow-library-item-id">swatches</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "typography" }));
+            }}
+            title="Drag onto canvas — type scale rendered with real fonts. Wire into a design-system node."
+          >
+            <span className="workflow-library-item-glyph">Aa</span>
+            <span className="workflow-library-item-label">Typography</span>
+            <span className="workflow-library-item-id">scale</span>
+          </div>
         </div>
       </div>
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Frame</div>
+        <div className="workflow-library-section-head">Asset tools</div>
         <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "section", title: "Section" }));
-            }}
-            title="Drag onto canvas — Figma-style section frame. Contained nodes (any node whose center is inside the section) move with it when dragged. The title text stays the same on-screen size at any zoom level."
-          >
-            <span className="workflow-library-item-glyph"><${Icon.Block}/></span>
-            <span className="workflow-library-item-label">Section</span>
-            <span className="workflow-library-item-id">frame</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "folder", path: "" }));
-            }}
-            title="Drag onto canvas — Folder pointer. Set a path (project-relative or absolute via the 📂 picker), then wire the right-side out port into: an Agent's folder-read port, a Prototype generator's read port, or a DS generator / DS brainstorm's input port. The downstream node will use this folder as its read scope (overrides any inline reference-folder field on the target)."
-          >
-            <span className="workflow-library-item-glyph"><${Icon.Folder}/></span>
-            <span className="workflow-library-item-label">Folder</span>
-            <span className="workflow-library-item-id">path → read scope</span>
-          </div>
+          ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
+            // Each skill is draggable; payload carries kind+skill so the drop
+            // handler creates a node already configured for this skill type.
+            const payload = { kind: "skill", skill: s.id };
+            if (s.model)        payload.model    = s.model;
+            if (s.provider)     payload.provider = s.provider;
+            if (s.defaultModel) payload.model    = s.defaultModel;
+            if (s.hasAspect)    payload.aspect   = "1:1";
+            // Subtitle: provider-fixed skills show "<provider> · <model>";
+            // dropdown skills show the default model.
+            const subtitle = s.model
+              ? s.model.split("/").pop()
+              : (s.defaultModel || "");
+            return html`
+              <div
+                key=${s.id}
+                className="workflow-library-item"
+                draggable=${true}
+                onDragStart=${(e) => {
+                  e.dataTransfer.effectAllowed = "copy";
+                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify(payload));
+                }}
+                title=${s.hint || s.label}
+              >
+                <span className="workflow-library-item-glyph">${skillGlyph(s)}</span>
+                <span className="workflow-library-item-label">${s.label}</span>
+                <span className="workflow-library-item-id">${subtitle}</span>
+              </div>
+            `;
+          })}
         </div>
       </div>
       <div className="workflow-library-section">
@@ -18553,139 +22744,31 @@ function WorkflowLibrary({ branches }) {
                  e.dataTransfer.effectAllowed = "copy";
                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-refiner" }));
                }}
-               title="Drag onto canvas — spawns interviewer + interviewee agents that loop Q&A until your criteria are met.">
+               title="Drag onto canvas — spawns interviewer + interviewee agents that loop Q/A until your criteria are met.">
             <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
             <span className="workflow-library-item-label">Prompt refiner</span>
             <span className="workflow-library-item-id">2-agent loop</span>
           </div>
         </div>
       </div>
-      <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Direction</div>
-        <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "color-palette" }));
-            }}
-            title="Drag onto canvas — color swatches with name + value. Wire into a design-system node."
-          >
-            <span className="workflow-library-item-glyph">●</span>
-            <span className="workflow-library-item-label">Color palette</span>
-            <span className="workflow-library-item-id">swatches</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "typography" }));
-            }}
-            title="Drag onto canvas — type scale rendered with real fonts. Wire into a design-system node."
-          >
-            <span className="workflow-library-item-glyph">Aa</span>
-            <span className="workflow-library-item-label">Typography</span>
-            <span className="workflow-library-item-id">scale</span>
-          </div>
-        </div>
-      </div>
-      <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Text</div>
-        <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "prompt", title: "", text: "" }));
-            }}
-            title="Drag onto canvas — empty text node"
-          >
-            <span className="workflow-library-item-glyph">¶</span>
-            <span className="workflow-library-item-label">New text</span>
-            <span className="workflow-library-item-id">empty</span>
-          </div>
-          ${savedPrompts.map(p => html`
-            <div
-              key=${p.slug}
-              className="workflow-library-item workflow-library-item-deletable"
-              draggable=${true}
-              onDragStart=${(e) => {
-                e.dataTransfer.effectAllowed = "copy";
-                e.dataTransfer.setData("application/x-th-workflow",
-                  JSON.stringify({ kind: "prompt", title: p.title, text: p.body || "" }));
-              }}
-              title=${"Drag onto canvas — saved prompt \"" + p.title + "\""}
-            >
-              <span className="workflow-library-item-glyph"><${Icon.Star}/></span>
-              <span className="workflow-library-item-label">${p.title}</span>
-              <span className="workflow-library-item-id">${p.slug}</span>
-              <button
-                className="workflow-library-item-del"
-                title=${"Delete saved prompt " + p.slug}
-                onClick=${(ev) => { ev.stopPropagation(); deletePrompt(p.slug); }}
-                onMouseDown=${(ev) => ev.stopPropagation()}
-              >×</button>
-            </div>
-          `)}
-        </div>
-      </div>
-      <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Tools</div>
-        <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "agent" }));
-            }}
-            title="Drag onto canvas — an agent with system prompt, folder access, and chat. 3 in / 2 out."
-          >
-            <span className="workflow-library-item-glyph"><${Icon.Bot}/></span>
-            <span className="workflow-library-item-label">Agent</span>
-            <span className="workflow-library-item-id">3in · 2out</span>
-          </div>
-          ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
-            // Each skill is draggable; payload carries kind+skill so the drop
-            // handler creates a node already configured for this skill type.
-            const payload = { kind: "skill", skill: s.id };
-            if (s.model)        payload.model    = s.model;
-            if (s.provider)     payload.provider = s.provider;
-            if (s.defaultModel) payload.model    = s.defaultModel;
-            if (s.hasAspect)    payload.aspect   = "1:1";
-            // Subtitle: provider-fixed skills show "<provider> · <model>";
-            // dropdown skills show the default model.
-            const subtitle = s.model
-              ? s.model.split("/").pop()
-              : (s.defaultModel || "");
-            return html`
-              <div
-                key=${s.id}
-                className="workflow-library-item"
-                draggable=${true}
-                onDragStart=${(e) => {
-                  e.dataTransfer.effectAllowed = "copy";
-                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify(payload));
-                }}
-                title=${s.hint || s.label}
-              >
-                <span className="workflow-library-item-glyph">${skillGlyph(s)}</span>
-                <span className="workflow-library-item-label">${s.label}</span>
-                <span className="workflow-library-item-id">${subtitle}</span>
-              </div>
-            `;
-          })}
-        </div>
-      </div>
       ` : null}
       ${tab === "outputs" ? html`
+      <div className="workflow-library-subtabs" role="tablist">
+        <button
+          role="tab"
+          className=${"workflow-library-subtab" + (outputsSubTab === "protos" ? " is-active" : "")}
+          aria-selected=${outputsSubTab === "protos" ? "true" : "false"}
+          onClick=${() => setOutputsSubTab("protos")}
+          title="Prototypes + generated HTML pages / components"
+        >Prototypes + components<span className="workflow-library-tab-count">${extraProtos.length + htmlPages.length}</span></button>
+        <button
+          role="tab"
+          className=${"workflow-library-subtab" + (outputsSubTab === "visual" ? " is-active" : "")}
+          aria-selected=${outputsSubTab === "visual" ? "true" : "false"}
+          onClick=${() => setOutputsSubTab("visual")}
+          title="Image / SVG / video / scenes — file-backed visuals"
+        >Visual assets<span className="workflow-library-tab-count">${assets.length}</span></button>
+      </div>
       <div className="workflow-library-viewtoggle" role="radiogroup" aria-label="View mode">
         <button
           role="radio"
@@ -18708,37 +22791,22 @@ function WorkflowLibrary({ branches }) {
           <span>Grid</span>
         </button>
       </div>
+      ${outputsSubTab === "protos" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Prototypes</div>
-        ${(branches.length === 0 && extraProtos.length === 0)
+        ${(extraProtos.length === 0)
           ? html`<div className="workflow-library-empty">No prototypes yet. When the agent writes <code>source/&lt;slug&gt;/index.html</code>, it shows up here AND auto-mounts a Prototype node on the canvas.</div>`
           : (outputsView === "list"
             ? html`<div className="workflow-library-list">
-                ${(branches || []).map(b => html`
-                  <div
-                    key=${b.id}
-                    className="workflow-library-item"
-                    draggable=${true}
-                    onDragStart=${(e) => {
-                      e.dataTransfer.effectAllowed = "copy";
-                      e.dataTransfer.setData("application/x-th-workflow",
-                        JSON.stringify({ kind: "prototype", branch: b.id }));
-                    }}
-                    title=${"Drag onto canvas — source/" + b.id + "/"}
-                  >
-                    <span className="workflow-library-item-glyph"><${Icon.Play}/></span>
-                    <span className="workflow-library-item-label">${b.label}</span>
-                    <span className="workflow-library-item-id">${b.id}</span>
-                  </div>
-                `)}
                 ${extraProtos.map(p => {
                   const isDeep = p.depth > 1;
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
+                  const starred = starredProtos.some(sp => sp && sp.id === p.id);
                   return html`
                     <div
                       key=${p.id}
-                      className="workflow-library-item workflow-library-item-generated"
+                      className=${"workflow-library-item workflow-library-item-generated" + (starred ? " is-starred" : "")}
                       draggable=${true}
                       onDragStart=${(e) => {
                         e.dataTransfer.effectAllowed = "copy";
@@ -18750,43 +22818,31 @@ function WorkflowLibrary({ branches }) {
                       <span className="workflow-library-item-glyph"><${Icon.Play}/></span>
                       <span className="workflow-library-item-label">${p.label}</span>
                       <span className="workflow-library-item-id">${p.id}</span>
+                      <button
+                        type="button"
+                        className=${"workflow-library-star-btn" + (starred ? " is-on" : "")}
+                        title=${starred ? "Unstar — remove from the projects landing" : "Star — surface this prototype on the projects landing"}
+                        aria-label=${starred ? "Unstar prototype" : "Star prototype"}
+                        aria-pressed=${starred ? "true" : "false"}
+                        onClick=${(e) => { e.stopPropagation(); togglePrototypeStar(p.id, !starred); }}
+                        onMouseDown=${(e) => e.stopPropagation()}
+                        draggable=${false}
+                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      ><${Icon.Star}/></button>
                     </div>
                   `;
                 })}
               </div>`
             : html`<div className="workflow-library-grid">
-                ${(branches || []).map(b => html`
-                  <div
-                    key=${b.id}
-                    className="workflow-library-card"
-                    draggable=${true}
-                    onDragStart=${(e) => {
-                      e.dataTransfer.effectAllowed = "copy";
-                      e.dataTransfer.setData("application/x-th-workflow",
-                        JSON.stringify({ kind: "prototype", branch: b.id }));
-                    }}
-                    title=${"Drag onto canvas — source/" + b.id + "/"}
-                  >
-                    <div className="workflow-library-card-thumb">
-                      <iframe
-                        className="workflow-library-card-iframe"
-                        src=${apiUrl("/source/" + encodeURIComponent(b.id) + "/")}
-                        title=${b.label}
-                        sandbox="allow-scripts allow-same-origin"
-                        scrolling="no"
-                      />
-                    </div>
-                    <div className="workflow-library-card-label">${b.label}</div>
-                  </div>
-                `)}
                 ${extraProtos.map(p => {
                   const isDeep = p.depth > 1;
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
+                  const starred = starredProtos.some(sp => sp && sp.id === p.id);
                   return html`
                     <div
                       key=${p.id}
-                      className="workflow-library-card workflow-library-card-generated"
+                      className=${"workflow-library-card workflow-library-card-generated" + (starred ? " is-starred" : "")}
                       draggable=${true}
                       onDragStart=${(e) => {
                         e.dataTransfer.effectAllowed = "copy";
@@ -18803,6 +22859,17 @@ function WorkflowLibrary({ branches }) {
                           sandbox="allow-scripts allow-same-origin"
                           scrolling="no"
                         />
+                        <button
+                          type="button"
+                          className=${"workflow-library-star-btn workflow-library-star-btn-corner" + (starred ? " is-on" : "")}
+                          title=${starred ? "Unstar — remove from the projects landing" : "Star — surface this prototype on the projects landing"}
+                          aria-label=${starred ? "Unstar prototype" : "Star prototype"}
+                          aria-pressed=${starred ? "true" : "false"}
+                          onClick=${(e) => { e.stopPropagation(); togglePrototypeStar(p.id, !starred); }}
+                          onMouseDown=${(e) => e.stopPropagation()}
+                          draggable=${false}
+                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        ><${Icon.Star}/></button>
                       </div>
                       <div className="workflow-library-card-label">${p.label}</div>
                     </div>
@@ -18812,13 +22879,15 @@ function WorkflowLibrary({ branches }) {
         }
       </div>
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">HTML pages</div>
+        <div className="workflow-library-section-head">HTML pages · components</div>
         ${htmlPages.length === 0
-          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Brainstorm a design system, or run any agent that writes <code>.html</code> under <code>source/</code> (other than <code>index.html</code>).</div>`
+          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Brainstorm a design system, or run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>).</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
               ${htmlPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
+      ` : null}
+      ${outputsSubTab === "visual" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Assets</div>
         ${outputsView === "list" ? html`
@@ -18828,7 +22897,7 @@ function WorkflowLibrary({ branches }) {
               draggable=${true}
               onDragStart=${(e) => {
                 e.dataTransfer.effectAllowed = "copy";
-                const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+                const branch = "main";
                 const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
                 const path = `source/${branch}/images/asset-${stamp}.png`;
                 e.dataTransfer.setData("application/x-th-workflow",
@@ -18849,7 +22918,7 @@ function WorkflowLibrary({ branches }) {
               draggable=${true}
               onDragStart=${(e) => {
                 e.dataTransfer.effectAllowed = "copy";
-                const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+                const branch = "main";
                 const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
                 const path = `source/${branch}/images/asset-${stamp}.png`;
                 e.dataTransfer.setData("application/x-th-workflow",
@@ -18866,6 +22935,7 @@ function WorkflowLibrary({ branches }) {
           </div>
         `}
       </div>
+      ` : null}
       ` : null}
     </aside>
   `;
@@ -21766,37 +25836,19 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
 
   // ── Auto-linked DS ───────────────────────────────────────────────────
   // The prototype is generated WITH a specific DS — that link lives in
-  // `meta.dsRef` inside the branch's data file (editor/branches/<slug>.js).
-  // We fetch it once on mount and treat it as the prototype's effective
-  // DS for the audit. The node carries `dsRef` as a cached mirror so the
-  // audit pipeline and other tooling can read it synchronously without
-  // re-fetching the branch file every time.
+  // `meta.dsRef` on the project (editor/data.js, exposed as window.EDITOR_DATA).
+  // The node carries `dsRef` as a cached mirror so the audit pipeline and other
+  // tooling can read it synchronously without re-fetching.
   const [linkedDsRef, setLinkedDsRef] = useState(node.dsRef || null);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const url = apiUrl("/editor/branches/" + encodeURIComponent(branch) + ".js");
-        const r = await fetch(url + (url.includes("?") ? "&" : "?") + "_meta=" + Date.now());
-        if (!r.ok) return;
-        const text = await r.text();
-        // Parse `dsRef: { id: "<slug>" ... }` out of the branch's data file.
-        // Regex-only — the file is plain JS we don't want to evaluate (it'd
-        // overwrite window.EDITOR_DATA).
-        const m = text.match(/dsRef\s*:\s*\{\s*id\s*:\s*['"]([a-z0-9][a-z0-9-]*)['"]/i);
-        if (cancelled) return;
-        const id = m ? m[1] : null;
-        if (id && id !== linkedDsRef) {
-          setLinkedDsRef(id);
-          // Keep node.dsRef in sync so the audit can read it synchronously.
-          if (onChange && id !== node.dsRef) onChange({ dsRef: id });
-        }
-      } catch { /* silent — fallback is whatever node.dsRef already has */ }
-    })();
-    return () => { cancelled = true; };
-    // Re-run if the branch changes (rare but possible).
+    const dsRef = window.EDITOR_DATA && window.EDITOR_DATA.meta && window.EDITOR_DATA.meta.dsRef;
+    const id = (dsRef && typeof dsRef === "object" && dsRef.id) || (typeof dsRef === "string" ? dsRef : null);
+    if (id && id !== linkedDsRef) {
+      setLinkedDsRef(id);
+      if (onChange && id !== node.dsRef) onChange({ dsRef: id });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branch]);
+  }, []);
 
   // Initial iframe src is computed once: if the node was locked to a
   // specific screen on a prior session, load at that URL so the user
@@ -22517,6 +26569,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         onMouseDown=${onResizeDown}
       />
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
+      ${selected && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
     </div>
   `;
 }
@@ -23252,7 +27305,320 @@ function NodeVersioningChrome({ node, allNodes, allEdges, onChange }) {
    in 3.5d). When the bound prototype is orphaned (iframe navigated away
    from its locked state) the asset card dims to communicate "this preview
    no longer reflects what the prototype is showing." */
-function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, allNodes, allEdges }) {
+/* v3.4 — WorkflowAssetTextPreview. Renders the first ~2 KB of a markdown
+   / text file inline inside an asset card. Streams the file via fetch on
+   mount; bails to onError when the file is missing. The bytes are shown
+   as plain monospace (no markdown rendering yet) — enough to identify
+   the content without pulling in a markdown library. Future iterations
+   can swap to a markdown renderer. */
+function WorkflowAssetTextPreview({ src, onError }) {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(src);
+        if (!r.ok) { if (!cancelled && onError) onError(); return; }
+        // Cap at 2 KB so the card stays light; truncated bodies get an ellipsis.
+        const reader = r.body && r.body.getReader ? r.body.getReader() : null;
+        let read = "";
+        if (reader) {
+          const decoder = new TextDecoder();
+          while (read.length < 2048) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            read += decoder.decode(value, { stream: true });
+          }
+          try { reader.cancel(); } catch {}
+        } else {
+          read = await r.text();
+        }
+        if (cancelled) return;
+        setText(read.length > 2048 ? read.slice(0, 2048) + "\n…" : read);
+      } catch {
+        if (!cancelled && onError) onError();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [src]);
+  return html`
+    <pre className="workflow-node-asset-text-preview">${text}</pre>
+  `;
+}
+
+/* v3.4.3 — Kind chip in the asset card bar. Shows the ACTUAL assetKind
+   (Image / SVG / HTML / Lottie / Video / Text / 3D) instead of leaving
+   the user to guess from the path. Hover-tip explains the file format. */
+function WorkflowAssetKindChip({ kind, path }) {
+  const LABELS = {
+    image:  "Image",
+    svg:    "SVG",
+    vector: "Vector",
+    html:   "HTML",
+    "html-set": "HTML",
+    lottie: "Lottie",
+    video:  "Video",
+    text:   "Text",
+    "3d":   "3D",
+    audio:  "Audio",
+  };
+  const label = LABELS[kind] || (kind ? kind.toUpperCase() : "?");
+  const ext = (path || "").match(/\.([a-z0-9]+)$/i);
+  const tip = `Asset kind: ${label}${ext ? " (." + ext[1].toLowerCase() + ")" : ""}`;
+  return html`
+    <span
+      className=${"workflow-node-asset-kind-chip workflow-node-asset-kind-chip-" + (kind || "unknown").replace(/[^a-z0-9-]/gi, "")}
+      title=${tip}
+      onMouseDown=${(e) => e.stopPropagation()}
+    >${label}</span>
+  `;
+}
+
+/* v3.4.3 — Model chip in the asset card bar. Shows which model was/will
+   be used to produce this asset's bytes, with an inline dropdown for
+   per-asset override. Resolution order:
+     1. `node.model` — explicit user override, if set
+     2. upstream skill's `node.model` — what the wired generator uses
+     3. upstream skill spec's `defaultModel`
+   When the user picks a new value, it's written to `node.model` so the
+   override survives across re-runs. */
+function WorkflowAssetModelChip({ node, allNodes, allEdges, onChange }) {
+  // Walk one edge backward to find the producing skill (the immediate
+  // upstream node connected to this asset's `in` port).
+  const upstreamSkill = useMemo(() => {
+    if (!allEdges || !allNodes) return null;
+    for (const e of allEdges) {
+      const t = (e.to || "").split(".", 1)[0];
+      if (t !== node.id) continue;
+      const f = (e.from || "").split(".", 1)[0];
+      const fn = allNodes.find(n => n && n.id === f);
+      if (fn && fn.kind === "skill") return fn;
+    }
+    return null;
+  }, [node.id, allNodes, allEdges]);
+  const skillCatalog = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+  const skillSpec = upstreamSkill ? skillCatalog.find(s => s && s.id === upstreamSkill.skill) || {} : null;
+  // Model in priority order — node override > upstream node model > skill default.
+  // v3.4.10 — every raw value is resolved through _resolveLiveModel so a
+  // deprecated string saved on the node (e.g. fal-ai/luma-dream-machine,
+  // gpt-image-1) DISPLAYS + DISPATCHES as the live catalog ID. The catalog
+  // is the source of truth — node.model is a hint that gets translated.
+  const rawModel = node.model
+                || (upstreamSkill && upstreamSkill.model)
+                || (skillSpec && skillSpec.defaultModel)
+                || "";
+  const effectiveModel = _resolveLiveModel(rawModel);
+  const wasDeprecated = _modelWasDeprecated(rawModel);
+  // Build the list of models the user can switch to. If we know the
+  // upstream skill's output kind, narrow to that catalog (image / text /
+  // video); otherwise show all integrated models.
+  const M = window.TH_MEDIA || {};
+  const candidates = useMemo(() => {
+    if (!skillSpec) return [];
+    if (skillSpec.modelKind === "text") return (M.textModels || []).filter(m => m.integrated !== false);
+    if (skillSpec.output === "video")   return (M.videoModels || []).filter(m => m.integrated !== false);
+    if (skillSpec.output === "image")   return (M.imageModels || []).filter(m => m.integrated !== false);
+    return [];
+  }, [skillSpec, M.textModels, M.imageModels, M.videoModels]);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const shortLabel = (() => {
+    if (!effectiveModel) return "auto";
+    const found = candidates.find(c => c.id === effectiveModel);
+    if (found) return found.label || found.id;
+    // Strip provider prefix for compactness (`fal-ai/luma-dream-machine` → `luma-dream-machine`)
+    return effectiveModel.split("/").pop();
+  })();
+  // v3.4.10 — surface the live → saved translation in the tooltip so users
+  // can tell the chip is showing the catalog's current ID rather than what's
+  // literally on disk (it doesn't say "I'm hiding the fact your save is
+  // deprecated"; it's transparent).
+  const deprecationNote = wasDeprecated
+    ? `  (live · saved value \`${rawModel}\` was deprecated → resolved to \`${effectiveModel}\`)` : "";
+  const tip = node.model
+    ? `Override: ${effectiveModel}${deprecationNote} — click to change. Clear override to follow upstream skill.`
+    : upstreamSkill
+      ? `Following upstream ${skillSpec ? skillSpec.label : "skill"}: ${effectiveModel || "(no model)"}${deprecationNote}. Click to override per-asset.`
+      : `No upstream skill wired. Click to set a model anyway (used if a skill is wired later).`;
+  return html`
+    <span
+      ref=${ref}
+      className=${"workflow-node-asset-model-chip" + (node.model ? " has-override" : "")}
+      title=${tip}
+      onMouseDown=${(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="workflow-node-asset-model-chip-btn"
+        onClick=${(e) => { e.stopPropagation(); setOpen(o => !o); }}
+      >${shortLabel}</button>
+      ${open && html`
+        <div className="workflow-node-asset-model-chip-menu" onClick=${(e) => e.stopPropagation()}>
+          ${node.model && html`
+            <button
+              type="button"
+              className="workflow-node-asset-model-chip-clear"
+              onClick=${() => { onChange && onChange({ model: null }); setOpen(false); }}
+            >— Clear override (follow upstream) —</button>
+          `}
+          ${candidates.length === 0 && html`
+            <div className="workflow-node-asset-model-chip-empty">No upstream skill wired — wire one to pick a model.</div>
+          `}
+          ${candidates.map(c => html`
+            <button
+              key=${c.id}
+              type="button"
+              className=${"workflow-node-asset-model-chip-item" + (c.id === effectiveModel ? " is-current" : "")}
+              title=${c.hint || c.id}
+              onClick=${() => { onChange && onChange({ model: c.id }); setOpen(false); }}
+            >${c.label || c.id}</button>
+          `)}
+        </div>
+      `}
+    </span>
+  `;
+}
+
+/* v3.4 — Asset background-color picker. Replaces the native-only
+   `<input type="color">` (hex RGB only) with a small portaled popover that
+   supports:
+     • a native color input for hex (the visual baseline)
+     • an alpha slider 0–100% which composes hex + alpha into rgba()
+     • a free-text input that accepts any CSS color string (rgba, hex8,
+       oklch, named, etc.) — bypasses the hex+alpha synthesis when the
+       user types directly
+     • Alt+click on the swatch clears the override (transparent again)
+   The popover is portaled to document.body and tracks the swatch's rect
+   so it doesn't get clipped by `.workflow-node { overflow: hidden }`. */
+function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState(null);
+  const swatchRef = useRef(null);
+  // Parse the current value into hex + alpha components for the controls.
+  // Any string the user typed by hand passes through unchanged via `text`.
+  const parsed = useMemo(() => {
+    const v = (value || "").trim();
+    if (!v) return { hex: "#ffffff", alpha: 1, text: "" };
+    // #rrggbbaa
+    let m = v.match(/^#([0-9a-f]{6})([0-9a-f]{2})$/i);
+    if (m) return { hex: "#" + m[1], alpha: parseInt(m[2], 16) / 255, text: v };
+    // #rrggbb
+    m = v.match(/^#([0-9a-f]{6})$/i);
+    if (m) return { hex: v, alpha: 1, text: v };
+    // rgba(r,g,b,a) / rgb(r,g,b)
+    m = v.match(/^rgba?\(([^)]+)\)/i);
+    if (m) {
+      const parts = m[1].split(",").map(s => s.trim());
+      const [r,g,b,a] = parts;
+      const toHex = (n) => {
+        const x = Math.max(0, Math.min(255, parseInt(n, 10) || 0));
+        return x.toString(16).padStart(2, "0");
+      };
+      return { hex: "#" + toHex(r) + toHex(g) + toHex(b), alpha: a == null ? 1 : Math.max(0, Math.min(1, parseFloat(a) || 0)), text: v };
+    }
+    // Anything else (oklch, named, etc.) — preserve verbatim as text.
+    return { hex: "#ffffff", alpha: 1, text: v };
+  }, [value]);
+  const composeRgba = (hex, alpha) => {
+    const m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!m) return hex;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    if (alpha >= 1) return hex;
+    const a = Math.round(alpha * 1000) / 1000;
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  };
+  const setHex = (hex) => onChange(composeRgba(hex, parsed.alpha));
+  const setAlpha = (alpha) => onChange(composeRgba(parsed.hex, alpha));
+  const setText = (text) => onChange(text.trim() || null);
+  const openPopover = (e) => {
+    if (e.altKey) { e.preventDefault(); e.stopPropagation(); onChange(null); return; }
+    e.stopPropagation();
+    const r = swatchRef.current && swatchRef.current.getBoundingClientRect();
+    if (r) setRect({ top: r.bottom + 6, left: r.left });
+    setOpen(true);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onDown = (e) => {
+      if (e.target && e.target.closest && e.target.closest(".workflow-asset-bg-popover")) return;
+      if (e.target && e.target.closest && e.target.closest(".workflow-node-asset-bg")) return;
+      setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [open]);
+  return html`
+    <${React.Fragment}>
+      <button
+        ref=${swatchRef}
+        className="workflow-node-asset-bg"
+        type="button"
+        data-node-id=${nodeId}
+        title=${value
+          ? `Background ${value} — click to edit, Alt+click to clear`
+          : "Set background color · Alt+click to clear"}
+        aria-label="Asset background color"
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${openPopover}
+        style=${value ? { background: value } : undefined}>
+        <span className="workflow-node-asset-bg-icon">${value ? "■" : "▢"}</span>
+      </button>
+      ${open && rect && createPortal(html`
+        <div
+          className="workflow-asset-bg-popover"
+          data-node-id=${nodeId}
+          style=${{ position: "fixed", top: rect.top + "px", left: rect.left + "px", zIndex: 70 }}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => e.stopPropagation()}>
+          <label className="workflow-asset-bg-row">
+            <span>Color</span>
+            <input
+              type="color"
+              value=${parsed.hex}
+              onInput=${(e) => setHex(e.target.value)}/>
+          </label>
+          <label className="workflow-asset-bg-row">
+            <span>Opacity</span>
+            <input
+              type="range"
+              min="0" max="100" step="1"
+              value=${Math.round(parsed.alpha * 100)}
+              onInput=${(e) => setAlpha(Number(e.target.value) / 100)}/>
+            <span className="workflow-asset-bg-alpha-pct">${Math.round(parsed.alpha * 100)}%</span>
+          </label>
+          <label className="workflow-asset-bg-row">
+            <span>CSS</span>
+            <input
+              type="text"
+              placeholder="rgba / #hex / oklch / named"
+              value=${parsed.text}
+              onChange=${(e) => setText(e.target.value)}/>
+          </label>
+          <div className="workflow-asset-bg-foot">
+            <button type="button" className="workflow-asset-bg-clear" onClick=${() => { onChange(null); setOpen(false); }}>Clear</button>
+            <button type="button" className="workflow-asset-bg-done"  onClick=${() => setOpen(false)}>Done</button>
+          </div>
+        </div>
+      `, document.body)}
+    <//>
+  `;
+}
+
+function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   // Prompt inspector — opens via the 📜 chip when node.promptDebug is set
   // (i.e. the asset was the output of a remix / repeater / blend run).
@@ -23293,6 +27659,60 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       } catch {}
     })();
   }, [node.id, node.activeVersionId, node.runStatus]);
+  // v3.4 — Inject node.bgColor into the asset's iframe content. Without
+  // this, setting bgColor only paints the body WRAPPER around the iframe;
+  // the iframe (which loads the asset file) covers the wrapper with its
+  // own body background and the user sees no change.
+  //
+  // Strategy: when bgColor changes (and on every iframe load), reach into
+  // contentDocument and stamp the picked color onto documentElement +
+  // body via `style.background`. Same-origin (daemon-served), so this is
+  // always reachable for our own HTML assets. The injection is lossless:
+  // when bgColor is cleared (null), we restore the original by removing
+  // our inline style override, letting the file's authored CSS win again.
+  //
+  // The watcher polls for the iframe via querySelector each render — it
+  // only does work when bgColor is actually set, so the cost is zero
+  // for assets the user hasn't customized.
+  useEffect(() => {
+    const isHtml = node.assetKind === "html" || node.assetKind === "html-set";
+    if (!isHtml) return;
+    let cancelled = false;
+    const apply = () => {
+      if (cancelled) return false;
+      const ifr = document.querySelector('iframe[data-asset-id="' + node.id + '"]');
+      if (!ifr) return false;
+      try {
+        const doc = ifr.contentDocument;
+        if (!doc || !doc.body) return false;
+        if (node.bgColor) {
+          doc.body.style.background = node.bgColor;
+          doc.documentElement.style.background = node.bgColor;
+        } else {
+          doc.body.style.background = "";
+          doc.documentElement.style.background = "";
+        }
+        return true;
+      } catch { return false; }
+    };
+    // Try now; if iframe not ready yet, retry on load + poll briefly.
+    if (!apply()) {
+      const id = setInterval(() => { if (apply()) clearInterval(id); }, 100);
+      setTimeout(() => clearInterval(id), 3000);
+    }
+    // Also re-apply whenever the iframe finishes a reload (file watcher
+    // bumps nonces → React re-mounts the iframe).
+    const ifr = document.querySelector('iframe[data-asset-id="' + node.id + '"]');
+    let onLoad = null;
+    if (ifr) {
+      onLoad = () => apply();
+      ifr.addEventListener("load", onLoad);
+    }
+    return () => {
+      cancelled = true;
+      if (ifr && onLoad) { try { ifr.removeEventListener("load", onLoad); } catch {} }
+    };
+  }, [node.id, node.bgColor, node.assetKind]);
   // DS-audit modal — opens via the audit badge when node.dsAudit is set.
   const [auditOpen, setAuditOpen] = useState(false);
   // Per-asset refine state.
@@ -23564,6 +27984,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // Cache-bust counter — bumped when a Phase-4 Run writes new bytes to this
   // asset's path so the <img> re-fetches instead of serving the stale copy.
   const [bust, setBust] = useState(0);
+  // v3.4.24 — Refs for selection-driven media playback. The effects that
+  // USE these (and reference `kind` / `fileSrc` in their deps) are declared
+  // further down — after `kind` and `fileSrc` get computed — so React
+  // doesn't trip a temporal-dead-zone error during render. Refs themselves
+  // are fine to create up here since they don't reference those vars.
+  const mediaRef = useRef(null);           // <video> ref
+  const lottieIframeRef = useRef(null);    // lottie player iframe ref
   // thumbState: "ok" → render normally; "missing" → render a placeholder
   // (file doesn't exist yet — typical for a fresh user-created asset awaiting
   // its first Run). Resets whenever path or bust changes so a successful Run
@@ -23705,6 +28132,45 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     : fileSrcRaw;
   const isStaleInline = isInlinePath && !isInlineSvg && !(isCanvasSnapshot && node.src);
 
+  // v3.4.24 — Selection-driven playback for media kinds (video + lottie).
+  // Placed HERE (after `kind` and `fileSrc` are computed) so the dep arrays
+  // can reference them without hitting a temporal-dead-zone error during
+  // render. Both media types start PAUSED so a canvas full of media doesn't
+  // fight for attention; playback kicks in only when the card is selected.
+  // HTML iframes (shader / threejs / viz / motion / canvas-gen / prototype)
+  // keep animating because their own rAF loops own playback — pausing them
+  // would require iframe-internal cooperation we don't have.
+  useEffect(() => {
+    const v = mediaRef.current;
+    if (!v || kind !== "video") return;
+    if (selected) {
+      const p = v.play(); if (p && p.catch) p.catch(() => {});
+    } else {
+      try { v.pause(); } catch {}
+    }
+  }, [selected, kind, fileSrc]);
+  useEffect(() => {
+    if (kind !== "lottie") return;
+    const ifr = lottieIframeRef.current;
+    if (!ifr) return;
+    // postMessage may race the lottie animation's construction. Try once
+    // immediately and again on iframe load so a freshly-mounted iframe
+    // gets the command after its script has wired up the listener.
+    const send = () => {
+      try { ifr.contentWindow && ifr.contentWindow.postMessage({ type: selected ? "play" : "pause" }, "*"); } catch {}
+    };
+    send();
+    const onLoad = () => send();
+    ifr.addEventListener("load", onLoad);
+    // Also resend ~300ms later in case the lottie data fetch resolved AFTER
+    // the iframe's `load` event but before we set the state.
+    const t = setTimeout(send, 300);
+    return () => {
+      ifr.removeEventListener("load", onLoad);
+      clearTimeout(t);
+    };
+  }, [selected, kind, bust]);
+
   // Display label — synthesize for inline assets, otherwise use the basename.
   const basename = isInlineSvg
     ? `inline svg · ${(node.svgHash || "").slice(0, 6)}${node.animated ? " · animated" : ""}`
@@ -23778,7 +28244,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         <div className="workflow-node-asset-icon-kind">re-expose</div>
       </div>
     `;
-  } else if (kind === "image" || kind === "svg") {
+  } else if (kind === "image" || kind === "svg" || kind === "vector") {
+    // v3.4 — `vector` covers SVG files produced by svg-gen + Quiver. The
+    // browser renders SVG natively in <img>, same code path as image/svg.
     bodyContent = thumbState === "missing" ? html`
       <div className="workflow-node-asset-empty">
         <div className="workflow-node-asset-empty-icon"><${Icon.Image}/></div>
@@ -23794,7 +28262,48 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onError=${() => setThumbState("missing")}
       />
     `;
+  } else if (kind === "lottie") {
+    // v3.4 — Lottie JSON wrapped in a same-origin iframe loading a tiny
+    // player document. We construct the player HTML inline + load the
+    // JSON via fetch within the iframe; this keeps lottie-web off the
+    // editor's main bundle while still rendering a live preview.
+    bodyContent = thumbState === "missing" ? html`
+      <div className="workflow-node-asset-empty">
+        <div className="workflow-node-asset-empty-icon">◉</div>
+        <div className="workflow-node-asset-empty-text">no JSON yet</div>
+        <div className="workflow-node-asset-empty-hint">connect a lottie skill → Run</div>
+      </div>
+    ` : html`
+        <iframe
+          ref=${lottieIframeRef}
+          key=${"asset-lottie-" + bust}
+          className="workflow-node-asset-thumb workflow-node-asset-iframe"
+          srcDoc=${buildLottieSrcDoc(fileSrc, true)}
+          title=${basename}
+          sandbox="allow-scripts allow-same-origin"
+          data-asset-id=${node.id}
+          onError=${() => setThumbState("missing")}
+        />
+      `;
+  } else if (kind === "text") {
+    // v3.4 — Markdown / text output (llm, describe skills). Render the
+    // first ~2KB of the file inline as a monospace preview. Full content
+    // available via the node's path / open-in-editor flow.
+    bodyContent = thumbState === "missing" ? html`
+      <div className="workflow-node-asset-empty">
+        <div className="workflow-node-asset-empty-icon">Σ</div>
+        <div className="workflow-node-asset-empty-text">no text yet</div>
+        <div className="workflow-node-asset-empty-hint">connect an LLM skill → Run</div>
+      </div>
+    ` : html`
+      <${WorkflowAssetTextPreview} src=${fileSrc} onError=${() => setThumbState("missing")}/>
+    `;
   } else if (kind === "video") {
+    // v3.4.24 — Video starts PAUSED; plays only when the card is selected.
+    // The mediaRef + useEffect-on-selected combo lets the user scan the
+    // canvas without N looping videos competing for attention. Hover
+    // alone wouldn't work on touch / would fight node-drag, so selection
+    // is the cleanest activation signal.
     bodyContent = thumbState === "missing" ? html`
       <div className="workflow-node-asset-empty">
         <div className="workflow-node-asset-empty-icon">🎬</div>
@@ -23802,9 +28311,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       </div>
     ` : html`
       <video
+        ref=${mediaRef}
         className="workflow-node-asset-thumb"
         src=${fileSrc}
-        muted playsInline preload="metadata"
+        muted playsInline loop preload="auto"
         onError=${() => setThumbState("missing")}
       />
     `;
@@ -23825,6 +28335,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         src=${fileSrc}
         title=${basename}
         sandbox="allow-scripts allow-same-origin"
+        data-asset-id=${node.id}
         onError=${() => setThumbState("missing")}
       />
     `;
@@ -23853,35 +28364,31 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     >
       <div className="workflow-node-bar workflow-node-asset-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-asset-glyph">${glyph}</span>
+        ${html`
+          <${HoverTip}
+            className=${"workflow-node-asset-autosize" + (_isCustom ? "" : " is-disabled")}
+            tip=${_isCustom
+              ? "Auto-size — restore adaptive sizing based on the asset's natural aspect ratio."
+              : "Auto-size (already active). Drag the corner to switch to custom sizing first; this button will then revert."}
+            ariaLabel="Auto-size asset card"
+            onClick=${(e) => {
+              e.stopPropagation();
+              if (_isCustom) onAutoSize();
+            }}
+            onMouseDown=${(e) => e.stopPropagation()}
+            aria-disabled=${!_isCustom}
+          >↺<//>
+        `}
         <span className="workflow-node-asset-name" title=${path}>${basename}</span>
         ${node.animated && html`<span className="workflow-node-asset-tag" title="SMIL animation detected">◐</span>`}
+        <${WorkflowAssetKindChip} kind=${node.assetKind || "image"} path=${path}/>
+        <${WorkflowAssetModelChip} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip}
-          as="label"
-          className="workflow-node-asset-bg"
-          tip=${node.bgColor
-            ? `Background ${node.bgColor} — click to change, Alt+click to clear.`
-            : "Set background color (currently transparent). Alt+click to clear once set."}
-          ariaLabel="Asset background color"
-          onMouseDown=${(e) => e.stopPropagation()}
-          onClick=${(e) => {
-            if (e.altKey) {
-              e.preventDefault();
-              e.stopPropagation();
-              onChange && onChange({ bgColor: null });
-            }
-          }}
-          style=${node.bgColor ? { background: node.bgColor } : undefined}
-        >
-          <input
-            type="color"
-            className="workflow-node-asset-bg-input"
-            value=${node.bgColor || "#ffffff"}
-            onInput=${(e) => onChange && onChange({ bgColor: e.target.value })}
-            onClick=${(e) => e.stopPropagation()}
-          />
-          <span className="workflow-node-asset-bg-icon">${node.bgColor ? "■" : "▢"}</span>
-        <//>
+        <${WorkflowAssetBgColorPicker}
+          nodeId=${node.id}
+          value=${node.bgColor || null}
+          onChange=${(v) => onChange && onChange({ bgColor: v })}
+        />
         ${replaceTarget && isFileRef && !isInlinePath && html`
           <${HoverTip}
             className="workflow-node-asset-replace"
@@ -23891,14 +28398,14 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             onMouseDown=${(e) => e.stopPropagation()}
           >↻<//>
         `}
-        ${_isCustom && html`
+        ${node.boundTo && node.boundTo.node && isFileRef && !isInlinePath && onOpenReplaceChooser && html`
           <${HoverTip}
-            className="workflow-node-asset-autosize"
-            tip="Auto-size (restore adaptive sizing based on asset's natural aspect ratio)."
-            ariaLabel="Auto-size asset card"
-            onClick=${(e) => { e.stopPropagation(); onAutoSize(); }}
+            className="workflow-node-asset-replace workflow-node-asset-replace-choose"
+            tip="Replace this exposed asset — pick a different file from the library. Format / kind change OK (image → video / 3D / lottie)."
+            ariaLabel="Choose replacement"
+            onClick=${(e) => { e.stopPropagation(); onOpenReplaceChooser(); }}
             onMouseDown=${(e) => e.stopPropagation()}
-          >↺<//>
+          >⇄<//>
         `}
         ${onZoom && kind === "html" && isFileRef && !isInlinePath && html`
           <${HoverTip}
@@ -24155,6 +28662,8 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onClose=${() => setPickerOpen(false)}
         onChange=${onChange}
       />`}
+      ${selected && (kind === "html" || kind === "html-set") && isFileRef && !isInlinePath && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${selected && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
 }
@@ -25548,7 +30057,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // attachment metadata so the LLM/agent can decide per-item how to use it.
   const onPickFiles = async (filesList) => {
     if (!filesList || !filesList.length) return;
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     setAttachError(null);
     setAttaching(true);
     const newOnes = [];
@@ -25622,7 +30131,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     }
     setBuilding(true);
     try {
-      const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+      const branch = "main";
       const agentIdForRun = (loadSettings().agentId) || "claude";
       const permissionMode = (loadSettings().permissionMode) || "bypassPermissions";
       const projectId = activeProjectId();
@@ -27363,7 +31872,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   // it to an MCP tool. Multiple files supported by iterating the picker.
   const onPickFiles = async (filesList) => {
     if (!filesList || !filesList.length) return;
-    const branch = (typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main";
+    const branch = "main";
     setAttachError(null);
     setAttaching(true);
     const newOnes = [];
@@ -27537,7 +32046,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
           <textarea
             className="workflow-node-ds-textarea"
             value=${spec.sampleImages || ""}
-            placeholder="e.g. hero shot, product close-up, team headshot · each gets generated via gpt-image-1 and embedded inline as <img src=&quot;data:image/png;base64,…&quot;> · leave empty to auto-suggest"
+            placeholder="e.g. hero shot, product close-up, team headshot · each gets generated via gpt-image-2 and embedded inline as <img src=&quot;data:image/png;base64,…&quot;> · leave empty to auto-suggest"
             onInput=${(e) => patchSpec({ sampleImages: e.target.value })}
             rows=${2}
           />
@@ -27639,7 +32148,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
             disabled=${building || !hasCore}
             data-disabled=${building || !hasCore}
             onClick=${(e) => { e.stopPropagation(); onClickBuild(); }}
-            title=${hasCore ? "Brainstorm — spawns ONE sample HTML page + a DS sample components page. Imagery subjects are generated via gpt-image-1 and embedded inline as base64 data URIs in the HTML; no sibling .png files." : "Fill at least one of Genre / Audience / Emotion first"}
+            title=${hasCore ? "Brainstorm — spawns ONE sample HTML page + a DS sample components page. Imagery subjects are generated via gpt-image-2 and embedded inline as base64 data URIs in the HTML; no sibling .png files." : "Fill at least one of Genre / Audience / Emotion first"}
           >${building
             ? html`<span className="workflow-node-ds-spinner"/>Brainstorming…`
             : html`<${Icon.Play}/> Brainstorm`}</button>
@@ -27667,12 +32176,12 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
           runStatus: building ? "pending" : null,
           conversation: [],
           outputMode: "folder",
-          outputPath: "source/" + ((typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main") + "/ds-brainstorm/",
+          outputPath: "source/" + ("main") + "/ds-brainstorm/",
         }}
-        wiredSystem=${"You are iterating on the in-progress DS brainstorm. The brainstorm node already dispatched a build that writes ONE sample HTML page + a DS-samples one-pager into source/" + ((typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main") + "/ds-brainstorm/. When the user sends a follow-up brief, treat it as a refinement directive: tweak the existing files in place rather than starting over. Preserve everything not touched verbatim. End each turn with a one-line summary of what changed."}
+        wiredSystem=${"You are iterating on the in-progress DS brainstorm. The brainstorm node already dispatched a build that writes ONE sample HTML page + a DS-samples one-pager into source/" + ("main") + "/ds-brainstorm/. When the user sends a follow-up brief, treat it as a refinement directive: tweak the existing files in place rather than starting over. Preserve everything not touched verbatim. End each turn with a one-line summary of what changed."}
         wiredInputs=${[]}
-        wiredReadRoot=${"source/" + ((typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main") + "/ds-brainstorm/"}
-        wiredWriteRoot=${"source/" + ((typeof window !== "undefined" && window.EDITOR_ACTIVE_BRANCH) || "main") + "/ds-brainstorm/"}
+        wiredReadRoot=${"source/" + ("main") + "/ds-brainstorm/"}
+        wiredWriteRoot=${"source/" + ("main") + "/ds-brainstorm/"}
         wiredFileOut=${""}
         onClose=${() => setChatOpen(false)}
         onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ lastRunId: patch.runId }); }}
@@ -27814,6 +32323,168 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
   `;
 }
 
+/* v3.4.18 — Replace exposed asset chooser.
+   Modal that lists every file in /__assets (image / svg / video / lottie /
+   html / 3d / shader / viz). User clicks a row to pick that file as the
+   replacement for an exposed asset on a prototype. The parent then calls
+   replaceExposedAssetWithFile which copies bytes + rewrites the prototype
+   HTML (swapping the <img> element type when the kind changes). Renders via
+   createPortal so the canvas's transform:scale doesn't crop or warp it. */
+function WorkflowReplaceAssetChooser({ targetNode, onCancel, onPick }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [kindFilter, setKindFilter] = useState(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(apiUrl("/__assets"))
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(j => { if (!cancelled) { setItems(j.items || []); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setItems([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const kindCounts = useMemo(() => {
+    const m = {};
+    for (const i of items) m[i.kind] = (m[i.kind] || 0) + 1;
+    return m;
+  }, [items]);
+
+  const visible = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const targetPath = targetNode && targetNode.path;
+    return items.filter(i => {
+      // Hide the asset we're replacing — picking itself would no-op.
+      if (targetPath && i.path === targetPath) return false;
+      if (kindFilter && i.kind !== kindFilter) return false;
+      if (!q) return true;
+      return (i.path || "").toLowerCase().includes(q)
+          || (i.kind || "").toLowerCase().includes(q);
+    });
+  }, [items, filter, kindFilter, targetNode]);
+
+  const KIND_ORDER = ["image", "svg", "video", "lottie", "html", "3d", "shader", "viz", "audio"];
+  const GLYPH = {
+    image:  html`<${Icon.Image}/>`,  svg:    html`<${Icon.Spark}/>`,
+    video:  html`<${Icon.Film}/>`,   audio:  html`<${Icon.Music}/>`,
+    shader: html`<${Icon.Shader}/>`, "3d":   html`<${Icon.Cube}/>`,
+    viz:    html`<${Icon.Chart}/>`,
+    html:   html`<${Icon.NotesDoc}/>`,
+    lottie: html`<span style=${{fontSize:'14px'}}>◉</span>`,
+  };
+
+  const renderThumb = (item) => {
+    const fileUrl = "/" + item.path + location.search;
+    if (item.kind === "image" || item.kind === "svg") {
+      return html`<img src=${fileUrl} loading="lazy" alt=""/>`;
+    }
+    if (item.kind === "video") {
+      // v3.4.24 — Hover-only playback in the chooser too.
+      return html`<${WorkflowLibraryHoverVideo} src=${fileUrl} alt=${item.name}/>`;
+    }
+    if (item.kind === "html") {
+      return html`<iframe src=${fileUrl} loading="lazy" scrolling="no" title=${item.name}/>`;
+    }
+    if (item.kind === "lottie") {
+      // v3.4.24 — Use the shared hover-controlled lottie wrapper so the
+      // chooser's lottie rows also start paused and animate on hover.
+      return html`<${WorkflowLibraryHoverLottie} fileUrl=${fileUrl} alt=${item.name}/>`;
+    }
+    return html`<span className="workflow-modal-thumb-glyph">${GLYPH[item.kind] || "•"}</span>`;
+  };
+
+  const targetKind = targetNode && (targetNode.assetKind || "image");
+  const targetPath = targetNode && targetNode.path;
+
+  return createPortal(html`
+    <div className="workflow-modal-backdrop" onMouseDown=${onCancel}>
+      <div className="workflow-modal" onMouseDown=${(e) => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div>
+            <div className="workflow-modal-title">Replace exposed asset</div>
+            <div className="workflow-modal-sub">
+              ${targetPath ? html`Currently: <code>${targetPath}</code> (${targetKind}) — click any item below to swap.` : html`Pick a replacement file.`}
+            </div>
+          </div>
+          <button className="workflow-modal-close" onClick=${onCancel} title="Cancel">×</button>
+        </div>
+        <div className="workflow-modal-toolbar">
+          <input
+            ref=${inputRef}
+            className="workflow-modal-filter"
+            placeholder="filter by path or kind…"
+            value=${filter}
+            onInput=${(e) => setFilter(e.target.value)}
+          />
+          <div className="workflow-modal-kindbar">
+            <button
+              className="workflow-modal-kindchip"
+              data-active=${kindFilter === null}
+              onClick=${() => setKindFilter(null)}
+            >all (${items.length})</button>
+            ${KIND_ORDER.filter(k => kindCounts[k]).map(k => html`
+              <button
+                key=${k}
+                className="workflow-modal-kindchip"
+                data-active=${kindFilter === k}
+                data-kind=${k}
+                onClick=${() => setKindFilter(kindFilter === k ? null : k)}
+                title=${k}
+              >${GLYPH[k]} ${k} (${kindCounts[k]})</button>
+            `)}
+          </div>
+        </div>
+        <div className="workflow-modal-list">
+          ${loading && html`<div className="workflow-modal-empty">Loading…</div>`}
+          ${!loading && visible.length === 0 && html`
+            <div className="workflow-modal-empty">No items match.</div>
+          `}
+          ${!loading && visible.map(item => {
+            const basename = item.path?.split("/").pop() || item.path;
+            const kindMismatch = targetKind && item.kind && item.kind !== targetKind;
+            return html`
+              <div
+                key=${item.path}
+                className="workflow-modal-row"
+                data-kind=${item.kind}
+                role="button"
+                tabIndex=${0}
+                onClick=${() => onPick({ path: item.path, kind: item.kind })}
+                style=${{ cursor: 'pointer' }}
+              >
+                <div className="workflow-modal-thumb" data-kind=${item.kind}>
+                  ${renderThumb(item)}
+                </div>
+                <div className="workflow-modal-text">
+                  <div className="workflow-modal-name">
+                    ${basename}
+                    ${kindMismatch && html`<span className="workflow-modal-tag" title=${"Will swap <" + (targetKind === 'image' || targetKind === 'svg' ? 'img' : '…') + "> for the right element type for " + item.kind}>${targetKind} → ${item.kind}</span>`}
+                  </div>
+                  <div className="workflow-modal-path">${item.path}</div>
+                </div>
+                <div className="workflow-modal-kind">${GLYPH[item.kind] || ""} ${item.kind}</div>
+              </div>
+            `;
+          })}
+        </div>
+        <div className="workflow-modal-foot">
+          <button className="tbtn" onClick=${onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
 /* Phase 3.5e — Manage exposed assets dialog.
    Full list of scanned items (filters off) with checkboxes. The dialog
    renders via createPortal at document.body so the canvas's transform:
@@ -27878,7 +32549,7 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
       return html`<img src=${apiUrl("/" + item.path)} alt="" loading="lazy"/>`;
     }
     if (kind === "video") {
-      return html`<video src=${apiUrl("/" + item.path)} muted preload="metadata"/>`;
+      return html`<video src=${apiUrl("/" + item.path)} muted playsInline autoPlay loop preload="auto"/>`;
     }
     return html`<span className="workflow-modal-thumb-glyph">${GLYPH[kind] || "•"}</span>`;
   };
@@ -27970,6 +32641,162 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
   `, document.body);
 }
 
+/* v3.4 — Default providers per capability. Renders a row per capability
+   (agent / image / video / svg / 3d / lottie) with two dropdowns: provider,
+   then a model picker filtered to that provider. The chosen pair is saved
+   to localStorage via saveDefaultProviders so popovers (Quick Refine /
+   Quick Remix / chat dispatch) can inherit it. Each row also has a "—
+   follow system" option that maps to null = no override. */
+/* v3.4.7 — Receives `mediaConfig` (from /__media_config) so each row can
+   show which providers are actually available (have keys configured),
+   which fall back to the Claude CLI (anthropic with no key), and resolve
+   the vague "follow system" placeholder to a NAMED model the user can
+   actually see picked. */
+function WorkflowDefaultProvidersSection({ mediaConfig }) {
+  const [state, setState] = useState(() => loadDefaultProviders());
+  useEffect(() => {
+    const on = () => setState(loadDefaultProviders());
+    window.addEventListener("th:default-providers-changed", on);
+    return () => window.removeEventListener("th:default-providers-changed", on);
+  }, []);
+  const setCap = (cap, patch) => {
+    const cur = state[cap] || {};
+    const next = patch ? { ...cur, ...patch } : null;
+    const all = saveDefaultProviders({ [cap]: next });
+    setState(all);
+  };
+  return html`
+    <div className="workflow-default-providers">
+      <div className="workflow-settings-section-group-head">Default models per capability</div>
+      <div className="workflow-settings-section-group-sub">
+        Each row defaults to the best available option for that capability — a model whose API key is configured below, OR the Claude CLI when no key is set but the CLI is installed. Pick a different provider/model to override. ✓ = key configured, CLI = falls back to Claude CLI, ⚠ = no key + no CLI (won't run until you paste a key).
+      </div>
+      ${CAPABILITY_KEYS.map(cap => html`
+        <${WorkflowDefaultProviderRow}
+          key=${cap}
+          capability=${cap}
+          value=${state[cap] || null}
+          mediaConfig=${mediaConfig}
+          onChange=${(v) => setCap(cap, v)}/>
+      `)}
+    </div>
+  `;
+}
+
+/* v3.4.7 — A provider has a "key configured" when the media-config row for
+   its id is true / has saved set to true. The daemon's status payload uses
+   `{ saved: true, ... }` per provider. CLI fallback applies to anthropic
+   (Claude CLI) only — the other providers fail without a key. */
+function _providerHasKey(mediaConfig, providerId) {
+  if (!mediaConfig || !mediaConfig.providers) return false;
+  const row = mediaConfig.providers[providerId];
+  if (!row) return false;
+  return !!(row.saved || row.configured || row.has_key);
+}
+function _providerAvailability(mediaConfig, providerId) {
+  if (_providerHasKey(mediaConfig, providerId)) return { ok: true, source: "key" };
+  // Claude CLI fallback covers anthropic (and openai via substitution post-3.4.6).
+  if (providerId === "anthropic" || providerId === "openai") {
+    // We can't synchronously detect the CLI from the browser, but the
+    // daemon's media-config response now includes `claude_cli_available`.
+    if (mediaConfig && mediaConfig.claude_cli_available) {
+      return { ok: true, source: "cli" };
+    }
+  }
+  return { ok: false, source: "none" };
+}
+function _pickAutoForCapability(cap, models, mediaConfig) {
+  // Return the {provider, model, source} pair the system would actually use
+  // when no explicit override is set. Resolution mirrors the daemon's path:
+  //   1. A model whose provider has a key
+  //   2. anthropic via Claude CLI (if available)
+  //   3. openai substituted via Claude CLI (if available)
+  //   4. nothing — runs will error
+  for (const m of models) {
+    if (_providerHasKey(mediaConfig, m.provider)) {
+      return { provider: m.provider, model: m.id, source: "key" };
+    }
+  }
+  if (mediaConfig && mediaConfig.claude_cli_available) {
+    const anthropic = models.find(m => m.provider === "anthropic");
+    if (anthropic) return { provider: anthropic.provider, model: anthropic.id, source: "cli" };
+    const openai = models.find(m => m.provider === "openai");
+    if (openai) return { provider: openai.provider, model: openai.id, source: "cli-substitute" };
+  }
+  return null;
+}
+
+function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }) {
+  const models = useMemo(() => listModelsForCapability(capability), [capability]);
+  const providersInUse = useMemo(() => {
+    const set = new Set();
+    for (const m of models) if (m.provider) set.add(m.provider);
+    return Array.from(set);
+  }, [models]);
+  const providerCatalog = (window.TH_MEDIA && window.TH_MEDIA.providers) || {};
+  const currentProvider = value && value.provider || "";
+  const currentModel    = value && value.model    || "";
+  const modelsForProvider = models.filter(m => !currentProvider || m.provider === currentProvider);
+  // Resolve what "Auto" would actually pick so we can show it as the
+  // first-option label and not leave the user guessing.
+  const auto = useMemo(() => _pickAutoForCapability(capability, models, mediaConfig), [capability, models, mediaConfig]);
+  const autoLabel = (() => {
+    if (!auto) return "Auto (no provider available — paste a key below)";
+    const pc = providerCatalog[auto.provider] || {};
+    const m  = models.find(mm => mm.id === auto.model);
+    const tag = auto.source === "cli"            ? "Claude CLI"
+              : auto.source === "cli-substitute" ? "Claude CLI (substitute)"
+                                                  : "API";
+    return `Auto · ${pc.label || auto.provider} · ${(m && m.label) || auto.model} (${tag})`;
+  })();
+  const renderProviderOption = (p) => {
+    const pc = providerCatalog[p] || {};
+    const av = _providerAvailability(mediaConfig, p);
+    const marker = av.ok
+      ? (av.source === "cli" ? "CLI" : "✓")
+      : "⚠";
+    return html`<option key=${p} value=${p}>${pc.label || p} · ${marker}</option>`;
+  };
+  return html`
+    <div className="workflow-default-provider-row">
+      <div className="workflow-default-provider-label">${CAPABILITY_LABELS[capability] || capability}</div>
+      <div className="workflow-default-provider-controls">
+        <select
+          className="workflow-default-provider-select"
+          value=${currentProvider}
+          onChange=${(e) => {
+            const p = e.target.value;
+            if (!p) { onChange(null); return; }
+            // Auto-pick a model from this provider — prefer the model whose
+            // id matches what Auto would pick (so switching from Auto to
+            // explicit is a smooth refinement), else the first available.
+            let pickedModel = "";
+            if (auto && auto.provider === p) pickedModel = auto.model;
+            else {
+              const m = models.find(mm => mm.provider === p);
+              if (m) pickedModel = m.id;
+            }
+            onChange({ provider: p, model: pickedModel });
+          }}>
+          <option value="">${autoLabel}</option>
+          ${providersInUse.map(renderProviderOption)}
+        </select>
+        <select
+          className="workflow-default-provider-select"
+          value=${currentModel}
+          disabled=${!currentProvider}
+          onChange=${(e) => onChange({ provider: currentProvider, model: e.target.value })}>
+          ${!currentProvider && html`<option value="">— Auto picks this for you —</option>`}
+          ${currentProvider && modelsForProvider.length === 0 && html`<option value="">(no integrated models for this provider)</option>`}
+          ${currentProvider && modelsForProvider.map(m => html`
+            <option key=${m.id || m.provider} value=${m.id}>${m.label || m.id || "(provider default)"}</option>
+          `)}
+        </select>
+      </div>
+    </div>
+  `;
+}
+
 /* Phase 4b — Settings dialog. One section per provider, driven by
    window.TH_MEDIA.providers. Integrated providers are interactive (Save /
    Test / Clear); non-integrated providers render greyed-out with a
@@ -28010,6 +32837,7 @@ function WorkflowSettingsDialog({ onClose }) {
           <button className="workflow-modal-close" onClick=${onClose}>×</button>
         </div>
         <div className="workflow-settings-body">
+          <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
           ${providerIds.map(pid => html`
             <${WorkflowProviderSection}
               key=${pid}
@@ -28377,10 +33205,12 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
 
   const skillSpec = ((window.TH_MEDIA && window.TH_MEDIA.skills) || []).find(s => s.id === skillId);
   const aspects   = (window.TH_MEDIA && window.TH_MEDIA.aspects) || [];
-  // Pick model list by skill kind. modelKind "text" → textModels, otherwise imageModels.
+  // Pick model list by skill kind. modelKind "text" → textModels,
+  // output "video" → videoModels (v3.4.1), otherwise imageModels.
   const allModels = (() => {
     if (!skillSpec) return [];
     if (skillSpec.modelKind === "text") return (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
+    if (skillSpec.output === "video") return (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
     return (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
   })();
 
@@ -28472,9 +33302,15 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   // Resolve effective model + provider for this skill. For skills that fix
   // both (rembg, upscale), spec.provider/model win. For generate-image, the
   // user-selected node.model wins, with the skill's defaultModel as fallback.
-  const model    = skillSpec.model    || node.model    || skillSpec.defaultModel || "";
-  const aspect   = node.aspect || "1:1";
-  const provider = skillSpec.provider
+  // v3.4.10 — every value passes through _resolveLiveModel so a stored
+  // deprecated string surfaces as its current catalog ID in the dropdown
+  // value, in the dispatcher, and downstream. The saved node.model is left
+  // alone; we just translate at every read.
+  const rawModel  = skillSpec.model || node.model || skillSpec.defaultModel || "";
+  const model     = _resolveLiveModel(rawModel);
+  const modelWasDeprecated = _modelWasDeprecated(rawModel);
+  const aspect    = node.aspect || "1:1";
+  const provider  = skillSpec.provider
     || (allModels.find(m => m.id === model) || {}).provider
     || "";
 
@@ -28504,10 +33340,11 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         <span className="workflow-node-skill-glyph">${skillGlyph(skillSpec)}</span>
         <span className="workflow-node-skill-title">${skillSpec.label}</span>
         <span className="workflow-node-bar-spacer"/>
-        ${(skillSpec.output || "image") === "image" && html`
+        ${html`
           <${HoverTip}
             className="workflow-node-skill-addout"
-            tip="Add a fresh output asset card wired to this skill — each run writes to a separate asset so you can keep history alongside the new generation."
+            tip=${"Add a fresh output asset card wired to this skill ("
+              + (skillSpec.output || "image") + " output) — each run writes to a separate asset so you can keep history alongside the new generation."}
             ariaLabel="Add output asset"
             onClick=${(e) => { e.stopPropagation(); onAddOutputAsset && onAddOutputAsset(node.id); }}
             onMouseDown=${(e) => e.stopPropagation()}
@@ -28531,7 +33368,9 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
                 const next = allModels.find(m => m.id === e.target.value);
                 onChange({ model: e.target.value, provider: next ? next.provider : undefined });
               }}
-              title="Pick model + provider"
+              title=${modelWasDeprecated
+                ? `Pick model + provider — saved value \`${rawModel}\` was deprecated, currently resolved to \`${model}\` from the live catalog.`
+                : "Pick model + provider"}
             >
               ${Object.keys(modelsByProvider).map(pid => html`
                 <optgroup key=${pid} label=${(providerLabels[pid] && providerLabels[pid].label) || pid}>
@@ -28796,7 +33635,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
       let finalText = "";
       if (phase !== "active") {
         try {
-          const cr = await fetch(apiUrl(`/__chat?branch=${encodeURIComponent(branchHint || "main")}&runId=${encodeURIComponent(node.runId)}`));
+          const cr = await fetch(apiUrl(`/__chat?runId=${encodeURIComponent(node.runId)}`));
           if (cr.ok) {
             const cj = await cr.json();
             finalText = extractFinalAssistantText(cj.events || []) || "";
@@ -29340,9 +34179,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                 if (!node.runId) return;
                 setApplyErr(null); setApplying(true);
                 try {
-                  const m = (derivedSummary?.folderRead || derivedSummary?.folderWrite || "").match(/^source\/([^/]+)\/?/);
-                  const branch = (m && m[1]) || "main";
-                  const r = await fetch(apiUrl(`/__chat?branch=${encodeURIComponent(branch)}&runId=${encodeURIComponent(node.runId)}`));
+                  const r = await fetch(apiUrl(`/__chat?runId=${encodeURIComponent(node.runId)}`));
                   const j = await r.json();
                   if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
                   const finalText = extractFinalAssistantText(j.events || []);
@@ -30150,93 +34987,6 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
   `, document.body);
 }
 
-function BranchPicker({ activeId, branches, defaultFrame, canvasGap, onSetFrameSize }) {
-  const [open, setOpen] = useState(false);
-  const [sizeDialogOpen, setSizeDialogOpen] = useState(false);
-  const [busy, setBusy] = useState(null);   // "switch" | "promote"
-  const active = branches.find(b => b.id === activeId) || branches[0];
-  const isMain = activeId === "main";
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (!e.target.closest(".branch-picker")) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const switchTo = (slug) => {
-    if (slug === activeId) { setOpen(false); return; }
-    const url = new URL(window.location.href);
-    url.searchParams.set("branch", slug);
-    window.location.href = url.toString();
-  };
-
-  const promote = async () => {
-    if (!confirm(`Promote branch "${active.label}" to Main?\n\nThis OVERWRITES source/main/* with source/${active.id}/*. Only valid after the exploration has been applied. The "${active.label}" branch stays.`)) return;
-    setBusy("promote");
-    try {
-      const res = await fetch(apiUrl(`/__promote?from=${encodeURIComponent(active.id)}`), { method: "POST" });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
-      alert(`Promoted ${active.label} → Main.\n${(payload.copied || []).map(f => "  · " + f).join("\n")}`);
-      const url = new URL(window.location.href);
-      url.searchParams.set("branch", "main");
-      window.location.href = url.toString();
-    } catch (e) {
-      alert(`Promote failed: ${e.message || e}`);
-    } finally {
-      setBusy(null);
-      setOpen(false);
-    }
-  };
-
-  return html`
-    <div className="branch-picker">
-      <button className="branch-trigger" data-open=${open} onClick=${() => setOpen(o => !o)} title="Switch branch">
-        <${Icon.Branch}/>
-        <span className="branch-trigger-label">${active.label}</span>
-        <${Icon.Chev}/>
-      </button>
-      ${open && html`
-        <div className="branch-menu">
-          <div className="branch-menu-title">Branches (${branches.length})</div>
-          ${branches.map(b => html`
-            <button key=${b.id} className="branch-item" data-active=${b.id === activeId} onClick=${() => switchTo(b.id)}>
-              <span className="branch-dot" data-active=${b.id === activeId}/>
-              <span className="branch-item-label">${b.label}</span>
-              ${b.id === "main" && html`<span className="branch-tag">main</span>`}
-            </button>
-          `)}
-          ${!isMain && html`
-            <div className="branch-menu-sep"/>
-            <button className="branch-item branch-item-promote" onClick=${promote} disabled=${busy !== null}>
-              <${Icon.ArrowUp}/>
-              <span>${busy === "promote" ? "Promoting…" : `Promote "${active.label}" → Main`}</span>
-            </button>
-          `}
-          <div className="branch-menu-sep"/>
-          <button className="branch-item" onClick=${() => { setSizeDialogOpen(true); setOpen(false); }}>
-            <span style=${{ width: 14, display: "inline-block" }}>⤢</span>
-            <span>Frame size · ${defaultFrame?.w || 1440}×${defaultFrame?.h || 900} · gap ${canvasGap ?? 120}px</span>
-          </button>
-          <div className="branch-menu-sep"/>
-          <div className="branch-menu-hint">
-            <${Icon.Fork}/>
-            <span>To fork a new branch, pick an element with the Select tool and click <strong>↗ Fork</strong>.</span>
-          </div>
-        </div>
-      `}
-      ${sizeDialogOpen && html`
-        <${FrameSizeDialog}
-          defaultFrame=${defaultFrame}
-          canvasGap=${canvasGap}
-          onCancel=${() => setSizeDialogOpen(false)}
-          onSave=${(w, h, g) => { onSetFrameSize(w, h, g); setSizeDialogOpen(false); }}
-        />
-      `}
-    </div>
-  `;
-}
 
 /* ────────── Branch docs buttons — Phase 5a ──────────
    Two toolbar shortcuts next to the run picker, surfacing the active branch's
@@ -30248,14 +34998,14 @@ function BranchPicker({ activeId, branches, defaultFrame, canvasGap, onSetFrameS
    opens a `DocViewerModal` with the file rendered via the existing chat
    markdown component, plus a Reload button so the user can re-fetch after the
    agent updates the file mid-session. */
-function BranchDocsButtons({ branchId }) {
+function BranchDocsButtons() {
   const [notes, setNotes] = useState({ loaded: false, exists: false, text: "", path: "" });
   const [brand, setBrand] = useState({ loaded: false, exists: false, text: "", path: "" });
   const [openName, setOpenName] = useState(null);  // "NOTES.md" | "brand-spec.md" | null
 
   const fetchDoc = useCallback(async (name) => {
     try {
-      const url = apiUrl(`/__doc?branch=${encodeURIComponent(branchId)}&name=${encodeURIComponent(name)}`);
+      const url = apiUrl(`/__doc?name=${encodeURIComponent(name)}`);
       const r = await fetch(url);
       if (!r.ok) return { loaded: true, exists: false, text: "", path: "" };
       const j = await r.json();
@@ -30268,7 +35018,7 @@ function BranchDocsButtons({ branchId }) {
     } catch {
       return { loaded: true, exists: false, text: "", path: "" };
     }
-  }, [branchId]);
+  }, []);
 
   const reloadAll = useCallback(async () => {
     const [n, b] = await Promise.all([fetchDoc("NOTES.md"), fetchDoc("brand-spec.md")]);
@@ -30276,10 +35026,8 @@ function BranchDocsButtons({ branchId }) {
   }, [fetchDoc]);
 
   useEffect(() => {
-    setNotes({ loaded: false, exists: false, text: "", path: "" });
-    setBrand({ loaded: false, exists: false, text: "", path: "" });
     reloadAll();
-  }, [branchId, reloadAll]);
+  }, [reloadAll]);
 
   const reloadOne = useCallback(async (name) => {
     const next = await fetchDoc(name);
@@ -30326,7 +35074,6 @@ function BranchDocsButtons({ branchId }) {
         <${DocViewerModal}
           title=${title}
           name=${openName}
-          branch=${branchId}
           text=${open.text}
           path=${open.path}
           onReload=${async () => {
@@ -30342,7 +35089,7 @@ function BranchDocsButtons({ branchId }) {
   `;
 }
 
-function DocViewerModal({ title, name, branch, text, path, onReload, onClose }) {
+function DocViewerModal({ title, name, text, path, onReload, onClose }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -30354,7 +35101,7 @@ function DocViewerModal({ title, name, branch, text, path, onReload, onClose }) 
       <div className="modal modal-doc" role="dialog" aria-modal="true">
         <div className="modal-head">
           <div>
-            <div className="modal-eyebrow">${branch} · ${path || name}</div>
+            <div className="modal-eyebrow">${path || name}</div>
             <div className="modal-title">${title}</div>
           </div>
           <div className="modal-head-actions">
@@ -30379,13 +35126,12 @@ function DocViewerModal({ title, name, branch, text, path, onReload, onClose }) 
   `;
 }
 
-/* Phase 7 — DS badge in the toolbar, next to BranchPicker.
-   Shows the active branch's meta.dsRef state: "Built · v<label>" when the DS
-   is loaded (window.EDITOR_DS_<id> populated by /__ds_bootstrap), "Missing"
-   when meta.dsRef points at an unbuilt DS, or "No DS" when meta.dsRef itself
-   is unset. The badge is a hint, not a gate — Workflow 1 enforcement lives
-   in the planner playbook (docs/agents/workflows/1-regenerate.md). */
-function DesignSystemBadge({ dsRef }) {
+/* DS badge in the toolbar. Shows meta.dsRef state: "Built · v<label>" when
+   the DS is loaded (window.EDITOR_DS_<id> populated by /__ds_bootstrap),
+   "Missing" when meta.dsRef points at an unbuilt DS, or "No DS" when
+   meta.dsRef itself is unset. The badge is a hint, not a gate — Workflow 1
+   enforcement lives in the planner playbook (docs/agents/workflows/1-regenerate.md). */
+function DesignSystemBadge({ dsRef, onOpenDsView }) {
   // Re-render when the th:ds-refresh event fires (e.g. after a DS write).
   // The bootstrap script populates window.EDITOR_DS_<id> at boot, but POST
   // /__design_system from this session shouldn't require a full page reload
@@ -30414,10 +35160,12 @@ function DesignSystemBadge({ dsRef }) {
 
   if (!dsRef || !dsRef.id) {
     return html`
-      <div className="ds-badge ds-badge-unset" title="No design system referenced. meta.dsRef is unset — Workflow 1 will refuse to run until you build one (Workflow 0).">
+      <button type="button" className="ds-badge ds-badge-unset"
+        onClick=${() => onOpenDsView && onOpenDsView()}
+        title="No design system referenced. meta.dsRef is unset — Workflow 1 will refuse to run until you build one (Workflow 0). Click to open the Design system view.">
         <span className="ds-badge-glyph">◐</span>
         <span className="ds-badge-label">No DS</span>
-      </div>
+      </button>
     `;
   }
   const bootstrapped = (typeof window !== "undefined") ? window["EDITOR_DS_" + dsRef.id] : null;
@@ -30426,40 +35174,35 @@ function DesignSystemBadge({ dsRef }) {
   const refShort = refVersion ? refVersion.slice(0, 8) : "";
   if (!ds) {
     return html`
-      <div
+      <button type="button"
         className="ds-badge ds-badge-missing"
-        title=${"meta.dsRef = " + dsRef.id + (refVersion ? "@" + refShort : "") + " — but design-systems/" + dsRef.id + "/ is not on disk. Run Workflow 0 to build it."}
+        onClick=${() => onOpenDsView && onOpenDsView()}
+        title=${"meta.dsRef = " + dsRef.id + (refVersion ? "@" + refShort : "") + " — but design-systems/" + dsRef.id + "/ is not on disk. Run Workflow 0 to build it. Click to open the Design system view."}
       >
         <span className="ds-badge-glyph">◐</span>
         <span className="ds-badge-id">${dsRef.id}</span>
         <span className="ds-badge-state">missing</span>
-      </div>
+      </button>
     `;
   }
   const liveVersion = ds.version || (ds.meta && ds.meta.version) || "";
   const liveShort = liveVersion ? liveVersion.slice(0, 8) : "";
   const stale = refVersion && liveVersion && refVersion !== liveVersion;
   const label = ds.label || (ds.meta && ds.meta.label) || "v1";
-  const galleryHref = (() => {
-    const proj = activeProjectId();
-    const base = "../design-systems/" + encodeURIComponent(dsRef.id) + "/gallery.html";
-    return proj ? (base + "?project=" + encodeURIComponent(proj)) : base;
-  })();
   return html`
-    <a
+    <button
+      type="button"
       className=${"ds-badge ds-badge-built" + (stale ? " ds-badge-stale" : "")}
-      href=${galleryHref}
-      target="_blank"
-      rel="noopener"
+      onClick=${() => onOpenDsView && onOpenDsView()}
       title=${"design-systems/" + dsRef.id + "/ · " + label + " · " + liveShort +
-              (stale ? " (branch pinned at " + refShort + " — regen recommended)" : "") +
-              " · click to open gallery in a new tab"}
+              (stale ? " (project pinned at " + refShort + " — regen recommended)" : "") +
+              " · click to open in the Design system view"}
     >
       <span className="ds-badge-glyph">◐</span>
       <span className="ds-badge-id">${dsRef.id}</span>
       <span className="ds-badge-version">${label}</span>
-      ${stale && html`<span className="ds-badge-stale-dot" title="Branch pinned at older DS version; regen recommended">●</span>`}
-    </a>
+      ${stale && html`<span className="ds-badge-stale-dot" title="Project pinned at older DS version; regen recommended">●</span>`}
+    </button>
   `;
 }
 
@@ -30709,15 +35452,30 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
 function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFrame, canvasGap, onSetFrameSize, agents, agentId, onAgentChange, runActive, lastRun, onReopenRun, onStartNewChat, workspaceInfo, projects, onReloadWorkspace, onUpdateFromSource, history, historyOpen, onOpenHistory, onCloseHistory }) {
   const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const branchId = window.EDITOR_ACTIVE_BRANCH || (window.EDITOR_BRANCHES && window.EDITOR_BRANCHES.active) || "main";
+  const [sizeDialogOpen, setSizeDialogOpen] = useState(false);
   return html`
     ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
+    ${sizeDialogOpen && html`
+      <${FrameSizeDialog}
+        defaultFrame=${defaultFrame}
+        canvasGap=${canvasGap}
+        onCancel=${() => setSizeDialogOpen(false)}
+        onSave=${(w, h, g) => { onSetFrameSize(w, h, g); setSizeDialogOpen(false); }}
+      />
+    `}
     <div className="toolbar">
       <div className="toolbar-left">
         <${ProjectHomeButton} info=${workspaceInfo}/>
         <span className="toolbar-mode-label" title=${`Editor · ${D.meta.project}`}>Editor</span>
-        ${/* v3.1 — BranchPicker removed (project-level branches deprecated). */ null}
-        <${DesignSystemBadge} dsRef=${D.meta && D.meta.dsRef}/>
+        <button
+          className="tbtn frame-size-btn"
+          data-tip-host="true"
+          onClick=${() => setSizeDialogOpen(true)}
+          aria-label="Frame size and grid gap"
+          title=${`Default frame size · ${defaultFrame?.w || 1440}×${defaultFrame?.h || 900} · gap ${canvasGap ?? 120}px`}>
+          <span style=${{ width: 14, display: "inline-block", textAlign: "center" }}>⤢</span>
+          <span className="tab-tip">${(defaultFrame?.w || 1440) + "×" + (defaultFrame?.h || 900) + " · gap " + (canvasGap ?? 120) + "px"}</span>
+        </button>
         <div className="tabs tabs-icon">
           <button className="tab tab-icon" data-active=${view === "canvas"}    onClick=${() => setView("canvas")}    title="Canvas (1)" aria-label="Canvas"><${Icon.Canvas}/><span className="tab-tip">Canvas <kbd>1</kbd></span></button>
           <button className="tab tab-icon" data-active=${view === "prototype"} onClick=${() => setView("prototype")} title="Prototype (2)" aria-label="Prototype"><${Icon.Play}/><span className="tab-tip">Prototype <kbd>2</kbd></span></button>
@@ -30741,7 +35499,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
             <button className="tab tab-icon" data-active=${tool === "draw"}      onClick=${() => setOrToggle("draw")}      title="Draw (D)"       aria-label="Draw tool"><${Icon.Pen}/><span className="tab-tip">Draw <kbd>D</kbd></span></button>
           </div>
         `}
-        <${BranchDocsButtons} branchId=${branchId}/>
+        <${BranchDocsButtons}/>
         <${DaemonIndicator} compact=${true}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
@@ -30761,7 +35519,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
             aria-label="Update from source"
             title=${runActive
               ? "An agent run is active — wait for it to finish before triggering Update from source"
-              : "Update from source — re-derive frames / primitives / entities from source/" + branchId + "/. Dispatches Workflow 1 (regenerate); streams in the chat drawer."}
+              : "Update from source — re-derive frames / primitives / entities from source/. Dispatches Workflow 1 (regenerate); streams in the chat drawer."}
           >
             <${Icon.Refresh}/>
             <span className="tab-tip">${runActive ? "Run active" : "Update from source"}</span>
@@ -30792,22 +35550,26 @@ function App() {
   const model = useMemo(() => applyModelEdits(D, [...edits, ...layoutEdits]), [edits, layoutEdits]);
 
   // Persist layout to disk on every layout-edit change. Sends the *full
-  // positions snapshot* (computed from the post-edit model), so the sidecar
-  // is always self-contained — backend just overwrites. Fire-and-forget; the
-  // editor state is the source of truth during a session.
+  // positions snapshot* + meta overrides (defaultFrame, canvasGap) — both
+  // computed from the post-edit model, so the sidecar is always self-
+  // contained. Fire-and-forget; the editor state is the source of truth
+  // during a session. Frame size / canvas gap belong here (not in the
+  // LLM-bound `edits` queue) because they're editor preferences, not
+  // design changes.
   useEffect(() => {
     if (layoutEdits.length === 0) return;
     const positions = {};
     model.frames.forEach(f => { positions[f.id] = { col: f.col, row: f.row }; });
-    const branch = (D.meta && D.meta.branch) || "main";
-    fetch(apiUrl("/__layout?branch=" + encodeURIComponent(branch)), {
+    const meta = {
+      defaultFrame: model.defaultFrame,
+      canvasGap:    model.canvasGap,
+    };
+    fetch(apiUrl("/__layout"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ positions }),
+      body: JSON.stringify({ positions, meta }),
     }).catch(() => { /* offline / not running serve.py — keep in-memory state regardless */ });
   }, [layoutEdits]);
-  const [exploreOpen, setExploreOpen] = useState(false);
-  const [exploreScope, setExploreScope] = useState(null);
   // Undo/redo (Phase 2). Same hook is mounted on WorkflowCanvas so editor +
   // workflow modes share the project history stack.
   const history = useHistory();
@@ -30882,9 +35644,9 @@ function App() {
 
   // Fires when ChatDrawer detects the agent's turn ended. Decides between:
   //   • Full page reload — when the agent modified any files. Editor reads
-  //     `editor/branches/<slug>.js` into `window.EDITOR_DATA` once at page
-  //     load, so model edits (arrows, frames, entities, primitives) only
-  //     show up after a fresh page load.
+  //     `editor/data.js` into `window.EDITOR_DATA` once at page load, so
+  //     model edits (arrows, frames, entities, primitives) only show up
+  //     after a fresh page load.
   //   • Iframe-only cache bust — fallback for edge cases (already reloaded
   //     once for this run, no Write/Edit detected).
   //
@@ -30959,7 +35721,11 @@ function App() {
 
   // Free-form chat — separate from edits-apply. Opens an empty drawer shell;
   // the user's first composer send spawns a `kind: "freeform"` run.
-  const activeBranchIdForChat = (window.EDITOR_ACTIVE_BRANCH || (window.EDITOR_BRANCHES && window.EDITOR_BRANCHES.active) || "main");
+  // v3.4.31 — Sourced from the URL (?branch=<slug>) when set, then the
+  // active branch the bootstrap stamped onto D.meta, falling back to
+  // "main" for legacy / single-prototype projects. This way the chat
+  // panel tags new turns with whichever prototype the user is editing.
+  const activeBranchIdForChat = (D.meta.activeBranch || "main");
   const openNewChat = useCallback(() => {
     setChatRun({
       runId: null,
@@ -30994,21 +35760,20 @@ function App() {
   }, [activeBranchIdForChat, agentId, permissionMode]);
 
   // "Update from source" — top-right toolbar action on the editor view.
-  // Dispatches a Workflow 1 (regenerate) agent run for the active branch:
-  // the agent reads the playbook (docs/agents/workflows/1-regenerate.md),
-  // parses source/<branch>/, then writes editor/branches/<branch>.js (and
-  // the optional sidecars: prototype.json, entities.json). The run streams
-  // into the chat drawer so the user can watch progress. Idempotent — the
-  // agent reads what's on disk and re-derives; nothing is destroyed.
+  // Dispatches a Workflow 1 (regenerate) agent run: the agent reads the
+  // playbook (docs/agents/workflows/1-regenerate.md), parses source/, then
+  // writes editor/data.js (and the optional sidecars: prototype.json,
+  // entities.json). The run streams into the chat drawer so the user can
+  // watch progress. Idempotent — the agent reads what's on disk and re-derives;
+  // nothing is destroyed.
   const updateFromSource = useCallback(async () => {
-    const branch = activeBranchIdForChat;
     if (runActive) {
       alert("An agent run is already active. Wait for it to finish (or stop it from the chat drawer) before triggering Update from source.");
       return null;
     }
     const ok = confirm(
-      `Trigger Workflow 1 (regenerate) against source/${branch}/?\n\n` +
-      `The agent will read your source files and rewrite editor/branches/${branch}.js. ` +
+      `Trigger Workflow 1 (regenerate) against source/?\n\n` +
+      `The agent will read your source files and rewrite editor/data.js. ` +
       `Existing edits.json and unsubmitted changes are preserved on disk; only the editor data is regenerated.\n\n` +
       `You'll see streaming progress in the chat drawer.`
     );
@@ -31016,23 +35781,21 @@ function App() {
     const prompt = [
       `Workflow 1 — regenerate editor data from source.`,
       ``,
-      `Active branch: ${branch}`,
-      `Source root: source/${branch}/`,
-      `Target data file: editor/branches/${branch}.js (window.EDITOR_DATA)`,
+      `Source root: source/`,
+      `Target data file: editor/data.js (window.EDITOR_DATA)`,
       ``,
       `Read docs/agents/workflows/1-regenerate.md (under TH_PROTOCOL_ROOT in workspace mode, or repo root in single-project mode) for the full playbook, then run it. Coordinate via docs/agents/planner.md — spawn the regenerate subagents per the dispatch table, each with a strict slice of the data file.`,
       ``,
-      `The user clicked the "Update from source" button on the editor view's toolbar, so they want a fresh pass over the current source/${branch}/ tree. Re-derive frames, primitives, entities, arrows, and (where appropriate) the state machines / timelines / grids sidecars from the source HTML/JSX. Honor source/${branch}/prototype.json and source/${branch}/entities.json if they exist — those are declarative sources of truth that should shape the regen rather than being overwritten.`,
+      `The user clicked the "Update from source" button on the editor view's toolbar, so they want a fresh pass over the current source/ tree. Re-derive frames, primitives, entities, arrows, and (where appropriate) the state machines / timelines / grids sidecars from the source HTML/JSX. Honor source/prototype.json and source/entities.json if they exist — those are declarative sources of truth that should shape the regen rather than being overwritten.`,
       ``,
-      `Gate check: this branch must have a meta.dsRef. If it doesn't, run Workflow 0 first (or set meta.dsRef = main.dsRef to inherit), then Workflow 1.`,
+      `Gate check: meta.dsRef must be set. If it isn't, run Workflow 0 first to build a DS, then Workflow 1.`,
       ``,
       `Stream progress as you go so the user can watch updates land in the chat drawer.`,
     ].join("\n");
-    const title = `Update editor data from source/${branch}/`;
+    const title = `Update editor data from source/`;
     let run = null;
     try {
       run = await triggerRun({
-        branch,
         agentId,
         kind: "freeform",
         prompt,
@@ -31290,10 +36053,9 @@ function App() {
     }
     try {
       const run = await triggerRun({
-        branch: activeBranchId,
         agentId,
         kind: "edits-apply",
-        title: `Applying ${edits.length} edit${edits.length===1?"":"s"} · ${activeBranchId}`,
+        title: `Applying ${edits.length} edit${edits.length===1?"":"s"}`,
         permissionMode,
         meta: { editCount: edits.length, annotationCount: annotations.length },
       });
@@ -31340,10 +36102,6 @@ function App() {
     alert(`Saved to ${r.path}. Open Claude in this folder and reference the file as instructions.`);
   };
 
-  const activeBranchId = window.EDITOR_ACTIVE_BRANCH || (window.EDITOR_BRANCHES && window.EDITOR_BRANCHES.active) || "main";
-  const allBranches = (window.EDITOR_BRANCHES && window.EDITOR_BRANCHES.branches) || [{ id: "main", label: "Main" }];
-  const activeBranch = allBranches.find(b => b.id === activeBranchId) || allBranches[0];
-
   return html`
     <div className="app" data-agent-busy=${agentBusy}>
       ${agentBusy && html`
@@ -31359,7 +36117,7 @@ function App() {
         editsCount=${edits.length} onSubmit=${submit}
         defaultFrame=${model.defaultFrame}
         canvasGap=${model.canvasGap}
-        onSetFrameSize=${(w, h, gap) => setEdits(es => [...es, { target: "meta", kind: "frameSize.set", w, h, gap }])}
+        onSetFrameSize=${(w, h, gap) => setLayoutEdits(es => [...es, { target: "meta", kind: "frameSize.set", w, h, gap }])}
         agents=${agents}
         agentId=${agentId}
         onAgentChange=${onAgentChange}
@@ -31388,10 +36146,10 @@ function App() {
       />
       ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
       <${ScreenshotWorker}
-        branchId=${window.EDITOR_ACTIVE_BRANCH || (window.EDITOR_BRANCHES && window.EDITOR_BRANCHES.active) || "main"}
+        branchId=${"main"}
         setView=${setView}
       />
-      ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke} onFork=${(origin) => { setExploreScope({ frames: [origin.frameId], primitives: [], origin }); setExploreOpen(true); }}/>`}
+      ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke}/>`}
       ${view === "prototype" && html`<${PrototypeView}/>`}
       ${view === "flow"      && html`<${FlowView}    model=${model} setEdits=${setEdits}/>`}
       ${view === "ia"        && html`<${IAView}      model=${model} setEdits=${setEdits}/>`}
@@ -31410,13 +36168,6 @@ function App() {
         onSetNote=${setStrokeNote}
         onSubmit=${submit}
         onUpdateSource=${updateSource}
-      />
-      <${NewBranchDialog}
-        open=${exploreOpen}
-        onClose=${() => { setExploreOpen(false); setExploreScope(null); }}
-        parentId=${activeBranchId}
-        parentLabel=${activeBranch.label}
-        initialScope=${exploreScope}
       />
       <${ChatDrawer}
         run=${chatRun}
@@ -31508,25 +36259,6 @@ async function saveFile(suggestedName, contents, mime = "application/octet-strea
   a.href = url; a.download = suggestedName; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { cancelled: false, path: "Downloads/" + suggestedName, picker: false };
-}
-
-/* ────────── Promote a single frame from the active exploration branch → main.
-   The actual cherry-pick (which components, tokens, DEMO entries to bring across)
-   is non-deterministic — Claude has to read both sources and reason about it.
-   So we just append a directive to MERGES.md and let Claude pick it up next time
-   it runs in this folder. The exploration branch stays untouched. */
-async function promoteFrameToMain(frame) {
-  const branch = D.meta.branch;
-  if (!branch || branch === "main") return;
-  const ok = confirm(`Mark frame "${frame.label}" for promotion into Main?\n\nThis appends a directive to MERGES.md describing what to cherry-pick. The actual merge happens when you run Claude in this folder next.`);
-  if (!ok) return;
-  const res = await fetch(apiUrl(`/__promote_frame?from=${encodeURIComponent(branch)}&frameId=${encodeURIComponent(frame.id)}`), { method: "POST" });
-  const payload = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    alert(`Couldn't record promotion: ${payload.error || res.status}`);
-    return;
-  }
-  alert(`Logged in ${payload.path}.\n\nRun Claude in this folder: "Apply MERGES.md".`);
 }
 
 /* Root — picks between the project gallery (workspace mode, no ?project=),

@@ -12,10 +12,6 @@ If a subagent and this doc disagree, **this doc wins.** Surface the conflict to 
 window.EDITOR_DATA = {
   meta: {
     project:      "Margin",                    // string — display title
-    branch:       "main",                      // string — slug; preserved verbatim
-    branchLabel:  "Main",                      // string — display name; preserved verbatim
-    sourceRoot:   "../source/main",            // string — editor-relative
-    sourceEntry:  "../source/main/index.html", // string — editor-relative
     notes:        "Free-text genre/voice note",// string — fed to DESIGN.md description
     defaultFrame: { w: 1440, h: 900 },          // object — Canvas grid cell size
     canvasGap:    120,                          // number — Canvas grid gap
@@ -23,8 +19,7 @@ window.EDITOR_DATA = {
       { id: "tc",  label: "Training Coordinator", kind: "user"    },
       { id: "pxp", label: "Programme Experience Partner", kind: "user" }
     ],
-    dsRef:        { id: "main", version: "<hash>" }, // ← Design system reference. REQUIRED before Workflow 1 runs. See "Design system library nodes" below.
-    exploration: { /* present only on exploration branches; preserved verbatim */ }
+    dsRef:        { id: "main", version: "<hash>" }  // ← Design system reference. REQUIRED before Workflow 1 runs. See "Design system library nodes" below.
   },
 
   // tokens / primitives / library are READ-ONLY mirrors of the DS library node
@@ -207,10 +202,9 @@ design-systems/
     │                              Source of truth for primitives.
     ├── DESIGN.md               ← Human-readable rationale: YAML frontmatter + prose.
     │                              Derived by Workflow 3 from styles.css + gallery.html.
-    └── meta.json               ← { id, version, label, genre, builtFrom, parentRef? }
+    └── meta.json               ← { id, version, label, genre, builtFrom }
                                    version = content hash of (styles.css + gallery.html + DESIGN.md)
                                    builtFrom = workflow-mode spec nodes that generated this DS
-                                   parentRef = optional cross-branch reference
 ```
 
 The editor consumes the DS via a runtime mirror at `editor/design-systems/<id>.js`:
@@ -230,8 +224,7 @@ window.EDITOR_DS_<id> = {
   library:    [ /* same shape as EDITOR_DATA.library — one entry per primitive variant */ ],
   meta: {
     genre:     "Linear-style observability — OKLCH greys, hairline borders…",
-    builtFrom: [ /* workflow-mode spec nodes that generated this DS */ ],
-    parentRef: { branch: "main", version: "…" } // optional — exploration branches inherit main's DS
+    builtFrom: [ /* workflow-mode spec nodes that generated this DS */ ]
   }
 };
 ```
@@ -311,7 +304,7 @@ Use this table to know which subagent's output writes which field. The planner m
 | 9 Timeline | `timelines[]` |
 | 10 Grids | `grids[]` |
 | **Planner (Step 4 merge)** | `frames[i].id`, `frames[i].label` (merged from subagents); `meta.lanes` (from Subagent 4); resolves convention-mismatched IDs |
-| **Planner (Step 5 meta)** | `meta.project`, `meta.branch`, `meta.branchLabel`, `meta.sourceRoot`, `meta.sourceEntry`, `meta.notes`, `meta.defaultFrame`, `meta.canvasGap`, `meta.exploration`, `meta.dsRef` |
+| **Planner (Step 5 meta)** | `meta.project`, `meta.notes`, `meta.defaultFrame`, `meta.canvasGap`, `meta.dsRef` |
 | **Planner (Step 5 DS mirror)** | `tokens`, `primitives`, `library` — copied verbatim from the DS library node identified by `meta.dsRef`. Read, don't enumerate. |
 | **Planner (Step 4c reconciliation)** | additional cross-actor handoff arrows → `arrows[]` |
 
