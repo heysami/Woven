@@ -187,6 +187,17 @@ After the agent finishes the run, the workflow canvas fills out with every step 
 
 From here you can switch to **Prototype mode** (the play icon in the toolbar) to interact with the full app outside the canvas frame, or re-run any individual asset node (right-click → Run) to regenerate a single illustration without redoing the whole flow.
 
+### What the agent generated from a single prompt
+
+The one-line prompt — *"create a ghibli themed mobile app to feed totoro"* — produced a four-tab app named **Mori**, with a watercolor Ghibli palette, soft-rain weather chip, and consistent illustration style across every screen:
+
+| Glade — feed Totoro | Forage — gather food | Friends — forest companions |
+| :---: | :---: | :---: |
+| ![Glade tab](docs/screenshots/10-app-glade.png) | ![Forage tab](docs/screenshots/11-app-forage.png) | ![Friends tab](docs/screenshots/12-app-friends.png) |
+| Totoro idles in a rainy clearing; three stat bars (**Fullness · Happiness · Trust**) drive a food picker — Acorn (favourite), Sun berry, Mushroom, Leaf roll — with live counts and a hint that O-Totoro loves acorns most. | A list of refilling foraging spots (**Camphor tree hollow · Rain meadow · Root cellar**) with painted location thumbnails and a "Resting · Back in 2h" cooldown on the cellar — spots regrow over time. | A grid of Ghibli companions (**Chibi-Totoro · Soot sprites · Catbus · Mei**) each with a Here-now / Away presence chip; Catbus and Mei unlock as trust climbs. |
+
+Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip carry across every screen — the agent inferred a consistent design system (cream background, sage green accent, hand-drawn icons) from the single prompt and applied it uniformly.
+
 ---
 
 ## Troubleshooting
