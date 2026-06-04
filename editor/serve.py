@@ -6046,7 +6046,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         elif defs.get("permission_flag"):
             spawn_args += [defs["permission_flag"], permission_mode]
         # v3.1 — Hide user-level slash commands (~/.claude/commands/). The
-        # daemon's capabilities preamble + Limn subagents (visual-planner,
+        # daemon's capabilities preamble + Woven subagents (visual-planner,
         # raster-foreground, etc.) are the only image-pipeline path; the
         # user's personal /prototype skill used to override visual-planner
         # by telling the agent to use placeholder rectangles instead.
@@ -10287,7 +10287,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Lottie additionally needs the <lottie-player> custom element loader
         # included once per page. We append a marker comment so re-runs don't
         # double-inject. Idempotent.
-        LOTTIE_LOADER_MARKER = "<!-- limn:lottie-player-loaded -->"
+        LOTTIE_LOADER_MARKER = "<!-- woven:lottie-player-loaded -->"
+        LOTTIE_LOADER_MARKER_LEGACY = "<!-- limn:lottie-player-loaded -->"
         LOTTIE_LOADER_BLOCK = (
             '\n  ' + LOTTIE_LOADER_MARKER + '\n'
             '  <script src="https://unpkg.com/@lottiefiles/lottie-player@2.0.8/dist/lottie-player.js" defer></script>\n'
@@ -10306,7 +10307,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if count == 0:
                 return text, 0
             # Inject the lottie loader for lottie kind, once per file.
-            if new_kind == "lottie" and LOTTIE_LOADER_MARKER not in new_text:
+            if new_kind == "lottie" and LOTTIE_LOADER_MARKER not in new_text and LOTTIE_LOADER_MARKER_LEGACY not in new_text:
                 # Insert just before </head>; fall back to before <body if no
                 # head closer exists; if neither, prepend at the top.
                 if re.search(r'</head\s*>', new_text, re.IGNORECASE):

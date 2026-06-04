@@ -1,5 +1,5 @@
 #!/bin/bash
-# Limn v3.1.1 — PreToolUse hook that blocks Write/Edit/MultiEdit on any
+# Woven v3.1.1 — PreToolUse hook that blocks Write/Edit/MultiEdit on any
 # visual-asset path (HTML, raster images, vectors, video) until the agent
 # has dispatched the visual-planner subagent at least once in the current
 # session.
@@ -69,7 +69,7 @@ esac
 # Block via exit 2 + stderr message. The agent reads the stderr text as
 # the reason for the denial and adjusts its plan.
 cat >&2 <<MSG
-[Limn v3.1.1 enforcement] Cannot write to this ${KIND} (${FILE_PATH##*/}) until visual-planner has been dispatched.
+[Woven v3.1.1 enforcement] Cannot write to this ${KIND} (${FILE_PATH##*/}) until visual-planner has been dispatched.
 
 You MUST first call the Task tool with:
   subagent_type: "visual-planner"
