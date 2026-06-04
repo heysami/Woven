@@ -181,10 +181,11 @@ Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work — ge
 
 ## 9. The final prototype
 
-After the agent finishes the run, the workflow canvas fills with the generated pages, design system, and asset nodes. Hop over to **Prototype mode** (the play icon in the toolbar) to see the live prototype in a phone frame.
+After the agent finishes the run, the workflow canvas fills out with every step that produced the prototype: a column of **Prompt** nodes (one per illustrated subject — Totoro himself, soot sprites, Chibi-Totoro, the Catbus…), each feeding a **Generate image** node, then a **Remove background** node that pipes the cleaned PNG into the final page rendering on the right. The chat drawer streams the agent's tool calls live (Read / Write / Bash) as it scaffolds files into `source/`. The right-most frame is the live phone-mockup of the Ghibli-themed Totoro feeder app, sitting inside the canvas alongside the assets that built it.
 
-<!-- Drop the final prototype screenshot in here once it's exported. -->
-![Final prototype — totoro feeder app](docs/screenshots/09-final-prototype.png)
+![Final prototype — Totoro feeder app on the workflow canvas](docs/screenshots/09-final-prototype.png)
+
+From here you can switch to **Prototype mode** (the play icon in the toolbar) to interact with the full app outside the canvas frame, or re-run any individual asset node (right-click → Run) to regenerate a single illustration without redoing the whole flow.
 
 ---
 
