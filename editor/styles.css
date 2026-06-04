@@ -558,6 +558,15 @@ button {
 }
 .landing-new-btn:hover { filter: brightness(1.05); }
 .landing-new-btn:active { filter: brightness(0.95); }
+.landing-new-btn[disabled],
+.landing-new-btn[data-disabled="true"] {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  cursor: not-allowed;
+  filter: none;
+}
+.landing-new-btn[disabled]:hover,
+.landing-new-btn[data-disabled="true"]:hover { filter: none; }
 
 .landing-create-card {
   display: grid;
@@ -5884,6 +5893,449 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .daemon-indicator-loading .cli-dot {
   animation: cli-dot-pulse 1.1s ease-in-out infinite;
+}
+
+/* Highlighted top-right chip that fires when neither a provider API key
+   nor the Claude CLI is configured. Loud red border + filled background so
+   the missing-model state can't be missed; the rest of the chrome stays
+   in its normal pill shape so it slots next to the other indicators. The
+   button is clickable — opens the Settings dialog directly. */
+.model-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  background: color-mix(in oklch, var(--danger, #dc2626) 14%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--danger, #dc2626) 55%, transparent);
+  color: color-mix(in oklch, var(--danger, #dc2626) 78%, var(--text));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger, #dc2626) 14%, transparent);
+  animation: model-status-pulse 2.4s ease-in-out infinite;
+}
+.model-status-indicator:hover {
+  background: color-mix(in oklch, var(--danger, #dc2626) 22%, var(--surface));
+  border-color: color-mix(in oklch, var(--danger, #dc2626) 75%, transparent);
+}
+.model-status-indicator:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--danger, #dc2626) 65%, transparent);
+  outline-offset: 2px;
+}
+.model-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger, #dc2626);
+  flex: 0 0 7px;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--danger, #dc2626) 30%, transparent);
+  animation: cli-dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes model-status-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger, #dc2626) 12%, transparent); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger, #dc2626) 22%, transparent); }
+}
+
+/* Setup card that replaces the "No projects yet" empty state when the
+   user has neither an API key nor a CLI configured. Two big choice tiles
+   side-by-side; clicking "Use CLI" expands an inline sub-picker rather
+   than navigating away. Reuses .landing-empty for the outer frame so the
+   page-level padding/grid behavior stays consistent. */
+.model-setup-card {
+  gap: 18px;
+  padding: 44px 40px;
+  text-align: left;
+  align-items: stretch;
+  max-width: 760px;
+  margin: 0 auto;
+  border-style: solid;
+  border-color: color-mix(in oklch, var(--danger, #dc2626) 35%, var(--border-strong));
+  background: linear-gradient(180deg,
+    color-mix(in oklch, var(--danger, #dc2626) 4%, var(--surface)),
+    var(--surface));
+}
+.model-setup-head { text-align: center; display: grid; gap: 8px; }
+.model-setup-eyebrow {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--danger, #dc2626) 70%, var(--text-muted));
+}
+.model-setup-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.model-setup-desc {
+  max-width: 520px;
+  margin: 0 auto;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.model-setup-desc code {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 12px;
+  padding: 1px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.model-setup-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 4px;
+}
+.model-setup-choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: start;
+  text-align: left;
+  padding: 18px 18px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.08s ease;
+  color: inherit;
+  font: inherit;
+}
+.model-setup-choice:hover {
+  border-color: var(--accent, oklch(55% 0.18 252));
+  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
+}
+.model-setup-choice:active { transform: translateY(1px); }
+.model-setup-choice-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--accent, oklch(55% 0.18 252));
+}
+.model-setup-choice-body { display: grid; gap: 6px; }
+.model-setup-choice-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.model-setup-choice-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.model-setup-choice-desc code {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  padding: 0 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.model-setup-choice-cta {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent, oklch(55% 0.18 252));
+}
+.model-setup-refresh-link {
+  align-self: center;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.model-setup-refresh-link:hover { color: var(--text); background: var(--surface-2); }
+
+/* Inline CLI picker shown when the user picks "Use CLI" inside the setup
+   card. One row per supported binary (claude, codex) with its install
+   command and a live ✓/— state from /__agents. */
+.model-setup-cli { display: grid; gap: 12px; }
+.model-setup-cli-head { text-align: center; display: grid; gap: 4px; margin-bottom: 4px; }
+.model-setup-cli-title { font-size: 15px; font-weight: 600; }
+.model-setup-cli-sub   { font-size: 12.5px; color: var(--text-muted); }
+.model-setup-cli-row {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+.model-setup-cli-row.is-ready {
+  border-color: color-mix(in oklch, var(--ok, #16a34a) 45%, var(--border));
+  background: color-mix(in oklch, var(--ok, #16a34a) 4%, var(--surface));
+}
+.model-setup-cli-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.model-setup-cli-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint);
+  flex: 0 0 8px;
+}
+.model-setup-cli-dot[data-ok="true"] {
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+}
+.model-setup-cli-name { font-size: 14px; font-weight: 600; }
+.model-setup-cli-state {
+  margin-left: auto;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.model-setup-cli-install code,
+.model-setup-cli-hint code {
+  display: inline-block;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 12px;
+  padding: 4px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  user-select: all;
+}
+.model-setup-cli-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.model-setup-cli-hint a {
+  color: var(--accent, oklch(55% 0.18 252));
+  text-decoration: none;
+}
+.model-setup-cli-hint a:hover { text-decoration: underline; }
+.model-setup-cli-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+@media (max-width: 720px) {
+  .model-setup-choices { grid-template-columns: 1fr; }
+  .model-setup-card { padding: 28px 22px; }
+}
+
+/* Shared layout for the optional sub-sections (Step 2 · asset providers,
+   Step 3 · local skills) that follow the required Step 1 model picker.
+   Visually quieter than the model choices — dashed top divider, smaller
+   eyebrow, condensed rows. */
+.onboarding-local-tools,
+.onboarding-asset-providers {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--border);
+}
+.onboarding-section-head { display: grid; gap: 4px; text-align: center; margin-bottom: 6px; }
+.onboarding-section-eyebrow {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.onboarding-section-title { font-size: 14px; font-weight: 600; }
+.onboarding-section-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 540px;
+  margin: 0 auto;
+}
+
+/* Asset provider rows — one per integrated provider in the Step 2
+   section. Same row shape as the local-tools rows but with inline key
+   entry instead of an install action. Collapsed by default → "Add key"
+   button → expanded form (password input + Save). When a key is already
+   configured we render a ✓ pill + Clear button. */
+.onboarding-asset-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.onboarding-asset-row.is-set {
+  border-color: color-mix(in oklch, var(--ok, #16a34a) 45%, var(--border));
+  background: color-mix(in oklch, var(--ok, #16a34a) 4%, var(--surface));
+}
+.onboarding-asset-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.onboarding-asset-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint);
+  flex: 0 0 8px;
+}
+.onboarding-asset-dot[data-ok="true"] {
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+}
+.onboarding-asset-name { font-size: 13.5px; font-weight: 600; }
+.onboarding-asset-covers {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.onboarding-asset-state {
+  margin-left: auto;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.onboarding-asset-row-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+.onboarding-asset-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  flex: 1 1 auto;
+}
+.onboarding-asset-docs {
+  font-size: 11px;
+  color: var(--accent, oklch(55% 0.18 252));
+  text-decoration: none;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+}
+.onboarding-asset-docs:hover { text-decoration: underline; }
+.onboarding-asset-row-form {
+  display: grid;
+  gap: 8px;
+}
+.onboarding-asset-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+}
+.onboarding-asset-input:focus {
+  outline: none;
+  border-color: var(--accent, oklch(55% 0.18 252));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 18%, transparent);
+}
+.onboarding-asset-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.onboarding-asset-form-actions .onboarding-asset-docs { margin-right: auto; }
+@media (max-width: 720px) {
+  .onboarding-asset-row-body { flex-direction: column; align-items: stretch; gap: 8px; }
+}
+.onboarding-tool-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.onboarding-tool-row.is-installed {
+  border-color: color-mix(in oklch, var(--ok, #16a34a) 45%, var(--border));
+  background: color-mix(in oklch, var(--ok, #16a34a) 4%, var(--surface));
+}
+.onboarding-tool-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.onboarding-tool-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint);
+  flex: 0 0 8px;
+}
+.onboarding-tool-dot[data-ok="true"] {
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+}
+.onboarding-tool-name { font-size: 13.5px; font-weight: 600; }
+.onboarding-tool-skills {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.onboarding-tool-state {
+  margin-left: auto;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.onboarding-tool-row-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.onboarding-tool-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  flex: 1 1 auto;
+}
+.onboarding-tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.onboarding-tool-docs {
+  font-size: 11px;
+  color: var(--accent, oklch(55% 0.18 252));
+  text-decoration: none;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+}
+.onboarding-tool-docs:hover { text-decoration: underline; }
+.onboarding-tool-err {
+  font-size: 11px;
+  color: var(--danger, #dc2626);
+  background: color-mix(in oklch, var(--danger, #dc2626) 6%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--danger, #dc2626) 30%, var(--border));
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  word-break: break-word;
+}
+@media (max-width: 720px) {
+  .onboarding-tool-row-body { flex-direction: column; align-items: stretch; gap: 8px; }
+  .onboarding-tool-actions { justify-content: flex-end; }
 }
 
 /* Chat streaming dots — animated triple-dot loader rendered below the last

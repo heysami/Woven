@@ -7107,6 +7107,73 @@ function CliIndicator({ compact }) {
   </span>`;
 }
 
+/* Polls /__media_config once on mount so any surface can ask "is any model
+   reachable from this editor at all?" — i.e. does the user have at least one
+   provider API key configured OR a logged-in Claude CLI on PATH. Returns the
+   raw config plus a derived `hasAnyKey` / `hasCli` / `configured` triple so
+   the empty-state setup card and the top-right warning chip can read off a
+   single source of truth. The reload callback is exposed so the setup card
+   can re-poll after the user opens the Settings dialog and pastes a key. */
+function useMediaConfig() {
+  const [config, setConfig] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const reload = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__media_config"));
+      if (!r.ok) throw new Error("media-config endpoint unavailable");
+      const j = await r.json();
+      setConfig(j);
+    } catch {
+      setConfig({ providers: {}, claude_cli_available: false });
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+  // Re-poll whenever the Settings dialog dispatches a "saved" event so the
+  // warning chip clears the instant the user pastes a working key — without
+  // making each top-level surface remember to wire the callback up.
+  useEffect(() => {
+    const on = () => reload();
+    window.addEventListener("th:media-config-changed", on);
+    return () => window.removeEventListener("th:media-config-changed", on);
+  }, [reload]);
+  const providers = (config && config.providers) || {};
+  const hasAnyKey = Object.values(providers).some(p => p && (p.has_key || p.saved || p.from_env));
+  const hasCli    = !!(config && config.claude_cli_available);
+  return { config, loaded, hasAnyKey, hasCli, configured: hasAnyKey || hasCli, reload };
+}
+
+/* Highlighted top-right pill that fires ONLY when no model can be resolved —
+   i.e. the user has no provider API key saved AND no Claude CLI on PATH.
+   Rendered next to <CliIndicator/> on every top-level surface (project
+   gallery, workflow toolbar, editor toolbar) so the missing-model state is
+   impossible to miss. Clicking it opens the Settings dialog via the
+   `onOpenSettings` callback the parent passes (same handler the gear uses).
+   When the user is set up, the component renders nothing — no chrome noise
+   for the happy path. */
+function ModelStatusIndicator({ onOpenSettings, compact }) {
+  const { loaded, hasAnyKey, hasCli, configured } = useMediaConfig();
+  if (!loaded || configured) return null;
+  // Both missing: paint the loudest variant. (We don't ship a "key present
+  // but CLI missing" warning here — that's not an error, it's just a CLI
+  // chip update; the cli-indicator already handles it.)
+  const label = compact ? "No model" : "No model configured";
+  const tip   = "No Anthropic API key saved AND no Claude CLI on PATH. The agent can't run until you set one up — click to open Settings.";
+  return html`<button
+    type="button"
+    className="model-status-indicator"
+    data-tip-host="true"
+    title=${tip}
+    onClick=${onOpenSettings}
+    aria-label="No model configured — open Settings"
+  >
+    <span className="model-status-dot"/>
+    <span className="model-status-label">${label}</span>
+    <span className="tab-tip">${tip}</span>
+  </button>`;
+}
+
 /* Topbar gear that opens the shared media/API-key settings dialog. The
    dialog itself (WorkflowSettingsDialog) is rendered as a sibling at the
    consumer site so it portals over whatever surface is active. */
@@ -11784,6 +11851,357 @@ const WIZARD_TITLES = {
   review:    "Review & create",
 };
 
+/* Sub-card rendered inside <ModelSetupCard/> when the user picks "Use CLI".
+   Lists every supported CLI agent with its install snippet so the user can
+   actually act on the choice without leaving the page. Reads /__agents so
+   we can flip a CLI from "install" to "✓ ready" the instant the user has
+   it on PATH (after running the install command in a separate terminal).
+   "Refresh" re-polls /__agents AND /__media_config so the parent setup
+   card unblocks the empty state. */
+function ModelSetupCliPicker({ onRefresh, onBack }) {
+  const { agents, loaded, reload: reloadAgents } = useAgents();
+  const claude = (agents || []).find(a => a.id === "claude");
+  const codex  = (agents || []).find(a => a.id === "codex");
+  const rows = [
+    {
+      id: "claude",
+      label: "Claude Code",
+      ok: !!(claude && claude.available),
+      version: claude && claude.version,
+      bin: claude && claude.bin,
+      install: "npm install -g @anthropic-ai/claude-code",
+      hint: "Once installed, sign in once with `claude login` so the daemon can shell out without an API key.",
+      docs: "https://docs.claude.com/en/docs/claude-code/quickstart",
+    },
+    {
+      id: "codex",
+      label: "Codex",
+      ok: !!(codex && codex.available),
+      version: codex && codex.version,
+      bin: codex && codex.bin,
+      install: "npm install -g @openai/codex",
+      hint: "Provided as an alternate agent — log in via `codex login` once installed.",
+      docs: "https://github.com/openai/codex",
+    },
+  ];
+  return html`
+    <div className="model-setup-cli">
+      <div className="model-setup-cli-head">
+        <div className="model-setup-cli-title">Pick a CLI to connect</div>
+        <div className="model-setup-cli-sub">Install the binary, sign in once in a terminal, then refresh. The daemon detects it via PATH.</div>
+      </div>
+      ${rows.map(r => html`
+        <div key=${r.id} className=${"model-setup-cli-row" + (r.ok ? " is-ready" : "")}>
+          <div className="model-setup-cli-row-head">
+            <span className="model-setup-cli-dot" data-ok=${r.ok}/>
+            <span className="model-setup-cli-name">${r.label}</span>
+            <span className="model-setup-cli-state">${r.ok ? ("ready" + (r.version ? " · " + String(r.version).split(/\s+/)[0] : "")) : (loaded ? "not on PATH" : "checking…")}</span>
+          </div>
+          ${!r.ok && html`
+            <div className="model-setup-cli-install">
+              <code>${r.install}</code>
+              <div className="model-setup-cli-hint">${r.hint} <a href=${r.docs} target="_blank" rel="noopener">docs ↗</a></div>
+            </div>
+          `}
+          ${r.ok && html`
+            <div className="model-setup-cli-hint">Detected at <code>${r.bin || "—"}</code>. The editor will shell out to this binary for every text-output run.</div>
+          `}
+        </div>
+      `)}
+      <div className="model-setup-cli-actions">
+        <button className="tbtn" onClick=${onBack}>← Back</button>
+        <button className="tbtn tbtn-primary" onClick=${async () => { await reloadAgents(); await onRefresh(); }}>I've installed it · refresh</button>
+      </div>
+    </div>
+  `;
+}
+
+/* Onboarding catalog — maps each integrated provider to the human-readable
+   skills it actually covers, in the language the setup card uses. Drives
+   the "Step 2 · Optional · Asset providers" section; ordering is meaningful
+   (fal first because one key unlocks the broadest skill set). Providers
+   listed as integrated in window.TH_MEDIA but absent from this map fall
+   back to the provider.hint string. */
+const ONBOARDING_ASSET_PROVIDERS = [
+  { id: "fal",       covers: "image · video · 3D · background removal · upscale" },
+  { id: "quiver",    covers: "vector SVG" },
+  { id: "openai",    covers: "raster image (gpt-image-2) · text models" },
+  { id: "anthropic", covers: "Claude text models · vision-based describe" },
+];
+
+/* Slim inline row for one provider in the onboarding "Asset providers"
+   section. Saves keys against /__media_config without leaving the page —
+   the Settings dialog has the full Save/Test/Clear UX, this is a friction-
+   free first-touch surface. When a key is already set we collapse to a
+   ✓ + Clear affordance so the user doesn't accidentally paste over a
+   working key. Dispatches th:media-config-changed on save so the top-
+   right warning chip and useMediaConfig consumers refresh. */
+function OnboardingAssetProviderRow({ provider, covers, status, onChanged }) {
+  const [keyInput, setKeyInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+  const hasKey   = !!(status && (status.has_key || status.saved || status.from_env));
+  const fromEnv  = !!(status && status.from_env && !status.saved);
+
+  const save = async () => {
+    const v = (keyInput || "").trim();
+    if (!v) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__media_config"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [provider.id]: { api_key: v } }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setKeyInput("");
+      setExpanded(false);
+      try { window.dispatchEvent(new Event("th:media-config-changed")); } catch {}
+      await onChanged();
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally { setBusy(false); }
+  };
+  const clear = async () => {
+    if (!confirm(`Remove the saved ${provider.label} key?`)) return;
+    setBusy(true); setErr(null);
+    try {
+      await fetch(apiUrl("/__media_config"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [provider.id]: { api_key: "" } }),
+      });
+      try { window.dispatchEvent(new Event("th:media-config-changed")); } catch {}
+      await onChanged();
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally { setBusy(false); }
+  };
+
+  return html`
+    <div className=${"onboarding-asset-row" + (hasKey ? " is-set" : "")}>
+      <div className="onboarding-asset-row-head">
+        <span className="onboarding-asset-dot" data-ok=${hasKey}/>
+        <span className="onboarding-asset-name">${provider.label}</span>
+        <span className="onboarding-asset-covers">${covers || provider.hint || ""}</span>
+        <span className="onboarding-asset-state">
+          ${hasKey ? (fromEnv ? "✓ via env var" : "✓ key set") : "— no key"}
+        </span>
+      </div>
+      ${!hasKey && !expanded && html`
+        <div className="onboarding-asset-row-body">
+          <a className="onboarding-asset-docs" href=${provider.docsUrl} target="_blank" rel="noopener">get key ↗</a>
+          <button className="tbtn tbtn-primary" onClick=${() => setExpanded(true)}>Add ${provider.label} key</button>
+        </div>
+      `}
+      ${!hasKey && expanded && html`
+        <div className="onboarding-asset-row-form">
+          <input
+            type="password"
+            className="onboarding-asset-input"
+            placeholder=${`Paste ${provider.label} API key…`}
+            value=${keyInput}
+            onInput=${(e) => setKeyInput(e.target.value)}
+            onKeyDown=${(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setExpanded(false); setKeyInput(""); setErr(null); } }}
+            autoFocus
+            disabled=${busy}/>
+          <div className="onboarding-asset-form-actions">
+            <a className="onboarding-asset-docs" href=${provider.docsUrl} target="_blank" rel="noopener">get key ↗</a>
+            <button className="tbtn" disabled=${busy} onClick=${() => { setExpanded(false); setKeyInput(""); setErr(null); }}>Cancel</button>
+            <button className="tbtn tbtn-primary" disabled=${busy || !keyInput.trim()} onClick=${save}>${busy ? "Saving…" : "Save key"}</button>
+          </div>
+        </div>
+      `}
+      ${hasKey && html`
+        <div className="onboarding-asset-row-body">
+          <span className="onboarding-asset-hint">${fromEnv ? "Coming from your shell environment — clear here would only affect the saved value." : "Saved locally in ~/.test-harness/media-config.json (mode 0600)."}</span>
+          <button className="tbtn" disabled=${busy} onClick=${clear}>Clear</button>
+        </div>
+      `}
+      ${err && html`<div className="onboarding-tool-err">${(err || "").slice(0, 400)}${(err || "").length > 400 ? "…" : ""}</div>`}
+    </div>
+  `;
+}
+
+/* Optional sub-card listing every integrated provider key the user might
+   want to set during onboarding. Reads /__media_config to show ✓/— per
+   provider. Decoupled from Step 1 (agent model) so the user understands
+   asset keys aren't required for project creation — they unlock specific
+   skill nodes (image, video, SVG, etc.) when they're ready. */
+function OnboardingAssetProvidersSection({ mediaCfg }) {
+  const providerCatalog = (typeof window !== "undefined" && window.TH_MEDIA && window.TH_MEDIA.providers) || {};
+  const rows = ONBOARDING_ASSET_PROVIDERS
+    .map(p => ({ ...p, ...(providerCatalog[p.id] || {}) }))
+    .filter(p => p.integrated && p.id);
+  if (!rows.length) return null;
+  return html`
+    <div className="onboarding-asset-providers">
+      <div className="onboarding-section-head">
+        <div className="onboarding-section-eyebrow">Step 2 · Optional · Asset providers</div>
+        <div className="onboarding-section-title">Add keys for image, video, SVG, audio…</div>
+        <div className="onboarding-section-desc">
+          Each asset skill (image · video · vector · 3D · audio) calls a specific provider. You can add these keys now or any time later via the gear icon — projects can still be created without them. ✓ means the daemon has a usable key for that provider.
+        </div>
+      </div>
+      ${rows.map(p => html`
+        <${OnboardingAssetProviderRow}
+          key=${p.id}
+          provider=${p}
+          covers=${p.covers}
+          status=${(mediaCfg.config && mediaCfg.config.providers && mediaCfg.config.providers[p.id]) || {}}
+          onChanged=${() => mediaCfg.reload()}/>
+      `)}
+    </div>
+  `;
+}
+
+/* Slim onboarding row for one local package (rembg today, others later).
+   Reuses the same /__local_status + /__local_install endpoints as the
+   Settings-dialog version but fits the lighter setup-card aesthetic — no
+   verbose hints, no install-output dump, just status + Install. Errors
+   surface inline; success collapses the button to "✓ installed". */
+function OnboardingLocalToolRow({ pkg }) {
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const probe = useCallback(async () => {
+    setErr(null);
+    try {
+      const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}`));
+      const j = await r.json();
+      setStatus(j);
+    } catch (e) {
+      setStatus({ installed: false });
+      setErr(String(e?.message || e));
+    }
+  }, [pkg.id]);
+  useEffect(() => { probe(); }, [probe]);
+  const install = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__local_install"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: pkg.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!j.ok) setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
+      await probe();
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally { setBusy(false); }
+  };
+  const installed = !!(status && status.installed);
+  const stateLabel = installed
+    ? `✓ installed${status && status.version && status.version !== "unknown" ? " · v" + status.version : ""}`
+    : (status ? "— not installed" : "checking…");
+  return html`
+    <div className=${"onboarding-tool-row" + (installed ? " is-installed" : "")}>
+      <div className="onboarding-tool-row-head">
+        <span className="onboarding-tool-dot" data-ok=${installed}/>
+        <span className="onboarding-tool-name">${pkg.label}</span>
+        <span className="onboarding-tool-skills">covers: ${pkg.skills}</span>
+        <span className="onboarding-tool-state">${stateLabel}</span>
+      </div>
+      <div className="onboarding-tool-row-body">
+        <span className="onboarding-tool-hint">${pkg.hint}</span>
+        <div className="onboarding-tool-actions">
+          <a className="onboarding-tool-docs" href=${pkg.docsUrl} target="_blank" rel="noopener">docs ↗</a>
+          <button
+            className=${"tbtn " + (!installed ? "tbtn-primary" : "")}
+            disabled=${busy}
+            onClick=${install}
+          >${busy ? "Installing… (1-3 min)" : (installed ? "Reinstall" : `Install ${pkg.label}`)}</button>
+        </div>
+      </div>
+      ${err && html`<div className="onboarding-tool-err">${(err || "").slice(0, 400)}${(err || "").length > 400 ? "…" : ""}</div>`}
+    </div>
+  `;
+}
+
+/* Optional sub-card inside ModelSetupCard listing every LOCAL_PACKAGES
+   entry the daemon knows how to install on demand. Marked "optional" so
+   users understand they can still create projects without these tools —
+   they just won't be able to run the matching skills (rembg → Remove
+   background) until the package is installed. */
+function OnboardingLocalToolsSection() {
+  return html`
+    <div className="onboarding-local-tools">
+      <div className="onboarding-section-head">
+        <div className="onboarding-section-eyebrow">Step 3 · Optional · Local skills</div>
+        <div className="onboarding-section-title">Install on-demand local tools</div>
+        <div className="onboarding-section-desc">
+          Local Python packages the daemon runs as subprocesses — no API key required. They cover skills that don't fit any provider above (e.g. background removal). Skip for now if you don't need them; you can come back via the gear icon any time.
+        </div>
+      </div>
+      ${LOCAL_PACKAGES.map(p => html`<${OnboardingLocalToolRow} key=${p.id} pkg=${p}/>`)}
+    </div>
+  `;
+}
+
+/* Empty-state replacement shown on /editor/ when there are no projects AND
+   no model can be resolved (no API key, no CLI). Forces the user to commit
+   to ONE setup path before the "Create project" affordance comes back —
+   otherwise a fresh project just errors on the first agent run. Two paths:
+     1. Paste an API key → opens WorkflowSettingsDialog (handler from parent).
+     2. Connect a CLI    → expands into <ModelSetupCliPicker/> inline.
+   The parent re-polls /__media_config via `onRefresh` when the user signals
+   they've finished, so the card unmounts itself once a model is reachable. */
+function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg }) {
+  const [pick, setPick] = useState(null); // null | "cli"
+  if (pick === "cli") {
+    return html`
+      <div className="landing-empty model-setup-card">
+        <div className="model-setup-head">
+          <div className="model-setup-eyebrow">Step 1 · Required · Agent model</div>
+          <div className="model-setup-title">Connect a Claude CLI for the agent</div>
+          <div className="model-setup-desc">
+            The agent needs at least one way to reach a text model before any project can run. This step covers the agent only — image · video · SVG keys are optional and live below.
+            ${workspaceDir ? html`<span> Workspace lives under <code>${workspaceDir}</code>.</span>` : null}
+          </div>
+        </div>
+        <${ModelSetupCliPicker} onRefresh=${onRefresh} onBack=${() => setPick(null)}/>
+        ${mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg}/>`}
+        <${OnboardingLocalToolsSection}/>
+      </div>
+    `;
+  }
+  return html`
+    <div className="landing-empty model-setup-card">
+      <div className="model-setup-head">
+        <div className="model-setup-eyebrow">Step 1 · Required · Agent model</div>
+        <div className="model-setup-title">Connect the agent model before adding a project</div>
+        <div className="model-setup-desc">
+          The agent runs every workflow step — it needs one path to a text model. Pick API key (Anthropic / OpenAI) or shell out to a CLI. Asset keys (image · video · SVG) are optional and live in the next step.
+        </div>
+      </div>
+      <div className="model-setup-choices">
+        <button className="model-setup-choice" onClick=${onOpenSettings}>
+          <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
+          <div className="model-setup-choice-body">
+            <div className="model-setup-choice-title">Use an API key</div>
+            <div className="model-setup-choice-desc">Paste an Anthropic or OpenAI key — the agent will use it for every text run. Stored locally at <code className="model-setup-inline-code">~/.test-harness/media-config.json</code> · mode 0600.</div>
+            <div className="model-setup-choice-cta">Open Settings →</div>
+          </div>
+        </button>
+        <button className="model-setup-choice" onClick=${() => setPick("cli")}>
+          <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
+          <div className="model-setup-choice-body">
+            <div className="model-setup-choice-title">Use a CLI</div>
+            <div className="model-setup-choice-desc">Shell out to Claude Code (or Codex) — uses your existing CLI login, no API key required for text runs.</div>
+            <div className="model-setup-choice-cta">Pick a CLI →</div>
+          </div>
+        </button>
+      </div>
+      <button className="model-setup-refresh-link" onClick=${onRefresh}>I've already set one up · refresh</button>
+      ${mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg}/>`}
+      <${OnboardingLocalToolsSection}/>
+    </div>
+  `;
+}
+
 /* Full-page project browser. Rendered at /editor/ when in workspace mode
    with no ?project= in the URL. Card grid scales to N projects; click a
    card to enter the project (URL gets ?project=<id>), hover for rename/
@@ -11796,6 +12214,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const mediaCfg = useMediaConfig();
   // Workspace DS list — needed for the wizard's "Pick from workspace" path.
   // Lazy-fetched only when the wizard opens (cheap GET, but no need to spam
   // the daemon on every landing render).
@@ -11905,6 +12324,7 @@ function ProjectsLanding({ info, projects, onReload }) {
           <code className="landing-meta-path">${info.workspaceDir}</code>
           <${DaemonIndicator}/>
           <${CliIndicator}/>
+          <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
           <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
         </div>
       </div>
@@ -11924,7 +12344,12 @@ function ProjectsLanding({ info, projects, onReload }) {
                 onInput=${e => setFilter(e.target.value)}
               />
             `}
-            <button className="landing-new-btn" onClick=${() => { setCreating(true); setErr(null); }}>
+            <button
+              className="landing-new-btn"
+              disabled=${!mediaCfg.configured}
+              data-disabled=${!mediaCfg.configured}
+              title=${mediaCfg.configured ? "Create a new project" : "Connect a model first — see the setup card below."}
+              onClick=${() => { if (!mediaCfg.configured) return; setCreating(true); setErr(null); }}>
               <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
               <span>New project</span>
             </button>
@@ -11938,7 +12363,15 @@ function ProjectsLanding({ info, projects, onReload }) {
           onCreated=${onWizardCreated}
         />`}
 
-        ${projects.length === 0 && !creating && html`
+        ${projects.length === 0 && !creating && !mediaCfg.configured && mediaCfg.loaded && html`
+          <${ModelSetupCard}
+            workspaceDir=${info.workspaceDir}
+            mediaCfg=${mediaCfg}
+            onOpenSettings=${() => setSettingsOpen(true)}
+            onRefresh=${() => mediaCfg.reload()}/>
+        `}
+
+        ${projects.length === 0 && !creating && mediaCfg.configured && html`
           <div className="landing-empty">
             <div className="landing-empty-icon">▣</div>
             <div className="landing-empty-title">No projects yet</div>
@@ -22188,6 +22621,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         <div className="workflow-bar-spacer"/>
         <${DaemonIndicator}/>
         <${CliIndicator}/>
+        <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
         ${onOpenNewChat && html`
           <${RunsMenu}
             onOpenRun=${onReopenRun}
@@ -38604,6 +39038,10 @@ function WorkflowSettingsDialog({ onClose }) {
       const r = await fetch(apiUrl("/__media_config"));
       const j = await r.json();
       setConfig(j);
+      // Broadcast so the top-right ModelStatusIndicator (and any other
+      // mounted useMediaConfig consumer) updates the instant a key is
+      // saved/cleared, without each surface remembering to wire it up.
+      try { window.dispatchEvent(new Event("th:media-config-changed")); } catch {}
     } catch { setConfig({ providers: {} }); }
   }, []);
   useEffect(() => { reload(); }, [reload]);
@@ -38649,23 +39087,25 @@ function WorkflowSettingsDialog({ onClose }) {
   `, document.body);
 }
 
-/* Phase 4c — Local skills section. Lists Python packages the daemon can
-   install on demand (rembg today; more in later phases). No API keys here —
-   "Install" runs pip in the daemon's environment, "Check" probes via
-   subprocess so freshly-installed packages are detected without restart. */
+/* Phase 4c — Local skills catalog. Single source of truth for Python
+   packages the daemon can install on demand. Shared between the Settings
+   dialog (`WorkflowLocalSkillsSection`) and the projects-landing onboarding
+   card (`OnboardingLocalToolsSection`) so a new tool added here lights up
+   in both surfaces without further wiring. */
+const LOCAL_PACKAGES = [
+  {
+    id: "rembg",
+    label: "rembg",
+    hint: "background removal · github.com/danielgatis/rembg · ~170 MB ONNX model on first use",
+    skills: "Remove background",
+    docsUrl: "https://github.com/danielgatis/rembg",
+  },
+];
+
 function WorkflowLocalSkillsSection() {
-  const PACKAGES = [
-    {
-      id: "rembg",
-      label: "rembg",
-      hint: "background removal · github.com/danielgatis/rembg · ~170 MB ONNX model on first use",
-      skills: "Remove background",
-      docsUrl: "https://github.com/danielgatis/rembg",
-    },
-  ];
   return html`
     <div className="workflow-settings-section-group-head">Local skills · no API key</div>
-    ${PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
+    ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
   `;
 }
 
@@ -41297,6 +41737,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
         `}
         <${BranchDocsButtons}/>
         <${DaemonIndicator} compact=${true}/>
+        <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
         <${RunsMenu} onOpenRun=${onReopenRun} onStartNewChat=${onStartNewChat} compact=${true}/>
