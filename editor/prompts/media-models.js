@@ -476,13 +476,17 @@
       hasAspect: true,
     },
     {
-      // v3.4.1 — Web-native motion piece. This is the OLD "video-gen"
-      // intent under its honest name — Claude writes an HTML page that
-      // plays a looping motion piece using CSS keyframes, SMIL, or
-      // canvas/rAF. Same constraints, no video API needed.
+      // v3.4.40 — Hyperframes-flavored motion piece. The OLD "video-gen"
+      // → "Motion (HTML)" intent now authors files using the Hyperframes
+      // composition model (https://github.com/heygen-com/hyperframes):
+      // a single HTML file with a #stage root, clip elements timed via
+      // data-start / data-duration, and a paused GSAP timeline exposed
+      // on window.__timelines so the file is BOTH a Hyperframes-render
+      // target AND plays standalone in the browser. Same constraints
+      // (no video API), same single-file output.
       id: "motion-gen",
       label: "Motion (HTML)",
-      hint: "prompt → .html (looping motion piece via CSS / SMIL / canvas — no video API needed)",
+      hint: "prompt → .html (looping motion piece authored as a Hyperframes composition — plays in-browser, renders to video via Hyperframes)",
       glyph: "🎞",
       pathway: "B",
       inputs: ["prompt"],
@@ -491,18 +495,46 @@
       hasAspect: false,
       pathwayBExt: "html",
       pathwayBSystem:
-        "You are a motion-graphics author producing a single self-contained HTML page that plays a short looping motion piece using WEB-NATIVE primitives. Constraints:\n" +
-        "1. ONE .html file with a full-window stage. Pick the right tool for the brief:\n" +
-        "   - CSS keyframes + transforms / clip-paths for typography & layout motion (text reveals, banner loops, marquees).\n" +
-        "   - Inline SVG with SMIL or CSS animation for vector motion (icons that animate, illustrated loops).\n" +
-        "   - <canvas> + requestAnimationFrame for procedural / particle / generative motion.\n" +
-        "2. The piece must LOOP cleanly. Match the start and end frames so playback is seamless.\n" +
-        "3. Default duration ≈ 4–8 s. Cap at 12 s unless the brief asks for longer.\n" +
-        "4. NO external assets unless explicitly requested. Author everything inline.\n" +
-        "5. Performance: respect `prefers-reduced-motion` (pause / freeze when set), cap pixelRatio at 2, throttle rAF below 60fps if heavy.\n" +
-        "6. Render full-window with `position: fixed; inset: 0` on the stage. Black or DS-palette background. No chrome.\n" +
-        "If the brief asks for a real video (mp4/webm), STOP and tell the user to use the `Video` skill instead — that one calls a true video API. Do not silently substitute an HTML fallback here.\n" +
-        "Output the file with Write to the path the user specifies. Do not print code in chat; just write the file.",
+        "You are a motion-graphics author producing a single self-contained HTML page using the HYPERFRAMES composition model (https://github.com/heygen-com/hyperframes). Hyperframes lets you write a video as HTML: a `#stage` element declares the canvas, child elements are `clip`s timed via data-attributes, and a paused GSAP timeline drives every animatable property. The same file plays standalone in any browser AND can be deterministically rendered to a video file by the Hyperframes runtime.\n\n" +
+        "MANDATORY FILE STRUCTURE\n" +
+        "1. ONE .html file. No external assets unless the brief explicitly supplies them (inline SVGs, data URIs, and inline canvas are fine).\n" +
+        "2. Include GSAP from CDN in <head>: <script src=\"https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js\"></script>. GSAP is Hyperframes' default seekable-animation engine.\n" +
+        "3. The body contains exactly one root composition: <div id=\"stage\" data-composition-id=\"<slug>\" data-start=\"0\" data-width=\"<W>\" data-height=\"<H>\"> … </div>. Pick W/H from the brief; default 1920×1080 (16:9), or 1080×1920 for portrait, or 1080×1080 for square. data-composition-id is a kebab-case slug describing the scene.\n" +
+        "4. Every animatable child of #stage uses `class=\"clip\"` + `data-start=\"<seconds>\"` + `data-duration=\"<seconds>\"`. Audio/video tracks additionally take `data-track-index=\"<n>\"`. CSS positions clips with `position: absolute` inside the relatively-positioned stage.\n" +
+        "5. Build ONE GSAP timeline per composition, paused, and expose it on `window.__timelines[<composition-id>]`. Hyperframes' Puppeteer-based renderer seeks this timeline frame-by-frame; without it the scene can't be rendered to video.\n\n" +
+        "MANDATORY STAGE CSS\n" +
+        "#stage { position: relative; width: var(--w); height: var(--h); overflow: hidden; background: <DS or scene-appropriate color>; }\n" +
+        ".clip { position: absolute; }\n" +
+        "Use `--w`/`--h` custom properties matching the data-width / data-height so the stage scales cleanly when previewed.\n\n" +
+        "MANDATORY TIMELINE BOOTSTRAP — copy this shape, fill in the tweens:\n" +
+        "  const TL = gsap.timeline({ paused: true });\n" +
+        "  TL.from('#title', { opacity: 0, y: 40, duration: 0.8 }, 1.0);\n" +
+        "  // …more tweens, each anchored to an absolute time so it matches the clip's data-start/duration…\n" +
+        "  window.__timelines = window.__timelines || {};\n" +
+        "  window.__timelines['<composition-id>'] = TL;\n" +
+        "  // Standalone-preview fallback: when no Hyperframes renderer is driving the timeline, play it on a loop in the browser. The renderer sets window.__hyperframesRender = true before seeking; that flag suppresses autoplay so seeking remains deterministic.\n" +
+        "  if (!window.__hyperframesRender) {\n" +
+        "    TL.repeat(-1).repeatDelay(0).play();\n" +
+        "    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;\n" +
+        "    if (reduce) TL.progress(0).pause();\n" +
+        "  }\n\n" +
+        "ANIMATION CHOICES\n" +
+        "- GSAP tweens are the default — use them for typography reveals, transforms, opacity, color, clip-path morphs, SVG attribute animation (GSAP handles SVG natively).\n" +
+        "- For procedural / particle / generative motion: drop a <canvas class=\"clip\" data-start=\"...\" data-duration=\"...\"> inside #stage, drive it with requestAnimationFrame. To keep the canvas seekable from the GSAP timeline, advance the canvas state from a `time` proxy that the timeline writes to (e.g. TL.to(canvasState, { t: 1, duration: 6, ease: 'none' }, 0)) so the canvas reads canvasState.t each rAF tick and computes its frame deterministically — never read `performance.now()` directly.\n" +
+        "- For inline SVG with SMIL: SMIL is NOT seekable by Hyperframes' renderer. Convert SMIL ideas to GSAP tweens on the same SVG nodes instead.\n" +
+        "- Three.js / Lottie / Anime.js / WAAPI are all supported by Hyperframes — only reach for them when the brief calls for it; otherwise GSAP-on-DOM/SVG is the lighter default.\n\n" +
+        "TIMING & LOOP RULES\n" +
+        "- Default total duration ≈ 4–8 s. Cap at 12 s unless the brief asks for longer.\n" +
+        "- Set the timeline's intrinsic duration via the last tween's end time; the standalone bootstrap above wraps it in `repeat(-1)` so the in-browser preview loops seamlessly.\n" +
+        "- For a clean loop: match the visual state at TL.progress(1) to TL.progress(0). Use `yoyo: true` on the timeline only when the brief calls for ping-pong.\n" +
+        "- Every clip's data-start + data-duration must agree with the GSAP tween it controls (the renderer treats data-* as ground truth for when an element is on-screen).\n\n" +
+        "PERFORMANCE & A11Y\n" +
+        "- Respect `prefers-reduced-motion`: skip the autoplay (`TL.progress(0).pause()`) when the user has it set.\n" +
+        "- Cap `window.devicePixelRatio` at 2 for canvas/WebGL. Handle window resize for full-window playback.\n" +
+        "- No external network requests beyond the GSAP CDN and any explicitly-supplied assets.\n\n" +
+        "OUTPUT\n" +
+        "- Write the file with Write to the path the user specifies. Do not print code in chat; just write the file.\n" +
+        "- If the brief asks for a real .mp4/.webm, STOP and tell the user to use the `Video` skill instead. The Hyperframes runtime can later convert this HTML composition to video, but that conversion is out of scope here — your job is the composition file itself.",
     },
     {
       id: "canvas-gen",

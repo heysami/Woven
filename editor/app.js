@@ -562,6 +562,7 @@ const Icon = {
   Shuffle:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 4h2.5c1.6 0 2.4 1.2 3.5 2.8M2 12h2.5c1.6 0 2.4-1.2 3.5-2.8"/><path d="M11 4l-2.4 3.6M11 12L8.6 8.4"/><path d="M11 2.5L13.5 4 11 5.5M11 10.5L13.5 12 11 13.5"/></svg>`,
   Loop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4 7a4 4 0 016.4-2.3M12 9a4 4 0 01-6.4 2.3"/><path d="M10 3.2l.6 1.9-1.9.5M6 12.8l-.6-1.9 1.9-.5"/></svg>`,
   Star:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.7 3.9 4.3.4-3.2 2.8 1 4.2L8 11.6 4.2 13.3l1-4.2L2 6.3l4.3-.4z"/></svg>`,
+  Code:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4L2 8l4 4M10 4l4 4-4 4"/></svg>`,
   // v3.1 — clarified node-toolbar icons.
   // OpenExt: arrow leaving a box (standard "open in new tab" affordance).
   //   Used by Prototype node's "Open in editor" button, replacing the ambiguous
@@ -880,6 +881,54 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   const [pan, setPan] = useState({ x: initial.x, y: initial.y });
   const [zoom, setZoom] = useState(initial.z);
   const [panning, setPanning] = useState(false);
+  // v3.4.14 — Refs that always carry the latest committed pan/zoom. The wheel
+  // handler reads from these instead of closure-captured `pan` / `zoom` so a
+  // burst of trackpad events (or 120Hz wheel devices) can't operate on stale
+  // values between React commits. Updated in a useEffect so they reflect what
+  // React just committed, not in-flight imperative writes (those track in the
+  // local `imp` variable inside the wheel effect).
+  const panRef  = useRef(pan);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { panRef.current  = pan;  }, [pan]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  // v3.4.14 — Imperative-only transform writes on the canvas element. React's
+  // render USED to write `style.transform` declaratively (style={{transform:
+  // ...}} on the .workflow-canvas div), but that races with the imperative
+  // wheel-pan/zoom path: a pending React render carrying stale pan/zoom can
+  // fire AFTER a fresh imperative write and overwrite it, producing the
+  // two-position flicker the user reported. Fix: drop the inline style prop
+  // from the JSX (callers render `<div className="workflow-canvas">` without
+  // a transform style), and write the transform here in a useLayoutEffect so
+  // both paths funnel through the same imperative write. useLayoutEffect
+  // (not useEffect) runs synchronously before paint, so the canvas is never
+  // visibly mounted at the wrong position. Same lookup as the wheel/drag
+  // handlers — supports both `.workflow-canvas` (workflow view) and
+  // `.canvas` (editor / flow / state-machine views).
+  // ourCommitRef gates the layout-effect write. The wheel-pan/zoom commit
+  // (scheduleCommit below) AND the mouse-drag mouseup BOTH call setPan with
+  // the imperative-DOM value they already wrote. For those, the
+  // useLayoutEffect that follows the render must NOT write the transform —
+  // state is just catching up to what imp already had on the DOM, and a
+  // fresh wheel event may have moved imp past `pan` between commit and
+  // render (that's the flicker scenario). External setPan calls
+  // (focus-node, history undo/redo) leave the flag false so the layout
+  // effect DOES write — those are genuine state-driven moves.
+  const ourCommitRef = useRef(false);
+  useLayoutEffect(() => {
+    if (ourCommitRef.current) {
+      ourCommitRef.current = false;
+      return;
+    }
+    const el = wrapRef.current; if (!el) return;
+    const canvasEl =
+         el.querySelector(":scope > .workflow-canvas")
+      || el.querySelector(":scope > .canvas")
+      || el.querySelector(".workflow-canvas")
+      || el.querySelector(".canvas");
+    if (canvasEl) {
+      canvasEl.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+    }
+  }, [pan, zoom]);
   // v3.4.2 — Expose pan/zoom-in-progress as a global flag + body attribute
   // so portaled chrome (asset action bar, picked-element bar, select
   // badge) can skip its per-frame `getBoundingClientRect` polling during
@@ -899,8 +948,73 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
     };
   }, [panning]);
 
+  // v3.4.14 — Wheel/trackpad pan + zoom path, now imperative-first to match
+  // the mouse-drag path (see v3.4.13 below). The previous setPan-on-every-
+  // wheel-event approach caused two visible flickers during trackpad pan +
+  // momentum:
+  //   1. Stale closures. The handler captured `pan`/`zoom`; useEffect deps
+  //      `[pan, zoom, ...]` re-bound it after every commit. At trackpad-
+  //      momentum rates (~120 events/sec) multiple events fire between
+  //      paints, all using the SAME captured pan → only the last delta
+  //      applies; effective pan jumps in chunks. Combined with (2), the
+  //      visual was two positions alternating per frame.
+  //   2. Render storm. setPan re-rendered WorkflowSurface every event, and
+  //      a sibling sync effect (`useEffect([pan, zoom], setData(...))` in
+  //      WorkflowSurface) cascaded into a parent re-render → so each wheel
+  //      event triggered TWO React commits, racing each other to write
+  //      `style.transform`.
+  // Fix: read latest pan/zoom from refs (never stale), track the live
+  // imperative position in a local `imp` var, write `style.transform`
+  // directly to the canvas element on every event, and commit React state
+  // ONCE after the burst settles (debounced). useEffect deps drop `pan`
+  // and `zoom` so the listener isn't rebound mid-burst.
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
+    const findCanvas = () =>
+         el.querySelector(":scope > .workflow-canvas")
+      || el.querySelector(":scope > .canvas")
+      || el.querySelector(".workflow-canvas")
+      || el.querySelector(".canvas");
+    let canvasEl = findCanvas();
+    // Live imperative position. Seeded from React state on each new burst
+    // (when the commit timer is idle) so an external setPan/setZoom between
+    // bursts doesn't get clobbered.
+    let imp = { x: panRef.current.x, y: panRef.current.y, z: zoomRef.current };
+    let commitTimer = 0;
+    const writeTransform = () => {
+      if (!canvasEl || !document.body.contains(canvasEl)) canvasEl = findCanvas();
+      if (canvasEl) canvasEl.style.transform = `translate(${imp.x}px, ${imp.y}px) scale(${imp.z})`;
+    };
+    const scheduleCommit = () => {
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = setTimeout(() => {
+        commitTimer = 0;
+        // React skips a re-render if the new value === the old one; here we
+        // pass fresh object literals so React always commits. That's the
+        // point — the React state needs to catch up to the imperative DOM
+        // exactly once after the burst, so downstream consumers (sync to
+        // data.pan, MiniMap, getBoundingClientRect-based chrome) see the
+        // final position. Equality with current state is fine to skip; we
+        // check via panRef to avoid a no-op render.
+        // Flag both setPan/setZoom calls as "our own commit" so the
+        // useLayoutEffect below skips its DOM write — the imperative path
+        // has the freshest value, state is just catching up.
+        ourCommitRef.current = true;
+        // Update panRef/zoomRef SYNCHRONOUSLY here. The matching useEffects
+        // below only fire after React's commit + paint cycle, so a wheel
+        // event firing in that gap would otherwise re-seed `imp` from
+        // stale refs and stomp the just-committed value with one delta-tick
+        // worth of drift. Updating the refs inline closes the gap.
+        if (panRef.current.x !== imp.x || panRef.current.y !== imp.y) {
+          panRef.current = { x: imp.x, y: imp.y };
+          setPan({ x: imp.x, y: imp.y });
+        }
+        if (zoomRef.current !== imp.z) {
+          zoomRef.current = imp.z;
+          setZoom(imp.z);
+        }
+      }, 80);
+    };
     const onWheel = (e) => {
       // Yield to native scrolling when the wheel event originates inside:
       //   (a) a node the caller flagged as selected (`[data-selected="true"]`)
@@ -919,31 +1033,49 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
         if (letSelectedScroll && e.target.closest('[data-selected="true"]')) return;
       }
       e.preventDefault();
+      // If no commit is pending, this is the first event of a new burst —
+      // re-seed `imp` from the latest React state in case an external
+      // setPan ran in the gap.
+      if (!commitTimer) {
+        imp = { x: panRef.current.x, y: panRef.current.y, z: zoomRef.current };
+      }
       if (isZoomGesture) {
         const dz = Math.exp(-e.deltaY * 0.003);
-        const newZoom = Math.max(0.08, Math.min(3, zoom * dz));
+        const newZoom = Math.max(0.08, Math.min(3, imp.z * dz));
         const r = el.getBoundingClientRect();
         const mx = e.clientX - r.left;
         const my = e.clientY - r.top;
-        const k = newZoom / zoom;
-        // v3.4.4 — Same synchronous flag for wheel-zoom. Each wheel event
-        // is a single transform; pulse the flag for ~120ms so any
-        // mid-flight rAF tick from the bars also skips its rect query.
-        // Without this, dolly-zoom while looking at many nodes shows the
-        // same jitter pan does.
-        pulseInteractingFlag();
-        setPan({ x: mx - (mx - pan.x) * k, y: my - (my - pan.y) * k });
-        setZoom(newZoom);
+        const k = newZoom / imp.z;
+        imp = { x: mx - (mx - imp.x) * k, y: my - (my - imp.y) * k, z: newZoom };
       } else {
-        // Wheel-scroll-pan (horizontal/vertical scroll without zoom modifier).
-        // Same treatment.
-        pulseInteractingFlag();
-        setPan({ x: pan.x - e.deltaX, y: pan.y - e.deltaY });
+        imp = { x: imp.x - e.deltaX, y: imp.y - e.deltaY, z: imp.z };
       }
+      // v3.4.4 — Pulse the interacting flag so portaled chrome (asset bar,
+      // badges) skip their rAF rect queries during this event. Same reason
+      // as drag-pan: avoid layout flushes piling up on top of paint cost.
+      pulseInteractingFlag();
+      writeTransform();
+      scheduleCommit();
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [pan, zoom, letSelectedScroll]);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = 0;
+        // Flush the pending commit so React state agrees with the DOM if
+        // the component unmounts mid-burst (e.g. view switch). Same idea
+        // as the mouse-drag's mouseup-time setPan below.
+        ourCommitRef.current = true;
+        if (panRef.current.x !== imp.x || panRef.current.y !== imp.y) {
+          setPan({ x: imp.x, y: imp.y });
+        }
+        if (zoomRef.current !== imp.z) {
+          setZoom(imp.z);
+        }
+      }
+    };
+  }, [letSelectedScroll]);
 
   // Spacebar held → "hand" mode (Figma convention)
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -1027,7 +1159,10 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       try { window.__thCanvasInteracting = false; } catch {}
       try { document.body.removeAttribute("data-canvas-interacting"); } catch {}
       // Commit final position so React state matches the imperative DOM.
-      if (pendingPan) setPan(pendingPan);
+      // Same flag as the wheel commit: tell useLayoutEffect to skip its DOM
+      // write — the DOM already has this value from writeTransform, no need
+      // to (re)write it from stale state.
+      if (pendingPan) { ourCommitRef.current = true; setPan(pendingPan); }
       pendingPan = null;
       setPanning(false);
     };
@@ -15268,6 +15403,30 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const { w, h } = finalKind === "html"
         ? { w: 1920, h: 1440 }
         : { w: 220,  h: 170  };
+      // v3.4.42 — If the drop landed over a composer (OR a composer is
+      // the current selection), also create the edge so the new asset
+      // shows up as a layer immediately. Selection wins because the
+      // user may have just clicked the composer to focus it before
+      // dragging in the library card. Inlined (instead of calling
+      // `_findComposerPasteTarget`) so we don't TDZ on it — that
+      // function is declared later in the component.
+      let composerTarget = null;
+      {
+        const nodes = data.nodes || [];
+        const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+        for (const id of sel) {
+          const n = nodes.find(nn => nn.id === id);
+          if (n && n.kind === "composer") { composerTarget = n; break; }
+        }
+        if (!composerTarget) {
+          for (const n of nodes) {
+            if (n.kind !== "composer") continue;
+            const x0 = n.x, y0 = n.y;
+            const x1 = x0 + (n.w || 520), y1 = y0 + (n.h || 460);
+            if (x >= x0 && x <= x1 && y >= y0 && y <= y1) { composerTarget = n; break; }
+          }
+        }
+      }
       setData(d => ({
         ...d,
         nodes: [...(d.nodes || []), {
@@ -15277,6 +15436,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           assetKind: finalKind,
           path,
         }],
+        edges: composerTarget
+          ? [...(d.edges || []), { from: `${id}.out`, to: `${composerTarget.id}.in` }]
+          : (d.edges || []),
       }));
     } else if (payload.kind === "agent") {
       // Agent nodes can be dropped raw OR as a task-specific preset
@@ -15471,6 +15633,85 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           ],
         }],
       }));
+    } else if (payload.kind === "composer") {
+      // v3.4.37 — Responsive layered canvas. Default size matches a 16:9
+      // hero frame so dragging one onto the canvas already shows a
+      // sensible preview. Layers are populated dynamically from edges
+      // that terminate at .input — the WorkflowComposerNode component
+      // walks allEdges / allNodes for the current wired set.
+      const w = 520, h = 460;
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id, kind: "composer",
+          x: Math.round(x - w / 2), y: Math.round(y - 18),
+          w, h,
+          canvasW: payload.canvasW || 1600,
+          canvasH: payload.canvasH || 900,
+          maxWidth:  payload.maxWidth  || null,
+          maxHeight: payload.maxHeight || null,
+          background: payload.background || "#ffffff",
+          // layers: [{ assetId, opacity, anchor, offsetX, offsetY, width, height, visible }]
+          // Per-edge layer config keyed by upstream node id. The node
+          // synthesises missing entries when new edges arrive.
+          layers: payload.layers || [],
+        }],
+      }));
+    } else if (payload.kind === "vector-editor") {
+      // Inline SVG drawing tool. Three-pane layout (tools+layers, stage,
+      // properties) mirrors the composer. Bake writes a self-contained
+      // .svg to source/<branch>/vector-<nodeId>.svg so downstream
+      // consumers can read it as an SVG asset.
+      const w = 720, h = 520;
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id, kind: "vector-editor",
+          x: Math.round(x - w / 2), y: Math.round(y - 18),
+          w, h,
+          canvasW: payload.canvasW || 1200,
+          canvasH: payload.canvasH || 800,
+          background: payload.background || "#ffffff",
+          shapes: payload.shapes || [],
+          selection: [],
+          activeTool: payload.activeTool || "select",
+        }],
+      }));
+    } else if (payload.kind === "formatted-text") {
+      // v3.4.37 — Rich text node. The body is contentEditable; selection
+      // + a wired Typography input enables a per-level picker. A plain
+      // Prompt wired to text-in overwrites the body when its content
+      // changes (one-way sync: the node tracks lastSourceText so
+      // subsequent local edits don't get overwritten until the source
+      // changes again).
+      const w = 380, h = 320;
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id, kind: "formatted-text",
+          x: Math.round(x - w / 2), y: Math.round(y - 18),
+          w, h,
+          html: payload.html || "<p>Type or wire a prompt here.</p>",
+          lastSourceText: null,
+        }],
+      }));
+    } else if (payload.kind === "mermaid") {
+      // v3.4.38 — Mermaid diagram node. Blank by default; the user opens
+      // the </> code panel to edit the source. diagramType is a hint that
+      // pre-fills the textarea with a template + drives the dropdown
+      // selection; the renderer infers the real type from the source's
+      // first line at render time.
+      const w = 420, h = 320;
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id, kind: "mermaid",
+          x: Math.round(x - w / 2), y: Math.round(y - 18),
+          w, h,
+          code: payload.code || "",
+          diagramType: payload.diagramType || "flowchart",
+        }],
+      }));
     } else if (payload.kind === "typography") {
       // Direction input — composable type scale wired into a DS generator.
       // The font CDN URL (Google Fonts) loads the actual family so the
@@ -15500,7 +15741,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         }],
       }));
     }
-  }, [screenToWorld, setData]);
+  }, [screenToWorld, setData, data]);
 
   const updateNode = useCallback((nid, patchOrFn) => {
     setData(d => ({
@@ -15652,6 +15893,32 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     return picked.length;
   }, [selectionRef, data]);
 
+  // v3.4.42 — Find a composer the user wants to receive a paste / drop.
+  // Priority:
+  //   1. A composer in the current selection (user clicked it most recently).
+  //   2. A composer under the world-space cursor (user has their mouse over
+  //      it when the paste fires).
+  // Returns the node object or null. Used by pasteNodesFromClipboard and
+  // pastePickedElement Path B to auto-wire newly-spawned asset nodes into
+  // the composer so they appear as layers immediately.
+  const _findComposerPasteTarget = useCallback((cursorX, cursorY) => {
+    const nodes = data.nodes || [];
+    const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+    for (const id of sel) {
+      const n = nodes.find(nn => nn.id === id);
+      if (n && n.kind === "composer") return n;
+    }
+    const cx = typeof cursorX === "number" ? cursorX : lastCanvasCursorRef.current.x;
+    const cy = typeof cursorY === "number" ? cursorY : lastCanvasCursorRef.current.y;
+    for (const n of nodes) {
+      if (n.kind !== "composer") continue;
+      const x0 = n.x, y0 = n.y;
+      const x1 = x0 + (n.w || 520), y1 = y0 + (n.h || 460);
+      if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) return n;
+    }
+    return null;
+  }, [data, selectionRef]);
+
   const pasteNodesFromClipboard = useCallback((targetWorldX, targetWorldY) => {
     const clip = nodeClipboardRef.current;
     if (!clip || !clip.nodes || !clip.nodes.length) return 0;
@@ -15678,6 +15945,30 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!nf || !nt) return null;
       return { from: `${nf}.${fromPort}`, to: `${nt}.${toPort}` };
     }).filter(Boolean);
+    // v3.4.42 — Auto-wire any newly-pasted ASSET nodes into the target
+    // composer (selected, else under cursor). Skip when the paste is
+    // happening inside the composer itself (clip contains a composer
+    // and the new asset is wired to that fresh composer via clip.edges
+    // — internalEdges already covered the relationship). For the common
+    // case "copy an asset, click the composer, Cmd+V", this is what
+    // makes the layer actually appear in the composer's stack.
+    const target = _findComposerPasteTarget(tx, ty);
+    if (target) {
+      const newComposerIds = new Set(newNodes.filter(n => n.kind === "composer").map(n => n.id));
+      const alreadyWiredAssetIds = new Set();
+      for (const e of newEdges) {
+        const toId = (e.to || "").split(".", 1)[0];
+        if (newComposerIds.has(toId)) {
+          const fromId = (e.from || "").split(".", 1)[0];
+          alreadyWiredAssetIds.add(fromId);
+        }
+      }
+      for (const n of newNodes) {
+        if (n.kind !== "asset") continue;
+        if (alreadyWiredAssetIds.has(n.id)) continue;
+        newEdges.push({ from: `${n.id}.out`, to: `${target.id}.in` });
+      }
+    }
     setData(d => ({
       ...d,
       nodes: [...(d.nodes || []), ...newNodes],
@@ -15690,9 +15981,60 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         { detail: { ids: Array.from(newIds) } }));
     }
     return newNodes.length;
-  }, [setData, selectionRef]);
+  }, [setData, selectionRef, _findComposerPasteTarget]);
 
   const hasNodeClipboard = useCallback(() => !!nodeClipboardRef.current, []);
+
+  // v3.4.32 — Duplicate selected nodes in-place (Cmd+D). Behaves like
+  // copy-then-paste-at-+30/+30 but DOES NOT touch nodeClipboardRef, so
+  // the user's previously-copied clipboard payload survives a duplicate
+  // (matches Figma / Sketch behavior). Edges between the duplicated
+  // nodes are also cloned; edges that cross the selection boundary are
+  // dropped to avoid silently re-wiring sibling structure.
+  const duplicateSelectedNodes = useCallback(() => {
+    const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+    if (!sel.size) return 0;
+    const picked = (data.nodes || []).filter(n => sel.has(n.id));
+    if (!picked.length) return 0;
+    const pickedIdSet = new Set(picked.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to   || "").split(".", 1)[0];
+      return pickedIdSet.has(f) && pickedIdSet.has(t);
+    });
+    const idMap = new Map();
+    for (const n of picked) idMap.set(n.id, _freshNodeId());
+    const DX = 30, DY = 30;                                   // "nearby" offset
+    const newNodes = picked.map(n => ({
+      ...JSON.parse(JSON.stringify(n)),
+      id: idMap.get(n.id),
+      x: (typeof n.x === "number" ? n.x : 0) + DX,
+      y: (typeof n.y === "number" ? n.y : 0) + DY,
+      runStatus: undefined, runError: undefined, runRunId: undefined,
+      runId: undefined, versions: [], activeVersionId: null, lastRunId: undefined,
+    }));
+    const newEdges = internalEdges.map(e => {
+      const fromId = (e.from || "").split(".", 1)[0];
+      const fromPort = (e.from || "").split(".", 2)[1] || "out";
+      const toId = (e.to || "").split(".", 1)[0];
+      const toPort = (e.to || "").split(".", 2)[1] || "in";
+      const nf = idMap.get(fromId), nt = idMap.get(toId);
+      if (!nf || !nt) return null;
+      return { from: `${nf}.${fromPort}`, to: `${nt}.${toPort}` };
+    }).filter(Boolean);
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []), ...newNodes],
+      edges: [...(d.edges || []), ...newEdges],
+    }));
+    if (selectionRef && selectionRef.current) {
+      const newIds = new Set(newNodes.map(n => n.id));
+      selectionRef.current.selectedIds = newIds;
+      window.dispatchEvent(new CustomEvent("th:set-canvas-selection",
+        { detail: { ids: Array.from(newIds) } }));
+    }
+    return newNodes.length;
+  }, [selectionRef, data, setData]);
 
   // v3.2 — Phase 2: sub-element pick mode for prototype + HTML asset nodes.
   // Only ONE node can be in pick mode at a time (clicking another node's
@@ -16726,6 +17068,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       }
       const tx = lastCanvasCursorRef.current.x + 30;
       const ty = lastCanvasCursorRef.current.y + 30;
+      // v3.4.42 — If a composer is the paste target (selected or under
+      // cursor), spawn the asset AND add an edge into it so the freshly
+      // pasted snippet shows up as a layer immediately. Previously this
+      // path just dropped the asset onto the canvas with no link, which
+      // is why "feedback says pasted but no layer appears."
+      const composerTarget = _findComposerPasteTarget(tx, ty);
       setData(d => ({
         ...d,
         nodes: [...(d.nodes || []), {
@@ -16734,6 +17082,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           path: relPath,
           spawnedBy: "paste-element",
         }],
+        edges: composerTarget
+          ? [...(d.edges || []), { from: `${assetId}.out`, to: `${composerTarget.id}.in` }]
+          : (d.edges || []),
       }));
       // v3.4.5c — Re-link the clipboard to the SNIPPET asset we just spawned.
       // The user's mental model after Path B is "this card IS my copied
@@ -16758,7 +17109,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const skipNote = skipped > 0
         ? ` (skipped ${skipped} cross-origin sheet${skipped === 1 ? "" : "s"})`
         : "";
-      flashPickOp("done", "Pasted as new HTML asset" + skipNote);
+      flashPickOp("done", composerTarget
+        ? "Pasted into Composer as new layer" + skipNote
+        : "Pasted as new HTML asset" + skipNote);
       return 1;
     } catch (err) {
       console.error("[paste standalone]", err);
@@ -16768,7 +17121,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       pastePickedElement._inFlight = false;
     }
-  }, [data, setData, resolveIframePath, flashPickOp]);
+  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget]);
 
   // v3.4.20 — Cmd+R: replace the currently picked element with the clipboard's
   // content. Same shape as pastePickedElement Path A (live-source re-read,
@@ -16971,6 +17324,276 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     }
   }, [resolveIframePath, flashPickOp]);
 
+  // v3.4.32 — Arrow-key element movement.
+  //
+  // Two modes of "move" depending on the picked element's layout:
+  //   • position: absolute / fixed → translate via inline left/top in 1px
+  //     steps, 8px when Shift is held. The element keeps its place in
+  //     the DOM tree; only the inline style mutates. Mirrors the
+  //     zoom-mode nudge affordance (Figma-style).
+  //   • in-flow children (static / relative) → reorder among siblings
+  //     within the parent. Layout decides which directions move:
+  //       - Block parent (no flex/grid):     Up/Down only.
+  //       - Flex row / grid-auto-flow:row:   Left/Right only.
+  //       - Flex column / column-reverse:    Up/Down only.
+  //       - Grid (default):                  all four (treat as row).
+  // Anything else (sticky, inline, …) is a no-op so we don't corrupt
+  // unexpected layouts.
+  const _saveIframeHtml = useCallback(async (doc, label) => {
+    const path = resolveIframePath();
+    if (!path) { flashPickOp("error", `${label} failed: couldn't resolve target file`); return false; }
+    const project = activeProjectId();
+    const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+    const apiU = apiUrl("/__html_save");
+    const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
+    const resp = await fetch(u, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, html: fullHtml, project }),
+    });
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      flashPickOp("error", `${label} failed: ` + (errBody.error || `HTTP ${resp.status}`));
+      return false;
+    }
+    return true;
+  }, [resolveIframePath, flashPickOp]);
+
+  // Resolve the live DOM node for the picked element, re-querying via
+  // pickedElement.path if pickedDomRef has gone stale (iframe re-mounted
+  // after a refresh / nonce bump). Returns the element + the iframe doc
+  // + window, or nulls if nothing is pickable right now.
+  const _resolvePickedLive = useCallback(() => {
+    const ifr = pickerIframeRef.current;
+    if (!ifr) return { el: null, doc: null, win: null };
+    const doc = ifr.contentDocument;
+    const win = ifr.contentWindow;
+    if (!doc || !win) return { el: null, doc: null, win: null };
+    let el = pickedDomRef.current;
+    if ((!el || !doc.contains(el)) && pickedElement && pickedElement.path) {
+      try {
+        const live = doc.querySelector(pickedElement.path);
+        if (live) { el = live; pickedDomRef.current = live; }
+      } catch {}
+    }
+    if (!el || !doc.contains(el)) return { el: null, doc, win };
+    return { el, doc, win };
+  }, [pickedElement]);
+
+  // v3.4.45 — Shift+Cmd/Ctrl+C : copy the picked element as a PNG raster
+  // to the SYSTEM clipboard so it pastes into Figma / Slack / any image-
+  // aware destination. Uses the html2canvas-pro bundle loaded globally
+  // in index.html (supports modern color functions like oklch). PNG is
+  // rendered at scale 2 (retina-sharp without ballooning byte size).
+  const copyPickedAsPng = useCallback(async () => {
+    const { el } = _resolvePickedLive();
+    if (!el) { flashPickOp("error", "No picked element to copy as PNG."); return 0; }
+    if (typeof window.html2canvas !== "function") {
+      flashPickOp("error", "html2canvas not loaded — can't copy as PNG.");
+      return 0;
+    }
+    if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === "undefined") {
+      flashPickOp("error", "System clipboard write not available in this browser.");
+      return 0;
+    }
+    flashPickOp("pending", "Rendering as PNG…");
+    try {
+      const canvas = await window.html2canvas(el, {
+        backgroundColor: null,
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+      });
+      const blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error("PNG encode failed")), "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      flashPickOp("done", `Copied <${pickedElement?.tagName || "element"}> as PNG (${canvas.width}×${canvas.height})`);
+      return 1;
+    } catch (err) {
+      flashPickOp("error", "PNG copy failed: " + (err && err.message || err));
+      return 0;
+    }
+  }, [_resolvePickedLive, pickedElement, flashPickOp]);
+
+  // v3.4.45 — Opt+Cmd / Alt+Ctrl+C : copy the picked element's *style* into
+  // the editor clipboard (not a system clipboard write). When pasted via
+  // Cmd+V onto another picked target, the styles are applied as inline
+  // declarations on that target — visual transplant without changing the
+  // tag / structure / content. Layout-affecting properties
+  // (position/top/left/width/height/display/etc.) are deliberately
+  // SKIPPED so the target stays where it is in its parent layout.
+  const copyPickedStyle = useCallback(() => {
+    const { el, win } = _resolvePickedLive();
+    if (!el || !win) { flashPickOp("error", "No picked element to copy style from."); return 0; }
+    const PROPS = [
+      "color",
+      "background-color", "background-image", "background-size", "background-position", "background-repeat", "background-attachment", "background-origin", "background-clip",
+      "font-family", "font-size", "font-weight", "font-style", "font-variant", "font-stretch",
+      "line-height", "letter-spacing", "word-spacing",
+      "text-align", "text-decoration", "text-decoration-color", "text-decoration-line", "text-decoration-style", "text-decoration-thickness",
+      "text-transform", "text-shadow", "text-overflow", "white-space",
+      "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
+      "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
+      "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
+      "border-top-left-radius", "border-top-right-radius", "border-bottom-left-radius", "border-bottom-right-radius",
+      "outline-color", "outline-style", "outline-width", "outline-offset",
+      "box-shadow",
+      "opacity",
+      "filter", "backdrop-filter", "mix-blend-mode", "isolation",
+      "padding-top", "padding-right", "padding-bottom", "padding-left",
+      "cursor",
+    ];
+    const computed = win.getComputedStyle(el);
+    const styles = {};
+    for (const p of PROPS) {
+      const v = computed.getPropertyValue(p);
+      if (!v) continue;
+      // Skip default / "nothing set" values for visual-only properties so
+      // the paste doesn't clobber the target with bland CSS-initial noise.
+      // For "explicit" properties (color/bg/padding/radius/shadow/opacity)
+      // keep the value even if it looks default — the user may have picked
+      // a transparent / zero-padded element on purpose.
+      const explicit = (
+        p === "color" || p === "background-color" || p === "opacity" ||
+        p === "box-shadow" || p.startsWith("padding-") || p.startsWith("border-") ||
+        p.startsWith("font-") || p === "line-height" || p === "letter-spacing"
+      );
+      if (!explicit && (v === "normal" || v === "auto" || v === "none" || v === "0px" || v === "rgb(0, 0, 0)" || v === "rgba(0, 0, 0, 0)")) continue;
+      styles[p] = v;
+    }
+    nodeClipboardRef.current = {
+      type: "html-style",
+      styles,
+      sourceTag: pickedElement?.tagName || "element",
+      ts: Date.now(),
+    };
+    flashPickOp("done", `Copied style of <${pickedElement?.tagName || "element"}> (${Object.keys(styles).length} props)`);
+    return 1;
+  }, [_resolvePickedLive, pickedElement, flashPickOp]);
+
+  // v3.4.45 — Apply a style-only clipboard to the picked target. Inlines
+  // each property via setProperty, then persists via _saveIframeHtml so
+  // the change survives a reload (same pattern as nudge / duplicate).
+  const pastePickedStyle = useCallback(async () => {
+    const clip = nodeClipboardRef.current;
+    if (!clip || clip.type !== "html-style") return 0;
+    const { el, doc } = _resolvePickedLive();
+    if (!el || !doc) { flashPickOp("error", "Pick a target element first, then paste style."); return 0; }
+    if (pastePickedStyle._inFlight) return 0;
+    pastePickedStyle._inFlight = true;
+    try {
+      flashPickOp("pending", "Applying style…");
+      const entries = Object.entries(clip.styles || {});
+      for (const [prop, val] of entries) {
+        try { el.style.setProperty(prop, val); } catch {}
+      }
+      const ok = await _saveIframeHtml(doc, "Paste style");
+      if (!ok) return 0;
+      flashPickOp("done", `Pasted style from <${clip.sourceTag}> (${entries.length} props)`);
+      return 1;
+    } catch (err) {
+      flashPickOp("error", "Paste style failed: " + (err && err.message || err));
+      return 0;
+    } finally {
+      pastePickedStyle._inFlight = false;
+    }
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+
+  const nudgePickedElement = useCallback(async (dx, dy) => {
+    const { el, doc, win } = _resolvePickedLive();
+    if (!el || !doc) return 0;
+    const cs = win.getComputedStyle(el);
+    const pos = cs.position;
+    if (pos !== "absolute" && pos !== "fixed") return 0;
+    // Read current inline value if set, otherwise the computed pixel value.
+    // parseFloat tolerates "12px" and "12". If both inline and computed are
+    // "auto" (newly-positioned element with no offsets), we anchor at 0.
+    const readPx = (inline, computed) => {
+      const fromInline = parseFloat(inline);
+      if (Number.isFinite(fromInline)) return fromInline;
+      const fromComputed = parseFloat(computed);
+      return Number.isFinite(fromComputed) ? fromComputed : 0;
+    };
+    const newLeft = readPx(el.style.left, cs.left) + dx;
+    const newTop  = readPx(el.style.top,  cs.top)  + dy;
+    el.style.left = `${newLeft}px`;
+    el.style.top  = `${newTop}px`;
+    flashPickOp("pending", `Nudge ${dx}/${dy}px…`);
+    const ok = await _saveIframeHtml(doc, "Nudge");
+    if (ok) flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
+    return ok ? 1 : 0;
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+
+  const reorderPickedElement = useCallback(async (direction) => {
+    // direction: "up" | "down" | "left" | "right"
+    const { el, doc, win } = _resolvePickedLive();
+    if (!el || !doc) return 0;
+    const parent = el.parentElement;
+    if (!parent) return 0;
+    const cs = win.getComputedStyle(el);
+    // Sticky / inline / table-row-group etc. — bail out rather than guess.
+    if (cs.position === "absolute" || cs.position === "fixed") return 0;
+    const pcs = win.getComputedStyle(parent);
+    const pd = pcs.display;
+    const isFlex = pd === "flex" || pd === "inline-flex";
+    const isGrid = pd === "grid" || pd === "inline-grid";
+    const isBlock = !isFlex && !isGrid;
+    let allowAxis; // "horizontal" | "vertical" | "both"
+    if (isFlex) {
+      const fd = (pcs.flexDirection || "row");
+      allowAxis = (fd === "row" || fd === "row-reverse") ? "horizontal" : "vertical";
+    } else if (isGrid) {
+      allowAxis = "both"; // grid items are a 2-D source order; allow either axis to step
+    } else if (isBlock) {
+      allowAxis = "vertical";
+    } else {
+      return 0;
+    }
+    const isHorizDir = (direction === "left" || direction === "right");
+    if (allowAxis === "horizontal" && !isHorizDir) return 0;
+    if (allowAxis === "vertical"   &&  isHorizDir) return 0;
+    // "Backward" = toward smaller source-order (Up / Left).
+    const backward = (direction === "up" || direction === "left");
+    if (backward) {
+      const prev = el.previousElementSibling;
+      if (!prev) return 0;
+      parent.insertBefore(el, prev);
+    } else {
+      const next = el.nextElementSibling;
+      if (!next) return 0;
+      // Move next BEFORE el → equivalent to moving el AFTER next.
+      parent.insertBefore(next, el);
+    }
+    flashPickOp("pending", `Reorder ${direction}…`);
+    const ok = await _saveIframeHtml(doc, "Reorder");
+    if (ok) flashPickOp("done", `Moved ${direction}`);
+    return ok ? 1 : 0;
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+
+  const duplicatePickedElement = useCallback(async () => {
+    const { el, doc } = _resolvePickedLive();
+    if (!el || !doc) return 0;
+    const parent = el.parentElement;
+    if (!parent) return 0;
+    const tagSnap = (el.tagName || "").toLowerCase();
+    flashPickOp("pending", `Duplicating <${tagSnap}>…`);
+    // deep clone preserves nested markup + inline styles. We strip the
+    // pick-mode hover/selected classes from BOTH copies so the saved
+    // HTML is clean of editor chrome.
+    const clone = el.cloneNode(true);
+    clone.classList.remove("th-pick-hover");
+    clone.classList.remove("th-pick-selected");
+    parent.insertBefore(clone, el.nextSibling);
+    doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(elm => {
+      elm.classList.remove("th-pick-hover");
+      elm.classList.remove("th-pick-selected");
+    });
+    const ok = await _saveIframeHtml(doc, "Duplicate");
+    if (ok) flashPickOp("done", `Duplicated <${tagSnap}>`);
+    return ok ? 1 : 0;
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+
   // Keyboard shortcuts active only while pickModeNodeId is set. Capture
   // phase so they beat the canvas-level copy/paste/delete handler.
   useEffect(() => {
@@ -16980,10 +17603,34 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       const cmd = e.metaKey || e.ctrlKey;
       if (cmd && (e.key === "c" || e.key === "C")) {
-        if (pickedElement) { copyPickedElement(); e.preventDefault(); e.stopPropagation(); }
+        // v3.4.45 — Three flavors of copy in pick mode, all share C:
+        //   Shift+Cmd/Ctrl+C → copy as PNG (system clipboard, raster)
+        //   Opt+Cmd / Alt+Ctrl+C → copy STYLE only (editor clipboard)
+        //   Cmd/Ctrl+C alone   → copy element HTML + CSS bundle
+        // Branching is mutually exclusive — first match wins so a user
+        // pressing Shift+Opt+Cmd+C (both modifiers) gets PNG, not style.
+        if (!pickedElement) return;
+        if (e.shiftKey) {
+          e.preventDefault(); e.stopPropagation();
+          copyPickedAsPng();
+          return;
+        }
+        if (e.altKey) {
+          e.preventDefault(); e.stopPropagation();
+          copyPickedStyle();
+          return;
+        }
+        copyPickedElement();
+        e.preventDefault(); e.stopPropagation();
       } else if (cmd && (e.key === "v" || e.key === "V")) {
         const clip = nodeClipboardRef.current;
-        if (clip && clip.type === "html-element") {
+        if (clip && clip.type === "html-style") {
+          // v3.4.45 — style-only clipboard paths through pastePickedStyle
+          // instead of the element-paste flow. The user pasted onto a
+          // picked target; we apply the styles inline + save.
+          pastePickedStyle();
+          e.preventDefault(); e.stopPropagation();
+        } else if (clip && clip.type === "html-element") {
           pastePickedElement();
           e.preventDefault(); e.stopPropagation();
         }
@@ -16996,13 +17643,49 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         // swap (no clipboard, no target, or target IS the original).
         e.preventDefault(); e.stopPropagation();
         replacePickedElement();
+      } else if (cmd && (e.key === "d" || e.key === "D")) {
+        // v3.4.32 — Cmd+D inside pick-mode duplicates the picked element
+        // in-place (inserts a deep clone immediately after the target).
+        // Browser's "bookmark this page" default would otherwise fire.
+        e.preventDefault(); e.stopPropagation();
+        if (pickedElement) duplicatePickedElement();
+        else flashPickOp("error", "Cmd+D: pick a target element first.");
+      } else if (e.key === "ArrowUp" || e.key === "ArrowDown" ||
+                 e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        // v3.4.32 — Arrow keys translate (abs/fixed) or reorder (in-flow).
+        // Magnitude is 1px / 8px-with-shift for the translate branch;
+        // reorder branch ignores magnitude (one sibling per press).
+        if (!pickedElement) return;
+        e.preventDefault(); e.stopPropagation();
+        const step = e.shiftKey ? 8 : 1;
+        let dx = 0, dy = 0;
+        if (e.key === "ArrowLeft")  dx = -step;
+        if (e.key === "ArrowRight") dx =  step;
+        if (e.key === "ArrowUp")    dy = -step;
+        if (e.key === "ArrowDown")  dy =  step;
+        // Try the translate path first; if the element isn't absolutely
+        // positioned, nudgePickedElement returns 0 and we fall back to
+        // sibling reorder. The reorder path interprets directions
+        // semantically — Left/Right on a flex-column parent is a no-op
+        // by design (the user said "if no flex, up/down only").
+        const dir = (e.key === "ArrowLeft") ? "left"
+                  : (e.key === "ArrowRight") ? "right"
+                  : (e.key === "ArrowUp") ? "up"
+                  : "down";
+        (async () => {
+          const moved = await nudgePickedElement(dx, dy);
+          if (!moved) await reorderPickedElement(dir);
+        })();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (pickedElement) { deletePickedElement(); e.preventDefault(); e.stopPropagation(); }
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [pickModeNodeId, pickedElement, copyPickedElement, pastePickedElement, replacePickedElement, deletePickedElement]);
+  }, [pickModeNodeId, pickedElement, copyPickedElement, pastePickedElement,
+      copyPickedAsPng, copyPickedStyle, pastePickedStyle,
+      replacePickedElement, deletePickedElement, duplicatePickedElement,
+      nudgePickedElement, reorderPickedElement, flashPickOp]);
 
   // v3.2 — Window-level keyboard shortcuts for canvas copy/paste/delete.
   // Skips when the user is typing in any form field so in-field
@@ -17043,6 +17726,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           const n = pasteNodesFromClipboard();
           if (n > 0) e.preventDefault();
         }
+      } else if (cmd && (e.key === "d" || e.key === "D")) {
+        // v3.4.32 — Cmd+D duplicates the current canvas selection in-place
+        // (offset by 30/30). Pick-mode owns Cmd+D for in-iframe element
+        // duplication via its capture-phase handler — letting this fire
+        // there too would double-stamp. The browser default ("bookmark
+        // this page") is suppressed only when we actually duplicate
+        // something, so an empty-selection Cmd+D still acts normally.
+        if (pickModeNodeId) return;
+        const n = duplicateSelectedNodes();
+        if (n > 0) e.preventDefault();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const n = deleteSelectedNodes();
         if (n > 0) e.preventDefault();
@@ -17050,7 +17743,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, pickModeNodeId]);
+  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, pickModeNodeId]);
 
   // Walk edges that TERMINATE at nodeId.in — collect upstream prompt texts
   // and asset references. Skill nodes read this to assemble the actual API call.
@@ -20644,6 +21337,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // file in /__assets; clicking a row calls replaceExposedAssetWithFile.
   const [replacePickerForAssetId, setReplacePickerForAssetId] = useState(null);
 
+  // v3.4.33 — Code panel docked to one node at a time. Tracks which
+  // asset / prototype node has its source open. Click the </> toolbar
+  // button to toggle. The panel renders at (node.x + node.w, node.y) so
+  // it visually butts against the node's right edge. Single-file assets
+  // (HTML / SVG / JSON / CSS / JS / text) show one body; prototypes
+  // surface every text file under source/<slug>/ as a tab strip.
+  const [codePanelNodeId, setCodePanelNodeId] = useState(null);
+
   // Expose flow — replace any existing asset nodes bound to this prototype
   // with the new set, pin lockedState, persist via setData. Re-Expose at a
   // new screen is just calling this again with new lockedState + assets.
@@ -21570,6 +22271,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             //      (alt / middle-click / space) fall through to the
             //      useEndlessCanvas pan handler instead.
             if (!e.target || !e.target.closest) return;
+            // v3.4.39 — A code panel docked to a host node carries
+            // `data-host-node-id` (not `data-node-id`). Without this
+            // branch the wrap's "empty canvas" path below ran for
+            // clicks on the panel and called preventDefault — which
+            // SKIPS the browser's default mousedown focus, so the
+            // user couldn't type / put a caret in the textarea.
+            // Treat panel clicks as a click on the host node (keeps
+            // it selected, no marquee, no preventDefault).
+            const panelEl = e.target.closest("[data-host-node-id]");
+            if (panelEl) {
+              const id = panelEl.getAttribute("data-host-node-id");
+              if (id && !selectedNodeIds.has(id) && !e.shiftKey) {
+                selectNodeId(id);
+              }
+              armSelectSuppression();
+              return;
+            }
             const nodeEl = e.target.closest("[data-node-id]");
             if (nodeEl) {
               const id = nodeEl.getAttribute("data-node-id");
@@ -21608,7 +22326,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         >
           <div
             className="workflow-canvas"
-            style=${{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
           >
             ${marquee && (() => {
               // Marquee rect drawn in WORLD space — pan+zoom are applied by
@@ -21671,6 +22388,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onIframeState=${(state) => reportIframeState(n.id, state)}
                 onExpose=${(lockedState, assets) => exposePrototype(n.id, lockedState, assets)}
                 onZoom=${() => openZoomForPrototype(n)}
+                onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
+                codeOpen=${codePanelNodeId === n.id}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -21694,10 +22413,36 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onZoom=${() => openZoomForAsset(n)}
+                onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
+                codeOpen=${codePanelNodeId === n.id}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
             `)}
+            ${codePanelNodeId && (() => {
+              // Resolve the host node fresh from data — re-renders pick up
+              // moves/resizes so the panel tracks the node's right edge.
+              const host = (data.nodes || []).find(n => n.id === codePanelNodeId);
+              if (!host) return null;
+              // Mermaid uses its own panel (textarea + diagram-type
+              // dropdown writing inline node state); asset/prototype use
+              // the file-backed code panel.
+              if (host.kind === "mermaid") {
+                return html`<${WorkflowMermaidCodePanel}
+                  key=${"mermaidcodepanel-" + host.id}
+                  node=${host}
+                  zoom=${zoom}
+                  onChange=${(patch) => updateNode(host.id, patch)}
+                  onClose=${() => setCodePanelNodeId(null)}
+                />`;
+              }
+              return html`<${WorkflowCodePanel}
+                key=${"codepanel-" + host.id}
+                node=${host}
+                zoom=${zoom}
+                onClose=${() => setCodePanelNodeId(null)}
+              />`;
+            })()}
             ${(data.nodes || []).filter(n => n.kind === "agent").map(n => {
               // Derive per-port wired content from upstream/downstream nodes.
               // Multiple connections to `input` are allowed — each upstream
@@ -21745,6 +22490,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                       summary.inputs.push({ kind: "typography", label: up.name || "type scale", fontFamily: up.fontFamily, monoFamily: up.monoFamily, levels: up.levels || [] });
                     } else if (up.kind === "asset") {
                       summary.inputs.push({ kind: "asset", label: up.path || "asset", path: up.path, assetKind: up.assetKind });
+                    } else if (up.kind === "composer") {
+                      // v3.4.43 — composer.out is treated like an HTML asset.
+                      // The bake step (Bake button on the composer) writes a
+                      // self-contained .html file to source/<branch>/composer-
+                      // <id>.html and stamps node.bakedPath. Without a bake the
+                      // composer carries no shareable bytes, so we surface
+                      // that distinction to the agent so it knows to ask the
+                      // user to bake first instead of looking for a file
+                      // that isn't there.
+                      if (up.bakedPath) {
+                        summary.inputs.push({ kind: "asset", label: "composer (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "html" });
+                      } else {
+                        summary.inputs.push({ kind: "text", label: "composer (UNBAKED — click Bake on the upstream Composer node first)", text: "" });
+                      }
+                    } else if (up.kind === "vector-editor") {
+                      // Like composer above, but writes an .svg. Surfaces as
+                      // an SVG asset once baked; otherwise hint to bake first.
+                      if (up.bakedPath) {
+                        summary.inputs.push({ kind: "asset", label: "vector (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "svg" });
+                      } else {
+                        summary.inputs.push({ kind: "text", label: "vector-editor (UNBAKED — click Bake on the upstream Vector editor node first)", text: "" });
+                      }
                     } else if (up.kind === "design-system") {
                       summary.inputs.push({ kind: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, dsRefVersion: up.version });
                     }
@@ -21965,6 +22732,172 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "composer").map(n => html`
+              <${WorkflowComposerNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onUnwireAsset=${(assetId) => {
+                  // v3.4.44 — Drop the edge(s) feeding this asset into this composer
+                  // so the layer doesn't auto-respawn on the next useMemo cycle.
+                  setData(d => ({
+                    ...d,
+                    edges: (d.edges || []).filter(e => {
+                      const fromId = (e.from || "").split(".", 1)[0];
+                      const toId = (e.to || "").split(".", 1)[0];
+                      return !(fromId === assetId && toId === n.id);
+                    }),
+                  }));
+                }}
+                onBakeAutoCreateOutput=${(bakedPath) => {
+                  // v3.4.47 — If nothing is wired to this composer's .out
+                  // port, auto-spawn an asset card pointing at the baked
+                  // file and wire composer.out → asset.in. Gives the user
+                  // a visible, draggable output handle without manual
+                  // asset-card creation. Idempotent: bails the moment any
+                  // outgoing edge exists (including one from a prior
+                  // bake), so re-bakes don't spawn duplicates.
+                  setData(d => {
+                    const edges = d.edges || [];
+                    const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id);
+                    if (hasOut) return d;
+                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const cw = n.w || 520;
+                    const newAsset = {
+                      id: assetId, kind: "asset", assetKind: "html",
+                      x: (n.x || 0) + cw + 60, y: (n.y || 0),
+                      w: 480, h: 320,
+                      path: bakedPath,
+                      spawnedBy: "composer-bake-output",
+                      boundTo: { node: n.id, port: "out" },
+                    };
+                    return {
+                      ...d,
+                      nodes: [...(d.nodes || []), newAsset],
+                      edges: [...edges, { from: `${n.id}.out`, to: `${assetId}.in` }],
+                    };
+                  });
+                }}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "formatted-text").map(n => html`
+              <${WorkflowFormattedTextNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onBakeAutoCreateOutput=${(bakedPath) => {
+                  // v3.4.47 — Same auto-create-output pattern as composer:
+                  // a formatted-text bake without any downstream wiring
+                  // spawns an HTML asset card that points at the baked
+                  // file so the user can chain it forward visually.
+                  setData(d => {
+                    const edges = d.edges || [];
+                    const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id);
+                    if (hasOut) return d;
+                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const fw = n.w || 380;
+                    const newAsset = {
+                      id: assetId, kind: "asset", assetKind: "html",
+                      x: (n.x || 0) + fw + 60, y: (n.y || 0),
+                      w: 420, h: 280,
+                      path: bakedPath,
+                      spawnedBy: "fmttext-bake-output",
+                      boundTo: { node: n.id, port: "out" },
+                    };
+                    return {
+                      ...d,
+                      nodes: [...(d.nodes || []), newAsset],
+                      edges: [...edges, { from: `${n.id}.out`, to: `${assetId}.in` }],
+                    };
+                  });
+                }}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "mermaid").map(n => html`
+              <${WorkflowMermaidNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
+                codeOpen=${codePanelNodeId === n.id}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "vector-editor").map(n => html`
+              <${WorkflowVectorEditorNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onBakeAutoCreateOutput=${(bakedPath) => {
+                  // Same pattern as composer / formatted-text: a vector-
+                  // editor bake without any downstream wiring spawns an
+                  // SVG asset card pointed at the freshly baked file
+                  // so the user sees the produced bytes on the canvas.
+                  // Re-bakes find the existing edge and no-op.
+                  setData(d => {
+                    const edges = d.edges || [];
+                    const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id);
+                    if (hasOut) return d;
+                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const fw = n.w || 720;
+                    const newAsset = {
+                      id: assetId, kind: "asset", assetKind: "svg",
+                      x: (n.x || 0) + fw + 60, y: (n.y || 0),
+                      w: 360, h: 240,
+                      path: bakedPath,
+                      spawnedBy: "vector-bake-output",
+                      boundTo: { node: n.id, port: "out" },
+                    };
+                    return {
+                      ...d,
+                      nodes: [...(d.nodes || []), newAsset],
+                      edges: [...edges, { from: `${n.id}.out`, to: `${assetId}.in` }],
+                    };
+                  });
+                }}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "iterator-repeater").map(n => html`
@@ -22664,6 +23597,67 @@ function WorkflowLibrary() {
             <span className="workflow-library-item-glyph">Aa</span>
             <span className="workflow-library-item-label">Typography</span>
             <span className="workflow-library-item-id">scale</span>
+          </div>
+        </div>
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Composition · text</div>
+        <div className="workflow-library-list">
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "composer" }));
+            }}
+            title="Drag onto canvas — responsive layered canvas. Wire multiple asset nodes in to stack them with per-layer opacity, anchor, and offset."
+          >
+            <span className="workflow-library-item-glyph">▣</span>
+            <span className="workflow-library-item-label">Composer</span>
+            <span className="workflow-library-item-id">layered canvas</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "formatted-text" }));
+            }}
+            title="Drag onto canvas — rich text node. Type directly; wire a Typography node to enable selection-based level picking."
+          >
+            <span className="workflow-library-item-glyph">¶</span>
+            <span className="workflow-library-item-label">Formatted text</span>
+            <span className="workflow-library-item-id">rich</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "mermaid" }));
+            }}
+            title="Drag onto canvas — Mermaid diagram. Edit the source in the code panel; flowchart / sequence / class / state / ER / pie supported."
+          >
+            <span className="workflow-library-item-glyph">⇄</span>
+            <span className="workflow-library-item-label">Mermaid diagram</span>
+            <span className="workflow-library-item-id">diagram</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "vector-editor" }));
+            }}
+            title="Drag onto canvas — inline SVG drawing tool. Draw rects, ellipses, lines, paths, freehand strokes, text. Apply fill/stroke/gradient/shadow/blur, run boolean ops, convert text to outlines. Bake to a self-contained .svg file."
+          >
+            <span className="workflow-library-item-glyph">✎</span>
+            <span className="workflow-library-item-label">Vector editor</span>
+            <span className="workflow-library-item-id">svg drawing</span>
           </div>
         </div>
       </div>
@@ -25822,7 +26816,414 @@ function WorkflowDsAuditReportModal({ result, loading, branch, onClose, onRerun 
   `, document.body);
 }
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, allNodes, allEdges }) {
+// v3.4.33 — Decides whether a node has a text representation worth
+// surfacing as code. Excludes pure binary assets (raster images, video,
+// audio) by extension and by assetKind so we don't blow up the panel by
+// trying to render a megabyte of PNG bytes. Prototype nodes always
+// qualify — they're a directory of files, all of which are text in
+// practice (the binary assets get filtered when we enumerate).
+const _TEXT_EXTS = new Set([
+  "html", "htm", "svg", "json", "css", "js", "mjs", "cjs", "ts", "tsx",
+  "jsx", "md", "txt", "xml", "yaml", "yml", "csv", "tsv",
+]);
+const _BIN_EXTS = new Set([
+  "png", "jpg", "jpeg", "webp", "gif", "avif", "ico", "bmp",
+  "mp4", "webm", "mov", "m4v", "avi", "mkv",
+  "mp3", "wav", "ogg", "flac", "aac",
+  "woff", "woff2", "ttf", "otf", "pdf", "zip",
+]);
+function isCodeViewableNode(node) {
+  if (!node) return false;
+  if (node.kind === "prototype") return true;
+  if (node.kind !== "asset") return false;
+  const path = (node.path || "").toLowerCase();
+  if (!path) return false;
+  const ext = path.includes(".") ? path.split(".").pop() : "";
+  if (_BIN_EXTS.has(ext)) return false;
+  if (_TEXT_EXTS.has(ext)) return true;
+  // Fall back to assetKind for missing/unknown extensions.
+  const k = (node.assetKind || "").toLowerCase();
+  if (k === "image" || k === "video" || k === "audio") return false;
+  if (k === "html" || k === "vector" || k === "svg" || k === "lottie"
+      || k === "text" || k === "json" || k === "html-set") return true;
+  return false;
+}
+
+// Docked code panel — positioned in canvas world space so it pans + zooms
+// with the rest of the surface. The host node passes its rectangle in
+// (left/top/width/height); the panel renders flush against the right edge
+// with no gap, matching the user's "stick to it" requirement. Single-file
+// nodes show one body; prototypes enumerate every text file under
+// source/<slug>/ as tabs (default to index.html when present).
+function WorkflowCodePanel({ node, onClose, zoom }) {
+  const [files, setFiles] = useState([]);          // [{ path, label }]
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [bodies, setBodies] = useState({});        // path → { text, loading, error }
+  const [panelW, setPanelW] = useState(480);
+  const [drafts, setDrafts] = useState({});        // path → string (unsaved edit), absent = clean
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [saveFlash, setSaveFlash] = useState(null);// "saved" pulse after success
+  const resizingRef = useRef(null);
+  const textareaRef = useRef(null);
+  const isProto = node.kind === "prototype";
+  const branch = isProto ? (node.branch || "main") : "";
+
+  // v3.4.35 — Asset path resolution for the code view.
+  //
+  // Asset nodes with `activeVersionId` keep their live bytes inside a
+  // version snapshot (workflow/views/<nodeId>/<vid>/[<cid>/]<rel>) NOT
+  // at the canonical `source/<slug>/<file>` path the node was originally
+  // wired to. Reading just node.path 404s — that's the screenshot the
+  // user reported. Mirror the iframe's path picker (see WorkflowAssetNode
+  // ~28680) so the editor reads from the same URL the iframe loads.
+  //
+  // For saves we always target the CANONICAL source path: versions are
+  // immutable snapshots, the daemon's /__write_text only accepts source/,
+  // and saving to source/<slug>/ updates the live file the next snapshot
+  // will pick up. Net effect: edit a version, hit Save → new bytes land
+  // on disk + the next run snapshots them as a new version.
+  const _assetPaths = (n) => {
+    if (!n) return { fetch: null, save: null };
+    const ver = (n.versions || []).find(v => v && v.id === n.activeVersionId);
+    const compId = ver && ver.activeCompositionId;
+    const canon  = (ver && ver.canonicalPaths && ver.canonicalPaths[0]) || n.path || "";
+    let fetchPath = canon;
+    if (ver && compId && canon) {
+      const inV = canon.startsWith("source/") ? canon.slice("source/".length) : canon;
+      fetchPath = `workflow/views/${n.id}/${ver.id}/${compId}/${inV}`;
+    } else if (ver && canon) {
+      fetchPath = canon;     // already the snapshot path on `versions[].canonicalPaths`
+    }
+    return { fetch: fetchPath, save: canon };
+  };
+
+  // 1. Build the file list. Asset nodes: single entry. Prototypes:
+  //    list every text file under source/<branch>/ via /__list_files.
+  useEffect(() => {
+    let alive = true;
+    if (isProto) {
+      const exts = "html,htm,css,js,mjs,svg,json,txt,md,xml,ts,jsx,tsx";
+      const rootSeg = branch.split("/").map(encodeURIComponent).join("/");
+      fetch(apiUrl(`/__list_files?root=source/${rootSeg}&exts=${exts}`))
+        .then(r => r.ok ? r.json() : { files: [] })
+        .then(j => {
+          if (!alive) return;
+          const items = (j.files || []).map(f => ({
+            path: f.path,
+            savePath: f.path,
+            label: f.path.replace(`source/${branch}/`, "") || f.path,
+          }));
+          // Pin index.html first, then root-level files, then deeper.
+          items.sort((a, b) => {
+            const ai = a.label === "index.html" ? 0 : (a.label.includes("/") ? 2 : 1);
+            const bi = b.label === "index.html" ? 0 : (b.label.includes("/") ? 2 : 1);
+            if (ai !== bi) return ai - bi;
+            return a.label.localeCompare(b.label);
+          });
+          setFiles(items);
+          setActiveIdx(0);
+        })
+        .catch(() => { if (alive) { setFiles([]); } });
+    } else if (node.path) {
+      const { fetch: fp, save: sp } = _assetPaths(node);
+      const label = (sp || fp || "").split("/").pop();
+      setFiles([{ path: fp, savePath: sp, label }]);
+      setActiveIdx(0);
+    }
+    return () => { alive = false; };
+  }, [node.id, node.kind, node.path, node.activeVersionId, branch, isProto]);
+
+  // 2. Lazily fetch each tab's text on first activation. Cached in `bodies`
+  //    so flipping back to a previously-viewed file is instant.
+  const activePath = files[activeIdx] && files[activeIdx].path;
+  useEffect(() => {
+    if (!activePath) return;
+    if (bodies[activePath] && !bodies[activePath].error) return;
+    let alive = true;
+    setBodies(b => ({ ...b, [activePath]: { text: "", loading: true, error: null } }));
+    // Cache-bust so an edit elsewhere (chat run, picker copy) reflects
+    // when the panel reopens. Same trick as the iframe nonce.
+    const url = apiUrl("/" + activePath);
+    const sep = url.includes("?") ? "&" : "?";
+    fetch(url + sep + "_c=" + Date.now())
+      .then(r => r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(text => { if (alive) setBodies(b => ({ ...b, [activePath]: { text, loading: false, error: null } })); })
+      .catch(err => { if (alive) setBodies(b => ({ ...b, [activePath]: { text: "", loading: false, error: String(err.message || err) } })); });
+    return () => { alive = false; };
+  }, [activePath]);
+
+  // 3. Live-refresh on `th:asset-refresh` (the broadcaster used by every
+  //    successful run / element edit) — refetches just the active tab.
+  useEffect(() => {
+    const onRefresh = () => {
+      if (!activePath) return;
+      setBodies(b => { const nb = { ...b }; delete nb[activePath]; return nb; });
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [activePath]);
+
+  // 3.5 Clear transient save UI (error banner, "Saved ✓" pulse) whenever
+  //     the user flips to a different tab so banners don't bleed across
+  //     files. The dirty draft for each path persists in `drafts` so the
+  //     in-progress edit is preserved.
+  useEffect(() => {
+    setSaveError(null);
+    setSaveFlash(null);
+  }, [activePath]);
+
+  // 4. Right-edge resize handle. Direct dom math (no setState per move)
+  //    keeps the drag at 60fps even with big bodies in the textarea.
+  const startResize = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = panelW;
+    resizingRef.current = { startX, startW };
+    const onMove = (ev) => {
+      const dx = ev.clientX - resizingRef.current.startX;
+      const next = Math.max(280, Math.min(1100, resizingRef.current.startW + dx / (zoom || 1)));
+      setPanelW(next);
+    };
+    const onUp = () => {
+      resizingRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [panelW, zoom]);
+
+  // v3.4.40 — Dock against the host node's ACTUAL rendered width. When
+  // the asset card is in auto-size mode, node.w is null (so the old
+  // `node.w || 360` fallback used to slap the panel against the wrong
+  // x — overlapping the asset card on the right side). A ResizeObserver
+  // on the host node mirrors its live width into state so the panel
+  // always sits flush against the right edge no matter how the card's
+  // size mode changes underneath.
+  const [hostRectW, setHostRectW] = useState(node.w || 360);
+  const [hostRectH, setHostRectH] = useState(node.h || 360);
+  useEffect(() => {
+    const el = typeof document !== "undefined"
+      ? document.querySelector(`.workflow-node[data-node-id="${node.id}"]`)
+      : null;
+    if (!el) return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      // Pull through the workflow-canvas's CSS transform: getBoundingClientRect
+      // returns post-transform px, so divide out the zoom to get the
+      // pre-transform (model-space) px the panel's `style.left` expects.
+      const z = zoom || 1;
+      setHostRectW(Math.round(r.width  / z));
+      setHostRectH(Math.round(r.height / z));
+    };
+    sync();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(sync);
+      ro.observe(el);
+    }
+    return () => { if (ro) ro.disconnect(); };
+  }, [node.id, node.w, node.h, node.size, zoom]);
+  const left  = (node.x || 0) + hostRectW;
+  const top   = (node.y || 0);
+  const height = hostRectH;
+  const cur = activePath ? bodies[activePath] : null;
+  const titleText = isProto
+    ? `source/${branch}/`
+    : (node.path || "").split("/").pop() || node.path || "code";
+
+  // The textarea value is the user's pending draft if any, otherwise the
+  // canonical bytes from the daemon. Editing pushes into `drafts[path]`
+  // so each tab keeps its own unsaved buffer when the user flips between
+  // files; saving clears the draft + refreshes the cache.
+  const cleanText = (cur && !cur.loading && !cur.error) ? (cur.text || "") : "";
+  const hasDraft = activePath && Object.prototype.hasOwnProperty.call(drafts, activePath);
+  const displayText = hasDraft ? drafts[activePath] : cleanText;
+  const dirty = hasDraft && drafts[activePath] !== cleanText;
+  const editable = !!activePath && cur && !cur.loading && !cur.error;
+
+  const save = async () => {
+    if (!activePath || !dirty || saving) return;
+    const activeFile = files[activeIdx];
+    const savePath = (activeFile && activeFile.savePath) || activePath;
+    // /__write_text only accepts paths under source/. A version snapshot
+    // (workflow/views/...) without a canonical fallback can't be saved.
+    if (!savePath || !savePath.startsWith("source/")) {
+      setSaveError("This file lives only inside a version snapshot — save target unknown. Open a fresh version or check the asset's canonical path.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const text = drafts[activePath];
+      const r = await fetch(apiUrl("/__write_text"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: savePath, text }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      // Promote the draft to the cache so the diff resolves to clean.
+      setBodies(b => ({ ...b, [activePath]: { text, loading: false, error: null } }));
+      setDrafts(d => { const nd = { ...d }; delete nd[activePath]; return nd; });
+      setSaveFlash("saved");
+      setTimeout(() => setSaveFlash(f => f === "saved" ? null : f), 1200);
+      // Broadcast on BOTH the display path (so this panel re-fetches)
+      // and the save path (so other iframes / preview cards refresh).
+      try {
+        window.dispatchEvent(new CustomEvent("th:asset-refresh",
+          { detail: { paths: [activePath, savePath] } }));
+      } catch {}
+    } catch (err) {
+      setSaveError(String((err && err.message) || err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Cmd+S inside the textarea → save. Capture phase to beat the
+  // browser's default "save page" dialog.
+  const onTextareaKeyDown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      e.stopPropagation();
+      save();
+    }
+    // Tab inserts a tab char rather than blurring the textarea.
+    if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const next = displayText.slice(0, start) + "  " + displayText.slice(end);
+      setDrafts(d => ({ ...d, [activePath]: next }));
+      // Restore caret after React re-render via rAF.
+      requestAnimationFrame(() => {
+        try { ta.selectionStart = ta.selectionEnd = start + 2; } catch {}
+      });
+    }
+  };
+
+  return html`
+    <div
+      className="workflow-code-panel"
+      data-host-node-id=${node.id}
+      style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
+      onMouseDown=${(e) => e.stopPropagation()}
+      onWheel=${(e) => e.stopPropagation()}
+    >
+      <div className="workflow-code-panel-bar">
+        <span className="workflow-code-panel-glyph"><${Icon.Code}/></span>
+        <span className="workflow-code-panel-title" title=${activePath || titleText}>
+          ${titleText}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
+        </span>
+        ${activePath && html`
+          <button
+            type="button"
+            className="workflow-code-panel-reset"
+            disabled=${!dirty || saving}
+            title=${dirty
+              ? "Reset — discard unsaved edits and restore the last saved bytes"
+              : "No changes to reset"}
+            onClick=${() => {
+              // Drop the draft for this tab so display falls back to the
+              // cached clean text. Also clear any error / saved-flash so
+              // the toolbar is in a neutral state after the reset.
+              setDrafts(d => { const nd = { ...d }; delete nd[activePath]; return nd; });
+              setSaveError(null);
+              setSaveFlash(null);
+            }}
+          >Reset</button>
+          <button
+            type="button"
+            className=${"workflow-code-panel-save"
+              + (dirty ? " is-dirty" : "")
+              + (saving ? " is-saving" : "")
+              + (saveFlash === "saved" ? " is-saved" : "")}
+            disabled=${!dirty || saving}
+            title=${dirty
+              ? (saving ? "Saving…" : "Save changes to " + activePath + " (⌘S)")
+              : (saveFlash === "saved" ? "Saved" : "No changes to save")}
+            onClick=${() => save()}
+          >${saving ? "Saving…" : (saveFlash === "saved" && !dirty ? "Saved ✓" : "Save")}</button>
+        `}
+        ${activePath && html`
+          <button
+            type="button"
+            className="workflow-code-panel-action"
+            title="Copy contents to clipboard"
+            onClick=${async () => {
+              try {
+                await navigator.clipboard.writeText(displayText);
+              } catch {}
+            }}
+          ><${Icon.Copy}/></button>
+        `}
+        <button
+          type="button"
+          className="workflow-code-panel-close"
+          title="Close code panel"
+          onClick=${() => onClose && onClose()}
+        >×</button>
+      </div>
+      ${files.length > 1 && html`
+        <div className="workflow-code-panel-tabs" role="tablist">
+          ${files.map((f, i) => html`
+            <button
+              key=${f.path}
+              role="tab"
+              aria-selected=${i === activeIdx ? "true" : "false"}
+              className=${"workflow-code-panel-tab" + (i === activeIdx ? " is-active" : "")}
+              onClick=${() => setActiveIdx(i)}
+              title=${f.path}
+            >${f.label}</button>
+          `)}
+        </div>
+      `}
+      <div className="workflow-code-panel-body">
+        ${!activePath
+          ? html`<div className="workflow-code-panel-empty">${isProto ? "No text files found under this prototype." : "No source file."}</div>`
+          : !cur || cur.loading
+            ? html`<div className="workflow-code-panel-empty">Loading…</div>`
+            : cur.error
+              ? html`<div className="workflow-code-panel-error">Failed to load: ${cur.error}</div>`
+              : html`<textarea
+                  ref=${textareaRef}
+                  className="workflow-code-panel-editor"
+                  spellCheck=${false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  wrap="off"
+                  value=${displayText}
+                  onInput=${(e) => {
+                    const v = e.target.value;
+                    setDrafts(d => ({ ...d, [activePath]: v }));
+                    if (saveError) setSaveError(null);
+                  }}
+                  onKeyDown=${onTextareaKeyDown}
+                />`
+        }
+      </div>
+      ${saveError && html`
+        <div className="workflow-code-panel-savebar">
+          <span className="workflow-code-panel-savebar-msg" title=${saveError}>Save failed: ${saveError}</span>
+          <button className="workflow-code-panel-savebar-dismiss" onClick=${() => setSaveError(null)} title="Dismiss">×</button>
+        </div>
+      `}
+      <div
+        className="workflow-code-panel-resize"
+        title="Drag to resize"
+        onMouseDown=${startResize}
+      />
+    </div>
+  `;
+}
+
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = node.branch || "main";
@@ -26390,6 +27791,17 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           >📌</span>
         `}
         <span className="workflow-node-bar-spacer"/>
+        ${onToggleCode && html`
+          <${HoverTip}
+            className=${"workflow-node-action workflow-node-action-code" + (codeOpen ? " is-on" : "")}
+            tip=${codeOpen
+              ? "Hide code — close the source-file tabs docked to the right of this prototype."
+              : "Show code — dock a tabbed source-file viewer next to this prototype (every text file under source/" + branch + "/)."}
+            ariaLabel="Show prototype source code"
+            onClick=${(e) => { e.stopPropagation(); onToggleCode(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Code}/><//>
+        `}
         <${HoverTip}
           className="workflow-node-action"
           tip="Open this prototype in the editor (new tab)"
@@ -27618,7 +29030,7 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   `;
 }
 
-function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, allNodes, allEdges }) {
+function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   // Prompt inspector — opens via the 📜 chip when node.promptDebug is set
   // (i.e. the asset was the output of a remix / repeater / blend run).
@@ -28415,6 +29827,17 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             onClick=${(e) => { e.stopPropagation(); onZoom(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Search}/><//>
+        `}
+        ${onToggleCode && isCodeViewableNode(node) && html`
+          <${HoverTip}
+            className=${"workflow-node-action workflow-node-action-code" + (codeOpen ? " is-on" : "")}
+            tip=${codeOpen
+              ? "Hide code — close the source view docked to the right of this asset."
+              : "Show code — dock the source file (" + (path.split("/").pop() || "asset") + ") next to this asset."}
+            ariaLabel="Show source code"
+            onClick=${(e) => { e.stopPropagation(); onToggleCode(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Code}/><//>
         `}
         ${(node.dsAudit || (assetDsRef && kind === "html" && isFileRef && !isInlinePath)) && (() => {
           const a = node.dsAudit;
@@ -29485,6 +30908,4379 @@ function bumpLabel(prev) {
   const m = /^v(\d+)(.*)$/i.exec(prev);
   if (!m) return "v1";
   return "v" + (parseInt(m[1], 10) + 1) + (m[2] || "");
+}
+
+/* v3.4.37 — Composer node.
+   Responsive layered canvas. Each wired asset becomes a layer inside an
+   aspect-ratio frame; per-layer state carries opacity, anchor (12 modes),
+   offset, and width/height overrides. Edges that terminate at composer.in
+   define the layer set; the node auto-creates a default layer entry the
+   first time it sees a new edge so wiring a fresh asset always renders
+   something visible.
+
+   12 anchor modes map to CSS positioning:
+     top-left / top-center / top-right
+     middle-left / center / middle-right
+     bottom-left / bottom-center / bottom-right
+     stretch-h (left:0; right:0)
+     stretch-v (top:0; bottom:0)
+     fill      (inset:0)
+   stretch / fill ignore w/h overrides for the stretched axis.
+
+   The canvas itself respects maxWidth/maxHeight so the rendered frame
+   adapts to whatever space its host (the node card, a downstream preview)
+   gives it without exceeding the user-set caps. */
+const COMPOSER_ANCHOR_MODES = [
+  { id: "top-left",      label: "↖",  group: "corner" },
+  { id: "top-center",    label: "↑",  group: "edge"   },
+  { id: "top-right",     label: "↗",  group: "corner" },
+  { id: "middle-left",   label: "←",  group: "edge"   },
+  { id: "center",        label: "·",  group: "center" },
+  { id: "middle-right",  label: "→",  group: "edge"   },
+  { id: "bottom-left",   label: "↙",  group: "corner" },
+  { id: "bottom-center", label: "↓",  group: "edge"   },
+  { id: "bottom-right",  label: "↘",  group: "corner" },
+  { id: "stretch-h",     label: "↔",  group: "stretch" },
+  { id: "stretch-v",     label: "↕",  group: "stretch" },
+  { id: "fill",          label: "▣",  group: "stretch" },
+];
+function _composerLayerStyle(layer, canvasW, canvasH) {
+  // Translate the layer's anchor + offsets + sizing into a CSS rule the
+  // browser can render. All values are computed in canvas-space px and
+  // expressed as percentages of the canvas so the preview is responsive.
+  const a = layer.anchor || "center";
+  const oX = layer.offsetX || 0;
+  const oY = layer.offsetY || 0;
+  const w  = layer.width;
+  const h  = layer.height;
+  const pX = (v) => `${(v / canvasW) * 100}%`;
+  const pY = (v) => `${(v / canvasH) * 100}%`;
+  const style = {
+    position: "absolute",
+    opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
+    pointerEvents: "none",
+  };
+  // Width / height — null means "natural" (auto). For stretch modes the
+  // stretched axis is forced full-bleed; the other axis honors the override.
+  if (a === "fill" || a === "stretch-h") {
+    style.left = "0"; style.right = "0";
+    if (h != null) style.height = pY(h); else if (a === "fill") style.top = "0", style.bottom = "0";
+  } else if (a === "stretch-v") {
+    style.top = "0"; style.bottom = "0";
+    if (w != null) style.width = pX(w);
+  } else {
+    if (w != null) style.width = pX(w);
+    if (h != null) style.height = pY(h);
+  }
+  // Anchor-driven left/right/top/bottom + transform offsets. Center modes
+  // translate -50% so the anchor point lands at the offset, not the
+  // top-left corner of the layer's bounding box.
+  if (a === "top-left")       { style.top  = pY(oY); style.left  = pX(oX); }
+  else if (a === "top-center"){ style.top  = pY(oY); style.left  = `calc(50% + ${pX(oX)})`; style.transform = "translateX(-50%)"; }
+  else if (a === "top-right") { style.top  = pY(oY); style.right = pX(-oX); }
+  else if (a === "middle-left")  { style.top  = `calc(50% + ${pY(oY)})`; style.left  = pX(oX); style.transform = "translateY(-50%)"; }
+  else if (a === "center")        { style.top = `calc(50% + ${pY(oY)})`; style.left  = `calc(50% + ${pX(oX)})`; style.transform = "translate(-50%, -50%)"; }
+  else if (a === "middle-right") { style.top = `calc(50% + ${pY(oY)})`; style.right = pX(-oX); style.transform = "translateY(-50%)"; }
+  else if (a === "bottom-left") { style.bottom = pY(-oY); style.left  = pX(oX); }
+  else if (a === "bottom-center"){ style.bottom = pY(-oY); style.left  = `calc(50% + ${pX(oX)})`; style.transform = "translateX(-50%)"; }
+  else if (a === "bottom-right") { style.bottom = pY(-oY); style.right = pX(-oX); }
+  else if (a === "stretch-h")  { style.top = pY(oY); }
+  else if (a === "stretch-v")  { style.left = pX(oX); }
+  return style;
+}
+function _composerAssetUrl(assetNode) {
+  // Resolve the same kind of version-aware path the asset card iframe
+  // uses, so the composer renders the live bytes — not a stale source/
+  // file that may not exist (versioned-only assets).
+  if (!assetNode) return null;
+  // v3.4.44 — formatted-text and composer nodes contribute a baked HTML
+  // file path (set by their respective Bake buttons). Resolve those
+  // through apiUrl so they render against the daemon-served source.
+  if ((assetNode.kind === "formatted-text" || assetNode.kind === "composer" || assetNode.kind === "vector-editor") && assetNode.bakedPath) {
+    return apiUrl("/" + assetNode.bakedPath);
+  }
+  const ver = (assetNode.versions || []).find(v => v && v.id === assetNode.activeVersionId);
+  const compId = ver && ver.activeCompositionId;
+  const canon  = (ver && ver.canonicalPaths && ver.canonicalPaths[0]) || assetNode.path || "";
+  if (!canon) return null;
+  if (ver && compId) {
+    const inV = canon.startsWith("source/") ? canon.slice("source/".length) : canon;
+    return apiUrl(`/workflow/views/${assetNode.id}/${ver.id}/${compId}/${inV}`);
+  }
+  if (ver) return apiUrl("/" + canon);
+  return apiUrl("/" + canon);
+}
+// v3.4.44 — Human label for a composer layer. Asset = filename; baked
+// formatted-text / composer = its bakedPath filename; fallback = node id.
+function _composerLayerLabel(assetNode) {
+  if (!assetNode) return null;
+  if (assetNode.kind === "formatted-text" && assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
+  if (assetNode.kind === "formatted-text") return "formatted-text (unbaked)";
+  if (assetNode.kind === "composer" && assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
+  if (assetNode.kind === "composer") return "composer (unbaked)";
+  if (assetNode.kind === "vector-editor" && assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
+  if (assetNode.kind === "vector-editor") return "vector (unbaked)";
+  return (assetNode.path || "").split("/").pop() || assetNode.id;
+}
+function _composerAssetKind(assetNode) {
+  // Pick a renderer per file extension. Image variants use <img>, video
+  // uses <video> (autoplay+loop+muted so the composer feels live), SVG
+  // uses <img> too (browsers happily render SVG via img src), HTML +
+  // anything else gets an <iframe>. Falls back to a labeled placeholder
+  // when there's no path to render.
+  if (!assetNode) return "missing";
+  // v3.4.44 — Baked text / composer compositions always render as iframes.
+  if (assetNode.kind === "formatted-text" || assetNode.kind === "composer") return "iframe";
+  // Baked vector-editor outputs are SVG — render via <img> so they
+  // scale crisply when used as a composer layer.
+  if (assetNode.kind === "vector-editor" && assetNode.bakedPath) return "img";
+  if (assetNode.kind === "vector-editor") return "iframe";
+  const p = (assetNode.path || "").toLowerCase();
+  const ext = p.includes(".") ? p.split(".").pop() : "";
+  if (["png","jpg","jpeg","webp","gif","avif"].includes(ext)) return "img";
+  if (["svg"].includes(ext)) return "img";
+  if (["mp4","webm","mov","m4v"].includes(ext)) return "video";
+  return "iframe";
+}
+
+/* v3.4.39 — Convert a viewport-px delta (from a mousemove event) into a
+   canvas-space px delta for a given stage element. Stage is rendered with
+   `aspect-ratio: canvasW/canvasH` so its rendered width on screen reflects
+   the live zoom AND any maxWidth/maxHeight caps; dividing by it pulls every
+   subsequent layer math back into canvas-pixel coordinates. */
+function _composerScreenToCanvas(stageEl, dxScreen, dyScreen, canvasW, canvasH) {
+  if (!stageEl) return { dx: 0, dy: 0 };
+  const r = stageEl.getBoundingClientRect();
+  const sx = r.width > 0 ? canvasW / r.width : 1;
+  const sy = r.height > 0 ? canvasH / r.height : 1;
+  return { dx: dxScreen * sx, dy: dyScreen * sy };
+}
+
+/* v3.4.39 — Quick-align shortcuts. Snap an active layer to one of the 9
+   canvas-grid positions (corners + edges + center), or stretch it to fill
+   one axis / both. Resets offsets so the anchor lands cleanly on the
+   chosen edge without leftover translation. The 3 stretch modes also
+   null out width/height for the stretched axis (so the layer truly
+   spans the canvas instead of carrying a stale concrete size). */
+const COMPOSER_ALIGN_PRESETS = [
+  // Row 1 — top
+  { id: "top-left",      label: "↖", anchor: "top-left",      zeroAll: true,  hint: "Anchor top-left corner" },
+  { id: "top-center",    label: "↑", anchor: "top-center",    zeroAll: true,  hint: "Anchor top-center" },
+  { id: "top-right",     label: "↗", anchor: "top-right",     zeroAll: true,  hint: "Anchor top-right corner" },
+  // Row 2 — middle
+  { id: "middle-left",   label: "←", anchor: "middle-left",   zeroAll: true,  hint: "Anchor middle-left" },
+  { id: "center",        label: "·", anchor: "center",        zeroAll: true,  hint: "Center on canvas" },
+  { id: "middle-right",  label: "→", anchor: "middle-right",  zeroAll: true,  hint: "Anchor middle-right" },
+  // Row 3 — bottom
+  { id: "bottom-left",   label: "↙", anchor: "bottom-left",   zeroAll: true,  hint: "Anchor bottom-left corner" },
+  { id: "bottom-center", label: "↓", anchor: "bottom-center", zeroAll: true,  hint: "Anchor bottom-center" },
+  { id: "bottom-right",  label: "↘", anchor: "bottom-right",  zeroAll: true,  hint: "Anchor bottom-right corner" },
+  // Stretch row — horizontal / vertical / fill (= both)
+  { id: "stretch-h",     label: "↔", anchor: "stretch-h",     zeroAll: true, nullW: true,             hint: "Stretch full width (free top/bottom)" },
+  { id: "stretch-v",     label: "↕", anchor: "stretch-v",     zeroAll: true,             nullH: true, hint: "Stretch full height (free left/right)" },
+  { id: "fill",          label: "▣", anchor: "fill",          zeroAll: true, nullW: true, nullH: true, hint: "Fill canvas (anchor every edge)" },
+];
+
+function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onUnwireAsset, onBakeAutoCreateOutput, allNodes, allEdges }) {
+  const w = node.w || 520;
+  const h = node.h || 460;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const stageRef = useRef(null);
+
+  // v3.4.44 — Resolve wired upstream LAYER SOURCES. Accept three kinds:
+  //   - asset      → renders as <img>/<video>/<iframe> via its versioned path
+  //   - formatted-text → renders as <iframe> when the formatted-text has
+  //     been baked (node.bakedPath). Without a bake the upstream carries
+  //     no bytes the composer can render, so we skip it.
+  //   - composer   → also via bakedPath, so composer → composer compounding
+  //     is possible (after baking the upstream composer).
+  const wiredAssetIds = useMemo(() => {
+    const ids = [];
+    for (const e of (allEdges || [])) {
+      const t = (e.to || "").split(".", 1)[0];
+      if (t !== node.id) continue;
+      const f = (e.from || "").split(".", 1)[0];
+      if (!f) continue;
+      const up = (allNodes || []).find(n => n.id === f);
+      if (!up) continue;
+      if (up.kind === "asset") ids.push(f);
+      else if (up.kind === "formatted-text" && up.bakedPath) ids.push(f);
+      else if (up.kind === "composer" && up.bakedPath) ids.push(f);
+      else if (up.kind === "vector-editor" && up.bakedPath) ids.push(f);
+    }
+    return ids;
+  }, [allEdges, allNodes, node.id]);
+
+  // v3.4.44 — Merge: layers state defines render ORDER + per-layer settings.
+  //   1. Drop layer entries whose edge is gone (orphans). Previously these
+  //      were preserved as "ghost" entries so a re-wire would restore their
+  //      settings — but users found it confusing, and `dropLayer` (×) was
+  //      effectively broken because removing from node.layers wouldn't
+  //      stick: the wiredAssetIds-driven append below kept re-adding it.
+  //   2. Append any wired asset not yet present in layers (new edge =
+  //      new layer on top of the stack).
+  const layers = useMemo(() => {
+    const wiredSet = new Set(wiredAssetIds);
+    const existing = (Array.isArray(node.layers) ? node.layers : [])
+      .filter(l => wiredSet.has(l.assetId));
+    const known = new Set(existing.map(l => l.assetId));
+    for (const aid of wiredAssetIds) {
+      if (!known.has(aid)) {
+        existing.push({
+          assetId: aid, opacity: 1, anchor: "center",
+          offsetX: 0, offsetY: 0, width: null, height: null, visible: true,
+        });
+        known.add(aid);
+      }
+    }
+    return existing;
+  }, [node.layers, wiredAssetIds]);
+
+  // Push the synthesised layers back onto the node when new edges arrived
+  // so the state persists across reloads. Only triggers when something
+  // actually changed (new entry appeared) to avoid a feedback loop with
+  // the useMemo above.
+  useEffect(() => {
+    const sigSaved = JSON.stringify((node.layers || []).map(l => l.assetId));
+    const sigDerived = JSON.stringify(layers.map(l => l.assetId));
+    if (sigSaved !== sigDerived) onChange({ layers });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers]);
+
+  const canvasW = node.canvasW || 1600;
+  const canvasH = node.canvasH || 900;
+  const [activeLayerIdx, setActiveLayerIdx] = useState(null);
+  // v3.4.39 — Live drag state (uncommitted offsets/sizing during a
+  // mousemove). We mutate this ref inline on every frame and read it in
+  // the layer style fn so the layer follows the cursor in real-time
+  // without thrashing React state on every pixel. The final value is
+  // committed via onChange on mouseup.
+  const layerDragRef = useRef(null);
+  const [, forceRerender] = useState(0);
+
+  const updateLayer = (idx, patch) => {
+    const next = layers.slice();
+    next[idx] = { ...next[idx], ...patch };
+    onChange({ layers: next });
+  };
+  // v3.4.39 — Apply an align preset to the active layer. Resets the
+  // axis-relevant offset / size fields so the layer cleanly snaps to the
+  // chosen edge / center / stretch mode instead of carrying stale state.
+  const applyAlign = (preset) => {
+    if (activeLayerIdx == null || !layers[activeLayerIdx]) return;
+    const patch = { anchor: preset.anchor };
+    if (preset.zeroAll) { patch.offsetX = 0; patch.offsetY = 0; }
+    if (preset.nullW) patch.width = null;
+    if (preset.nullH) patch.height = null;
+    updateLayer(activeLayerIdx, patch);
+  };
+  // v3.4.41 — Measure the layer's CURRENT canvas-space rect (top-left
+  // x/y + width/height in canvas pixels) by reading its DOM rect on the
+  // stage and dividing out the stage's screen-to-canvas scale factor.
+  // Returns null when the stage / layer DOM isn't mounted yet.
+  const measureLayerRect = (idx) => {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const layerEl = stage.querySelector(`[data-layer-idx="${idx}"]`);
+    if (!layerEl) return null;
+    const sr = stage.getBoundingClientRect();
+    const lr = layerEl.getBoundingClientRect();
+    if (sr.width <= 0 || sr.height <= 0) return null;
+    const sx = canvasW / sr.width;
+    const sy = canvasH / sr.height;
+    return {
+      lx: (lr.x - sr.x) * sx,
+      ly: (lr.y - sr.y) * sy,
+      lw: lr.width  * sx,
+      lh: lr.height * sy,
+    };
+  };
+  // v3.4.41 — Change a layer's ANCHOR without visually moving it. The
+  // anchor decides which side of the canvas the offsets are measured
+  // from. Naively swapping the anchor with the same offsets snaps the
+  // layer (offsetX=0 with top-left means "pin top-left at 0,0" — totally
+  // different from "pin center at 0,0"). To keep the layer visually
+  // still, we measure its current rect and re-solve the offsets for the
+  // target anchor.
+  const changeAnchor = (anchor) => {
+    if (activeLayerIdx == null || !layers[activeLayerIdx]) return;
+    const rect = measureLayerRect(activeLayerIdx);
+    // If we couldn't measure (layer hidden, not in DOM), fall back to a
+    // raw anchor swap — preserves the prior behavior so the click never
+    // becomes a no-op.
+    if (!rect) {
+      updateLayer(activeLayerIdx, { anchor });
+      return;
+    }
+    const { lx, ly, lw, lh } = rect;
+    // For stretch / fill modes, the layer fills one or both axes — we
+    // can't fully preserve position, so only set the offsetting axis and
+    // null the size on the stretched axis.
+    if (anchor === "fill") {
+      updateLayer(activeLayerIdx, { anchor, offsetX: 0, offsetY: 0, width: null, height: null });
+      return;
+    }
+    if (anchor === "stretch-h") {
+      updateLayer(activeLayerIdx, { anchor, offsetX: 0, offsetY: Math.round(ly), width: null });
+      return;
+    }
+    if (anchor === "stretch-v") {
+      updateLayer(activeLayerIdx, { anchor, offsetX: Math.round(lx), offsetY: 0, height: null });
+      return;
+    }
+    // 3×3 grid — derive ox/oy that satisfy the target anchor's CSS:
+    //   left   anchor: layer's left edge at offsetX from canvas left
+    //   right  anchor: layer's right edge at -offsetX from canvas right
+    //   center anchor: layer's center at offsetX from canvas center
+    // (same logic per Y axis with offsetY)
+    let ox = 0, oy = 0;
+    if (anchor.endsWith("-left"))        ox = lx;
+    else if (anchor.endsWith("-right"))  ox = (lx + lw) - canvasW;
+    else if (anchor.endsWith("-center")) ox = (lx + lw / 2) - canvasW / 2;
+    else if (anchor === "center")        ox = (lx + lw / 2) - canvasW / 2;
+    if (anchor.startsWith("top-"))       oy = ly;
+    else if (anchor.startsWith("bottom-")) oy = (ly + lh) - canvasH;
+    else if (anchor.startsWith("middle-")) oy = (ly + lh / 2) - canvasH / 2;
+    else if (anchor === "center")        oy = (ly + lh / 2) - canvasH / 2;
+    // v3.4.41 — Freeze the size when changing anchor on an auto-sized
+    // layer. Otherwise iframes / videos can re-layout to a slightly
+    // different intrinsic width when the CSS rule shape changes
+    // (transform present vs absent, different positioning anchors), and
+    // the layer drifts a few pixels. With width/height locked to the
+    // canvas-px size we just measured, the position math is exact.
+    const cur = layers[activeLayerIdx] || {};
+    const patch = { anchor, offsetX: Math.round(ox), offsetY: Math.round(oy) };
+    if (cur.width == null)  patch.width  = Math.round(lw);
+    if (cur.height == null) patch.height = Math.round(lh);
+    updateLayer(activeLayerIdx, patch);
+  };
+  // v3.4.39 — Drag-to-move on the stage. Begins on layer mousedown; the
+  // delta cursor→canvas pixels is rolled into offsetX/offsetY via a ref
+  // (live preview) and committed to React state on mouseup. The anchor
+  // mode decides the sign of the delta — stretch axes are immobile, so
+  // we zero those deltas.
+  const startLayerDrag = (idx, e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const stage = stageRef.current;
+    const startLayer = layers[idx];
+    if (!startLayer) return;
+    const startX = e.clientX, startY = e.clientY;
+    const startOX = startLayer.offsetX || 0;
+    const startOY = startLayer.offsetY || 0;
+    const anchor = startLayer.anchor || "center";
+    const lockX = anchor === "stretch-h" || anchor === "fill";
+    const lockY = anchor === "stretch-v" || anchor === "fill";
+    layerDragRef.current = { idx, kind: "move", startOX, startOY };
+    const onMv = (ev) => {
+      const { dx, dy } = _composerScreenToCanvas(stage, ev.clientX - startX, ev.clientY - startY, canvasW, canvasH);
+      layerDragRef.current.liveOX = lockX ? startOX : Math.round(startOX + dx);
+      layerDragRef.current.liveOY = lockY ? startOY : Math.round(startOY + dy);
+      forceRerender(t => t + 1);
+    };
+    const onUp = () => {
+      const d = layerDragRef.current;
+      if (d && (d.liveOX !== undefined || d.liveOY !== undefined)) {
+        updateLayer(idx, {
+          offsetX: d.liveOX !== undefined ? d.liveOX : startOX,
+          offsetY: d.liveOY !== undefined ? d.liveOY : startOY,
+        });
+      }
+      layerDragRef.current = null;
+      window.removeEventListener("mousemove", onMv);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMv);
+    window.addEventListener("mouseup", onUp);
+    setActiveLayerIdx(idx);
+  };
+  // v3.4.39 — Drag-to-resize via a bottom-right corner handle. Like the
+  // move handler but writes into width/height instead. Naturally bounded
+  // above 8 px to keep layers grabbable. Stretch axes ignore their side
+  // of the drag — the size is owned by the canvas there.
+  const startLayerResize = (idx, e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const stage = stageRef.current;
+    const startLayer = layers[idx];
+    if (!startLayer) return;
+    // Seed with the layer's current rendered size when w/h is null (auto).
+    const layerEl = stage && stage.querySelector(`[data-layer-idx="${idx}"]`);
+    const lr = layerEl ? layerEl.getBoundingClientRect() : null;
+    const sr = stage ? stage.getBoundingClientRect() : null;
+    const startW = startLayer.width != null
+      ? startLayer.width
+      : (lr && sr && sr.width > 0 ? Math.round(lr.width * (canvasW / sr.width)) : Math.round(canvasW / 3));
+    const startH = startLayer.height != null
+      ? startLayer.height
+      : (lr && sr && sr.height > 0 ? Math.round(lr.height * (canvasH / sr.height)) : Math.round(canvasH / 3));
+    const anchor = startLayer.anchor || "center";
+    const lockW = anchor === "stretch-h" || anchor === "fill";
+    const lockH = anchor === "stretch-v" || anchor === "fill";
+    const startX = e.clientX, startY = e.clientY;
+    layerDragRef.current = { idx, kind: "resize", startW, startH };
+    const onMv = (ev) => {
+      const { dx, dy } = _composerScreenToCanvas(stage, ev.clientX - startX, ev.clientY - startY, canvasW, canvasH);
+      layerDragRef.current.liveW = lockW ? null : Math.max(8, Math.round(startW + dx));
+      layerDragRef.current.liveH = lockH ? null : Math.max(8, Math.round(startH + dy));
+      forceRerender(t => t + 1);
+    };
+    const onUp = () => {
+      const d = layerDragRef.current;
+      if (d) {
+        const patch = {};
+        if (d.liveW !== undefined && !lockW) patch.width = d.liveW;
+        if (d.liveH !== undefined && !lockH) patch.height = d.liveH;
+        if (Object.keys(patch).length) updateLayer(idx, patch);
+      }
+      layerDragRef.current = null;
+      window.removeEventListener("mousemove", onMv);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMv);
+    window.addEventListener("mouseup", onUp);
+    setActiveLayerIdx(idx);
+  };
+  // Resolve the live layer (drag overrides on top of saved state) so the
+  // stage paints follow-the-cursor without committing every frame.
+  const liveLayerAt = (i) => {
+    const base = layers[i];
+    const d = layerDragRef.current;
+    if (!d || d.idx !== i) return base;
+    if (d.kind === "move") {
+      return {
+        ...base,
+        offsetX: d.liveOX !== undefined ? d.liveOX : base.offsetX,
+        offsetY: d.liveOY !== undefined ? d.liveOY : base.offsetY,
+      };
+    }
+    if (d.kind === "resize") {
+      return {
+        ...base,
+        width:  d.liveW !== undefined ? d.liveW : base.width,
+        height: d.liveH !== undefined ? d.liveH : base.height,
+      };
+    }
+    return base;
+  };
+  const moveLayer = (idx, dir) => {
+    const next = layers.slice();
+    const tgt = idx + dir;
+    if (tgt < 0 || tgt >= next.length) return;
+    const tmp = next[idx]; next[idx] = next[tgt]; next[tgt] = tmp;
+    onChange({ layers: next });
+    setActiveLayerIdx(tgt);
+  };
+  // v3.4.44 — Delete-layer. Both removes the entry from node.layers AND
+  // removes the upstream edge — without the edge removal, useMemo's wired
+  // append would just re-create the layer entry on the next render. The
+  // parent surface owns edge state, so it provides `onUnwireAsset`.
+  const dropLayer = (idx) => {
+    const layer = layers[idx];
+    const next = layers.slice(); next.splice(idx, 1);
+    onChange({ layers: next });
+    if (layer && onUnwireAsset) onUnwireAsset(layer.assetId);
+    setActiveLayerIdx(null);
+  };
+
+  // v3.4.43 — Bake. Serialize the current layer stack + canvas params
+  // into a self-contained HTML file written to source/<branch>/composer-
+  // <nodeId>.html. The file mirrors the in-node preview: a relatively-
+  // positioned .stage with absolutely-positioned .layer-N children
+  // carrying the same anchor/offset/size CSS as the live composer. After
+  // a successful write we stamp node.bakedPath + node.bakedAt; downstream
+  // agents read bakedPath as if it were a regular HTML asset.
+  const [bakeState, setBakeState] = useState({ phase: "idle", error: null });
+  const bakeComposer = useCallback(async () => {
+    setBakeState({ phase: "baking", error: null });
+    try {
+      const branch = (() => {
+        // Sniff branch from a wired prototype if present, else "main".
+        for (const e of (allEdges || [])) {
+          const f = (e.from || "").split(".", 1)[0];
+          const up = (allNodes || []).find(n => n.id === f);
+          if (up && up.kind === "prototype" && up.branch) return up.branch;
+        }
+        return "main";
+      })();
+      const outPath = `source/${branch}/composer-${node.id}.html`;
+      // v3.4.46 — Guard pX/pY against zero / NaN / infinite canvas dims
+      // so a misconfigured canvas can't emit "Infinity%" or "NaN%" CSS
+      // values that some downstream parsers (and html2canvas) choke on.
+      const pX = (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !Number.isFinite(canvasW) || canvasW <= 0) return "0%";
+        return `${(n / canvasW) * 100}%`;
+      };
+      const pY = (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !Number.isFinite(canvasH) || canvasH <= 0) return "0%";
+        return `${(n / canvasH) * 100}%`;
+      };
+      // v3.4.46 — Shared HTML-attribute escaper. Without `&` → `&amp;`
+      // (and the other special chars) a perfectly-valid daemon URL like
+      // `…?project=mimiow&t=123` produces a malformed attribute that
+      // some downstream parsers silently truncate — the exact failure
+      // mode the user reported ("file is created but incomplete").
+      const attrEsc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+      const layerCss = [];
+      const layerTags = [];
+      // v3.4.46 — Collected per-layer issues that didn't abort the bake
+      // (unknown extension, missing URL, layer-level throw). Surfaced
+      // in the toast on success/error so the user knows which layers
+      // degraded vs which fully baked.
+      const layerErrors = [];
+      // v3.4.46 — Per-layer try/catch. A bug in ONE layer (orphan asset,
+      // unknown anchor, mangled URL, missing field) used to abort the
+      // whole bake mid-loop, leaving a TRUNCATED HTML file on disk +
+      // the user staring at an error toast. Now each layer is best-
+      // effort: failures emit a small error tile and the loop continues
+      // so the rest of the composition still bakes successfully.
+      for (let i = 0; i < layers.length; i++) {
+        try {
+          const layer = layers[i];
+          if (!layer.visible) continue;
+          if (!wiredAssetIds.includes(layer.assetId)) continue;
+          const assetNode = (allNodes || []).find(n => n.id === layer.assetId);
+          if (!assetNode) continue;
+          const a = layer.anchor || "center";
+          const oX = layer.offsetX || 0;
+          const oY = layer.offsetY || 0;
+          const w = layer.width;
+          const h = layer.height;
+          const rules = [];
+          rules.push(`position: absolute`);
+          rules.push(`opacity: ${typeof layer.opacity === "number" ? layer.opacity : 1}`);
+          if (a === "fill" || a === "stretch-h") {
+            rules.push(`left: 0; right: 0`);
+            if (h != null) rules.push(`height: ${pY(h)}`); else if (a === "fill") rules.push(`top: 0; bottom: 0`);
+          } else if (a === "stretch-v") {
+            rules.push(`top: 0; bottom: 0`);
+            if (w != null) rules.push(`width: ${pX(w)}`);
+          } else {
+            if (w != null) rules.push(`width: ${pX(w)}`);
+            if (h != null) rules.push(`height: ${pY(h)}`);
+          }
+          if (a === "top-left")        { rules.push(`top: ${pY(oY)}; left: ${pX(oX)}`); }
+          else if (a === "top-center") { rules.push(`top: ${pY(oY)}; left: calc(50% + ${pX(oX)}); transform: translateX(-50%)`); }
+          else if (a === "top-right")  { rules.push(`top: ${pY(oY)}; right: ${pX(-oX)}`); }
+          else if (a === "middle-left")  { rules.push(`top: calc(50% + ${pY(oY)}); left: ${pX(oX)}; transform: translateY(-50%)`); }
+          else if (a === "center")        { rules.push(`top: calc(50% + ${pY(oY)}); left: calc(50% + ${pX(oX)}); transform: translate(-50%, -50%)`); }
+          else if (a === "middle-right") { rules.push(`top: calc(50% + ${pY(oY)}); right: ${pX(-oX)}; transform: translateY(-50%)`); }
+          else if (a === "bottom-left")   { rules.push(`bottom: ${pY(-oY)}; left: ${pX(oX)}`); }
+          else if (a === "bottom-center") { rules.push(`bottom: ${pY(-oY)}; left: calc(50% + ${pX(oX)}); transform: translateX(-50%)`); }
+          else if (a === "bottom-right")  { rules.push(`bottom: ${pY(-oY)}; right: ${pX(-oX)}`); }
+          else if (a === "stretch-h")     { rules.push(`top: ${pY(oY)}`); }
+          else if (a === "stretch-v")     { rules.push(`left: ${pX(oX)}`); }
+          layerCss.push(`  .layer-${i} { ${rules.join("; ")}; }`);
+          // v3.4.46 — Pick the renderer by EXTENSION (path or URL) rather
+          // than just by node.assetKind. Catches the "kind says image
+          // but file is .mp4" mismatch users sometimes produce by
+          // renaming a file without updating the asset card's kind.
+          // Explicitly supports <audio> and <svg> (via <img>); falls
+          // back to <iframe> for unknown extensions so the browser
+          // decides how to render. URL goes through attrEsc so query
+          // strings don't break the attribute (the most likely cause
+          // of the user's truncated-file report).
+          const url = _composerAssetUrl(assetNode);
+          const label = _composerLayerLabel(assetNode) || assetNode.id;
+          const safeLabel = attrEsc(label);
+          if (!url) {
+            layerErrors.push("layer #" + i + " (" + label + "): no resolvable asset URL — generate the asset or click Bake on the upstream node first");
+            layerTags.push(`    <div class="layer-${i}" data-label="${safeLabel}" style="background:#222;color:#aaa;display:flex;align-items:center;justify-content:center;font:11px/1.3 monospace;padding:8px;text-align:center;">[missing source]<br/>${safeLabel}</div>`);
+            continue;
+          }
+          const safeUrl = attrEsc(url);
+          const ext = (() => {
+            const pathExt = (() => {
+              const p = String(assetNode.path || "").toLowerCase();
+              return p.includes(".") ? p.split(".").pop() : "";
+            })();
+            const urlExt = (() => {
+              const u = String(url || "").toLowerCase().split("?")[0];
+              return u.includes(".") ? u.split(".").pop() : "";
+            })();
+            return pathExt || urlExt || "";
+          })();
+          const isVideoExt = ["mp4","webm","mov","m4v","ogv"].includes(ext);
+          const isAudioExt = ["mp3","wav","ogg","m4a","aac","flac"].includes(ext);
+          const isImgExt   = ["png","jpg","jpeg","webp","gif","avif","svg","svgz","apng","bmp","ico"].includes(ext);
+          const isHtmlExt  = ["html","htm"].includes(ext);
+          const isJsonExt  = ext === "json";
+          // Baked composer / formatted-text upstreams have node.kind
+          // !== "asset" but they DO have a bakedPath (an .html file).
+          // Treat their kind as iframe regardless of ext-checks below.
+          const isBakedHtml = (assetNode.kind === "composer" || assetNode.kind === "formatted-text") && !!assetNode.bakedPath;
+          if (isBakedHtml || isHtmlExt) {
+            layerTags.push(`    <iframe class="layer-${i}" src="${safeUrl}" title="${safeLabel}" loading="lazy"></iframe>`);
+          } else if (isVideoExt) {
+            layerTags.push(`    <video class="layer-${i}" src="${safeUrl}" autoplay loop muted playsinline preload="metadata"></video>`);
+          } else if (isAudioExt) {
+            layerTags.push(`    <audio class="layer-${i}" src="${safeUrl}" autoplay loop muted preload="metadata"></audio>`);
+          } else if (isImgExt) {
+            layerTags.push(`    <img class="layer-${i}" src="${safeUrl}" alt="${safeLabel}" loading="lazy"/>`);
+          } else if (isJsonExt) {
+            // Lottie-style JSON renders as text in an <iframe>, not as
+            // animation. Flag so the user knows it needs a player wrap.
+            layerErrors.push("layer #" + i + " (" + label + "): JSON asset (likely Lottie) — browsers won't render JSON inline. Wrap with a Lottie player.");
+            layerTags.push(`    <iframe class="layer-${i}" src="${safeUrl}" title="${safeLabel}" loading="lazy"></iframe>`);
+          } else {
+            layerErrors.push("layer #" + i + " (" + label + "): unknown extension \"" + (ext || "(none)") + "\" — using iframe as fallback");
+            layerTags.push(`    <iframe class="layer-${i}" src="${safeUrl}" title="${safeLabel}" loading="lazy"></iframe>`);
+          }
+        } catch (layerErr) {
+          // Per-layer failure: log it, emit a placeholder so the layer
+          // index is preserved, keep going. This is the difference
+          // between "TRUNCATED FILE" and "complete file with one tile
+          // marked broken" — way more salvageable for the user.
+          const msg = String((layerErr && layerErr.message) || layerErr);
+          layerErrors.push("layer #" + i + " threw during bake: " + msg);
+          try {
+            layerCss.push(`  .layer-${i} { position: absolute; top: 0; left: 0; width: 240px; height: 80px; background: #fee; border: 1px dashed #c33; opacity: 0.85; }`);
+            layerTags.push(`    <div class="layer-${i}" style="display:flex;align-items:center;justify-content:center;font:10px/1.3 monospace;color:#900;padding:6px;text-align:center;">[layer ${i} error] ${attrEsc(msg).slice(0, 100)}</div>`);
+          } catch {}
+        }
+      }
+      const css = [
+        ":root { --w: " + canvasW + "px; --h: " + canvasH + "px; }",
+        "html, body { margin: 0; padding: 0; background: #111; min-height: 100%; }",
+        "body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }",
+        ".stage {",
+        "  position: relative;",
+        `  aspect-ratio: ${canvasW} / ${canvasH};`,
+        "  width: 100%;",
+        `  max-width: ${node.maxWidth ? node.maxWidth + "px" : (canvasW + "px")};`,
+        `  max-height: ${node.maxHeight ? node.maxHeight + "px" : "100vh"};`,
+        `  background: ${node.background || "#ffffff"};`,
+        "  overflow: hidden;",
+        "  margin: 0 auto;",
+        "}",
+        ".stage > img, .stage > video, .stage > iframe { display: block; object-fit: contain; border: 0; }",
+        ".stage > img, .stage > video { width: 100%; height: 100%; }",
+        ".stage > iframe { width: 100%; height: 100%; }",
+        ...layerCss,
+      ].join("\n");
+      const docHtml = [
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '  <meta charset="utf-8">',
+        `  <title>Composer · ${node.id}</title>`,
+        "  <style>",
+        css,
+        "  </style>",
+        "</head>",
+        "<body>",
+        '  <div class="stage" data-composer-id="' + node.id + '">',
+        ...layerTags,
+        "  </div>",
+        "</body>",
+        "</html>",
+        "",
+      ].join("\n");
+      // v3.4.46 — Validate the HTML before posting. A truncated docHtml
+      // (e.g. missing </html>) is almost certainly a bug we want to
+      // surface explicitly rather than write to disk and confuse the
+      // user with a "successful" bake of a malformed file.
+      if (!docHtml || !docHtml.includes("</html>")) {
+        throw new Error("Bake assembled malformed HTML — refusing to write. Re-bake with the issue reported in the layer-error list.");
+      }
+      const r = await fetch(apiUrl("/__write_text"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: outPath, text: docHtml }),
+      });
+      if (!r.ok) {
+        // v3.4.46 — Surface both the JSON `.error` AND the raw text body
+        // if JSON parse fails. The user previously saw bare "HTTP 500"
+        // with no diagnostic; now they get the actual server message
+        // (e.g. "path escapes project root" / "permission denied").
+        let detail = `HTTP ${r.status}`;
+        try {
+          const j = await r.json();
+          if (j && j.error) detail = j.error;
+        } catch {
+          try { const t = await r.text(); if (t) detail = t.slice(0, 200); } catch {}
+        }
+        throw new Error("Save failed: " + detail);
+      }
+      const ts = new Date().toISOString();
+      onChange({ bakedPath: outPath, bakedAt: ts });
+      // v3.4.47 — Auto-spawn an output asset card if nothing is wired to
+      // .out yet. Lets the user chain downstream consumers visually
+      // without having to manually drop an HTML asset card and configure
+      // its path. The parent's onBakeAutoCreateOutput is idempotent so
+      // re-bakes don't multiply asset nodes.
+      try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(outPath); } catch {}
+      // v3.4.46 — When some layers degraded but the bake itself
+      // succeeded, surface the issue list as an inline warning on the
+      // node. The user sees the file IS written + how many layers had
+      // issues, with the full list available via tooltip.
+      const errs = layerErrors;
+      if (errs.length > 0) {
+        setBakeState({
+          phase: "done-with-warnings",
+          warnings: errs,
+          warningSummary: `Baked with ${errs.length} layer issue${errs.length === 1 ? "" : "s"}`,
+        });
+      } else {
+        setBakeState({ phase: "done", error: null });
+      }
+      // Broadcast so any iframe / asset card pointed at this path refetches.
+      try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outPath] } })); } catch {}
+      setTimeout(() => setBakeState(s => (s.phase === "done" || s.phase === "done-with-warnings") ? { phase: "idle", error: null } : s), 2500);
+    } catch (err) {
+      // v3.4.46 — Include the layer-error list (if any) so the user can
+      // tell whether the failure was a single bad layer or a wholesale
+      // bake/write failure.
+      const errs = layerErrors;
+      const baseMsg = String((err && err.message) || err);
+      const fullMsg = errs.length > 0
+        ? baseMsg + " · " + errs.length + " layer issue" + (errs.length === 1 ? "" : "s") + " (see tooltip)"
+        : baseMsg;
+      setBakeState({ phase: "error", error: fullMsg, warnings: errs });
+    }
+  }, [node.id, node.maxWidth, node.maxHeight, node.background, canvasW, canvasH, layers, wiredAssetIds, allNodes, allEdges, onChange, onBakeAutoCreateOutput]);
+
+  return html`
+    <div
+      className="workflow-node workflow-node-composer"
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">▣</span>
+        <span className="workflow-node-label">Composer</span>
+        <span className="workflow-node-bar-spacer"/>
+        ${node.bakedAt && bakeState.phase === "idle" && html`
+          <span className="workflow-node-composer-baked-tag"
+                title=${"Last baked: " + node.bakedAt + " → " + (node.bakedPath || "")}>baked</span>
+        `}
+        <button
+          className=${"workflow-node-composer-bake"
+            + (bakeState.phase === "baking" ? " is-baking" : "")
+            + (bakeState.phase === "done" ? " is-done" : "")
+            + (bakeState.phase === "done-with-warnings" ? " is-warning" : "")
+            + (bakeState.phase === "error" ? " is-error" : "")}
+          title=${bakeState.phase === "error"
+            ? ("Bake failed: " + (bakeState.error || "")
+                + ((bakeState.warnings && bakeState.warnings.length)
+                    ? ("\n\nPer-layer issues:\n• " + bakeState.warnings.join("\n• "))
+                    : ""))
+            : bakeState.phase === "done-with-warnings"
+              ? ("Baked with warnings. " + (bakeState.warningSummary || "") + "\n\n• " + (bakeState.warnings || []).join("\n• "))
+              : (node.bakedPath
+                ? ("Re-bake — overwrite " + node.bakedPath + " with the current layer stack. Downstream consumers (agents wired to .out) read this file.")
+                : "Bake this composition into a self-contained HTML file. Downstream consumers (agents wired to .out) read the file.")}
+          onClick=${(e) => { e.stopPropagation(); bakeComposer(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+          disabled=${bakeState.phase === "baking"}
+        >${bakeState.phase === "baking"
+          ? html`<span className="workflow-node-composer-bake-spinner"/> baking…`
+          : bakeState.phase === "done"
+            ? "Baked ✓"
+            : bakeState.phase === "done-with-warnings"
+              ? html`Baked ⚠ ${(bakeState.warnings || []).length}`
+              : bakeState.phase === "error"
+                ? "Retry bake"
+                : (node.bakedPath ? "Re-bake" : "Bake")}</button>
+        <span className="workflow-node-composer-dim" title="Canvas pixel dimensions">${canvasW}×${canvasH}</span>
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <div className="workflow-composer-body">
+        <div className="workflow-composer-left">
+          <div className="workflow-composer-section">
+            <div className="workflow-composer-section-head">Layers <span className="workflow-composer-count">${layers.length}</span></div>
+            <div className="workflow-composer-layers">
+              ${layers.length === 0 && html`<div className="workflow-composer-hint">No layers yet.</div>`}
+              ${layers.slice().reverse().map((layer, revIdx) => {
+                const i = layers.length - 1 - revIdx;
+                const assetNode = (allNodes || []).find(n => n.id === layer.assetId);
+                const label = assetNode ? (_composerLayerLabel(assetNode) || assetNode.id) : `(missing) ${layer.assetId}`;
+                const orphan = !wiredAssetIds.includes(layer.assetId);
+                const isActive = i === activeLayerIdx;
+                return html`
+                  <div
+                    key=${"row-" + layer.assetId + "-" + i}
+                    className=${"workflow-composer-layer-row" + (isActive ? " is-active" : "") + (orphan ? " is-orphan" : "")}
+                    onClick=${() => setActiveLayerIdx(i === activeLayerIdx ? null : i)}
+                  >
+                    <button className="workflow-composer-layer-vis"
+                      title=${layer.visible !== false ? "Hide layer" : "Show layer"}
+                      onClick=${(e) => { e.stopPropagation(); updateLayer(i, { visible: !(layer.visible !== false) }); }}
+                    >${layer.visible !== false ? "●" : "○"}</button>
+                    <span className="workflow-composer-layer-label" title=${label}>${label}</span>
+                    <button className="workflow-composer-layer-mv" disabled=${i === layers.length - 1}
+                      title="Move up (increase z-index)"
+                      onClick=${(e) => { e.stopPropagation(); moveLayer(i, +1); }}
+                    >↑</button>
+                    <button className="workflow-composer-layer-mv" disabled=${i === 0}
+                      title="Move down (decrease z-index)"
+                      onClick=${(e) => { e.stopPropagation(); moveLayer(i, -1); }}
+                    >↓</button>
+                    <button className="workflow-composer-layer-rm"
+                      title="Remove layer (won't disconnect the edge)"
+                      onClick=${(e) => { e.stopPropagation(); dropLayer(i); }}
+                    >×</button>
+                  </div>
+                `;
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="workflow-composer-middle">
+        <div
+          className="workflow-composer-stage"
+          ref=${stageRef}
+          style=${{
+            aspectRatio: `${canvasW} / ${canvasH}`,
+            background: node.background || "#ffffff",
+            maxWidth:  node.maxWidth  ? node.maxWidth  + "px" : "100%",
+            maxHeight: node.maxHeight ? node.maxHeight + "px" : "100%",
+          }}
+          onMouseDown=${(e) => {
+            // Empty-canvas click → deselect any active layer.
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+              setActiveLayerIdx(null);
+            }
+          }}
+        >
+          ${layers.length === 0 && html`
+            <div className="workflow-composer-empty">
+              Wire one or more <strong>Asset</strong> nodes into this composer to add layers.
+            </div>
+          `}
+          ${layers.map((layer, i) => {
+            if (!layer.visible) return null;
+            if (!wiredAssetIds.includes(layer.assetId)) return null;
+            const assetNode = (allNodes || []).find(n => n.id === layer.assetId);
+            if (!assetNode) return null;
+            const url = _composerAssetUrl(assetNode);
+            const kind = _composerAssetKind(assetNode);
+            // v3.4.39 — use the live (drag-overridden) layer for paint so
+            // dragging is real-time without React state per frame.
+            const liveLayer = liveLayerAt(i);
+            const style = _composerLayerStyle(liveLayer, canvasW, canvasH);
+            // Allow pointer events on the layer wrapper so the user can grab
+            // it and drag to move; let inner img/video keep their default
+            // pointer-events: none from CSS so they don't intercept.
+            style.pointerEvents = "auto";
+            const label = _composerLayerLabel(assetNode) || assetNode.id;
+            const isActive = i === activeLayerIdx;
+            const cursor = isActive ? "move" : "pointer";
+            return html`
+              <div
+                key=${layer.assetId + "-" + i}
+                data-layer-idx=${i}
+                className=${"workflow-composer-layer" + (isActive ? " is-active" : "")}
+                style=${{ ...style, cursor }}
+                onMouseDown=${(e) => {
+                  // First click selects, subsequent mousedown drags. Either
+                  // way prevent the wrap's marquee from starting.
+                  if (!isActive) {
+                    setActiveLayerIdx(i);
+                    e.stopPropagation();
+                    return;
+                  }
+                  startLayerDrag(i, e);
+                }}
+                title=${label + " — drag to move (when selected)"}
+              >
+                ${url
+                  ? (kind === "video"
+                      ? html`<video src=${url} autoPlay loop muted playsInline/>`
+                      : kind === "iframe"
+                        ? html`<iframe src=${url} title=${label} sandbox="allow-scripts allow-same-origin"/>`
+                        : html`<img src=${url} alt=${label}/>`)
+                  : html`<div className="workflow-composer-layer-missing">${label}</div>`}
+                ${isActive && html`
+                  <div
+                    className="workflow-composer-resize-handle workflow-composer-resize-handle-br"
+                    title="Drag to resize this layer"
+                    onMouseDown=${(e) => startLayerResize(i, e)}
+                  />
+                `}
+              </div>
+            `;
+          })}
+        </div>
+        </div>
+        <div className="workflow-composer-right">
+        ${activeLayerIdx != null && layers[activeLayerIdx] && html`
+          <div className="workflow-composer-section workflow-composer-layer-edit-panel">
+            <div className="workflow-composer-section-head">Selected layer</div>
+            <div className="workflow-composer-row">
+              <label className="workflow-composer-field workflow-composer-field-wide">
+                <span>opacity</span>
+                <input type="range" min="0" max="1" step="0.01"
+                  value=${layers[activeLayerIdx].opacity != null ? layers[activeLayerIdx].opacity : 1}
+                  onInput=${(e) => updateLayer(activeLayerIdx, { opacity: +e.target.value })}/>
+                <span className="workflow-composer-field-val">${Math.round((layers[activeLayerIdx].opacity != null ? layers[activeLayerIdx].opacity : 1) * 100)}%</span>
+              </label>
+            </div>
+            <div className="workflow-composer-edit-grids">
+              <div className="workflow-composer-edit-col">
+                <div className="workflow-composer-subhead">Anchor — pin one edge (layer stays put)</div>
+                <div className="workflow-composer-anchor-grid">
+                  ${COMPOSER_ANCHOR_MODES.map(m => html`
+                    <button
+                      key=${m.id}
+                      className=${"workflow-composer-anchor" + (layers[activeLayerIdx].anchor === m.id ? " is-on" : "")}
+                      data-group=${m.group}
+                      title=${"Anchor: " + m.id + " — pins this side(s) for responsive resizing. Layer doesn't move."}
+                      onClick=${(e) => { e.stopPropagation(); changeAnchor(m.id); }}
+                    >${m.label}</button>
+                  `)}
+                </div>
+              </div>
+              <div className="workflow-composer-edit-col">
+                <div className="workflow-composer-subhead">Align — snap to canvas position</div>
+                <div className="workflow-composer-align-grid">
+                  ${COMPOSER_ALIGN_PRESETS.map(p => html`
+                    <button
+                      key=${"a-" + p.id}
+                      className=${"workflow-composer-align" + (layers[activeLayerIdx].anchor === p.anchor && (layers[activeLayerIdx].offsetX || 0) === 0 && (layers[activeLayerIdx].offsetY || 0) === 0 ? " is-on" : "")}
+                      data-group=${p.id.startsWith("stretch") || p.id === "fill" ? "stretch" : "snap"}
+                      title=${p.hint}
+                      onClick=${(e) => { e.stopPropagation(); applyAlign(p); }}
+                    >${p.label}</button>
+                  `)}
+                </div>
+              </div>
+            </div>
+            <div className="workflow-composer-subhead">Position — drag on canvas, or type values</div>
+            <div className="workflow-composer-pos-grid">
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>x</span>
+                <input type="number" value=${layers[activeLayerIdx].offsetX || 0}
+                  onInput=${(e) => updateLayer(activeLayerIdx, { offsetX: +e.target.value || 0 })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>y</span>
+                <input type="number" value=${layers[activeLayerIdx].offsetY || 0}
+                  onInput=${(e) => updateLayer(activeLayerIdx, { offsetY: +e.target.value || 0 })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>w</span>
+                <input type="number" value=${layers[activeLayerIdx].width || ""} placeholder="auto"
+                  onInput=${(e) => updateLayer(activeLayerIdx, { width: +e.target.value || null })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>h</span>
+                <input type="number" value=${layers[activeLayerIdx].height || ""} placeholder="auto"
+                  onInput=${(e) => updateLayer(activeLayerIdx, { height: +e.target.value || null })}/>
+              </label>
+            </div>
+            <div className="workflow-composer-hint workflow-composer-tip">
+              Click a layer on the stage to select it, drag to move. Drag the corner handle to resize.
+            </div>
+          </div>
+        `}
+        <div className="workflow-composer-canvas-controls">
+          <div className="workflow-composer-section">
+            <div className="workflow-composer-section-head">Canvas</div>
+            <div className="workflow-composer-pos-grid">
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>W</span>
+                <input type="number" value=${canvasW} min="1"
+                  onInput=${(e) => onChange({ canvasW: Math.max(1, +e.target.value || 1) })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>H</span>
+                <input type="number" value=${canvasH} min="1"
+                  onInput=${(e) => onChange({ canvasH: Math.max(1, +e.target.value || 1) })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>max W</span>
+                <input type="number" value=${node.maxWidth || ""} placeholder="—"
+                  onInput=${(e) => onChange({ maxWidth: +e.target.value || null })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked">
+                <span>max H</span>
+                <input type="number" value=${node.maxHeight || ""} placeholder="—"
+                  onInput=${(e) => onChange({ maxHeight: +e.target.value || null })}/>
+              </label>
+              <label className="workflow-composer-field workflow-composer-field-stacked workflow-composer-field-color">
+                <span>bg</span>
+                <input type="color" value=${node.background || "#ffffff"}
+                  onInput=${(e) => onChange({ background: e.target.value })}/>
+              </label>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+      <div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id}
+        data-port-side="in"
+        title="Wire one or more Asset nodes in — each becomes a layer in the composer canvas."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id}
+        data-port-side="out"
+        title="Pipe the composed canvas into a downstream prototype / HTML consumer."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Vector editor — inline SVG drawing tool.
+
+   Three-pane layout (left tools+layers, middle SVG stage, right
+   properties) modeled on the composer node. State is a flat array
+   of shape objects on node.shapes; the SVG canvas paints them in
+   order (last on top). Bake serializes the current scene into a
+   self-contained .svg written under source/<branch>/.
+
+   Shape schema:
+     common  : { id, type, name, visible, locked, fill, stroke,
+                 strokeWidth, strokeDasharray, strokeLinecap,
+                 opacity, shadow, blur, rotation }
+     rect    : { x, y, w, h, rx }
+     ellipse : { cx, cy, rx, ry }
+     line    : { x1, y1, x2, y2 }
+     path    : { d, closed }                  // pen + pencil + outlined text
+     text    : { x, y, content, fontFamily,
+                 fontSize, fontWeight, textAnchor }
+
+   Fill can be a string (solid colour) or
+     { type: "linear", angle, stops: [{ offset, color, opacity }] }
+   ───────────────────────────────────────────────────────────────────── */
+
+const VECTOR_FONT_FAMILIES = [
+  { id: "Inter",              label: "Inter",              stack: '"Inter", system-ui, sans-serif' },
+  { id: "Space Grotesk",      label: "Space Grotesk",      stack: '"Space Grotesk", sans-serif' },
+  { id: "Space Mono",         label: "Space Mono",         stack: '"Space Mono", monospace' },
+  { id: "JetBrains Mono",     label: "JetBrains Mono",     stack: '"JetBrains Mono", monospace' },
+  { id: "Cormorant Garamond", label: "Cormorant Garamond", stack: '"Cormorant Garamond", serif' },
+  { id: "Source Serif 4",     label: "Source Serif 4",     stack: '"Source Serif 4", serif' },
+];
+
+const VECTOR_TOOLS = [
+  { id: "select",  label: "Select",    glyph: "▢", hint: "Select / move shapes (V)" },
+  { id: "rect",    label: "Rectangle", glyph: "▭", hint: "Drag to draw a rectangle (R)" },
+  { id: "ellipse", label: "Ellipse",   glyph: "◯", hint: "Drag to draw an ellipse (O)" },
+  { id: "line",    label: "Line",      glyph: "／", hint: "Drag to draw a line (L)" },
+  { id: "pen",     label: "Pen",       glyph: "✒", hint: "Click anchors; double-click or Enter to finish (P)" },
+  { id: "pencil",  label: "Pencil",    glyph: "✎", hint: "Free-form sketch (B)" },
+  { id: "text",    label: "Text",      glyph: "T", hint: "Click to place text (T)" },
+];
+
+const VECTOR_DEFAULT_FILL   = "#3b82f6";
+const VECTOR_DEFAULT_STROKE = "#0f172a";
+
+function _vecId(prefix) {
+  return prefix + "_" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+}
+
+function _vecNextName(shapes, type) {
+  const base = ({
+    rect:    "Rectangle",
+    ellipse: "Ellipse",
+    line:    "Line",
+    path:    "Path",
+    text:    "Text",
+  })[type] || "Shape";
+  let max = 0;
+  for (const s of (shapes || [])) {
+    if (!s || !s.name) continue;
+    const m = s.name.match(new RegExp("^" + base + " (\\d+)$"));
+    if (m) max = Math.max(max, +m[1]);
+  }
+  return base + " " + (max + 1);
+}
+
+function _vecResolvePaint(spec, defId) {
+  if (spec == null || spec === "" || spec === "none") return { paintAttr: "none" };
+  if (typeof spec === "string") return { paintAttr: spec };
+  if (typeof spec === "object" && spec.type === "linear") {
+    const angle = Number.isFinite(spec.angle) ? spec.angle : 0;
+    const rad = (angle * Math.PI) / 180;
+    const cx = 0.5, cy = 0.5;
+    const dx = Math.cos(rad) / 2;
+    const dy = Math.sin(rad) / 2;
+    return {
+      paintAttr: "url(#" + defId + ")",
+      defElement: html`
+        <linearGradient id=${defId}
+            x1=${cx - dx} y1=${cy - dy}
+            x2=${cx + dx} y2=${cy + dy}>
+          ${(spec.stops || []).map((s, i) => html`
+            <stop key=${i}
+                  offset=${(s.offset != null ? s.offset : (i / Math.max(1, spec.stops.length - 1))) + ""}
+                  stopColor=${s.color || "#000"}
+                  stopOpacity=${s.opacity != null ? s.opacity : 1}/>
+          `)}
+        </linearGradient>
+      `,
+    };
+  }
+  return { paintAttr: "none" };
+}
+
+// ── Layered paints (Figma-style fill + stroke stacks) ───────────────
+// A shape's fill/stroke can either be a SINGLE legacy paint (string
+// or linear-gradient object on shape.fill / shape.stroke) OR an
+// ordered array on shape.fills / shape.strokes. The renderer +
+// serializer call _vecNormalizeFills / _vecNormalizeStrokes which
+// always return an array of paint layers so the rest of the code
+// has a uniform shape.
+//
+// Paint-layer schema:
+//   { id, type: "solid" | "linear" | "radial",
+//     color?,                    // solid + paint-type fallback
+//     stops?, angle?,            // linear gradient
+//     cx?, cy?, r?,              // radial gradient (object-bounding-box coords; 0..1)
+//     opacity,                   // 0..1, applied via the element's opacity attr
+//     visible,                   // false → skip in render + bake
+//     blendMode }                // CSS mix-blend-mode keyword
+//
+// Stroke layers additionally carry: width, dasharray, linecap.
+function _vecNormalizeFills(shape) {
+  if (Array.isArray(shape.fills)) return shape.fills;
+  if (!shape.fill || shape.fill === "none") return [];
+  if (typeof shape.fill === "string") {
+    return [{ id: "f_legacy", type: "solid", color: shape.fill,
+              opacity: 1, visible: true, blendMode: "normal" }];
+  }
+  if (typeof shape.fill === "object" && shape.fill.type === "linear") {
+    return [{ id: "f_legacy", type: "linear",
+              angle: shape.fill.angle, stops: shape.fill.stops,
+              opacity: 1, visible: true, blendMode: "normal" }];
+  }
+  return [];
+}
+function _vecNormalizeStrokes(shape) {
+  if (Array.isArray(shape.strokes)) return shape.strokes;
+  if (!shape.stroke || shape.stroke === "none") return [];
+  const baseW = shape.strokeWidth != null ? shape.strokeWidth : 1;
+  const baseD = shape.strokeDasharray || "";
+  const baseC = shape.strokeLinecap || "butt";
+  if (typeof shape.stroke === "string") {
+    return [{ id: "s_legacy", type: "solid", color: shape.stroke,
+              width: baseW, dasharray: baseD, linecap: baseC,
+              opacity: 1, visible: true, blendMode: "normal" }];
+  }
+  if (typeof shape.stroke === "object" && shape.stroke.type === "linear") {
+    return [{ id: "s_legacy", type: "linear",
+              angle: shape.stroke.angle, stops: shape.stroke.stops,
+              width: baseW, dasharray: baseD, linecap: baseC,
+              opacity: 1, visible: true, blendMode: "normal" }];
+  }
+  return [];
+}
+
+// Resolve any paint layer (solid / linear / radial) into the SVG
+// fill/stroke attribute value + the optional <defs> element. Mirrors
+// _vecResolvePaint's shape but handles the three layered paint types.
+function _vecResolvePaintLayer(layer, defId) {
+  if (!layer || layer.visible === false) return { paintAttr: "none" };
+  if (layer.type === "solid") {
+    return { paintAttr: layer.color || "#000" };
+  }
+  if (layer.type === "linear") {
+    const angle = Number.isFinite(layer.angle) ? layer.angle : 0;
+    const rad = (angle * Math.PI) / 180;
+    const cx = 0.5, cy = 0.5;
+    const dx = Math.cos(rad) / 2;
+    const dy = Math.sin(rad) / 2;
+    const stops = layer.stops || [];
+    return {
+      paintAttr: "url(#" + defId + ")",
+      defElement: html`
+        <linearGradient id=${defId}
+            x1=${cx - dx} y1=${cy - dy}
+            x2=${cx + dx} y2=${cy + dy}>
+          ${stops.map((s, i) => html`
+            <stop key=${i}
+                  offset=${(s.offset != null ? s.offset : (i / Math.max(1, stops.length - 1))) + ""}
+                  stopColor=${s.color || "#000"}
+                  stopOpacity=${s.opacity != null ? s.opacity : 1}/>
+          `)}
+        </linearGradient>
+      `,
+    };
+  }
+  if (layer.type === "radial") {
+    const cx = layer.cx != null ? layer.cx : 0.5;
+    const cy = layer.cy != null ? layer.cy : 0.5;
+    const r  = layer.r  != null ? layer.r  : 0.5;
+    const stops = layer.stops || [];
+    return {
+      paintAttr: "url(#" + defId + ")",
+      defElement: html`
+        <radialGradient id=${defId} cx=${cx} cy=${cy} r=${r}>
+          ${stops.map((s, i) => html`
+            <stop key=${i}
+                  offset=${(s.offset != null ? s.offset : (i / Math.max(1, stops.length - 1))) + ""}
+                  stopColor=${s.color || "#000"}
+                  stopOpacity=${s.opacity != null ? s.opacity : 1}/>
+          `)}
+        </radialGradient>
+      `,
+    };
+  }
+  return { paintAttr: "none" };
+}
+
+// Bake-side counterpart — emits raw SVG strings instead of HTM elements.
+function _vecResolvePaintLayerForBake(layer, defId) {
+  if (!layer || layer.visible === false) return { paintAttr: "none" };
+  if (layer.type === "solid") {
+    return { paintAttr: layer.color || "#000" };
+  }
+  if (layer.type === "linear") {
+    const angle = Number.isFinite(layer.angle) ? layer.angle : 0;
+    const rad = (angle * Math.PI) / 180;
+    const cx = 0.5, cy = 0.5;
+    const dx = Math.cos(rad) / 2;
+    const dy = Math.sin(rad) / 2;
+    const stops = (layer.stops || []).map((s, i) => {
+      const off = s.offset != null ? s.offset : (i / Math.max(1, (layer.stops || []).length - 1));
+      const op  = s.opacity != null ? ` stop-opacity="${s.opacity}"` : "";
+      return `<stop offset="${off}" stop-color="${s.color || "#000"}"${op}/>`;
+    }).join("");
+    return {
+      paintAttr: `url(#${defId})`,
+      defText: `<linearGradient id="${defId}" x1="${cx - dx}" y1="${cy - dy}" x2="${cx + dx}" y2="${cy + dy}">${stops}</linearGradient>`,
+    };
+  }
+  if (layer.type === "radial") {
+    const cx = layer.cx != null ? layer.cx : 0.5;
+    const cy = layer.cy != null ? layer.cy : 0.5;
+    const r  = layer.r  != null ? layer.r  : 0.5;
+    const stops = (layer.stops || []).map((s, i) => {
+      const off = s.offset != null ? s.offset : (i / Math.max(1, (layer.stops || []).length - 1));
+      const op  = s.opacity != null ? ` stop-opacity="${s.opacity}"` : "";
+      return `<stop offset="${off}" stop-color="${s.color || "#000"}"${op}/>`;
+    }).join("");
+    return {
+      paintAttr: `url(#${defId})`,
+      defText: `<radialGradient id="${defId}" cx="${cx}" cy="${cy}" r="${r}">${stops}</radialGradient>`,
+    };
+  }
+  return { paintAttr: "none" };
+}
+
+// CSS blend-mode keywords supported in the paint-layer dropdown.
+const VECTOR_BLEND_MODES = [
+  "normal", "multiply", "screen", "overlay",
+  "darken", "lighten", "color-dodge", "color-burn",
+  "hard-light", "soft-light", "difference", "exclusion",
+  "hue", "saturation", "color", "luminosity",
+];
+
+function _vecResolveFilter(shape, defId) {
+  const blur = +shape.blur || 0;
+  const sh = shape.shadow;
+  const hasShadow = sh && (sh.dx || sh.dy || sh.blur) && sh.color;
+  if (!blur && !hasShadow) return { filterAttr: null };
+  const prims = [];
+  if (blur > 0) prims.push(html`<feGaussianBlur key="b" stdDeviation=${blur}/>`);
+  if (hasShadow) {
+    prims.push(html`
+      <feDropShadow key="ds"
+        dx=${sh.dx || 0}
+        dy=${sh.dy || 0}
+        stdDeviation=${sh.blur || 0}
+        floodColor=${sh.color || "#000"}
+        floodOpacity=${sh.opacity != null ? sh.opacity : 0.5}/>
+    `);
+  }
+  return {
+    filterAttr: "url(#" + defId + ")",
+    defElement: html`
+      <filter id=${defId} x="-50%" y="-50%" width="200%" height="200%">
+        ${prims}
+      </filter>
+    `,
+  };
+}
+
+function _vecShapeToPolygon(shape, sampleStep = 4) {
+  if (!shape) return null;
+  if (shape.type === "rect") {
+    const { x, y, w, h } = shape;
+    return [[
+      [x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y],
+    ]];
+  }
+  if (shape.type === "ellipse") {
+    const { cx, cy, rx, ry } = shape;
+    const n = Math.max(32, Math.round(Math.PI * 2 * Math.max(rx, ry) / sampleStep));
+    const ring = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      ring.push([cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]);
+    }
+    ring.push(ring[0]);
+    return [ring];
+  }
+  if (shape.type === "line") {
+    const { x1, y1, x2, y2 } = shape;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const t = (shape.strokeWidth || 1) * 0.5 || 0.5;
+    const ring = [
+      [x1 + nx * t, y1 + ny * t],
+      [x2 + nx * t, y2 + ny * t],
+      [x2 - nx * t, y2 - ny * t],
+      [x1 - nx * t, y1 - ny * t],
+    ];
+    ring.push(ring[0]);
+    return [ring];
+  }
+  if (shape.type === "path") {
+    return _vecSamplePathD(shape.d || "", sampleStep);
+  }
+  return null;
+}
+
+function _vecSamplePathD(d, step = 4) {
+  if (!d) return null;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const tokens = d.match(/[MLHVCSQTAZ][^MLHVCSQTAZ]*/gi) || [];
+  const subpaths = [];
+  let cur = null;
+  for (const tk of tokens) {
+    if (tk[0] === "M" || tk[0] === "m") {
+      if (cur && cur.length > 1) subpaths.push(cur);
+      cur = [];
+    }
+    if (cur) cur.push(tk);
+  }
+  if (cur && cur.length > 1) subpaths.push(cur);
+  const rings = [];
+  for (const sub of subpaths) {
+    const subD = sub.join("");
+    const tmp = document.createElementNS(svgNS, "path");
+    tmp.setAttribute("d", subD);
+    const sl = tmp.getTotalLength();
+    if (!isFinite(sl) || sl <= 0) continue;
+    const n = Math.max(8, Math.ceil(sl / step));
+    const ring = [];
+    for (let i = 0; i < n; i++) {
+      const p = tmp.getPointAtLength((i / n) * sl);
+      ring.push([p.x, p.y]);
+    }
+    ring.push([ring[0][0], ring[0][1]]);
+    rings.push(ring);
+  }
+  return rings.length ? rings : null;
+}
+
+function _vecPolygonToD(polys) {
+  if (!polys || !polys.length) return "";
+  const parts = [];
+  for (const poly of polys) {
+    for (const ring of poly) {
+      if (!ring || ring.length < 2) continue;
+      parts.push("M " + ring.map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L "));
+      parts.push("Z");
+    }
+  }
+  return parts.join(" ");
+}
+
+function _vecShapeBBox(shape) {
+  if (!shape) return null;
+  if (shape.type === "rect")     return { x: shape.x, y: shape.y, w: shape.w, h: shape.h };
+  if (shape.type === "ellipse")  return { x: shape.cx - shape.rx, y: shape.cy - shape.ry, w: 2 * shape.rx, h: 2 * shape.ry };
+  if (shape.type === "line") {
+    const x = Math.min(shape.x1, shape.x2), y = Math.min(shape.y1, shape.y2);
+    return { x, y, w: Math.abs(shape.x2 - shape.x1), h: Math.abs(shape.y2 - shape.y1) };
+  }
+  if (shape.type === "text") {
+    const fs = shape.fontSize || 24;
+    const w = (shape.content || "").length * fs * 0.6;
+    return { x: shape.x, y: shape.y - fs, w, h: fs * 1.2 };
+  }
+  if (shape.type === "path") {
+    const polys = _vecSamplePathD(shape.d || "", 8);
+    if (!polys) return { x: 0, y: 0, w: 0, h: 0 };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const ring of polys) for (const [x, y] of ring) {
+      if (x < minX) minX = x; if (y < minY) minY = y;
+      if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+    }
+    if (!isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  return null;
+}
+
+function _vecScreenToCanvas(svgEl, clientX, clientY, canvasW, canvasH) {
+  if (!svgEl) return { x: 0, y: 0 };
+  const r = svgEl.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return { x: 0, y: 0 };
+  return {
+    x: ((clientX - r.x) / r.width)  * canvasW,
+    y: ((clientY - r.y) / r.height) * canvasH,
+  };
+}
+
+const _vecFontUrlCache = new Map();
+async function _vecFetchFontUrl(family, weight) {
+  const key = family + ":" + (weight || 400);
+  if (_vecFontUrlCache.has(key)) return _vecFontUrlCache.get(key);
+  const css = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:wght@${weight || 400}&display=swap`;
+  const txt = await fetch(css).then(r => r.text());
+  const m = txt.match(/url\((https:\/\/[^)]+\.(?:woff2|woff|ttf|otf))\)/);
+  const url = m ? m[1] : null;
+  _vecFontUrlCache.set(key, url);
+  return url;
+}
+
+function WorkflowVectorEditorNode({
+  node, zoom, selected, onSelect, onMove, onResize, onRemove,
+  onChange, onDragStart, onDragEnd, onStartEdge,
+  allNodes, allEdges, onBakeAutoCreateOutput,
+}) {
+  const w = node.w || 720;
+  const h = node.h || 520;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+
+  const svgRef = useRef(null);
+  const canvasW = node.canvasW || 1200;
+  const canvasH = node.canvasH || 800;
+  const shapes  = Array.isArray(node.shapes) ? node.shapes : [];
+  const tool    = node.activeTool || "select";
+  const selection = Array.isArray(node.selection) ? node.selection : [];
+
+  const dragRef = useRef(null);
+  const [, forceRerender] = useState(0);
+  const [draftShape, setDraftShape] = useState(null);
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [opState, setOpState] = useState({ phase: "idle", message: "" });
+  // Per-shape node-edit mode. nodeEditId carries the id of the path
+  // currently in anchor-edit mode; selectedAnchor is "<subpathIdx>:<anchorIdx>"
+  // and drives which anchor's Bézier handles are shown.
+  const [nodeEditId, setNodeEditId] = useState(null);
+  const [selectedAnchor, setSelectedAnchor] = useState(null);
+  // Per-node clipboard for in-editor copy / paste / duplicate. Lives
+  // in a ref so writes don't trigger renders. Holds an array of
+  // deep-cloned shape templates (no ids) ready to be re-instantiated.
+  const clipboardRef = useRef([]);
+
+  const commitShapes = (next, extraPatch) => {
+    onChange({ shapes: next, ...(extraPatch || {}) });
+  };
+  const setShape = (id, patch) => {
+    commitShapes(shapes.map(s => s.id === id ? { ...s, ...patch } : s));
+  };
+  const setSelection = (ids) => {
+    onChange({ selection: Array.isArray(ids) ? ids : [ids].filter(Boolean) });
+  };
+  const setTool = (t) => onChange({ activeTool: t, selection: [] });
+
+  const selectedShapes = useMemo(
+    () => selection.map(id => shapes.find(s => s.id === id)).filter(Boolean),
+    [selection, shapes]
+  );
+  const singleSel = selectedShapes.length === 1 ? selectedShapes[0] : null;
+
+  const _makeShape = (type, geom) => ({
+    id: _vecId("sh"),
+    type,
+    name: _vecNextName(shapes, type),
+    visible: true,
+    locked: false,
+    fill: type === "line" ? "none" : VECTOR_DEFAULT_FILL,
+    stroke: type === "line" ? VECTOR_DEFAULT_STROKE : "none",
+    strokeWidth: type === "line" ? 2 : 1,
+    strokeDasharray: "",
+    strokeLinecap: "butt",
+    opacity: 1,
+    shadow: null,
+    blur: 0,
+    rotation: 0,
+    ...geom,
+  });
+
+  const onStageMouseDown = (e) => {
+    if (e.button !== 0) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const start = _vecScreenToCanvas(svg, e.clientX, e.clientY, canvasW, canvasH);
+
+    if (tool === "select") {
+      let el = e.target;
+      let id = null;
+      while (el && el !== svg) {
+        const a = el.getAttribute && el.getAttribute("data-shape-id");
+        if (a) { id = a; break; }
+        el = el.parentNode;
+      }
+      // In node-edit mode, clicking the stage background should NOT
+      // wipe selection — the anchor / handle dots handle their own
+      // stopPropagation, so an empty-canvas click here means the user
+      // wants to bail out.
+      if (!id) {
+        if (nodeEditId) { setNodeEditId(null); setSelectedAnchor(null); return; }
+        setSelection([]);
+        return;
+      }
+      // Double-click on an already-selected path → enter node-edit mode.
+      if (e.detail >= 2 && selection.length === 1 && selection[0] === id) {
+        const s = shapes.find(x => x.id === id);
+        if (s && s.type === "path") {
+          e.stopPropagation();
+          e.preventDefault();
+          setNodeEditId(id);
+          setSelectedAnchor(null);
+          return;
+        }
+      }
+      // Selecting a different shape exits node-edit mode automatically.
+      if (nodeEditId && nodeEditId !== id) {
+        setNodeEditId(null);
+        setSelectedAnchor(null);
+      }
+      e.stopPropagation();
+      e.preventDefault();
+      const next = e.shiftKey
+        ? (selection.includes(id) ? selection.filter(x => x !== id) : [...selection, id])
+        : (selection.length === 1 && selection[0] === id ? selection : [id]);
+      setSelection(next);
+      const startSnapshot = next.map(sid => {
+        const s = shapes.find(x => x.id === sid);
+        return s ? { id: sid, bbox: _vecShapeBBox(s), shape: s } : null;
+      }).filter(Boolean);
+      dragRef.current = { kind: "move", startMouse: start, snapshot: startSnapshot, ids: next };
+      const onMv = (ev) => {
+        const p = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
+        dragRef.current.dx = p.x - start.x;
+        dragRef.current.dy = p.y - start.y;
+        forceRerender(t => t + 1);
+      };
+      const onUp = () => {
+        const d = dragRef.current;
+        if (d && (d.dx || d.dy)) {
+          const dx = d.dx || 0, dy = d.dy || 0;
+          commitShapes(shapes.map(s => {
+            if (!d.ids.includes(s.id)) return s;
+            return _vecTranslateShape(s, dx, dy);
+          }));
+        }
+        dragRef.current = null;
+        window.removeEventListener("mousemove", onMv);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMv);
+      window.addEventListener("mouseup", onUp);
+      return;
+    }
+
+    if (tool === "rect" || tool === "ellipse" || tool === "line") {
+      e.stopPropagation();
+      e.preventDefault();
+      let draft;
+      if (tool === "rect")     draft = _makeShape("rect",    { x: start.x, y: start.y, w: 0, h: 0, rx: 0 });
+      if (tool === "ellipse")  draft = _makeShape("ellipse", { cx: start.x, cy: start.y, rx: 0, ry: 0 });
+      if (tool === "line")     draft = _makeShape("line",    { x1: start.x, y1: start.y, x2: start.x, y2: start.y });
+      setDraftShape(draft);
+      const onMv = (ev) => {
+        const p = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
+        setDraftShape(prev => {
+          if (!prev) return prev;
+          if (prev.type === "rect") {
+            const x = Math.min(start.x, p.x), y = Math.min(start.y, p.y);
+            return { ...prev, x, y, w: Math.abs(p.x - start.x), h: Math.abs(p.y - start.y) };
+          }
+          if (prev.type === "ellipse") {
+            return {
+              ...prev,
+              cx: (start.x + p.x) / 2,
+              cy: (start.y + p.y) / 2,
+              rx: Math.abs(p.x - start.x) / 2,
+              ry: Math.abs(p.y - start.y) / 2,
+            };
+          }
+          if (prev.type === "line") {
+            return { ...prev, x2: p.x, y2: p.y };
+          }
+          return prev;
+        });
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMv);
+        window.removeEventListener("mouseup", onUp);
+        setDraftShape(d => {
+          if (!d) return d;
+          if (d.type === "rect"    && (d.w < 1 || d.h < 1)) return null;
+          if (d.type === "ellipse" && (d.rx < 1 || d.ry < 1)) return null;
+          if (d.type === "line") {
+            if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 1) return null;
+          }
+          commitShapes([...shapes, d], { selection: [d.id], activeTool: "select" });
+          return null;
+        });
+      };
+      window.addEventListener("mousemove", onMv);
+      window.addEventListener("mouseup", onUp);
+      return;
+    }
+
+    if (tool === "pencil") {
+      e.stopPropagation();
+      e.preventDefault();
+      const pts = [[start.x, start.y]];
+      const draft = _makeShape("path", { d: `M ${start.x.toFixed(2)} ${start.y.toFixed(2)}`, closed: false });
+      draft.fill = "none";
+      draft.stroke = VECTOR_DEFAULT_STROKE;
+      draft.strokeWidth = 2;
+      draft.strokeLinecap = "round";
+      setDraftShape(draft);
+      const onMv = (ev) => {
+        const p = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
+        const last = pts[pts.length - 1];
+        if (Math.hypot(p.x - last[0], p.y - last[1]) < 2) return;
+        pts.push([p.x, p.y]);
+        const d = _vecSmoothPolyline(pts);
+        setDraftShape(prev => prev ? { ...prev, d } : prev);
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMv);
+        window.removeEventListener("mouseup", onUp);
+        setDraftShape(d => {
+          if (!d) return d;
+          if (pts.length < 2) return null;
+          commitShapes([...shapes, d], { selection: [d.id], activeTool: "select" });
+          return null;
+        });
+      };
+      window.addEventListener("mousemove", onMv);
+      window.addEventListener("mouseup", onUp);
+      return;
+    }
+
+    if (tool === "pen") {
+      e.stopPropagation();
+      e.preventDefault();
+      const dbl = e.detail >= 2;
+      setDraftShape(prev => {
+        if (!prev || prev.type !== "path") {
+          const fresh = _makeShape("path", { d: `M ${start.x.toFixed(2)} ${start.y.toFixed(2)}`, closed: false, _penPoints: [[start.x, start.y]] });
+          fresh.fill = "none"; fresh.stroke = VECTOR_DEFAULT_STROKE; fresh.strokeWidth = 2;
+          return fresh;
+        }
+        const pts = (prev._penPoints || []).slice();
+        if (dbl) {
+          if (pts.length < 2) return null;
+          const d = "M " + pts.map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L ");
+          const final = { ...prev, d, _penPoints: undefined };
+          commitShapes([...shapes, final], { selection: [final.id], activeTool: "select" });
+          return null;
+        }
+        pts.push([start.x, start.y]);
+        const d = "M " + pts.map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L ");
+        return { ...prev, d, _penPoints: pts };
+      });
+      return;
+    }
+
+    if (tool === "text") {
+      e.stopPropagation();
+      e.preventDefault();
+      const txt = _makeShape("text", {
+        x: start.x, y: start.y,
+        content: "Type here",
+        fontFamily: "Inter",
+        fontSize: 32,
+        fontWeight: 500,
+        textAnchor: "start",
+      });
+      txt.fill = "#0f172a";
+      txt.stroke = "none";
+      commitShapes([...shapes, txt], { selection: [txt.id], activeTool: "select" });
+      setEditingTextId(txt.id);
+      return;
+    }
+  };
+
+  // Clone a shape: deep-copy, mint a fresh id, optionally rename + offset.
+  const _cloneShape = (shape, opts) => {
+    const o = opts || {};
+    const offset = o.offset != null ? o.offset : 0;
+    const cloned = JSON.parse(JSON.stringify(shape));
+    cloned.id = _vecId("sh");
+    // Re-derive a unique name in the scene (skip "Boolean (op)" / "Outlined: …" patterns).
+    if (cloned.name && /^[A-Z][a-z]+ \d+$/.test(cloned.name)) {
+      cloned.name = _vecNextName(o.scene || shapes, cloned.type);
+    } else if (cloned.name) {
+      cloned.name = cloned.name + " copy";
+    }
+    if (offset) {
+      const translated = _vecTranslateShape(cloned, offset, offset);
+      if (translated && translated !== cloned) Object.assign(cloned, translated);
+    }
+    return cloned;
+  };
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const mod = e.metaKey || e.ctrlKey;
+
+      // ── Clipboard: Cmd/Ctrl + C / V / D ──────────────────────────────
+      // The workspace's outer copy/paste/duplicate handler is also on
+      // window, so we have to use `stopImmediatePropagation()` (not just
+      // `stopPropagation`) to keep it from running on the same press —
+      // otherwise Cmd+D would also duplicate the whole vector-editor
+      // node and steal the selection.
+      if (mod && (e.key === "c" || e.key === "C") && selection.length) {
+        clipboardRef.current = selectedShapes.map(s => JSON.parse(JSON.stringify(s)));
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+      if (mod && (e.key === "v" || e.key === "V") && clipboardRef.current.length) {
+        const scene = shapes.slice();
+        const newShapes = clipboardRef.current.map(s => _cloneShape(s, { offset: 20, scene }));
+        commitShapes([...scene, ...newShapes], { selection: newShapes.map(s => s.id) });
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+      if (mod && (e.key === "d" || e.key === "D") && selection.length) {
+        const scene = shapes.slice();
+        const newShapes = selectedShapes.map(s => _cloneShape(s, { offset: 20, scene }));
+        commitShapes([...scene, ...newShapes], { selection: newShapes.map(s => s.id) });
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (draftShape) { setDraftShape(null); return; }
+        if (nodeEditId) { setNodeEditId(null); setSelectedAnchor(null); return; }
+        if (selection.length) { setSelection([]); return; }
+        if (editingTextId) { setEditingTextId(null); return; }
+      }
+      if (e.key === "Enter" && draftShape && draftShape.type === "path" && (draftShape._penPoints || []).length >= 2) {
+        const pts = draftShape._penPoints;
+        const d = "M " + pts.map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L ");
+        const final = { ...draftShape, d, _penPoints: undefined };
+        commitShapes([...shapes, final], { selection: [final.id], activeTool: "select" });
+        setDraftShape(null);
+        return;
+      }
+      if ((e.key === "Backspace" || e.key === "Delete") && selection.length) {
+        commitShapes(shapes.filter(s => !selection.includes(s.id)), { selection: [] });
+        e.preventDefault();
+        return;
+      }
+      if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key) && selection.length) {
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp"   ? -step : e.key === "ArrowDown"  ? step : 0;
+        commitShapes(shapes.map(s => selection.includes(s.id) ? _vecTranslateShape(s, dx, dy) : s));
+        e.preventDefault();
+        return;
+      }
+      // Single-letter tool shortcuts — only when no modifier is held,
+      // so Cmd+V (paste) doesn't get hijacked into "select tool".
+      if (!editingTextId && !draftShape && !mod) {
+        const sk = e.key.toLowerCase();
+        if (sk === "v") setTool("select");
+        else if (sk === "r") setTool("rect");
+        else if (sk === "o") setTool("ellipse");
+        else if (sk === "l") setTool("line");
+        else if (sk === "p") setTool("pen");
+        else if (sk === "b") setTool("pencil");
+        else if (sk === "t") setTool("text");
+      }
+    };
+    // Capture phase + stopImmediatePropagation lets us intercept the
+    // workspace-level Cmd+C / V / D handlers (also attached to window
+    // in bubble phase) before they run. Without capture, both handlers
+    // fire on the same press and the workspace one duplicates the whole
+    // vector-editor node.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, selection, selectedShapes, shapes, draftShape, editingTextId, tool]);
+
+  const runBooleanOp = (op) => {
+    if (selectedShapes.length < 2) {
+      setOpState({ phase: "error", message: "Select 2+ shapes to run a boolean op." });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1500);
+      return;
+    }
+    if (!window.polygonClipping) {
+      setOpState({ phase: "error", message: "polygon-clipping not loaded yet." });
+      return;
+    }
+    try {
+      const polys = selectedShapes.map(s => _vecShapeToPolygon(s)).filter(Boolean);
+      if (polys.length < 2) {
+        setOpState({ phase: "error", message: "Couldn't sample selected shapes." });
+        return;
+      }
+      const fn = window.polygonClipping[op];
+      if (!fn) {
+        setOpState({ phase: "error", message: "Unknown op: " + op });
+        return;
+      }
+      const result = fn(polys[0], ...polys.slice(1));
+      const d = _vecPolygonToD(result);
+      if (!d) {
+        setOpState({ phase: "error", message: "Result is empty." });
+        return;
+      }
+      const base = selectedShapes[0];
+      const newShape = _makeShape("path", { d, closed: true });
+      newShape.name  = `Boolean (${op})`;
+      newShape.fill  = base.fill;
+      newShape.stroke = base.stroke;
+      newShape.strokeWidth = base.strokeWidth;
+      newShape.opacity = base.opacity;
+      const selIds = new Set(selection);
+      commitShapes([...shapes.filter(s => !selIds.has(s.id)), newShape], { selection: [newShape.id] });
+      setOpState({ phase: "done", message: `${op} ✓` });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1000);
+    } catch (err) {
+      setOpState({ phase: "error", message: String(err && err.message || err) });
+    }
+  };
+
+  const convertTextToOutline = async () => {
+    if (!singleSel || singleSel.type !== "text") return;
+    if (!window.opentype) {
+      setOpState({ phase: "error", message: "opentype.js not loaded yet." });
+      return;
+    }
+    setOpState({ phase: "working", message: "Fetching font…" });
+    try {
+      const url = await _vecFetchFontUrl(singleSel.fontFamily, singleSel.fontWeight);
+      if (!url) throw new Error("Could not resolve font URL.");
+      const buf = await fetch(url).then(r => r.arrayBuffer());
+      const font = window.opentype.parse(buf);
+      const op = font.getPath(singleSel.content || "", singleSel.x || 0, singleSel.y || 0, singleSel.fontSize || 32);
+      const d = op.toPathData(3);
+      if (!d) throw new Error("Empty outline.");
+      const newShape = _makeShape("path", { d, closed: true });
+      newShape.name  = `Outlined: ${singleSel.content}`;
+      newShape.fill  = singleSel.fill;
+      newShape.stroke = singleSel.stroke;
+      newShape.strokeWidth = singleSel.strokeWidth;
+      newShape.opacity = singleSel.opacity;
+      commitShapes(shapes.map(s => s.id === singleSel.id ? newShape : s), { selection: [newShape.id] });
+      setOpState({ phase: "done", message: "outlined ✓" });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1000);
+    } catch (err) {
+      setOpState({ phase: "error", message: String(err && err.message || err) });
+    }
+  };
+
+  const reorderShape = (id, dir) => {
+    const idx = shapes.findIndex(s => s.id === id);
+    if (idx < 0) return;
+    const next = shapes.slice();
+    const tgt = idx + dir;
+    if (tgt < 0 || tgt >= next.length) return;
+    const tmp = next[idx]; next[idx] = next[tgt]; next[tgt] = tmp;
+    commitShapes(next);
+  };
+  const removeShape = (id) => {
+    commitShapes(shapes.filter(s => s.id !== id), { selection: selection.filter(x => x !== id) });
+  };
+
+  const [bakeState, setBakeState] = useState({ phase: "idle", error: null });
+  const bakeSvg = useCallback(async () => {
+    setBakeState({ phase: "baking", error: null });
+    try {
+      const svgText = _vecSerializeSvg(node);
+      // Sniff branch from a wired downstream prototype, falling back to
+      // "main". Mirrors WorkflowComposerNode's bake-path resolution so
+      // both nodes drop their artifacts into the same source/<branch>/.
+      const branch = (() => {
+        for (const e of (allEdges || [])) {
+          const f = (e.from || "").split(".", 1)[0];
+          const t = (e.to || "").split(".", 1)[0];
+          // upstream prototype (rare) or downstream prototype.
+          const peer = (allNodes || []).find(n => n.id === (f === node.id ? t : f));
+          if (peer && peer.kind === "prototype" && peer.branch) return peer.branch;
+        }
+        return "main";
+      })();
+      // Write into source/<branch>/svg/ so /__assets picks it up (the
+      // endpoint only scans a fixed set of subdirs: images/, svg/,
+      // video/, models/, shaders/, viz/, audio/). Files dropped at
+      // the branch root are invisible to the Outputs / Assets tab.
+      const outPath = `source/${branch}/svg/vector-${node.id}.svg`;
+      const r = await fetch(apiUrl("/__write_text"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: outPath, text: svgText }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      const ts = new Date().toISOString();
+      onChange({ bakedPath: outPath, bakedAt: ts });
+      setBakeState({ phase: "done", error: null });
+      try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outPath] } })); } catch {}
+      // First bake: ask the parent to drop an asset node wired to our
+      // .out port so the user sees the produced SVG on the canvas the
+      // same way other producers surface their outputs. Subsequent
+      // bakes are no-ops on the parent side — the existing asset node
+      // already points at the same path, and `th:asset-refresh` above
+      // tells it to re-read the bytes.
+      if (onBakeAutoCreateOutput) {
+        try { onBakeAutoCreateOutput(outPath); } catch {}
+      }
+      setTimeout(() => setBakeState(s => s.phase === "done" ? { phase: "idle", error: null } : s), 1500);
+    } catch (err) {
+      setBakeState({ phase: "error", error: String(err && err.message || err) });
+    }
+  }, [node, onChange, allNodes, allEdges, onBakeAutoCreateOutput]);
+
+  const liveShape = (shape) => {
+    const d = dragRef.current;
+    if (!d || d.kind !== "move") return shape;
+    if (!d.ids || !d.ids.includes(shape.id)) return shape;
+    return _vecTranslateShape(shape, d.dx || 0, d.dy || 0);
+  };
+
+  // ── Node-edit drag handlers ───────────────────────────────────────
+  // Anchor drag — translates the anchor's x/y and shifts its Bézier
+  // handles by the same delta so the curve preserves its shape.
+  // Persist an edited parsed-path back to the shape. Writes both the
+  // derived d-string AND the parallel anchorRadii table so corner
+  // radii survive the parse / build round-trip.
+  // Persist an edited anchor graph back to the shape. We write BOTH
+  // the parsed structure (the source of truth across renders) AND a
+  // derived d-string (used by the renderer + bake). Radii and other
+  // per-anchor metadata survive because shape.anchors is read back
+  // verbatim on the next render rather than re-parsed from `d`.
+  const _commitPath = (targetId, parsed) => {
+    setShape(targetId, {
+      anchors: parsed,
+      d: _vecBuildPathD(parsed),
+      // Clear the legacy radii sidecar — anchors carry their own
+      // `.radius` field now.
+      anchorRadii: undefined,
+    });
+  };
+
+  const onAnchorMouseDown = (target, parsed, subIdx, anchorIdx, ev) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    setSelectedAnchor(subIdx + ":" + anchorIdx);
+    const svg = svgRef.current;
+    if (!svg) return;
+    const start = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
+    const baseAnchor = { ...parsed.subpaths[subIdx].anchors[anchorIdx] };
+    const onMv = (e) => {
+      const p = _vecScreenToCanvas(svg, e.clientX, e.clientY, canvasW, canvasH);
+      const dx = p.x - start.x, dy = p.y - start.y;
+      const next = { subpaths: parsed.subpaths.map((sub, si) => si !== subIdx ? sub : ({
+        ...sub,
+        anchors: sub.anchors.map((a, ai) => ai !== anchorIdx ? a : ({
+          x: baseAnchor.x + dx,
+          y: baseAnchor.y + dy,
+          inX:  baseAnchor.inX  != null ? baseAnchor.inX  + dx : null,
+          inY:  baseAnchor.inY  != null ? baseAnchor.inY  + dy : null,
+          outX: baseAnchor.outX != null ? baseAnchor.outX + dx : null,
+          outY: baseAnchor.outY != null ? baseAnchor.outY + dy : null,
+        })),
+      }))};
+      _commitPath(target.id, next);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMv);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMv);
+    window.addEventListener("mouseup", onUp);
+  };
+  // Handle drag — moves the in/out Bézier control point. Default
+  // behaviour mirrors the opposite handle around the anchor (smooth
+  // anchor); Alt-drag breaks the symmetry (corner anchor with
+  // independent handles).
+  const onHandleMouseDown = (target, parsed, subIdx, anchorIdx, side, ev, phantomOpts) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    setSelectedAnchor(subIdx + ":" + anchorIdx);
+    const svg = svgRef.current;
+    if (!svg) return;
+    const start = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
+    const baseAnchor = { ...parsed.subpaths[subIdx].anchors[anchorIdx] };
+    const inKey = side === "in" ? ["inX", "inY"] : ["outX", "outY"];
+    const oppKey = side === "in" ? ["outX", "outY"] : ["inX", "inY"];
+    // Phantom drags start from the displayed offset (so the first
+    // motion picks up where the cursor grabbed), not the anchor's
+    // current XY which is hidden under the anchor square.
+    const startHX = baseAnchor[inKey[0]] != null
+      ? baseAnchor[inKey[0]]
+      : (phantomOpts && phantomOpts.phantomXY ? phantomOpts.phantomXY.x : baseAnchor.x);
+    const startHY = baseAnchor[inKey[1]] != null
+      ? baseAnchor[inKey[1]]
+      : (phantomOpts && phantomOpts.phantomXY ? phantomOpts.phantomXY.y : baseAnchor.y);
+    const mirror = !ev.altKey;
+    const onMv = (e) => {
+      const p = _vecScreenToCanvas(svg, e.clientX, e.clientY, canvasW, canvasH);
+      const dx = p.x - start.x, dy = p.y - start.y;
+      const nx = startHX + dx, ny = startHY + dy;
+      const patch = { [inKey[0]]: nx, [inKey[1]]: ny };
+      if (mirror) {
+        // Mirror the opposite handle through the anchor.
+        patch[oppKey[0]] = 2 * baseAnchor.x - nx;
+        patch[oppKey[1]] = 2 * baseAnchor.y - ny;
+      }
+      const next = { subpaths: parsed.subpaths.map((sub, si) => si !== subIdx ? sub : ({
+        ...sub,
+        anchors: sub.anchors.map((a, ai) => ai !== anchorIdx ? a : ({ ...baseAnchor, ...patch })),
+      }))};
+      _commitPath(target.id, next);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMv);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMv);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return html`
+    <div
+      className="workflow-node workflow-node-vector"
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">✎</span>
+        <span className="workflow-node-label">Vector editor</span>
+        <span className="workflow-node-bar-spacer"/>
+        ${node.bakedPath && html`
+          <a className="workflow-node-vector-baked-link"
+             href=${apiUrl("/" + node.bakedPath)}
+             target="_blank"
+             rel="noreferrer noopener"
+             title=${"Open the baked .svg in a new tab. Last baked " + (node.bakedAt || "—") + "."}
+             onMouseDown=${(e) => e.stopPropagation()}
+             onClick=${(e) => e.stopPropagation()}
+          >↗ ${node.bakedPath.split("/").pop()}</a>
+        `}
+        <button
+          className=${"workflow-node-vector-bake" + (bakeState.phase === "baking" ? " is-baking" : "") + (bakeState.phase === "done" ? " is-done" : "") + (bakeState.phase === "error" ? " is-error" : "")}
+          title=${bakeState.error
+            ? "Bake failed: " + bakeState.error
+            : (node.bakedPath
+              ? "Re-bake — overwrite " + node.bakedPath + " with the current scene."
+              : "Bake the current scene into a self-contained .svg under source/<branch>/.")}
+          onClick=${(e) => { e.stopPropagation(); bakeSvg(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+          disabled=${bakeState.phase === "baking"}
+        >${bakeState.phase === "baking"
+          ? "baking…"
+          : bakeState.phase === "done"
+            ? "Baked ✓"
+            : bakeState.phase === "error"
+              ? "Retry bake"
+              : (node.bakedPath ? "Re-bake" : "Bake")}</button>
+        <span className="workflow-node-vector-dim" title="Canvas pixel dimensions">${canvasW}×${canvasH}</span>
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <div className="workflow-vector-body">
+        <div className="workflow-vector-left">
+          <div className="workflow-vector-section">
+            <div className="workflow-vector-section-head">Tools</div>
+            <div className="workflow-vector-tools">
+              ${VECTOR_TOOLS.map(t => html`
+                <button
+                  key=${t.id}
+                  className=${"workflow-vector-tool" + (tool === t.id ? " is-on" : "")}
+                  title=${t.hint}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onClick=${(e) => { e.stopPropagation(); setTool(t.id); setDraftShape(null); }}
+                ><span className="workflow-vector-tool-glyph">${t.glyph}</span><span className="workflow-vector-tool-label">${t.label}</span></button>
+              `)}
+            </div>
+          </div>
+          <div className="workflow-vector-section">
+            <div className="workflow-vector-section-head">Boolean ops</div>
+            <div className="workflow-vector-bool-grid">
+              <button className="workflow-vector-bool" title="Union — combine selected shapes" onClick=${(e) => { e.stopPropagation(); runBooleanOp("union"); }}>∪ union</button>
+              <button className="workflow-vector-bool" title="Difference — subtract from base" onClick=${(e) => { e.stopPropagation(); runBooleanOp("difference"); }}>− subtract</button>
+              <button className="workflow-vector-bool" title="Intersection — overlap only"     onClick=${(e) => { e.stopPropagation(); runBooleanOp("intersection"); }}>∩ intersect</button>
+              <button className="workflow-vector-bool" title="XOR — non-overlapping parts"     onClick=${(e) => { e.stopPropagation(); runBooleanOp("xor"); }}>⊕ xor</button>
+            </div>
+            ${singleSel && singleSel.type === "text" && html`
+              <button className="workflow-vector-outline-btn"
+                title="Convert the selected text into editable SVG path outlines via opentype.js."
+                onClick=${(e) => { e.stopPropagation(); convertTextToOutline(); }}
+              >Convert text → outlines</button>
+            `}
+            ${singleSel && (singleSel.type === "rect" || singleSel.type === "ellipse" || singleSel.type === "line") && html`
+              <button className="workflow-vector-outline-btn"
+                title="Convert the primitive into a path with editable anchor points + Bézier handles."
+                onClick=${(e) => {
+                  e.stopPropagation();
+                  const next = _vecPrimitiveToPath(singleSel);
+                  if (next) {
+                    commitShapes(shapes.map(s => s.id === singleSel.id ? next : s), { selection: [next.id] });
+                    setNodeEditId(next.id);
+                  }
+                }}
+              >Convert to editable path</button>
+            `}
+            ${singleSel && singleSel.type === "path" && html`
+              <button className=${"workflow-vector-outline-btn" + (nodeEditId === singleSel.id ? " is-on" : "")}
+                title=${nodeEditId === singleSel.id
+                  ? "Exit node-edit mode (Esc)."
+                  : "Edit individual anchor points + Bézier handles on this path."}
+                onClick=${(e) => {
+                  e.stopPropagation();
+                  setNodeEditId(nodeEditId === singleSel.id ? null : singleSel.id);
+                  setSelectedAnchor(null);
+                }}
+              >${nodeEditId === singleSel.id ? "Exit node-edit" : "Edit nodes (points + handles)"}</button>
+            `}
+            ${opState.phase !== "idle" && html`
+              <div className=${"workflow-vector-op-banner workflow-vector-op-" + opState.phase}>${opState.message}</div>
+            `}
+          </div>
+          <div className="workflow-vector-section workflow-vector-layers-section">
+            <div className="workflow-vector-section-head">Layers <span className="workflow-vector-count">${shapes.length}</span></div>
+            <div className="workflow-vector-layers">
+              ${shapes.length === 0 && html`<div className="workflow-vector-hint">No shapes yet. Pick a tool and draw on the stage.</div>`}
+              ${shapes.slice().reverse().map((s, revIdx) => {
+                const i = shapes.length - 1 - revIdx;
+                const isSel = selection.includes(s.id);
+                return html`
+                  <div
+                    key=${"l-" + s.id}
+                    className=${"workflow-vector-layer-row" + (isSel ? " is-active" : "")}
+                    onClick=${(e) => { e.stopPropagation(); setSelection(e.shiftKey && isSel ? selection.filter(x => x !== s.id) : (e.shiftKey ? [...selection, s.id] : [s.id])); }}
+                  >
+                    <button className="workflow-vector-layer-vis"
+                      title=${s.visible !== false ? "Hide layer" : "Show layer"}
+                      onClick=${(e) => { e.stopPropagation(); setShape(s.id, { visible: !(s.visible !== false) }); }}
+                    >${s.visible !== false ? "●" : "○"}</button>
+                    <span className="workflow-vector-layer-label" title=${s.name}>${s.name || s.type}</span>
+                    <button className="workflow-vector-layer-mv" disabled=${i === shapes.length - 1}
+                      title="Move up" onClick=${(e) => { e.stopPropagation(); reorderShape(s.id, +1); }}>↑</button>
+                    <button className="workflow-vector-layer-mv" disabled=${i === 0}
+                      title="Move down" onClick=${(e) => { e.stopPropagation(); reorderShape(s.id, -1); }}>↓</button>
+                    <button className="workflow-vector-layer-rm"
+                      title="Delete layer" onClick=${(e) => { e.stopPropagation(); removeShape(s.id); }}>×</button>
+                  </div>
+                `;
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="workflow-vector-middle">
+          <div
+            className="workflow-vector-stage-wrap"
+            data-tool=${tool}
+          >
+            <svg
+              ref=${svgRef}
+              className="workflow-vector-stage"
+              viewBox=${`0 0 ${canvasW} ${canvasH}`}
+              preserveAspectRatio="xMidYMid meet"
+              style=${{ background: node.background || "#ffffff" }}
+              onMouseDown=${onStageMouseDown}
+            >
+              <defs>
+                ${shapes.flatMap((s) => {
+                  const paintF = _vecResolvePaint(s.fill,   "fillgrad-" + node.id + "-" + s.id);
+                  const paintS = _vecResolvePaint(s.stroke, "strkgrad-" + node.id + "-" + s.id);
+                  const fx     = _vecResolveFilter(s,       "filter-"   + node.id + "-" + s.id);
+                  // Flatten so each def element ends up as a top-level
+                  // child of <defs> with its own key (the def's id is
+                  // unique per-shape so it works as a React key).
+                  const out = [];
+                  if (paintF.defElement) out.push(html`<${React.Fragment} key=${"def-f-" + s.id}>${paintF.defElement}<//>`);
+                  if (paintS.defElement) out.push(html`<${React.Fragment} key=${"def-s-" + s.id}>${paintS.defElement}<//>`);
+                  if (fx.defElement)     out.push(html`<${React.Fragment} key=${"def-x-" + s.id}>${fx.defElement}<//>`);
+                  return out;
+                })}
+              </defs>
+              ${shapes.map((s) => {
+                if (s.visible === false) return null;
+                return html`<${React.Fragment} key=${"sh-" + s.id}>${_vecRenderShape(liveShape(s), {
+                  nodeId: node.id,
+                  selected: selection.includes(s.id),
+                  editingText: editingTextId === s.id,
+                  onTextEdit: (val) => setShape(s.id, { content: val }),
+                  onTextDone: () => setEditingTextId(null),
+                  onDoubleClick: () => { if (s.type === "text") setEditingTextId(s.id); },
+                })}<//>`;
+              })}
+              ${draftShape && _vecRenderShape(draftShape, { nodeId: node.id, draft: true })}
+              ${draftShape && draftShape.type === "path" && Array.isArray(draftShape._penPoints) && html`
+                <g key="pen-draft-dots" pointerEvents="none">
+                  ${draftShape._penPoints.map(([px, py], pi) => html`
+                    <rect key=${"pdot-" + pi}
+                          x=${px - 4} y=${py - 4} width="8" height="8"
+                          fill=${pi === draftShape._penPoints.length - 1 ? "#3b82f6" : "#fff"}
+                          stroke="#3b82f6" strokeWidth="1.5"
+                          vectorEffect="non-scaling-stroke"/>
+                  `)}
+                </g>
+              `}
+              ${selectedShapes.map(s => {
+                // Hide the bbox outline while node-edit is active so it
+                // doesn't visually clash with the anchor overlay.
+                if (nodeEditId === s.id) return null;
+                const bb = _vecShapeBBox(liveShape(s));
+                if (!bb) return null;
+                return html`
+                  <rect key=${"sel-" + s.id}
+                        className="workflow-vector-sel-outline"
+                        x=${bb.x} y=${bb.y} width=${bb.w} height=${bb.h}
+                        fill="none" stroke="#3b82f6" strokeWidth="1"
+                        strokeDasharray="4 3" vectorEffect="non-scaling-stroke"
+                        pointerEvents="none"/>
+                `;
+              })}
+              ${(() => {
+                // Node-edit overlay — only when nodeEditId points at a
+                // path that's still in the scene.
+                if (!nodeEditId) return null;
+                const target = shapes.find(s => s.id === nodeEditId);
+                if (!target || target.type !== "path") return null;
+                const parsed = _vecGetAnchorStruct(target);
+                return _vecRenderNodeEditOverlay({
+                  parsed, target, selectedAnchor,
+                  onAnchorMouseDown: (subIdx, anchorIdx, ev) => {
+                    onAnchorMouseDown(target, parsed, subIdx, anchorIdx, ev);
+                  },
+                  onHandleMouseDown: (subIdx, anchorIdx, side, ev, phantomOpts) => {
+                    onHandleMouseDown(target, parsed, subIdx, anchorIdx, side, ev, phantomOpts);
+                  },
+                });
+              })()}
+            </svg>
+          </div>
+        </div>
+        <div className="workflow-vector-right">
+          ${(() => {
+            // Node-edit mode: surface the per-anchor panel above the
+            // shape's regular properties (which still apply to the
+            // whole path).
+            if (!nodeEditId || !selectedAnchor) return null;
+            const target = shapes.find(s => s.id === nodeEditId);
+            if (!target || target.type !== "path") return null;
+            const parsed = _vecGetAnchorStruct(target);
+            const [subIdxStr, anchorIdxStr] = selectedAnchor.split(":");
+            const subIdx = +subIdxStr, anchorIdx = +anchorIdxStr;
+            const sub = parsed.subpaths[subIdx];
+            if (!sub) return null;
+            const anchor = sub.anchors[anchorIdx];
+            if (!anchor) return null;
+            return html`<${VectorAnchorPanel}
+              anchor=${anchor}
+              parsed=${parsed}
+              subIdx=${subIdx}
+              anchorIdx=${anchorIdx}
+              onAnchorChange=${(patch) => {
+                const next = { subpaths: parsed.subpaths.map((s, si) => si !== subIdx ? s : ({
+                  ...s,
+                  anchors: s.anchors.map((a, ai) => ai !== anchorIdx ? a : ({ ...a, ...patch })),
+                })) };
+                _commitPath(target.id, next);
+              }}
+            />`;
+          })()}
+          ${singleSel
+            ? html`<${VectorPropertiesPanel}
+                shape=${singleSel}
+                onPatch=${(p) => setShape(singleSel.id, p)}
+              />`
+            : selectedShapes.length > 1
+              ? html`<div className="workflow-vector-hint">${selectedShapes.length} shapes selected.</div>`
+              : html`<div className="workflow-vector-hint">Select a shape to edit its properties.</div>`}
+          <div className="workflow-vector-section workflow-vector-canvas-controls">
+            <div className="workflow-vector-section-head">Canvas</div>
+            <div className="workflow-vector-pos-grid">
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>W</span>
+                <input type="number" value=${canvasW} min="1"
+                  onInput=${(e) => onChange({ canvasW: Math.max(1, +e.target.value || 1) })}/>
+              </label>
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>H</span>
+                <input type="number" value=${canvasH} min="1"
+                  onInput=${(e) => onChange({ canvasH: Math.max(1, +e.target.value || 1) })}/>
+              </label>
+              <label className="workflow-vector-field workflow-vector-field-stacked workflow-vector-field-color">
+                <span>bg</span>
+                <input type="color" value=${node.background || "#ffffff"}
+                  onInput=${(e) => onChange({ background: e.target.value })}/>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id} data-port-side="in"
+        title="Wire upstream nodes here (currently unused; reserved for future image-trace / SVG-import flows)."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id} data-port-side="out"
+        title="Bake to write the .svg; downstream consumers read it as a regular SVG asset."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+function _vecTranslateShape(s, dx, dy) {
+  if (!s || (!dx && !dy)) return s;
+  if (s.type === "rect")    return { ...s, x: s.x + dx, y: s.y + dy };
+  if (s.type === "ellipse") return { ...s, cx: s.cx + dx, cy: s.cy + dy };
+  if (s.type === "line")    return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
+  if (s.type === "text")    return { ...s, x: s.x + dx, y: s.y + dy };
+  if (s.type === "path") {
+    // Keep shape.anchors in sync if it's the source of truth — otherwise
+    // node-edit mode would read stale (untranslated) anchors next time
+    // the user enters it. Translate every anchor's xy + its handles,
+    // then rebuild the d-string from the new graph.
+    if (s.anchors && Array.isArray(s.anchors.subpaths)) {
+      const translated = {
+        subpaths: s.anchors.subpaths.map(sub => ({
+          ...sub,
+          anchors: (sub.anchors || []).map(a => ({
+            ...a,
+            x: a.x + dx, y: a.y + dy,
+            inX:  a.inX  != null ? a.inX  + dx : null,
+            inY:  a.inY  != null ? a.inY  + dy : null,
+            outX: a.outX != null ? a.outX + dx : null,
+            outY: a.outY != null ? a.outY + dy : null,
+          })),
+        })),
+      };
+      return { ...s, anchors: translated, d: _vecBuildPathD(translated) };
+    }
+    return { ...s, d: _vecTranslatePathD(s.d, dx, dy) };
+  }
+  return s;
+}
+
+function _vecTranslatePathD(d, dx, dy) {
+  if (!d) return d;
+  return d.replace(/([MLCSQTAHVZ])\s*([^MLCSQTAHVZ]*)/gi, (_, cmd, args) => {
+    const C = cmd.toUpperCase();
+    if (C === "Z") return cmd;
+    const nums = (args.match(/-?\d+(\.\d+)?(?:e-?\d+)?/g) || []).map(Number);
+    if (cmd !== C) return cmd + " " + nums.join(" ");
+    let out = [];
+    if (C === "H") {
+      for (let i = 0; i < nums.length; i++) out.push(nums[i] + dx);
+    } else if (C === "V") {
+      for (let i = 0; i < nums.length; i++) out.push(nums[i] + dy);
+    } else if (C === "A") {
+      for (let i = 0; i < nums.length; i += 7) {
+        out.push(nums[i], nums[i+1], nums[i+2], nums[i+3], nums[i+4], nums[i+5] + dx, nums[i+6] + dy);
+      }
+    } else {
+      for (let i = 0; i < nums.length; i += 2) {
+        out.push(nums[i] + dx, nums[i+1] + dy);
+      }
+    }
+    return cmd + " " + out.join(" ");
+  });
+}
+
+function _vecSmoothPolyline(pts) {
+  if (!pts || pts.length < 2) return "";
+  if (pts.length === 2) {
+    return `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)} L ${pts[1][0].toFixed(2)} ${pts[1][1].toFixed(2)}`;
+  }
+  const d = [`M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d.push(`C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`);
+  }
+  return d.join(" ");
+}
+
+// ── Path-anchor parser ───────────────────────────────────────────────
+// Walks an SVG d-string and emits a structured shape that the node-edit
+// UI can render as draggable anchors + Bézier handles.
+//
+//   { subpaths: [{ closed: bool,
+//                  anchors: [{ x, y, inX, inY, outX, outY }] }] }
+//
+// inX/inY = the incoming cubic Bézier control point handle (absolute
+// coords). outX/outY = the outgoing handle. Either may be null on a
+// "corner" anchor where the adjacent segment is a straight line.
+//
+// Supports M/L/H/V/C/S/Q/T/Z, both absolute (uppercase) and relative
+// (lowercase). Q/T are upgraded to C; H/V to L; S/T mirror the
+// previous handle per SVG2. Arcs (A) are unsupported in the editor —
+// shapes containing them will round-trip via the d-string but their
+// anchors won't appear; convert them via Bake/re-import if needed.
+function _vecParsePathD(d) {
+  if (!d || typeof d !== "string") return { subpaths: [] };
+  // Tokenize: each command letter starts a new step; numbers (incl.
+  // exponents, negative signs) accumulate as args.
+  const re = /([MLHVCSQTAZmlhvcsqtaz])|(-?\d+\.?\d*(?:[eE][-+]?\d+)?)/g;
+  const steps = [];
+  let cur = null, m;
+  while ((m = re.exec(d))) {
+    if (m[1]) { if (cur) steps.push(cur); cur = { cmd: m[1], args: [] }; }
+    else if (cur) cur.args.push(+m[2]);
+  }
+  if (cur) steps.push(cur);
+
+  const subpaths = [];
+  let active = null;            // current subpath { closed, anchors }
+  let cx = 0, cy = 0;           // current pen position (absolute)
+  let startX = 0, startY = 0;   // current subpath start
+  let prevCtrlX = null, prevCtrlY = null; // last cubic c2 for S/s reflection
+  let prevQuadX = null, prevQuadY = null; // last quad control for T/t
+
+  const startSubpath = (x, y) => {
+    if (active) subpaths.push(active);
+    active = { closed: false, anchors: [{ x, y, inX: null, inY: null, outX: null, outY: null }] };
+    startX = x; startY = y;
+  };
+  const closeSubpath = () => {
+    if (!active) return;
+    active.closed = true;
+    // If the final anchor lies on the subpath start (within 0.5 canvas
+    // px), merge its inX/inY into the first anchor and drop the
+    // duplicate — otherwise an ellipse-shaped path produces 5 anchors
+    // (M + 4 C + Z back to M) where the 5th anchor visually overlaps
+    // the 1st, doubling up handle dots in node-edit mode.
+    const a = active.anchors;
+    if (a.length >= 2) {
+      const first = a[0], last = a[a.length - 1];
+      const dx = last.x - first.x, dy = last.y - first.y;
+      if (Math.hypot(dx, dy) < 0.5) {
+        first.inX = last.inX;
+        first.inY = last.inY;
+        a.pop();
+      }
+    }
+    subpaths.push(active);
+    active = null;
+    cx = startX; cy = startY;
+  };
+
+  // Append a line segment to the active subpath.
+  const lineTo = (x, y) => {
+    if (!active) startSubpath(cx, cy);
+    active.anchors.push({ x, y, inX: null, inY: null, outX: null, outY: null });
+    cx = x; cy = y;
+    prevCtrlX = prevCtrlY = prevQuadX = prevQuadY = null;
+  };
+  // Append a cubic Bézier — sets the previous anchor's outX/outY (c1)
+  // and the new anchor's inX/inY (c2).
+  const cubicTo = (c1x, c1y, c2x, c2y, x, y) => {
+    if (!active) startSubpath(cx, cy);
+    const prev = active.anchors[active.anchors.length - 1];
+    prev.outX = c1x; prev.outY = c1y;
+    active.anchors.push({ x, y, inX: c2x, inY: c2y, outX: null, outY: null });
+    cx = x; cy = y;
+    prevCtrlX = c2x; prevCtrlY = c2y;
+    prevQuadX = prevQuadY = null;
+  };
+  // Quadratic → cubic conversion. Cubic c1 = p0 + 2/3 (q - p0), c2 = p2 + 2/3 (q - p2).
+  const quadTo = (qx, qy, x, y) => {
+    const c1x = cx + (2 / 3) * (qx - cx);
+    const c1y = cy + (2 / 3) * (qy - cy);
+    const c2x = x  + (2 / 3) * (qx - x);
+    const c2y = y  + (2 / 3) * (qy - y);
+    cubicTo(c1x, c1y, c2x, c2y, x, y);
+    prevQuadX = qx; prevQuadY = qy;
+    prevCtrlX = c2x; prevCtrlY = c2y;
+  };
+
+  for (const step of steps) {
+    const { cmd, args } = step;
+    const C = cmd.toUpperCase();
+    const rel = cmd !== C;
+    // Z takes no args — it just closes the active subpath. Handle
+    // it BEFORE the args loop, otherwise the `while (i < args.length)`
+    // body never runs (args.length === 0) and the subpath stays open.
+    if (C === "Z") {
+      closeSubpath();
+      continue;
+    }
+    // Helpers to consume pairs of args. Multiple coordinate pairs after
+    // a single command letter are treated per SVG spec (e.g. "M x y x y"
+    // = M followed by an implicit L).
+    let i = 0;
+    while (i < args.length) {
+      if (C === "M") {
+        const x = rel ? cx + args[i] : args[i];
+        const y = rel ? cy + args[i+1] : args[i+1];
+        i += 2;
+        // First pair of M = moveTo; subsequent pairs in the same M cmd
+        // become implicit L.
+        if (i === 2) {
+          // Close any open subpath WITHOUT marking it closed; just push it.
+          if (active) { subpaths.push(active); active = null; }
+          startSubpath(x, y);
+        } else {
+          lineTo(x, y);
+        }
+        continue;
+      }
+      if (C === "L") {
+        const x = rel ? cx + args[i] : args[i];
+        const y = rel ? cy + args[i+1] : args[i+1];
+        i += 2;
+        lineTo(x, y);
+        continue;
+      }
+      if (C === "H") {
+        const x = rel ? cx + args[i] : args[i];
+        i += 1;
+        lineTo(x, cy);
+        continue;
+      }
+      if (C === "V") {
+        const y = rel ? cy + args[i] : args[i];
+        i += 1;
+        lineTo(cx, y);
+        continue;
+      }
+      if (C === "C") {
+        const c1x = rel ? cx + args[i]   : args[i];
+        const c1y = rel ? cy + args[i+1] : args[i+1];
+        const c2x = rel ? cx + args[i+2] : args[i+2];
+        const c2y = rel ? cy + args[i+3] : args[i+3];
+        const x   = rel ? cx + args[i+4] : args[i+4];
+        const y   = rel ? cy + args[i+5] : args[i+5];
+        i += 6;
+        cubicTo(c1x, c1y, c2x, c2y, x, y);
+        continue;
+      }
+      if (C === "S") {
+        // S c2 endpoint — c1 is the reflection of the previous cubic's c2.
+        const c1x = prevCtrlX != null ? 2 * cx - prevCtrlX : cx;
+        const c1y = prevCtrlY != null ? 2 * cy - prevCtrlY : cy;
+        const c2x = rel ? cx + args[i]   : args[i];
+        const c2y = rel ? cy + args[i+1] : args[i+1];
+        const x   = rel ? cx + args[i+2] : args[i+2];
+        const y   = rel ? cy + args[i+3] : args[i+3];
+        i += 4;
+        cubicTo(c1x, c1y, c2x, c2y, x, y);
+        continue;
+      }
+      if (C === "Q") {
+        const qx = rel ? cx + args[i]   : args[i];
+        const qy = rel ? cy + args[i+1] : args[i+1];
+        const x  = rel ? cx + args[i+2] : args[i+2];
+        const y  = rel ? cy + args[i+3] : args[i+3];
+        i += 4;
+        quadTo(qx, qy, x, y);
+        continue;
+      }
+      if (C === "T") {
+        const qx = prevQuadX != null ? 2 * cx - prevQuadX : cx;
+        const qy = prevQuadY != null ? 2 * cy - prevQuadY : cy;
+        const x  = rel ? cx + args[i]   : args[i];
+        const y  = rel ? cy + args[i+1] : args[i+1];
+        i += 2;
+        quadTo(qx, qy, x, y);
+        continue;
+      }
+      // Unknown command — skip the rest of its args.
+      i = args.length;
+    }
+  }
+  if (active) subpaths.push(active);
+  return { subpaths };
+}
+
+// Serialize a parsed-path back into a d-string. Straight segments
+// emit "L"; curved segments emit "C"; closed subpaths terminate with "Z".
+// Return the canonical anchor structure for a path shape. When the
+// shape has been edited in node-edit mode it carries the full parsed
+// graph on `shape.anchors`; otherwise (legacy / freshly-imported
+// shapes) we fall back to parsing the d-string. Storing the parsed
+// graph as the source of truth — rather than re-parsing the d-string
+// on every render — preserves per-anchor metadata (radius, type) that
+// can't be round-tripped through the d-string. Applying a corner
+// radius emits `L entry / Q corner exit / L next` which reparses into
+// extra anchors with synthetic Bézier handles, so the original corner
+// information would be lost without this caching.
+function _vecGetAnchorStruct(shape) {
+  if (shape && shape.anchors && Array.isArray(shape.anchors.subpaths)) {
+    return shape.anchors;
+  }
+  return _vecParsePathD((shape && shape.d) || "");
+}
+
+function _vecBuildPathD(parsed) {
+  if (!parsed || !parsed.subpaths) return "";
+  const fmt = (n) => (Math.round(n * 100) / 100).toString();
+  const out = [];
+  for (const sub of parsed.subpaths) {
+    const a = sub.anchors || [];
+    const N = a.length;
+    if (N < 1) continue;
+    const closed = !!sub.closed;
+
+    // Per-anchor "rounded corner" precomputation. An anchor is rounded
+    // when radius > 0 AND both adjacent segments are straight (any
+    // existing Bézier handle disables the radius treatment — the user
+    // already has explicit curvature there). The "entry" point is
+    // where the segment terminating at this anchor stops; the "exit"
+    // point is where the segment leaving this anchor begins; the arc
+    // from entry → corner → exit is emitted as a quadratic Bézier
+    // with the original anchor as control point.
+    const entry = new Array(N);
+    const exit  = new Array(N);
+    const rounded = new Array(N).fill(false);
+    for (let i = 0; i < N; i++) { entry[i] = { x: a[i].x, y: a[i].y }; exit[i] = { x: a[i].x, y: a[i].y }; }
+    for (let i = 0; i < N; i++) {
+      const r = +a[i].radius || 0;
+      if (r <= 0) continue;
+      const prevIdx = i - 1 >= 0 ? i - 1 : (closed ? N - 1 : -1);
+      const nextIdx = i + 1 < N ? i + 1 : (closed ? 0 : -1);
+      if (prevIdx < 0 || nextIdx < 0) continue;
+      const prev = a[prevIdx], cur = a[i], next = a[nextIdx];
+      const prevSegCurved = (prev.outX != null) || (cur.inX != null);
+      const nextSegCurved = (cur.outX != null) || (next.inX != null);
+      if (prevSegCurved || nextSegCurved) continue;
+      const d1 = Math.hypot(prev.x - cur.x, prev.y - cur.y);
+      const d2 = Math.hypot(next.x - cur.x, next.y - cur.y);
+      const rr = Math.min(r, d1 * 0.5, d2 * 0.5);
+      if (rr <= 0 || d1 === 0 || d2 === 0) continue;
+      entry[i] = { x: cur.x + (prev.x - cur.x) / d1 * rr, y: cur.y + (prev.y - cur.y) / d1 * rr };
+      exit[i]  = { x: cur.x + (next.x - cur.x) / d2 * rr, y: cur.y + (next.y - cur.y) / d2 * rr };
+      rounded[i] = true;
+    }
+
+    // Emit. Start at exit[0] — equals a[0] when anchor 0 isn't rounded.
+    out.push(`M ${fmt(exit[0].x)} ${fmt(exit[0].y)}`);
+    const segCount = closed ? N : N - 1;
+    for (let si = 0; si < segCount; si++) {
+      const toIdx = (si + 1) % N;
+      const cur = a[si], nxt = a[toIdx];
+      const segCurved = (cur.outX != null && cur.outY != null) || (nxt.inX != null && nxt.inY != null);
+      // Straight or cubic segment from this anchor's exit to next anchor's entry.
+      if (segCurved) {
+        const c1x = cur.outX != null ? cur.outX : cur.x;
+        const c1y = cur.outY != null ? cur.outY : cur.y;
+        const c2x = nxt.inX != null ? nxt.inX : nxt.x;
+        const c2y = nxt.inY != null ? nxt.inY : nxt.y;
+        out.push(`C ${fmt(c1x)} ${fmt(c1y)} ${fmt(c2x)} ${fmt(c2y)} ${fmt(entry[toIdx].x)} ${fmt(entry[toIdx].y)}`);
+      } else {
+        out.push(`L ${fmt(entry[toIdx].x)} ${fmt(entry[toIdx].y)}`);
+      }
+      // Then the corner arc at the destination anchor, when it's
+      // rounded AND there's a continuing segment after it. For an
+      // open subpath, the last anchor isn't followed by another
+      // segment so its arc would be a dead branch — skip.
+      const continues = closed || si + 1 < segCount;
+      if (rounded[toIdx] && continues) {
+        out.push(`Q ${fmt(nxt.x)} ${fmt(nxt.y)} ${fmt(exit[toIdx].x)} ${fmt(exit[toIdx].y)}`);
+      }
+    }
+    if (closed) out.push("Z");
+  }
+  return out.join(" ");
+}
+
+// Convert a primitive shape (rect / ellipse / line) into an editable
+// path shape with the same fill/stroke/effects. Rounded rects emit
+// 8 anchors with cubic Bézier handles approximating the arc;
+// rectangles with rx=0 emit 4 corner anchors with straight segments.
+// Ellipses use the κ ≈ 0.5522847498 cubic-Bézier approximation.
+function _vecPrimitiveToPath(shape) {
+  if (!shape) return null;
+  // κ — magic constant for a cubic-Bézier circle approximation.
+  const K = 0.5522847498307936;
+  const inherit = {
+    id: shape.id,
+    type: "path",
+    name: shape.name,
+    visible: shape.visible !== false,
+    locked: !!shape.locked,
+    fill: shape.fill,
+    stroke: shape.stroke,
+    strokeWidth: shape.strokeWidth,
+    strokeDasharray: shape.strokeDasharray,
+    strokeLinecap: shape.strokeLinecap,
+    opacity: shape.opacity,
+    shadow: shape.shadow,
+    blur: shape.blur,
+    rotation: shape.rotation,
+  };
+
+  if (shape.type === "rect") {
+    const { x, y, w, h } = shape;
+    const r = Math.min(Math.max(0, shape.rx || 0), Math.min(w, h) / 2);
+    if (r <= 0) {
+      // 4-corner closed polygon, straight sides.
+      const parsed = { subpaths: [{ closed: true, anchors: [
+        { x: x,     y: y,     inX: null, inY: null, outX: null, outY: null },
+        { x: x + w, y: y,     inX: null, inY: null, outX: null, outY: null },
+        { x: x + w, y: y + h, inX: null, inY: null, outX: null, outY: null },
+        { x: x,     y: y + h, inX: null, inY: null, outX: null, outY: null },
+      ]}]};
+      return { ...inherit, d: _vecBuildPathD(parsed), closed: true };
+    }
+    // Rounded rect: 8 corner anchors. Each corner is a curved transition.
+    const k = r * K;
+    const anchors = [
+      // Top edge: from TL-right to TR-left.
+      { x: x + r,     y: y,         inX: null,         inY: null,         outX: null,         outY: null },
+      { x: x + w - r, y: y,         inX: null,         inY: null,         outX: x + w - r + k, outY: y     },
+      // TR corner curve.
+      { x: x + w,     y: y + r,     inX: x + w,        inY: y + r - k,    outX: null,         outY: null },
+      // Right edge.
+      { x: x + w,     y: y + h - r, inX: null,         inY: null,         outX: x + w,        outY: y + h - r + k },
+      // BR corner curve.
+      { x: x + w - r, y: y + h,     inX: x + w - r + k, inY: y + h,        outX: null,         outY: null },
+      // Bottom edge.
+      { x: x + r,     y: y + h,     inX: null,         inY: null,         outX: x + r - k,    outY: y + h },
+      // BL corner curve.
+      { x: x,         y: y + h - r, inX: x,            inY: y + h - r + k, outX: null,         outY: null },
+      // Left edge — closing curve sets first anchor's inX/inY back through TL.
+      { x: x,         y: y + r,     inX: null,         inY: null,         outX: x,            outY: y + r - k },
+    ];
+    // The closing segment (last → first) is a curve from anchors[7] (out)
+    // to anchors[0] (in). Set anchors[0].inX/Y appropriately.
+    anchors[0].inX = x + r - k; anchors[0].inY = y;
+    // Convert the corner-curve approximations to straight where outX/inX
+    // are null on both sides (no-op here — already correct).
+    return { ...inherit, d: _vecBuildPathD({ subpaths: [{ closed: true, anchors }]}), closed: true };
+  }
+
+  if (shape.type === "ellipse") {
+    const { cx, cy, rx, ry } = shape;
+    const kx = rx * K, ky = ry * K;
+    const anchors = [
+      { x: cx + rx, y: cy,      inX: cx + rx, inY: cy - ky, outX: cx + rx, outY: cy + ky },
+      { x: cx,      y: cy + ry, inX: cx + kx, inY: cy + ry, outX: cx - kx, outY: cy + ry },
+      { x: cx - rx, y: cy,      inX: cx - rx, inY: cy + ky, outX: cx - rx, outY: cy - ky },
+      { x: cx,      y: cy - ry, inX: cx - kx, inY: cy - ry, outX: cx + kx, outY: cy - ry },
+    ];
+    return { ...inherit, d: _vecBuildPathD({ subpaths: [{ closed: true, anchors }]}), closed: true };
+  }
+
+  if (shape.type === "line") {
+    const parsed = { subpaths: [{ closed: false, anchors: [
+      { x: shape.x1, y: shape.y1, inX: null, inY: null, outX: null, outY: null },
+      { x: shape.x2, y: shape.y2, inX: null, inY: null, outX: null, outY: null },
+    ]}]};
+    // Lines come into the editor as stroked, not filled. Preserve that.
+    return { ...inherit, d: _vecBuildPathD(parsed), closed: false };
+  }
+
+  if (shape.type === "path") return shape;
+  return null;
+}
+
+// Render the anchor-edit overlay for a path in node-edit mode. For
+// each anchor: a draggable dot + handle lines + handle dots whenever
+// inX/inY or outX/outY are set. The selected anchor's handles are
+// always shown (even if the segments are straight on both sides) so
+// the user has a visible affordance to drag them out and add curvature.
+function _vecRenderNodeEditOverlay(opts) {
+  const { parsed, target, selectedAnchor, onAnchorMouseDown, onHandleMouseDown } = opts;
+  const items = [];
+  // Subtle outline of the path itself so anchors aren't floating in space.
+  items.push(html`
+    <path key="ne-outline"
+          d=${target.d || ""}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+          strokeDasharray="3 3"
+          pointerEvents="none"/>
+  `);
+  // Default offset (in canvas units) for "phantom" handles that the
+  // user can grab on a corner anchor to pull out a curve. Calibrated
+  // against the path's bounding-box diagonal so the affordance scales
+  // with the shape's size (a 2000-unit canvas needs a bigger nudge
+  // than a 200-unit canvas).
+  const bbox = _vecShapeBBox({ type: "path", d: target.d });
+  const phantomOffset = Math.max(16, Math.min(80, Math.hypot(bbox?.w || 200, bbox?.h || 200) * 0.04));
+
+  parsed.subpaths.forEach((sub, subIdx) => {
+    const anchors = sub.anchors;
+    anchors.forEach((a, anchorIdx) => {
+      const selKey = subIdx + ":" + anchorIdx;
+      const isSel = selectedAnchor === selKey;
+      // Resolve neighbour anchors so a phantom handle can point along
+      // the tangent toward the previous / next anchor.
+      const prevA = anchors[anchorIdx - 1] || (sub.closed ? anchors[anchors.length - 1] : null);
+      const nextA = anchors[anchorIdx + 1] || (sub.closed ? anchors[0] : null);
+      const normToward = (target) => {
+        if (!target) return { x: 0, y: 0 };
+        const dx = target.x - a.x, dy = target.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { x: dx / len, y: dy / len };
+      };
+      // Handle lines + dots — render when the anchor has handles, OR
+      // when it's the selected anchor (so user can grab the "phantom"
+      // tangent and pull out a curve). Phantom handles render slightly
+      // offset along the tangent so they don't hide under the anchor
+      // square, with a ghosted style to signal "pull-out affordance".
+      const hasIn  = a.inX != null;
+      const hasOut = a.outX != null;
+      const showIn  = hasIn  || isSel;
+      const showOut = hasOut || isSel;
+      if (showIn) {
+        // Real handles use the stored coords; phantom handles offset
+        // along the tangent toward the previous anchor.
+        let inX, inY, phantom;
+        if (hasIn) { inX = a.inX; inY = a.inY; phantom = false; }
+        else {
+          const n = normToward(prevA);
+          // Fall back to a neutral 45° direction when no neighbour
+          // (single-anchor subpath — rare but possible).
+          if (n.x === 0 && n.y === 0) { n.x = -0.7071; n.y = -0.7071; }
+          inX = a.x + n.x * phantomOffset;
+          inY = a.y + n.y * phantomOffset;
+          phantom = true;
+        }
+        items.push(html`
+          <line key=${"ne-inl-" + selKey}
+                x1=${a.x} y1=${a.y} x2=${inX} y2=${inY}
+                stroke="#3b82f6"
+                strokeWidth=${phantom ? "1" : "1"}
+                strokeOpacity=${phantom ? 0.45 : 1}
+                strokeDasharray=${phantom ? "3 3" : undefined}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"/>
+          <circle key=${"ne-in-" + selKey}
+                  cx=${inX} cy=${inY} r=${phantom ? 4 : 4.5}
+                  fill=${phantom ? "rgba(255,255,255,0.85)" : "#fff"}
+                  stroke="#3b82f6" strokeWidth="1.5"
+                  strokeDasharray=${phantom ? "2 2" : undefined}
+                  vectorEffect="non-scaling-stroke"
+                  style=${{ cursor: "grab" }}
+                  onMouseDown=${(ev) => onHandleMouseDown(subIdx, anchorIdx, "in", ev, phantom ? { phantomXY: { x: inX, y: inY } } : null)}/>
+        `);
+      }
+      if (showOut) {
+        let outX, outY, phantom;
+        if (hasOut) { outX = a.outX; outY = a.outY; phantom = false; }
+        else {
+          const n = normToward(nextA);
+          if (n.x === 0 && n.y === 0) { n.x = 0.7071; n.y = 0.7071; }
+          outX = a.x + n.x * phantomOffset;
+          outY = a.y + n.y * phantomOffset;
+          phantom = true;
+        }
+        items.push(html`
+          <line key=${"ne-outl-" + selKey}
+                x1=${a.x} y1=${a.y} x2=${outX} y2=${outY}
+                stroke="#3b82f6"
+                strokeWidth="1"
+                strokeOpacity=${phantom ? 0.45 : 1}
+                strokeDasharray=${phantom ? "3 3" : undefined}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"/>
+          <circle key=${"ne-out-" + selKey}
+                  cx=${outX} cy=${outY} r=${phantom ? 4 : 4.5}
+                  fill=${phantom ? "rgba(255,255,255,0.85)" : "#fff"}
+                  stroke="#3b82f6" strokeWidth="1.5"
+                  strokeDasharray=${phantom ? "2 2" : undefined}
+                  vectorEffect="non-scaling-stroke"
+                  style=${{ cursor: "grab" }}
+                  onMouseDown=${(ev) => onHandleMouseDown(subIdx, anchorIdx, "out", ev, phantom ? { phantomXY: { x: outX, y: outY } } : null)}/>
+        `);
+      }
+      // The anchor itself — square dot, larger when selected.
+      const r = isSel ? 5 : 4;
+      items.push(html`
+        <rect key=${"ne-a-" + selKey}
+              x=${a.x - r} y=${a.y - r} width=${r * 2} height=${r * 2}
+              fill=${isSel ? "#3b82f6" : "#fff"}
+              stroke="#3b82f6" strokeWidth="1.5"
+              vectorEffect="non-scaling-stroke"
+              style=${{ cursor: "grab" }}
+              onMouseDown=${(ev) => onAnchorMouseDown(subIdx, anchorIdx, ev)}/>
+      `);
+    });
+  });
+  return html`<g key="node-edit-overlay" className="workflow-vector-nodeedit">${items}</g>`;
+}
+
+// Build the geometry-only SVG element for a shape (no fill/stroke
+// attrs yet). The caller plugs in paint + opacity + blend per layer.
+function _vecShapeGeometryElement(shape, paintProps, opts) {
+  const tr = shape.rotation ? `rotate(${shape.rotation} ${_vecCenterX(shape)} ${_vecCenterY(shape)})` : undefined;
+  if (shape.type === "rect") {
+    return html`<rect ...${paintProps} transform=${tr}
+      x=${shape.x} y=${shape.y} width=${Math.max(0, shape.w)} height=${Math.max(0, shape.h)}
+      rx=${shape.rx || 0} ry=${shape.ry != null ? shape.ry : (shape.rx || 0)}/>`;
+  }
+  if (shape.type === "ellipse") {
+    return html`<ellipse ...${paintProps} transform=${tr}
+      cx=${shape.cx} cy=${shape.cy} rx=${Math.max(0, shape.rx)} ry=${Math.max(0, shape.ry)}/>`;
+  }
+  if (shape.type === "line") {
+    return html`<line ...${paintProps} transform=${tr}
+      x1=${shape.x1} y1=${shape.y1} x2=${shape.x2} y2=${shape.y2}/>`;
+  }
+  if (shape.type === "path") {
+    return html`<path ...${paintProps} transform=${tr} d=${shape.d || ""}/>`;
+  }
+  if (shape.type === "text") {
+    const fam = (VECTOR_FONT_FAMILIES.find(f => f.id === shape.fontFamily) || VECTOR_FONT_FAMILIES[0]).stack;
+    return html`<text ...${paintProps} transform=${tr}
+      x=${shape.x} y=${shape.y}
+      fontFamily=${fam}
+      fontSize=${shape.fontSize || 24}
+      fontWeight=${shape.fontWeight || 400}
+      textAnchor=${shape.textAnchor || "start"}>
+      ${shape.content || ""}
+    </text>`;
+  }
+  return null;
+}
+
+function _vecRenderShape(shape, opts) {
+  if (!shape) return null;
+  const nodeId = opts.nodeId || "n";
+  const filterId = "filter-" + nodeId + "-" + shape.id;
+  const fx = _vecResolveFilter(shape, filterId);
+  const fills   = _vecNormalizeFills(shape);
+  const strokes = _vecNormalizeStrokes(shape);
+
+  // Text in inline-edit mode short-circuits to a foreignObject input.
+  if (shape.type === "text" && opts.editingText) {
+    return html`
+      <foreignObject x=${shape.x - 4} y=${shape.y - (shape.fontSize || 24)}
+                     width="600" height=${(shape.fontSize || 24) * 1.6}
+                     data-shape-id=${shape.id}>
+        <input
+          xmlns="http://www.w3.org/1999/xhtml"
+          type="text"
+          className="workflow-vector-text-edit"
+          value=${shape.content || ""}
+          autoFocus
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => e.stopPropagation()}
+          onInput=${(e) => opts.onTextEdit && opts.onTextEdit(e.target.value)}
+          onBlur=${() => opts.onTextDone && opts.onTextDone()}
+          onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") { e.target.blur(); }}}
+          style=${{
+            font: `${shape.fontWeight || 500} ${shape.fontSize || 24}px ${(VECTOR_FONT_FAMILIES.find(f => f.id === shape.fontFamily) || VECTOR_FONT_FAMILIES[0]).stack}`,
+            color: (fills[0] && fills[0].color) || "#0f172a",
+            background: "rgba(255,255,255,0.85)",
+            border: "1px solid #3b82f6",
+            padding: "2px 4px",
+            width: "100%",
+          }}/>
+      </foreignObject>
+    `;
+  }
+
+  // Defs from fills + strokes (gradients only — solids have no defs).
+  const defElements = [];
+  // Render one geometry element per VISIBLE fill (fill applied,
+  // stroke=none) and one per VISIBLE stroke (fill=none, stroke
+  // applied). Layer order = paint order = z-order within the group.
+  const children = [];
+  fills.forEach((layer, i) => {
+    if (layer.visible === false) return;
+    const defId = "fillgrad-" + nodeId + "-" + shape.id + "-" + i;
+    const resolved = _vecResolvePaintLayer(layer, defId);
+    if (resolved.defElement) defElements.push(html`<${React.Fragment} key=${"d-f-" + i}>${resolved.defElement}<//>`);
+    const paintProps = {
+      fill: resolved.paintAttr,
+      stroke: "none",
+      opacity: layer.opacity != null ? layer.opacity : 1,
+      style: { mixBlendMode: (layer.blendMode && layer.blendMode !== "normal") ? layer.blendMode : undefined,
+               pointerEvents: opts.draft ? "none" : undefined },
+    };
+    children.push(html`<${React.Fragment} key=${"f-" + i}>${_vecShapeGeometryElement(shape, paintProps, opts)}<//>`);
+  });
+  strokes.forEach((layer, i) => {
+    if (layer.visible === false) return;
+    const defId = "strkgrad-" + nodeId + "-" + shape.id + "-" + i;
+    const resolved = _vecResolvePaintLayer(layer, defId);
+    if (resolved.defElement) defElements.push(html`<${React.Fragment} key=${"d-s-" + i}>${resolved.defElement}<//>`);
+    const paintProps = {
+      fill: "none",
+      stroke: resolved.paintAttr,
+      strokeWidth: layer.width != null ? layer.width : 1,
+      strokeDasharray: layer.dasharray || undefined,
+      strokeLinecap: layer.linecap || undefined,
+      opacity: layer.opacity != null ? layer.opacity : 1,
+      style: { mixBlendMode: (layer.blendMode && layer.blendMode !== "normal") ? layer.blendMode : undefined,
+               pointerEvents: opts.draft ? "none" : undefined },
+    };
+    children.push(html`<${React.Fragment} key=${"s-" + i}>${_vecShapeGeometryElement(shape, paintProps, opts)}<//>`);
+  });
+
+  // A shape with zero visible fills AND zero visible strokes still
+  // needs a hit target — emit an invisible filled clone so click/hover
+  // selection still works in the editor.
+  if (children.length === 0) {
+    const paintProps = { fill: "transparent", stroke: "none",
+      style: { pointerEvents: opts.draft ? "none" : "auto" } };
+    children.push(html`<${React.Fragment} key="hit">${_vecShapeGeometryElement(shape, paintProps, opts)}<//>`);
+  }
+
+  // Wrap everything in a <g> carrying the data-shape-id + shape-level
+  // opacity + filter so the existing hit-testing + selection still
+  // works the same way. The opts.onDoubleClick goes here too.
+  const groupProps = {
+    "data-shape-id": shape.id,
+    opacity: shape.opacity != null ? shape.opacity : 1,
+    filter: fx.filterAttr || undefined,
+    onDoubleClick: opts.onDoubleClick,
+    className: "workflow-vector-shape" + (opts.selected ? " is-selected" : "") + (opts.draft ? " is-draft" : ""),
+    style: opts.draft ? { pointerEvents: "none" } : undefined,
+  };
+  return html`
+    <g ...${groupProps}>
+      ${defElements.length ? html`<defs>${defElements}</defs>` : null}
+      ${children}
+    </g>
+  `;
+}
+
+function _vecCenterX(s) {
+  const b = _vecShapeBBox(s);
+  return b ? b.x + b.w / 2 : 0;
+}
+function _vecCenterY(s) {
+  const b = _vecShapeBBox(s);
+  return b ? b.y + b.h / 2 : 0;
+}
+
+function _vecSerializeSvg(node) {
+  const canvasW = node.canvasW || 1200;
+  const canvasH = node.canvasH || 800;
+  const shapes  = Array.isArray(node.shapes) ? node.shapes : [];
+  const defs = [];
+  const body = [];
+  for (const s of shapes) {
+    if (s.visible === false) continue;
+    const filterId = "filter-" + node.id + "-" + s.id;
+    const fx = _vecResolveFilterForBake(s, filterId);
+    if (fx.defText) defs.push(fx.defText);
+    const fills   = _vecNormalizeFills(s);
+    const strokes = _vecNormalizeStrokes(s);
+    // Emit one geometry element per visible fill, then one per
+    // visible stroke. Wrap in a <g> carrying shape-level opacity +
+    // filter so the layered output composes the same way as the
+    // editor preview.
+    const layerEls = [];
+    fills.forEach((layer, i) => {
+      if (layer.visible === false) return;
+      const defId = "fillgrad-" + node.id + "-" + s.id + "-" + i;
+      const resolved = _vecResolvePaintLayerForBake(layer, defId);
+      if (resolved.defText) defs.push(resolved.defText);
+      layerEls.push(_vecSerializeShapeOne(s, {
+        fill: resolved.paintAttr, stroke: "none",
+        strokeWidth: 0, dasharray: "", linecap: "",
+        opacity: layer.opacity, blend: layer.blendMode,
+      }));
+    });
+    strokes.forEach((layer, i) => {
+      if (layer.visible === false) return;
+      const defId = "strkgrad-" + node.id + "-" + s.id + "-" + i;
+      const resolved = _vecResolvePaintLayerForBake(layer, defId);
+      if (resolved.defText) defs.push(resolved.defText);
+      layerEls.push(_vecSerializeShapeOne(s, {
+        fill: "none", stroke: resolved.paintAttr,
+        strokeWidth: layer.width != null ? layer.width : 1,
+        dasharray: layer.dasharray || "", linecap: layer.linecap || "",
+        opacity: layer.opacity, blend: layer.blendMode,
+      }));
+    });
+    // Wrap the layers in a <g> for shape-level opacity + filter.
+    const groupAttrs = [
+      s.opacity != null && s.opacity !== 1 ? `opacity="${s.opacity}"` : "",
+      fx.filterAttr ? `filter="${fx.filterAttr}"` : "",
+    ].filter(Boolean).join(" ");
+    body.push(`<g ${groupAttrs}>${layerEls.join("")}</g>`);
+  }
+  const lines = [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${canvasW} ${canvasH}" width="${canvasW}" height="${canvasH}">`,
+    `  <rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="${node.background || "#ffffff"}"/>`,
+    `  <defs>`,
+    ...defs.map(l => "    " + l),
+    `  </defs>`,
+    ...body.map(l => "  " + l),
+    `</svg>`,
+    ``,
+  ];
+  return lines.join("\n");
+}
+
+function _vecResolvePaintForBake(spec, defId) {
+  if (spec == null || spec === "none" || spec === "") return { paintAttr: "none" };
+  if (typeof spec === "string") return { paintAttr: spec };
+  if (typeof spec === "object" && spec.type === "linear") {
+    const angle = Number.isFinite(spec.angle) ? spec.angle : 0;
+    const rad = (angle * Math.PI) / 180;
+    const cx = 0.5, cy = 0.5;
+    const dx = Math.cos(rad) / 2;
+    const dy = Math.sin(rad) / 2;
+    const stops = (spec.stops || []).map((s, i) => {
+      const off = s.offset != null ? s.offset : (i / Math.max(1, spec.stops.length - 1));
+      const op  = s.opacity != null ? ` stop-opacity="${s.opacity}"` : "";
+      return `<stop offset="${off}" stop-color="${s.color || "#000"}"${op}/>`;
+    }).join("");
+    return {
+      paintAttr: `url(#${defId})`,
+      defText: `<linearGradient id="${defId}" x1="${cx - dx}" y1="${cy - dy}" x2="${cx + dx}" y2="${cy + dy}">${stops}</linearGradient>`,
+    };
+  }
+  return { paintAttr: "none" };
+}
+
+function _vecResolveFilterForBake(shape, defId) {
+  const blur = +shape.blur || 0;
+  const sh = shape.shadow;
+  const hasShadow = sh && (sh.dx || sh.dy || sh.blur) && sh.color;
+  if (!blur && !hasShadow) return { filterAttr: null };
+  const prims = [];
+  if (blur > 0) prims.push(`<feGaussianBlur stdDeviation="${blur}"/>`);
+  if (hasShadow) prims.push(`<feDropShadow dx="${sh.dx || 0}" dy="${sh.dy || 0}" stdDeviation="${sh.blur || 0}" flood-color="${sh.color}" flood-opacity="${sh.opacity != null ? sh.opacity : 0.5}"/>`);
+  return {
+    filterAttr: `url(#${defId})`,
+    defText: `<filter id="${defId}" x="-50%" y="-50%" width="200%" height="200%">${prims.join("")}</filter>`,
+  };
+}
+
+// Emit one geometry element with the given paint props. Caller is
+// responsible for wrapping the per-shape group + iterating fills/strokes.
+function _vecSerializeShapeOne(shape, paints) {
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const common = [
+    `fill="${paints.fill || "none"}"`,
+    `stroke="${paints.stroke || "none"}"`,
+    `stroke-width="${paints.strokeWidth || 0}"`,
+    paints.dasharray ? `stroke-dasharray="${paints.dasharray}"` : "",
+    paints.linecap   ? `stroke-linecap="${paints.linecap}"` : "",
+    paints.opacity != null && paints.opacity !== 1 ? `opacity="${paints.opacity}"` : "",
+    paints.blend && paints.blend !== "normal" ? `style="mix-blend-mode:${paints.blend}"` : "",
+  ].filter(Boolean).join(" ");
+  const tr = shape.rotation ? ` transform="rotate(${shape.rotation} ${_vecCenterX(shape)} ${_vecCenterY(shape)})"` : "";
+  if (shape.type === "rect") {
+    return `<rect x="${shape.x}" y="${shape.y}" width="${Math.max(0, shape.w)}" height="${Math.max(0, shape.h)}" rx="${shape.rx || 0}" ry="${shape.ry != null ? shape.ry : (shape.rx || 0)}" ${common}${tr}/>`;
+  }
+  if (shape.type === "ellipse") {
+    return `<ellipse cx="${shape.cx}" cy="${shape.cy}" rx="${Math.max(0, shape.rx)}" ry="${Math.max(0, shape.ry)}" ${common}${tr}/>`;
+  }
+  if (shape.type === "line") {
+    return `<line x1="${shape.x1}" y1="${shape.y1}" x2="${shape.x2}" y2="${shape.y2}" ${common}${tr}/>`;
+  }
+  if (shape.type === "path") {
+    return `<path d="${shape.d || ""}" ${common}${tr}/>`;
+  }
+  if (shape.type === "text") {
+    const fam = (VECTOR_FONT_FAMILIES.find(f => f.id === shape.fontFamily) || VECTOR_FONT_FAMILIES[0]).stack;
+    return `<text x="${shape.x}" y="${shape.y}" font-family='${fam.replace(/'/g, "&apos;")}' font-size="${shape.fontSize || 24}" font-weight="${shape.fontWeight || 400}" text-anchor="${shape.textAnchor || "start"}" ${common}${tr}>${esc(shape.content || "")}</text>`;
+  }
+  return "";
+}
+
+function VectorPropertiesPanel({ shape, onPatch }) {
+  if (!shape) return null;
+  const type = shape.type;
+  const isText = type === "text";
+
+  return html`
+    <div className="workflow-vector-section">
+      <div className="workflow-vector-section-head">${shape.name || type}</div>
+      <div className="workflow-vector-row">
+        <label className="workflow-vector-field workflow-vector-field-wide">
+          <span>name</span>
+          <input type="text" value=${shape.name || ""}
+            onInput=${(e) => onPatch({ name: e.target.value })}/>
+        </label>
+      </div>
+      <div className="workflow-vector-row">
+        <label className="workflow-vector-field workflow-vector-field-wide">
+          <span>opacity</span>
+          <input type="range" min="0" max="1" step="0.01" value=${shape.opacity != null ? shape.opacity : 1}
+            onInput=${(e) => onPatch({ opacity: +e.target.value })}/>
+          <span className="workflow-vector-field-val">${Math.round((shape.opacity != null ? shape.opacity : 1) * 100)}%</span>
+        </label>
+      </div>
+
+      <${VectorPaintStack}
+        role="fill"
+        layers=${_vecNormalizeFills(shape)}
+        legacyRoot=${shape}
+        onLayersChange=${(next) => onPatch({ fills: next, fill: undefined })}
+      />
+      <${VectorPaintStack}
+        role="stroke"
+        layers=${_vecNormalizeStrokes(shape)}
+        legacyRoot=${shape}
+        onLayersChange=${(next) => onPatch({ strokes: next, stroke: undefined })}
+      />
+
+      ${isText && html`
+        <div className="workflow-vector-subhead">Text</div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide">
+            <span>content</span>
+            <input type="text" value=${shape.content || ""}
+              onInput=${(e) => onPatch({ content: e.target.value })}/>
+          </label>
+        </div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide">
+            <span>font</span>
+            <select value=${shape.fontFamily || "Inter"}
+              onInput=${(e) => onPatch({ fontFamily: e.target.value })}>
+              ${VECTOR_FONT_FAMILIES.map(f => html`<option key=${f.id} value=${f.id}>${f.label}</option>`)}
+            </select>
+          </label>
+        </div>
+        <div className="workflow-vector-pos-grid">
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>size</span>
+            <input type="number" min="1" value=${shape.fontSize || 24}
+              onInput=${(e) => onPatch({ fontSize: Math.max(1, +e.target.value || 1) })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>weight</span>
+            <select value=${shape.fontWeight || 400}
+              onInput=${(e) => onPatch({ fontWeight: +e.target.value })}>
+              <option value="300">300</option>
+              <option value="400">400</option>
+              <option value="500">500</option>
+              <option value="600">600</option>
+              <option value="700">700</option>
+              <option value="800">800</option>
+            </select>
+          </label>
+        </div>
+      `}
+
+      <div className="workflow-vector-subhead">Effects</div>
+      <div className="workflow-vector-row">
+        <label className="workflow-vector-field workflow-vector-field-wide">
+          <span>blur</span>
+          <input type="range" min="0" max="40" step="0.5"
+            value=${shape.blur || 0}
+            onInput=${(e) => onPatch({ blur: +e.target.value || 0 })}/>
+          <span className="workflow-vector-field-val">${(+(shape.blur || 0)).toFixed(1)}</span>
+        </label>
+      </div>
+      <div className="workflow-vector-row">
+        <label className="workflow-vector-checkbox">
+          <input type="checkbox" checked=${!!shape.shadow}
+            onInput=${(e) => onPatch({ shadow: e.target.checked
+              ? (shape.shadow || { dx: 4, dy: 4, blur: 6, color: "#000000", opacity: 0.35 })
+              : null })}/>
+          <span>shadow</span>
+        </label>
+      </div>
+      ${shape.shadow && html`
+        <div className="workflow-vector-pos-grid">
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>dx</span>
+            <input type="number" value=${shape.shadow.dx || 0}
+              onInput=${(e) => onPatch({ shadow: { ...shape.shadow, dx: +e.target.value || 0 } })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>dy</span>
+            <input type="number" value=${shape.shadow.dy || 0}
+              onInput=${(e) => onPatch({ shadow: { ...shape.shadow, dy: +e.target.value || 0 } })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>blur</span>
+            <input type="number" min="0" value=${shape.shadow.blur || 0}
+              onInput=${(e) => onPatch({ shadow: { ...shape.shadow, blur: Math.max(0, +e.target.value || 0) } })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked workflow-vector-field-color">
+            <span>color</span>
+            <input type="color" value=${shape.shadow.color || "#000000"}
+              onInput=${(e) => onPatch({ shadow: { ...shape.shadow, color: e.target.value } })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>α</span>
+            <input type="range" min="0" max="1" step="0.01" value=${shape.shadow.opacity != null ? shape.shadow.opacity : 0.5}
+              onInput=${(e) => onPatch({ shadow: { ...shape.shadow, opacity: +e.target.value } })}/>
+          </label>
+        </div>
+      `}
+
+      ${type === "rect" && html`
+        <div className="workflow-vector-subhead">Corner radius</div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide">
+            <span>rx</span>
+            <input type="range" min="0" max=${Math.floor(Math.min(shape.w || 0, shape.h || 0) / 2) || 200} step="1"
+              value=${shape.rx || 0}
+              onInput=${(e) => onPatch({ rx: +e.target.value || 0, ry: +e.target.value || 0 })}/>
+            <span className="workflow-vector-field-val">${shape.rx || 0}</span>
+          </label>
+        </div>
+      `}
+
+      <div className="workflow-vector-subhead">Transform</div>
+      <div className="workflow-vector-pos-grid">
+        <label className="workflow-vector-field workflow-vector-field-stacked">
+          <span>rotate</span>
+          <input type="number" value=${shape.rotation || 0}
+            onInput=${(e) => onPatch({ rotation: +e.target.value || 0 })}/>
+        </label>
+      </div>
+    </div>
+  `;
+}
+
+// ── Paint stack — Figma-style fills / strokes editor ─────────────────
+// One section per role ("fill" or "stroke"). Renders each paint layer
+// as a row: visibility toggle, color/gradient swatch, paint-type chip,
+// opacity, blend mode, expand/collapse, remove. Add button + reorder.
+// Per-anchor properties panel, shown ABOVE the shape's regular
+// properties when node-edit mode is active and a single anchor is
+// selected. Mirrors Figma's "selected node" inspector: anchor type
+// (corner / smooth / asymmetric), corner radius (when no handles),
+// position, and per-handle x/y.
+function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange }) {
+  const hasIn  = anchor.inX != null && anchor.inY != null;
+  const hasOut = anchor.outX != null && anchor.outY != null;
+  // Anchor type heuristic:
+  //   corner    — no handles on either side
+  //   asymmetric— both handles present but not collinear / different lengths
+  //   smooth    — both handles present and mirrored through the anchor
+  let type = "corner";
+  if (hasIn || hasOut) {
+    if (hasIn && hasOut) {
+      const inDx = anchor.inX - anchor.x, inDy = anchor.inY - anchor.y;
+      const outDx = anchor.outX - anchor.x, outDy = anchor.outY - anchor.y;
+      // Smooth = handles are collinear AND opposite (their sum ≈ 0
+      // when normalised by handle length). Allow some slop because
+      // floating-point arithmetic during drag drifts.
+      const inLen = Math.hypot(inDx, inDy) || 1;
+      const outLen = Math.hypot(outDx, outDy) || 1;
+      const dot = (inDx / inLen) * (outDx / outLen) + (inDy / inLen) * (outDy / outLen);
+      // dot ≈ -1 → opposite directions = smooth (handles are mirrored
+      // through the anchor); otherwise asymmetric (different angles).
+      type = dot < -0.98 ? "smooth" : "asymmetric";
+    } else {
+      // One-sided handle (only in OR only out) — call it asymmetric.
+      type = "asymmetric";
+    }
+  }
+
+  const setType = (next) => {
+    if (next === type) return;
+    if (next === "corner") {
+      // Drop both handles + reset radius to 0 (the user can still
+      // set radius via the slider afterwards).
+      onAnchorChange({ inX: null, inY: null, outX: null, outY: null });
+      return;
+    }
+    // Synthesize handles offset along the tangent toward the prev /
+    // next anchor (so they're visibly far from the anchor square —
+    // sitting on top of it would hide them). Magnitude scales with
+    // the path's bounding-box diagonal so a tiny path gets a small
+    // pull-out and a large one gets enough room to grab.
+    const allAnchors = parsed.subpaths.flatMap(s => s.anchors || []);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const a of allAnchors) {
+      if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
+      if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
+    }
+    const diag = isFinite(minX) ? Math.hypot(maxX - minX, maxY - minY) : 200;
+    const handleLen = Math.max(24, Math.min(120, diag * 0.08));
+    // Direction vectors toward neighbour anchors (unit length).
+    const norm = (from, to) => {
+      if (!to) return null;
+      const dx = to.x - from.x, dy = to.y - from.y;
+      const len = Math.hypot(dx, dy);
+      if (!len) return null;
+      return { x: dx / len, y: dy / len };
+    };
+    const vToPrev = norm(anchor, prev) || { x: -1, y: 0 };
+    const vToNext = norm(anchor, next) || { x:  1, y: 0 };
+    const fallbackInX  = anchor.x + vToPrev.x * handleLen;
+    const fallbackInY  = anchor.y + vToPrev.y * handleLen;
+    const fallbackOutX = anchor.x + vToNext.x * handleLen;
+    const fallbackOutY = anchor.y + vToNext.y * handleLen;
+    if (next === "smooth") {
+      // Pick a tangent direction: use whichever handle we have,
+      // otherwise the horizontal default.
+      let inX = anchor.inX, inY = anchor.inY;
+      let outX = anchor.outX, outY = anchor.outY;
+      if (inX == null && outX == null) { inX = fallbackInX; inY = fallbackInY; outX = fallbackOutX; outY = fallbackOutY; }
+      else if (inX == null) { inX = 2 * anchor.x - outX; inY = 2 * anchor.y - outY; }
+      else if (outX == null) { outX = 2 * anchor.x - inX; outY = 2 * anchor.y - inY; }
+      else {
+        // Both present but treated as asymmetric — mirror around
+        // anchor using the inX/inY as the reference.
+        outX = 2 * anchor.x - inX; outY = 2 * anchor.y - inY;
+      }
+      onAnchorChange({ inX, inY, outX, outY });
+      return;
+    }
+    if (next === "asymmetric") {
+      // Add whichever handle is missing; keep existing.
+      let inX = anchor.inX, inY = anchor.inY;
+      let outX = anchor.outX, outY = anchor.outY;
+      if (inX == null) { inX = fallbackInX; inY = fallbackInY; }
+      if (outX == null) { outX = fallbackOutX; outY = fallbackOutY; }
+      onAnchorChange({ inX, inY, outX, outY });
+    }
+  };
+
+  // Distance from neighbours — caps the corner radius slider so it
+  // can't exceed half the shortest adjacent segment.
+  const sub = parsed.subpaths[subIdx];
+  const N = sub.anchors.length;
+  const prev = sub.anchors[anchorIdx - 1] || (sub.closed ? sub.anchors[N - 1] : null);
+  const next = sub.anchors[anchorIdx + 1] || (sub.closed ? sub.anchors[0] : null);
+  const d1 = prev ? Math.hypot(prev.x - anchor.x, prev.y - anchor.y) : 0;
+  const d2 = next ? Math.hypot(next.x - anchor.x, next.y - anchor.y) : 0;
+  const maxRadius = Math.max(0, Math.floor(Math.min(d1, d2) * 0.5));
+
+  return html`
+    <div className="workflow-vector-section">
+      <div className="workflow-vector-section-head">Anchor ${anchorIdx + 1}</div>
+
+      <div className="workflow-vector-row">
+        <button className=${"workflow-vector-paint-mode" + (type === "corner" ? " is-on" : "")}
+          onClick=${() => setType("corner")}>corner</button>
+        <button className=${"workflow-vector-paint-mode" + (type === "smooth" ? " is-on" : "")}
+          onClick=${() => setType("smooth")}>smooth</button>
+        <button className=${"workflow-vector-paint-mode" + (type === "asymmetric" ? " is-on" : "")}
+          onClick=${() => setType("asymmetric")}>asymm.</button>
+      </div>
+
+      ${type === "corner" && prev && next && maxRadius > 0 && html`
+        <div className="workflow-vector-subhead">Corner radius</div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide">
+            <span>r</span>
+            <input type="range" min="0" max=${maxRadius} step="1"
+              value=${anchor.radius || 0}
+              onInput=${(e) => onAnchorChange({ radius: +e.target.value || 0 })}/>
+            <span className="workflow-vector-field-val">${anchor.radius || 0}</span>
+          </label>
+        </div>
+      `}
+
+      <div className="workflow-vector-subhead">Position</div>
+      <div className="workflow-vector-pos-grid">
+        <label className="workflow-vector-field workflow-vector-field-stacked">
+          <span>x</span>
+          <input type="number" value=${Math.round(anchor.x * 100) / 100}
+            onInput=${(e) => onAnchorChange({ x: +e.target.value || 0 })}/>
+        </label>
+        <label className="workflow-vector-field workflow-vector-field-stacked">
+          <span>y</span>
+          <input type="number" value=${Math.round(anchor.y * 100) / 100}
+            onInput=${(e) => onAnchorChange({ y: +e.target.value || 0 })}/>
+        </label>
+      </div>
+
+      ${(hasIn || type !== "corner") && html`
+        <div className="workflow-vector-subhead">Incoming handle</div>
+        <div className="workflow-vector-pos-grid">
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>x</span>
+            <input type="number" value=${anchor.inX != null ? Math.round(anchor.inX * 100) / 100 : ""}
+              placeholder="(none)"
+              onInput=${(e) => onAnchorChange({ inX: e.target.value === "" ? null : +e.target.value })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>y</span>
+            <input type="number" value=${anchor.inY != null ? Math.round(anchor.inY * 100) / 100 : ""}
+              placeholder="(none)"
+              onInput=${(e) => onAnchorChange({ inY: e.target.value === "" ? null : +e.target.value })}/>
+          </label>
+        </div>
+      `}
+
+      ${(hasOut || type !== "corner") && html`
+        <div className="workflow-vector-subhead">Outgoing handle</div>
+        <div className="workflow-vector-pos-grid">
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>x</span>
+            <input type="number" value=${anchor.outX != null ? Math.round(anchor.outX * 100) / 100 : ""}
+              placeholder="(none)"
+              onInput=${(e) => onAnchorChange({ outX: e.target.value === "" ? null : +e.target.value })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>y</span>
+            <input type="number" value=${anchor.outY != null ? Math.round(anchor.outY * 100) / 100 : ""}
+              placeholder="(none)"
+              onInput=${(e) => onAnchorChange({ outY: e.target.value === "" ? null : +e.target.value })}/>
+          </label>
+        </div>
+      `}
+
+      <div className="workflow-vector-hint workflow-vector-tip">
+        Tip: alt-drag a handle to break symmetry; drag the anchor square to move + carry handles with it.
+      </div>
+    </div>
+  `;
+}
+
+function VectorPaintStack({ role, layers, onLayersChange }) {
+  const [openIdx, setOpenIdx] = useState(null);
+  const isStroke = role === "stroke";
+  const title = isStroke ? "Strokes" : "Fills";
+  const newSolid = () => ({
+    id: "p_" + Math.random().toString(36).slice(2, 8),
+    type: "solid",
+    color: isStroke ? "#0f172a" : "#3b82f6",
+    opacity: 1, visible: true, blendMode: "normal",
+    ...(isStroke ? { width: 1, dasharray: "", linecap: "butt" } : {}),
+  });
+  const update = (i, patch) => {
+    const next = layers.slice();
+    next[i] = { ...next[i], ...patch };
+    onLayersChange(next);
+  };
+  const move = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= layers.length) return;
+    const next = layers.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    onLayersChange(next);
+    if (openIdx === i) setOpenIdx(j); else if (openIdx === j) setOpenIdx(i);
+  };
+  const remove = (i) => {
+    const next = layers.slice(); next.splice(i, 1);
+    onLayersChange(next);
+    setOpenIdx(null);
+  };
+  const add = () => {
+    const next = [...layers, newSolid()];
+    onLayersChange(next);
+    setOpenIdx(next.length - 1);
+  };
+  // Swatch preview for the row collapsed state — a flat color for
+  // solid, a tiny gradient bar for linear/radial.
+  const swatchStyle = (layer) => {
+    if (!layer || layer.visible === false) return { background: "#fff", border: "1px solid #d1d5db", opacity: 0.5 };
+    if (layer.type === "solid") return { background: layer.color || "#000" };
+    const stops = (layer.stops || []).map((s, i) =>
+      `${s.color || "#000"} ${Math.round((s.offset != null ? s.offset : i / Math.max(1, (layer.stops || []).length - 1)) * 100)}%`).join(", ");
+    if (layer.type === "linear") {
+      return { background: `linear-gradient(${(layer.angle || 0) + 90}deg, ${stops})` };
+    }
+    if (layer.type === "radial") {
+      return { background: `radial-gradient(circle at ${(layer.cx || 0.5) * 100}% ${(layer.cy || 0.5) * 100}%, ${stops})` };
+    }
+    return { background: "#000" };
+  };
+
+  return html`
+    <div className="workflow-vector-section workflow-vector-paint-stack">
+      <div className="workflow-vector-section-head">
+        ${title}
+        <button className="workflow-vector-paint-add" title=${"Add a " + (isStroke ? "stroke" : "fill") + " layer"} onClick=${add}>+</button>
+      </div>
+      ${layers.length === 0 && html`<div className="workflow-vector-hint">No ${isStroke ? "strokes" : "fills"}. Click + to add one.</div>`}
+      ${layers.slice().reverse().map((layer, revIdx) => {
+        // Display in reverse-array order: the LAST array entry (=
+        // visually on top, since later layers are painted over
+        // earlier ones) appears at the TOP of the list. ↑ brings the
+        // layer forward in z (= higher array index = up in the list);
+        // ↓ sends it backward.
+        const i = layers.length - 1 - revIdx;
+        const isOpen = openIdx === i;
+        return html`
+          <div key=${"pl-" + (layer.id || i)} className=${"workflow-vector-paint-row" + (isOpen ? " is-open" : "") + (layer.visible === false ? " is-hidden" : "")}>
+            <div className="workflow-vector-paint-row-head">
+              <button className="workflow-vector-paint-vis"
+                title=${layer.visible !== false ? "Hide layer" : "Show layer"}
+                onClick=${() => update(i, { visible: layer.visible === false })}
+              >${layer.visible !== false ? "●" : "○"}</button>
+              <button className="workflow-vector-paint-swatch"
+                style=${swatchStyle(layer)}
+                title="Toggle editor"
+                onClick=${() => setOpenIdx(isOpen ? null : i)}/>
+              <select className="workflow-vector-paint-type-sel"
+                value=${layer.type}
+                title="Paint type"
+                onClick=${(e) => e.stopPropagation()}
+                onInput=${(e) => {
+                  const t = e.target.value;
+                  const carryColor = layer.color || (layer.stops && layer.stops[0] && layer.stops[0].color) || "#3b82f6";
+                  if (t === "solid")  update(i, { type: "solid", color: carryColor });
+                  if (t === "linear") update(i, { type: "linear", angle: layer.angle != null ? layer.angle : 0,
+                    stops: layer.stops && layer.stops.length ? layer.stops : [{ offset: 0, color: carryColor }, { offset: 1, color: "#a855f7" }] });
+                  if (t === "radial") update(i, { type: "radial", cx: layer.cx != null ? layer.cx : 0.5, cy: layer.cy != null ? layer.cy : 0.5, r: layer.r != null ? layer.r : 0.5,
+                    stops: layer.stops && layer.stops.length ? layer.stops : [{ offset: 0, color: carryColor }, { offset: 1, color: "#a855f7" }] });
+                }}>
+                <option value="solid">solid</option>
+                <option value="linear">linear</option>
+                <option value="radial">radial</option>
+              </select>
+              <input type="number" min="0" max="100" step="1"
+                className="workflow-vector-paint-opacity"
+                value=${Math.round((layer.opacity != null ? layer.opacity : 1) * 100)}
+                title="Opacity %"
+                onInput=${(e) => update(i, { opacity: Math.max(0, Math.min(100, +e.target.value || 0)) / 100 })}/>
+              <button className="workflow-vector-paint-mv" disabled=${i === layers.length - 1}
+                title="Bring forward" onClick=${() => move(i, +1)}>↑</button>
+              <button className="workflow-vector-paint-mv" disabled=${i === 0}
+                title="Send backward" onClick=${() => move(i, -1)}>↓</button>
+              <button className="workflow-vector-paint-rm" title="Remove layer" onClick=${() => remove(i)}>×</button>
+            </div>
+            ${isOpen && html`
+              <div className="workflow-vector-paint-row-body">
+                ${layer.type === "solid" && html`
+                  <input type="color" className="workflow-vector-color-wide"
+                    value=${layer.color || "#000"}
+                    onInput=${(e) => update(i, { color: e.target.value })}/>
+                `}
+                ${(layer.type === "linear" || layer.type === "radial") && html`
+                  <div className="workflow-vector-gradient-edit">
+                    ${layer.type === "linear" && html`
+                      <label className="workflow-vector-field workflow-vector-field-stacked">
+                        <span>angle</span>
+                        <input type="number" value=${layer.angle || 0}
+                          onInput=${(e) => update(i, { angle: +e.target.value || 0 })}/>
+                      </label>
+                    `}
+                    ${layer.type === "radial" && html`
+                      <div className="workflow-vector-pos-grid">
+                        <label className="workflow-vector-field workflow-vector-field-stacked">
+                          <span>cx</span>
+                          <input type="number" min="0" max="1" step="0.01" value=${layer.cx != null ? layer.cx : 0.5}
+                            onInput=${(e) => update(i, { cx: +e.target.value })}/>
+                        </label>
+                        <label className="workflow-vector-field workflow-vector-field-stacked">
+                          <span>cy</span>
+                          <input type="number" min="0" max="1" step="0.01" value=${layer.cy != null ? layer.cy : 0.5}
+                            onInput=${(e) => update(i, { cy: +e.target.value })}/>
+                        </label>
+                        <label className="workflow-vector-field workflow-vector-field-stacked">
+                          <span>r</span>
+                          <input type="number" min="0" max="1.5" step="0.01" value=${layer.r != null ? layer.r : 0.5}
+                            onInput=${(e) => update(i, { r: +e.target.value })}/>
+                        </label>
+                      </div>
+                    `}
+                    ${(layer.stops || []).map((s, si) => html`
+                      <div key=${"stp-" + si} className="workflow-vector-gradient-stop">
+                        <input type="color" value=${s.color || "#000"}
+                          onInput=${(e) => {
+                            const stops = (layer.stops || []).slice();
+                            stops[si] = { ...stops[si], color: e.target.value };
+                            update(i, { stops });
+                          }}/>
+                        <input type="number" min="0" max="1" step="0.01"
+                          value=${s.offset != null ? s.offset : si / Math.max(1, (layer.stops || []).length - 1)}
+                          onInput=${(e) => {
+                            const stops = (layer.stops || []).slice();
+                            stops[si] = { ...stops[si], offset: +e.target.value };
+                            update(i, { stops });
+                          }}/>
+                        <button className="workflow-vector-gradient-rm"
+                          onClick=${() => {
+                            const stops = (layer.stops || []).slice();
+                            stops.splice(si, 1);
+                            update(i, { stops });
+                          }}>×</button>
+                      </div>
+                    `)}
+                    <button className="workflow-vector-gradient-add"
+                      onClick=${() => {
+                        const stops = (layer.stops || []).slice();
+                        stops.push({ offset: 1, color: "#000" });
+                        update(i, { stops });
+                      }}>+ stop</button>
+                  </div>
+                `}
+                <label className="workflow-vector-field workflow-vector-field-wide">
+                  <span>blend</span>
+                  <select value=${layer.blendMode || "normal"}
+                    onInput=${(e) => update(i, { blendMode: e.target.value })}>
+                    ${VECTOR_BLEND_MODES.map(b => html`<option key=${b} value=${b}>${b}</option>`)}
+                  </select>
+                </label>
+                ${isStroke && html`
+                  <div className="workflow-vector-pos-grid">
+                    <label className="workflow-vector-field workflow-vector-field-stacked">
+                      <span>width</span>
+                      <input type="number" min="0" step="0.5" value=${layer.width != null ? layer.width : 1}
+                        onInput=${(e) => update(i, { width: Math.max(0, +e.target.value || 0) })}/>
+                    </label>
+                    <label className="workflow-vector-field workflow-vector-field-stacked">
+                      <span>dash</span>
+                      <select value=${layer.dasharray || ""}
+                        onInput=${(e) => update(i, { dasharray: e.target.value })}>
+                        <option value="">solid</option>
+                        <option value="2 2">dotted</option>
+                        <option value="6 4">dashed</option>
+                        <option value="10 6">long</option>
+                        <option value="2 6 12 6">dash-dot</option>
+                      </select>
+                    </label>
+                    <label className="workflow-vector-field workflow-vector-field-stacked">
+                      <span>cap</span>
+                      <select value=${layer.linecap || "butt"}
+                        onInput=${(e) => update(i, { linecap: e.target.value })}>
+                        <option value="butt">butt</option>
+                        <option value="round">round</option>
+                        <option value="square">square</option>
+                      </select>
+                    </label>
+                  </div>
+                `}
+              </div>
+            `}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
+/* v3.4.37 — Formatted text node.
+   contentEditable body for direct rich-text editing. A Typography node
+   wired to typo-in surfaces a per-level button strip; the user selects
+   a range and clicks a level to wrap it with that level's inline
+   styles (font-size, weight, line-height, family). A Prompt wired to
+   text-in syncs its text into the body whenever the source changes
+   (one-way: subsequent local edits are NOT overwritten until the
+   source text actually changes again).
+
+   Output is the rendered HTML — downstream Composer / Prototype
+   consumers can embed or screenshot the rendered DOM. */
+function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
+  const w = node.w || 380;
+  const h = node.h || 320;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const editorRef = useRef(null);
+
+  // Resolve wired typography + text inputs once per edge / node change.
+  const { typo, sourceText } = useMemo(() => {
+    let typo = null, sourceText = null;
+    for (const e of (allEdges || [])) {
+      const t = (e.to || "").split(".", 1)[0];
+      if (t !== node.id) continue;
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (!up) continue;
+      if (up.kind === "typography" && !typo) typo = up;
+      else if (up.kind === "prompt" && sourceText == null) sourceText = up.text || "";
+    }
+    return { typo, sourceText };
+  }, [allEdges, allNodes, node.id]);
+
+  // Plain-text source sync — when an upstream Prompt's text changes,
+  // overwrite the body. lastSourceText guards against repeatedly
+  // rewriting user edits; only a CHANGE to the source triggers a sync.
+  useEffect(() => {
+    if (sourceText == null) return;
+    if (sourceText === node.lastSourceText) return;
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const html = esc(sourceText).split(/\n\n+/).map(p =>
+      `<p>${p.split("\n").map(esc).join("<br/>")}</p>`
+    ).join("");
+    onChange({ html, lastSourceText: sourceText });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceText]);
+
+  // Push the current bytes into the contentEditable on mount + on
+  // external updates. We avoid re-syncing while the user is typing
+  // (focused) by reading the live innerHTML and comparing.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    if (document.activeElement === el) return;
+    if (el.innerHTML !== (node.html || "")) el.innerHTML = node.html || "";
+  }, [node.html]);
+
+  const commitHtml = () => {
+    const el = editorRef.current;
+    if (!el) return;
+    const next = el.innerHTML;
+    if (next !== node.html) onChange({ html: next });
+  };
+
+  const applyLevel = (level) => {
+    if (!typo || !level) return;
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = document.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) return;
+    // Inline-style span carrying the level's typography. Falls back to
+    // inheriting the family if the typography node hasn't loaded fonts.
+    const family = (level.mono ? typo.monoFamily : typo.fontFamily) || "inherit";
+    const span = document.createElement("span");
+    span.setAttribute("data-th-typo", level.name || "");
+    span.style.fontFamily = family;
+    span.style.fontSize   = level.size + "px";
+    span.style.fontWeight = String(level.weight || 400);
+    span.style.lineHeight = String(level.lineHeight || 1.4);
+    const frag = range.cloneContents();
+    span.appendChild(frag);
+    range.deleteContents();
+    range.insertNode(span);
+    sel.removeAllRanges();
+    commitHtml();
+  };
+
+  // v3.4.44 — Bake. Snapshot the current contentEditable body into a
+  // standalone HTML file at source/<branch>/fmttext-<id>.html. Embeds
+  // the wired typography's fonts as @import links + a body font-family
+  // fallback so the baked file renders the same fonts standalone (and
+  // when loaded as a Composer layer iframe). Downstream agents read
+  // bakedPath via the same input-resolver path Asset uses.
+  const [bakeState, setBakeState] = useState({ phase: "idle", error: null });
+  const bakeFmtText = useCallback(async () => {
+    setBakeState({ phase: "baking", error: null });
+    try {
+      const branch = (() => {
+        for (const e of (allEdges || [])) {
+          const f = (e.from || "").split(".", 1)[0];
+          const up = (allNodes || []).find(n => n.id === f);
+          if (up && up.kind === "prototype" && up.branch) return up.branch;
+        }
+        return "main";
+      })();
+      const outPath = `source/${branch}/fmttext-${node.id}.html`;
+      const cssFamilies = [];
+      const fontLinks = [];
+      if (typo) {
+        if (typo.fontFamily) cssFamilies.push(`"${typo.fontFamily}", system-ui, sans-serif`);
+        else                  cssFamilies.push("system-ui, sans-serif");
+        if (typo.fontCdn) fontLinks.push(`<link rel="stylesheet" href="${typo.fontCdn}"/>`);
+        if (typo.monoCdn) fontLinks.push(`<link rel="stylesheet" href="${typo.monoCdn}"/>`);
+      } else {
+        cssFamilies.push("system-ui, sans-serif");
+      }
+      const bodyHtml = node.html || "<p>(empty)</p>";
+      const docHtml = [
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '  <meta charset="utf-8">',
+        `  <title>Formatted text · ${node.id}</title>`,
+        ...fontLinks.map(s => "  " + s),
+        "  <style>",
+        "    html, body { margin: 0; padding: 0; background: transparent; }",
+        `    body { font-family: ${cssFamilies[0]}; font-size: 16px; line-height: 1.5; color: #1a1a1a; padding: 24px; }`,
+        "    p { margin: 0 0 0.5em; }",
+        "    p:last-child { margin-bottom: 0; }",
+        "  </style>",
+        "</head>",
+        '<body data-fmttext-id="' + node.id + '">',
+        bodyHtml,
+        "</body>",
+        "</html>",
+        "",
+      ].join("\n");
+      const r = await fetch(apiUrl("/__write_text"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: outPath, text: docHtml }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      onChange({ bakedPath: outPath, bakedAt: new Date().toISOString() });
+      // v3.4.47 — Same composer-style auto-output. If no edge from this
+      // formatted-text's .out exists, spawn an HTML asset card pointing
+      // at bakedPath so downstream consumers can be chained visually
+      // without manual asset-card setup.
+      try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(outPath); } catch {}
+      setBakeState({ phase: "done", error: null });
+      try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outPath] } })); } catch {}
+      setTimeout(() => setBakeState(s => s.phase === "done" ? { phase: "idle", error: null } : s), 1500);
+    } catch (err) {
+      setBakeState({ phase: "error", error: String(err && err.message || err) });
+    }
+  }, [node.id, node.html, typo, allEdges, allNodes, onChange, onBakeAutoCreateOutput]);
+
+  return html`
+    <div
+      className="workflow-node workflow-node-fmttext"
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">¶</span>
+        <span className="workflow-node-label">Formatted text</span>
+        <span className="workflow-node-bar-spacer"/>
+        ${typo && html`<span className="workflow-node-fmttext-tag" title=${"Typography wired: " + (typo.name || typo.id)}>${typo.name || "type"}</span>`}
+        ${sourceText != null && html`<span className="workflow-node-fmttext-tag" title="Text input wired">text</span>`}
+        ${node.bakedAt && bakeState.phase === "idle" && html`
+          <span className="workflow-node-composer-baked-tag"
+                title=${"Last baked: " + node.bakedAt + " → " + (node.bakedPath || "")}>baked</span>
+        `}
+        <button
+          className=${"workflow-node-composer-bake" + (bakeState.phase === "baking" ? " is-baking" : "") + (bakeState.phase === "done" ? " is-done" : "") + (bakeState.phase === "error" ? " is-error" : "")}
+          title=${bakeState.error
+            ? "Bake failed: " + bakeState.error
+            : (node.bakedPath
+              ? "Re-bake — overwrite " + node.bakedPath + " with the current text. Composer / agent consumers read this file."
+              : "Bake this text into a self-contained HTML file. Wire into a Composer to use as a layer, or into an Agent for visual reference.")}
+          onClick=${(e) => { e.stopPropagation(); bakeFmtText(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+          disabled=${bakeState.phase === "baking"}
+        >${bakeState.phase === "baking"
+          ? html`<span className="workflow-node-composer-bake-spinner"/> baking…`
+          : bakeState.phase === "done"
+            ? "Baked ✓"
+            : bakeState.phase === "error"
+              ? "Retry bake"
+              : (node.bakedPath ? "Re-bake" : "Bake")}</button>
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      ${typo && Array.isArray(typo.levels) && typo.levels.length > 0
+        ? html`
+          <div className="workflow-fmttext-typobar" onMouseDown=${(e) => e.stopPropagation()}>
+            <span className="workflow-fmttext-typobar-head">Select text + apply:</span>
+            ${typo.levels.map(lv => html`
+              <button
+                key=${lv.name}
+                className="workflow-fmttext-typobar-btn"
+                title=${`${lv.name} · ${lv.size}px / ${lv.weight} / lh ${lv.lineHeight}`}
+                onMouseDown=${(e) => e.preventDefault()}
+                onClick=${(e) => { e.stopPropagation(); applyLevel(lv); }}
+              >${lv.name}</button>
+            `)}
+          </div>
+        `
+        /* v3.4.41 — Empty-state CTA. When no Typography node is wired into
+           the left port, the user has no level picker — explain why and
+           tell them what to do. The CTA replaces the typobar so it occupies
+           the same slot (above the editor) without changing the editor's
+           visible area. */
+        : html`
+          <div className="workflow-fmttext-typobar workflow-fmttext-typobar-empty"
+               onMouseDown=${(e) => e.stopPropagation()}>
+            <span className="workflow-fmttext-typobar-empty-glyph" aria-hidden="true">⌁</span>
+            <span className="workflow-fmttext-typobar-empty-msg">
+              Link a <strong>Typography</strong> node to the left port to enable the level picker.
+            </span>
+          </div>
+        `}
+      <div
+        ref=${editorRef}
+        className="workflow-fmttext-editor"
+        contentEditable=${true}
+        suppressContentEditableWarning=${true}
+        onInput=${commitHtml}
+        onBlur=${commitHtml}
+        onMouseDownCapture=${(e) => {
+          /* The outer node + canvas wrap both grab the mousedown in
+             capture phase to manage selection. Their handlers don't
+             call preventDefault, but the cascade of React state
+             updates + suppressContentEditableWarning combine to
+             swallow the browser's native "focus contentEditable on
+             mousedown" default in some setups (notably after a
+             selection swap). We force focus here so the cursor
+             always lands inside the editor on click.
+
+             Capture phase ensures we beat the bubble-phase
+             stopPropagation below, AND we focus BEFORE React's
+             reconciliation cycle starts. */
+          e.stopPropagation();
+          const el = editorRef.current;
+          if (el && document.activeElement !== el) {
+            // Defer focus to after the browser's own mousedown
+            // processing so the caret lands at the click point
+            // (focus()-then-collapse would lose the click x/y).
+            requestAnimationFrame(() => {
+              if (document.activeElement !== el) el.focus({ preventScroll: true });
+            });
+          }
+        }}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onKeyDown=${(e) => e.stopPropagation()}
+        style=${typo ? {
+          fontFamily: typo.fontFamily || undefined,
+        } : undefined}
+      />
+      <div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id}
+        data-port-side="in"
+        title="Wire a Typography node (enables the level picker) or a Prompt node (overwrites the body when its text changes)."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id}
+        data-port-side="out"
+        title="Pipe the rendered HTML into a downstream Composer / Prototype consumer."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+/* v3.4.38 — Mermaid diagram node.
+   Renders Mermaid source via the CDN bundle loaded in editor/index.html
+   (window.mermaid). Source lives inline on node.code; node.diagramType
+   is a hint used to pre-seed the textarea + drive the dropdown choice
+   in the code panel (the renderer infers the actual type from the
+   source's first line). Empty state shows a "open the code panel" call
+   to action because Mermaid's own error is unhelpful for blank input. */
+const MERMAID_TYPES = [
+  { id: "flowchart",     label: "Flowchart",         seed: "flowchart TD\n  A[Start] --> B{Choice}\n  B -->|Yes| C[Done]\n  B -->|No| D[Skip]" },
+  { id: "sequence",      label: "Sequence",          seed: "sequenceDiagram\n  participant A\n  participant B\n  A->>B: Hello\n  B-->>A: World" },
+  { id: "class",         label: "Class",             seed: "classDiagram\n  class Animal {\n    +String name\n    +sleep()\n  }\n  Animal <|-- Dog" },
+  { id: "state",         label: "State",             seed: "stateDiagram-v2\n  [*] --> Idle\n  Idle --> Working: start\n  Working --> Idle: done\n  Working --> [*]: cancel" },
+  { id: "er",            label: "ER",                seed: "erDiagram\n  USER ||--o{ POST : writes\n  POST {\n    string title\n    string body\n  }" },
+  { id: "journey",       label: "User journey",      seed: "journey\n  title My journey\n  section Sign up\n    Discover: 3: User\n    Register: 4: User" },
+  { id: "gantt",         label: "Gantt",             seed: "gantt\n  title Roadmap\n  section Phase 1\n  Spec      :a1, 2024-01-01, 7d\n  Build     :after a1, 14d" },
+  { id: "pie",           label: "Pie chart",         seed: "pie title Distribution\n  \"A\" : 35\n  \"B\" : 25\n  \"C\" : 40" },
+  { id: "mindmap",       label: "Mind map",          seed: "mindmap\n  root((idea))\n    A\n      a1\n      a2\n    B" },
+  { id: "timeline",      label: "Timeline",          seed: "timeline\n  title History\n  2020 : First\n  2022 : Second\n  2024 : Third" },
+  { id: "quadrant",      label: "Quadrant",          seed: "quadrantChart\n  title Quadrant\n  x-axis Low --> High\n  y-axis Low --> High\n  A: [0.3, 0.6]\n  B: [0.7, 0.8]" },
+  { id: "gitgraph",      label: "Git graph",         seed: "gitGraph\n  commit\n  branch dev\n  commit\n  checkout main\n  merge dev" },
+];
+function _mermaidTypeFromSource(src) {
+  // First non-blank line's leading keyword decides the rendered type.
+  // We only use this for the dropdown's "auto" reflection — Mermaid
+  // itself parses the source unambiguously.
+  if (!src) return "flowchart";
+  const first = String(src).split(/\r?\n/).map(s => s.trim()).find(s => s.length > 0) || "";
+  const head = first.toLowerCase().split(/\s+/)[0] || "";
+  if (head.startsWith("sequencediagram")) return "sequence";
+  if (head.startsWith("classdiagram"))    return "class";
+  if (head.startsWith("statediagram"))    return "state";
+  if (head.startsWith("erdiagram"))       return "er";
+  if (head === "journey")                 return "journey";
+  if (head === "gantt")                   return "gantt";
+  if (head === "pie")                     return "pie";
+  if (head === "mindmap")                 return "mindmap";
+  if (head === "timeline")                return "timeline";
+  if (head === "quadrantchart")           return "quadrant";
+  if (head === "gitgraph")                return "gitgraph";
+  return "flowchart";
+}
+let _mermaidInited = false;
+function _ensureMermaidInited() {
+  if (_mermaidInited) return true;
+  const M = (typeof window !== "undefined") && window.mermaid;
+  if (!M) return false;
+  try {
+    M.initialize({ startOnLoad: false, theme: "default", securityLevel: "loose" });
+    _mermaidInited = true;
+  } catch (err) {
+    console.warn("[mermaid] initialize failed", err);
+  }
+  return _mermaidInited;
+}
+
+function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onToggleCode, codeOpen }) {
+  const w = node.w || 420;
+  const h = node.h || 320;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const hostRef = useRef(null);
+  const [renderState, setRenderState] = useState({ phase: "idle", error: null });
+
+  const code = (node.code || "").trim();
+  const effectiveType = _mermaidTypeFromSource(code);
+
+  useEffect(() => {
+    let alive = true;
+    const host = hostRef.current;
+    if (!host) return;
+    if (!code) {
+      host.innerHTML = "";
+      setRenderState({ phase: "empty", error: null });
+      return;
+    }
+    if (!_ensureMermaidInited()) {
+      setRenderState({ phase: "error", error: "mermaid.js failed to load (CDN blocked?)" });
+      return;
+    }
+    setRenderState({ phase: "rendering", error: null });
+    const renderId = "th-mermaid-" + node.id + "-" + Math.random().toString(36).slice(2, 8);
+    try {
+      // Mermaid 10+ returns a Promise<{svg, bindFunctions}>.
+      window.mermaid.render(renderId, code)
+        .then(({ svg, bindFunctions }) => {
+          if (!alive) return;
+          host.innerHTML = svg;
+          if (bindFunctions) { try { bindFunctions(host); } catch {} }
+          setRenderState({ phase: "ready", error: null });
+        })
+        .catch((err) => {
+          if (!alive) return;
+          host.innerHTML = "";
+          setRenderState({ phase: "error", error: String(err && err.message || err) });
+        });
+    } catch (err) {
+      setRenderState({ phase: "error", error: String(err && err.message || err) });
+    }
+    return () => { alive = false; };
+  }, [code, node.id]);
+
+  return html`
+    <div
+      className="workflow-node workflow-node-mermaid"
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">⇄</span>
+        <span className="workflow-node-label">Mermaid · ${effectiveType}</span>
+        <span className="workflow-node-bar-spacer"/>
+        ${onToggleCode && html`
+          <${HoverTip}
+            className=${"workflow-node-action workflow-node-action-code" + (codeOpen ? " is-on" : "")}
+            tip=${codeOpen ? "Hide code panel" : "Edit the Mermaid source — pick a diagram type, type the code, click Save."}
+            ariaLabel="Edit Mermaid source"
+            onClick=${(e) => { e.stopPropagation(); onToggleCode(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Code}/><//>
+        `}
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <div className="workflow-mermaid-body">
+        ${!code
+          ? html`
+            <div className="workflow-mermaid-empty">
+              <div className="workflow-mermaid-empty-glyph"><${Icon.Code}/></div>
+              <div className="workflow-mermaid-empty-msg">
+                Please open the code <span className="workflow-mermaid-empty-icon"><${Icon.Code}/></span> button to edit the diagram source.
+              </div>
+              ${onToggleCode && html`
+                <button
+                  className="workflow-mermaid-empty-cta"
+                  onClick=${(e) => { e.stopPropagation(); onToggleCode(); }}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                >Open code</button>
+              `}
+            </div>
+          `
+          : renderState.phase === "error"
+            ? html`
+              <div className="workflow-mermaid-error">
+                <div className="workflow-mermaid-error-head">Render failed</div>
+                <pre className="workflow-mermaid-error-msg">${renderState.error}</pre>
+              </div>
+            `
+            : html`
+              <div
+                ref=${hostRef}
+                className="workflow-mermaid-stage"
+                data-phase=${renderState.phase}
+              />
+            `
+        }
+      </div>
+      <div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id}
+        data-port-side="in"
+        title="Mermaid is a leaf node — its source is edited inline. (Connections are unused, exposed for future variants.)"
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id}
+        data-port-side="out"
+        title="Pipe the rendered SVG into a downstream Composer / Prototype consumer."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+/* v3.4.38 — Mermaid code panel.
+   A tailored variant of the asset/prototype code panel. Reuses the same
+   chrome / layout / save / reset / resize affordances, but the body is
+   bound to node.code (inline state) instead of a file, and the toolbar
+   adds a diagram-type dropdown that pre-seeds the textarea with a
+   ready-to-render template when the type changes. */
+function WorkflowMermaidCodePanel({ node, onChange, onClose, zoom }) {
+  const [panelW, setPanelW] = useState(480);
+  const [draft, setDraft] = useState(node.code || "");
+  const [saveFlash, setSaveFlash] = useState(null);
+  const resizingRef = useRef(null);
+  const dirty = draft !== (node.code || "");
+  const effectiveType = _mermaidTypeFromSource(draft);
+
+  // Resync the draft if the node's code changes from outside (undo /
+  // redo, history restore). Only when not currently dirty so we don't
+  // wipe a user's in-progress edit.
+  useEffect(() => {
+    if (!dirty) setDraft(node.code || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.code]);
+
+  const save = () => {
+    onChange({ code: draft, diagramType: effectiveType });
+    setSaveFlash("saved");
+    setTimeout(() => setSaveFlash(f => f === "saved" ? null : f), 1200);
+  };
+  const reset = () => setDraft(node.code || "");
+  const pickType = (id) => {
+    const tpl = MERMAID_TYPES.find(t => t.id === id);
+    if (!tpl) return;
+    // Replace the draft with the template ONLY when the current draft
+    // is blank or matches a different type's seed. Avoids wiping a
+    // hand-edited diagram on a stray dropdown click.
+    const isTemplated = MERMAID_TYPES.some(t => (draft || "").trim() === t.seed.trim());
+    if (!draft.trim() || isTemplated) {
+      setDraft(tpl.seed);
+    } else {
+      // Already has content of a different type — still update the
+      // dropdown reflection but ask the user explicitly via toolbar
+      // before clobbering: just stamp the type field on save, leave
+      // draft alone. The user can clear the textarea manually if they
+      // want the seed.
+      onChange({ diagramType: id });
+    }
+  };
+  const startResize = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX, startW = panelW;
+    resizingRef.current = { startX, startW };
+    const onMove = (ev) => {
+      const dx = ev.clientX - resizingRef.current.startX;
+      const next = Math.max(280, Math.min(1100, resizingRef.current.startW + dx / (zoom || 1)));
+      setPanelW(next);
+    };
+    const onUp = () => {
+      resizingRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+  const onTextareaKeyDown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
+      e.preventDefault(); e.stopPropagation();
+      save();
+    }
+    if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const next = draft.slice(0, start) + "  " + draft.slice(end);
+      setDraft(next);
+      requestAnimationFrame(() => { try { ta.selectionStart = ta.selectionEnd = start + 2; } catch {} });
+    }
+  };
+
+  const left = (node.x || 0) + (node.w || 420);
+  const top = (node.y || 0);
+  const height = (node.h || 320);
+
+  return html`
+    <div
+      className="workflow-code-panel workflow-code-panel-mermaid"
+      data-host-node-id=${node.id}
+      style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
+      onMouseDown=${(e) => e.stopPropagation()}
+      onWheel=${(e) => e.stopPropagation()}
+    >
+      <div className="workflow-code-panel-bar">
+        <span className="workflow-code-panel-glyph"><${Icon.Code}/></span>
+        <span className="workflow-code-panel-title" title="Mermaid source">
+          Mermaid · ${effectiveType}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
+        </span>
+        <button
+          type="button"
+          className="workflow-code-panel-reset"
+          disabled=${!dirty}
+          title=${dirty ? "Reset — discard unsaved edits" : "No changes to reset"}
+          onClick=${reset}
+        >Reset</button>
+        <button
+          type="button"
+          className=${"workflow-code-panel-save"
+            + (dirty ? " is-dirty" : "")
+            + (saveFlash === "saved" ? " is-saved" : "")}
+          disabled=${!dirty}
+          title=${dirty ? "Save changes (⌘S)" : (saveFlash === "saved" ? "Saved" : "No changes to save")}
+          onClick=${save}
+        >${saveFlash === "saved" && !dirty ? "Saved ✓" : "Save"}</button>
+        <button
+          type="button"
+          className="workflow-code-panel-close"
+          title="Close code panel"
+          onClick=${() => onClose && onClose()}
+        >×</button>
+      </div>
+      <div className="workflow-mermaid-typebar">
+        <label className="workflow-mermaid-typebar-label">Diagram type</label>
+        <select
+          className="workflow-mermaid-typebar-select"
+          value=${effectiveType}
+          onChange=${(e) => pickType(e.target.value)}
+        >
+          ${MERMAID_TYPES.map(t => html`
+            <option key=${t.id} value=${t.id}>${t.label}</option>
+          `)}
+        </select>
+        <span className="workflow-mermaid-typebar-hint" title="Mermaid infers the type from the first line of the source. Picking a type here pre-fills a working template when the editor is blank.">Auto-detected from source</span>
+      </div>
+      <div className="workflow-code-panel-body">
+        <textarea
+          className="workflow-code-panel-editor"
+          spellCheck=${false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          autoComplete="off"
+          wrap="off"
+          value=${draft}
+          placeholder="Type Mermaid source here, or pick a diagram type above for a starter template."
+          onInput=${(e) => setDraft(e.target.value)}
+          onKeyDown=${onTextareaKeyDown}
+        />
+      </div>
+      <div
+        className="workflow-code-panel-resize"
+        title="Drag to resize"
+        onMouseDown=${startResize}
+      />
+    </div>
+  `;
 }
 
 /* Phase 8 — Iterator nodes (Repeater / Remix / Blend / Refiner).

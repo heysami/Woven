@@ -1106,6 +1106,24 @@ button {
   flex-direction: column;
   overflow-y: auto;
   user-select: none;
+  /* Promote the library to its own persistent GPU compositing layer. The
+     neighbouring .workflow-canvas already has will-change: transform and
+     does a LOT of GPU work during zoom (rasterising at new scale, much
+     heavier than a pan translate). Without an explicit layer hint, the
+     browser intermittently drops paint frames on the library's plain-DOM
+     rows (LIBRARY head, tabs, subtabs, section heads) — only the
+     iframe-backed card thumbnails stay up because each iframe is already
+     on its own compositing layer. transform: translateZ(0) forces the
+     library onto its own layer that the GPU keeps cached and re-composites
+     independently of the canvas's repaint storm. isolation: isolate
+     prevents any z-index leak into the canvas stacking context.
+     `contain: paint` was tried first but made the dropouts MORE frequent
+     under heavy zoom — likely because paint containment without layer
+     promotion still leaves the layer eligible for the "skip stale tile"
+     optimisation; the explicit transform forces a persistent layer the
+     browser can't elide. */
+  transform: translateZ(0);
+  isolation: isolate;
 }
 .workflow-library-head {
   padding: 12px 14px 8px;
@@ -11776,6 +11794,281 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent-text);
 }
 
+/* v3.4.33 — Code panel toolbar button (asset + prototype nodes). Mirror
+   of the zoom button styling — same hairline accent ring, plus an
+   "is-on" state that pins the accent fill so the user can see at a
+   glance which node owns the docked code panel. */
+.workflow-node-action-code:hover {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.workflow-node-action-code.is-on,
+.workflow-node-action-code.is-on:hover {
+  background: var(--accent);
+  color: var(--accent-on);
+  border-color: var(--accent);
+}
+
+/* Docked code panel. Lives inside the canvas world (absolute, in the
+   same transform-origin as the nodes) so it pans + zooms with the rest
+   of the surface. Positioned by the React component at
+   (node.x + node.w, node.y) so its left edge touches the node's right
+   edge — no gap, exactly what the user asked for. */
+.workflow-code-panel {
+  position: absolute;
+  z-index: 6;                                 /* above edges, below pickers */
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 0 8px 8px 0;                 /* flat on the docked edge */
+  box-shadow: 4px 4px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: text;
+}
+.workflow-code-panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.workflow-code-panel-glyph {
+  display: inline-flex;
+  color: var(--accent);
+}
+.workflow-code-panel-title {
+  flex: 1;
+  font: 11.5px/1.2 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-code-panel-action,
+.workflow-code-panel-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+.workflow-code-panel-action:hover,
+.workflow-code-panel-close:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.workflow-code-panel-tabs {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+}
+.workflow-code-panel-tabs::-webkit-scrollbar { height: 4px; }
+.workflow-code-panel-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.workflow-code-panel-tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  font: 11px/1.2 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text-faint);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-code-panel-tab:hover { color: var(--text); background: var(--surface); }
+.workflow-code-panel-tab.is-active {
+  color: var(--accent);
+  background: var(--surface);
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;                        /* overlap parent border */
+}
+.workflow-code-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* The <textarea> (when present) supplies its own native scrollbars.
+     For the empty/error/loading placeholder states we don't want nested
+     scroll, so hide overflow here and let the placeholder be short. */
+  overflow: hidden;
+  background: var(--surface);
+  position: relative;
+  display: flex;          /* let the textarea actually fill the body */
+}
+.workflow-code-panel-body > .workflow-code-panel-empty,
+.workflow-code-panel-body > .workflow-code-panel-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+/* v3.4.34 — Editable textarea. Replaces the read-only <pre> so the user
+   can edit + scroll the source bytes. wrap="off" preserves horizontal
+   scroll for long lines; the parent body's overflow:auto handles both
+   axes. No border/outline — the panel frame already provides a visual
+   container. */
+.workflow-code-panel-editor {
+  flex: 1;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: 11.5px/1.5 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text);
+  resize: none;
+  white-space: pre;
+  overflow-wrap: normal;
+  /* Native scrollbars on the textarea itself — vertical for long files,
+     horizontal for long lines (wrap="off"). */
+  overflow: auto;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+.workflow-code-panel-editor:focus { outline: 0; }
+.workflow-code-panel-dirty {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  vertical-align: middle;
+}
+.workflow-code-panel-save {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font: 11px/1.2 var(--font-sans, system-ui);
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workflow-code-panel-save:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.workflow-code-panel-save:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.workflow-code-panel-save.is-dirty {
+  background: var(--accent);
+  color: var(--accent-on, #fff);
+  border-color: var(--accent);
+  opacity: 1;
+}
+.workflow-code-panel-save.is-dirty:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.workflow-code-panel-save.is-saving { opacity: 0.7; cursor: wait; }
+.workflow-code-panel-save.is-saved {
+  background: color-mix(in srgb, var(--success, #2ecc71) 22%, var(--surface));
+  border-color: color-mix(in srgb, var(--success, #2ecc71) 50%, var(--border));
+  color: var(--success, #2ecc71);
+}
+.workflow-code-panel-savebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(192, 57, 43, 0.08);
+  border-top: 1px solid color-mix(in srgb, var(--danger, #c0392b) 30%, transparent);
+  font: 11px/1.3 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--danger, #c0392b);
+  flex: 0 0 auto;
+}
+.workflow-code-panel-savebar-msg {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-code-panel-savebar-dismiss {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.workflow-code-panel-empty {
+  padding: 20px 16px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+.workflow-code-panel-error {
+  padding: 16px;
+  color: var(--danger, #c0392b);
+  font: 11.5px/1.4 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  background: rgba(192, 57, 43, 0.06);
+}
+/* v3.4.36 — Right-edge resize handle. The previous version pushed the
+   handle 3px OUTSIDE the panel; the panel's overflow:hidden clipped
+   it so the user couldn't see (let alone grab) it. Now the handle sits
+   INSIDE the panel's right edge, with a faint border-tinted background
+   that lights up on hover so it's discoverable. */
+.workflow-code-panel-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  background: linear-gradient(to right, transparent, var(--border) 40%, var(--border) 60%, transparent);
+  opacity: 0.5;
+  z-index: 3;
+}
+.workflow-code-panel-resize:hover,
+.workflow-code-panel-resize:active {
+  background: var(--accent);
+  opacity: 1;
+}
+/* Reset button — sits next to Save with a neutral outline style so the
+   "destructive" affordance reads as secondary, never primary. */
+.workflow-code-panel-reset {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font: 11px/1.2 var(--font-sans, system-ui);
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workflow-code-panel-reset:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.workflow-code-panel-reset:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .zoom-overlay {
   position: fixed;
   inset: 0;
@@ -14308,4 +14601,1165 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* ────────── v3.4.37 Composer node ────────── */
+.workflow-node-composer {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* v3.4.43 — 3-column layout. Layers list on the LEFT (220px), stage in
+   the MIDDLE (1fr — composing only, nothing else), properties + canvas
+   controls on the RIGHT (260px). The middle stays clean so the
+   composing surface gets maximum eye-line; the right column scrolls
+   when active-layer-edit + canvas controls together exceed node height. */
+.workflow-composer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px 1fr 260px;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+.workflow-composer-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+  min-width: 0;
+  min-height: 0;
+}
+.workflow-composer-middle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* v3.4.41 — Right column scrolls when its content (stage + selected-layer
+   edit + canvas controls) exceeds the node height. min-height:0 lets
+   children honor that flex constraint instead of overflowing the node. */
+.workflow-composer-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.workflow-composer-canvas-controls {
+  flex: 0 0 auto;
+}
+/* v3.4.41 — Stacked-label compact field, used by Position (x/y/w/h) and
+   Canvas (W/H/maxW/maxH/bg) so the inputs share a clean 4-column grid
+   without label-side-overflow. Label tucks above the input. */
+.workflow-composer-pos-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.workflow-composer-canvas-controls .workflow-composer-pos-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.workflow-composer-field-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.workflow-composer-field-stacked > span:first-child {
+  min-width: 0;
+  font: 9.5px var(--font-mono);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.workflow-composer-field-stacked > input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.workflow-composer-field-stacked.workflow-composer-field-color > input[type="color"] {
+  height: 22px;
+}
+/* Active-layer edit panel — sits between stage and Canvas controls in the
+   right column. Card chrome same as other sections. */
+.workflow-composer-layer-edit-panel {
+  flex: 0 0 auto;
+}
+/* Side-by-side Anchor + Align grids inside the layer-edit panel so the
+   user sees both at once instead of one above the other taking 4 rows
+   of vertical space. */
+.workflow-composer-edit-grids {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.workflow-composer-edit-col { min-width: 0; }
+.workflow-composer-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: start;
+  justify-self: center;
+}
+.workflow-composer-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 16px;
+}
+.workflow-composer-layer {
+  /* per-layer absolute positioning is set inline; we only style chrome */
+}
+.workflow-composer-layer img,
+.workflow-composer-layer video,
+.workflow-composer-layer iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  border: 0;
+  pointer-events: none;
+}
+.workflow-composer-layer.is-active {
+  outline: 1px dashed var(--accent);
+  outline-offset: 0;
+}
+.workflow-composer-layer-missing {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font: 10px var(--font-mono);
+}
+.workflow-composer-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.workflow-composer-section {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.workflow-composer-section-head {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.workflow-composer-count {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 5px;
+  font: 10px var(--font-mono);
+  color: var(--text);
+}
+.workflow-composer-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.workflow-composer-row:last-child { margin-bottom: 0; }
+.workflow-composer-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.workflow-composer-field-wide { flex: 2; }
+.workflow-composer-field-color input[type="color"] {
+  width: 100%; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 4px;
+}
+.workflow-composer-field span:first-child {
+  flex: 0 0 auto;
+  min-width: 28px;
+  font: 10px var(--font-mono);
+}
+.workflow-composer-field input[type="number"],
+.workflow-composer-field input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font: 11px var(--font-mono);
+  color: var(--text);
+}
+.workflow-composer-field input[type="range"] { flex: 1; }
+.workflow-composer-field-val {
+  min-width: 32px;
+  text-align: right;
+  font: 10px var(--font-mono);
+  color: var(--text);
+}
+.workflow-composer-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow: auto;
+}
+.workflow-composer-hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 4px 0;
+}
+.workflow-composer-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.workflow-composer-layer-row:hover { border-color: var(--border); }
+.workflow-composer-layer-row.is-active { border-color: var(--accent); }
+.workflow-composer-layer-row.is-orphan { opacity: 0.5; }
+.workflow-composer-layer-vis {
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  color: var(--accent); padding: 0 2px; font-size: 14px; line-height: 1;
+}
+.workflow-composer-layer-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.workflow-composer-layer-mv,
+.workflow-composer-layer-rm {
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  color: var(--text-faint); padding: 0 3px; font-size: 11px; line-height: 1;
+}
+.workflow-composer-layer-mv:hover,
+.workflow-composer-layer-rm:hover { color: var(--text); }
+.workflow-composer-layer-mv:disabled,
+.workflow-composer-layer-rm:disabled { opacity: 0.3; cursor: default; }
+.workflow-composer-layer-edit {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.workflow-composer-anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 22px) 22px;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.workflow-composer-anchor {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+.workflow-composer-anchor:hover { color: var(--text); border-color: var(--border-strong); }
+.workflow-composer-anchor.is-on {
+  background: var(--accent);
+  color: var(--accent-on, #fff);
+  border-color: var(--accent);
+}
+.workflow-composer-anchor[data-group="stretch"] {
+  grid-column: span 1;
+}
+/* v3.4.39 — Section heads inside layer-edit (Anchor / Align / Position).
+   Tiny uppercase eyebrow that splits the three control groups visually
+   so the user understands WHY there are two 3×3 grids stacked. */
+.workflow-composer-subhead {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin: 8px 0 3px;
+}
+.workflow-composer-subhead:first-child { margin-top: 0; }
+/* Align preset grid — same 3×3 + stretch-row shape as anchor-grid, but
+   conceptually different (snap-to-canvas vs pin-this-side) so it gets
+   its own header + grid for clarity. */
+.workflow-composer-align-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 22px) 22px;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.workflow-composer-align {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+.workflow-composer-align:hover { color: var(--text); border-color: var(--border-strong); }
+.workflow-composer-align.is-on {
+  background: var(--accent);
+  color: var(--accent-on, #fff);
+  border-color: var(--accent);
+}
+/* Inline tip below the Position row — sets expectations that the user
+   can drag directly on the canvas. */
+.workflow-composer-tip {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-faint);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin-top: 6px;
+}
+/* Layer resize handle on the stage — small square at the bottom-right
+   corner of the active layer. Visible only when the layer is selected
+   (`.workflow-composer-layer.is-active` renders it). */
+.workflow-composer-resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 1.5px solid var(--surface);
+  border-radius: 2px;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.workflow-composer-resize-handle-br {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+.workflow-composer-resize-handle:hover { filter: brightness(1.1); }
+/* When a layer is selected, render a clear dashed outline (vs the
+   default subtle dashed hint) so the user knows which layer drag will
+   affect. */
+.workflow-composer-layer.is-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: 0;
+}
+.workflow-node-composer-dim {
+  font: 10px var(--font-mono);
+  color: var(--text-faint);
+  padding: 0 6px;
+}
+/* v3.4.43 — Bake button on the composer node bar. Primary action: emit
+   a self-contained HTML file of the current layer stack. Accent fill
+   when idle so the user notices it; muted state during the network
+   round-trip; green tick on success; red on error. */
+.workflow-node-composer-bake {
+  appearance: none;
+  background: var(--accent);
+  color: var(--accent-on, #fff);
+  border: 0;
+  border-radius: 5px;
+  padding: 2px 10px;
+  font: 11px var(--font-sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.workflow-node-composer-bake:hover:not(:disabled) { filter: brightness(1.08); }
+.workflow-node-composer-bake:disabled { opacity: 0.6; cursor: wait; }
+.workflow-node-composer-bake.is-done {
+  background: color-mix(in srgb, var(--success, #2ecc71) 80%, var(--accent));
+}
+.workflow-node-composer-bake.is-error {
+  background: var(--danger, #c0392b);
+}
+/* v3.4.46 — Yellow/amber state when the bake succeeded but some layers
+   degraded (missing asset, unknown extension, layer-level throw). The
+   user sees "Baked ⚠ N" so they know the file IS on disk + how many
+   issues to investigate; hovering reveals the full per-layer list. */
+.workflow-node-composer-bake.is-warning {
+  background: color-mix(in srgb, #d97706 80%, var(--accent));
+  color: #fff;
+}
+.workflow-node-composer-bake-spinner {
+  width: 10px; height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  animation: th-spin 0.7s linear infinite;
+}
+@keyframes th-spin { to { transform: rotate(360deg); } }
+/* Pill on the bar that flags the node as having a current bake. Appears
+   only when bakeState is idle so it doesn't compete with the button's
+   transient states. */
+.workflow-node-composer-baked-tag {
+  font: 9.5px var(--font-mono);
+  background: color-mix(in srgb, var(--success, #2ecc71) 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--success, #2ecc71) 45%, var(--border));
+  color: color-mix(in srgb, var(--success, #2ecc71) 90%, var(--text));
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ────────── v3.4.37 Formatted text node ────────── */
+.workflow-node-fmttext {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workflow-node-fmttext-tag {
+  font: 10px var(--font-mono);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+.workflow-fmttext-typobar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+.workflow-fmttext-typobar-head {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+.workflow-fmttext-typobar-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: 11px var(--font-sans);
+  color: var(--text);
+  cursor: pointer;
+}
+.workflow-fmttext-typobar-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* v3.4.41 — Empty state for the typobar (no Typography wired yet). Dashed
+   border + faint accent glyph telegraphs "this slot needs a connection."
+   Sits in the same height as the populated typobar so the editor below
+   doesn't jump when the user wires/unwires a typo node. */
+.workflow-fmttext-typobar-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px dashed var(--border-strong);
+  border-top: 1px dashed var(--border-strong);
+  color: var(--text-faint);
+}
+.workflow-fmttext-typobar-empty-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+}
+.workflow-fmttext-typobar-empty-msg {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text);
+}
+.workflow-fmttext-typobar-empty-msg strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+.workflow-fmttext-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  outline: 0;
+  background: var(--surface);
+  color: var(--text);
+  font: 14px/1.5 var(--font-sans);
+  cursor: text;
+  user-select: text;
+}
+.workflow-fmttext-editor:focus { outline: 0; }
+.workflow-fmttext-editor p { margin: 0 0 0.5em; }
+.workflow-fmttext-editor p:last-child { margin-bottom: 0; }
+
+/* ────────── v3.4.38 Mermaid node ────────── */
+.workflow-node-mermaid {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.workflow-mermaid-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface);
+}
+.workflow-mermaid-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 12px;
+  background: var(--surface);
+}
+.workflow-mermaid-stage svg {
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+}
+.workflow-mermaid-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+  color: var(--text-faint);
+}
+.workflow-mermaid-empty-glyph {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: 50%;
+  color: var(--accent);
+}
+.workflow-mermaid-empty-glyph svg { width: 18px; height: 18px; }
+.workflow-mermaid-empty-msg {
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 280px;
+}
+.workflow-mermaid-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 2px;
+  color: var(--accent);
+}
+.workflow-mermaid-empty-cta {
+  appearance: none;
+  background: var(--accent);
+  color: var(--accent-on, #fff);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font: 12px/1 var(--font-sans);
+  cursor: pointer;
+}
+.workflow-mermaid-empty-cta:hover { filter: brightness(1.07); }
+.workflow-mermaid-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: rgba(192, 57, 43, 0.05);
+  border: 1px solid color-mix(in srgb, var(--danger, #c0392b) 25%, transparent);
+  border-radius: 6px;
+  margin: 8px;
+  overflow: auto;
+}
+.workflow-mermaid-error-head {
+  font: 11px/1.2 var(--font-sans);
+  color: var(--danger, #c0392b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.workflow-mermaid-error-msg {
+  margin: 0;
+  font: 11px/1.4 var(--font-mono);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Diagram-type dropdown above the textarea in the Mermaid code panel. */
+.workflow-mermaid-typebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.workflow-mermaid-typebar-label {
+  font: 10px var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.workflow-mermaid-typebar-select {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 22px 3px 8px;
+  font: 11px var(--font-sans);
+  color: var(--text);
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-faint) 50%), linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+.workflow-mermaid-typebar-select:hover { border-color: var(--accent); }
+.workflow-mermaid-typebar-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+  flex: 1;
+  text-align: right;
+  cursor: help;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Vector editor node — chrome modeled on the composer (3-pane layout,
+   bake button in the title bar). The SVG stage occupies the middle
+   pane; the left pane holds the tool palette, boolean-op buttons, and
+   the layer list; the right pane holds the live properties panel.
+   ───────────────────────────────────────────────────────────────────── */
+.workflow-node-vector {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.workflow-vector-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 200px 1fr 260px;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+.workflow-vector-left,
+.workflow-vector-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+}
+.workflow-vector-middle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.workflow-vector-section {
+  background: var(--surface-2, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.workflow-vector-section-head {
+  font: 600 10.5px/1.2 var(--font-mono);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.workflow-vector-count {
+  background: var(--surface);
+  color: var(--text-faint);
+  font: 10px var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+}
+.workflow-vector-subhead {
+  font: 500 10.5px/1.2 var(--font-mono);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+.workflow-vector-hint {
+  font: 11px/1.4 var(--font-mono);
+  color: var(--text-faint);
+  padding: 4px 2px;
+}
+
+/* Tool palette — 2-col grid of icon + label buttons. */
+.workflow-vector-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.workflow-vector-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font: 11px var(--font-mono);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.workflow-vector-tool:hover { border-color: var(--accent, #3b82f6); }
+.workflow-vector-tool.is-on {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+}
+.workflow-vector-tool-glyph {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.workflow-vector-tool-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Boolean op buttons + the convert-text-to-outline cta. */
+.workflow-vector-bool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.workflow-vector-bool,
+.workflow-vector-outline-btn {
+  padding: 6px 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font: 11px var(--font-mono);
+  cursor: pointer;
+  text-align: center;
+}
+.workflow-vector-bool:hover,
+.workflow-vector-outline-btn:hover { border-color: var(--accent, #3b82f6); }
+.workflow-vector-outline-btn {
+  margin-top: 6px;
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+}
+.workflow-vector-op-banner {
+  font: 10.5px var(--font-mono);
+  padding: 4px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+.workflow-vector-op-error   { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+.workflow-vector-op-working { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
+.workflow-vector-op-done    { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+
+/* Layers list — mirrors composer rows. */
+.workflow-vector-layers-section { flex: 1 1 auto; min-height: 120px; }
+.workflow-vector-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  min-height: 0;
+}
+.workflow-vector-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: 11px var(--font-mono);
+  cursor: pointer;
+}
+.workflow-vector-layer-row:hover { background: var(--surface-2, rgba(0, 0, 0, 0.04)); }
+.workflow-vector-layer-row.is-active {
+  border-color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, transparent);
+}
+.workflow-vector-layer-vis,
+.workflow-vector-layer-mv,
+.workflow-vector-layer-rm {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-faint);
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-vector-layer-vis:hover,
+.workflow-vector-layer-mv:hover,
+.workflow-vector-layer-rm:hover { color: var(--text); }
+.workflow-vector-layer-mv:disabled { opacity: 0.3; cursor: default; }
+.workflow-vector-layer-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Middle pane — SVG stage. Centered, max-fits the pane while keeping
+   its aspect-ratio. Light checker bg under transparency to hint that
+   the user is drawing on a real canvas. */
+.workflow-vector-stage-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(45deg, #e5e7eb 25%, transparent 25%) 0 0/12px 12px,
+    linear-gradient(-45deg, #e5e7eb 25%, transparent 25%) 0 0/12px 12px,
+    linear-gradient(45deg, transparent 75%, #e5e7eb 75%) 6px 6px/12px 12px,
+    linear-gradient(-45deg, transparent 75%, #e5e7eb 75%) 6px 6px/12px 12px,
+    #f8fafc;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  padding: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+.workflow-vector-stage {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+.workflow-vector-stage-wrap[data-tool="select"]  .workflow-vector-stage { cursor: default; }
+.workflow-vector-stage-wrap[data-tool="rect"]    .workflow-vector-stage,
+.workflow-vector-stage-wrap[data-tool="ellipse"] .workflow-vector-stage,
+.workflow-vector-stage-wrap[data-tool="line"]    .workflow-vector-stage,
+.workflow-vector-stage-wrap[data-tool="pen"]     .workflow-vector-stage,
+.workflow-vector-stage-wrap[data-tool="pencil"]  .workflow-vector-stage { cursor: crosshair; }
+.workflow-vector-stage-wrap[data-tool="text"]    .workflow-vector-stage { cursor: text; }
+
+.workflow-vector-shape.is-selected { outline: none; }
+.workflow-vector-shape.is-draft { opacity: 0.75; }
+.workflow-vector-sel-outline { /* stroked via attrs */ }
+.workflow-vector-text-edit {
+  font: inherit;
+  outline: none;
+}
+
+/* Properties panel — row/grid/field shared with composer's vocab but
+   namespaced under vector- so they can evolve independently. */
+.workflow-vector-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.workflow-vector-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font: 11px var(--font-mono);
+  color: var(--text);
+}
+.workflow-vector-field-wide { flex: 1 1 auto; }
+.workflow-vector-field span:first-child {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.workflow-vector-field input[type="number"],
+.workflow-vector-field input[type="text"],
+.workflow-vector-field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 11px var(--font-mono);
+  color: var(--text);
+  box-sizing: border-box;
+  width: 100%;
+}
+.workflow-vector-field input[type="range"] { flex: 1; }
+.workflow-vector-field-val {
+  font: 10px var(--font-mono);
+  color: var(--text-faint);
+  min-width: 28px;
+  text-align: right;
+}
+.workflow-vector-field-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.workflow-vector-field-stacked > span:first-child {
+  min-width: 0;
+  font: 9.5px var(--font-mono);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.workflow-vector-field-stacked > input,
+.workflow-vector-field-stacked > select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.workflow-vector-field-stacked.workflow-vector-field-color > input[type="color"] {
+  height: 22px;
+}
+.workflow-vector-pos-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.workflow-vector-canvas-controls .workflow-vector-pos-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.workflow-vector-paint-mode {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 10px var(--font-mono);
+  color: var(--text-faint);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.workflow-vector-paint-mode.is-on {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+}
+.workflow-vector-color-wide {
+  width: 100%;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0;
+  background: var(--surface);
+}
+.workflow-vector-gradient-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workflow-vector-gradient-stop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.workflow-vector-gradient-stop input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 4px; }
+.workflow-vector-gradient-stop input[type="number"] { flex: 1; }
+.workflow-vector-gradient-rm,
+.workflow-vector-gradient-add {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 10px var(--font-mono);
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 3px 6px;
+}
+.workflow-vector-gradient-add { align-self: flex-start; }
+
+/* Paint stack — Figma-style fills / strokes editor. One section per role
+   ("fill" or "stroke"); each layer renders as a row with a swatch +
+   inline controls. The section head's + button adds a new layer. */
+.workflow-vector-paint-stack { gap: 4px; }
+.workflow-vector-paint-add {
+  margin-left: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 12px var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+  padding: 1px 7px;
+  line-height: 1.2;
+}
+.workflow-vector-paint-add:hover { border-color: var(--accent); }
+.workflow-vector-paint-row {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  margin-bottom: 4px;
+}
+.workflow-vector-paint-row.is-hidden { opacity: 0.55; }
+.workflow-vector-paint-row.is-open { border-color: var(--accent); }
+.workflow-vector-paint-row-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+.workflow-vector-paint-vis {
+  background: transparent; border: 0; cursor: pointer;
+  font: 14px/1 var(--font-mono); color: var(--text);
+  padding: 0 2px;
+}
+.workflow-vector-paint-swatch {
+  width: 26px; height: 18px; border-radius: 3px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.workflow-vector-paint-type-sel {
+  font: 10px var(--font-mono);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 2px;
+  color: var(--text);
+  height: 20px;
+}
+.workflow-vector-paint-opacity {
+  width: 44px;
+  font: 10px var(--font-mono);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--text);
+  height: 20px;
+}
+.workflow-vector-paint-mv,
+.workflow-vector-paint-rm {
+  background: transparent; border: 0; cursor: pointer;
+  font: 12px var(--font-mono); color: var(--text-faint);
+  padding: 0 3px;
+}
+.workflow-vector-paint-mv:disabled { opacity: 0.3; cursor: default; }
+.workflow-vector-paint-mv:hover:not(:disabled),
+.workflow-vector-paint-rm:hover { color: var(--accent); }
+.workflow-vector-paint-row-body {
+  padding: 4px 6px 6px 6px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workflow-vector-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 11px var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* Title bar — Bake button + dims + baked-tag, mirroring composer. */
+.workflow-node-vector-bake {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: 11px var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+}
+.workflow-node-vector-bake:hover { border-color: var(--accent, #3b82f6); }
+.workflow-node-vector-bake.is-baking { opacity: 0.6; cursor: progress; }
+.workflow-node-vector-bake.is-done   { background: #16a34a; border-color: #16a34a; color: #fff; }
+.workflow-node-vector-bake.is-error  { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.workflow-node-vector-baked-tag {
+  font: 10px var(--font-mono);
+  color: var(--text-faint);
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+.workflow-node-vector-dim {
+  font: 10px var(--font-mono);
+  color: var(--text-faint);
+  margin-right: 6px;
 }

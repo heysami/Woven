@@ -27,6 +27,18 @@
        (accent-color, ::selection bg) — so the screenshot silently failed even
        when the source CSS itself uses only hex. -->
   <script src="https://unpkg.com/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js"></script>
+  <!-- v3.4.38 — Mermaid for the diagram node. Used by WorkflowMermaidNode to
+       render flowchart / sequence / class / state / etc. diagrams from
+       inline source. Pinned major version; the node calls mermaid.initialize
+       and mermaid.render at mount + on code changes. -->
+  <script src="https://unpkg.com/mermaid@11/dist/mermaid.min.js"></script>
+  <!-- Vector editor — opentype.js parses font files so text shapes can be
+       converted into editable SVG outlines, and polygon-clipping powers
+       union / subtract / intersect / xor boolean ops on flattened paths.
+       Both are loaded eagerly so the vector node can call into them
+       synchronously on first user interaction. -->
+  <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+  <script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
   <!-- Phase 6 — data.js + branches/*.js are per-project files. In workspace
        mode the daemon routes them under the active project root, picked from
        ?project=<id> in the URL. Forwarding the query string keeps the same

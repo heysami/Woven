@@ -682,6 +682,119 @@ KINDS = {
         "notes": "Live iframe. User-driven. Expose button creates asset children with boundTo set.",
     },
 
+    # ── composer ─────────────────────────────────────────────────────────
+    # v3.4.37 — Responsive layered canvas. Each wired asset becomes a
+    # layer inside an aspect-ratio frame; per-layer state carries
+    # opacity, anchor (12 modes incl. stretch/fill), offset, sizing.
+    # Output is a rendered HTML view that downstream prototype/HTML
+    # consumers can embed or screenshot.
+    "composer": {
+        "title":        "Composer (responsive canvas)",
+        "category":     "container",
+        "inputs": {
+            "layers":     {"type": "array",  "userEditable": True},
+            "width":      {"type": "number", "userEditable": True},
+            "height":     {"type": "number", "userEditable": True},
+            "maxWidth":   {"type": "number", "userEditable": True},
+            "maxHeight":  {"type": "number", "userEditable": True},
+            "background": {"type": "text",   "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven. Asset inputs are layered onto a responsive canvas with per-layer anchor/opacity.",
+    },
+
+    # ── vector-editor ────────────────────────────────────────────────────
+    # Inline SVG drawing tool. Three-pane layout: tools+layers (left),
+    # SVG stage (middle), properties (right). Shapes are stored inline
+    # on the node; Bake serializes them into a self-contained .svg
+    # written to source/<branch>/vector-<nodeId>.svg so downstream
+    # composer/agent/prototype nodes can consume it like a regular SVG
+    # asset.
+    "vector-editor": {
+        "title":        "Vector editor",
+        "category":     "container",
+        "inputs": {
+            "shapes":     {"type": "array",  "userEditable": True},
+            "canvasW":    {"type": "number", "userEditable": True},
+            "canvasH":    {"type": "number", "userEditable": True},
+            "background": {"type": "text",   "userEditable": True},
+            "activeTool": {"type": "text",   "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven inline vector tool. Bake writes source/<branch>/vector-<id>.svg; downstream consumers read bakedPath as an SVG asset.",
+    },
+
+    # ── formatted-text ───────────────────────────────────────────────────
+    # v3.4.37 — Rich text node. The body is edited in-place via
+    # contentEditable, and the user can select a range to apply a
+    # typography level from a wired Typography node. A plain Prompt
+    # wired to `text-in` overwrites the body when its content changes.
+    # Output is the rendered HTML so downstream consumers (composer,
+    # prototype) can embed it.
+    "formatted-text": {
+        "title":        "Formatted text",
+        "category":     "container",
+        "inputs": {
+            "html":     {"type": "text", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven. Typography input enables a selection-based level picker.",
+    },
+
+    # ── mermaid ──────────────────────────────────────────────────────────
+    # v3.4.38 — Mermaid diagram node. The body renders via the mermaid.js
+    # CDN bundle pinned in editor/index.html. Source code is stored
+    # inline on the node, edited via a tailored code panel (same </>
+    # affordance as the asset code panel) that surfaces a diagram-type
+    # dropdown above the textarea so the user can switch between
+    # flowchart / sequence / class / state / er / pie / etc.
+    "mermaid": {
+        "title":        "Mermaid diagram",
+        "category":     "container",
+        "inputs": {
+            "code":         {"type": "text", "userEditable": True},
+            "diagramType":  {"type": "text", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven. Renders Mermaid source via the CDN bundle in editor/index.html.",
+    },
+
     # ── section (manual-only) ─────────────────────────────────────────────
     "section": {
         "title":        "Section (group frame)",
