@@ -26149,7 +26149,57 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       });
     };
     host.addEventListener("wheel", onWheel, { passive: false });
-    return () => host.removeEventListener("wheel", onWheel);
+    // cmd/ctrl + wheel inside the prototype iframe never reaches the
+    // host listener — the event stays in the iframe's own document and
+    // the browser handles it as page-zoom on the editor itself (so the
+    // toolbar appears to disappear off-viewport). Install a forwarder
+    // on the iframe(s) contentDocument that re-dispatches the gesture
+    // on the host, translated into host viewport coords. Same-origin
+    // only (the editor only loads /source/ iframes), so contentDocument
+    // access is safe. We re-scan periodically because the main iframe
+    // reloads on nonce bump and nested imports mount over the session.
+    const installedDocs = new WeakMap();   // doc → onWheel handler (for cleanup)
+    const installOn = (doc) => {
+      if (!doc || installedDocs.has(doc)) return;
+      const fwd = (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const win = doc.defaultView;
+        const frame = win && win.frameElement;
+        if (!frame) return;
+        const fr = frame.getBoundingClientRect();
+        const cw = frame.clientWidth || frame.offsetWidth || fr.width || 1;
+        const ch = frame.clientHeight || frame.offsetHeight || fr.height || 1;
+        const sx = fr.width  > 0 ? fr.width  / cw : 1;
+        const sy = fr.height > 0 ? fr.height / ch : 1;
+        e.preventDefault();
+        e.stopPropagation();
+        host.dispatchEvent(new WheelEvent("wheel", {
+          deltaX: e.deltaX, deltaY: e.deltaY,
+          ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+          clientX: fr.left + e.clientX * sx,
+          clientY: fr.top  + e.clientY * sy,
+          bubbles: false, cancelable: true,
+        }));
+      };
+      try { doc.addEventListener("wheel", fwd, { passive: false }); } catch { return; }
+      installedDocs.set(doc, fwd);
+    };
+    const scanForwarders = () => {
+      // Main iframe.
+      const f = iframeRef.current;
+      if (f) {
+        let d; try { d = f.contentDocument; } catch {}
+        installOn(d);
+      }
+      // Any imported nested iframes registered by the import flow.
+      for (const d of nestedDocsRef.current) installOn(d);
+    };
+    scanForwarders();
+    const interval = setInterval(scanForwarders, 750);
+    return () => {
+      host.removeEventListener("wheel", onWheel);
+      clearInterval(interval);
+    };
   }, []);
   // Apply the stashed scroll target after React commits the new scaler size.
   // Without the layout-effect tick, scrollLeft/Top would clip to the OLD
