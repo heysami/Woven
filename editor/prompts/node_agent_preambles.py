@@ -269,7 +269,7 @@ These files are written by upstream nodes and you MUST consume them, not improvi
 
 ### Generate the page
 
-Write a single HTML file to `source/{{branch}}/_pages/page_{page_idx}/index.html` (the folder convention — NOT the legacy flat `_pages/page_{page_idx}.html`). The file is self-contained — it includes the chrome partial inline, links the DS stylesheets, references `data.js` for values, and uses the shell's layout classes.
+Write a single HTML file to `source/{{branch}}/_pages/page_{page_idx}.html`. The file is self-contained — it includes the chrome partial inline, links the DS stylesheets, references `data.js` for values, and uses the shell's layout classes. (Earlier revisions experimented with a `_pages/page_N/index.html` folder layout, but the workflow.json asset card declares the flat path and the orchestrator / runRemix downstream both fetch by it — keep all four sites in sync or downstream fetches 404.)
 
 Constraints (BRAINSTORM_VISUAL_RULES + CONTENT_DISCIPLINE):
 
@@ -290,16 +290,16 @@ POST `/__workflow/node/bs_html_{page_idx}/commit` with:
 ```json
 {{
   "outputs": {{ "loc": <N>, "shell": "<from PRD>", "states": ["idle", ...] }},
-  "files": [{{"relPath": "index.html", "content": "<!DOCTYPE html>..." }}],
+  "files": [{{"relPath": "page_{page_idx}.html", "content": "<!DOCTYPE html>..." }}],
   "runStatus": "done"
 }}
 ```
 
-The atomic commit endpoint stages the file, validates non-empty, renames into place, and broadcasts SSE so the canvas refreshes itself.
+The atomic commit endpoint stages the file, validates non-empty, renames into place (under `source/{{branch}}/_pages/`), and broadcasts SSE so the canvas refreshes itself.
 
 ### Do NOT
 
-- Do NOT write outside `source/{{branch}}/_pages/page_{page_idx}/` (your outputsRoot).
+- Do NOT write outside `source/{{branch}}/_pages/page_{page_idx}.html` (your only output).
 - Do NOT edit other pages' files — siblings handle their own.
 - Do NOT touch `chrome.html` / `model.json` / `data.js` / the DS — those are upstream contracts.
 - Do NOT invent any numeric / named fact missing from `model.json`. Error out instead."""

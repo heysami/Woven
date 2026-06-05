@@ -160,15 +160,15 @@ KINDS = {
         ),
         "perIdOverrides": {
             "bp_research": {
-                "outputsRoot": "source/",
-                "completion": {"requires": ["files: source/research.md exists"]},
-                "notes": "WebSearch + WebFetch + write source/research.md.",
+                "outputsRoot": "source/{branch}/",
+                "completion": {"requires": ["files: source/{branch}/research.md exists"]},
+                "notes": "WebSearch + WebFetch + write source/{branch}/research.md.",
             },
             "bp_proto_build": {
-                "outputsRoot": "source/",
+                "outputsRoot": "source/{branch}/",
                 "extendsGraph": True,
                 "graphExtensionScope": "per-image-slot subagent trios",
-                "completion": {"requires": ["files: source/index.html exists"]},
+                "completion": {"requires": ["files: source/{branch}/index.html exists"]},
             },
             "bp_design_brief": {
                 "outputsRoot": "DESIGN_BRIEF.html",
@@ -189,35 +189,42 @@ KINDS = {
                 "completion": {"requires": ["files: DECISION_cp_remix_pick.json exists with 3 values"]},
             },
             # D6 migration targets — bs_html_* moves from skill·llm to agent.
+            # Outputs are FLAT files (source/<branch>/_pages/page_N.html) so the
+            # downstream `bs_html_N_asset` card + the orchestrator skill's
+            # path table + runRemix's fetch all resolve to the same place.
+            # An earlier experiment used a folder convention
+            # (`_pages/page_N/index.html`) but the scaffold + orchestrator
+            # never migrated, so downstream fetches 404'd — the source of the
+            # user-visible "could not read upstream HTML" error.
             "bs_html_1": {
-                "outputsRoot": "source/_pages/page_1/",
-                "completion": {"requires": ["files: source/_pages/page_1/index.html exists, non-empty"]},
+                "outputsRoot": "source/{branch}/_pages/page_1.html",
+                "completion": {"requires": ["files: source/{branch}/_pages/page_1.html exists, non-empty"]},
                 "downstreamLink": "br_remix_p1",
-                "notes": "Generates one full HTML page (Standing Brief). Visible subprocess. Dispatched in parallel with siblings bs_html_2/3.",
+                "notes": "Generates one full HTML page. Visible subprocess. Dispatched in parallel with siblings bs_html_2/3.",
             },
             "bs_html_2": {
-                "outputsRoot": "source/_pages/page_2/",
-                "completion": {"requires": ["files: source/_pages/page_2/index.html exists, non-empty"]},
+                "outputsRoot": "source/{branch}/_pages/page_2.html",
+                "completion": {"requires": ["files: source/{branch}/_pages/page_2.html exists, non-empty"]},
                 "downstreamLink": "br_remix_p2",
             },
             "bs_html_3": {
-                "outputsRoot": "source/_pages/page_3/",
-                "completion": {"requires": ["files: source/_pages/page_3/index.html exists, non-empty"]},
+                "outputsRoot": "source/{branch}/_pages/page_3.html",
+                "completion": {"requires": ["files: source/{branch}/_pages/page_3.html exists, non-empty"]},
                 "downstreamLink": "br_remix_p3",
             },
             # Long-form PRD writes — complex artifact, must be agent-kind not skill·llm.
-            "bp_prd_refine":   {"outputsRoot": "source/prd.md",         "completion": {"requires": ["files: source/prd.md exists"]}},
-            "bp_prd_final":    {"outputsRoot": "source/prd-final.md",   "completion": {"requires": ["files: source/prd-final.md exists"]}},
-            "bp_prd_align":    {"outputsRoot": "source/prd-aligned.md", "completion": {"requires": ["files: source/prd-aligned.md exists"]}},
+            "bp_prd_refine":   {"outputsRoot": "source/{branch}/prd.md",         "completion": {"requires": ["files: source/{branch}/prd.md exists"]}},
+            "bp_prd_final":    {"outputsRoot": "source/{branch}/prd-final.md",   "completion": {"requires": ["files: source/{branch}/prd-final.md exists"]}},
+            "bp_prd_align":    {"outputsRoot": "source/{branch}/prd-aligned.md", "completion": {"requires": ["files: source/{branch}/prd-aligned.md exists"]}},
             # ── COHERENCE PASS (Subagent 11) — see COHERENCE_PHASE_PLAN.md ───────
             # Upstream contract producers: ONE source of truth before page generation.
             # cp_fixture canonicalises every numeric/named fact (entities) so pages
             # cannot drift (the `38` vs `312` super bug).
             "cp_fixture": {
-                "outputsRoot": "source/_coherence/",
+                "outputsRoot": "source/{branch}/_coherence/",
                 "completion": {"requires": [
-                    "files: source/_coherence/model.json exists",
-                    "files: source/data.js exists",
+                    "files: source/{branch}/_coherence/model.json exists",
+                    "files: source/{branch}/data.js exists",
                 ]},
                 "extendsGraph": False,
                 "notes": (
@@ -231,10 +238,10 @@ KINDS = {
             },
             # cp_chrome writes ONE chrome contract every page must include.
             "cp_chrome": {
-                "outputsRoot": "source/_coherence/",
+                "outputsRoot": "source/{branch}/_coherence/",
                 "completion": {"requires": [
-                    "files: source/_coherence/chrome.html exists",
-                    "files: source/_coherence/chrome.contract.json exists",
+                    "files: source/{branch}/_coherence/chrome.html exists",
+                    "files: source/{branch}/_coherence/chrome.contract.json exists",
                 ]},
                 "notes": (
                     "Reads the DS (shells + styles.css) + PRD page-to-shell map; writes "
@@ -247,9 +254,9 @@ KINDS = {
             },
             # Downstream auditors: read the canonical contracts + final pages, emit COHERENCE_REPORT.json.
             "lint_data_coherence": {
-                "outputsRoot": "source/COHERENCE_REPORT.json",
+                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
                 "completion": {"requires": [
-                    "files: source/COHERENCE_REPORT.json exists",
+                    "files: source/{branch}/COHERENCE_REPORT.json exists",
                 ]},
                 "notes": (
                     "Reads model.json + every final source/<branch>/*.html + data.js. "
@@ -263,9 +270,9 @@ KINDS = {
                 ),
             },
             "lint_chrome_consistency": {
-                "outputsRoot": "source/COHERENCE_REPORT.json",
+                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
                 "completion": {"requires": [
-                    "files: source/COHERENCE_REPORT.json exists",
+                    "files: source/{branch}/COHERENCE_REPORT.json exists",
                 ]},
                 "notes": (
                     "Reads chrome.contract.json + every final page. "
@@ -281,7 +288,7 @@ KINDS = {
             # We document the contract under a wildcard key the validator falls
             # back to when checking per-id.
             "v_": {
-                "outputsRoot": "source/COHERENCE_REPORT.json",
+                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
                 "completion": {"requires": [
                     # No file required beyond the appended verdict; the report
                     # accumulates entries from many v_<id> commits.
@@ -335,7 +342,7 @@ KINDS = {
             "primaryShell":     {"type": "text", "required": True},
             "compatibleShells": {"type": "array", "required": True},
         },
-        "outputsRoot":  "source/_ds_brainstorm/{variant}/",
+        "outputsRoot":  "source/{branch}/_ds_brainstorm/{variant}/",
         # v2.50 — idTemplate: when the reconciler finds an orphan variant
         # folder on disk that has no matching node, auto-heal substitutes
         # {variant} here to build the new node id. Without this, auto-heal
@@ -523,7 +530,7 @@ KINDS = {
             "model":    {"type": "text",   "default": "claude-opus-4-7", "userEditable": True},
         },
         "outputs":      {},
-        "outputsRoot":  "source/_remix/p{pageIdx}/",
+        "outputsRoot":  "source/{branch}/_remix/p{pageIdx}/",
         "consumeFrom": {
             "source": "{upstream.outputsRoot}",
             "rules": [
@@ -600,7 +607,7 @@ KINDS = {
             "model":      {"type": "text",   "userEditable": True},
         },
         "outputs":      {},
-        "outputsRoot":  "source/_blend/{id}/",
+        "outputsRoot":  "source/{branch}/_blend/{id}/",
         "consumeFrom": {
             "source": "{upstream[0..n].outputsRoot}",
             "rules":  [{"match": "**/*", "handler": "include-with-weight", "target": "(input)"}],
