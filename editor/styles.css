@@ -1159,6 +1159,90 @@ button {
   transition: margin-right 0.12s ease;
 }
 
+/* Fullscreen canvas mode — collapse the entire chrome (top bar + library
+   rail + library resize handle + any chat-panel margin) so the canvas
+   spans the full viewport. The exit affordance is a floating button
+   rendered as a sibling of .workflow-bar. Esc also exits. */
+.workflow-root[data-fullscreen="true"] {
+  grid-template-rows: 0 1fr;       /* collapse the bar row */
+}
+.workflow-root[data-fullscreen="true"] .workflow-bar {
+  display: none;
+}
+/* IMPORTANT: keep library + handle in DOM flow (visibility:collapse + zero
+   intrinsic size) instead of `display: none`. CSS Grid auto-placement
+   *removes* `display:none` items from the algorithm, which would slide
+   the canvas-wrap into the first cell and effectively collapse it to
+   width:0. visibility:collapse on grid items mirrors display:none
+   visually but preserves placement.
+   The grid-template-columns collapse means the placeholder slots have
+   zero width — so even though the items still "exist" they take no
+   space. */
+.workflow-root[data-fullscreen="true"] .workflow-body {
+  grid-template-columns: 0 0 1fr;
+}
+.workflow-root[data-fullscreen="true"] .workflow-library,
+.workflow-root[data-fullscreen="true"] .workflow-resize-handle-lib {
+  visibility: hidden;
+  width: 0;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+/* Pull the canvas back over the chat margin too — true fullscreen means
+   the chat panel docks ABOVE the canvas (overlay), not beside it.
+   Bumped specificity with !important because the chat-margin rule lives
+   on .workflow-body and would otherwise compete. */
+.workflow-root[data-fullscreen="true"] .workflow-body[data-chat-active="true"] .workflow-canvas-wrap,
+.workflow-root[data-fullscreen="true"] .workflow-body .workflow-canvas-wrap {
+  margin-right: 0 !important;
+}
+/* The Enter-fullscreen button in the top bar — quiet icon glyph. */
+.workflow-bar-fullscreen {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.workflow-bar-fullscreen:hover {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 10%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  color: var(--text);
+}
+/* Floating Exit-fullscreen pill — sits in the top-right of the viewport
+   so it's always reachable without giving up the canvas real estate. */
+.workflow-fullscreen-exit {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 50;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px oklch(0% 0 0 / 0.12);
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease, transform 0.08s ease;
+}
+.workflow-fullscreen-exit:hover {
+  background: var(--surface-2);
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+}
+.workflow-fullscreen-exit:active { transform: translateY(1px); }
+
 /* Library rail */
 .workflow-library {
   background: var(--surface);
@@ -5168,7 +5252,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-iter-title { font-size: 12.5px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-node-iter-body {
   display: flex; flex-direction: column; gap: 8px;
-  padding: 10px 12px 24px;
+  padding: 10px 12px 0;             /* bottom padding moved onto the sticky action row */
   background: var(--surface);
   overflow-y: auto; min-height: 0;
 }
@@ -5232,7 +5316,19 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 3px; padding: 4px 6px; outline: none;
 }
 .workflow-node-iter-variant-input:focus { border-color: var(--accent); }
-.workflow-node-iter-actions { display: flex; gap: 6px; margin-top: 4px; align-items: center; flex-wrap: wrap; }
+/* Pin the Run / ✦ Setup loop / Build row to the bottom of the body's scroll
+   viewport. If a node was scaffolded too short or a user resized it small,
+   the action button stays in view while the textareas above scroll behind
+   it — instead of being cropped past the visible region. */
+.workflow-node-iter-actions {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 10px 0 14px;
+  background: var(--surface);
+  z-index: 1;
+}
 /* Error span inside an iterator action row — full message wraps over
    multiple lines so the user sees the actionable hint, not just a teaser.
    Scrolls if it exceeds 8 lines. */

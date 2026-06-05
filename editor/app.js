@@ -6346,8 +6346,26 @@ function pickAssetSpawnDefaults(skillSpec, branch, stamp) {
     ext = "md"; assetKind = "text";
   }
   const slug = skill.id || "asset";
-  const path = `source/${branch}/images/${slug}-${stamp}.${ext}`;
+  const path = `source/${branch}/${assetSubdirForKind(assetKind)}/${slug}-${stamp}.${ext}`;
   return { assetKind, ext, path };
+}
+
+/* Per-kind output subdirectory under source/<branch>/. Previously every
+   spawned asset landed in `images/` regardless of kind, which meant remix
+   HTML alts wrote to `source/main/images/foo.html` instead of a sensible
+   `source/main/_remix/foo.html` — and the orchestrator-scaffolded asset
+   sinks (which expect _remix/) found nothing on disk to point at. */
+function assetSubdirForKind(assetKind) {
+  switch (assetKind) {
+    case "html":   return "_remix";   // html alts/remixes land beside the orchestrator's _remix/ subdir
+    case "vector": return "vectors";
+    case "video":  return "videos";
+    case "lottie": return "lotties";
+    case "3d":     return "models3d";
+    case "text":   return "text";
+    case "image":
+    default:       return "images";
+  }
 }
 
 /* v3.4 — Kind-only variant of pickAssetSpawnDefaults for iterator nodes.
@@ -6361,7 +6379,7 @@ function pickAssetSpawnDefaultsForKind(outputKind, slug, branch, stamp) {
   if (outputKind === "lottie") assetKind = "lottie";
   if (outputKind === "vector" || outputKind === "svg") assetKind = "vector";
   if (outputKind === "text") assetKind = "text";
-  const path = `source/${branch}/images/${slug || "asset"}-${stamp}.${ext}`;
+  const path = `source/${branch}/${assetSubdirForKind(assetKind)}/${slug || "asset"}-${stamp}.${ext}`;
   return { assetKind, ext, path };
 }
 
@@ -16204,6 +16222,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // window listener stops firing once the cursor crosses the boundary).
   const [nodeDragging, setNodeDragging] = useState(false);
 
+  // Fullscreen canvas mode — hides the top bar + library + library drag
+  // handle + chat-panel margin so the whole viewport is canvas. Session-only
+  // (NOT persisted) — losing the chrome on reload would confuse first-time
+  // users who don't know the affordance exists. Esc exits.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e) => { if (e.key === "Escape") setFullscreen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
   // Zoom overlay state — set to { filePath, branch, nodeId } when the user
   // clicks 🔍 on a Workflow prototype node or HTML asset card. Null otherwise.
   // The overlay portals to document.body and reads the file's iframe at 1:1,
@@ -19805,7 +19835,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         const newId = "n" + stampBase + "-r" + i + Math.random().toString(36).slice(2, 5);
         const offsetX = (rmx.w || 360) + 60;
         variantIds[i] = newId;
-        if (effectiveKind === "image" || effectiveKind === "html" || effectiveKind === "text") {
+        if (effectiveKind === "image" || effectiveKind === "text") {
           // v3.4 — Use the remix's effectiveKind to pick ext + assetKind so
           // a remix whose output is html / text / etc. spawns the right
           // file kind instead of forcing `.png` + image.
@@ -19820,13 +19850,26 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             runStatus: "pending",
           });
         } else if (effectiveKind === "html") {
-          const path = `source/${branch}/html/remix-${stampBase}-${i}.html`;
+          // HTML remix alts deserve a bigger card AND a path under
+          // source/<branch>/_remix/ (assetSubdirForKind handles this) so
+          // the device-class probe on iframe load has room to lay the
+          // page out and the orchestrator-scaffolded sinks find the file
+          // where they expect it. Previously this branch was unreachable
+          // (the if-chain above absorbed "html") so html remixes spawned
+          // 220×170 cards into source/main/images/ — too small to render
+          // a real layout and in the wrong directory.
+          const remixSpawn = pickAssetSpawnDefaultsForKind("html", "remix-" + stampBase, branch, i);
+          const path = remixSpawn.path;
           variantPaths[i] = path;
           const offsetY = (((rmx.h - 32) / n) * (i + 0.5)) - 85;
           spawnedNodes.push({
             id: newId, kind: "asset",
             x: Math.round(rmx.x + offsetX), y: Math.round(rmx.y + 32 + offsetY),
-            w: 280, h: 220, assetKind: "html", path,
+            // Don't pin w/h — leave them undefined so the asset renderer's
+            // adaptive sizing + the iframe device-class probe pick the
+            // right dimensions once the file loads. (Setting w/h here
+            // would lock the card into `_isCustom` mode forever.)
+            assetKind: "html", path,
             runStatus: "pending",
           });
         } else {
@@ -23029,6 +23072,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           if (sr.ok) {
             const sj = await sr.json();
             if (sj.done) { runDone = true; break; }
+            // turnDone after ≥1 completed turn = "agent finished its work
+            // for this dispatch and went idle waiting for follow-ups."
+            // Claude CLI in chat mode often never exits, so without this
+            // the loop would tick for the full 30-min cap.
+            if (sj.turnDone && (sj.turnsCompleted || 0) >= 1) { runDone = true; break; }
           } else if (sr.status === 404) {
             // Run record is gone — daemon was restarted, or runId is stale.
             // Treat as done so we fall through to the final resolve.
@@ -23173,7 +23221,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   const empty = !data.nodes || data.nodes.length === 0;
 
   return html`
-    <div className="workflow-root">
+    <div className="workflow-root" data-fullscreen=${fullscreen ? "true" : "false"}>
       <div className="workflow-bar">
         <button className="proto-door-back" onClick=${backToProjects} title="Back to projects">
           <span className="proto-door-back-arrow">←</span>
@@ -23191,12 +23239,26 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             compact=${true}/>
         `}
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
+        <button
+          className="workflow-bar-fullscreen"
+          title="Fullscreen canvas — hides the top bar + library so only the canvas is visible. Press Esc to exit."
+          aria-label="Enter fullscreen"
+          onClick=${() => setFullscreen(true)}
+        >⛶</button>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
         <div className="workflow-zoom" title="Zoom — ⌘+wheel to zoom, space+drag to pan" data-tip-host="true">
           ${Math.round(zoom * 100)}%
           <span className="tab-tip">Canvas zoom · ⌘+wheel to zoom, Space+drag to pan</span>
         </div>
       </div>
+      ${fullscreen && html`
+        <button
+          className="workflow-fullscreen-exit"
+          title="Exit fullscreen (Esc)"
+          aria-label="Exit fullscreen"
+          onClick=${() => setFullscreen(false)}
+        >⛶ Exit fullscreen</button>
+      `}
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
       ${replacePickerForAssetId && html`<${WorkflowReplaceAssetChooser}
         targetNode=${(data.nodes || []).find(n => n.id === replacePickerForAssetId)}
@@ -28433,8 +28495,10 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setDragging(true);
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
@@ -28442,12 +28506,15 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     };
     const onUp = () => {
       setDragging(false);
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onMove, onDragStart, onDragEnd]);
 
   // Bottom-right corner resize — both width AND height. dw + dh come from
@@ -28457,20 +28524,25 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dw = (ev.clientX - lastX) / zoom;
       const dh = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onResize && onResize(dw, dh);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
   // ⋯ → opens the editor in a new tab on this branch (workflow tab stays
@@ -30353,6 +30425,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     // v3.0 — commit "custom" sizing once on drag-start so the adaptive
     // sizing logic respects the user's explicit pick. Subsequent moves
@@ -30361,15 +30434,18 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       onChange && onChange({ size: { ...(node.size || {}), scale: "custom" } });
     }
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dw = (ev.clientX - lastX) / zoom;
       const dh = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onResize && onResize(dw, dh);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
       // v3.0 — commit final size to the dedicated /size endpoint on drag
       // release. Frontend's debounced /__workflow POST also persists w/h,
       // but going through /size emits a workflow-changed SSE so co-viewers
@@ -30378,6 +30454,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd, onChange, node.size, node.id, node.w, node.h]);
 
   // v3.0 — "↺ Auto size" affordance. Calls the dedicated /size endpoint
@@ -30400,12 +30477,83 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // are fine to create up here since they don't reference those vars.
   const mediaRef = useRef(null);           // <video> ref
   const lottieIframeRef = useRef(null);    // lottie player iframe ref
+  const htmlIframeRef = useRef(null);      // html-asset iframe ref (device-class probe)
   // thumbState: "ok" → render normally; "missing" → render a placeholder
   // (file doesn't exist yet — typical for a fresh user-created asset awaiting
   // its first Run). Resets whenever path or bust changes so a successful Run
   // un-flags it automatically.
   const [thumbState, setThumbState] = useState("ok");
   useEffect(() => { setThumbState("ok"); }, [node.path, bust]);
+  // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
+  // overflow probe, then write the device class + natural aspect back to
+  // node.size so the adaptive sizing block downstream picks the right
+  // dimensions. Without this every html asset rendered at the same 16:10
+  // ratio at 480px wide, which made mobile-designed pages look squashed
+  // and desktop pages stuck at a thumbnail too small to be useful.
+  const onHtmlIframeLoad = useCallback(() => {
+    const ifr = htmlIframeRef.current;
+    if (!ifr) return;
+    let doc;
+    try { doc = ifr.contentDocument; } catch { doc = null; }
+    if (!doc || !doc.documentElement) return;
+    // Standard reference sizes — match the iPhone-14 / 1440x900 design
+    // breakpoints designers reach for. Mobile aspect is height-over-width
+    // (a tall card); desktop aspect is width-over-height.
+    const DESKTOP_REF = { w: 1440, h: 900,  cls: "desktop" };
+    const MOBILE_REF  = { w: 390,  h: 844,  cls: "mobile"  };
+    // The downstream sizing block defines aspect as width / height, so:
+    //   desktop aspect = 1440 / 900 = 1.6
+    //   mobile aspect  = 390 / 844 ≈ 0.46
+    const aspectFor = (ref) => ref.w / ref.h;
+
+    let cls = null;
+    // Strongest signal: explicit viewport meta with a numeric width hint.
+    // `width=1440` (or any value ≥ 800) is the agent's way of saying "this
+    // page is desktop"; `width=device-width` + a real <html> scrollWidth
+    // around 375-480 → mobile.
+    const meta = doc.querySelector('meta[name="viewport"]');
+    const content = meta && (meta.getAttribute("content") || "");
+    if (content) {
+      const m = /width\s*=\s*(\d+)/i.exec(content);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n >= 800)      cls = "desktop";
+        else if (n <= 600) cls = "mobile";
+      }
+      // device-width by itself isn't enough — could be either. Fall through
+      // to the overflow probe.
+    }
+    if (!cls) {
+      // Fallback: measured layout width. If the document's intrinsic content
+      // significantly overflows the iframe (designed for a wider viewport),
+      // call it desktop. For the mobile branch, only commit if the page
+      // ALSO declares a viewport meta — otherwise we'd mis-classify any
+      // tiny/empty/test page (where naturalW ≤ 480 trivially) as mobile.
+      const rootW = doc.documentElement.scrollWidth || 0;
+      const bodyW = (doc.body && doc.body.scrollWidth) || 0;
+      const naturalW = Math.max(rootW, bodyW);
+      const renderedW = ifr.clientWidth || 0;
+      if (naturalW > renderedW + 200 && naturalW >= 800) cls = "desktop";
+      else if (!!content && naturalW > 0 && naturalW <= 480) cls = "mobile";
+    }
+    if (!cls) return;  // ambiguous — leave the existing 16/10 default alone
+    const ref = cls === "mobile" ? MOBILE_REF : DESKTOP_REF;
+    const aspect = aspectFor(ref);
+    // Idempotent persist — only write if device class or aspect changed,
+    // so re-renders / cache-bust reloads don't thrash onChange.
+    const prevAspect = (node.size && node.size.naturalAspect) || 0;
+    const prevClass  = (node.size && node.size.deviceClass)   || "";
+    if (prevClass === cls && Math.abs(prevAspect - aspect) < 0.01) return;
+    onChange && onChange({
+      size: {
+        ...(node.size || {}),
+        naturalAspect: aspect,
+        deviceClass:   cls,
+        // Don't override a user-pinned "custom" — only refine the adaptive
+        // path. Leave existing scale alone if the user explicitly picked one.
+      },
+    });
+  }, [onChange, node.size]);
   useEffect(() => {
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
@@ -30420,8 +30568,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setDragging(true);
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
@@ -30429,12 +30579,15 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     };
     const onUp = () => {
       setDragging(false);
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onMove, onDragStart, onDragEnd]);
 
   // ── Adaptive sizing — v3.0 asset-versioning.md §5 ──────────────────────
@@ -30454,9 +30607,24 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     h = node.h || 240;
   } else {
     const _scale = _size.scale || "fit-canvas";
-    const _baseW = _scale === "small" ? 320 : _scale === "large" ? 720 : 480;
+    // For an HTML asset we know the intended device class (set by the
+    // iframe onLoad probe), bias the base width so desktop pages get the
+    // larger ~640 thumbnail and mobile pages get a narrower ~300 column
+    // (which combined with the 0.46 aspect produces the standard
+    // 375x667-ish tall card). Other kinds keep the original 320/480/720
+    // ladder unchanged.
+    const _deviceClass = (kind === "html" || kind === "html-set")
+      ? (_size.deviceClass || null) : null;
+    let _baseW;
+    if (_deviceClass === "mobile") {
+      _baseW = _scale === "small" ? 240 : _scale === "large" ? 380 : 300;
+    } else if (_deviceClass === "desktop") {
+      _baseW = _scale === "small" ? 480 : _scale === "large" ? 800 : 640;
+    } else {
+      _baseW = _scale === "small" ? 320 : _scale === "large" ? 720 : 480;
+    }
     const _minW = _size.minW || 280;
-    const _maxW = _size.maxW || 720;
+    const _maxW = _size.maxW || (_deviceClass === "desktop" ? 800 : 720);
     let _aspect = (Number.isFinite(_size.naturalAspect) && _size.naturalAspect > 0)
                   ? _size.naturalAspect : null;
     if (!_aspect) {
@@ -30739,12 +30907,14 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       </div>
     ` : html`
       <iframe
+        ref=${htmlIframeRef}
         key=${"asset-iframe-" + bust}
         className="workflow-node-asset-thumb workflow-node-asset-iframe"
         src=${fileSrc}
         title=${basename}
         sandbox="allow-scripts allow-same-origin"
         data-asset-id=${node.id}
+        onLoad=${onHtmlIframeLoad}
         onError=${() => setThumbState("missing")}
       />
     `;
@@ -31408,6 +31578,25 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
    hints. Asset nodes (image / svg / video) act as visual reference inputs
    the same way (the build prompt receives their file paths). */
 
+// Synchronously flip the canvas wrap's data-node-dragging attribute. The
+// React state setter (setNodeDragging) is one render-tick behind the
+// mousedown — so until React flushes, iframes still have pointer-events:
+// auto. A fast cursor sweep into a prototype iframe in that ~16ms window
+// would let the iframe capture the gesture; once that happens the parent
+// window's mousemove/mouseup listeners go dead until the cursor exits the
+// iframe again, by which point the user has already released and the drag
+// is "stuck on". Toggling the DOM attribute directly closes that window.
+function setCanvasDraggingSync(active) {
+  const wrap = document.querySelector(".workflow-canvas-wrap");
+  if (wrap) wrap.setAttribute("data-node-dragging", active ? "true" : "false");
+}
+// Defensive: if a mousemove fires with no button pressed, the mouseup was
+// eaten somewhere we couldn't see (most commonly an iframe). Treat it as
+// the missing release so the drag terminates cleanly instead of resuming
+// when the cursor next moves over the canvas chrome.
+function isReleasedDuringMove(ev) {
+  return ev && typeof ev.buttons === "number" && ev.buttons === 0;
+}
 function dragHandler(zoom, onMove, onDragStart, onDragEnd) {
   // Shared drag-start handler used by every direction-node header bar; saves
   // the duplicate boilerplate that lives in WorkflowPromptNode etc. Same
@@ -31418,20 +31607,27 @@ function dragHandler(zoom, onMove, onDragStart, onDragEnd) {
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onMove(dx, dy);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    // If the window loses focus mid-drag (alt-tab, devtools focus) the
+    // mouseup may go elsewhere — bail then too.
+    window.addEventListener("blur", onUp);
   };
 }
 function resizeHandler(zoom, onResize, onDragStart, onDragEnd) {
@@ -31440,20 +31636,25 @@ function resizeHandler(zoom, onResize, onDragStart, onDragEnd) {
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dw = (ev.clientX - lastX) / zoom;
       const dh = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onResize && onResize(dw, dh);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   };
 }
 
@@ -36297,7 +36498,11 @@ function WorkflowRepeaterNode({ node, zoom, onMove, onResize, onRemove, onChange
   while (variantDsRefs.length < n) variantDsRefs.push(null);
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = node.w || 360, h = node.h || 380;
+  // Floor h so the action row (Run button) can't fall below the body's
+  // scroll line even if the node was scaffolded with a stale tiny height
+  // or the user shrank it manually. Same belt-and-suspenders pattern the
+  // skill-node renderer uses (see WorkflowSkillNode).
+  const w = Math.max(300, node.w || 360), h = Math.max(380, node.h || 380);
   const running = runState?.status === "loading";
   const setN = (next) => {
     const v = Math.max(1, Math.min(8, parseInt(next, 10) || 1));
@@ -36409,7 +36614,8 @@ function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   while (variantDsRefs.length < n) variantDsRefs.push(null);
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = node.w || 360, h = node.h || 400;
+  // Floor h so the Run row stays visible regardless of stored/resized height.
+  const w = Math.max(300, node.w || 360), h = Math.max(400, node.h || 400);
   const running = runState?.status === "loading";
   const setN = (next) => {
     const v = Math.max(1, Math.min(8, parseInt(next, 10) || 1));
@@ -36537,7 +36743,8 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   while (slots.length < n) slots.push({ weight: 1, criteria: "" });
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = node.w || 380, h = node.h || 420;
+  // Floor h so the Run row stays visible regardless of stored/resized height.
+  const w = Math.max(340, node.w || 380), h = Math.max(420, node.h || 420);
   const running = runState?.status === "loading";
   const setN = (next) => {
     const v = Math.max(2, Math.min(6, parseInt(next, 10) || 2));
@@ -36646,7 +36853,13 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
 function WorkflowRefinerNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = node.w || 420, h = node.h || 480;
+  // Floor h so the ✦ Setup loop action row can never fall below the body's
+  // scroll line. The onboarding scaffold used to seed iterator-refiner with
+  // h=200 (no per-kind entry in _OB_SIZE) which made the Setup button
+  // invisible on a freshly-created project. Belt-and-suspenders: scaffold
+  // default is now 520 (see _OB_SIZE), the renderer floors at 480, and the
+  // CSS pins the action row sticky-bottom inside the scroll viewport.
+  const w = Math.max(360, node.w || 420), h = Math.max(480, node.h || 480);
   const setting = runState?.status === "loading";
   const pushPast = node.pushPast || [];
   return html`
@@ -36804,8 +37017,10 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setDragging(true);
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
@@ -36813,12 +37028,15 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     };
     const onUp = () => {
       setDragging(false);
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onMove, onDragStart, onDragEnd]);
 
   const onResizeDown = useCallback((e) => {
@@ -36826,20 +37044,25 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dw = (ev.clientX - lastX) / zoom;
       const dh = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onResize && onResize(dw, dh);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
   const patchSpec = (patch) => onChange({ spec: { ...spec, ...patch } });
@@ -37040,6 +37263,21 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
       // to pick up the new version. Capped at 30 min. Live log of the
       // run is in the chat dialog (💬 Chat button) — no inline stream
       // here anymore.
+      //
+      // Two completion signals matter:
+      //   • `sj.done`     — subprocess exited (only fires when the agent
+      //                     actually quits; Claude CLI in chat mode often
+      //                     stays alive waiting for follow-ups, so this
+      //                     can take a long time or never come).
+      //   • `sj.turnDone` — the current turn finished and the agent went
+      //                     idle. For a Build dispatch we structure the
+      //                     work as ONE turn (write trio + POST to
+      //                     /__design_system), so turnDone after the run
+      //                     has actually completed at least one turn is
+      //                     the right "build landed" signal — without it
+      //                     the Build button stays "Building…" for the
+      //                     full 30-minute cap even though the DS was
+      //                     committed minutes ago.
       const start = Date.now();
       const maxMs = 30 * 60 * 1000;
       while (Date.now() - start < maxMs) {
@@ -37049,6 +37287,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
           if (sr.ok) {
             const sj = await sr.json();
             if (sj.done) break;
+            if (sj.turnDone && (sj.turnsCompleted || 0) >= 1) break;
           } else if (sr.status === 404) {
             // Run record gone (daemon restart) — treat as done so we
             // fall through to the final refresh.
@@ -38490,8 +38729,10 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setDragging(true);
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
@@ -38499,12 +38740,15 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
     };
     const onUp = () => {
       setDragging(false);
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onMove, onDragStart, onDragEnd, editingTitle]);
 
   const onResizeDown = useCallback((e) => {
@@ -38512,20 +38756,25 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dw = (ev.clientX - lastX) / zoom;
       const dh = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onResize && onResize(dw, dh);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
   return html`
@@ -38597,8 +38846,10 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setDragging(true);
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
@@ -38606,12 +38857,15 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
     };
     const onUp = () => {
       setDragging(false);
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onMove, onDragStart, onDragEnd]);
 
   const onResizeDown = useCallback((e) => {
@@ -38619,20 +38873,25 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
     onDragStart && onDragStart();
     const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
       onResize && onResize(dx, dy);
     };
     const onUp = () => {
+      setCanvasDraggingSync(false);
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
   const [building, setBuilding] = useState(false);

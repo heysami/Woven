@@ -1400,13 +1400,21 @@ def _ob_col_x(stage_idx: int) -> int:
     return stage_idx * (ONBOARDING_COL_W + ONBOARDING_COL_GAP)
 
 # Per-kind default sizes (world units).
+# Heights here MUST fit the node's whole body — header + fields + the
+# bottom action row (Run / Setup loop / Build). If a kind has its own
+# renderer that uses a `Math.max(MIN_H, …)` floor, set the scaffold
+# default >= that floor so newly-seeded nodes don't snap up on first
+# render (which would also shift sibling node positions on the canvas).
 _OB_SIZE = {
-    "folder":         {"w": 280, "h": 140},
-    "prompt":         {"w": 340, "h": 220},
-    "skill":          {"w": 340, "h": 200},
-    "agent":          {"w": 360, "h": 280},
-    "ds-brainstorm":  {"w": 320, "h": 220},
-    "iterator-remix": {"w": 320, "h": 220},
+    "folder":            {"w": 280, "h": 140},
+    "prompt":            {"w": 340, "h": 220},
+    "skill":             {"w": 340, "h": 220},
+    "agent":             {"w": 360, "h": 280},
+    "ds-brainstorm":     {"w": 320, "h": 360},
+    "iterator-refiner":  {"w": 420, "h": 520},
+    "iterator-remix":    {"w": 360, "h": 420},
+    "iterator-repeater": {"w": 360, "h": 400},
+    "iterator-blend":    {"w": 380, "h": 440},
 }
 
 # v2.19 — exported scaffolder defaults that the daemon's /run gate compares
