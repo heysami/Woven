@@ -38,8 +38,8 @@ You do **not** need Node, npm, Docker, or a build step. The editor ships as stat
 
 ```bash
 # 1. Clone (or download a zip and unpack)
-git clone https://github.com/your-org/woven.git
-cd woven
+git clone https://github.com/heysami/Woven.git
+cd Woven
 
 # 2. (Optional) install one of the supported CLIs
 #    Pick ONE — you only need one connection path to a model.
