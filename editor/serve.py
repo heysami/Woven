@@ -4694,7 +4694,7 @@ _HOST_LEAK_ENV_VARS = (
 # generates the file if missing, leaves it alone if present and well-formed.
 # This is what makes the visual-planner enforcement self-installing — no
 # user step required beyond running the daemon.
-def _ensure_harness_settings() -> str | None:
+def _ensure_harness_settings() -> "str | None":
     """Generate INSTALL_ROOT/.claude/settings-harness.json on demand and
     return its absolute path. Returns None if the hook script itself is
     missing (in which case spawn sites silently skip --settings — the
