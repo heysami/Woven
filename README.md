@@ -4,7 +4,7 @@
 
 # Woven
 
-### A canvas for prototypes that feel designed.
+### A canvas where ideas grow into apps.
 
 Toss Woven an idea. Get a whole app back, drawn live on the canvas. Every illustration, every screen, every shader lands as its own node, so you can noodle on one, riff on another, branch off a weird take, or just trash the lot and try again. Freeform generation, freeform editing, pure chaos.
 
