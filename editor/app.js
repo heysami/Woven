@@ -1080,6 +1080,71 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
     };
   }, [letSelectedScroll]);
 
+  // cmd/ctrl + wheel inside a child iframe (prototype, html asset) never
+  // bubbles out to the wrap's wheel listener — it's confined to the
+  // iframe's own document. The browser then handles it as page-zoom,
+  // which scales the whole editor UI. Forward those gestures back to
+  // the wrap so the canvas zoom handler picks them up. Same-origin only
+  // (the editor only hosts same-origin /source/ iframes), so accessing
+  // contentDocument is safe. Plain wheel keeps native scrolling inside
+  // the iframe (we don't preventDefault unless the user is zooming).
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const installed = new WeakMap();   // doc → handler
+    const installOn = (doc) => {
+      if (!doc || installed.has(doc)) return;
+      const onWheel = (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const win = doc.defaultView;
+        const frame = win && win.frameElement;
+        if (!frame) return;
+        const fr = frame.getBoundingClientRect();
+        // Inner→host coord conversion. The iframe may be CSS-scaled by
+        // its parent (workflow node's scale-to-fit transform), so derive
+        // the scale from rendered-width / layout-width.
+        const cw = frame.clientWidth || frame.offsetWidth || fr.width || 1;
+        const ch = frame.clientHeight || frame.offsetHeight || fr.height || 1;
+        const sx = fr.width  > 0 ? fr.width  / cw : 1;
+        const sy = fr.height > 0 ? fr.height / ch : 1;
+        const clientX = fr.left + e.clientX * sx;
+        const clientY = fr.top  + e.clientY * sy;
+        e.preventDefault();
+        e.stopPropagation();
+        wrap.dispatchEvent(new WheelEvent("wheel", {
+          deltaX: e.deltaX, deltaY: e.deltaY,
+          ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+          clientX, clientY,
+          bubbles: false, cancelable: true,
+        }));
+      };
+      try { doc.addEventListener("wheel", onWheel, { passive: false }); } catch { return; }
+      installed.set(doc, onWheel);
+    };
+    const scanFrames = () => {
+      const frames = wrap.querySelectorAll("iframe");
+      for (const f of frames) {
+        let doc; try { doc = f.contentDocument; } catch { continue; }
+        if (doc) installOn(doc);
+        // Re-attach on every (re)load — iframe swaps its contentDocument
+        // when src changes, and the new doc has no listener yet.
+        if (!f.__thWheelForward) {
+          f.__thWheelForward = () => {
+            let d; try { d = f.contentDocument; } catch { return; }
+            installOn(d);
+          };
+          f.addEventListener("load", f.__thWheelForward);
+        }
+      }
+    };
+    scanFrames();
+    // Cheap re-scan handles user adding new nodes (and the iframe arriving
+    // mid-session). 750ms is well below human reaction time and the work
+    // is querySelectorAll + a WeakMap probe per frame.
+    const interval = setInterval(scanFrames, 750);
+    return () => clearInterval(interval);
+  }, []);
+
   // Spacebar held → "hand" mode (Figma convention)
   const [spaceHeld, setSpaceHeld] = useState(false);
   useEffect(() => {
@@ -23566,10 +23631,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           onClick=${() => setFullscreen(true)}
         >⛶</button>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
-        <div className="workflow-zoom" title="Zoom — ⌘+wheel to zoom, space+drag to pan" data-tip-host="true">
+        <button
+          type="button"
+          className="workflow-zoom"
+          title=${zoom === 1 ? "Canvas zoom — ⌘+wheel to zoom, Space+drag to pan" : "Canvas zoom " + Math.round(zoom * 100) + "% — click to reset to 100%"}
+          data-tip-host="true"
+          onClick=${() => { if (zoom !== 1) setZoom(1); }}
+        >
           ${Math.round(zoom * 100)}%
-          <span className="tab-tip">Canvas zoom · ⌘+wheel to zoom, Space+drag to pan</span>
-        </div>
+          <span className="tab-tip">${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}</span>
+        </button>
       </div>
       ${fullscreen && html`
         <button

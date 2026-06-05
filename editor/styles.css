@@ -1269,6 +1269,15 @@ button {
   border-radius: 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
+  cursor: pointer;
+  appearance: none;
+  line-height: 1.4;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.workflow-zoom:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 .workflow-body {
   display: grid;
