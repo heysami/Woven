@@ -7237,17 +7237,16 @@ function ModelStatusIndicator({ onOpenSettings, compact }) {
   </button>`;
 }
 
-/* v3.4.41 — Sibling of ModelStatusIndicator. Pings /__local_status for every
-   LOCAL_PACKAGES entry flagged required:true (rembg today) and renders a
-   warning pill if any of them aren't installed. Same UX shape as the
-   no-model pill so the gap is impossible to miss on the projects landing,
-   workflow toolbar, and editor toolbar. Click opens Settings, where
-   WorkflowLocalSkillsSection has Install buttons for the same packages. */
-function LocalSkillsStatusIndicator({ onOpenSettings, compact }) {
-  // Required packages — derived once at module load; LOCAL_PACKAGES is a
-  // static const so deriving on each render is wasteful but harmless.
+/* v3.4.41 — Hook (not a pill) that polls /__local_status for every
+   LOCAL_PACKAGES entry flagged required:true (rembg today) and exposes
+   { loaded, allRequiredInstalled, missing }. Used by the projects-landing
+   setup-card gate so the empty state stays open until every required
+   skill is installed, even after the agent model is configured. Listens
+   for the th:local-skills-changed event the install rows dispatch so the
+   landing re-evaluates immediately on install. */
+function useRequiredLocalSkills() {
   const required = LOCAL_PACKAGES.filter(p => p.required);
-  const [statuses, setStatuses] = useState({});   // { pkgId: { installed, version, ... } | null }
+  const [statuses, setStatuses] = useState({});
   const [loaded, setLoaded] = useState(false);
   const reload = useCallback(async () => {
     if (!required.length) { setLoaded(true); return; }
@@ -7270,36 +7269,17 @@ function LocalSkillsStatusIndicator({ onOpenSettings, compact }) {
     }
   }, [required.length]);
   useEffect(() => { reload(); }, [reload]);
-  // Re-poll when any onboarding-tool-row finishes installing — the row
-  // dispatches this event after a successful install, so the pill clears
-  // immediately instead of waiting for a page reload.
   useEffect(() => {
     const on = () => reload();
     window.addEventListener("th:local-skills-changed", on);
     return () => window.removeEventListener("th:local-skills-changed", on);
   }, [reload]);
-  if (!loaded || !required.length) return null;
   const missing = required.filter(p => !statuses[p.id] || !statuses[p.id].installed);
-  if (missing.length === 0) return null;
-  const names = missing.map(p => p.label).join(", ");
-  const label = compact
-    ? (missing.length === 1 ? `${missing[0].label} missing` : `${missing.length} skills missing`)
-    : (missing.length === 1 ? `${missing[0].label} not installed` : `${missing.length} local skills missing`);
-  const tip = missing.length === 1
-    ? `${missing[0].label} is required — ${missing[0].requiredReason || "needed by an asset pipeline"} Click to open Settings and install.`
-    : `${names} are required local skills. Click to open Settings and install.`;
-  return html`<button
-    type="button"
-    className="local-skills-status-indicator"
-    data-tip-host="true"
-    title=${tip}
-    onClick=${onOpenSettings}
-    aria-label=${`${names} not installed — open Settings`}
-  >
-    <span className="local-skills-status-dot"/>
-    <span className="local-skills-status-label">${label}</span>
-    <span className="tab-tip">${tip}</span>
-  </button>`;
+  return {
+    loaded,
+    allRequiredInstalled: loaded && missing.length === 0,
+    missing,
+  };
 }
 
 /* Topbar gear that opens the shared media/API-key settings dialog. The
@@ -12307,8 +12287,9 @@ function OnboardingLocalToolRow({ pkg }) {
       const j = await r.json().catch(() => ({}));
       if (!j.ok) setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
       await probe();
-      // v3.4.41 — Notify the always-visible LocalSkillsStatusIndicator pill
-      // so it clears the warning immediately on success.
+      // v3.4.41 — Notify useRequiredLocalSkills (the hook the projects-landing
+      // setup-card gate consults) so the empty state can unmount the moment
+      // the last required package finishes installing.
       try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
     } catch (e) {
       setErr(String(e?.message || e));
@@ -12383,15 +12364,42 @@ function OnboardingLocalToolsSection() {
 }
 
 /* Empty-state replacement shown on /editor/ when there are no projects AND
-   no model can be resolved (no API key, no CLI). Forces the user to commit
-   to ONE setup path before the "Create project" affordance comes back —
-   otherwise a fresh project just errors on the first agent run. Two paths:
+   either the agent model is unresolved (no API key, no CLI) OR a required
+   local skill (rembg) is still missing. The card refuses to unmount until
+   BOTH gates pass; v3.4.41 extended it from a model-only gate to also cover
+   local skills so the user can't create a project that will fail at the
+   raster-foreground cutout step.
+   Two paths for the model gate:
      1. Paste an API key → opens WorkflowSettingsDialog (handler from parent).
      2. Connect a CLI    → expands into <ModelSetupCliPicker/> inline.
-   The parent re-polls /__media_config via `onRefresh` when the user signals
-   they've finished, so the card unmounts itself once a model is reachable. */
-function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg }) {
+   When the model is already configured but rembg is missing, the card
+   collapses to a focused "Step 3 only" layout that just asks the user to
+   install the missing skill — no model UI noise.
+   The parent re-polls /__media_config via `onRefresh` and re-checks local
+   skills via the th:local-skills-changed event the install rows fire, so
+   the card unmounts itself once both gates pass. */
+function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg, localSkills }) {
   const [pick, setPick] = useState(null); // null | "cli"
+  const modelOk = mediaCfg && mediaCfg.configured;
+  // Focused-skill mode — model is fine, the only remaining gate is one or
+  // more required local packages. Show ONLY the local-tools section with a
+  // tighter header so the user isn't asked to "reconnect a model" they
+  // already configured.
+  if (modelOk && localSkills && !localSkills.allRequiredInstalled) {
+    const missingNames = localSkills.missing.map(p => p.label).join(", ");
+    return html`
+      <div className="landing-empty model-setup-card model-setup-card-skills-only">
+        <div className="model-setup-head">
+          <div className="model-setup-eyebrow">Required · Local skills</div>
+          <div className="model-setup-title">Install ${missingNames} before adding a project</div>
+          <div className="model-setup-desc">
+            Your agent model is configured — but ${missingNames} ${localSkills.missing.length === 1 ? "is" : "are"} still missing and required by the raster-foreground asset pipeline. Install ${localSkills.missing.length === 1 ? "it" : "them"} below to unlock <strong>+ New project</strong>.
+          </div>
+        </div>
+        <${OnboardingLocalToolsSection}/>
+      </div>
+    `;
+  }
   if (pick === "cli") {
     return html`
       <div className="landing-empty model-setup-card">
@@ -12456,6 +12464,13 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const mediaCfg = useMediaConfig();
+  // v3.4.41 — Required local skills (rembg). The setup card stays open
+  // until every required skill is installed, even after the model is
+  // configured — that way users who set up an API key but skipped rembg
+  // still get nudged before they hit the cutout stage of an asset run.
+  const localSkills = useRequiredLocalSkills();
+  const setupNeeded = !mediaCfg.configured || !localSkills.allRequiredInstalled;
+  const onboardingReady = mediaCfg.loaded && localSkills.loaded;
   // Workspace DS list — needed for the wizard's "Pick from workspace" path.
   // Lazy-fetched only when the wizard opens (cheap GET, but no need to spam
   // the daemon on every landing render).
@@ -12566,7 +12581,6 @@ function ProjectsLanding({ info, projects, onReload }) {
           <${DaemonIndicator}/>
           <${CliIndicator}/>
           <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
-          <${LocalSkillsStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
           <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
         </div>
       </div>
@@ -12588,10 +12602,16 @@ function ProjectsLanding({ info, projects, onReload }) {
             `}
             <button
               className="landing-new-btn"
-              disabled=${!mediaCfg.configured}
-              data-disabled=${!mediaCfg.configured}
-              title=${mediaCfg.configured ? "Create a new project" : "Connect a model first — see the setup card below."}
-              onClick=${() => { if (!mediaCfg.configured) return; setCreating(true); setErr(null); }}>
+              disabled=${setupNeeded}
+              data-disabled=${setupNeeded}
+              title=${
+                !mediaCfg.configured
+                  ? "Connect a model first — see the setup card below."
+                  : (!localSkills.allRequiredInstalled
+                      ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
+                      : "Create a new project")
+              }
+              onClick=${() => { if (setupNeeded) return; setCreating(true); setErr(null); }}>
               <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
               <span>New project</span>
             </button>
@@ -12605,15 +12625,16 @@ function ProjectsLanding({ info, projects, onReload }) {
           onCreated=${onWizardCreated}
         />`}
 
-        ${projects.length === 0 && !creating && !mediaCfg.configured && mediaCfg.loaded && html`
+        ${projects.length === 0 && !creating && setupNeeded && onboardingReady && html`
           <${ModelSetupCard}
             workspaceDir=${info.workspaceDir}
             mediaCfg=${mediaCfg}
+            localSkills=${localSkills}
             onOpenSettings=${() => setSettingsOpen(true)}
             onRefresh=${() => mediaCfg.reload()}/>
         `}
 
-        ${projects.length === 0 && !creating && mediaCfg.configured && html`
+        ${projects.length === 0 && !creating && !setupNeeded && html`
           <div className="landing-empty">
             <div className="landing-empty-icon">▣</div>
             <div className="landing-empty-title">No projects yet</div>
@@ -22944,7 +22965,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         <${DaemonIndicator}/>
         <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
-        <${LocalSkillsStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${onOpenNewChat && html`
           <${RunsMenu}
             onOpenRun=${onReopenRun}
@@ -39474,8 +39494,9 @@ function WorkflowLocalPackageRow({ pkg }) {
         setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
       }
       await probe();
-      // v3.4.41 — Notify the top-bar LocalSkillsStatusIndicator pill so it
-      // clears the warning immediately on success without a page reload.
+      // v3.4.41 — Notify useRequiredLocalSkills (consumed by the projects-
+      // landing setup-card gate) so installing rembg from Settings re-opens
+      // the "+ New project" button immediately, no page reload required.
       try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
     } catch (e) {
       setErr(String(e?.message || e));
@@ -42108,7 +42129,6 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
         <${BranchDocsButtons}/>
         <${DaemonIndicator} compact=${true}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
-        <${LocalSkillsStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
         <${RunsMenu} onOpenRun=${onReopenRun} onStartNewChat=${onStartNewChat} compact=${true}/>

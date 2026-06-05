@@ -6007,52 +6007,6 @@ a.ds-badge:hover, button.ds-badge:hover {
   50%      { box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger, #dc2626) 22%, transparent); }
 }
 
-/* v3.4.41 — Sibling pill that warns when a REQUIRED local skill (rembg) is
-   missing. Same shape as .model-status-indicator so it slots next to it on
-   every top-level surface, but tinted amber so the two warnings are
-   distinguishable at a glance ("no model" is fatal, "no rembg" is gated
-   per-pipeline). Both clear to nothing on the happy path. */
-.local-skills-status-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", monospace);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-  background: color-mix(in oklch, var(--warn, #d97706) 14%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--warn, #d97706) 55%, transparent);
-  color: color-mix(in oklch, var(--warn, #d97706) 78%, var(--text));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--warn, #d97706) 14%, transparent);
-  animation: local-skills-status-pulse 2.4s ease-in-out infinite;
-}
-.local-skills-status-indicator:hover {
-  background: color-mix(in oklch, var(--warn, #d97706) 22%, var(--surface));
-  border-color: color-mix(in oklch, var(--warn, #d97706) 75%, transparent);
-}
-.local-skills-status-indicator:focus-visible {
-  outline: 2px solid color-mix(in oklch, var(--warn, #d97706) 65%, transparent);
-  outline-offset: 2px;
-}
-.local-skills-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn, #d97706);
-  flex: 0 0 7px;
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warn, #d97706) 30%, transparent);
-  animation: cli-dot-pulse 1.2s ease-in-out infinite;
-}
-@keyframes local-skills-status-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--warn, #d97706) 12%, transparent); }
-  50%      { box-shadow: 0 0 0 5px color-mix(in oklch, var(--warn, #d97706) 22%, transparent); }
-}
 
 /* Setup card that replaces the "No projects yet" empty state when the
    user has neither an API key nor a CLI configured. Two big choice tiles
