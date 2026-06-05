@@ -6729,12 +6729,18 @@ a.ds-badge:hover, button.ds-badge:hover {
 .model-setup-wizard-dot:hover {
   border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 40%, var(--border));
 }
-/* "Done but NOT the step you're on" → solid green ✓. This is the only
-   state that should read as completed. */
+/* "Done but NOT the step you're on" → light-green ✓. Softer than the
+   chip greens elsewhere so a completed step recedes visually while
+   still reading unambiguously as done.
+   Note: colours are hardcoded oklch values (not color-mix against
+   --surface) because --surface has chroma 0 → in oklch the
+   undefined hue interpolates toward 0° (orange), so a sage mix
+   came out pinkish. Direct values keep the hue locked to the
+   accent's green band. */
 .model-setup-wizard-dot[data-done="true"] {
-  background: var(--ok, #16a34a);
-  border-color: var(--ok, #16a34a);
-  color: var(--surface);
+  background: oklch(92% 0.04 162);
+  border-color: oklch(76% 0.10 162);
+  color: var(--accent-text);
 }
 /* "You are here" → solid dark slate with a ring. Deliberately NOT using
    --accent because the project's accent is green, same hue family as
@@ -6756,7 +6762,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 0 0 36px;
 }
 .model-setup-wizard-line[data-done="true"] {
-  background: var(--ok, #16a34a);
+  background: oklch(78% 0.09 162);
 }
 .model-setup-wizard-body {
   padding: 16px 20px;
@@ -13506,6 +13512,33 @@ a.ds-badge:hover, button.ds-badge:hover {
   z-index: 3;
 }
 .zoom-toolbar-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+/* Canvas zoom percentage chip — sibling of the close button, lives to its
+   left at top-right. Click resets canvas zoom to 100%. */
+.zoom-canvas-pct {
+  appearance: none;
+  position: fixed;
+  top: 14px;
+  right: 60px;        /* 36 (close) + 14 (close margin) + 10 (gap) */
+  height: 36px;
+  min-width: 56px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: 500 12px/1 var(--font-mono);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.18));
+  z-index: 3;
+}
+.zoom-canvas-pct:hover {
   background: var(--surface-2);
   color: var(--text);
 }

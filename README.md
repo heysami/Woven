@@ -1,8 +1,14 @@
-# Woven — Prototype Editor
+<div align="center">
+  <img src="docs/woven-mark.svg" alt="Woven" width="180" />
+</div>
 
-A local-first, Figma-style canvas for designing and generating multi-page interactive prototypes. The editor is driven by an agent (Claude Code, Codex, or a raw API key) that can read, write and orchestrate your project files on disk.
+# Woven
 
-This README walks you end-to-end through your **first** run: install, start the daemon, connect a model, optionally add asset-provider keys, create your first project, and send your first prompt.
+### Describe an app. Watch one get drawn.
+
+Hand a sentence to Woven and an agent — Claude Code, Codex, or your own API key — builds the whole prototype: a design system, every screen, every illustration, every page wired together. The canvas in front of you fills in live, one node at a time. Pull on any single asset and re-run it without redoing the rest. Everything runs on your laptop; the only thing that leaves it is the model calls you make yourself.
+
+This README walks through your first run end-to-end — from install all the way to the Ghibli-themed Totoro feeder app at the bottom, generated from one prompt.
 
 ---
 
@@ -90,13 +96,13 @@ The card has two paths, both equivalent for the agent:
 
 ### 4a · Use a CLI
 
-Click **Use a CLI** to expand the picker. The editor lists every supported binary, shows its install command, and live-detects whether it's on your `PATH`. Once you've installed and signed in, click **I've installed it · refresh** — the green dot flips to ✓ and you're done.
+Click **Install a CLI** to open the install-options dialog. The editor lists every supported binary with its install + login commands and live-detects whether each one is on your `PATH`. Once you've installed and signed in, click **I've installed it · refresh** — the dot flips to green and you're done.
 
 ![Onboarding · Step 1 — CLI picker](docs/screenshots/02-onboarding-cli-picker.png)
 
 ### 4b · Use an API key
 
-Click **Use an API key → Open Settings** to paste an Anthropic or OpenAI key. The key is stored locally at `~/.test-harness/media-config.json` (file mode `0600`, never sent anywhere except the provider's own API).
+Click **Paste an API key** to drop in an Anthropic or OpenAI key. The key is stored locally at `~/.test-harness/media-config.json` (file mode `0600`, never sent anywhere except the provider's own API).
 
 Either path clears the **NO MODEL CONFIGURED** pill the instant it succeeds.
 
