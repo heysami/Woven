@@ -6210,11 +6210,14 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Specificity bump (two classes) so this beats .landing-empty's
    `padding: 60px 28px` further down in the source — otherwise the
    dashed-bordered container painted ~60px of dead space above the pip
-   header and below the footer. */
+   header and below the footer. Also narrow the card to its actual
+   content width so we don't leave ~400px of horizontal void either
+   side of a ~280px content cluster on a desktop viewport. */
 .landing-empty.model-setup-wizard {
   padding: 0;
   gap: 0;
   overflow: hidden;
+  max-width: 440px;
 }
 .model-setup-wizard-header {
   display: grid;
