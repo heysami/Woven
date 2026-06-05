@@ -7237,6 +7237,71 @@ function ModelStatusIndicator({ onOpenSettings, compact }) {
   </button>`;
 }
 
+/* v3.4.41 — Sibling of ModelStatusIndicator. Pings /__local_status for every
+   LOCAL_PACKAGES entry flagged required:true (rembg today) and renders a
+   warning pill if any of them aren't installed. Same UX shape as the
+   no-model pill so the gap is impossible to miss on the projects landing,
+   workflow toolbar, and editor toolbar. Click opens Settings, where
+   WorkflowLocalSkillsSection has Install buttons for the same packages. */
+function LocalSkillsStatusIndicator({ onOpenSettings, compact }) {
+  // Required packages — derived once at module load; LOCAL_PACKAGES is a
+  // static const so deriving on each render is wasteful but harmless.
+  const required = LOCAL_PACKAGES.filter(p => p.required);
+  const [statuses, setStatuses] = useState({});   // { pkgId: { installed, version, ... } | null }
+  const [loaded, setLoaded] = useState(false);
+  const reload = useCallback(async () => {
+    if (!required.length) { setLoaded(true); return; }
+    try {
+      const results = await Promise.all(required.map(async p => {
+        try {
+          const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(p.id)}`));
+          if (!r.ok) return [p.id, { installed: false }];
+          const j = await r.json();
+          return [p.id, j];
+        } catch {
+          return [p.id, { installed: false }];
+        }
+      }));
+      const next = {};
+      for (const [id, st] of results) next[id] = st;
+      setStatuses(next);
+    } finally {
+      setLoaded(true);
+    }
+  }, [required.length]);
+  useEffect(() => { reload(); }, [reload]);
+  // Re-poll when any onboarding-tool-row finishes installing — the row
+  // dispatches this event after a successful install, so the pill clears
+  // immediately instead of waiting for a page reload.
+  useEffect(() => {
+    const on = () => reload();
+    window.addEventListener("th:local-skills-changed", on);
+    return () => window.removeEventListener("th:local-skills-changed", on);
+  }, [reload]);
+  if (!loaded || !required.length) return null;
+  const missing = required.filter(p => !statuses[p.id] || !statuses[p.id].installed);
+  if (missing.length === 0) return null;
+  const names = missing.map(p => p.label).join(", ");
+  const label = compact
+    ? (missing.length === 1 ? `${missing[0].label} missing` : `${missing.length} skills missing`)
+    : (missing.length === 1 ? `${missing[0].label} not installed` : `${missing.length} local skills missing`);
+  const tip = missing.length === 1
+    ? `${missing[0].label} is required — ${missing[0].requiredReason || "needed by an asset pipeline"} Click to open Settings and install.`
+    : `${names} are required local skills. Click to open Settings and install.`;
+  return html`<button
+    type="button"
+    className="local-skills-status-indicator"
+    data-tip-host="true"
+    title=${tip}
+    onClick=${onOpenSettings}
+    aria-label=${`${names} not installed — open Settings`}
+  >
+    <span className="local-skills-status-dot"/>
+    <span className="local-skills-status-label">${label}</span>
+    <span className="tab-tip">${tip}</span>
+  </button>`;
+}
+
 /* Topbar gear that opens the shared media/API-key settings dialog. The
    dialog itself (WorkflowSettingsDialog) is rendered as a sibling at the
    consumer site so it portals over whatever surface is active. */
@@ -12242,22 +12307,40 @@ function OnboardingLocalToolRow({ pkg }) {
       const j = await r.json().catch(() => ({}));
       if (!j.ok) setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
       await probe();
+      // v3.4.41 — Notify the always-visible LocalSkillsStatusIndicator pill
+      // so it clears the warning immediately on success.
+      try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
     } catch (e) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
   };
   const installed = !!(status && status.installed);
+  // v3.4.41 — A required package that isn't installed is flagged with a
+  // REQUIRED badge + the reason line, mirroring how the "NO MODEL CONFIGURED"
+  // pill makes the agent-model gap unmissable. Once installed, the badge
+  // disappears so the row collapses back to the calm "✓ installed" state.
+  const missingRequired = pkg.required && status && !installed;
   const stateLabel = installed
     ? `✓ installed${status && status.version && status.version !== "unknown" ? " · v" + status.version : ""}`
-    : (status ? "— not installed" : "checking…");
+    : (status ? (pkg.required ? "— REQUIRED · not installed" : "— not installed") : "checking…");
   return html`
-    <div className=${"onboarding-tool-row" + (installed ? " is-installed" : "")}>
+    <div className=${
+      "onboarding-tool-row"
+      + (installed ? " is-installed" : "")
+      + (missingRequired ? " is-required-missing" : "")
+    }>
       <div className="onboarding-tool-row-head">
-        <span className="onboarding-tool-dot" data-ok=${installed}/>
+        <span className="onboarding-tool-dot" data-ok=${installed} data-required=${missingRequired ? "true" : null}/>
         <span className="onboarding-tool-name">${pkg.label}</span>
+        ${missingRequired && html`<span className="onboarding-tool-required-badge" title="Install this before generating raster-foreground assets">REQUIRED</span>`}
         <span className="onboarding-tool-skills">covers: ${pkg.skills}</span>
         <span className="onboarding-tool-state">${stateLabel}</span>
       </div>
+      ${missingRequired && pkg.requiredReason && html`
+        <div className="onboarding-tool-required-reason">
+          <strong>Why this is required:</strong> ${pkg.requiredReason}
+        </div>
+      `}
       <div className="onboarding-tool-row-body">
         <span className="onboarding-tool-hint">${pkg.hint}</span>
         <div className="onboarding-tool-actions">
@@ -12274,19 +12357,24 @@ function OnboardingLocalToolRow({ pkg }) {
   `;
 }
 
-/* Optional sub-card inside ModelSetupCard listing every LOCAL_PACKAGES
-   entry the daemon knows how to install on demand. Marked "optional" so
-   users understand they can still create projects without these tools —
-   they just won't be able to run the matching skills (rembg → Remove
-   background) until the package is installed. */
+/* Sub-card inside ModelSetupCard listing every LOCAL_PACKAGES entry the
+   daemon knows how to install on demand. Packages flagged `required: true`
+   (e.g. rembg → raster-foreground cutout) get the same REQUIRED treatment
+   as the agent-model gap above; optional ones (none today) get the calm
+   "skip for now" framing. The eyebrow flips between Required / Optional
+   based on what's in LOCAL_PACKAGES so adding non-required packages later
+   doesn't lie to the user. */
 function OnboardingLocalToolsSection() {
+  const hasRequired = LOCAL_PACKAGES.some(p => p.required);
   return html`
-    <div className="onboarding-local-tools">
+    <div className=${"onboarding-local-tools" + (hasRequired ? " has-required" : "")}>
       <div className="onboarding-section-head">
-        <div className="onboarding-section-eyebrow">Step 3 · Optional · Local skills</div>
+        <div className="onboarding-section-eyebrow">Step 3 · ${hasRequired ? "Required" : "Optional"} · Local skills</div>
         <div className="onboarding-section-title">Install on-demand local tools</div>
         <div className="onboarding-section-desc">
-          Local Python packages the daemon runs as subprocesses — no API key required. They cover skills that don't fit any provider above (e.g. background removal). Skip for now if you don't need them; you can come back via the gear icon any time.
+          ${hasRequired
+            ? html`Local Python packages the daemon runs as subprocesses — no API key required. Marked <strong>REQUIRED</strong> are needed before the matching asset pipeline can run (e.g. <code>rembg</code> for raster-foreground cutouts). Optional ones can wait until you need them.`
+            : "Local Python packages the daemon runs as subprocesses — no API key required. They cover skills that don't fit any provider above (e.g. background removal). Skip for now if you don't need them; you can come back via the gear icon any time."}
         </div>
       </div>
       ${LOCAL_PACKAGES.map(p => html`<${OnboardingLocalToolRow} key=${p.id} pkg=${p}/>`)}
@@ -12478,6 +12566,7 @@ function ProjectsLanding({ info, projects, onReload }) {
           <${DaemonIndicator}/>
           <${CliIndicator}/>
           <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
+          <${LocalSkillsStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
           <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
         </div>
       </div>
@@ -22855,6 +22944,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         <${DaemonIndicator}/>
         <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
+        <${LocalSkillsStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${onOpenNewChat && html`
           <${RunsMenu}
             onOpenRun=${onReopenRun}
@@ -39333,6 +39423,14 @@ const LOCAL_PACKAGES = [
     hint: "background removal · github.com/danielgatis/rembg · ~170 MB ONNX model on first use",
     skills: "Remove background",
     docsUrl: "https://github.com/danielgatis/rembg",
+    // v3.4.41 — Marked required: rembg is the cutout step in the
+    // raster-foreground asset pipeline (every character / mascot / isolated
+    // subject runs through it). Foreground asset generation fails at the
+    // cutout stage without it. OnboardingLocalToolRow / Section render a
+    // warning badge + red dot when a required package is not installed,
+    // matching the "NO MODEL CONFIGURED" treatment for the agent model.
+    required: true,
+    requiredReason: "Cutout step in the raster-foreground asset pipeline (characters, mascots, isolated subjects). Foreground asset generation fails without it.",
   },
 ];
 
@@ -39376,6 +39474,9 @@ function WorkflowLocalPackageRow({ pkg }) {
         setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
       }
       await probe();
+      // v3.4.41 — Notify the top-bar LocalSkillsStatusIndicator pill so it
+      // clears the warning immediately on success without a page reload.
+      try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
     } catch (e) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
@@ -42007,6 +42108,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
         <${BranchDocsButtons}/>
         <${DaemonIndicator} compact=${true}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
+        <${LocalSkillsStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
         <${RunsMenu} onOpenRun=${onReopenRun} onStartNewChat=${onStartNewChat} compact=${true}/>
