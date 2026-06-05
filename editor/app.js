@@ -648,7 +648,10 @@ const ONBOARDING_SCOPE_PRESETS = [
     desc: "End-to-end: PRD + DS + 9 design mockups + final prototype + design brief.",
     stages: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
     glyph: html`<${Icon.Spark}/>`,
-    recommended: true,
+    // v3.5 — "recommended" removed. The end-to-end path is still the most
+    // ambitious option, but it's also the alpha-feature path and shouldn't
+    // be steered into by default. The "Alpha feature" badge below makes the
+    // status explicit; users pick on capability, not on a nudge.
   },
 ];
 
@@ -11929,7 +11932,10 @@ function NewProjectWizard({ workspaceProjects, existingDsList, onClose, onCreate
                       <span className="wizard-preset-glyph">${p.glyph}</span>
                       <span className="wizard-preset-title">${p.title}</span>
                       ${isBlank && html`<span className="wizard-preset-rec">default</span>`}
-                      ${p.recommended && html`<span className="wizard-preset-rec">recommended</span>`}
+                      ${/* v3.5 — Every non-blank guided path is currently alpha.
+                            Blank is the only stable path, so it's the only one
+                            without the badge. */ null}
+                      ${!isBlank && html`<span className="wizard-preset-rec wizard-preset-alpha">Alpha feature</span>`}
                     </div>
                     <div className="wizard-preset-desc">${p.desc}</div>
                     ${!isBlank && html`
@@ -15879,18 +15885,125 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
 function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // v3.5 — same two-kind attachment model as ChatComposer (see app.js:8392).
+  // attachments = images bound to this single turn (→ /__attachment, land in
+  // source/_attachments/). uploads = any files the user wants the agent to
+  // use as long-lived project assets (→ /__upload, land in source/uploads/).
+  // We reuse the same endpoints and the same prompt-prepend convention so
+  // the spawned chat sees attachments exactly as it would from the drawer.
+  const [attachments, setAttachments] = useState([]);   // [{ path, mime, size }]
+  const [uploads,     setUploads]     = useState([]);   // [{ name, path, mime, bytes }]
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [error, setError] = useState(null);
   const taRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
   useEffect(() => {
     // Autofocus when the composer first mounts so the user can just start typing.
     const t = setTimeout(() => { try { taRef.current && taRef.current.focus(); } catch {} }, 50);
     return () => clearTimeout(t);
   }, []);
+
+  const uploadAttachment = useCallback(async (file) => {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith("image/")) {
+      setError("Only image files can be attached");
+      return;
+    }
+    setAttachBusy(true); setError(null);
+    try {
+      const dataUri = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(r.error || new Error("read failed"));
+        r.readAsDataURL(file);
+      });
+      const resp = await fetch(apiUrl("/__attachment"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: file.name, data_uri: dataUri }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
+      setAttachments(prev => [...prev, { path: j.path, mime: j.mime, size: j.size }]);
+    } catch (e) {
+      setError("Attach failed: " + (e.message || e));
+    } finally {
+      setAttachBusy(false);
+    }
+  }, []);
+
+  const uploadProjectFiles = useCallback(async (files) => {
+    if (!files || !files.length) return;
+    setUploadBusy(true); setError(null);
+    try {
+      const fd = new FormData();
+      for (let i = 0; i < files.length; i++) fd.append(`file${i}`, files[i], files[i].name);
+      const resp = await fetch(apiUrl("/__upload"), { method: "POST", body: fd });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
+      if (Array.isArray(j.files) && j.files.length) setUploads(prev => [...prev, ...j.files]);
+      if (Array.isArray(j.skipped) && j.skipped.length) {
+        setError(`${j.skipped.length} file(s) skipped: ${j.skipped.map(s => s.name + " (" + s.reason + ")").join(", ")}`);
+      }
+    } catch (e) {
+      setError("Upload failed: " + (e.message || e));
+    } finally {
+      setUploadBusy(false);
+    }
+  }, []);
+
+  // Mirrors ChatComposer.composeWithAttachments: file references are
+  // prepended to the prompt so the agent sees them as part of its turn.
+  const composeWithAttachments = (body) => {
+    if (!attachments.length && !uploads.length) return body;
+    const lines = [];
+    if (attachments.length) {
+      lines.push("User attached " + attachments.length + " image" + (attachments.length === 1 ? "" : "s") + " for vision:");
+      for (const a of attachments) lines.push("  • " + a.path);
+      lines.push("Use the Read tool on the path(s) above to inspect them before responding.");
+    }
+    if (uploads.length) {
+      if (attachments.length) lines.push("");
+      lines.push("User uploaded " + uploads.length + " project file" + (uploads.length === 1 ? "" : "s") + " (long-lived assets under source/uploads/):");
+      for (const u of uploads) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
+      lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + uploads[0].path + "` for img2img) or Read them if you need their contents.");
+    }
+    lines.push("");
+    return lines.join("\n") + body;
+  };
+
+  const onPaste = useCallback((e) => {
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.kind === "file" && it.type && it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) { e.preventDefault(); uploadAttachment(f); }
+      }
+    }
+  }, [uploadAttachment]);
+
+  // Drop routing matches ChatComposer (app.js:8490): exactly one image →
+  // attachment (vision); anything else (including multi-image) → uploads.
+  const onDrop = useCallback((e) => {
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (!files.length) return;
+    e.preventDefault();
+    if (files.length === 1 && files[0].type && files[0].type.startsWith("image/")) {
+      uploadAttachment(files[0]);
+    } else {
+      uploadProjectFiles(files);
+    }
+  }, [uploadAttachment, uploadProjectFiles]);
+
   const send = async () => {
     const v = (text || "").trim();
-    if (!v || busy) return;
+    if ((!v && attachments.length === 0 && uploads.length === 0) || busy) return;
     setBusy(true);
     try {
-      if (onStartChatWithPrompt) await onStartChatWithPrompt(v);
+      const body = composeWithAttachments(v);
+      if (onStartChatWithPrompt) await onStartChatWithPrompt(body);
       // No setText("") — once the chat starts, this whole component
       // unmounts because chatActive flips true (see WorkflowSurface).
     } finally { setBusy(false); }
@@ -15903,14 +16016,74 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
       send();
     }
   };
-  const canSend = (text || "").trim().length > 0 && !busy;
+  const canSend = ((text || "").trim().length > 0 || attachments.length > 0 || uploads.length > 0) && !busy;
   return html`
-    <div className="workflow-empty-composer" onMouseDown=${(e) => e.stopPropagation()}>
+    <div
+      className="workflow-empty-composer"
+      onMouseDown=${(e) => e.stopPropagation()}
+      onDragOver=${(e) => e.preventDefault()}
+      onDrop=${onDrop}
+    >
       <div className="workflow-empty-composer-icon"><${Icon.Spark}/></div>
       <div className="workflow-empty-composer-title">Your workflow is empty</div>
       <div className="workflow-empty-composer-sub">
-        Type what you want to build — or drag a block from the Library to assemble it manually.
+        Type what you want to build, drop in reference images or files — or drag a block from the Library to assemble it manually.
       </div>
+      ${(attachments.length > 0 || uploads.length > 0) && html`
+        <div className="workflow-empty-composer-attachments">
+          ${attachments.map((a, i) => html`
+            <span key=${"a"+i} className="workflow-empty-composer-attachment" title=${a.path}>
+              <span className="workflow-empty-composer-attachment-icon"><${Icon.Image}/></span>
+              <span className="workflow-empty-composer-attachment-name">${a.path.split("/").pop()}</span>
+              <button
+                className="workflow-empty-composer-attachment-rm"
+                onClick=${() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                title="Remove"
+              >×</button>
+            </span>
+          `)}
+          ${uploads.map((u, i) => html`
+            <span key=${"u"+i} className="workflow-empty-composer-attachment is-upload" title=${`${u.path} · ${u.bytes} bytes`}>
+              <span className="workflow-empty-composer-attachment-icon"><${Icon.Folder}/></span>
+              <span className="workflow-empty-composer-attachment-name">${u.name}</span>
+              <button
+                className="workflow-empty-composer-attachment-rm"
+                onClick=${async () => {
+                  setUploads(prev => prev.filter((_, j) => j !== i));
+                  try {
+                    await fetch(apiUrl(`/__upload/delete?name=${encodeURIComponent(u.name)}`), { method: "POST" });
+                  } catch { /* best-effort */ }
+                }}
+                title="Remove and delete from uploads/"
+              >×</button>
+            </span>
+          `)}
+        </div>
+      `}
+      ${error && html`<div className="workflow-empty-composer-error">${error}</div>`}
+      <input
+        ref=${fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        multiple
+        style=${{ display: "none" }}
+        onChange=${(e) => {
+          const fs = Array.from(e.target.files || []);
+          fs.forEach(uploadAttachment);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref=${uploadInputRef}
+        type="file"
+        multiple
+        style=${{ display: "none" }}
+        onChange=${(e) => {
+          const fs = Array.from(e.target.files || []);
+          if (fs.length) uploadProjectFiles(fs);
+          e.target.value = "";
+        }}
+      />
       <div className="workflow-empty-composer-field">
         <textarea
           ref=${taRef}
@@ -15921,12 +16094,29 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
           disabled=${busy}
           onInput=${(e) => setText(e.target.value)}
           onKeyDown=${onKeyDown}
+          onPaste=${onPaste}
         />
-        <button
-          className="workflow-empty-composer-send"
-          disabled=${!canSend}
-          onClick=${send}
-        >${busy ? html`<span className="workflow-empty-composer-spinner"/>` : html`<${Icon.Send}/>`}<span>Send</span></button>
+        <div className="workflow-empty-composer-actions">
+          <button
+            className="workflow-empty-composer-attach"
+            type="button"
+            disabled=${attachBusy || busy}
+            onClick=${() => fileInputRef.current && fileInputRef.current.click()}
+            title="Attach images for vision (drag, paste, or click) — bound to this turn"
+          >${attachBusy ? "…" : html`<${Icon.Clip}/>`}</button>
+          <button
+            className="workflow-empty-composer-attach"
+            type="button"
+            disabled=${uploadBusy || busy}
+            onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
+            title="Upload project files — multi-file, any type, lives in source/uploads/"
+          >${uploadBusy ? "…" : html`<${Icon.Folder}/>`}</button>
+          <button
+            className="workflow-empty-composer-send"
+            disabled=${!canSend}
+            onClick=${send}
+          >${busy ? html`<span className="workflow-empty-composer-spinner"/>` : html`<${Icon.Send}/>`}<span>Send</span></button>
+        </div>
       </div>
       <div className="workflow-empty-composer-keys">
         <kbd>⌘</kbd>+wheel to zoom · <kbd>Space</kbd>+drag to pan · drag headers to move nodes

@@ -2489,16 +2489,29 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap {
   position: relative;
   overflow: hidden;
-  /* v2.50 — very subtle 2-axis grid (was horizontal-only ledger rules at
-     50% opacity). Fine 1px lines at ~13% border opacity on a 30px pitch,
-     over a soft centre wash that fades to the warm canvas base. Reads as
-     barely-there texture, not a hard grid. */
+  /* v3.5 — diamond lattice texture (was an axis-aligned square grid). Two
+     repeating-linear-gradients at ±45° cross to form a 45°-rotated square
+     grid (i.e. diamonds), matching the landing-diamonds visual language so
+     the workflow canvas reads as the same family. 1px lines at ~13% border
+     opacity, 30px perpendicular pitch — same visual density as the prior
+     square grid, just rotated. The soft centre wash on top stays. */
   background-color: var(--canvas-bg);
   background-image:
-    linear-gradient(0deg,  color-mix(in oklch, var(--border-strong) 13%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklch, var(--border-strong) 13%, transparent) 1px, transparent 1px),
+    repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent 29px,
+      color-mix(in oklch, var(--border-strong) 13%, transparent) 29px,
+      color-mix(in oklch, var(--border-strong) 13%, transparent) 30px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0,
+      transparent 29px,
+      color-mix(in oklch, var(--border-strong) 13%, transparent) 29px,
+      color-mix(in oklch, var(--border-strong) 13%, transparent) 30px
+    ),
     radial-gradient(circle at 50% 36%, var(--surface) 0%, transparent 72%);
-  background-size: 30px 30px, 30px 30px, 100% 100%;
   cursor: default;
 }
 .workflow-canvas-wrap[data-space="true"] { cursor: grab; }
@@ -2627,13 +2640,23 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text-muted);
   max-width: 460px;
 }
+/* v3.5 — Field is now a vertical stack (textarea on top, actions row below)
+   so the attach + upload buttons sit next to Send in the same toolbar.
+   Pre-fix the field was a 2-column grid (textarea | Send) and there was
+   nowhere to put two more buttons without crowding Send into the corner. */
 .workflow-empty-composer-field {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 8px;
   width: 100%;
   align-items: stretch;
   margin-top: 4px;
+}
+.workflow-empty-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
 }
 .workflow-empty-composer-input {
   border: 1px solid var(--border-strong);
@@ -2647,17 +2670,44 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   min-height: 64px;
   font-family: inherit;
   transition: border-color 0.12s, box-shadow 0.12s;
+  width: 100%;
 }
 .workflow-empty-composer-input:focus {
   outline: 0;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
 }
+.workflow-empty-composer-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.workflow-empty-composer-attach:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.workflow-empty-composer-attach:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.workflow-empty-composer-attach svg { width: 16px; height: 16px; }
 .workflow-empty-composer-send {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 34px;
   padding: 0 14px;
+  margin-left: auto;
   border: 0;
   border-radius: 8px;
   background: var(--accent);
@@ -2675,6 +2725,68 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   cursor: not-allowed;
 }
 .workflow-empty-composer-send svg { width: 14px; height: 14px; }
+/* Staged-file chips above the textarea — same layout as chat-composer
+   attachments but with classes scoped to this composer so future tweaks
+   don't leak. */
+.workflow-empty-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  justify-content: flex-start;
+}
+.workflow-empty-composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text);
+  max-width: 240px;
+}
+.workflow-empty-composer-attachment.is-upload {
+  background: color-mix(in oklch, var(--accent) 6%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+}
+.workflow-empty-composer-attachment-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.workflow-empty-composer-attachment-icon svg { width: 12px; height: 12px; }
+.workflow-empty-composer-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.workflow-empty-composer-attachment-rm {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.workflow-empty-composer-attachment-rm:hover {
+  background: var(--surface);
+  color: var(--danger, #c0392b);
+}
+.workflow-empty-composer-error {
+  font-size: 11.5px;
+  color: var(--danger, #c0392b);
+  text-align: left;
+  width: 100%;
+}
 .workflow-empty-composer-spinner {
   width: 13px; height: 13px;
   border: 2px solid color-mix(in oklch, oklch(98% 0.002 250) 50%, transparent);
@@ -3584,21 +3696,32 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-port-zone-in  { left:  0; justify-content: flex-start; }
 .workflow-port-zone-out { right: 0; justify-content: flex-end; }
 
+/* v3.5 — Port dots are now DIAMONDS (clip-path), not circles. The dot's box
+   stays 14×14 so existing JS that snaps the pending edge to the port centre
+   (elementsFromPoint hit-test + center math) is untouched — only the painted
+   silhouette changes. The translateX(±50%) on each zone keeps half the
+   diamond on the node body and half hanging off the edge, so the visible
+   protrusion reads as a half-diamond (triangle) — matches the landing's
+   half-diamond card anchor. We swap the surface-fill + border combo for a
+   solid accent fill because clip-path crops the border to the polygon and
+   makes a hairline ring look ragged at this size; a green drop-shadow
+   replaces the white halo and follows the clipped silhouette. */
 .workflow-port-dot {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  background: var(--surface);
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 0 1px var(--surface);
+  background: var(--accent);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
   pointer-events: auto;
   cursor: crosshair;
-  transition: transform 0.1s ease, background 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--accent) 70%, transparent));
+  transition: transform 0.1s ease, background 0.1s ease, filter 0.1s ease;
 }
 .workflow-port-zone-in  .workflow-port-dot { transform: translateX(-50%); }
 .workflow-port-zone-out .workflow-port-dot { transform: translateX(50%); }
 .workflow-port-dot:hover {
-  background: var(--accent-soft);
+  background: var(--accent-strong);
+  filter: drop-shadow(0 0 4px var(--accent))
+          drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
 }
 
 /* Prototype gets 4 ports — left/right × top/bottom quarters of the body.
@@ -4525,8 +4648,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   cursor: pointer;
 }
 .workflow-edge:hover { opacity: 1; stroke-width: 3; }
+/* v3.5 — Selected edge now strokes in the project's HOT orange (TE-style
+   record button). Previously a darker green (var(--accent-text)), which
+   read as just "more saturated green" against the green default stroke
+   and was easy to miss at a glance. Orange is reserved for special focal
+   states (per :root token comment) — a selected edge IS that focus, so
+   it earns the colour. */
 .workflow-edge-selected {
-  stroke: var(--accent-text);
+  stroke: var(--hot);
   opacity: 1;
   stroke-width: 3.5;
 }
@@ -15290,6 +15419,17 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 2px 6px;
   border-radius: 3px;
   font-weight: 500;
+}
+/* v3.5 — "Alpha feature" variant. All guided scopes are alpha right now;
+   only Blank is the stable path. Uses the hot/orange semantic so it reads
+   as "use with care", not as a "recommended" nudge. Letter-spacing + caps
+   so it visually distinguishes from the lower-case "default" badge on Blank. */
+.wizard-preset-rec.wizard-preset-alpha {
+  background: var(--hot);
+  color: oklch(100% 0 0);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
 }
 .wizard-preset-desc {
   font-size: 12px;
