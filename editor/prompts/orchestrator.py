@@ -122,6 +122,13 @@ def orchestrator_prompt(project_root: str, install_root: str, branch: str = "mai
     body = _read_text(skill_path).strip()
     if not body: return ""
 
+    # Branch-aware substitution. The skill markdown carries `{branch}`
+    # placeholders in path references; we resolve them against the dispatch's
+    # branch param (default "main"). Mirrors how node_agent_preambles.render
+    # substitutes — keeps the skill author honest about the branch axis
+    # without requiring multiple skill files for multi-prototype futures.
+    body = body.replace("{branch}", branch)
+
     # v2.11 — skill freshness header. The agent's system prompt is FROZEN at
     # spawn time; later edits to the skill markdown don't propagate to a
     # running agent. The freshness header tells the agent to re-read the
@@ -150,7 +157,19 @@ def orchestrator_prompt(project_root: str, install_root: str, branch: str = "mai
         "What follows below is a SNAPSHOT of the file taken at spawn-time, "
         "included as a fallback in case the canonical path is unreadable. "
         "Read it now for your first action, BUT re-read the canonical path "
-        "on every turn after that.\n\n---\n\n"
+        "on every turn after that.\n\n"
+        # The canonical file on disk uses `{branch}` as a placeholder for
+        # the active branch slug. The daemon substitutes it into the
+        # snapshot below at spawn time, but a live re-read of the file
+        # shows the literal placeholder text. Tell the agent how to read
+        # both forms so divergence between cached + live versions doesn't
+        # confuse it.
+        f"**Branch convention.** Paths in the canonical file use `{{branch}}` "
+        f"as a placeholder for the active branch slug, which on this run is "
+        f"`{branch}` (also available as `$TH_BRANCH` in any subprocess you "
+        f"spawn). The snapshot below already has that substituted; if a live "
+        f"re-read shows `{{branch}}` literally, mentally substitute the same "
+        f"value.\n\n---\n\n"
     )
 
     decisions = _list_decision_files(project_root)
