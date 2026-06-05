@@ -6207,15 +6207,19 @@ a.ds-badge:hover, button.ds-badge:hover {
    the wizard since "in progress" feels less alarming than "you have not
    started" — only Step 1 of the wizard, when no model is configured,
    gets the warning treatment via .model-setup-wizard:not(.is-ok). */
-.model-setup-wizard {
-  padding: 0;          /* let the wizard header / body / footer own padding */
+/* Specificity bump (two classes) so this beats .landing-empty's
+   `padding: 60px 28px` further down in the source — otherwise the
+   dashed-bordered container painted ~60px of dead space above the pip
+   header and below the footer. */
+.landing-empty.model-setup-wizard {
+  padding: 0;
   gap: 0;
-  overflow: hidden;    /* sections divide cleanly */
+  overflow: hidden;
 }
 .model-setup-wizard-header {
   display: grid;
-  gap: 10px;
-  padding: 22px 28px 14px;
+  gap: 0;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 3%, var(--surface));
 }
@@ -6282,13 +6286,12 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--ok, #16a34a);
 }
 .model-setup-wizard-body {
-  padding: 20px 28px;
-  /* No min-height — let the wizard size to its content so Steps with a
-     small footprint (Step 1) don't have a big empty void below them.
-     Asset-provider / local-tools children inside have their own top divider
-     (`border-top: 1px dashed var(--border)`) for the "Step 1 → Step 2" gap
-     in the legacy stacked layout. The wizard shows one step at a time, so
-     that divider is dead weight here — turn it off. */
+  padding: 16px 20px;
+  /* No min-height — let the wizard size to its content. Asset-provider /
+     local-tools children inside have their own top divider (border-top:
+     1px dashed var(--border)) for the "Step 1 → Step 2" gap in the
+     legacy stacked layout. The wizard shows one step at a time, so that
+     divider is dead weight here — turn it off below. */
 }
 .model-setup-wizard-body .onboarding-local-tools,
 .model-setup-wizard-body .onboarding-asset-providers {
@@ -6305,8 +6308,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 24px;
+  gap: 8px;
+  padding: 10px 20px;
   border-top: 1px solid var(--border);
   background: var(--surface-2, color-mix(in oklch, var(--surface) 95%, var(--text) 5%));
 }
