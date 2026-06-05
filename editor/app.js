@@ -12409,14 +12409,14 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
       </div>
 
       <div className="model-setup-wizard-body">
-        ${allOk && html`
+        ${allOk && step === 3 && html`
           <div className="model-setup-allset">
             <div className="model-setup-allset-check">✓</div>
             <div className="model-setup-allset-title">All set!</div>
             <div className="model-setup-allset-sub">Model connected and required local skills installed.</div>
           </div>
         `}
-        ${!allOk && step === 1 && html`
+        ${(!allOk || step !== 3) && step === 1 && html`
           <div className="model-setup-step1">
             <div className="model-setup-step1-status" data-ok=${modelOk}>
               <span className="model-setup-step1-dot"/>
@@ -12447,35 +12447,31 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
           </div>
         `}
 
-        ${!allOk && step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
-        ${!allOk && step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
+        ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
+        ${(!allOk) && step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
       </div>
 
       <div className="model-setup-wizard-footer">
-        ${allOk
-          ? html`
-              <span/>
-              <button
-                type="button"
-                className="model-setup-wizard-nav is-primary"
-                onClick=${() => onAcknowledge && onAcknowledge()}
-              >Got it</button>
-            `
-          : html`
-              <button
-                type="button"
-                className="model-setup-wizard-nav"
-                disabled=${step <= 1}
-                onClick=${() => setStep(step - 1)}
-              >← Back</button>
-              ${step < 3 && html`
-                <button
-                  type="button"
-                  className="model-setup-wizard-nav is-primary"
-                  onClick=${() => setStep(step + 1)}
-                >Next →</button>
-              `}
-            `}
+        <button
+          type="button"
+          className="model-setup-wizard-nav"
+          disabled=${step <= 1}
+          onClick=${() => setStep(step - 1)}
+        >← Back</button>
+        ${step < 3 && html`
+          <button
+            type="button"
+            className="model-setup-wizard-nav is-primary"
+            onClick=${() => setStep(step + 1)}
+          >Next →</button>
+        `}
+        ${step === 3 && allOk && html`
+          <button
+            type="button"
+            className="model-setup-wizard-nav is-primary"
+            onClick=${() => onAcknowledge && onAcknowledge()}
+          >Got it</button>
+        `}
       </div>
 
       ${installOpen && html`<${ModelInstallDialog}
