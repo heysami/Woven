@@ -6085,10 +6085,19 @@ class H(http.server.SimpleHTTPRequestHandler):
             pass
         sys_prompt += "\n\n" + system_prompt
         spawn_args += ["--append-system-prompt", sys_prompt]
-        if WORKSPACE_DIR and project_root != INSTALL_ROOT:
-            spawn_args += ["--add-dir", INSTALL_ROOT]
-        # v2.44 — same cwd-writes fix as _run_create. Claude Code 2.1.150+
-        # no longer trusts cwd implicitly even with bypassPermissions.
+        # The agent's workspace is the PROJECT, not the editor installation.
+        # Previously this also added --add-dir INSTALL_ROOT so the agent could
+        # Read protocol docs (AGENTS.md, PROTOTYPE.md, docs/agents/**), but
+        # --add-dir grants WRITE access too — and one or more agent runs used
+        # that to modify editor/app.js, editor/styles.css, and drop generated
+        # files into editor/assets/ without user permission. The protocol-root
+        # write access is the bug; protocol-root READ access is what was
+        # actually needed. Claude Code's Read tool can open absolute paths
+        # outside --add-dir'd directories (and Bash `cat` runs at the shell's
+        # filesystem permission level, which can read anywhere the user can),
+        # so dropping --add-dir INSTALL_ROOT preserves reads while removing
+        # the unsanctioned-write surface. See AGENTS.md "Editor source is OFF
+        # LIMITS" for the policy this enforces.
         spawn_args += ["--add-dir", project_root]
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,
@@ -11961,11 +11970,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
             spawn_args += ["--append-system-prompt", sys_prompt]
-        # Phase 6 — in workspace mode mount the shared protocol (AGENTS.md,
-        # PROTOTYPE.md, docs/agents/**) as a read-only context dir so the
-        # agent can Read them even though they live outside cwd.
-        if WORKSPACE_DIR and project_root != INSTALL_ROOT:
-            spawn_args += ["--add-dir", INSTALL_ROOT]
+        # The agent's workspace is the PROJECT only. We do NOT add
+        # INSTALL_ROOT to --add-dir — that would extend the writable
+        # sandbox to the editor binary itself, which several past runs
+        # abused (editing editor/app.js, dropping files into editor/assets/).
+        # See _build_child_env's TH_PROTOCOL_ROOT env var + AGENTS.md
+        # "Editor source is OFF LIMITS" — protocol-root reads happen via
+        # absolute paths through Read/Bash, which don't require --add-dir.
+        #
         # v2.44 — Claude Code 2.1.150+ no longer auto-allows writes to cwd
         # even with --permission-mode bypassPermissions. Explicitly add the
         # project root so Write/Edit calls inside it don't trigger
@@ -12353,8 +12365,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             pass
         spawn_args += ["--append-system-prompt", sys_prompt]
         spawn_args += ["--resume", state.session_id]
-        if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
-            spawn_args += ["--add-dir", INSTALL_ROOT]
+        # The agent's workspace is the PROJECT only — INSTALL_ROOT is NOT
+        # added to --add-dir on resume either, mirroring the policy applied
+        # on the initial spawn (see _run_create's _spawn_node_agent path).
+        # Protocol-root reads still work via absolute paths through Read/Bash.
         # v2.44 — explicitly allow writes inside the project root.
         spawn_args += ["--add-dir", state.project_root]
 
