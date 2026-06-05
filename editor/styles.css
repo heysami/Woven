@@ -13487,13 +13487,23 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .zoom-toolbar-close {
   appearance: none;
-  background: transparent;
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 6px 0;
-  font: 600 14px/1 var(--font-sans);
+  font: 600 16px/1 var(--font-sans);
   cursor: pointer;
   color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.18));
+  z-index: 3;
 }
 .zoom-toolbar-close:hover {
   background: var(--surface-2);
