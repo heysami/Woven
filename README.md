@@ -4,15 +4,17 @@
 
 # Woven
 
-### A canvas where every screen, illustration, and shader is its own node — and the prototype it builds is just files.
+### A canvas for prototypes that feel designed.
 
-Other AI builders give you a sandbox: one chat, a hosted preview, a regenerate button that nukes the take you liked. Woven gives you a workshop.
+Bring an idea. Leave with a multi-page app where every illustration, every screen, every shader lives as its own node on the canvas. Polish one. Re-roll another. Pin the take you love.
 
-Every visual comes out of a pipeline that knows what kind it is — raster portraits get generated and cut out, shaders stay GLSL, vectors stay vector, particles and Lottie and 3D each have their own subagent — so the result reads as drawn rather than generated. Every node remembers its history, so chasing one ugly illustration across ten re-rolls never costs you the screens you already love. And the output is just files: plain HTML/CSS/JS in `source/`, opens by double-clicking, emails to a designer who's never heard of Woven.
+Each kind of visual has its own pipeline. Raster portraits get generated and cut out. Shaders stay GLSL. Vectors stay paths. Particles, Lottie, and 3D each have their own subagent. The result reads as drawn.
 
-You bring the agent — Claude Code, Codex, or an API key. Woven is the structure around it.
+The output is real. Plain HTML, CSS, and JS in `source/`. Opens by double-clicking. Emails to a designer who's never heard of Woven.
 
-This README walks through your first run end-to-end — from install all the way to the Ghibli-themed Totoro feeder app at the bottom, generated from one prompt.
+You bring the agent (Claude Code, Codex, or an API key). Woven is the canvas around it.
+
+This README walks through your first run end-to-end, from install to the Ghibli-themed Totoro feeder app at the bottom, generated from one prompt.
 
 ---
 
@@ -21,7 +23,7 @@ This README walks through your first run end-to-end — from install all the way
 1. [What you need before starting](#1-what-you-need-before-starting)
 2. [Install](#2-install)
 3. [Start the editor](#3-start-the-editor)
-4. [First-run onboarding — connect a model](#4-first-run-onboarding--connect-a-model)
+4. [First-run onboarding: connect a model](#4-first-run-onboarding-connect-a-model)
 5. [Optional · add asset-provider keys (image · video · SVG)](#5-optional--add-asset-provider-keys-image--video--svg)
 6. [Required · install local skills (rembg)](#6-required--install-local-skills-rembg)
 7. [Create your first project](#7-create-your-first-project)
@@ -37,9 +39,9 @@ You only need four things on your machine:
 | Requirement      | Why                                                                          | How to check                          |
 | ---------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **Python 3.10+** | The editor daemon (`serve.py`) is pure Python with stdlib only.              | `python3 --version`                   |
-| **A modern browser** | Chrome, Edge, Safari, or Firefox — anything from the last ~2 years.      | —                                     |
-| **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. You'll wire this up in [Step 4](#4-first-run-onboarding--connect-a-model). | `claude --version` / `codex --version` |
-| **`rembg`**      | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~150 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
+| **A modern browser** | Chrome, Edge, Safari, or Firefox (anything from the last ~2 years).      | (no command, just open it)            |
+| **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. You'll wire this up in [Step 4](#4-first-run-onboarding-connect-a-model). | `claude --version` / `codex --version` |
+| **`rembg`**      | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~170 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
 
 You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a single Python file.
 
@@ -52,8 +54,8 @@ You do **not** need Node, npm, Docker, or a build step. The editor ships as stat
 git clone https://github.com/heysami/Woven.git
 cd Woven
 
-# 2. (Optional) install one of the supported CLIs
-#    Pick ONE — you only need one connection path to a model.
+# 2. (Optional) install one of the supported CLIs.
+#    Pick ONE. You only need one connection path to a model.
 npm install -g @anthropic-ai/claude-code   # Claude Code
 # or
 npm install -g @openai/codex               # Codex
@@ -64,7 +66,7 @@ claude login    # (if you installed Claude Code)
 codex login     # (if you installed Codex)
 ```
 
-If you'd rather paste an API key instead of installing a CLI, skip the `npm install` step — you'll paste the key in the onboarding UI in [Step 4](#4-first-run-onboarding--connect-a-model).
+If you'd rather paste an API key instead of installing a CLI, skip the `npm install` step; you'll paste the key in the onboarding UI in [Step 4](#4-first-run-onboarding-connect-a-model).
 
 ---
 
@@ -73,10 +75,10 @@ If you'd rather paste an API key instead of installing a CLI, skip the `npm inst
 From the repo root:
 
 ```bash
-# macOS — double-click in Finder
+# macOS: double-click in Finder
 open editor/serve.command
 
-# any platform — from a terminal
+# any platform: from a terminal
 python3 editor/serve.py
 ```
 
@@ -90,19 +92,19 @@ TH_WORKSPACE_DIR="$HOME/my-prototypes" python3 editor/serve.py
 
 ---
 
-## 4. First-run onboarding — connect a model
+## 4. First-run onboarding: connect a model
 
-On the very first launch, the **Projects** page shows a setup card. The top-right pill reads **NO MODEL CONFIGURED** in red — that's your cue that nothing will run until you wire up one connection.
+On the very first launch, the **Projects** page shows a setup card. The top-right pill reads **NO MODEL CONFIGURED** in red. That's your cue that nothing will run until you wire up one connection.
 
-![Onboarding · Step 1 — required agent model](docs/screenshots/01-onboarding-step1.png)
+![Onboarding · Step 1 · required agent model](docs/screenshots/01-onboarding-step1.png)
 
 The card has two paths, both equivalent for the agent:
 
 ### 4a · Use a CLI
 
-Click **Install a CLI** to open the install-options dialog. The editor lists every supported binary with its install + login commands and live-detects whether each one is on your `PATH`. Once you've installed and signed in, click **I've installed it · refresh** — the dot flips to green and you're done.
+Click **Install a CLI** to open the install-options dialog. The editor lists every supported binary with its install + login commands and live-detects whether each one is on your `PATH`. Once you've installed and signed in, click **I've installed it · refresh**. The dot flips to green and you're done.
 
-![Onboarding · Step 1 — CLI picker](docs/screenshots/02-onboarding-cli-picker.png)
+![Onboarding · Step 1 · CLI picker](docs/screenshots/02-onboarding-cli-picker.png)
 
 ### 4b · Use an API key
 
@@ -116,9 +118,9 @@ Either path clears the **NO MODEL CONFIGURED** pill the instant it succeeds.
 
 Step 1 only covers the **agent's text model**. To unlock image generation, video, vector SVG, audio, etc., add the relevant provider keys in **Step 2** of the onboarding card:
 
-![Onboarding · Step 2 — asset providers](docs/screenshots/03-onboarding-asset-providers.png)
+![Onboarding · Step 2 · asset providers](docs/screenshots/03-onboarding-asset-providers.png)
 
-Each row shows what the provider covers and lets you paste a key inline — no need to leave the page:
+Each row shows what the provider covers and lets you paste a key inline, no need to leave the page:
 
 | Provider     | Covers                                                              | Where to get a key                                       |
 | ------------ | ------------------------------------------------------------------- | -------------------------------------------------------- |
@@ -133,11 +135,11 @@ These are **optional**. Projects can still be created without them; you just won
 
 ## 6. Required · install local skills (rembg)
 
-The wizard's **Step 3 · Local skills** lists Python packages the daemon will install into your user site (`pip install --user`). **`rembg` is the one required entry** — it's the background-removal step in the `raster-foreground` asset pipeline (every character, mascot, or isolated subject runs through it on the way to the canvas). Skip it and foreground asset generation falls over at the cutout stage.
+The wizard's **Step 3 · Local skills** lists Python packages the daemon will install into your user site (`pip install --user`). **`rembg` is the one required entry**: it's the background-removal step in the `raster-foreground` asset pipeline (every character, mascot, or isolated subject runs through it on the way to the canvas). Skip it and foreground asset generation falls over at the cutout stage.
 
-![Onboarding · Step 3 — Local skills (rembg)](docs/screenshots/03b-onboarding-local-skills.png)
+![Onboarding · Step 3 · Local skills (rembg)](docs/screenshots/03b-onboarding-local-skills.png)
 
-Click **Install rembg** and give it a minute — first install pulls ~170 MB of ONNX model weights.
+Click **Install rembg** and give it a minute. First install pulls ~170 MB of ONNX model weights.
 
 If you'd rather drop down to the terminal:
 
@@ -145,7 +147,7 @@ If you'd rather drop down to the terminal:
 pip3 install --user rembg
 ```
 
-Optional packages (for `particle-gl`, `3d`, etc.) can wait — install them from the gear icon → Settings when the matching pipeline first asks for them.
+Optional packages (for `particle-gl`, `3d`, etc.) can wait. Install them from the gear icon → Settings when the matching pipeline first asks for them.
 
 ---
 
@@ -153,30 +155,30 @@ Optional packages (for `particle-gl`, `3d`, etc.) can wait — install them from
 
 Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up:
 
-![Projects landing — model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
+![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 
 Click **+ New project** (or **+ Create your first project** in the empty state). A 3-step pop-up wizard opens.
 
 ### Step 1 of 3 · Name your project
 
-Type a folder-safe ID (alphanumeric + `.` `_` `-`). The display name auto-fills to match — change it if you want a prettier label in the gallery.
+Type a folder-safe ID (alphanumeric + `.` `_` `-`). The display name auto-fills to match. Change it if you want a prettier label in the gallery.
 
-![New project wizard — step 1, name](docs/screenshots/05-new-project-wizard.png)
+![New project wizard · step 1 · name](docs/screenshots/05-new-project-wizard.png)
 
 Click **Next →**.
 
 ### Step 2 of 3 · Pick a scope
 
-This is where you tell the agent how much help you want for this project. For a first run, leave **Blank** selected (the default — already highlighted in green) so you land on a clean canvas with no automation.
+This is where you tell the agent how much help you want for this project. For a first run, leave **Blank** selected (the default, already highlighted in green) so you land on a clean canvas with no automation.
 
-![New project wizard — step 2, scope = Blank](docs/screenshots/06-wizard-scope.png)
+![New project wizard · step 2 · scope = Blank](docs/screenshots/06-wizard-scope.png)
 
 | Scope         | What happens after **Create**                                                              |
 | ------------- | ------------------------------------------------------------------------------------------ |
 | **Blank**     | Empty project, no automation, fresh canvas (recommended for your first run).                |
 | Quick designs | The agent brainstorms 3 visual directions and you pick one.                                  |
 | Design system | The agent generates a full design system from your brand brief.                              |
-| PRD only      | The agent writes a structured PRD from your intent — no visuals.                             |
+| PRD only      | The agent writes a structured PRD from your intent, no visuals.                              |
 | Full guided   | End-to-end: PRD → DS → 9 design mockups → final prototype + design brief.                    |
 | Custom        | Pick stages individually + tell the agent what you already have.                            |
 
@@ -186,9 +188,9 @@ Click **Next →** then **Create & open** on the review step.
 
 ## 8. Open the workflow and send your first prompt
 
-The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (prompt nodes, asset generators, composition tools…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it — no menus to open, no drawers to expand.
+The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (prompt nodes, asset generators, composition tools…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it. No menus to open, no drawers to expand.
 
-![Empty workflow — canvas-centered composer](docs/screenshots/07-empty-workflow.png)
+![Empty workflow · canvas-centered composer](docs/screenshots/07-empty-workflow.png)
 
 Type your prompt into the composer. The agent has read/edit/bash access to your project root and will scaffold the prototype from scratch. For this walkthrough we'll use:
 
@@ -196,28 +198,28 @@ Type your prompt into the composer. The agent has read/edit/bash access to your 
 
 ![Prompt typed in the empty-workflow composer](docs/screenshots/08-prompt-entered.png)
 
-Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work — generating the design system, scaffolding pages, dispatching asset jobs, and wiring everything together as nodes on the canvas in real time.
+Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work, generating the design system, scaffolding pages, dispatching asset jobs, and wiring everything together as nodes on the canvas in real time.
 
 ---
 
 ## 9. The final prototype
 
-After the agent finishes the run, the workflow canvas fills out with every step that produced the prototype: a column of **Prompt** nodes (one per illustrated subject — Totoro himself, soot sprites, Chibi-Totoro, the Catbus…), each feeding a **Generate image** node, then a **Remove background** node that pipes the cleaned PNG into the final page rendering on the right. The chat drawer streams the agent's tool calls live (Read / Write / Bash) as it scaffolds files into `source/`. The right-most frame is the live phone-mockup of the Ghibli-themed Totoro feeder app, sitting inside the canvas alongside the assets that built it.
+After the agent finishes the run, the workflow canvas fills out with every step that produced the prototype: a column of **Prompt** nodes (one per illustrated subject: Totoro himself, soot sprites, Chibi-Totoro, the Catbus…), each feeding a **Generate image** node, then a **Remove background** node that pipes the cleaned PNG into the final page rendering on the right. The chat drawer streams the agent's tool calls live (Read / Write / Bash) as it scaffolds files into `source/`. The right-most frame is the live phone-mockup of the Ghibli-themed Totoro feeder app, sitting inside the canvas alongside the assets that built it.
 
-![Final prototype — Totoro feeder app on the workflow canvas](docs/screenshots/09-final-prototype.png)
+![Final prototype · Totoro feeder app on the workflow canvas](docs/screenshots/09-final-prototype.png)
 
 From here you can switch to **Prototype mode** (the play icon in the toolbar) to interact with the full app outside the canvas frame, or re-run any individual asset node (right-click → Run) to regenerate a single illustration without redoing the whole flow.
 
 ### What the agent generated from a single prompt
 
-The one-line prompt — *"create a ghibli themed mobile app to feed totoro"* — produced a four-tab app named **Mori**, with a watercolor Ghibli palette, soft-rain weather chip, and consistent illustration style across every screen:
+The one-line prompt, *"create a ghibli themed mobile app to feed totoro"*, produced a four-tab app named **Mori**, with a watercolor Ghibli palette, soft-rain weather chip, and consistent illustration style across every screen:
 
-| Glade — feed Totoro | Forage — gather food | Friends — forest companions |
+| Glade · feed Totoro | Forage · gather food | Friends · forest companions |
 | :---: | :---: | :---: |
 | ![Glade tab](docs/screenshots/10-app-glade.png) | ![Forage tab](docs/screenshots/11-app-forage.png) | ![Friends tab](docs/screenshots/12-app-friends.png) |
-| Totoro idles in a rainy clearing; three stat bars (**Fullness · Happiness · Trust**) drive a food picker — Acorn (favourite), Sun berry, Mushroom, Leaf roll — with live counts and a hint that O-Totoro loves acorns most. | A list of refilling foraging spots (**Camphor tree hollow · Rain meadow · Root cellar**) with painted location thumbnails and a "Resting · Back in 2h" cooldown on the cellar — spots regrow over time. | A grid of Ghibli companions (**Chibi-Totoro · Soot sprites · Catbus · Mei**) each with a Here-now / Away presence chip; Catbus and Mei unlock as trust climbs. |
+| Totoro idles in a rainy clearing; three stat bars (**Fullness · Happiness · Trust**) drive a food picker (Acorn the favourite, Sun berry, Mushroom, Leaf roll) with live counts and a hint that O-Totoro loves acorns most. | A list of refilling foraging spots (**Camphor tree hollow · Rain meadow · Root cellar**) with painted location thumbnails and a "Resting · Back in 2h" cooldown on the cellar. Spots regrow over time. | A grid of Ghibli companions (**Chibi-Totoro · Soot sprites · Catbus · Mei**) each with a Here-now / Away presence chip; Catbus and Mei unlock as trust climbs. |
 
-Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip carry across every screen — the agent inferred a consistent design system (cream background, sage green accent, hand-drawn icons) from the single prompt and applied it uniformly.
+Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip carry across every screen. The agent inferred a consistent design system (cream background, sage green accent, hand-drawn icons) from the single prompt and applied it uniformly.
 
 ---
 
@@ -226,7 +228,7 @@ Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip
 | Symptom                                              | Fix                                                                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Top-right pill stays red after pasting a key         | Click the **gear icon → Test** on that provider row in Settings to verify the key.                     |
-| **CLI missing** chip is amber                        | `which claude` — if empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`.         |
+| **CLI missing** chip is amber                        | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`.          |
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the repo root.         |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
 | Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 5](#5-optional--add-asset-provider-keys-image--video--svg)). |
