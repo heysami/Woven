@@ -7124,29 +7124,37 @@ function useDaemonStatus() {
   return { status, lastOk };
 }
 
-/* v3.4.49 — Banner that pops at the top of the page when the local
-   daemon (serve.py) is unreachable. Tells the user exactly what to run
-   to get it back; without this, the tiny "Daemon down" pill in the
-   header just signalled "something's wrong" with no instructions. */
-function DaemonDownBanner() {
-  const { status } = useDaemonStatus();
-  const [copied, setCopied] = useState(false);
-  if (status !== "down") return null;
+/* v3.4.51 — Popup with serve.py restart instructions, opened from the
+   DaemonIndicator chip when the daemon is unreachable. Replaces the
+   permanent "daemon-down-banner" which ate page real estate on the
+   projects landing only (every other surface didn't have room for it).
+   Now the explanation lives behind a click on the down-state badge,
+   consistent across landing, workflow toolbar, and editor toolbar. */
+function DaemonDownDialog({ onClose }) {
   const cmd = "python3 editor/serve.py";
+  const [copied, setCopied] = useState(false);
   const onCopy = () => {
     try { navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {}
   };
   return html`
-    <div className="daemon-down-banner" role="alert">
-      <div className="daemon-down-banner-icon" aria-hidden="true">!</div>
-      <div className="daemon-down-banner-body">
-        <div className="daemon-down-banner-title">The local daemon is unreachable.</div>
-        <div className="daemon-down-banner-sub">
-          The editor talks to a Python daemon (<code>serve.py</code>) for every write. Re-run it from a terminal at the project root:
+    <div className="workflow-modal-backdrop" onClick=${onClose}>
+      <div className="workflow-modal daemon-down-dialog" onClick=${e => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div>
+            <div className="workflow-modal-title">The local daemon is unreachable</div>
+            <div className="workflow-modal-sub">The editor talks to a Python daemon (serve.py) for every write.</div>
+          </div>
+          <button type="button" className="workflow-modal-close" onClick=${onClose} aria-label="Close">×</button>
         </div>
-        <div className="daemon-down-banner-cmd">
-          <code>${cmd}</code>
-          <button type="button" className="daemon-down-banner-copy" onClick=${onCopy}>${copied ? "Copied" : "Copy"}</button>
+        <div className="daemon-down-dialog-body">
+          <div className="daemon-down-dialog-step">Re-run it from a terminal at the project root:</div>
+          <div className="daemon-down-dialog-cmd">
+            <code>${cmd}</code>
+            <button type="button" className="model-install-modal-copy" onClick=${onCopy}>${copied ? "Copied" : "Copy"}</button>
+          </div>
+          <div className="daemon-down-dialog-hint">
+            This dialog closes itself the moment the daemon comes back up.
+          </div>
         </div>
       </div>
     </div>
@@ -7160,6 +7168,16 @@ function DaemonDownBanner() {
    a glance whether their writes will land. */
 function DaemonIndicator({ compact }) {
   const { status, lastOk } = useDaemonStatus();
+  // v3.4.51 — When the daemon is down, clicking the chip opens the
+  // restart-instructions popup. Dialog state lives here so every surface
+  // that mounts DaemonIndicator (landing, workflow toolbar, editor
+  // toolbar) gets the same click-to-explain behavior without each
+  // parent having to wire it up. Auto-closes the moment status flips
+  // back to "up".
+  const [dialogOpen, setDialogOpen] = useState(false);
+  useEffect(() => {
+    if (status === "up" && dialogOpen) setDialogOpen(false);
+  }, [status, dialogOpen]);
   const loading = status === "checking";
   const ok = status === "up";
   const cls = loading
@@ -7171,24 +7189,34 @@ function DaemonIndicator({ compact }) {
     ? "Checking local daemon…"
     : ok
       ? "Daemon reachable at " + (typeof window !== "undefined" ? window.location.origin : "this host") + ". /__workspace responded successfully."
-      : "Daemon unreachable. serve.py may have crashed or been stopped — re-run editor/serve.command from a terminal.";
+      : "Daemon unreachable. Click for restart instructions.";
   const tipShort = loading
     ? "Pinging daemon…"
     : ok
       ? "Daemon up"
-      : (lastOk ? "Daemon down · last seen " + Math.max(1, Math.round((Date.now() - lastOk) / 1000)) + "s ago" : "Daemon down");
+      : (lastOk ? "Daemon down · last seen " + Math.max(1, Math.round((Date.now() - lastOk) / 1000)) + "s ago · click for instructions" : "Daemon down · click for instructions");
   const label = loading ? "Daemon…" : (ok ? "Daemon" : "Daemon down");
-  return html`<span
-    className=${cls}
-    title=${tooltip}
-    data-tip-host="true"
-    data-state=${ok ? "ok" : (loading ? "loading" : "down")}
-    aria-live="polite"
-  >
+  // Render as a button when interactive (down state), span otherwise — keeps
+  // the markup clean while letting CSS keep one selector for the pill chrome.
+  const interactive = !loading && !ok;
+  const common = {
+    className: cls,
+    title: tooltip,
+    "data-tip-host": "true",
+    "data-state": ok ? "ok" : (loading ? "loading" : "down"),
+    "aria-live": "polite",
+  };
+  const body = html`
     <span className="cli-dot"/>
     ${!compact && html`<span className="cli-label">${label}</span>`}
     <span className="tab-tip">${tipShort}</span>
-  </span>`;
+  `;
+  return html`
+    ${interactive
+      ? html`<button type="button" ...${common} onClick=${() => setDialogOpen(true)} aria-label="Daemon down — open restart instructions">${body}</button>`
+      : html`<span ...${common}>${body}</span>`}
+    ${dialogOpen && html`<${DaemonDownDialog} onClose=${() => setDialogOpen(false)}/>`}
+  `;
 }
 
 /* Status chip showing whether the Claude CLI is reachable. Drives the
@@ -12752,7 +12780,6 @@ function ProjectsLanding({ info, projects, onReload }) {
         </div>
       </div>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
-      <${DaemonDownBanner}/>
       <div className="landing-main">
         <div className="landing-titlebar">
           <div>

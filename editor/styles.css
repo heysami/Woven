@@ -5960,88 +5960,51 @@ a.ds-badge:hover, button.ds-badge:hover {
   animation: cli-dot-pulse 1.1s ease-in-out infinite;
 }
 
-/* v3.4.49 — Daemon-down explainer banner. Sits below the landing header
-   with a clear "what to do next" command + copy button. Without this the
-   user only saw a small red "Daemon down" pill in the header with no
-   actionable hint. */
-.daemon-down-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin: 16px 28px 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in oklch, var(--danger, #dc2626) 40%, var(--border));
-  background: color-mix(in oklch, var(--danger, #dc2626) 5%, var(--surface));
-  border-radius: 8px;
+/* v3.4.51 — Daemon-down explainer is now a popup opened from the chip,
+   not a permanent banner. The chip-as-button gets the affordance
+   styling so users notice it's clickable when down. */
+.daemon-indicator-down {
+  cursor: pointer;
 }
-.daemon-down-banner-icon {
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--danger, #dc2626);
-  color: var(--surface);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 14px;
-  margin-top: 1px;
+.daemon-indicator-down:hover {
+  border-color: color-mix(in oklch, var(--danger, #dc2626) 55%, var(--border));
+  background: color-mix(in oklch, var(--danger, #dc2626) 10%, var(--surface));
 }
-.daemon-down-banner-body {
+.daemon-down-dialog {
+  width: min(440px, 92vw);
+  max-height: min(60vh, 480px);
+  grid-template-rows: auto 1fr;
+}
+.daemon-down-dialog-body {
   display: grid;
-  gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
+  gap: 10px;
+  padding: 16px 18px;
 }
-.daemon-down-banner-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: color-mix(in oklch, var(--danger, #dc2626) 75%, var(--text));
-}
-.daemon-down-banner-sub {
+.daemon-down-dialog-step {
   font-size: 12.5px;
   color: var(--text-muted);
   line-height: 1.5;
 }
-.daemon-down-banner-sub code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
-  padding: 1px 5px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
-.daemon-down-banner-cmd {
+.daemon-down-dialog-cmd {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 2px;
-  background: var(--surface);
+  background: color-mix(in oklch, var(--text) 4%, var(--surface));
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 8px 6px 10px;
 }
-.daemon-down-banner-cmd code {
+.daemon-down-dialog-cmd code {
   flex: 1 1 auto;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   color: var(--text);
   word-break: break-all;
 }
-.daemon-down-banner-copy {
-  appearance: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 9px;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.daemon-down-banner-copy:hover {
-  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
+.daemon-down-dialog-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* Highlighted top-right chip that fires when neither a provider API key
