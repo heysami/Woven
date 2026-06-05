@@ -6226,72 +6226,60 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-transform: uppercase;
   color: var(--text-muted);
 }
-.model-setup-wizard-pips {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
+/* v3.4.44 — Three numbered dots connected by a thin line. No labels, no
+   tile chrome — the body below shows whatever the active step is, so the
+   numbers don't need to spell anything out. Hover/title still surfaces the
+   step name for screen readers and tooltip-curious users. */
+.model-setup-wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
 }
-.model-setup-wizard-pip {
+.model-setup-wizard-dot {
   appearance: none;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 8px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-}
-.model-setup-wizard-pip:hover { background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 4%, var(--surface)); }
-.model-setup-wizard-pip[data-active="true"] {
-  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 60%, var(--border));
-  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 8%, var(--surface));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 12%, transparent);
-}
-.model-setup-wizard-pip[data-done="true"] {
-  border-color: color-mix(in oklch, var(--ok, #16a34a) 50%, var(--border));
-  background: color-mix(in oklch, var(--ok, #16a34a) 5%, var(--surface));
-}
-.model-setup-wizard-pip[data-done="true"][data-active="true"] {
-  border-color: color-mix(in oklch, var(--ok, #16a34a) 65%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ok, #16a34a) 14%, transparent);
-}
-.model-setup-wizard-pip-num {
-  width: 22px;
-  height: 22px;
+  border: 1.5px solid var(--border);
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font: inherit;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  background: var(--border);
   color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  flex: 0 0 28px;
 }
-.model-setup-wizard-pip[data-active="true"] .model-setup-wizard-pip-num {
+.model-setup-wizard-dot:hover {
+  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 40%, var(--border));
+}
+.model-setup-wizard-dot[data-active="true"] {
   background: var(--accent, oklch(55% 0.18 252));
+  border-color: var(--accent, oklch(55% 0.18 252));
   color: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 18%, transparent);
 }
-.model-setup-wizard-pip[data-done="true"] .model-setup-wizard-pip-num {
+.model-setup-wizard-dot[data-done="true"] {
   background: var(--ok, #16a34a);
+  border-color: var(--ok, #16a34a);
   color: var(--surface);
 }
-.model-setup-wizard-pip-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
+.model-setup-wizard-dot[data-done="true"][data-active="true"] {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ok, #16a34a) 22%, transparent);
 }
-.model-setup-wizard-pip-tag {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 9.5px;
-  color: var(--text-muted);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.model-setup-wizard-line {
+  height: 1.5px;
+  width: 48px;
+  background: var(--border);
+  flex: 0 0 48px;
+}
+.model-setup-wizard-line[data-done="true"] {
+  background: var(--ok, #16a34a);
 }
 .model-setup-wizard-body {
   padding: 26px 32px;
@@ -6367,9 +6355,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-style: italic;
 }
 @media (max-width: 720px) {
-  .model-setup-wizard-pips { grid-template-columns: 1fr; }
   .model-setup-wizard-body { padding: 20px 18px; }
-  .model-setup-wizard-pip-tag { display: none; }
+  .model-setup-wizard-line { width: 32px; flex-basis: 32px; }
 }
 
 /* v3.4.43 — Step 1 simplified layout. Status dot + label, a single CTA

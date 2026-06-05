@@ -12391,29 +12391,28 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
 
   const pips = [
     { n: 1, label: "Agent model",  done: modelOk },
-    { n: 2, label: "Asset keys",   done: false, optional: true },
+    { n: 2, label: "Asset keys",   done: false },
     { n: 3, label: "Local skills", done: skillsOk },
   ];
 
   return html`
     <div className="landing-empty model-setup-card model-setup-wizard">
       <div className="model-setup-wizard-header">
-        <div className="model-setup-wizard-pips" role="tablist" aria-label="Onboarding steps">
-          ${pips.map(p => html`
+        <div className="model-setup-wizard-steps" role="tablist" aria-label="Onboarding steps">
+          ${pips.map((p, i) => html`
+            ${i > 0 && html`<span className="model-setup-wizard-line" data-done=${pips[i-1].done && p.done}/>`}
             <button
               key=${p.n}
               role="tab"
               type="button"
-              className="model-setup-wizard-pip"
+              className="model-setup-wizard-dot"
               data-active=${step === p.n}
               data-done=${p.done}
               aria-selected=${step === p.n}
+              aria-label=${`Step ${p.n} — ${p.label}`}
+              title=${p.label}
               onClick=${() => setStep(p.n)}
-            >
-              <span className="model-setup-wizard-pip-num">${p.done ? "✓" : p.n}</span>
-              <span className="model-setup-wizard-pip-label">${p.label}</span>
-              ${p.optional && html`<span className="model-setup-wizard-pip-tag">optional</span>`}
-            </button>
+            >${p.done ? "✓" : p.n}</button>
           `)}
         </div>
       </div>
