@@ -7073,23 +7073,39 @@ function useDaemonStatus() {
   useEffect(() => {
     let cancelled = false;
     const STALE_MS = 15000;
-    // Bootstrap ping (once) so the badge isn't stuck on "checking" when no
-    // other fetch has fired yet. v2.50 — targets /__healthz instead of
-    // /__workspace. /__healthz is a dedicated liveness probe that holds NO
-    // locks and reads NO files, so it returns in <5ms even when the daemon
-    // is processing a 146KB workflow.json save behind locks. Decouples
-    // "daemon up" from application-traffic latency.
+    // Bootstrap ping so the badge isn't stuck on "checking" when no other
+    // fetch has fired yet. v2.50 — targets /__healthz instead of /__workspace
+    // (no locks, no file reads, <5ms even under heavy saves).
+    // v3.4.49 — Retry the bootstrap a few times before declaring "down".
+    // Pre-fix, a single failed ping (slow network, daemon still warming up
+    // after `python3 editor/serve.py` started, the JS racing the first
+    // route registration) flipped the badge to red — users saw a "Daemon
+    // down" flash on every fresh load even though the daemon was fine.
+    // Three tries × 400ms = ~1.2s of grace before the badge actually flips.
     (async () => {
-      try {
-        const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-        const to = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
-        const r = await fetch(apiUrl("/__healthz"), { signal: ctrl ? ctrl.signal : undefined, cache: "no-store" });
-        if (to) clearTimeout(to);
-        if (!cancelled && r.ok) { setStatus("up"); setLastOk(Date.now()); }
-        else if (!cancelled) setStatus("down");
-      } catch {
-        if (!cancelled) setStatus("down");
+      const tryOnce = async () => {
+        try {
+          const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+          const to = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
+          const r = await fetch(apiUrl("/__healthz"), { signal: ctrl ? ctrl.signal : undefined, cache: "no-store" });
+          if (to) clearTimeout(to);
+          return !!(r && r.ok);
+        } catch {
+          return false;
+        }
+      };
+      for (let i = 0; i < 3; i++) {
+        if (cancelled) return;
+        if (await tryOnce()) {
+          if (cancelled) return;
+          setStatus("up"); setLastOk(Date.now());
+          return;
+        }
+        // Quick backoff between retries — keeps the user under the "checking"
+        // label rather than flipping to red on a single transient miss.
+        await new Promise(res => setTimeout(res, 400));
       }
+      if (!cancelled) setStatus("down");
     })();
     // Then ride on the wrapped-fetch stamp: re-render every 4s to recheck
     // freshness — this is a setState that compares to current state, NOT
@@ -7106,6 +7122,35 @@ function useDaemonStatus() {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
   return { status, lastOk };
+}
+
+/* v3.4.49 — Banner that pops at the top of the page when the local
+   daemon (serve.py) is unreachable. Tells the user exactly what to run
+   to get it back; without this, the tiny "Daemon down" pill in the
+   header just signalled "something's wrong" with no instructions. */
+function DaemonDownBanner() {
+  const { status } = useDaemonStatus();
+  const [copied, setCopied] = useState(false);
+  if (status !== "down") return null;
+  const cmd = "python3 editor/serve.py";
+  const onCopy = () => {
+    try { navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {}
+  };
+  return html`
+    <div className="daemon-down-banner" role="alert">
+      <div className="daemon-down-banner-icon" aria-hidden="true">!</div>
+      <div className="daemon-down-banner-body">
+        <div className="daemon-down-banner-title">The local daemon is unreachable.</div>
+        <div className="daemon-down-banner-sub">
+          The editor talks to a Python daemon (<code>serve.py</code>) for every write. Re-run it from a terminal at the project root:
+        </div>
+        <div className="daemon-down-banner-cmd">
+          <code>${cmd}</code>
+          <button type="button" className="daemon-down-banner-copy" onClick=${onCopy}>${copied ? "Copied" : "Copy"}</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 /* Status chip showing whether the local daemon (serve.py) is reachable.
@@ -12707,6 +12752,7 @@ function ProjectsLanding({ info, projects, onReload }) {
         </div>
       </div>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
+      <${DaemonDownBanner}/>
       <div className="landing-main">
         <div className="landing-titlebar">
           <div>
