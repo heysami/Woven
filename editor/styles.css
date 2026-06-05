@@ -6354,19 +6354,25 @@ a.ds-badge:hover, button.ds-badge:hover {
 .model-setup-wizard-dot:hover {
   border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 40%, var(--border));
 }
-.model-setup-wizard-dot[data-active="true"] {
-  background: var(--accent, oklch(55% 0.18 252));
-  border-color: var(--accent, oklch(55% 0.18 252));
-  color: var(--surface);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 18%, transparent);
-}
+/* "Done but NOT the step you're on" → solid green ✓. This is the only
+   state that should read as completed. */
 .model-setup-wizard-dot[data-done="true"] {
   background: var(--ok, #16a34a);
   border-color: var(--ok, #16a34a);
   color: var(--surface);
 }
+/* "You are here" → solid dark slate with a ring. Deliberately NOT using
+   --accent because the project's accent is green, same hue family as
+   --ok, which made the active+done dot indistinguishable from the
+   plain done dots. Dark slate stands out clearly against both the
+   green done state and the white pending state — at a glance the user
+   sees "here" vs "done" vs "yet to do". */
+.model-setup-wizard-dot[data-active="true"],
 .model-setup-wizard-dot[data-done="true"][data-active="true"] {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ok, #16a34a) 22%, transparent);
+  background: oklch(28% 0.02 250);
+  border-color: oklch(28% 0.02 250);
+  color: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in oklch, oklch(28% 0.02 250) 22%, transparent);
 }
 .model-setup-wizard-line {
   height: 1.5px;

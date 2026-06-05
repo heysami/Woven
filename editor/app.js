@@ -12798,7 +12798,17 @@ function ProjectsLanding({ info, projects, onReload }) {
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
             onOpenSettings=${() => setSettingsOpen(true)}
-            onRefresh=${() => { mediaCfg.reload(); try { window.dispatchEvent(new CustomEvent("th:agents-changed")); } catch {} }}
+            onRefresh=${() => {
+              // v3.4.50 — Dispatch BOTH change events so every consumer of
+              // useMediaConfig / useAgents re-polls — including the top-right
+              // "NO MODEL CONFIGURED" pill (its own useMediaConfig instance)
+              // and the CLI pill (its own useAgents instance). Just calling
+              // mediaCfg.reload() only refreshed the wizard's local instance
+              // and left the indicators stale.
+              mediaCfg.reload();
+              try { window.dispatchEvent(new CustomEvent("th:media-config-changed")); } catch {}
+              try { window.dispatchEvent(new CustomEvent("th:agents-changed")); } catch {}
+            }}
             onAcknowledge=${() => setSetupAcknowledged(true)}/>
         `}
 
