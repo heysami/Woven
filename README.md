@@ -4,9 +4,13 @@
 
 # Woven
 
-### Describe an app. Watch one get drawn.
+### A canvas where every screen, illustration, and shader is its own node — and the prototype it builds is just files.
 
-Hand a sentence to Woven and an agent — Claude Code, Codex, or your own API key — builds the whole prototype: a design system, every screen, every illustration, every page wired together. The canvas in front of you fills in live, one node at a time. Pull on any single asset and re-run it without redoing the rest. Everything runs on your laptop; the only thing that leaves it is the model calls you make yourself.
+Other AI builders give you a sandbox: one chat, a hosted preview, a regenerate button that nukes the take you liked. Woven gives you a workshop.
+
+Every visual comes out of a pipeline that knows what kind it is — raster portraits get generated and cut out, shaders stay GLSL, vectors stay vector, particles and Lottie and 3D each have their own subagent — so the result reads as drawn rather than generated. Every node remembers its history, so chasing one ugly illustration across ten re-rolls never costs you the screens you already love. And the output is just files: plain HTML/CSS/JS in `source/`, opens by double-clicking, emails to a designer who's never heard of Woven.
+
+You bring the agent — Claude Code, Codex, or an API key. Woven is the structure around it.
 
 This README walks through your first run end-to-end — from install all the way to the Ghibli-themed Totoro feeder app at the bottom, generated from one prompt.
 
@@ -129,17 +133,19 @@ These are **optional**. Projects can still be created without them; you just won
 
 ## 6. Required · install local skills (rembg)
 
-The third panel of the onboarding card lists Python packages the daemon can install for you. **`rembg` is required** — it's the background-removal step in the `raster-foreground` pipeline (every character, mascot, or isolated subject goes through it). Without it, asset generation for foreground rasters fails at the cutout stage.
+The wizard's **Step 3 · Local skills** lists Python packages the daemon will install into your user site (`pip install --user`). **`rembg` is the one required entry** — it's the background-removal step in the `raster-foreground` asset pipeline (every character, mascot, or isolated subject runs through it on the way to the canvas). Skip it and foreground asset generation falls over at the cutout stage.
 
-Click **Install** next to `rembg` to install it into your user site (`pip install --user rembg`). First install pulls ~150 MB of model weights — give it a minute.
+![Onboarding · Step 3 — Local skills (rembg)](docs/screenshots/03b-onboarding-local-skills.png)
 
-If you prefer the command line:
+Click **Install rembg** and give it a minute — first install pulls ~170 MB of ONNX model weights.
+
+If you'd rather drop down to the terminal:
 
 ```bash
 pip3 install --user rembg
 ```
 
-Other packages in the panel (e.g. for `particle-gl`, `3d`) are optional and can be added later via Settings.
+Optional packages (for `particle-gl`, `3d`, etc.) can wait — install them from the gear icon → Settings when the matching pipeline first asks for them.
 
 ---
 
