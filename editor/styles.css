@@ -502,74 +502,129 @@ button {
 }
 
 /* ── Projects landing page (full-screen gallery) ── */
+/* =============================================================================
+   Projects-landing — diamond field genre. The whole landing rides over a single
+   full-page WebGL canvas (landing-shaders.js) that draws, from ONE diamond grid:
+     • a dark header band with faint diamond fretwork,
+     • the triangle-tooth boundary at the bottom of the header,
+     • the light diamond field that lights up in 3D under the cursor.
+   The header sits on top of the dark band; the grid + cards float over the
+   light field. There is no DOM seam between dark and light, so no hairline
+   leaks at the boundary. Lifted from prototype `landing-diamonds` — see
+   `landing-diamonds/README.md` (§1–§5) for the full design rationale.
+   ----------------------------------------------------------------------------
+   Landing-scoped overrides for the project's existing :root tokens go here,
+   not at :root, so the rest of the app (workflow canvas, source editor, etc.)
+   keeps the warm-paper TE palette unchanged.
+   =========================================================================== */
 .landing-root {
+  --landing-header-bg: #121716;   /* must match SHADER_BG headerCol vec3(0.071,0.090,0.086) */
+  --landing-teeth-h:   24px;      /* exact lower half of a 48px diamond — leave room below header */
+  --landing-radius:    11px;
   position: fixed;
   inset: 0;
   overflow: auto;
-  background: var(--surface-2);
+  background: oklch(97% 0.004 70);  /* matches the shader's flat-field colour ≈ vec3(0.962…) */
   color: var(--text);
-  font-family: var(--font, "Inter", system-ui, sans-serif);
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
 }
+/* One canvas behind everything draws header texture + teeth + field as one grid */
+.landing-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Header content rides over the dark portion of the canvas. The header itself
+   is transparent — the dark band is painted by the shader. */
 .landing-header {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  border-bottom: none;        /* the teeth ARE the boundary now */
+  flex: none;
+  padding: 0;
+}
+.landing-header-inner {
+  position: relative;
+  z-index: 2;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 22px 30px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.landing-brandrow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 28px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  gap: 16px;
 }
 .landing-brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-weight: 600;
-  font-size: 14px;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 18px;
+  color: #f4f6f5;
+  letter-spacing: -0.01em;
+}
+/* Diamond-W logo mark — 5 lattice diamonds straight off the grid (see §3.1
+   of landing-diamonds/README.md). Green fill, green drop-shadow so the mark
+   glows against the dark band. */
+.landing-logo-mark {
+  width: 34px;
+  height: auto;
+  display: block;
+  fill: var(--accent);
+  filter: drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 55%, transparent));
 }
 .landing-meta {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: rgba(235, 240, 238, 0.74);
 }
 .landing-meta-label {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: rgba(225, 232, 229, 0.55);
 }
 .landing-meta-path {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
-  padding: 2px 8px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-}
-.landing-main {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 40px 28px 80px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius-sm);
+  color: rgba(235, 240, 238, 0.74);
 }
 .landing-titlebar {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
 }
 .landing-title {
   margin: 0;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text);
+  color: #f4f6f5;
 }
 .landing-subtitle {
   margin-top: 4px;
   font-size: 13px;
-  color: var(--text-muted);
+  color: rgba(225, 232, 229, 0.6);
 }
 .landing-actions {
   display: inline-flex;
@@ -577,48 +632,95 @@ button {
   gap: 10px;
 }
 .landing-filter {
-  height: 34px;
-  padding: 0 10px;
-  width: 240px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
+  height: 36px;
+  padding: 0 12px;
+  width: 236px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
   font: inherit;
   font-size: 13px;
-  color: var(--text);
+  color: #eef2f0;
 }
+.landing-filter::placeholder { color: rgba(225, 232, 229, 0.45); }
 .landing-filter:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent);
+  background: rgba(255, 255, 255, 0.10);
 }
 .landing-new-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 14px;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
   border: 0;
-  border-radius: 6px;
-  background: var(--accent);
-  color: white;
-  font: inherit;
-  font-size: 13px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: 0;
   cursor: pointer;
-  transition: filter 0.1s ease;
+  transition: filter 0.12s ease;
 }
-.landing-new-btn:hover { filter: brightness(1.05); }
+.landing-new-btn:hover { filter: brightness(1.06); }
 .landing-new-btn:active { filter: brightness(0.95); }
 .landing-new-btn[disabled],
 .landing-new-btn[data-disabled="true"] {
-  background: var(--surface-2);
-  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(235, 240, 238, 0.5);
   cursor: not-allowed;
   filter: none;
 }
 .landing-new-btn[disabled]:hover,
 .landing-new-btn[data-disabled="true"]:hover { filter: none; }
+
+/* Status chips on the dark band — scoped overrides for the indicator pills
+   defined elsewhere in this file. Without this they paint near-black ink on
+   the dark header and disappear. We tint borders/backgrounds to match the
+   workspace-path chip and lift text/icons to a legible near-white.
+   Scope is strictly `.landing-header` so the same pills on the workflow
+   toolbar and editor toolbar (white surfaces) are untouched. */
+.landing-header .daemon-indicator,
+.landing-header .cli-indicator,
+.landing-header .model-status-indicator,
+.landing-header .workflow-toolbar-gear {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(235, 240, 238, 0.82);
+}
+.landing-header .daemon-indicator:hover,
+.landing-header .cli-indicator:hover,
+.landing-header .model-status-indicator:hover,
+.landing-header .workflow-toolbar-gear:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f4f6f5;
+}
+.landing-header .cli-label,
+.landing-header .model-status-label { color: rgba(235, 240, 238, 0.82); }
+.landing-header .workflow-toolbar-gear svg { color: rgba(235, 240, 238, 0.82); }
+.landing-header .model-status-indicator { color: #fff; background: color-mix(in oklch, var(--hot) 60%, transparent); border-color: color-mix(in oklch, var(--hot) 70%, transparent); }
+.landing-header .model-status-indicator:hover { background: color-mix(in oklch, var(--hot) 75%, transparent); }
+
+/* Main area below the dark band — content sits over the light diamond field.
+   Pull it up by one "tooth" (half-diamond, 24px) + a hair so the grid
+   visually starts inside the teeth zone, exactly as the reference does. */
+.landing-main {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+}
+.landing-main-inner {
+  position: relative;
+  z-index: 2;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: calc(var(--landing-teeth-h) + 4px) 30px 96px;
+}
 
 .landing-create-card {
   display: grid;
@@ -682,23 +784,32 @@ button {
 
 .landing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px;
 }
+/* See-through glass card — the diamond field shows through so the card reads
+   as a frosted pane floating over the grid (see landing-diamonds README §4.2).
+   On hover the card solidifies to white, animated, so the grid stays calm at
+   rest and committed once the user reaches for one. */
 .landing-card {
   display: grid;
   gap: 10px;
-  padding: 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 20px;
+  align-content: start;  /* don't stretch shorter cards' content to fill the row height */
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: var(--landing-radius);
+  box-shadow: 0 3px 12px rgba(40, 34, 26, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(3px) saturate(1.15);
+  -webkit-backdrop-filter: blur(3px) saturate(1.15);
   cursor: pointer;
-  transition: border-color 0.1s ease, box-shadow 0.1s ease, transform 0.05s ease;
+  transition: border-color 0.3s ease, box-shadow 0.35s ease, transform 0.2s ease, background 0.3s ease;
   position: relative;
 }
 .landing-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  background: #ffffff;
+  border-color: var(--border);
+  box-shadow: 0 7px 20px rgba(40, 34, 26, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .landing-card:active { transform: translateY(1px); }
 .landing-card:focus-visible {
@@ -708,6 +819,7 @@ button {
 }
 .landing-card-editing {
   cursor: default;
+  background: #ffffff;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -716,10 +828,31 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  position: relative;
+}
+/* Green half-diamond anchor pinned flush to the card's left edge, vertically
+   centred on the title row. Tied to the card by `left: -20px` cancelling the
+   20px card padding. drop-shadow (not box-shadow) so the glow follows the
+   clip-path silhouette — see landing-diamonds README §4.5. */
+.landing-card-anchor {
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 12px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  filter: drop-shadow(0 0 4px var(--accent))
+          drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
+  pointer-events: none;
 }
 .landing-card-label {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-display), "Bricolage Grotesque", var(--font-sans);
+  font-family: "Bricolage Grotesque", var(--font-sans);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -819,15 +952,20 @@ button {
    door button was removed; starred prototypes take its place as a small
    per-project list so the user can jump straight from the gallery into
    the one bookmarked screen they care about. */
+/* Inside the glass card the starred-prototypes panel stays a SOLID opaque
+   white panel so it reads as a crisp focal element (see landing-diamonds
+   README §4.2). It has its own subtle shadow so it lifts off the frosted
+   pane without competing with the card border. */
 .landing-card-stars {
   margin-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 8px;
-  background: var(--surface);
+  padding: 12px 14px;
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 .landing-card-stars-head {
   display: flex;
@@ -6366,6 +6504,15 @@ a.ds-badge:hover, button.ds-badge:hover {
      middle of the card with white gutters either side. Force stretch so
      header / body / footer hug the dashed border edge to edge. */
   justify-items: stretch;
+  /* The diamond-field landing makes `.landing-empty` translucent (a frosted
+     panel). The multi-step setup wizard needs maximum legibility — many small
+     status pills, refresh links, install buttons — so we re-assert a solid
+     white background here and drop the blur. The dashed border + shadow keep
+     it visually consistent with the empty state otherwise. */
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 6px 18px rgba(40, 34, 26, 0.10);
 }
 .model-setup-wizard-header {
   display: grid;
@@ -7311,15 +7458,23 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface-2);
 }
 
+/* Empty / onboarding state sits on the diamond field. We use a translucent
+   white surface (NOT solid) so the field reads through the panel — same
+   visual language as the glass cards above. The model-setup wizard branch
+   (`.landing-empty.model-setup-wizard`) re-asserts a solid white background
+   further down because the multi-step wizard needs maximum legibility. */
 .landing-empty {
   display: grid;
   justify-items: center;
   gap: 12px;
   padding: 60px 28px;
-  background: var(--surface);
+  background: color-mix(in oklch, #ffffff 78%, transparent);
   border: 1px dashed var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--landing-radius);
   text-align: center;
+  backdrop-filter: blur(3px) saturate(1.15);
+  -webkit-backdrop-filter: blur(3px) saturate(1.15);
+  box-shadow: 0 3px 12px rgba(40, 34, 26, 0.06);
 }
 .landing-empty-mini {
   grid-column: 1 / -1;

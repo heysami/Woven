@@ -12795,55 +12795,89 @@ function ProjectsLanding({ info, projects, onReload }) {
       })
     : projects;
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Mount the landing's diamond-field shader on a single full-page canvas
+  // behind the whole landing. The shader draws (from ONE grid) the dark
+  // header band, the triangle-tooth boundary, and the light field below.
+  // boundaryFn returns the live header height each frame so the dark band
+  // always ends exactly at the bottom of the (variable-height) header.
+  // The disposer returned by mountShader stops the RAF + frees the GL
+  // context the moment the user enters a project (this component unmounts).
+  // ──────────────────────────────────────────────────────────────────────────
+  const bgCanvasRef = useRef(null);
+  useEffect(() => {
+    if (!bgCanvasRef.current || typeof window.mountShader !== "function") return;
+    const dispose = window.mountShader(bgCanvasRef.current, window.SHADER_BG, {
+      track: window,
+      boundaryFn: () => {
+        const h = document.querySelector(".landing-header");
+        return h ? h.offsetHeight : 150;
+      },
+    });
+    return dispose;
+  }, []);
+
   return html`
     <div className="landing-root">
-      <div className="landing-header">
-        <div className="landing-brand">
-          <div className="brand-dot"/>
-          <span>Prototype Editor</span>
+      <canvas ref=${bgCanvasRef} className="landing-bg-canvas" aria-hidden="true"></canvas>
+      <header className="landing-header">
+        <div className="landing-header-inner">
+          <div className="landing-brandrow">
+            <span className="landing-brand">
+              <svg className="landing-logo-mark" viewBox="0 0 76 40" aria-hidden="true">
+                <path d="M14 2L26 14L14 26L2 14Z"/>
+                <path d="M38 2L50 14L38 26L26 14Z"/>
+                <path d="M62 2L74 14L62 26L50 14Z"/>
+                <path d="M26 14L38 26L26 38L14 26Z"/>
+                <path d="M50 14L62 26L50 38L38 26Z"/>
+              </svg>
+              <span className="landing-brand-name">Woven</span>
+            </span>
+            <div className="landing-meta">
+              <span className="landing-meta-label">Workspace</span>
+              <code className="landing-meta-path">${info.workspaceDir}</code>
+              <${DaemonIndicator}/>
+              <${CliIndicator}/>
+              <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
+              <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
+            </div>
+          </div>
+          <div className="landing-titlebar">
+            <div>
+              <h1 className="landing-title">Projects</h1>
+              <div className="landing-subtitle">${projects.length} project${projects.length === 1 ? "" : "s"} in this workspace</div>
+            </div>
+            <div className="landing-actions">
+              ${projects.length > 0 && html`
+                <input
+                  className="landing-filter"
+                  placeholder="Filter by id or label…"
+                  value=${filter}
+                  onInput=${e => setFilter(e.target.value)}
+                />
+              `}
+              <button
+                className="landing-new-btn"
+                disabled=${setupNeeded}
+                data-disabled=${setupNeeded}
+                title=${
+                  !mediaCfg.configured
+                    ? "Connect a model first — see the setup card below."
+                    : (!localSkills.allRequiredInstalled
+                        ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
+                        : "Create a new project")
+                }
+                onClick=${() => { if (setupNeeded) return; setCreating(true); setErr(null); }}>
+                <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
+                <span>New project</span>
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="landing-meta">
-          <span className="landing-meta-label">Workspace</span>
-          <code className="landing-meta-path">${info.workspaceDir}</code>
-          <${DaemonIndicator}/>
-          <${CliIndicator}/>
-          <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
-          <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
-        </div>
-      </div>
+      </header>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
-      <div className="landing-main">
-        <div className="landing-titlebar">
-          <div>
-            <h1 className="landing-title">Projects</h1>
-            <div className="landing-subtitle">${projects.length} project${projects.length === 1 ? "" : "s"} in this workspace</div>
-          </div>
-          <div className="landing-actions">
-            ${projects.length > 0 && html`
-              <input
-                className="landing-filter"
-                placeholder="Filter by id or label…"
-                value=${filter}
-                onInput=${e => setFilter(e.target.value)}
-              />
-            `}
-            <button
-              className="landing-new-btn"
-              disabled=${setupNeeded}
-              data-disabled=${setupNeeded}
-              title=${
-                !mediaCfg.configured
-                  ? "Connect a model first — see the setup card below."
-                  : (!localSkills.allRequiredInstalled
-                      ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
-                      : "Create a new project")
-              }
-              onClick=${() => { if (setupNeeded) return; setCreating(true); setErr(null); }}>
-              <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
-              <span>New project</span>
-            </button>
-          </div>
-        </div>
+      <main className="landing-main">
+        <div className="landing-main-inner">
 
         ${creating && html`<${NewProjectWizard}
           workspaceProjects=${projects}
@@ -12912,6 +12946,7 @@ function ProjectsLanding({ info, projects, onReload }) {
             ` : html`
               <div key=${p.id} className="landing-card" onClick=${() => openProject(p.id, "workflow")} role="button" tabIndex=${0} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProject(p.id, "workflow"); } }}>
                 <div className="landing-card-head">
+                  <span className="landing-card-anchor" aria-hidden="true"></span>
                   <div className="landing-card-label">${p.label || p.id}</div>
                   <div className="landing-card-actions">
                     <button
@@ -12992,7 +13027,8 @@ function ProjectsLanding({ info, projects, onReload }) {
             `}
           </div>
         `}
-      </div>
+        </div>
+      </main>
     </div>
   `;
 }
