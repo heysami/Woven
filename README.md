@@ -13,7 +13,7 @@ This README walks you end-to-end through your **first** run: install, start the 
 3. [Start the editor](#3-start-the-editor)
 4. [First-run onboarding — connect a model](#4-first-run-onboarding--connect-a-model)
 5. [Optional · add asset-provider keys (image · video · SVG)](#5-optional--add-asset-provider-keys-image--video--svg)
-6. [Optional · install local skills (rembg, etc.)](#6-optional--install-local-skills-rembg-etc)
+6. [Required · install local skills (rembg)](#6-required--install-local-skills-rembg)
 7. [Create your first project](#7-create-your-first-project)
 8. [Open the workflow and send your first prompt](#8-open-the-workflow-and-send-your-first-prompt)
 9. [The final prototype](#9-the-final-prototype)
@@ -22,13 +22,14 @@ This README walks you end-to-end through your **first** run: install, start the 
 
 ## 1. What you need before starting
 
-You only need three things on your machine:
+You only need four things on your machine:
 
 | Requirement      | Why                                                                          | How to check                          |
 | ---------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **Python 3.10+** | The editor daemon (`serve.py`) is pure Python with stdlib only.              | `python3 --version`                   |
 | **A modern browser** | Chrome, Edge, Safari, or Firefox — anything from the last ~2 years.      | —                                     |
 | **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. You'll wire this up in [Step 4](#4-first-run-onboarding--connect-a-model). | `claude --version` / `codex --version` |
+| **`rembg`**      | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~150 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
 
 You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a single Python file.
 
@@ -120,11 +121,19 @@ These are **optional**. Projects can still be created without them; you just won
 
 ---
 
-## 6. Optional · install local skills (rembg, etc.)
+## 6. Required · install local skills (rembg)
 
-The third panel of the onboarding card lists Python packages the daemon can install for you. These cover skills that don't fit any provider above — for example **rembg** (background removal for raster images). One click installs the package into your user site (`pip install --user`).
+The third panel of the onboarding card lists Python packages the daemon can install for you. **`rembg` is required** — it's the background-removal step in the `raster-foreground` pipeline (every character, mascot, or isolated subject goes through it). Without it, asset generation for foreground rasters fails at the cutout stage.
 
-These are also optional and can be added later via Settings.
+Click **Install** next to `rembg` to install it into your user site (`pip install --user rembg`). First install pulls ~150 MB of model weights — give it a minute.
+
+If you prefer the command line:
+
+```bash
+pip3 install --user rembg
+```
+
+Other packages in the panel (e.g. for `particle-gl`, `3d`) are optional and can be added later via Settings.
 
 ---
 
