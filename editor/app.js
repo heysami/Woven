@@ -12228,7 +12228,7 @@ function OnboardingAssetProviderRow({ provider, covers, status, onChanged }) {
    provider. Decoupled from Step 1 (agent model) so the user understands
    asset keys aren't required for project creation — they unlock specific
    skill nodes (image, video, SVG, etc.) when they're ready. */
-function OnboardingAssetProvidersSection({ mediaCfg }) {
+function OnboardingAssetProvidersSection({ mediaCfg, headless }) {
   const providerCatalog = (typeof window !== "undefined" && window.TH_MEDIA && window.TH_MEDIA.providers) || {};
   const rows = ONBOARDING_ASSET_PROVIDERS
     .map(p => ({ ...p, ...(providerCatalog[p.id] || {}) }))
@@ -12236,13 +12236,15 @@ function OnboardingAssetProvidersSection({ mediaCfg }) {
   if (!rows.length) return null;
   return html`
     <div className="onboarding-asset-providers">
-      <div className="onboarding-section-head">
-        <div className="onboarding-section-eyebrow">Step 2 · Optional · Asset providers</div>
-        <div className="onboarding-section-title">Add keys for image, video, SVG, audio…</div>
-        <div className="onboarding-section-desc">
-          Each asset skill (image · video · vector · 3D · audio) calls a specific provider. You can add these keys now or any time later via the gear icon — projects can still be created without them. ✓ means the daemon has a usable key for that provider.
+      ${!headless && html`
+        <div className="onboarding-section-head">
+          <div className="onboarding-section-eyebrow">Step 2 · Optional · Asset providers</div>
+          <div className="onboarding-section-title">Add keys for image, video, SVG, audio…</div>
+          <div className="onboarding-section-desc">
+            Each asset skill (image · video · vector · 3D · audio) calls a specific provider. You can add these keys now or any time later via the gear icon — projects can still be created without them. ✓ means the daemon has a usable key for that provider.
+          </div>
         </div>
-      </div>
+      `}
       ${rows.map(p => html`
         <${OnboardingAssetProviderRow}
           key=${p.id}
@@ -12345,82 +12347,57 @@ function OnboardingLocalToolRow({ pkg }) {
    "skip for now" framing. The eyebrow flips between Required / Optional
    based on what's in LOCAL_PACKAGES so adding non-required packages later
    doesn't lie to the user. */
-function OnboardingLocalToolsSection() {
+function OnboardingLocalToolsSection({ headless } = {}) {
   const hasRequired = LOCAL_PACKAGES.some(p => p.required);
   return html`
     <div className=${"onboarding-local-tools" + (hasRequired ? " has-required" : "")}>
-      <div className="onboarding-section-head">
-        <div className="onboarding-section-eyebrow">Step 3 · ${hasRequired ? "Required" : "Optional"} · Local skills</div>
-        <div className="onboarding-section-title">Install on-demand local tools</div>
-        <div className="onboarding-section-desc">
-          ${hasRequired
-            ? html`Local Python packages the daemon runs as subprocesses — no API key required. Marked <strong>REQUIRED</strong> are needed before the matching asset pipeline can run (e.g. <code>rembg</code> for raster-foreground cutouts). Optional ones can wait until you need them.`
-            : "Local Python packages the daemon runs as subprocesses — no API key required. They cover skills that don't fit any provider above (e.g. background removal). Skip for now if you don't need them; you can come back via the gear icon any time."}
+      ${!headless && html`
+        <div className="onboarding-section-head">
+          <div className="onboarding-section-eyebrow">Step 3 · ${hasRequired ? "Required" : "Optional"} · Local skills</div>
+          <div className="onboarding-section-title">Install on-demand local tools</div>
+          <div className="onboarding-section-desc">
+            ${hasRequired
+              ? html`Local Python packages the daemon runs as subprocesses — no API key required. Marked <strong>REQUIRED</strong> are needed before the matching asset pipeline can run (e.g. <code>rembg</code> for raster-foreground cutouts). Optional ones can wait until you need them.`
+              : "Local Python packages the daemon runs as subprocesses — no API key required. They cover skills that don't fit any provider above (e.g. background removal). Skip for now if you don't need them; you can come back via the gear icon any time."}
+          </div>
         </div>
-      </div>
+      `}
       ${LOCAL_PACKAGES.map(p => html`<${OnboardingLocalToolRow} key=${p.id} pkg=${p}/>`)}
     </div>
   `;
 }
 
-/* v3.4.42 — Empty-state setup, as a real wizard.
-   Pre-fix this was a single scrolling card showing model picker + asset
-   providers + local skills all stacked vertically; users missed the
-   bottom step and asset keys ate visual weight even though they're
-   optional. Now: one step visible at a time, header pips show progress,
-   Back/Next move through. Auto-jumps to the first unmet requirement on
-   mount so a user with a configured model but missing rembg lands on
-   Step 3 directly — no scrolling, no hunting.
-   Steps:
-     1 · Agent model   (required)  — gates everything else
-     2 · Asset keys    (optional)  — can be skipped
-     3 · Local skills  (required)  — rembg today
-   The card unmounts when both required gates pass (model + skills);
-   asset keys never block the wizard, only nudge the user to set them up
-   during the initial flow. */
-function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg, localSkills }) {
+/* v3.4.43 — Onboarding wizard, simplified.
+   One step visible at a time, pips at the top show the three steps
+   (Agent model · Asset keys · Local skills). The body for each step is
+   just the section content — no big headlines, no paragraph blurbs,
+   no nested heads. Footer is Back/Next, both always free to click;
+   the actual gate ("+ New project" disabled) is enforced on the landing,
+   not by the wizard itself, so the user can roam.
+   Step 1 collapses to a single button that opens a small install-
+   instructions popup — no two-tile choice screen, no inline sub-picker. */
+function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
   const modelOk  = !!(mediaCfg && mediaCfg.configured);
   const skillsOk = !!(localSkills && localSkills.allRequiredInstalled);
-  // Initial step = first unmet requirement; user can navigate freely after.
   const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 1);
-  // CLI sub-mode inside Step 1 — "Use a CLI" expands the picker without
-  // navigating away from Step 1.
-  const [pick, setPick] = useState(null); // null | "cli"
-  // If an external state change satisfies the step the user is on (e.g.
-  // they pasted an API key in Settings while parked on Step 1), advance
-  // to the next unmet step automatically — feels like a wizard "Next"
-  // happened for free.
+  const [installOpen, setInstallOpen] = useState(false);
+  // Auto-advance when the user satisfies the current step externally
+  // (e.g. pastes an API key in Settings while parked on Step 1).
   const lastModelOkRef = useRef(modelOk);
   useEffect(() => {
-    if (!lastModelOkRef.current && modelOk && step === 1) {
-      setStep(!skillsOk ? 3 : 2);
-      setPick(null);
-    }
+    if (!lastModelOkRef.current && modelOk && step === 1) setStep(!skillsOk ? 3 : 2);
     lastModelOkRef.current = modelOk;
   }, [modelOk, skillsOk, step]);
 
-  const canBack = step > 1;
-  // Step 1 only releases the Next button once a model is reachable.
-  // Step 2 (optional) always releases. Step 3 has no Next — it's the end.
-  const canNext = step === 1 ? modelOk : step === 2 ? true : false;
-
-  // Build the three pips the header renders. Click a done step to revisit
-  // it; click an unreached step to skip ahead (useful when the user knows
-  // they want to do asset keys first, for example).
   const pips = [
-    { n: 1, label: "Agent model",   done: modelOk,  required: true  },
-    { n: 2, label: "Asset keys",    done: false,    required: false, optional: true },
-    { n: 3, label: "Local skills",  done: skillsOk, required: true  },
+    { n: 1, label: "Agent model",  done: modelOk },
+    { n: 2, label: "Asset keys",   done: false, optional: true },
+    { n: 3, label: "Local skills", done: skillsOk },
   ];
 
   return html`
     <div className="landing-empty model-setup-card model-setup-wizard">
       <div className="model-setup-wizard-header">
-        <div className="model-setup-wizard-eyebrow">
-          ${pips.filter(p => p.required).every(p => p.done)
-            ? "Onboarding — almost done"
-            : "Onboarding"}
-        </div>
         <div className="model-setup-wizard-pips" role="tablist" aria-label="Onboarding steps">
           ${pips.map(p => html`
             <button
@@ -12431,8 +12408,7 @@ function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg, loc
               data-active=${step === p.n}
               data-done=${p.done}
               aria-selected=${step === p.n}
-              onClick=${() => { setStep(p.n); setPick(null); }}
-              title=${p.done ? `Step ${p.n} complete — click to revisit` : `Go to Step ${p.n}`}
+              onClick=${() => setStep(p.n)}
             >
               <span className="model-setup-wizard-pip-num">${p.done ? "✓" : p.n}</span>
               <span className="model-setup-wizard-pip-label">${p.label}</span>
@@ -12444,92 +12420,103 @@ function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg, loc
 
       <div className="model-setup-wizard-body">
         ${step === 1 && html`
-          <div className="model-setup-wizard-step">
-            <div className="model-setup-head">
-              <div className="model-setup-eyebrow">Step 1 of 3 · Required · Agent model</div>
-              <div className="model-setup-title">${pick === "cli" ? "Connect a Claude CLI for the agent" : (modelOk ? "Agent model connected" : "Connect the agent model")}</div>
-              <div className="model-setup-desc">
-                ${modelOk
-                  ? html`Your model is reachable from this editor — click <strong>Continue →</strong> to move on, or pick a different one below.`
-                  : "The agent runs every workflow step — it needs one path to a text model. Pick API key (Anthropic / OpenAI) or shell out to a CLI."}
-                ${workspaceDir && pick === "cli" ? html`<span> Workspace lives under <code>${workspaceDir}</code>.</span>` : null}
-              </div>
+          <div className="model-setup-step1">
+            <div className="model-setup-step1-status" data-ok=${modelOk}>
+              <span className="model-setup-step1-dot"/>
+              <span className="model-setup-step1-label">${modelOk ? "Model connected" : "No model yet"}</span>
             </div>
-            ${pick === "cli"
-              ? html`<${ModelSetupCliPicker} onRefresh=${onRefresh} onBack=${() => setPick(null)}/>`
-              : html`
-                <div className="model-setup-choices">
-                  <button className="model-setup-choice" onClick=${onOpenSettings}>
-                    <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
-                    <div className="model-setup-choice-body">
-                      <div className="model-setup-choice-title">Use an API key</div>
-                      <div className="model-setup-choice-desc">Paste an Anthropic or OpenAI key. Stored locally at <code className="model-setup-inline-code">~/.test-harness/media-config.json</code> · mode 0600.</div>
-                      <div className="model-setup-choice-cta">Open Settings →</div>
-                    </div>
-                  </button>
-                  <button className="model-setup-choice" onClick=${() => setPick("cli")}>
-                    <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
-                    <div className="model-setup-choice-body">
-                      <div className="model-setup-choice-title">Use a CLI</div>
-                      <div className="model-setup-choice-desc">Shell out to Claude Code (or Codex) — uses your existing CLI login, no API key required for text runs.</div>
-                      <div className="model-setup-choice-cta">Pick a CLI →</div>
-                    </div>
-                  </button>
-                </div>
-                <button className="model-setup-refresh-link" onClick=${onRefresh}>I've already set one up · refresh</button>
-              `}
+            <button
+              type="button"
+              className="model-setup-step1-cta"
+              onClick=${() => setInstallOpen(true)}
+            >${modelOk ? "Reconnect a different model" : "Show install instructions"}</button>
+            <button
+              type="button"
+              className="model-setup-step1-refresh"
+              onClick=${onRefresh}
+            >I've already set one up · refresh</button>
           </div>
         `}
 
-        ${step === 2 && html`
-          <div className="model-setup-wizard-step">
-            <div className="model-setup-head">
-              <div className="model-setup-eyebrow">Step 2 of 3 · Optional · Asset providers</div>
-              <div className="model-setup-title">Add image / video / SVG keys (or skip)</div>
-              <div className="model-setup-desc">
-                Provider keys unlock the matching asset skills (image generation, video, SVG). You can skip this and add keys later via the gear icon — projects still create + run without them; the workflow will just refuse the un-keyed media skills.
-              </div>
-            </div>
-            ${mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg}/>`}
-          </div>
-        `}
-
-        ${step === 3 && html`
-          <div className="model-setup-wizard-step">
-            <div className="model-setup-head">
-              <div className="model-setup-eyebrow">Step 3 of 3 · Required · Local skills</div>
-              <div className="model-setup-title">${skillsOk ? "Local skills installed" : "Install required local skills"}</div>
-              <div className="model-setup-desc">
-                ${skillsOk
-                  ? html`All required local packages are installed — close this card and click <strong>+ New project</strong> to start.`
-                  : html`Local Python packages the daemon runs as subprocesses — no API key required. Marked <strong>REQUIRED</strong> are needed before the matching asset pipeline can run (e.g. <code>rembg</code> for raster-foreground cutouts).`}
-              </div>
-            </div>
-            <${OnboardingLocalToolsSection}/>
-          </div>
-        `}
+        ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
+        ${step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
       </div>
 
       <div className="model-setup-wizard-footer">
         <button
           type="button"
           className="model-setup-wizard-nav"
-          disabled=${!canBack}
-          onClick=${() => { setStep(step - 1); setPick(null); }}
+          disabled=${step <= 1}
+          onClick=${() => setStep(step - 1)}
         >← Back</button>
-        <span className="model-setup-wizard-step-of">Step ${step} of 3</span>
         ${step < 3 && html`
           <button
             type="button"
             className="model-setup-wizard-nav is-primary"
-            disabled=${!canNext}
-            title=${canNext ? "Move to the next step" : (step === 1 ? "Connect a model before continuing" : "")}
-            onClick=${() => { setStep(step + 1); setPick(null); }}
-          >${step === 2 ? "Skip · Continue →" : "Continue →"}</button>
+            onClick=${() => setStep(step + 1)}
+          >Next →</button>
         `}
-        ${step === 3 && html`
-          <span className="model-setup-wizard-step-hint">${skillsOk ? "" : "Install above to finish"}</span>
-        `}
+      </div>
+
+      ${installOpen && html`<${ModelInstallDialog}
+        onClose=${() => setInstallOpen(false)}
+        onOpenSettings=${() => { setInstallOpen(false); onOpenSettings(); }}
+        onRefresh=${async () => { await onRefresh(); setInstallOpen(false); }}/>`}
+    </div>
+  `;
+}
+
+/* v3.4.43 — Lightweight install-instructions popup opened from Step 1's CTA.
+   Shows the two CLI install paths (Claude Code · Codex) as copy-paste blocks
+   plus an "Or paste an API key" button that opens the existing Settings
+   dialog. No inline form, no separate picker — one place, three commands,
+   done. */
+function ModelInstallDialog({ onClose, onOpenSettings, onRefresh }) {
+  const cmds = [
+    { label: "Claude Code (Anthropic)", install: "npm install -g @anthropic-ai/claude-code", login: "claude login" },
+    { label: "Codex (OpenAI)",          install: "npm install -g @openai/codex",            login: "codex login" },
+  ];
+  const [copied, setCopied] = useState(null);
+  const copy = (text, id) => {
+    try { navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(c => c === id ? null : c), 1400); } catch {}
+  };
+  return html`
+    <div className="workflow-modal-backdrop" onClick=${onClose}>
+      <div className="workflow-modal model-install-modal" onClick=${e => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div>
+            <div className="workflow-modal-title">Install a model CLI</div>
+            <div className="workflow-modal-sub">Pick one — you only need one path to a model.</div>
+          </div>
+          <button type="button" className="workflow-modal-close" onClick=${onClose} aria-label="Close">×</button>
+        </div>
+        <div className="model-install-modal-body">
+          ${cmds.map((c, i) => html`
+            <div className="model-install-modal-row" key=${c.label}>
+              <div className="model-install-modal-name">${c.label}</div>
+              ${[c.install, c.login].map((cmd, j) => html`
+                <div className="model-install-modal-cmd" key=${j}>
+                  <code>${cmd}</code>
+                  <button
+                    type="button"
+                    className="model-install-modal-copy"
+                    onClick=${() => copy(cmd, `${i}-${j}`)}
+                  >${copied === `${i}-${j}` ? "Copied" : "Copy"}</button>
+                </div>
+              `)}
+            </div>
+          `)}
+          <div className="model-install-modal-row model-install-modal-row-key">
+            <div className="model-install-modal-name">Or paste an API key</div>
+            <button type="button" className="model-install-modal-key-btn" onClick=${onOpenSettings}>
+              Open Settings to paste a key
+            </button>
+          </div>
+        </div>
+        <div className="model-install-modal-foot">
+          <button type="button" className="model-setup-wizard-nav" onClick=${onClose}>Close</button>
+          <button type="button" className="model-setup-wizard-nav is-primary" onClick=${onRefresh}>I've installed it · refresh</button>
+        </div>
       </div>
     </div>
   `;
@@ -12711,7 +12698,6 @@ function ProjectsLanding({ info, projects, onReload }) {
 
         ${projects.length === 0 && !creating && setupNeeded && onboardingReady && html`
           <${ModelSetupCard}
-            workspaceDir=${info.workspaceDir}
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
             onOpenSettings=${() => setSettingsOpen(true)}

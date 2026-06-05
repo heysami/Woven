@@ -6372,6 +6372,165 @@ a.ds-badge:hover, button.ds-badge:hover {
   .model-setup-wizard-pip-tag { display: none; }
 }
 
+/* v3.4.43 — Step 1 simplified layout. Status dot + label, a single CTA
+   that opens the install-instructions modal, and a quiet refresh link.
+   Replaces the previous two-tile choice grid + inline CLI sub-picker. */
+.model-setup-step1 {
+  display: grid;
+  gap: 14px;
+  max-width: 460px;
+  margin: 0 auto;
+  text-align: center;
+}
+.model-setup-step1-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.model-setup-step1-status[data-ok="true"] {
+  border-color: color-mix(in oklch, var(--ok, #16a34a) 50%, var(--border));
+  background: color-mix(in oklch, var(--ok, #16a34a) 5%, var(--surface));
+  color: color-mix(in oklch, var(--ok, #16a34a) 80%, var(--text));
+}
+.model-setup-step1-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint);
+}
+.model-setup-step1-status[data-ok="true"] .model-setup-step1-dot {
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+}
+.model-setup-step1-cta {
+  appearance: none;
+  border: 1px solid var(--accent, oklch(55% 0.18 252));
+  background: var(--accent, oklch(55% 0.18 252));
+  color: var(--surface);
+  border-radius: 8px;
+  padding: 12px 22px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+.model-setup-step1-cta:hover { filter: brightness(1.05); }
+.model-setup-step1-refresh {
+  appearance: none;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 4px;
+}
+.model-setup-step1-refresh:hover { color: var(--text); }
+
+/* v3.4.43 — Install-instructions popup opened from Step 1's CTA.
+   Reuses the .workflow-modal-backdrop / .workflow-modal pattern from the
+   workflow surface so we don't redefine the centering/overlay; just adds
+   the inner layout for two CLI install rows + an "Or paste an API key"
+   row. Keep it tight — no marketing copy, just commands + copy buttons. */
+.model-install-modal {
+  width: min(560px, 92vw);
+  max-height: min(70vh, 600px);
+  grid-template-rows: auto 1fr auto;
+}
+.workflow-modal-close {
+  appearance: none;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 6px;
+}
+.workflow-modal-close:hover { color: var(--text); }
+.model-install-modal-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.model-install-modal-row {
+  display: grid;
+  gap: 6px;
+}
+.model-install-modal-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.model-install-modal-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in oklch, var(--text) 4%, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px 6px 10px;
+}
+.model-install-modal-cmd code {
+  flex: 1 1 auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+}
+.model-install-modal-copy {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.model-install-modal-copy:hover {
+  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
+}
+.model-install-modal-row-key {
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+}
+.model-install-modal-key-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  justify-self: start;
+  color: var(--text);
+}
+.model-install-modal-key-btn:hover {
+  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 45%, var(--border));
+  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
+}
+.model-install-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2, color-mix(in oklch, var(--surface) 95%, var(--text) 5%));
+}
+
 /* Shared layout for the optional sub-sections (Step 2 · asset providers,
    Step 3 · local skills) that follow the required Step 1 model picker.
    Visually quieter than the model choices — dashed top divider, smaller
