@@ -15808,6 +15808,100 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   `, document.body);
 }
 
+/* Portaled row of action chips that float above the node, aligned to the
+   left of the pick-element badge (rect.right - 32 - 6). Used by prototype
+   and asset nodes to surface Show-code / Zoom outside the title bar so the
+   chrome stays uncluttered. Each action is { key, icon, tip, ariaLabel,
+   onClick, active, disabled, className }. Visibility + rect tracking mirror
+   WorkflowNodeSelectBadge; the canvas-interacting hide rule kicks in via the
+   .workflow-node-top-actions CSS selector. */
+function WorkflowNodeTopActions({ nodeId, selected, actions }) {
+  const [rect, setRect] = useState(null);
+  const [tipState, setTipState] = useState(null);
+  useEffect(() => {
+    if (!selected) { setRect(null); return; }
+    let raf = 0;
+    let last = null;
+    const tick = () => {
+      if (window.__thCanvasInteracting) { raf = requestAnimationFrame(tick); return; }
+      const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      if (node) {
+        const r = node.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                   right: r.right, bottom: r.bottom };
+          setRect(last);
+        }
+      } else if (last) {
+        last = null;
+        setRect(null);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeId, selected]);
+  const visibleActions = (actions || []).filter(Boolean);
+  if (!selected || !rect || visibleActions.length === 0) return null;
+  // 32×32 button matches the pick-badge sizing; 4px between buttons; 6px
+  // gap before the badge (which is 32px wide and sits flush to rect.right).
+  const BTN = 32, GAP = 4, BADGE_W = 32, BADGE_GAP = 6;
+  const totalW = visibleActions.length * BTN + (visibleActions.length - 1) * GAP;
+  const style = {
+    position: "fixed",
+    top: (rect.top - 40) + "px",
+    left: (rect.right - BADGE_W - BADGE_GAP - totalW) + "px",
+    height: BTN + "px",
+    zIndex: 60,
+  };
+  const showTip = (key, el, text) => {
+    if (!el || !text) { setTipState(null); return; }
+    const r = el.getBoundingClientRect();
+    setTipState({ key, left: r.left + r.width / 2, top: r.top - 6, text });
+  };
+  const clearTip = () => setTipState(null);
+  const tipBubble = tipState ? html`
+    <div
+      className="th-portal-tip th-portal-tip-above"
+      style=${{
+        position: "fixed",
+        left: tipState.left + "px",
+        top:  tipState.top + "px",
+        transform: "translate(-50%, -100%)",
+        zIndex: 70,
+        pointerEvents: "none",
+      }}>${tipState.text}</div>
+  ` : null;
+  return createPortal(html`
+    <${React.Fragment}>
+      <div
+        className="workflow-node-top-actions"
+        data-node-id=${nodeId}
+        style=${style}
+        onMouseDown=${(e) => e.stopPropagation()}
+      >
+        ${visibleActions.map(a => html`
+          <button
+            key=${a.key}
+            className=${"workflow-node-top-action" + (a.active ? " is-on" : "") + (a.className ? " " + a.className : "")}
+            data-node-id=${nodeId}
+            disabled=${!!a.disabled}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => { e.stopPropagation(); if (a.onClick) a.onClick(); }}
+            onMouseEnter=${(e) => showTip(a.key, e.currentTarget, a.tip)}
+            onMouseLeave=${clearTip}
+            onFocus=${(e) => showTip(a.key, e.currentTarget, a.tip)}
+            onBlur=${clearTip}
+            aria-label=${a.ariaLabel || a.tip || a.key}
+          >${a.icon}</button>
+        `)}
+      </div>
+      ${tipBubble}
+    <//>
+  `, document.body);
+}
+
 /* v3.2 — Toast for pick-mode element ops (copy / paste / delete).
    Portaled to document.body, fixed at bottom-center, auto-dismisses via
    the flashPickOp dwell timer in WorkflowSurface. Three visual variants:
@@ -29085,17 +29179,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           >📌</span>
         `}
         <span className="workflow-node-bar-spacer"/>
-        ${onToggleCode && html`
-          <${HoverTip}
-            className=${"workflow-node-action workflow-node-action-code" + (codeOpen ? " is-on" : "")}
-            tip=${codeOpen
-              ? "Hide code — close the source-file tabs docked to the right of this prototype."
-              : "Show code — dock a tabbed source-file viewer next to this prototype (every text file under source/" + branch + "/)."}
-            ariaLabel="Show prototype source code"
-            onClick=${(e) => { e.stopPropagation(); onToggleCode(); }}
-            onMouseDown=${(e) => e.stopPropagation()}
-          ><${Icon.Code}/><//>
-        `}
         <${HoverTip}
           className="workflow-node-action"
           tip="Open this prototype in the editor (new tab)"
@@ -29126,22 +29209,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             >${auditing ? html`<${Icon.Refresh}/>` : html`<${Icon.Shield}/>`}<//>
           <//>
         `}
-        ${onZoom && html`
-          <${HoverTip}
-            className="workflow-node-action workflow-node-action-zoom"
-            tip="Zoom in — open this prototype at native size for direct editing (Select / Text / Comment / Sketch / Export)."
-            ariaLabel="Zoom"
-            onClick=${(e) => { e.stopPropagation(); onZoom(); }}
-            onMouseDown=${(e) => e.stopPropagation()}
-          ><${Icon.Search}/><//>
-        `}
-        <${HoverTip}
-          className="workflow-node-action workflow-node-action-expose"
-          tip=${locked ? "Re-expose visual assets at the current screen." : "Expose visual assets on this screen — surface their source paths so upstream nodes can write into them."}
-          ariaLabel="Expose visual assets"
-          onClick=${(e) => { e.stopPropagation(); expose(); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        ><${Icon.Plus}/><//>
         <${HoverTip}
           className="workflow-node-action"
           tip="Manage exposed assets — open the full list of assets and pick which ones to expose to upstream writers."
@@ -29276,6 +29343,31 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       />
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
       ${selected && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${selected && html`<${WorkflowNodeTopActions}
+        nodeId=${node.id}
+        selected=${selected}
+        actions=${[
+          onToggleCode && {
+            key: "code",
+            icon: html`<${Icon.Code}/>`,
+            tip: codeOpen
+              ? "Hide code — close the source-file tabs docked to the right of this prototype."
+              : "Show code — dock a tabbed source-file viewer next to this prototype (every text file under source/" + branch + "/).",
+            ariaLabel: "Show prototype source code",
+            active: codeOpen,
+            onClick: onToggleCode,
+            className: "workflow-node-top-action-code",
+          },
+          onZoom && {
+            key: "zoom",
+            icon: html`<${Icon.Search}/>`,
+            tip: "Zoom in — open this prototype at native size for direct editing (Select / Text / Comment / Sketch / Export).",
+            ariaLabel: "Zoom",
+            onClick: onZoom,
+            className: "workflow-node-top-action-zoom",
+          },
+        ]}
+      />`}
       ${selected && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
@@ -31212,26 +31304,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             onMouseDown=${(e) => e.stopPropagation()}
           >⇄<//>
         `}
-        ${onZoom && kind === "html" && isFileRef && !isInlinePath && html`
-          <${HoverTip}
-            className="workflow-node-action workflow-node-action-zoom"
-            tip="Zoom in — open this HTML at native size for direct editing."
-            ariaLabel="Zoom"
-            onClick=${(e) => { e.stopPropagation(); onZoom(); }}
-            onMouseDown=${(e) => e.stopPropagation()}
-          ><${Icon.Search}/><//>
-        `}
-        ${onToggleCode && isCodeViewableNode(node) && html`
-          <${HoverTip}
-            className=${"workflow-node-action workflow-node-action-code" + (codeOpen ? " is-on" : "")}
-            tip=${codeOpen
-              ? "Hide code — close the source view docked to the right of this asset."
-              : "Show code — dock the source file (" + (path.split("/").pop() || "asset") + ") next to this asset."}
-            ariaLabel="Show source code"
-            onClick=${(e) => { e.stopPropagation(); onToggleCode(); }}
-            onMouseDown=${(e) => e.stopPropagation()}
-          ><${Icon.Code}/><//>
-        `}
         ${(node.dsAudit || (assetDsRef && kind === "html" && isFileRef && !isInlinePath)) && (() => {
           const a = node.dsAudit;
           let glyph, state, title;
@@ -31479,6 +31551,31 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onChange=${onChange}
       />`}
       ${selected && (kind === "html" || kind === "html-set") && isFileRef && !isInlinePath && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${selected && html`<${WorkflowNodeTopActions}
+        nodeId=${node.id}
+        selected=${selected}
+        actions=${[
+          onToggleCode && isCodeViewableNode(node) && {
+            key: "code",
+            icon: html`<${Icon.Code}/>`,
+            tip: codeOpen
+              ? "Hide code — close the source view docked to the right of this asset."
+              : "Show code — dock the source file (" + (path.split("/").pop() || "asset") + ") next to this asset.",
+            ariaLabel: "Show source code",
+            active: codeOpen,
+            onClick: onToggleCode,
+            className: "workflow-node-top-action-code",
+          },
+          onZoom && kind === "html" && isFileRef && !isInlinePath && {
+            key: "zoom",
+            icon: html`<${Icon.Search}/>`,
+            tip: "Zoom in — open this HTML at native size for direct editing.",
+            ariaLabel: "Zoom",
+            onClick: onZoom,
+            className: "workflow-node-top-action-zoom",
+          },
+        ]}
+      />`}
       ${selected && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;

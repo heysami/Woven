@@ -1585,6 +1585,45 @@ button {
 }
 .workflow-node-select-badge:active { transform: translateY(1px); }
 
+/* Top-of-node action chips (Show code · Zoom). Portaled to document.body
+   alongside the pick badge, aligned to its left at top: rect.top - 40.
+   Same 32×32 chip styling as the select badge so the row reads as one
+   floating chrome strip above the node. */
+.workflow-node-top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.workflow-node-top-action {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
+}
+.workflow-node-top-action:hover:not([disabled]) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.workflow-node-top-action[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.workflow-node-top-action.is-on,
+.workflow-node-top-action.is-on:hover {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  border-color: var(--accent);
+}
+.workflow-node-top-action:active { transform: translateY(1px); }
+
 /* v3.3 — Asset action bar. Portaled horizontal strip of 4 icon buttons
    floating above a selected asset node. Each button opens a popover
    (refine / refine-prompt / fork / remix). Position is fixed-by-the-parent
@@ -1611,6 +1650,7 @@ button {
 body[data-canvas-interacting="true"] .workflow-asset-action-bar,
 body[data-canvas-interacting="true"] .workflow-asset-action-popover,
 body[data-canvas-interacting="true"] .workflow-node-select-badge,
+body[data-canvas-interacting="true"] .workflow-node-top-actions,
 body[data-canvas-interacting="true"] .th-portal-tip,
 body[data-canvas-interacting="true"] .workflow-asset-bg-popover {
   display: none !important;
