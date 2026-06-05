@@ -6,7 +6,7 @@
 
 ### A canvas for prototypes that feel designed.
 
-Bring an idea. Leave with a multi-page app where every illustration, every screen, every shader lives as its own node on the canvas. Polish one. Re-roll another. Pin the take you love.
+Toss Woven an idea. It gets woven into a whole app, drawn live on the canvas. Every illustration, every screen, every shader lands as its own node, so you can noodle on one, riff on another, branch off a weird take, or just trash the lot and try again. Freeform generation, freeform editing, pure chaos.
 
 Each kind of visual has its own pipeline. Raster portraits get generated and cut out. Shaders stay GLSL. Vectors stay paths. Particles, Lottie, and 3D each have their own subagent. The result reads as drawn.
 
