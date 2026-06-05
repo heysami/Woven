@@ -26162,24 +26162,51 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const installOn = (doc) => {
       if (!doc || installedDocs.has(doc)) return;
       const fwd = (e) => {
-        if (!(e.ctrlKey || e.metaKey)) return;
-        const win = doc.defaultView;
-        const frame = win && win.frameElement;
-        if (!frame) return;
-        const fr = frame.getBoundingClientRect();
-        const cw = frame.clientWidth || frame.offsetWidth || fr.width || 1;
-        const ch = frame.clientHeight || frame.offsetHeight || fr.height || 1;
-        const sx = fr.width  > 0 ? fr.width  / cw : 1;
-        const sy = fr.height > 0 ? fr.height / ch : 1;
+        // cmd/ctrl + wheel → canvas zoom (re-dispatch on host so the host
+        // wheel listener picks it up with corrected host viewport coords).
+        if (e.ctrlKey || e.metaKey) {
+          const win = doc.defaultView;
+          const frame = win && win.frameElement;
+          if (!frame) return;
+          const fr = frame.getBoundingClientRect();
+          const cw = frame.clientWidth || frame.offsetWidth || fr.width || 1;
+          const ch = frame.clientHeight || frame.offsetHeight || fr.height || 1;
+          const sx = fr.width  > 0 ? fr.width  / cw : 1;
+          const sy = fr.height > 0 ? fr.height / ch : 1;
+          e.preventDefault();
+          e.stopPropagation();
+          host.dispatchEvent(new WheelEvent("wheel", {
+            deltaX: e.deltaX, deltaY: e.deltaY,
+            ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+            clientX: fr.left + e.clientX * sx,
+            clientY: fr.top  + e.clientY * sy,
+            bubbles: false, cancelable: true,
+          }));
+          return;
+        }
+        // Plain wheel: per-axis routing. If the iframe page can scroll in
+        // an axis, let the page handle it (the user wants to scroll inside
+        // the prototype). If it can't, pan the zoom-host in that axis so
+        // the user can navigate the scaled canvas. Axes are independent:
+        // a page that scrolls vertically but not horizontally still lets
+        // shift+wheel / trackpad-X pan the host horizontally.
+        const se = doc.scrollingElement || doc.documentElement;
+        if (!se) return;
+        const canScrollX = se.scrollWidth  > se.clientWidth  + 1;
+        const canScrollY = se.scrollHeight > se.clientHeight + 1;
+        if (e.deltaX === 0 && e.deltaY === 0) return;
+        // We always preventDefault + apply scroll ourselves: this keeps
+        // the iframe-native and host-pan paths in lockstep (no risk of
+        // double-scrolling when the browser also fires native scroll).
+        // Apply iframe scroll for axes the page can scroll; otherwise
+        // pan the zoom-host so the user can still navigate at scale.
         e.preventDefault();
-        e.stopPropagation();
-        host.dispatchEvent(new WheelEvent("wheel", {
-          deltaX: e.deltaX, deltaY: e.deltaY,
-          ctrlKey: e.ctrlKey, metaKey: e.metaKey,
-          clientX: fr.left + e.clientX * sx,
-          clientY: fr.top  + e.clientY * sy,
-          bubbles: false, cancelable: true,
-        }));
+        const win = doc.defaultView;
+        if (win && (canScrollX || canScrollY)) {
+          win.scrollBy(canScrollX ? e.deltaX : 0, canScrollY ? e.deltaY : 0);
+        }
+        if (!canScrollX && e.deltaX) host.scrollLeft += e.deltaX;
+        if (!canScrollY && e.deltaY) host.scrollTop  += e.deltaY;
       };
       try { doc.addEventListener("wheel", fwd, { passive: false }); } catch { return; }
       installedDocs.set(doc, fwd);
