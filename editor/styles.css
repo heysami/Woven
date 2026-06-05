@@ -6282,9 +6282,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--ok, #16a34a);
 }
 .model-setup-wizard-body {
-  padding: 26px 32px;
-  min-height: 240px;
-  /* Asset-provider / local-tools children inside have their own top divider
+  padding: 20px 28px;
+  /* No min-height — let the wizard size to its content so Steps with a
+     small footprint (Step 1) don't have a big empty void below them.
+     Asset-provider / local-tools children inside have their own top divider
      (`border-top: 1px dashed var(--border)`) for the "Step 1 → Step 2" gap
      in the legacy stacked layout. The wizard shows one step at a time, so
      that divider is dead weight here — turn it off. */
@@ -6359,22 +6360,20 @@ a.ds-badge:hover, button.ds-badge:hover {
   .model-setup-wizard-line { width: 32px; flex-basis: 32px; }
 }
 
-/* v3.4.43 — Step 1 simplified layout. Status dot + label, a single CTA
-   that opens the install-instructions modal, and a quiet refresh link.
-   Replaces the previous two-tile choice grid + inline CLI sub-picker. */
+/* v3.4.45 — Step 1: status pill + small REQUIRED badge, two CTAs side by
+   side (Install CLI / Paste an API key), and a quiet refresh link. Tight
+   spacing — no max-width centering, no big gaps. */
 .model-setup-step1 {
   display: grid;
-  gap: 14px;
-  max-width: 460px;
-  margin: 0 auto;
+  gap: 10px;
+  justify-items: center;
   text-align: center;
 }
 .model-setup-step1-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  justify-self: center;
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -6393,32 +6392,47 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-step1-status[data-ok="true"] .model-setup-step1-dot {
   background: var(--ok, #16a34a);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+}
+.model-setup-step1-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .model-setup-step1-cta {
   appearance: none;
   border: 1px solid var(--accent, oklch(55% 0.18 252));
   background: var(--accent, oklch(55% 0.18 252));
   color: var(--surface);
-  border-radius: 8px;
-  padding: 12px 22px;
+  border-radius: 7px;
+  padding: 9px 18px;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 120ms ease;
+  transition: filter 120ms ease, background 120ms ease, color 120ms ease;
 }
 .model-setup-step1-cta:hover { filter: brightness(1.05); }
+.model-setup-step1-cta.is-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+.model-setup-step1-cta.is-secondary:hover {
+  filter: none;
+  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 40%, var(--border));
+  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
+}
 .model-setup-step1-refresh {
   appearance: none;
   background: none;
   border: none;
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-muted);
   text-decoration: underline;
   cursor: pointer;
-  padding: 4px;
+  padding: 2px;
 }
 .model-setup-step1-refresh:hover { color: var(--text); }
 
@@ -6721,23 +6735,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   .onboarding-tool-actions { justify-content: flex-end; }
 }
 
-/* v3.4.41 — Required-missing variant. Mirrors the "NO MODEL CONFIGURED"
-   urgency: red dot, red-tinted border + background wash, prominent badge.
-   Once the user installs the package the row collapses back to the calm
-   ".is-installed" state defined above. */
-.onboarding-tool-row.is-required-missing {
-  border-color: color-mix(in oklch, var(--danger, #dc2626) 45%, var(--border));
-  background: color-mix(in oklch, var(--danger, #dc2626) 5%, var(--surface));
-}
-.onboarding-tool-dot[data-required="true"] {
-  background: var(--danger, #dc2626);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--danger, #dc2626) 25%, transparent);
-  animation: onboarding-tool-required-pulse 1.6s ease-in-out infinite;
-}
-@keyframes onboarding-tool-required-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px color-mix(in oklch, var(--danger, #dc2626) 25%, transparent); }
-  50%      { box-shadow: 0 0 0 4px color-mix(in oklch, var(--danger, #dc2626) 18%, transparent); }
-}
+/* v3.4.45 — Minimal required indicator: one small red pill, that's it.
+   No row-wide red border or background tint (those read as "error" rather
+   than "still to do"). The reason text is plain muted prose below the
+   pill — no red box, no left bar. */
 .onboarding-tool-required-badge {
   display: inline-flex;
   align-items: center;
@@ -6752,16 +6753,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-tool-required-reason {
   font-size: 11.5px;
-  color: color-mix(in oklch, var(--danger, #dc2626) 70%, var(--text));
-  background: color-mix(in oklch, var(--danger, #dc2626) 7%, var(--surface));
-  border-left: 2px solid color-mix(in oklch, var(--danger, #dc2626) 60%, transparent);
-  padding: 6px 10px;
-  border-radius: 0 4px 4px 0;
+  color: var(--text-muted);
   line-height: 1.45;
-}
-.onboarding-tool-required-reason strong {
-  font-weight: 600;
-  color: color-mix(in oklch, var(--danger, #dc2626) 85%, var(--text));
 }
 
 /* Chat streaming dots — animated triple-dot loader rendered below the last

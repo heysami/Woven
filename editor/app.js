@@ -12298,31 +12298,25 @@ function OnboardingLocalToolRow({ pkg }) {
     } finally { setBusy(false); }
   };
   const installed = !!(status && status.installed);
-  // v3.4.41 — A required package that isn't installed is flagged with a
-  // REQUIRED badge + the reason line, mirroring how the "NO MODEL CONFIGURED"
-  // pill makes the agent-model gap unmissable. Once installed, the badge
-  // disappears so the row collapses back to the calm "✓ installed" state.
+  // v3.4.45 — Just ONE small REQUIRED pill when missing. No row-wide red
+  // border, no red background wash, no red reason box — those read as
+  // "error" rather than "still to do". The pill alone tells the user
+  // the package is required; the reason line below is plain muted text.
   const missingRequired = pkg.required && status && !installed;
   const stateLabel = installed
     ? `✓ installed${status && status.version && status.version !== "unknown" ? " · v" + status.version : ""}`
-    : (status ? (pkg.required ? "— REQUIRED · not installed" : "— not installed") : "checking…");
+    : (status ? "not installed" : "checking…");
   return html`
-    <div className=${
-      "onboarding-tool-row"
-      + (installed ? " is-installed" : "")
-      + (missingRequired ? " is-required-missing" : "")
-    }>
+    <div className=${"onboarding-tool-row" + (installed ? " is-installed" : "")}>
       <div className="onboarding-tool-row-head">
-        <span className="onboarding-tool-dot" data-ok=${installed} data-required=${missingRequired ? "true" : null}/>
+        <span className="onboarding-tool-dot" data-ok=${installed}/>
         <span className="onboarding-tool-name">${pkg.label}</span>
-        ${missingRequired && html`<span className="onboarding-tool-required-badge" title="Install this before generating raster-foreground assets">REQUIRED</span>`}
+        ${missingRequired && html`<span className="onboarding-tool-required-badge" title=${pkg.requiredReason || "Required"}>REQUIRED</span>`}
         <span className="onboarding-tool-skills">covers: ${pkg.skills}</span>
         <span className="onboarding-tool-state">${stateLabel}</span>
       </div>
       ${missingRequired && pkg.requiredReason && html`
-        <div className="onboarding-tool-required-reason">
-          <strong>Why this is required:</strong> ${pkg.requiredReason}
-        </div>
+        <div className="onboarding-tool-required-reason">${pkg.requiredReason}</div>
       `}
       <div className="onboarding-tool-row-body">
         <span className="onboarding-tool-hint">${pkg.hint}</span>
@@ -12423,12 +12417,20 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
             <div className="model-setup-step1-status" data-ok=${modelOk}>
               <span className="model-setup-step1-dot"/>
               <span className="model-setup-step1-label">${modelOk ? "Model connected" : "No model yet"}</span>
+              ${!modelOk && html`<span className="onboarding-tool-required-badge" title="An agent model is required before you can create a project">REQUIRED</span>`}
             </div>
-            <button
-              type="button"
-              className="model-setup-step1-cta"
-              onClick=${() => setInstallOpen(true)}
-            >${modelOk ? "Reconnect a different model" : "Show install instructions"}</button>
+            <div className="model-setup-step1-actions">
+              <button
+                type="button"
+                className="model-setup-step1-cta"
+                onClick=${() => setInstallOpen(true)}
+              >Install a CLI</button>
+              <button
+                type="button"
+                className="model-setup-step1-cta is-secondary"
+                onClick=${onOpenSettings}
+              >Paste an API key</button>
+            </div>
             <button
               type="button"
               className="model-setup-step1-refresh"
@@ -12459,7 +12461,6 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
 
       ${installOpen && html`<${ModelInstallDialog}
         onClose=${() => setInstallOpen(false)}
-        onOpenSettings=${() => { setInstallOpen(false); onOpenSettings(); }}
         onRefresh=${async () => { await onRefresh(); setInstallOpen(false); }}/>`}
     </div>
   `;
@@ -12470,7 +12471,7 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
    plus an "Or paste an API key" button that opens the existing Settings
    dialog. No inline form, no separate picker — one place, three commands,
    done. */
-function ModelInstallDialog({ onClose, onOpenSettings, onRefresh }) {
+function ModelInstallDialog({ onClose, onRefresh }) {
   const cmds = [
     { label: "Claude Code (Anthropic)", install: "npm install -g @anthropic-ai/claude-code", login: "claude login" },
     { label: "Codex (OpenAI)",          install: "npm install -g @openai/codex",            login: "codex login" },
@@ -12505,12 +12506,6 @@ function ModelInstallDialog({ onClose, onOpenSettings, onRefresh }) {
               `)}
             </div>
           `)}
-          <div className="model-install-modal-row model-install-modal-row-key">
-            <div className="model-install-modal-name">Or paste an API key</div>
-            <button type="button" className="model-install-modal-key-btn" onClick=${onOpenSettings}>
-              Open Settings to paste a key
-            </button>
-          </div>
         </div>
         <div className="model-install-modal-foot">
           <button type="button" className="model-setup-wizard-nav" onClick=${onClose}>Close</button>
