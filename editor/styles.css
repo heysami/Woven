@@ -6201,6 +6201,177 @@ a.ds-badge:hover, button.ds-badge:hover {
   .model-setup-card { padding: 28px 22px; }
 }
 
+/* v3.4.42 — Wizard variant. Same outer card chrome, but the body is a
+   one-step-at-a-time stack with a pip header showing progress and a
+   sticky footer with Back/Next. Tunes down the danger-color border for
+   the wizard since "in progress" feels less alarming than "you have not
+   started" — only Step 1 of the wizard, when no model is configured,
+   gets the warning treatment via .model-setup-wizard:not(.is-ok). */
+.model-setup-wizard {
+  padding: 0;          /* let the wizard header / body / footer own padding */
+  gap: 0;
+  overflow: hidden;    /* sections divide cleanly */
+}
+.model-setup-wizard-header {
+  display: grid;
+  gap: 10px;
+  padding: 22px 28px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 3%, var(--surface));
+}
+.model-setup-wizard-eyebrow {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.model-setup-wizard-pips {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.model-setup-wizard-pip {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.model-setup-wizard-pip:hover { background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 4%, var(--surface)); }
+.model-setup-wizard-pip[data-active="true"] {
+  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 60%, var(--border));
+  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 8%, var(--surface));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 12%, transparent);
+}
+.model-setup-wizard-pip[data-done="true"] {
+  border-color: color-mix(in oklch, var(--ok, #16a34a) 50%, var(--border));
+  background: color-mix(in oklch, var(--ok, #16a34a) 5%, var(--surface));
+}
+.model-setup-wizard-pip[data-done="true"][data-active="true"] {
+  border-color: color-mix(in oklch, var(--ok, #16a34a) 65%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ok, #16a34a) 14%, transparent);
+}
+.model-setup-wizard-pip-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--border);
+  color: var(--text-muted);
+}
+.model-setup-wizard-pip[data-active="true"] .model-setup-wizard-pip-num {
+  background: var(--accent, oklch(55% 0.18 252));
+  color: var(--surface);
+}
+.model-setup-wizard-pip[data-done="true"] .model-setup-wizard-pip-num {
+  background: var(--ok, #16a34a);
+  color: var(--surface);
+}
+.model-setup-wizard-pip-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.model-setup-wizard-pip-tag {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.model-setup-wizard-body {
+  padding: 26px 32px;
+  min-height: 240px;
+  /* Asset-provider / local-tools children inside have their own top divider
+     (`border-top: 1px dashed var(--border)`) for the "Step 1 → Step 2" gap
+     in the legacy stacked layout. The wizard shows one step at a time, so
+     that divider is dead weight here — turn it off. */
+}
+.model-setup-wizard-body .onboarding-local-tools,
+.model-setup-wizard-body .onboarding-asset-providers {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.model-setup-wizard-step {
+  display: grid;
+  gap: 18px;
+}
+.model-setup-wizard-step .model-setup-head { text-align: left; }
+.model-setup-wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2, color-mix(in oklch, var(--surface) 95%, var(--text) 5%));
+}
+.model-setup-wizard-nav {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text);
+}
+.model-setup-wizard-nav:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 6%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
+}
+.model-setup-wizard-nav:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.model-setup-wizard-nav.is-primary {
+  background: var(--accent, oklch(55% 0.18 252));
+  border-color: var(--accent, oklch(55% 0.18 252));
+  color: var(--surface);
+}
+.model-setup-wizard-nav.is-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.model-setup-wizard-nav.is-primary:disabled {
+  background: var(--border);
+  border-color: var(--border);
+  color: var(--text-muted);
+  opacity: 1;
+}
+.model-setup-wizard-step-of {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.model-setup-wizard-step-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+@media (max-width: 720px) {
+  .model-setup-wizard-pips { grid-template-columns: 1fr; }
+  .model-setup-wizard-body { padding: 20px 18px; }
+  .model-setup-wizard-pip-tag { display: none; }
+}
+
 /* Shared layout for the optional sub-sections (Step 2 · asset providers,
    Step 3 · local skills) that follow the required Step 1 model picker.
    Visually quieter than the model choices — dashed top divider, smaller

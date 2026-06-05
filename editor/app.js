@@ -12363,90 +12363,174 @@ function OnboardingLocalToolsSection() {
   `;
 }
 
-/* Empty-state replacement shown on /editor/ when there are no projects AND
-   either the agent model is unresolved (no API key, no CLI) OR a required
-   local skill (rembg) is still missing. The card refuses to unmount until
-   BOTH gates pass; v3.4.41 extended it from a model-only gate to also cover
-   local skills so the user can't create a project that will fail at the
-   raster-foreground cutout step.
-   Two paths for the model gate:
-     1. Paste an API key → opens WorkflowSettingsDialog (handler from parent).
-     2. Connect a CLI    → expands into <ModelSetupCliPicker/> inline.
-   When the model is already configured but rembg is missing, the card
-   collapses to a focused "Step 3 only" layout that just asks the user to
-   install the missing skill — no model UI noise.
-   The parent re-polls /__media_config via `onRefresh` and re-checks local
-   skills via the th:local-skills-changed event the install rows fire, so
-   the card unmounts itself once both gates pass. */
+/* v3.4.42 — Empty-state setup, as a real wizard.
+   Pre-fix this was a single scrolling card showing model picker + asset
+   providers + local skills all stacked vertically; users missed the
+   bottom step and asset keys ate visual weight even though they're
+   optional. Now: one step visible at a time, header pips show progress,
+   Back/Next move through. Auto-jumps to the first unmet requirement on
+   mount so a user with a configured model but missing rembg lands on
+   Step 3 directly — no scrolling, no hunting.
+   Steps:
+     1 · Agent model   (required)  — gates everything else
+     2 · Asset keys    (optional)  — can be skipped
+     3 · Local skills  (required)  — rembg today
+   The card unmounts when both required gates pass (model + skills);
+   asset keys never block the wizard, only nudge the user to set them up
+   during the initial flow. */
 function ModelSetupCard({ onOpenSettings, onRefresh, workspaceDir, mediaCfg, localSkills }) {
+  const modelOk  = !!(mediaCfg && mediaCfg.configured);
+  const skillsOk = !!(localSkills && localSkills.allRequiredInstalled);
+  // Initial step = first unmet requirement; user can navigate freely after.
+  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 1);
+  // CLI sub-mode inside Step 1 — "Use a CLI" expands the picker without
+  // navigating away from Step 1.
   const [pick, setPick] = useState(null); // null | "cli"
-  const modelOk = mediaCfg && mediaCfg.configured;
-  // Focused-skill mode — model is fine, the only remaining gate is one or
-  // more required local packages. Show ONLY the local-tools section with a
-  // tighter header so the user isn't asked to "reconnect a model" they
-  // already configured.
-  if (modelOk && localSkills && !localSkills.allRequiredInstalled) {
-    const missingNames = localSkills.missing.map(p => p.label).join(", ");
-    return html`
-      <div className="landing-empty model-setup-card model-setup-card-skills-only">
-        <div className="model-setup-head">
-          <div className="model-setup-eyebrow">Required · Local skills</div>
-          <div className="model-setup-title">Install ${missingNames} before adding a project</div>
-          <div className="model-setup-desc">
-            Your agent model is configured — but ${missingNames} ${localSkills.missing.length === 1 ? "is" : "are"} still missing and required by the raster-foreground asset pipeline. Install ${localSkills.missing.length === 1 ? "it" : "them"} below to unlock <strong>+ New project</strong>.
-          </div>
-        </div>
-        <${OnboardingLocalToolsSection}/>
-      </div>
-    `;
-  }
-  if (pick === "cli") {
-    return html`
-      <div className="landing-empty model-setup-card">
-        <div className="model-setup-head">
-          <div className="model-setup-eyebrow">Step 1 · Required · Agent model</div>
-          <div className="model-setup-title">Connect a Claude CLI for the agent</div>
-          <div className="model-setup-desc">
-            The agent needs at least one way to reach a text model before any project can run. This step covers the agent only — image · video · SVG keys are optional and live below.
-            ${workspaceDir ? html`<span> Workspace lives under <code>${workspaceDir}</code>.</span>` : null}
-          </div>
-        </div>
-        <${ModelSetupCliPicker} onRefresh=${onRefresh} onBack=${() => setPick(null)}/>
-        ${mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg}/>`}
-        <${OnboardingLocalToolsSection}/>
-      </div>
-    `;
-  }
+  // If an external state change satisfies the step the user is on (e.g.
+  // they pasted an API key in Settings while parked on Step 1), advance
+  // to the next unmet step automatically — feels like a wizard "Next"
+  // happened for free.
+  const lastModelOkRef = useRef(modelOk);
+  useEffect(() => {
+    if (!lastModelOkRef.current && modelOk && step === 1) {
+      setStep(!skillsOk ? 3 : 2);
+      setPick(null);
+    }
+    lastModelOkRef.current = modelOk;
+  }, [modelOk, skillsOk, step]);
+
+  const canBack = step > 1;
+  // Step 1 only releases the Next button once a model is reachable.
+  // Step 2 (optional) always releases. Step 3 has no Next — it's the end.
+  const canNext = step === 1 ? modelOk : step === 2 ? true : false;
+
+  // Build the three pips the header renders. Click a done step to revisit
+  // it; click an unreached step to skip ahead (useful when the user knows
+  // they want to do asset keys first, for example).
+  const pips = [
+    { n: 1, label: "Agent model",   done: modelOk,  required: true  },
+    { n: 2, label: "Asset keys",    done: false,    required: false, optional: true },
+    { n: 3, label: "Local skills",  done: skillsOk, required: true  },
+  ];
+
   return html`
-    <div className="landing-empty model-setup-card">
-      <div className="model-setup-head">
-        <div className="model-setup-eyebrow">Step 1 · Required · Agent model</div>
-        <div className="model-setup-title">Connect the agent model before adding a project</div>
-        <div className="model-setup-desc">
-          The agent runs every workflow step — it needs one path to a text model. Pick API key (Anthropic / OpenAI) or shell out to a CLI. Asset keys (image · video · SVG) are optional and live in the next step.
+    <div className="landing-empty model-setup-card model-setup-wizard">
+      <div className="model-setup-wizard-header">
+        <div className="model-setup-wizard-eyebrow">
+          ${pips.filter(p => p.required).every(p => p.done)
+            ? "Onboarding — almost done"
+            : "Onboarding"}
+        </div>
+        <div className="model-setup-wizard-pips" role="tablist" aria-label="Onboarding steps">
+          ${pips.map(p => html`
+            <button
+              key=${p.n}
+              role="tab"
+              type="button"
+              className="model-setup-wizard-pip"
+              data-active=${step === p.n}
+              data-done=${p.done}
+              aria-selected=${step === p.n}
+              onClick=${() => { setStep(p.n); setPick(null); }}
+              title=${p.done ? `Step ${p.n} complete — click to revisit` : `Go to Step ${p.n}`}
+            >
+              <span className="model-setup-wizard-pip-num">${p.done ? "✓" : p.n}</span>
+              <span className="model-setup-wizard-pip-label">${p.label}</span>
+              ${p.optional && html`<span className="model-setup-wizard-pip-tag">optional</span>`}
+            </button>
+          `)}
         </div>
       </div>
-      <div className="model-setup-choices">
-        <button className="model-setup-choice" onClick=${onOpenSettings}>
-          <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
-          <div className="model-setup-choice-body">
-            <div className="model-setup-choice-title">Use an API key</div>
-            <div className="model-setup-choice-desc">Paste an Anthropic or OpenAI key — the agent will use it for every text run. Stored locally at <code className="model-setup-inline-code">~/.test-harness/media-config.json</code> · mode 0600.</div>
-            <div className="model-setup-choice-cta">Open Settings →</div>
+
+      <div className="model-setup-wizard-body">
+        ${step === 1 && html`
+          <div className="model-setup-wizard-step">
+            <div className="model-setup-head">
+              <div className="model-setup-eyebrow">Step 1 of 3 · Required · Agent model</div>
+              <div className="model-setup-title">${pick === "cli" ? "Connect a Claude CLI for the agent" : (modelOk ? "Agent model connected" : "Connect the agent model")}</div>
+              <div className="model-setup-desc">
+                ${modelOk
+                  ? html`Your model is reachable from this editor — click <strong>Continue →</strong> to move on, or pick a different one below.`
+                  : "The agent runs every workflow step — it needs one path to a text model. Pick API key (Anthropic / OpenAI) or shell out to a CLI."}
+                ${workspaceDir && pick === "cli" ? html`<span> Workspace lives under <code>${workspaceDir}</code>.</span>` : null}
+              </div>
+            </div>
+            ${pick === "cli"
+              ? html`<${ModelSetupCliPicker} onRefresh=${onRefresh} onBack=${() => setPick(null)}/>`
+              : html`
+                <div className="model-setup-choices">
+                  <button className="model-setup-choice" onClick=${onOpenSettings}>
+                    <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
+                    <div className="model-setup-choice-body">
+                      <div className="model-setup-choice-title">Use an API key</div>
+                      <div className="model-setup-choice-desc">Paste an Anthropic or OpenAI key. Stored locally at <code className="model-setup-inline-code">~/.test-harness/media-config.json</code> · mode 0600.</div>
+                      <div className="model-setup-choice-cta">Open Settings →</div>
+                    </div>
+                  </button>
+                  <button className="model-setup-choice" onClick=${() => setPick("cli")}>
+                    <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
+                    <div className="model-setup-choice-body">
+                      <div className="model-setup-choice-title">Use a CLI</div>
+                      <div className="model-setup-choice-desc">Shell out to Claude Code (or Codex) — uses your existing CLI login, no API key required for text runs.</div>
+                      <div className="model-setup-choice-cta">Pick a CLI →</div>
+                    </div>
+                  </button>
+                </div>
+                <button className="model-setup-refresh-link" onClick=${onRefresh}>I've already set one up · refresh</button>
+              `}
           </div>
-        </button>
-        <button className="model-setup-choice" onClick=${() => setPick("cli")}>
-          <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
-          <div className="model-setup-choice-body">
-            <div className="model-setup-choice-title">Use a CLI</div>
-            <div className="model-setup-choice-desc">Shell out to Claude Code (or Codex) — uses your existing CLI login, no API key required for text runs.</div>
-            <div className="model-setup-choice-cta">Pick a CLI →</div>
+        `}
+
+        ${step === 2 && html`
+          <div className="model-setup-wizard-step">
+            <div className="model-setup-head">
+              <div className="model-setup-eyebrow">Step 2 of 3 · Optional · Asset providers</div>
+              <div className="model-setup-title">Add image / video / SVG keys (or skip)</div>
+              <div className="model-setup-desc">
+                Provider keys unlock the matching asset skills (image generation, video, SVG). You can skip this and add keys later via the gear icon — projects still create + run without them; the workflow will just refuse the un-keyed media skills.
+              </div>
+            </div>
+            ${mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg}/>`}
           </div>
-        </button>
+        `}
+
+        ${step === 3 && html`
+          <div className="model-setup-wizard-step">
+            <div className="model-setup-head">
+              <div className="model-setup-eyebrow">Step 3 of 3 · Required · Local skills</div>
+              <div className="model-setup-title">${skillsOk ? "Local skills installed" : "Install required local skills"}</div>
+              <div className="model-setup-desc">
+                ${skillsOk
+                  ? html`All required local packages are installed — close this card and click <strong>+ New project</strong> to start.`
+                  : html`Local Python packages the daemon runs as subprocesses — no API key required. Marked <strong>REQUIRED</strong> are needed before the matching asset pipeline can run (e.g. <code>rembg</code> for raster-foreground cutouts).`}
+              </div>
+            </div>
+            <${OnboardingLocalToolsSection}/>
+          </div>
+        `}
       </div>
-      <button className="model-setup-refresh-link" onClick=${onRefresh}>I've already set one up · refresh</button>
-      ${mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg}/>`}
-      <${OnboardingLocalToolsSection}/>
+
+      <div className="model-setup-wizard-footer">
+        <button
+          type="button"
+          className="model-setup-wizard-nav"
+          disabled=${!canBack}
+          onClick=${() => { setStep(step - 1); setPick(null); }}
+        >← Back</button>
+        <span className="model-setup-wizard-step-of">Step ${step} of 3</span>
+        ${step < 3 && html`
+          <button
+            type="button"
+            className="model-setup-wizard-nav is-primary"
+            disabled=${!canNext}
+            title=${canNext ? "Move to the next step" : (step === 1 ? "Connect a model before continuing" : "")}
+            onClick=${() => { setStep(step + 1); setPick(null); }}
+          >${step === 2 ? "Skip · Continue →" : "Continue →"}</button>
+        `}
+        ${step === 3 && html`
+          <span className="model-setup-wizard-step-hint">${skillsOk ? "" : "Install above to finish"}</span>
+        `}
+      </div>
     </div>
   `;
 }
