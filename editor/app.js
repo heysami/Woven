@@ -11807,6 +11807,20 @@ function NewProjectWizard({ workspaceProjects, existingDsList, onClose, onCreate
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      // The daemon writes brand-spec.md / reference.md / prd.md best-effort
+      // and returns any per-artifact write failures here. Failing silently
+      // bit us hard: the marker reports hasBrandSpec/hasReference based on
+      // wizard intent, not on whether the files actually landed, so the
+      // downstream orchestrator would happily plan against blank intake.
+      // Surface them loudly so they can't be missed again.
+      if (Array.isArray(j.onboardingWarnings) && j.onboardingWarnings.length) {
+        console.warn("[onboarding] some intake artifacts failed to write:", j.onboardingWarnings);
+        throw new Error(
+          "Project created, but some intake files failed to write:\n  • " +
+          j.onboardingWarnings.join("\n  • ") +
+          "\nThe orchestrator would build on a blank brief — please report this."
+        );
+      }
       onCreated && onCreated({ id: body.id, scope: body.scope || null });
     } catch (e) {
       setErr(e.message || String(e));

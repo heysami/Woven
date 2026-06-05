@@ -39,8 +39,8 @@ You typically run as three Task-tool subagent calls dispatched by workflow-orche
 
 **Input:** project root.
 
-1. **Load the canonical fixture.** Read `source/_coherence/model.json` (or wherever `cp_fixture` wrote it). This is the source of truth — every entity, every fact, declared once.
-2. **Enumerate the pages.** Glob `source/*.html` (typically `index.html`, `verdict-card.html`, `audit-trail.html` — three pages).
+1. **Load the canonical fixture.** Read `source/main/_coherence/model.json` (or wherever `cp_fixture` wrote it). This is the source of truth — every entity, every fact, declared once.
+2. **Enumerate the pages.** Glob `source/main/*.html` (typically `index.html`, `verdict-card.html`, `audit-trail.html` — three pages).
 3. **Walk every fact in every page.**
    - For each numeric figure in prose (`312 amplifiers`, `0.92`, `49m`, `+1300%`, etc.), check if it maps to a known model entity (e.g., a case id appearing nearby).
    - For each proper-noun fact (`@harbour_voice`, `SNT-2614-PORT`, `synthetic-minister-clip`), check the same.
@@ -49,7 +49,7 @@ You typically run as three Task-tool subagent calls dispatched by workflow-orche
    - **R2 (block):** the same entity key must not resolve to two values across surfaces.
    - **R3 (block):** a `caseId` referenced on multiple pages carries the same `grade` / `confidence` / counts everywhere.
    - **R4 (warn):** a figure in prose with no backing model entity is flagged as an orphan fact (invented number suspect).
-5. **Append findings** to `source/COHERENCE_REPORT.json` (create if missing). Each finding has shape:
+5. **Append findings** to `source/main/COHERENCE_REPORT.json` (create if missing). Each finding has shape:
    ```json
    { "lint": "data", "rule": "R1", "severity": "block",
      "surface": "verdict-card.html", "expected": 312, "found": 38,
@@ -67,7 +67,7 @@ You typically run as three Task-tool subagent calls dispatched by workflow-orche
 
 **Input:** project root.
 
-1. **Load the chrome contract.** Read `source/_coherence/chrome.contract.json` — has shape `{brandSymbolId, navItems, sealSelector, navLocation, ...}`.
+1. **Load the chrome contract.** Read `source/main/_coherence/chrome.contract.json` — has shape `{brandSymbolId, navItems, sealSelector, navLocation, ...}`.
 2. **Enumerate pages.** Same glob.
 3. **For each page, extract:**
    - Brand SVG `<symbol id>` or markup hash.
