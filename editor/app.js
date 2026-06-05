@@ -12423,17 +12423,21 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
               <span className="model-setup-step1-label">${modelOk ? "Model connected" : "No model yet"}</span>
               ${!modelOk && html`<span className="onboarding-tool-required-badge" title="An agent model is required before you can create a project">REQUIRED</span>`}
             </div>
-            <div className="model-setup-step1-actions">
-              <button
-                type="button"
-                className="model-setup-step1-cta"
-                onClick=${() => setInstallOpen(true)}
-              >Install a CLI</button>
-              <button
-                type="button"
-                className="model-setup-step1-cta is-secondary"
-                onClick=${onOpenSettings}
-              >Paste an API key</button>
+            <div className="model-setup-choices model-setup-choices-compact">
+              <button className="model-setup-choice" type="button" onClick=${() => setInstallOpen(true)}>
+                <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
+                <div className="model-setup-choice-body">
+                  <div className="model-setup-choice-title">Install a CLI</div>
+                  <div className="model-setup-choice-desc">Claude Code or Codex.</div>
+                </div>
+              </button>
+              <button className="model-setup-choice" type="button" onClick=${onOpenSettings}>
+                <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
+                <div className="model-setup-choice-body">
+                  <div className="model-setup-choice-title">Paste an API key</div>
+                  <div className="model-setup-choice-desc">Anthropic or OpenAI.</div>
+                </div>
+              </button>
             </div>
             <button
               type="button"
