@@ -5,13 +5,13 @@
     {
       "name": "editor-harness",
       "runtimeExecutable": "/opt/homebrew/bin/python3",
-      "runtimeArgs": ["/Users/sami/Documents/Limn/editor/serve.py"],
+      "runtimeArgs": ["/Users/sami/Documents/Woven/editor/serve.py"],
       "cwd": ".",
       "port": 5733,
       "env": {
-        "TH_WORKSPACE_DIR": "/Users/sami/Documents/Limn test"
+        "TH_WORKSPACE_DIR": "/Users/sami/Documents/Woven IN USE/projects"
       },
-      "url": "/editor/?project=mimiow"
+      "url": "/editor/?project=demo-inhouse"
     }
   ]
 }

@@ -101,11 +101,40 @@ button {
   padding: 0;
 }
 
-/* === App shell === */
+/* === App shell ===
+   Named grid areas so the optional DS-proposal banner can sit above the
+   toolbar without shoving every view into an implicit overflow row.
+   Without explicit areas, the banner stole the toolbar row, the toolbar
+   stole the 1fr view row, and the active view got placed in an auto row
+   below the viewport — different views broke in different ways depending
+   on whether they used height:100%, flex, or absolute positioning. */
 .app {
   display: grid;
-  grid-template-rows: var(--toolbar-h) 1fr;
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "banner"
+    "toolbar"
+    "view";
   height: 100vh;
+}
+.app > .ds-proposal-banner { grid-area: banner; }
+.app > .toolbar             { grid-area: toolbar; min-height: var(--toolbar-h); }
+/* Every view-root sits in the same `view` cell so we don't need to know
+   which view is active to place it correctly. EditsPanel/ChatDrawer/
+   HistoryPanel/agent-busy-banner are all position:absolute|fixed, so they
+   ignore the grid entirely. */
+.app > .canvas-wrap,
+.app > .proto-view,
+.app > .proto-empty,
+.app > .flow-view,
+.app > .ia-view,
+.app > .ds-router,
+.app > .sm-view,
+.app > .timeline-view,
+.app > .grid-view,
+.app > .empty-view {
+  grid-area: view;
+  min-height: 0;
 }
 
 /* When the daemon reports any run is mid-turn, freeze the workspace so the
@@ -118,6 +147,29 @@ button {
   filter: saturate(0.8);
   opacity: 0.78;
   transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+/* v3.4.40 — Carve pan/zoom/scroll back out of the freeze. The user should
+   still be able to explore the workspace (drag-pan, wheel-zoom, marquee
+   selection by space+drag) while the agent edits — what we want to stop
+   is *editing*, not *looking around*. Every view's pan surface uses
+   .canvas-wrap (see useEndlessCanvas), so re-enabling pointer-events there
+   restores all the gestures bound on the wrap element itself. Editing
+   affordances inside the wrap (.frame, arrows, stroke overlay, zoom-pill,
+   minimap) stay locked via explicit rules below — so the user can pan past
+   frames but can't click on one to edit it.
+   The selectors below match the specificity of the broad freeze rule above
+   (which has three :not() class-spec pseudo-classes) so the override wins
+   the cascade. The negations are no-ops for these matched classes. */
+.app[data-agent-busy="true"] > .canvas-wrap:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner) {
+  pointer-events: auto;
+}
+.app[data-agent-busy="true"] .canvas-wrap .frame:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner),
+.app[data-agent-busy="true"] .canvas-wrap .arrow:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner),
+.app[data-agent-busy="true"] .canvas-wrap .flow-arrow:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner),
+.app[data-agent-busy="true"] .canvas-wrap .arrow-edit-bar:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner),
+.app[data-agent-busy="true"] .canvas-wrap .stroke-overlay:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner) {
+  pointer-events: none;
 }
 
 /* Diagonal stripe overlay over the canvas to make the locked state obvious
@@ -4767,11 +4819,24 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-modal-verdict-defer.is-active  { background: oklch(58% 0.14 60);  border-color: oklch(58% 0.14 60);  color: white; }
 .ds-modal-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
+}
+/* Inline error row — shown if Save succeeded but auto-dispatch of Workflow 6
+   failed (no available agent, daemon offline, run already active). */
+.ds-modal-foot-err {
+  flex: 1 1 100%;
+  font-size: 11.5px;
+  color: var(--danger, #c0392b);
+  background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--danger, #c0392b) 32%, var(--border));
+  padding: 6px 10px;
+  border-radius: 4px;
+  line-height: 1.4;
 }
 .ds-modal-foot-counts {
   display: flex;

@@ -5486,7 +5486,7 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   `;
 }
 
-function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke }) {
+function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke, selectionRef, onSelectionCountChange }) {
   // Read frames/arrows from the materialized model so col/row migration and
   // edit-time moves both flow through. D.frames (raw data) only carries x/y
   // until the migration shim inside applyModelEdits attaches col/row to the
@@ -5638,6 +5638,29 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
   // the drag uses the full push/swap semantics.
   const [selectedFrames, setSelectedFrames] = useState(() => new Set());
   const DRAG_THRESHOLD = 5;
+
+  // v3.4.37 — Mirror the currently-picked frame into the parent's selection
+  // ref so spawnFromComposer can include a <selected-frame> block in the
+  // editor-mode chat prompt. Mirrors `selected` first (single-click pick,
+  // the inspector target); falls back to the first member of selectedFrames
+  // (multi-select from rearrange tool) if there's no single pick. Empty
+  // selection => empty ref entry => empty block => existing prompt path
+  // is untouched. Refs avoid prop-callback churn; count is reactive so the
+  // Send-button badge can subscribe.
+  useEffect(() => {
+    const pickedId = selected || (selectedFrames.size > 0 ? Array.from(selectedFrames)[0] : null);
+    const frame = pickedId ? (frames.find(f => f.id === pickedId) || null) : null;
+    const count = selected ? 1 : selectedFrames.size;
+    if (selectionRef) {
+      selectionRef.current = {
+        frameId: pickedId,
+        frame,
+        sourceRoot: (D && D.meta && D.meta.sourceRoot) || "source/",
+        view: "canvas",
+      };
+    }
+    if (onSelectionCountChange) onSelectionCountChange(count);
+  }, [selected, selectedFrames, frames, selectionRef, onSelectionCountChange]);
 
   // Drop-zone resolver — snaps based on where the dragged FRAME's TOP-LEFT
   // lands, not the cursor. This is critical: pre-fix the snap used the
@@ -6596,6 +6619,46 @@ function formatSelectionContext({ selectedIds, nodes } = {}) {
     "",
     ...lines,
     "</selected-nodes>",
+  ].join("\n");
+}
+
+// v3.4.37 — Editor-mode equivalent of formatSelectionContext. When the user
+// is in editor mode and picks a frame on the canvas (CanvasView's `selected`),
+// mirrors that into a `<selected-frame>` block so the agent can resolve "this
+// frame", "this screen", "this page" against editor/data.js + source/.
+// Returns "" for an empty selection so the existing prompt path is untouched.
+//
+// The ref shape (populated by CanvasView):
+//   { frameId: string|null, frame: { id, label, kind, col, row, parent? } | null,
+//     sourceRoot: string|null, view: "canvas" }
+function formatEditorSelectionContext({ frameId, frame, sourceRoot, view } = {}) {
+  if (!frameId) return "";
+  const trim = (s, n = 120) => {
+    if (!s) return null;
+    const t = String(s).replace(/\s+/g, " ").trim();
+    return t.length <= n ? t : t.slice(0, n).trimEnd() + "…";
+  };
+  const meta = [];
+  if (frame) {
+    if (frame.label && frame.label !== frame.id) meta.push(`label: "${trim(frame.label, 80)}"`);
+    if (frame.kind)                              meta.push(`kind: ${frame.kind}`);
+    if (typeof frame.col === "number" && typeof frame.row === "number") meta.push(`position: col=${frame.col}, row=${frame.row}`);
+    if (frame.parent)                            meta.push(`parent: ${frame.parent}`);
+    if (frame.entry)                             meta.push(`entry: true`);
+  }
+  // Source-path hint — editor convention is source/<frameId>.html or
+  // source/<frameId>/index.html. Agent should still verify on disk, but the
+  // hint saves a Glob round-trip.
+  const root = (sourceRoot || "source/").replace(/\/+$/, "/");
+  const pathHint = `${root}${frameId}.html (or ${root}${frameId}/index.html — verify on disk)`;
+  return [
+    `<selected-frame view="${view || "canvas"}">`,
+    `The user has frame \`${frameId}\` selected on the editor canvas. When their request uses "this frame", "this screen", "this page", "this", "that", etc., it refers to this frame. The frame maps to a source file under \`${root}\` — load that file (and editor/data.js for structural fields) before editing.`,
+    "",
+    `  - id: \`${frameId}\``,
+    ...(meta.length ? [`      ${meta.join("  ·  ")}`] : []),
+    `      source: ${pathHint}`,
+    `</selected-frame>`,
   ].join("\n");
 }
 
@@ -7668,6 +7731,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // (history fetch + live SSE) can dedupe if the jsonl flushed concurrently
   // with our read and the SSE replays an overlapping seq. Reset on cold mount.
   const _seenSeqRef = useRef(new Set());
+  // v3.4.37 — Per-runId events + answers cache. Switching between threads
+  // (RunsMenu → click another run → click back) used to always blank the
+  // drawer to "Waiting for the agent…" while /__chat re-hydrated; we cache
+  // the rendered state per runId so revisits are instant. Cache lives in
+  // a ref (no re-render on writes), keyed by runId, scoped to this drawer
+  // instance — it dies with the component (memory bounded).
+  const eventsCacheRef = useRef(new Map());
   // Track the runId we last reset state for so we can tell apart "fresh
   // run" from "same run, new SSE epoch."
   const prevRunIdRef = useRef(null);
@@ -7695,11 +7765,52 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     }
     // Cold mount (different runId): reset everything. Same runId with a new
     // sseEpoch (post-resume): keep events + lastIdRef, just open a new SSE.
+    //
+    // v3.4.37 — Before blanking the drawer, consult the per-runId cache so
+    // that revisits to a thread render instantly (no empty → hydrated flicker,
+    // no abort-race "failed to load" if the user clicks fast). The cache is
+    // populated on every event update below. Live SSE still tails after the
+    // last cached seq so any events that landed while we were elsewhere come
+    // in normally.
+    //
+    // v3.4.38 — `cacheHit` short-circuits the /__chat re-fetch below. Without
+    // this, switching to a cached chat painted twice: cached events first,
+    // then the hydrate fetch overwrote them ~50ms later. Cache always reflects
+    // what the SSE most recently delivered, so it's authoritative for this
+    // drawer's lifetime; live SSE picks up from cached.lastSeq with no gap.
+    let cacheHit = false;
     if (prevRunIdRef.current !== run.runId) {
-      setEvents([]); setStatus("connecting"); setError(null); setAnswers({});
-      completedRef.current = false;
-      lastIdRef.current = -1;
-      _seenSeqRef.current = new Set();   // v2.50 — fresh dedup set per run
+      const cached = eventsCacheRef.current.get(run.runId);
+      if (cached && Array.isArray(cached.events) && cached.events.length) {
+        setEvents(cached.events);
+        setAnswers(cached.answers || {});
+        setError(null);
+        // If the cached run ended terminally, seed the status from the cache
+        // so the drawer doesn't briefly show "connecting" before the run flags
+        // get re-applied. A live SSE tail can still flip back to streaming.
+        setStatus(run.done || run.turnDone ? "done" : "streaming");
+        lastIdRef.current = typeof cached.lastSeq === "number" ? cached.lastSeq : -1;
+        _seenSeqRef.current = new Set(
+          cached.events
+            .map(e => e && e.id)
+            .filter(x => x != null)
+            .map(Number)
+        );
+        cacheHit = true;
+      } else {
+        setEvents([]); setStatus("connecting"); setError(null); setAnswers({});
+        lastIdRef.current = -1;
+        _seenSeqRef.current = new Set();
+      }
+      // v3.4.39 — Pre-seed completedRef with the run's *already-terminal*
+      // status (if any) so the post-effect doesn't re-fire onRunComplete
+      // on a chat that finished long ago. Without this, reopening a done
+      // chat invoked handleRunComplete → bumped every iframe src → the
+      // editor's frames visibly flashed every time the user clicked back
+      // into a thread. The callback should only fire on a *live* terminal
+      // transition the SSE delivers during this mount; if status is going
+      // to land at "done" on first paint, treat it as already-fired.
+      completedRef.current = (run.done || run.turnDone) ? "done" : false;
       prevRunIdRef.current = run.runId;
     }
     const ctl = new AbortController();
@@ -7711,6 +7822,12 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     // done. The composer reads `processEnded` from the same status, so a
     // historical run automatically renders read-only.
     if (run.historical) {
+      // v3.4.38 — Cache hit on a historical run: no need to re-fetch /__chat
+      // (the cache has every event we ever rendered and historical runs never
+      // get new ones). Just return the cleanup; status was already seeded above.
+      if (cacheHit) {
+        return () => { cancelled = true; ctl.abort(); };
+      }
       (async () => {
         try {
           const url = apiUrl(`/__chat?runId=${encodeURIComponent(run.runId)}`);
@@ -7770,7 +7887,16 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       // one-shot fetch that can't lose a streaming flush, so it's the
       // reliable floor. The live SSE then only tails events AFTER the last
       // persisted seq — no gap, no duplicates.
+      //
+      // v3.4.38 — On a cache hit, skip the hydrate fetch. The cache already
+      // holds every event the SSE delivered (the cache-write effect runs on
+      // every events change), so the fetch can only return a stale subset
+      // and cause a visible flash when setEvents(evs) overwrites the cache.
+      // Jump straight to the SSE tail with after=cached.lastSeq.
       try {
+        if (cacheHit) {
+          // Skip history fetch entirely on cache hit.
+        } else {
         const histUrl = apiUrl(`/__chat?runId=${encodeURIComponent(run.runId)}`);
         const hr = await fetch(histUrl, { signal: ctl.signal });
         if (hr.ok) {
@@ -7802,6 +7928,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             if (Object.keys(seeded).length) setAnswers(prev => ({ ...seeded, ...prev }));
           }
         }
+        }  // end of !cacheHit branch
       } catch (e) {
         // History fetch failed/aborted — not fatal; the live SSE below still
         // streams from lastIdRef (-1 on cold mount = everything).
@@ -7907,7 +8034,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     if (status === "done" || status === "error") {
       if (completedRef.current !== status) {
         completedRef.current = status;
-        if (onRunComplete) onRunComplete({ runId: run?.runId, status, error, didModifyFiles });
+        if (onRunComplete) onRunComplete({ runId: run?.runId, status, error, didModifyFiles, modifiedPaths });
       }
     } else {
       // Turn re-opened (user replied). Reset so the next done fires onRunComplete.
@@ -7935,6 +8062,20 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // When a new run starts, snap back to sticky so its first events scroll in.
   useEffect(() => { stickRef.current = true; }, [run?.runId]);
 
+  // v3.4.37 — Persist the current runId's rendered state into the per-runId
+  // cache after every event/answers update so a later run-switch back to this
+  // thread hydrates instantly from the cache (instead of blanking → fetching).
+  // Skip the new-chat shell (no runId yet); skip when there's nothing yet.
+  useEffect(() => {
+    if (!run?.runId || isNew) return;
+    if (!events.length) return;
+    eventsCacheRef.current.set(run.runId, {
+      events,
+      answers,
+      lastSeq: lastIdRef.current,
+    });
+  }, [run?.runId, events, answers, isNew]);
+
   // The subprocess has actually exited (SSE `end` channel received) AND no
   // later events have arrived since. After /__run/:id/resume kicks off a
   // fresh process on the same runId, new events appear after the last
@@ -7955,14 +8096,26 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // decision in App. We only check WRITE-flavoured tools (Write/Edit/
   // MultiEdit/NotebookEdit) — Read/Glob/Grep are read-only, Bash is opaque
   // (and rare enough that we let the user F5 manually if needed).
-  const didModifyFiles = useMemo(
-    () => events.some(ev =>
-      ev.event === "agent"
-      && ev.data?.type === "tool_use"
-      && ["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(ev.data.name)
-    ),
-    [events]
-  );
+  // v3.4.38 — Also collect the *paths* the agent wrote to so the parent
+  // can decide between a full page reload (only needed when editor/data.js
+  // or design-systems/* meta changes — those load once at boot via
+  // <script src>) and a lightweight iframe refresh (enough for any source/*
+  // change). Pre-fix the parent reloaded after every single file modification,
+  // which made editor-mode chat unbearable.
+  const { didModifyFiles, modifiedPaths } = useMemo(() => {
+    const paths = [];
+    let any = false;
+    for (const ev of events) {
+      if (ev.event !== "agent" || ev.data?.type !== "tool_use") continue;
+      if (!["Write", "Edit", "MultiEdit", "NotebookEdit"].includes(ev.data.name)) continue;
+      any = true;
+      const inp = ev.data.input || {};
+      // Write/Edit/MultiEdit/NotebookEdit all take `file_path`.
+      const fp = inp.file_path || inp.notebook_path || null;
+      if (fp) paths.push(String(fp));
+    }
+    return { didModifyFiles: any, modifiedPaths: paths };
+  }, [events]);
 
   // Derive the spawn-time permission mode from the first 'spawned' event so
   // we can show what mode the agent is *actually* running with — independent
@@ -8028,7 +8181,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               </div>
             </div>
           `}
-          ${!isNew && events.length === 0 && status === "connecting" && html`<div className="chat-empty">Waiting for the agent…</div>`}
+          ${!isNew && events.length === 0 && status === "connecting" && html`<div className="chat-empty">Loading conversation…</div>`}
           ${blocks.map((bl) => html`<${ChatBlock}
             key=${bl.key}
             block=${bl}
@@ -14427,10 +14580,19 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   // listens for and routes to the appropriate mutation / chat dispatch.
   // `rules` is forwarded verbatim so the surface can translate them into
   // explicit agent constraints (chat body) and remix-node fields.
+  //
+  // v3.4.36 — Prototype nodes also use this bar (whole-prototype scope, not
+  // just a picked sub-element). Prototypes don't carry `path`; the source
+  // folder is `source/<slug>/` where slug = branch[/subpath]. We forward
+  // that folder path so the listeners can branch on host.kind and build a
+  // folder-scope refine prompt instead of a single-file one.
+  const isPrototype = node && node.kind === "prototype";
+  const protoSlug   = isPrototype ? prototypeSlugForNode(node) : null;
+  const emitPath    = isPrototype && protoSlug ? `source/${protoSlug}/` : node.path;
   const onSubmit = ({ tool, text, remixForm, rules }) => {
     if (tool === "refine") {
       window.dispatchEvent(new CustomEvent("th:asset-quick-refine", {
-        detail: { nodeId: node.id, path: node.path, prompt: (text || "").trim(), rules }
+        detail: { nodeId: node.id, path: emitPath, prompt: (text || "").trim(), rules }
       }));
     } else if (tool === "prompt") {
       window.dispatchEvent(new CustomEvent("th:asset-refine-prompt", {
@@ -14438,7 +14600,7 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
       }));
     } else if (tool === "fork") {
       window.dispatchEvent(new CustomEvent("th:asset-quick-fork", {
-        detail: { nodeId: node.id, path: node.path, prompt: (text || "").trim(), rules }
+        detail: { nodeId: node.id, path: emitPath, prompt: (text || "").trim(), rules }
       }));
     } else if (tool === "remix") {
       window.dispatchEvent(new CustomEvent("th:asset-quick-remix", {
@@ -16641,12 +16803,34 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     // Quick Refine — chat-spawn a refine pass against the selected asset's
     // file in place. Reuses the workflow-chat infrastructure the empty
     // composer already uses (onStartChatWithPrompt → triggerRun).
+    //
+    // v3.4.36 — Prototype-scope refine. When the host is a prototype node,
+    // the "asset" is the whole feature folder (source/<slug>/), not a
+    // single file. We send a folder-scoped prompt that tells the agent to
+    // walk every file under that folder and apply the user's refinement
+    // consistently — same kind="html" guidance the picked-element scope
+    // uses, but with a directory scope note instead of an element selector.
     const onRefine = (e) => {
       const det = e && e.detail; if (!det) return;
       const path = det.path || "(unknown path)";
       const prompt = (det.prompt || "").trim();
       if (!prompt) return;
       const host = (data.nodes || []).find(n => n && n.id === det.nodeId);
+      if (host && host.kind === "prototype") {
+        const slug = prototypeSlugForNode(host) || (host.branch || "main");
+        const folder = `source/${slug}/`;
+        const scopeNote = [
+          "Scope: refine the ENTIRE prototype rooted at `" + folder + "`.",
+          "  • Walk every HTML/CSS/JS file under that directory and apply the refinement consistently.",
+          "  • Treat shared chrome (header, nav, side panels) as a single edit propagated across pages.",
+          "  • Per-page screens (e.g. index.html, dashboard.html) each get the same refinement applied in context.",
+          "  • Do NOT add or remove files unless the refinement explicitly asks for new screens.",
+          "  • Preserve cross-page navigation links and data wiring.",
+        ].join("\n");
+        const body = buildRefineBody(folder, "html", prompt, scopeNote, det.rules);
+        try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[proto-quick-refine]", err); }
+        return;
+      }
       const kind = host && host.assetKind;
       const body = buildRefineBody(path, kind, prompt, null, det.rules);
       try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[asset-quick-refine]", err); }
@@ -16677,6 +16861,55 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const det = e && e.detail; if (!det) return;
       const origin = (data.nodes || []).find(n => n && n.id === det.nodeId);
       if (!origin) return;
+      // v3.4.36 — Prototype-scope fork: copy the whole source/<slug>/
+      // folder to source/<slug>-fork-<stamp>/, then spawn a sibling
+      // prototype node pointed at the new branch and dispatch the refine
+      // against the clone. /__copy_file is single-file; we hand the actual
+      // folder copy + screen-by-screen refinement to a chat-spawned agent
+      // so the fork is one atomic op the user can watch unfold.
+      if (origin.kind === "prototype") {
+        const prompt = (det.prompt || "").trim();
+        if (!prompt) return;
+        const oldSlug = prototypeSlugForNode(origin) || (origin.branch || "main");
+        const stamp = Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 5);
+        // Forked branch lives one level under the original slug's first
+        // segment so workspace browsers still find both side by side.
+        const rootBranch = (origin.branch || "main").split("/")[0];
+        const newSlug = `${rootBranch}-fork-${stamp}`;
+        const oldFolder = `source/${oldSlug}/`;
+        const newFolder = `source/${newSlug}/`;
+        const scopeNote = [
+          "Scope: FORK an entire prototype folder.",
+          "  • Source folder:  `" + oldFolder + "`",
+          "  • Target folder:  `" + newFolder + "`",
+          "  1. Copy every file under the source folder to the target folder, preserving the directory structure exactly.",
+          "  2. Do NOT touch any file under the source folder — the original must remain bit-identical.",
+          "  3. Then apply the refinement below to every HTML/CSS/JS file under the TARGET folder consistently.",
+          "  4. After both steps land, regenerate the editor data so the new branch shows up in the project sidebar.",
+        ].join("\n");
+        const body = buildRefineBody(newFolder, "html", prompt, scopeNote, det.rules);
+        try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[proto-quick-fork]", err); }
+        // Optimistically spawn a sibling prototype node so the user sees
+        // where the new branch will live on the canvas. The iframe will
+        // 404 until the agent finishes copying; the iframe key is bumped
+        // by the standard th:asset-refresh path once files land.
+        const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        setData(d => ({
+          ...d,
+          nodes: [...(d.nodes || []), {
+            id: newId,
+            kind: "prototype",
+            branch: newSlug,
+            x: (origin.x || 0) + (origin.w || 480) + 60,
+            y: origin.y || 0,
+            w: origin.w || 480,
+            h: origin.h || 320,
+            dsRef: origin.dsRef || null,
+            spawnedBy: "quick-fork",
+          }],
+        }));
+        return;
+      }
       const oldPath = det.path || origin.path;
       const prompt = (det.prompt || "").trim();
       if (!oldPath || !prompt) return;
@@ -28416,6 +28649,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       />
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
       ${selected && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${selected && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
 }
@@ -41446,9 +41680,10 @@ function DesignSystemBadge({ dsRef, onOpenDsView }) {
    agent-busy banner when DS_PROPOSAL.md exists at project root; clicking
    Review opens DSProposalModal which lets the user toggle Accept / Reject /
    Defer per entry and save back. Verdict writes go through POST
-   /__ds_proposals — workflow 6 (the dispatch) is still agent-driven, but
-   marking the verdicts no longer requires hand-editing the markdown. */
-function DSProposalBanner() {
+   /__ds_proposals; saving also fires onDispatch so Workflow 6 spawns
+   automatically in the chat drawer — the user no longer has to copy the
+   prompt and paste it into a fresh agent surface. */
+function DSProposalBanner({ onDispatch, dispatchDisabled }) {
   const [state, setState] = useState({ loaded: false, exists: false, count: 0, entries: [] });
   const [modalOpen, setModalOpen] = useState(false);
   const refresh = useCallback(async () => {
@@ -41500,6 +41735,8 @@ function DSProposalBanner() {
           path=${state.path}
           onClose=${() => setModalOpen(false)}
           onSaved=${() => { refresh(); }}
+          onDispatch=${onDispatch}
+          dispatchDisabled=${dispatchDisabled}
         />
       `}
     </div>
@@ -41511,7 +41748,7 @@ function DSProposalBanner() {
    /__ds_proposals. The file is the source of truth; the modal is just a
    richer editor over it. After save, the user still has to run Workflow 6
    (the dispatch) — the modal prints a one-liner hint with the spawn prompt. */
-function DSProposalModal({ entries, path, onClose, onSaved }) {
+function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatchDisabled }) {
   // Local working copy of verdicts so the user can stage changes before
   // submitting. Seeded from each entry's current verdict (parsed from the
   // file's checkboxes by the daemon).
@@ -41522,6 +41759,7 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [dispatchErr, setDispatchErr] = useState(null);
 
   const setVerdict = (idx, v) => setDraft(d => ({ ...d, [idx]: d[idx] === v ? null : v }));
 
@@ -41539,9 +41777,27 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
     return acc;
   }, { accept: 0, reject: 0, defer: 0 });
 
+  const dispatchPromptText = [
+    "Run Workflow 6 — partition DS_PROPOSAL.md entries by verdict and dispatch.",
+    "",
+    "Read docs/agents/workflows/6-ds-propose.md.",
+    "",
+    "For each Accept → hand off to Workflow 6b (atomic DS update).",
+    "For each Reject → spawn the substitution pass (rewrites feature pages to the closest existing variant).",
+    "For each Defer → archive to DS_DEFERRED.md.",
+    "",
+    "After dispatch, delete DS_PROPOSAL.md.",
+  ].join("\n");
+
+  // Save verdicts AND spawn Workflow 6 so the user doesn't have to copy the
+  // dispatch prompt and paste it into a fresh agent surface. If the dispatch
+  // fails (no available agent, run already active, daemon offline) we keep
+  // the save but surface the error inline + leave the "Copy dispatch prompt"
+  // fallback button visible.
   const save = async () => {
     if (saving) return;
     setSaving(true);
+    setDispatchErr(null);
     try {
       const verdicts = entries.map(e => ({ index: e.index, verdict: draft[e.index] || null }));
       const r = await fetch(apiUrl("/__ds_proposals"), {
@@ -41556,6 +41812,17 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
       }
       setSavedAt(Date.now());
       onSaved && onSaved();
+      // Auto-dispatch Workflow 6 if the parent gave us a hook and no other
+      // run is locking the lane. Closing the modal hands the user over to
+      // the chat drawer so they can watch the agent partition + dispatch.
+      if (onDispatch && !dispatchDisabled) {
+        try {
+          await onDispatch({ prompt: dispatchPromptText });
+          onClose && onClose();
+        } catch (err) {
+          setDispatchErr(err?.message || String(err));
+        }
+      }
     } catch (e) {
       alert("Save failed: " + (e?.message || e));
     } finally {
@@ -41564,21 +41831,10 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
   };
 
   const copyDispatchPrompt = () => {
-    const text = [
-      "Run Workflow 6 — partition DS_PROPOSAL.md entries by verdict and dispatch.",
-      "",
-      "Read docs/agents/workflows/6-ds-propose.md.",
-      "",
-      "For each Accept → hand off to Workflow 6b (atomic DS update).",
-      "For each Reject → spawn the substitution pass (rewrites feature pages to the closest existing variant).",
-      "For each Defer → archive to DS_DEFERRED.md.",
-      "",
-      "After dispatch, delete DS_PROPOSAL.md.",
-    ].join("\n");
     try {
-      navigator.clipboard.writeText(text).then(() => alert("Dispatch prompt copied. Paste into an agent surface to run Workflow 6."));
+      navigator.clipboard.writeText(dispatchPromptText).then(() => alert("Dispatch prompt copied. Paste into an agent surface to run Workflow 6."));
     } catch {
-      alert("Clipboard unavailable. Dispatch prompt:\n\n" + text);
+      alert("Clipboard unavailable. Dispatch prompt:\n\n" + dispatchPromptText);
     }
   };
 
@@ -41659,8 +41915,13 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
             <span title="Archived; no change">${counts.defer} defer</span>
             <span className="ds-modal-foot-counts-rest">${entries.length - (counts.accept + counts.reject + counts.defer)} undecided</span>
           </div>
+          ${dispatchErr && html`
+            <div className="ds-modal-foot-err" role="alert">
+              Verdicts saved, but Workflow 6 didn't auto-dispatch: ${dispatchErr}. Use "Copy dispatch prompt" and paste into a fresh agent.
+            </div>
+          `}
           <div className="ds-modal-foot-actions">
-            ${savedAt && html`
+            ${(savedAt || dispatchErr) && html`
               <button
                 className="ds-modal-foot-btn"
                 onClick=${copyDispatchPrompt}
@@ -41676,8 +41937,16 @@ function DSProposalModal({ entries, path, onClose, onSaved }) {
               onClick=${save}
               data-disabled=${!dirty || saving}
               disabled=${!dirty || saving}
-              title="Write verdicts back into DS_PROPOSAL.md"
-            >${saving ? "Saving…" : savedAt ? "Saved · save again" : "Save verdicts"}</button>
+              title=${onDispatch && !dispatchDisabled
+                ? "Write verdicts back into DS_PROPOSAL.md and spawn Workflow 6 in the chat drawer"
+                : (dispatchDisabled
+                    ? "Write verdicts back into DS_PROPOSAL.md. (An agent run is already active — dispatch the Workflow 6 prompt manually after it finishes.)"
+                    : "Write verdicts back into DS_PROPOSAL.md")}
+            >${saving
+                ? "Saving…"
+                : savedAt
+                  ? "Saved · save again"
+                  : (onDispatch && !dispatchDisabled ? "Save & dispatch" : "Save verdicts")}</button>
           </div>
         </div>
       </div>
@@ -41838,6 +42107,14 @@ function App() {
   const [chatRun, setChatRun] = useState(null);    // currently-mounted run (drawer open)
   const [lastRun,  setLastRun]  = useState(null);  // sticky reference so user can reopen after close
   const [runFinished, setRunFinished] = useState(false);  // ChatDrawer reports the agent's turn ended
+  // v3.4.37 — Editor-mode selection mirror, parallel to WorkflowCanvas's
+  // selectionRef. CanvasView populates this ref with { frameId, frame,
+  // sourceRoot, view } on every selection change; spawnFromComposer reads
+  // it at call time so the chat agent sees which frame the user is looking
+  // at when they ask "fix this screen". selectionCount drives the Send
+  // button's "· 1" badge (ref alone would miss the re-render).
+  const editorSelectionRef = useRef({ frameId: null, frame: null, sourceRoot: null, view: "canvas" });
+  const [editorSelectionCount, setEditorSelectionCount] = useState(0);
   // Global lock — true whenever ANY daemon run is mid-turn (agent's working).
   // Polled from /__runs so it stays correct even when the user closes the
   // chat drawer. Drives the "interactions paused" banner + the edit lock on
@@ -41880,24 +42157,44 @@ function App() {
   }, []);
 
   // Fires when ChatDrawer detects the agent's turn ended. Decides between:
-  //   • Full page reload — when the agent modified any files. Editor reads
-  //     `editor/data.js` into `window.EDITOR_DATA` once at page load, so
-  //     model edits (arrows, frames, entities, primitives) only show up
-  //     after a fresh page load.
-  //   • Iframe-only cache bust — fallback for edge cases (already reloaded
-  //     once for this run, no Write/Edit detected).
+  //   • Full page reload — ONLY when the agent edited the editor's own
+  //     bootstrap data files (editor/data.js, editor/design-systems/*.js)
+  //     since those load once via <script src> at boot and there's no
+  //     equivalent in-memory refresh path.
+  //   • Iframe-only cache bust — for every other change (source/* HTML/CSS/JS,
+  //     workflow.json, prompts, NOTES). The drawer + chat state stay alive,
+  //     which is what makes the experience feel like Workflow mode's chat
+  //     (which never reloads — it just dispatches th:workflow-reload).
   //
-  // sessionStorage breaks the reload loop: after we reload, the same run's
-  // status:done event replays via SSE on the auto-reopened drawer. Without
-  // the flag we'd reload forever. The flag is keyed by runId so a fresh
-  // run in the same tab will still auto-reload on its first done.
-  const handleRunComplete = useCallback(({ runId, status, didModifyFiles }) => {
+  // sessionStorage still breaks the reload loop on the rare path where we
+  // do reload: after reload, the same run's status:done event replays via
+  // SSE on the auto-reopened drawer; the flag prevents a second reload.
+  // Keyed by runId so a fresh run in the same tab can still trigger reload
+  // when warranted.
+  const handleRunComplete = useCallback(({ runId, status, didModifyFiles, modifiedPaths }) => {
     setRunFinished(true);
     // Persist the last run so the drawer can be re-opened.
     setLastRun(prev => (prev && prev.runId === runId) ? { ...prev, done: true } : prev);
     if (runId) saveSettings({ lastRunId: runId });
 
-    if (status === "done" && didModifyFiles) {
+    // v3.4.38 — Narrow the reload trigger to paths that boot once via
+    // <script src>. Pre-fix this reloaded after EVERY chat that touched a
+    // file, which blew away the React tree (including the chat drawer) and
+    // made editor-mode chat feel jarring vs. workflow-mode chat (which has
+    // no reload). The agent typically touches source/* on a chat — those
+    // don't need a reload.
+    const paths = Array.isArray(modifiedPaths) ? modifiedPaths : [];
+    const touchesEditorBoot = paths.some(p => {
+      if (!p) return false;
+      const norm = String(p).replace(/\\/g, "/");
+      // editor/data.js is the canonical model file. Design-system *.js files
+      // are also <script src>'d at boot (one per DS, picked by meta.dsRef).
+      if (/(^|\/)editor\/data\.js$/.test(norm)) return true;
+      if (/(^|\/)editor\/design-systems\/[^/]+\.js$/.test(norm)) return true;
+      return false;
+    });
+
+    if (status === "done" && didModifyFiles && touchesEditorBoot) {
       const alreadyReloadedFor = sessionStorage.getItem("th.autoReloadedForRun");
       if (alreadyReloadedFor !== runId) {
         // Mark so the SSE replay after reload doesn't trigger a second reload.
@@ -41909,8 +42206,9 @@ function App() {
       }
     }
 
-    // Either no file mods, or we already reloaded — do the lightweight
-    // iframe refresh so any newly-changed source HTML/CSS shows up.
+    // Everything else (source/* changes, workflow.json edits, NOTES, docs):
+    // just bump iframes so any new HTML/CSS/JS shows up. Drawer + chat state
+    // stay intact — the conversation continues exactly where it was.
     if (status === "done") {
       try {
         document.querySelectorAll('iframe[src*="source/"], iframe[src*="../source/"]').forEach(ifr => {
@@ -41979,7 +42277,12 @@ function App() {
     // Called by ChatComposer when isNew && user clicks Send. Wrap the user's
     // text with the editor-mode context envelope so the agent knows we're
     // talking about data/IA/source, not the workflow node canvas.
-    const wrappedPrompt = composeModeAwarePrompt("editor", text);
+    // v3.4.37 — if a frame is selected on the editor canvas, prepend a
+    // <selected-frame> block so "fix this screen" / "tweak this page" /
+    // "make this frame purple" resolve to a real frame id + source path.
+    const selectionBlock = formatEditorSelectionContext(editorSelectionRef.current);
+    const composed = selectionBlock ? `${selectionBlock}\n\n${text}` : text;
+    const wrappedPrompt = composeModeAwarePrompt("editor", composed);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
     const run = await triggerRun({
       branch: activeBranchIdForChat,
@@ -42047,6 +42350,29 @@ function App() {
       alert("Update from source dispatch failed: " + (e?.message || String(e)));
       return null;
     }
+    return run;
+  }, [activeBranchIdForChat, agentId, permissionMode, runActive]);
+
+  // Spawn Workflow 6 (DS proposals dispatch) right after the user commits
+  // verdicts in the DS-proposal modal. Wires the resulting run into the chat
+  // drawer so the user watches the partition + per-verdict dispatch unfold
+  // instead of hand-pasting the prompt into a fresh agent surface.
+  const dispatchDsProposals = useCallback(async ({ prompt }) => {
+    if (runActive) {
+      throw new Error("An agent run is already active. Wait for it to finish, then dispatch Workflow 6 manually.");
+    }
+    const run = await triggerRun({
+      branch: activeBranchIdForChat,
+      agentId,
+      kind: "freeform",
+      prompt,
+      title: "Workflow 6 — DS proposals dispatch",
+      permissionMode,
+    });
+    setChatRun(run);
+    setLastRun(run);
+    setRunFinished(false);
+    saveSettings({ lastRunId: run.runId });
     return run;
   }, [activeBranchIdForChat, agentId, permissionMode, runActive]);
 
@@ -42347,7 +42673,7 @@ function App() {
           <span>Agent is editing — interactions paused</span>
         </div>
       `}
-      <${DSProposalBanner}/>
+      <${DSProposalBanner} onDispatch=${dispatchDsProposals} dispatchDisabled=${runActive}/>
       <${Toolbar}
         view=${view} setView=${setView}
         tool=${tool} setTool=${setTool}
@@ -42386,7 +42712,7 @@ function App() {
         branchId=${"main"}
         setView=${setView}
       />
-      ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke}/>`}
+      ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke} selectionRef=${editorSelectionRef} onSelectionCountChange=${setEditorSelectionCount}/>`}
       ${view === "prototype" && html`<${PrototypeView}/>`}
       ${view === "flow"      && html`<${FlowView}    model=${model} setEdits=${setEdits}/>`}
       ${view === "ia"        && html`<${IAView}      model=${model} setEdits=${setEdits}/>`}
@@ -42421,6 +42747,7 @@ function App() {
         permissionMode=${permissionMode}
         onPermissionModeChange=${onPermissionModeChange}
         onStartNewChat=${spawnFromComposer}
+        selectionCount=${editorSelectionCount}
       />
     </div>
   `;

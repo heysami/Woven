@@ -49,9 +49,24 @@ if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
     exit 0
 fi
 
+# v3.4.37 — Editor-mode chats edit existing source files; they shouldn't be
+# forced through the visual-planner trio-scaffolding flow (which writes to
+# workflow/workflow.json and is the wrong target). composeModeAwarePrompt
+# stamps every editor-mode chat's first user message with the marker
+# `[Context: you're chatting from EDITOR MODE of the prototype editor.]`.
+# Take the LAST mode marker in the transcript as authoritative — a user
+# can switch modes within a session, and we only want to gate the active
+# one. If the last marker is EDITOR MODE, skip the gate; visual-planner
+# stays available for the agent to call when the user explicitly asks
+# for asset generation.
+LAST_MODE=$(grep -aE "Context: you're chatting from (EDITOR|WORKFLOW) MODE" "$TRANSCRIPT" 2>/dev/null | tail -1)
+case "$LAST_MODE" in
+    *"EDITOR MODE"*) exit 0 ;;
+esac
+
 # Has visual-planner been dispatched this session? Look for a Task tool
 # call with subagent_type: visual-planner anywhere in the transcript.
-if grep -E '"(name|tool_name)"\s*:\s*"Task"' "$TRANSCRIPT" 2>/dev/null \
+if grep -E '"(name|tool_name)"\s*:\s*"(Task|Agent)"' "$TRANSCRIPT" 2>/dev/null \
    | grep -q '"subagent_type"\s*:\s*"visual-planner"'; then
     exit 0
 fi
