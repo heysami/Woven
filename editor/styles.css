@@ -2572,16 +2572,6 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   will-change: transform;
 }
 
-/* Make iframes transparent to pointer events whenever a gesture is in
-   progress — space-pan, active pan, or a node drag. Same-origin iframes
-   capture mousemove inside their own document, which stops the parent
-   window's listener from firing once the cursor crosses the boundary; this
-   rule lets the gesture cross iframes cleanly. */
-.workflow-canvas-wrap[data-space="true"] .workflow-node-iframe,
-.workflow-canvas-wrap[data-panning="true"] .workflow-node-iframe,
-.workflow-canvas-wrap[data-node-dragging="true"] .workflow-node-iframe {
-  pointer-events: none;
-}
 /* Until a prototype is selected, its iframe is "drift-through": mousing
    over the iframe doesn't capture wheel events (so canvas panning works
    smoothly across the prototype) and clicks pass to the card itself
@@ -2597,6 +2587,24 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-proto[data-selected="true"] .workflow-node-iframe,
 .workflow-node-asset[data-selected="true"] .workflow-node-iframe {
   pointer-events: auto;
+}
+/* Make iframes transparent to pointer events whenever a gesture is in
+   progress — space-pan, active pan, or a node drag. Same-origin iframes
+   capture mousemove inside their own document, which stops the parent
+   window's listener from firing once the cursor crosses the boundary; this
+   rule lets the gesture cross iframes cleanly.
+   The extra `.workflow-node[data-selected="true"]` segment bumps the
+   specificity above the selected-iframe-is-interactive rule above, so a
+   selected prototype/asset's iframe still falls through during space-pan
+   / active-pan / node-drag (without it, source order made the selected
+   rule win and the gesture would die at the iframe boundary). */
+.workflow-canvas-wrap[data-space="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-panning="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-node-dragging="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-space="true"] .workflow-node[data-selected="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-panning="true"] .workflow-node[data-selected="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-node-dragging="true"] .workflow-node[data-selected="true"] .workflow-node-iframe {
+  pointer-events: none !important;
 }
 /* Selected-state outline — subtle accent ring so the user can see which
    card is currently the "interactive" one. */
