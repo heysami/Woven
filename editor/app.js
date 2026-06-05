@@ -12374,16 +12374,19 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
   const modelOk  = !!(mediaCfg && mediaCfg.configured);
   const skillsOk = !!(localSkills && localSkills.allRequiredInstalled);
   const allOk    = modelOk && skillsOk;
-  // v3.4.46 — Initial step = first unmet requirement on FIRST mount only.
-  // After that, user controls navigation — no surprise jumps when they
-  // click Refresh on Step 1 and the daemon now reports rembg missing.
-  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 3);
+  // v3.4.47 — Four pips now: 1 Model · 2 Asset keys · 3 Local skills · 4 Done.
+  // Step 4 is its own dedicated celebration so the user can press ← Back to
+  // review Steps 1/2/3 instead of being trapped on a single completion view.
+  // Initial step = first unmet requirement on FIRST mount only. After that,
+  // navigation is user-driven (no surprise auto-jumps).
+  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 4);
   const [installOpen, setInstallOpen] = useState(false);
 
   const pips = [
     { n: 1, label: "Agent model",  done: modelOk },
     { n: 2, label: "Asset keys",   done: false },
     { n: 3, label: "Local skills", done: skillsOk },
+    { n: 4, label: "Done",         done: allOk   },
   ];
 
   return html`
@@ -12409,14 +12412,7 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
       </div>
 
       <div className="model-setup-wizard-body">
-        ${allOk && step === 3 && html`
-          <div className="model-setup-allset">
-            <div className="model-setup-allset-check">✓</div>
-            <div className="model-setup-allset-title">All set!</div>
-            <div className="model-setup-allset-sub">Model connected and required local skills installed.</div>
-          </div>
-        `}
-        ${(!allOk || step !== 3) && step === 1 && html`
+        ${step === 1 && html`
           <div className="model-setup-step1">
             <div className="model-setup-step1-status" data-ok=${modelOk}>
               <span className="model-setup-step1-dot"/>
@@ -12448,7 +12444,16 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
         `}
 
         ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
-        ${(!allOk) && step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
+        ${step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
+        ${step === 4 && html`
+          <div className="model-setup-allset" data-ok=${allOk}>
+            <div className="model-setup-allset-check">${allOk ? "✓" : "…"}</div>
+            <div className="model-setup-allset-title">${allOk ? "All set!" : "Almost there"}</div>
+            <div className="model-setup-allset-sub">${allOk
+              ? "Model connected and required local skills installed."
+              : "Finish the required steps to enable + New project."}</div>
+          </div>
+        `}
       </div>
 
       <div className="model-setup-wizard-footer">
@@ -12458,18 +12463,20 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
           disabled=${step <= 1}
           onClick=${() => setStep(step - 1)}
         >← Back</button>
-        ${step < 3 && html`
+        ${step < 4 && html`
           <button
             type="button"
             className="model-setup-wizard-nav is-primary"
             onClick=${() => setStep(step + 1)}
           >Next →</button>
         `}
-        ${step === 3 && allOk && html`
+        ${step === 4 && html`
           <button
             type="button"
             className="model-setup-wizard-nav is-primary"
-            onClick=${() => onAcknowledge && onAcknowledge()}
+            disabled=${!allOk}
+            title=${allOk ? "Dismiss the setup card" : "Finish the required steps first"}
+            onClick=${() => allOk && onAcknowledge && onAcknowledge()}
           >Got it</button>
         `}
       </div>

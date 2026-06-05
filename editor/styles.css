@@ -6286,9 +6286,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-wizard-line {
   height: 1.5px;
-  width: 48px;
+  width: 36px;
   background: var(--border);
-  flex: 0 0 48px;
+  flex: 0 0 36px;
 }
 .model-setup-wizard-line[data-done="true"] {
   background: var(--ok, #16a34a);
