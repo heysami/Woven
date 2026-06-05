@@ -7022,6 +7022,16 @@ function useAgents() {
     }
   }, []);
   useEffect(() => { reload(); }, [reload]);
+  // v3.4.48 — Listen for explicit "agents changed" dispatches so the
+  // wizard's refresh link can keep every consumer (CliIndicator,
+  // AgentPicker, etc.) in sync. Without this, refreshing in the wizard
+  // updated mediaCfg but the top-right CLI pill stayed at "not installed"
+  // because useAgents was only fetching at mount.
+  useEffect(() => {
+    const on = () => reload();
+    window.addEventListener("th:agents-changed", on);
+    return () => window.removeEventListener("th:agents-changed", on);
+  }, [reload]);
   return { agents, loaded, reload };
 }
 
@@ -12564,15 +12574,22 @@ function ProjectsLanding({ info, projects, onReload }) {
   // succeeded the gate flipped and the wizard silently unmounted —
   // looked like a glitch, no celebration. The card now shows a clear
   // success state and waits for the user to dismiss it.
+  // v3.4.48 — wasNeededRef starts at false, NOT at the initial setupNeeded
+  // value. Pre-fix: on every page reload, the first render saw mediaCfg
+  // and localSkills as un-loaded → setupNeeded = !undefined = true →
+  // wasNeededRef captured true → after fetches resolved (setupNeeded → false),
+  // the wizard still opened because wasNeededRef.current was already true.
+  // Now we only flip the ref when onboardingReady AND setupNeeded — the
+  // post-fetch confirmation of an actual missing requirement.
   const [setupAcknowledged, setSetupAcknowledged] = useState(false);
-  const wasNeededRef = useRef(setupNeeded);
+  const wasNeededRef = useRef(false);
   useEffect(() => {
-    if (setupNeeded) {
+    if (onboardingReady && setupNeeded) {
       wasNeededRef.current = true;
       // If something regresses (e.g. user revokes a key) re-show the wizard.
       if (setupAcknowledged) setSetupAcknowledged(false);
     }
-  }, [setupNeeded, setupAcknowledged]);
+  }, [onboardingReady, setupNeeded, setupAcknowledged]);
   // Show the wizard while there's something to do, OR while we're showing
   // the post-completion "All set!" state that the user hasn't dismissed yet.
   const wizardOpen = setupNeeded || (wasNeededRef.current && !setupAcknowledged);
@@ -12735,7 +12752,7 @@ function ProjectsLanding({ info, projects, onReload }) {
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
             onOpenSettings=${() => setSettingsOpen(true)}
-            onRefresh=${() => mediaCfg.reload()}
+            onRefresh=${() => { mediaCfg.reload(); try { window.dispatchEvent(new CustomEvent("th:agents-changed")); } catch {} }}
             onAcknowledge=${() => setSetupAcknowledged(true)}/>
         `}
 
