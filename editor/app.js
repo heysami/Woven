@@ -12370,18 +12370,15 @@ function OnboardingLocalToolsSection({ headless } = {}) {
    not by the wizard itself, so the user can roam.
    Step 1 collapses to a single button that opens a small install-
    instructions popup — no two-tile choice screen, no inline sub-picker. */
-function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
+function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAcknowledge }) {
   const modelOk  = !!(mediaCfg && mediaCfg.configured);
   const skillsOk = !!(localSkills && localSkills.allRequiredInstalled);
-  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 1);
+  const allOk    = modelOk && skillsOk;
+  // v3.4.46 — Initial step = first unmet requirement on FIRST mount only.
+  // After that, user controls navigation — no surprise jumps when they
+  // click Refresh on Step 1 and the daemon now reports rembg missing.
+  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 3);
   const [installOpen, setInstallOpen] = useState(false);
-  // Auto-advance when the user satisfies the current step externally
-  // (e.g. pastes an API key in Settings while parked on Step 1).
-  const lastModelOkRef = useRef(modelOk);
-  useEffect(() => {
-    if (!lastModelOkRef.current && modelOk && step === 1) setStep(!skillsOk ? 3 : 2);
-    lastModelOkRef.current = modelOk;
-  }, [modelOk, skillsOk, step]);
 
   const pips = [
     { n: 1, label: "Agent model",  done: modelOk },
@@ -12412,7 +12409,14 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
       </div>
 
       <div className="model-setup-wizard-body">
-        ${step === 1 && html`
+        ${allOk && html`
+          <div className="model-setup-allset">
+            <div className="model-setup-allset-check">✓</div>
+            <div className="model-setup-allset-title">All set!</div>
+            <div className="model-setup-allset-sub">Model connected and required local skills installed.</div>
+          </div>
+        `}
+        ${!allOk && step === 1 && html`
           <div className="model-setup-step1">
             <div className="model-setup-step1-status" data-ok=${modelOk}>
               <span className="model-setup-step1-dot"/>
@@ -12439,24 +12443,35 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills }) {
           </div>
         `}
 
-        ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
-        ${step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
+        ${!allOk && step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
+        ${!allOk && step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
       </div>
 
       <div className="model-setup-wizard-footer">
-        <button
-          type="button"
-          className="model-setup-wizard-nav"
-          disabled=${step <= 1}
-          onClick=${() => setStep(step - 1)}
-        >← Back</button>
-        ${step < 3 && html`
-          <button
-            type="button"
-            className="model-setup-wizard-nav is-primary"
-            onClick=${() => setStep(step + 1)}
-          >Next →</button>
-        `}
+        ${allOk
+          ? html`
+              <span/>
+              <button
+                type="button"
+                className="model-setup-wizard-nav is-primary"
+                onClick=${() => onAcknowledge && onAcknowledge()}
+              >Got it</button>
+            `
+          : html`
+              <button
+                type="button"
+                className="model-setup-wizard-nav"
+                disabled=${step <= 1}
+                onClick=${() => setStep(step - 1)}
+              >← Back</button>
+              ${step < 3 && html`
+                <button
+                  type="button"
+                  className="model-setup-wizard-nav is-primary"
+                  onClick=${() => setStep(step + 1)}
+                >Next →</button>
+              `}
+            `}
       </div>
 
       ${installOpen && html`<${ModelInstallDialog}
@@ -12536,6 +12551,24 @@ function ProjectsLanding({ info, projects, onReload }) {
   const localSkills = useRequiredLocalSkills();
   const setupNeeded = !mediaCfg.configured || !localSkills.allRequiredInstalled;
   const onboardingReady = mediaCfg.loaded && localSkills.loaded;
+  // v3.4.46 — Once the wizard mounts, keep it mounted until the user
+  // explicitly acknowledges completion (clicks "Got it" on the final
+  // "✓ All set!" view). Without this, the moment the rembg install
+  // succeeded the gate flipped and the wizard silently unmounted —
+  // looked like a glitch, no celebration. The card now shows a clear
+  // success state and waits for the user to dismiss it.
+  const [setupAcknowledged, setSetupAcknowledged] = useState(false);
+  const wasNeededRef = useRef(setupNeeded);
+  useEffect(() => {
+    if (setupNeeded) {
+      wasNeededRef.current = true;
+      // If something regresses (e.g. user revokes a key) re-show the wizard.
+      if (setupAcknowledged) setSetupAcknowledged(false);
+    }
+  }, [setupNeeded, setupAcknowledged]);
+  // Show the wizard while there's something to do, OR while we're showing
+  // the post-completion "All set!" state that the user hasn't dismissed yet.
+  const wizardOpen = setupNeeded || (wasNeededRef.current && !setupAcknowledged);
   // Workspace DS list — needed for the wizard's "Pick from workspace" path.
   // Lazy-fetched only when the wizard opens (cheap GET, but no need to spam
   // the daemon on every landing render).
@@ -12690,15 +12723,16 @@ function ProjectsLanding({ info, projects, onReload }) {
           onCreated=${onWizardCreated}
         />`}
 
-        ${projects.length === 0 && !creating && setupNeeded && onboardingReady && html`
+        ${projects.length === 0 && !creating && wizardOpen && onboardingReady && html`
           <${ModelSetupCard}
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
             onOpenSettings=${() => setSettingsOpen(true)}
-            onRefresh=${() => mediaCfg.reload()}/>
+            onRefresh=${() => mediaCfg.reload()}
+            onAcknowledge=${() => setSetupAcknowledged(true)}/>
         `}
 
-        ${projects.length === 0 && !creating && !setupNeeded && html`
+        ${projects.length === 0 && !creating && !setupNeeded && !wizardOpen && html`
           <div className="landing-empty">
             <div className="landing-empty-icon">▣</div>
             <div className="landing-empty-title">No projects yet</div>

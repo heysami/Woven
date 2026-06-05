@@ -6442,6 +6442,40 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-step1-refresh:hover { color: var(--text); }
 
+/* v3.4.46 — "All set!" completion view, shown when both required gates
+   (model + rembg) pass. Replaces the per-step body so the wizard reads
+   as "done" rather than just vanishing on the install-success transition. */
+.model-setup-allset {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+  padding: 8px 0;
+}
+.model-setup-allset-check {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--ok, #16a34a);
+  color: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.model-setup-allset-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.model-setup-allset-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
 /* v3.4.43 — Install-instructions popup opened from Step 1's CTA.
    Reuses the .workflow-modal-backdrop / .workflow-modal pattern from the
    workflow surface so we don't redefine the centering/overlay; just adds
