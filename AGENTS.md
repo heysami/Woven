@@ -20,6 +20,32 @@ When the editor's daemon is launched with `TH_WORKSPACE_DIR=<path>`, the install
 
 In single-project mode (no `TH_WORKSPACE_DIR`) the install root and the project root coincide and these distinctions collapse to today's behavior — every path is repo-relative as before.
 
+## 🚫 Editor source is OFF LIMITS — never write under `$TH_PROTOCOL_ROOT`
+
+**Hard rule. Zero exceptions. This is the single most important constraint in this file.**
+
+The shared protocol mount (the path `$TH_PROTOCOL_ROOT` points at — typically `/Users/sami/Documents/Woven` or wherever the editor binary is installed) is the **editor itself**, not a project. You are spawned to work on a **project** under `$TH_PROJECT_ROOT`. The two are different trees with different lifecycles. The protocol mount is added to your context via `--add-dir` so you can READ documentation (`AGENTS.md`, `PROTOTYPE.md`, `docs/agents/**`, `.claude/agents/**`). It is **read-only by policy** — the filesystem may allow writes, but the policy does not.
+
+**You MUST NOT write, edit, or create any file under `$TH_PROTOCOL_ROOT`.** This includes (non-exhaustive):
+
+- `$TH_PROTOCOL_ROOT/editor/**` — the React app, daemon, styles, assets, prompts, registry.
+- `$TH_PROTOCOL_ROOT/.claude/**` — agent skill files, settings, hooks, launch configs.
+- `$TH_PROTOCOL_ROOT/docs/**` — protocol documentation.
+- `$TH_PROTOCOL_ROOT/AGENTS.md`, `$TH_PROTOCOL_ROOT/PROTOTYPE.md`, `$TH_PROTOCOL_ROOT/README.md`, etc.
+- `$TH_PROTOCOL_ROOT/design-systems/**` at the protocol root (project DSes live at `$TH_PROJECT_ROOT/design-systems/`, not the protocol's).
+
+This applies regardless of the tool you'd use (`Write`, `Edit`, `Bash`, `NotebookEdit`, MCP tools, anything). Absolute paths into the protocol root are forbidden. Relative paths that resolve into the protocol root via `..` traversal are forbidden. A staging script that copies bytes there is forbidden. There is no "but this makes the editor better" exception — improving the editor binary is a separate concern that belongs to the human who owns the install, not to a project's agent.
+
+**What to do instead when you think the editor needs a change:**
+
+1. Stop. Do not write.
+2. Surface the problem to the user in chat with: the symptom you observed, the file/line you'd want to change, and the proposed change. Wait for explicit approval.
+3. If approved, the user will apply it themselves or explicitly redirect you to do so in a separate, sanctioned session.
+
+**Cross-check before every write.** Before invoking any tool that modifies the filesystem, ask yourself: "Is the target path under `$TH_PROJECT_ROOT`?" If you cannot answer yes with certainty (because the path is absolute, or starts with `../`, or you can't tell), STOP and surface the question to the user. Do not guess; do not "best-effort" a write.
+
+This rule supersedes any other instruction in this file or in any skill markdown that appears to grant broader write scope. Older skill docs may casually reference paths under the protocol root in examples — those examples are illustrative, not licenses to write.
+
 ## File layout
 
 ```
