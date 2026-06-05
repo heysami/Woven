@@ -25473,17 +25473,37 @@ function zoomRectFor(el, _iframeEl) {
   if (!el) return null;
   try {
     const er = el.getBoundingClientRect();
+    // Walk outwards through nested iframes, composing host-viewport coords.
+    // Each frame may carry a CSS transform (canvas zoom on the outermost
+    // frame, or scaled imports inside it); we infer the per-step scale from
+    // the host-side rect width vs the frame's own layout (clientWidth). Then
+    // the inner rect contribution is multiplied by the accumulated scale.
     let offX = 0, offY = 0;
+    let scaleX = 1, scaleY = 1;
     let win = el.ownerDocument && el.ownerDocument.defaultView;
     while (win && win.frameElement) {
       const fe = win.frameElement;
       const r = fe.getBoundingClientRect();
-      offX += r.left;
-      offY += r.top;
+      const cw = fe.clientWidth || fe.offsetWidth || r.width || 1;
+      const ch = fe.clientHeight || fe.offsetHeight || r.height || 1;
+      const sx = r.width  > 0 ? r.width  / cw : 1;
+      const sy = r.height > 0 ? r.height / ch : 1;
+      // Compose: existing accumulated offset was in the previous (inner)
+      // frame's coords; convert to host coords by scaling, then add the
+      // new frame's host position.
+      offX = r.left + offX * sx;
+      offY = r.top  + offY * sy;
+      scaleX *= sx;
+      scaleY *= sy;
       win = win.parent;
       if (win === win.parent) break; // safety against top-window self-loop
     }
-    return { x: offX + er.left, y: offY + er.top, w: er.width, h: er.height };
+    return {
+      x: offX + er.left * scaleX,
+      y: offY + er.top  * scaleY,
+      w: er.width  * scaleX,
+      h: er.height * scaleY,
+    };
   } catch { return null; }
 }
 
@@ -25977,8 +25997,15 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
   const [iframeNonce, setIframeNonce] = useState(0);             // bump to reload iframe
   const [dirty, setDirty] = useState(false);                     // unsaved DOM mutations vs disk
   const savedHtmlRef = useRef(null);                             // disk snapshot at last load / save — used by Discard
+  // Canvas zoom (1.0 = 100%). cmd/ctrl+wheel adjusts it; the indicator chip
+  // at top-right shows the pct + resets to 1.0 on click. Plain wheel still
+  // scrolls inside the iframe-host (intentional — lets the user pan around
+  // a 1920×1440 prototype without first having to switch tools).
+  const [canvasScale, setCanvasScale] = useState(1);
+  const pendingScrollRef = useRef(null);                          // { left, top } applied in layout-effect after scale change
 
   const iframeRef = useRef(null);
+  const hostRef = useRef(null);
   const docRef = useRef(null);
   const overlayRef = useRef(null);
   const sketchCanvasRef = useRef(null);
@@ -26018,6 +26045,53 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const t = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(t);
   }, []);
+
+  // cmd/ctrl + wheel zooms the prototype canvas (instead of the browser
+  // window). Plain wheel keeps native scroll for panning around big
+  // prototypes — the iframe-host has overflow:auto so that just works.
+  // The cursor stays anchored to the same content point across the zoom:
+  // we stash the target scrollLeft/Top and apply it in a layout effect
+  // after React commits the new scaler size.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const onWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      // Read from state via closure — we resync via deps so the closure has
+      // the latest scale value. setCanvasScale + ref-stashed scroll runs
+      // once per event; rapid bursts compound through React state.
+      setCanvasScale((oldScale) => {
+        const dz = Math.exp(-e.deltaY * 0.003);
+        const newScale = Math.max(0.25, Math.min(3, oldScale * dz));
+        if (newScale === oldScale) return oldScale;
+        const r = host.getBoundingClientRect();
+        const cx = e.clientX - r.left + host.scrollLeft;
+        const cy = e.clientY - r.top + host.scrollTop;
+        // After re-layout, the same base-coord point must sit under the
+        // cursor: newScroll = baseCoord * newScale - cursorOffsetInHost.
+        pendingScrollRef.current = {
+          left: cx * newScale / oldScale - (e.clientX - r.left),
+          top:  cy * newScale / oldScale - (e.clientY - r.top),
+        };
+        return newScale;
+      });
+    };
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
+  }, []);
+  // Apply the stashed scroll target after React commits the new scaler size.
+  // Without the layout-effect tick, scrollLeft/Top would clip to the OLD
+  // (smaller) scroll range and the cursor anchor would drift.
+  useLayoutEffect(() => {
+    const target = pendingScrollRef.current;
+    if (!target) return;
+    pendingScrollRef.current = null;
+    const host = hostRef.current;
+    if (!host) return;
+    host.scrollLeft = target.left;
+    host.scrollTop = target.top;
+  }, [canvasScale]);
 
   // Resolve the file path the iframe should load. The path is already
   // project-relative ("source/<branch>/index.html" or "source/<branch>/components/foo.html");
@@ -27230,6 +27304,13 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
   overlayChildren.push(html`
     <aside key="rail" className="zoom-toolbar" data-busy=${busy ? "true" : "false"}>
       <button className="zoom-toolbar-close" title="Close (Esc) — prompts to discard if there are unsaved edits" onClick=${closeWithConfirm}>×</button>
+      <button
+        className="zoom-canvas-pct"
+        title=${canvasScale === 1
+          ? "Canvas zoom · ⌘+wheel to zoom"
+          : "Canvas zoom " + Math.round(canvasScale * 100) + "% — click to reset to 100%"}
+        onClick=${() => { pendingScrollRef.current = { left: 0, top: 0 }; setCanvasScale(1); }}
+      >${Math.round(canvasScale * 100)}%</button>
       ${TOOLS.map(t => html`
         <button
           key=${t.id}
@@ -27275,26 +27356,46 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
 
   // The iframe-host area scrolls on its own so the user can pan around a
   // 1920×1440 prototype while the overlay chrome stays fixed.
+  // The scaler wraps the frame so the host's scrollbars reflect the
+  // *visual* size after canvasScale — without it, scrollbars stay sized
+  // to the 1920×1440 layout box and a zoomed-out view would still scroll
+  // forever past the visible content.
   overlayChildren.push(html`
-    <div key="host" className="zoom-iframe-host">
-      <div className="zoom-iframe-frame">
-        <iframe
-          key=${"zoom-iframe-" + iframeNonce}
-          ref=${iframeRef}
-          className="zoom-iframe"
-          src=${iframeSrc}
-          title=${"Zoom · " + filePath}
-        />
-        ${tool === "sketch" && html`
-          <canvas
-            ref=${sketchCanvasRef}
-            className="zoom-sketch-canvas"
-            onMouseDown=${onSketchDown}
-            onMouseMove=${onSketchMove}
-            onMouseUp=${onSketchUp}
-            onMouseLeave=${onSketchUp}
+    <div key="host" className="zoom-iframe-host" ref=${hostRef}>
+      <div
+        className="zoom-iframe-scaler"
+        style=${{
+          width:  (1920 * canvasScale) + "px",
+          height: (1440 * canvasScale) + "px",
+          position: "relative",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          className="zoom-iframe-frame"
+          style=${{
+            transform: "scale(" + canvasScale + ")",
+            transformOrigin: "0 0",
+          }}
+        >
+          <iframe
+            key=${"zoom-iframe-" + iframeNonce}
+            ref=${iframeRef}
+            className="zoom-iframe"
+            src=${iframeSrc}
+            title=${"Zoom · " + filePath}
           />
-        `}
+          ${tool === "sketch" && html`
+            <canvas
+              ref=${sketchCanvasRef}
+              className="zoom-sketch-canvas"
+              onMouseDown=${onSketchDown}
+              onMouseMove=${onSketchMove}
+              onMouseUp=${onSketchUp}
+              onMouseLeave=${onSketchUp}
+            />
+          `}
+        </div>
       </div>
     </div>
   `);
