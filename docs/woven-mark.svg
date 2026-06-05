@@ -1,13 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 231 40" width="380" height="65" role="img" aria-label="Woven">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 307 92" width="560" height="167" role="img" aria-label="Woven">
   <title>Woven</title>
-  <g fill="#2da569">
+  <defs>
+    <style>
+      @font-face {
+        font-family: "Space Grotesk";
+        font-style: normal;
+        font-weight: 700;
+        src: url("data:font/woff2;base64,d09GMgABAAAAAALwABAAAAAABcAAAAKWAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYbgSAcKgZgP1NUQVQqAEwRCAqCdIJIATYCJAMYCw4ABCAFgS4HIAwHG2wEKJ6FsXuiFKJOXUysCBCj+Oc6gu/3e91z3g2CIhT66wCO/1FRcSiBdUqqqmyrKitrfH1s2fb60P7qzf/r2fWBQCRCcVK7SEeWcP2P1Vi4OeX1/w3cVOvjAS8MPNAEA7sP6AIWxVmgCQYavaPD4bk8kcxdOjXx0EzMsJenPxPoB6QQihDotcQFsx4RlwbpcXFbA6QK1AXiqLylAQIEQpG6hW6phYNVKTg6gCqUMrXaE2EHA9UQMMFCptCe5K+wwrUuAaCkf56BSz4yAfbQJA7gEqaYCL/C5h7gG9o6mtf/n5Q7YgYC4inPAHNYIXQLjCOYwpxXVrURIHmgMoFEg3Gs7zhHC/TqllJbuUYdFQrU8NT6ub6rr+srBAAhKkMInaAfXTgD7wBQ4GbXPjzB1xiVCmgBzaeF4ap5ogJRXvHM8zMhwy8vdPbpCfo/PdHZG9305dvHHLp5L5q5pSxF35utNHvZYaPuEa4zD4+PGbMv1Xk+WffwRHNoNs2lWT25p6NrhcrMwq92L2ZzdJp8ZdcrxSvCciCmKSCgJUGc4N/SGBATXRvk2xJnW62MDHRz17+ocH+Ly7Q5C/jzOXd2PULEz5tg5XGwQ6hPhptjXoDVgIFXpatPYFz4P+eBmHbf0OYkeVISYyVmVohu9ImNiRBFrFxfiLKA3Y0fEy1zSjIncHPADYKk3WrKLpT5/etm2T/4vm6yAvAUtRMAebUpY84AnRIEH5I0LyFvgk0ZCFan3VXYjMAgg+GQVYjIsuEUZuQIOs1jQOCpDqtYUYQIK6AwadAK3WmJG4tAv/0nctDtUKomxUqVMxKpRaM25VrVMhKnWqUqbVKUq9SuTrEWzjLi2gOZBk4VolGdMixQ4YLzX4l9KQc=") format("woff2");
+      }
+      .wm {
+        font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+        font-weight: 700;
+        font-size: 40px;
+        letter-spacing: -0.01em;
+        fill: #f4f6f5;
+      }
+    </style>
+    <pattern id="fretwork" patternUnits="userSpaceOnUse" width="56" height="56" patternTransform="translate(125.5 18.0) rotate(45)">
+      <rect width="56" height="56" fill="none"/>
+      <path d="M0 0 H56 M0 28 H56 M0 0 V56 M28 0 V56" stroke="rgba(255,255,255,0.045)" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="100%" height="100%" fill="#121716"/>
+  <rect width="100%" height="100%" fill="url(#fretwork)"/>
+
+  <!-- mark -->
+  <g transform="translate(38 26)" fill="#2da569">
     <path d="M14 2L26 14L14 26L2 14Z"/>
     <path d="M38 2L50 14L38 26L26 14Z"/>
     <path d="M62 2L74 14L62 26L50 14Z"/>
     <path d="M26 14L38 26L26 38L14 26Z"/>
     <path d="M50 14L62 26L50 38L38 26Z"/>
   </g>
-  <g fill="#2da569" transform="translate(103,34)">
-    <g transform="translate(0.00,0) scale(0.04000,-0.04000)"><path d="M122 0 30 700H161L229 92H247L335 700H563L651 92H669L737 700H868L776 0H548L458 622H440L350 0Z"/></g><g transform="translate(35.52,0) scale(0.04000,-0.04000)"><path d="M306 -14Q232 -14 173.0 16.0Q114 46 80.0 103.0Q46 160 46 240V256Q46 336 80.0 393.0Q114 450 173.0 480.0Q232 510 306 510Q380 510 439.0 480.0Q498 450 532.0 393.0Q566 336 566 256V240Q566 160 532.0 103.0Q498 46 439.0 16.0Q380 -14 306 -14ZM306 98Q364 98 402.0 135.5Q440 173 440 243V253Q440 323 402.5 360.5Q365 398 306 398Q248 398 210.0 360.5Q172 323 172 253V243Q172 173 210.0 135.5Q248 98 306 98Z"/></g><g transform="translate(59.60,0) scale(0.04000,-0.04000)"><path d="M174 0 16 496H150L265 92H283L398 496H532L374 0Z"/></g><g transform="translate(81.12,0) scale(0.04000,-0.04000)"><path d="M296 -14Q222 -14 165.5 17.5Q109 49 77.5 106.5Q46 164 46 242V254Q46 332 77.0 389.5Q108 447 164.0 478.5Q220 510 294 510Q367 510 421.0 477.5Q475 445 505.0 387.5Q535 330 535 254V211H174Q176 160 212.0 128.0Q248 96 300 96Q353 96 378.0 119.0Q403 142 416 170L519 116Q505 90 478.5 59.5Q452 29 408.0 7.5Q364 -14 296 -14ZM175 305H407Q403 348 372.5 374.0Q342 400 293 400Q242 400 212.0 374.0Q182 348 175 305Z"/></g><g transform="translate(103.80,0) scale(0.04000,-0.04000)"><path d="M70 0V496H194V431H212Q224 457 257.0 480.5Q290 504 357 504Q415 504 458.5 477.5Q502 451 526.0 404.5Q550 358 550 296V0H424V286Q424 342 396.5 370.0Q369 398 318 398Q260 398 228.0 359.5Q196 321 196 252V0Z"/></g>
-  </g>
+
+  <!-- wordmark -->
+  <text class="wm" x="141" y="60">Woven</text>
 </svg>
