@@ -48,12 +48,12 @@ Pure declarative metadata. Schema:
   "description":    "Longer prose — explains the pipeline shape, the loop-until-bar pattern, multi-draft cruxes if any, what makes this planner the right choice for its trigger.",
 
   "triggers": [
-    { "mode": "chat",       "title": "Bare Intent — chat",
-      "rule":       "When the user's message mentions <X>, FIRST action is a Task call to <id>.",
-      "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>'" },
-    { "mode": "onboarding", "title": "Stage X — bp_proto_build Phase Y",
-      "rule":       "...",
-      "ruleSource": "editor/prompts/node_agent_preambles.py — ..." }
+    { "mode": "chat", "title": "Path A — \"build an app\" with this slot",
+      "rule":       "Top-level Claude scaffolds the app shell first (with the planner's placeholder), then dispatches the planner per slot.",
+      "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>' Path A" },
+    { "mode": "chat", "title": "Path B — Bare intent",
+      "rule":       "User wants the artefact itself; Claude dispatches the planner directly in BARE-INTENT MODE.",
+      "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>' Path B" }
   ],
 
   "dispatches": {
@@ -75,8 +75,7 @@ Pure declarative metadata. Schema:
 
   "documents": {
     "designDoc":   "docs/features/<your-feature>.md",
-    "calibration": ".claude/lens-calibration/fixtures/my-*",
-    "policy":      ".claude/agents/onboarding-visual-policy.md (MY_PIPELINE block)"
+    "calibration": ".claude/lens-calibration/fixtures/my-*"
   }
 }
 ```
@@ -161,12 +160,9 @@ This is intentional: disabling cuts AUTO-DISPATCH, not capability.
 3. If chat-triggerable: add a hard-rule section to `capabilities.py:capabilities_preamble`
    AND add the section's header to `_strip_disabled_planner_blocks`'s
    `SECTIONS` table.
-4. If onboarding-dispatched: add a `bp_<id>_build` per-id preamble in
-   `editor/prompts/node_agent_preambles.py` and wire Phase 2X into
-   `bp_proto_build`'s preamble.
-5. If it adds new node kinds: declare them in `editor/kinds/registry.py`
+4. If it adds new node kinds: declare them in `editor/kinds/registry.py`
    (per-id overrides + container kinds).
-6. (Optional but recommended) Hand-author calibration fixtures at
+5. (Optional but recommended) Hand-author calibration fixtures at
    `.claude/lens-calibration/fixtures/<id>-*` if it dispatches lens-gated
    components.
 

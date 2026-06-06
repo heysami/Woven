@@ -19,7 +19,7 @@ You handle two dispatch patterns. **Read your dispatch prompt's first words to d
 
 ### Mode A — HTML enumeration (the legacy mode)
 
-The default. Dispatched by Subagent 1 / `bp_proto_build` after HTML is written. Your input envelope carries `sourceRoot`, `branch`, etc. You walk every HTML/CSS/JS file in source/, enumerate visual slots, classify, scaffold, dispatch drawers. The bulk of this playbook is about Mode A.
+The default. Dispatched by the workflow-mode chat after it has scaffolded source HTML (via the `/prototype` skill or by hand). Your input envelope carries `sourceRoot`, `branch`, etc. You walk every HTML/CSS/JS file in source/, enumerate visual slots, classify, scaffold, dispatch drawers. The bulk of this playbook is about Mode A.
 
 ### Mode B — Bare intent (v3.1 — new)
 

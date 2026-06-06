@@ -1,23 +1,26 @@
 {
-  "id":             "narrative-experience-planner",
-  "label":          "Narrative experience",
-  "tagline":        "Immersive walk-into-this-place pieces — dramaturgy, presence, felt-state",
-  "version":        "v3.3",
+  "id": "narrative-experience-planner",
+  "label": "Narrative experience",
+  "tagline": "Immersive walk-into-this-place pieces \u2014 dramaturgy, presence, felt-state",
+  "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName":   "narrative-experience-planner",
-  "playbookPath":   ".claude/agents/narrative-experience-planner.md",
-
-  "description":    "Crafts pieces where the user walks into a place and leaves changed: a museum microsite that lives, an exhibition extension that breathes, a memorial that holds, a character portrait at depth, an editorial scrollytelling piece that earns its long-form. Inherits simulation-planner's discipline (4 paradigms — 2d-illustrative / 3d-environment / iconographic-anim / hybrid — pipeline shape, scene-builder fanout, lens trio, multi-draft at the moments of creative divergence, cross-drawer coherence review). What changes is purpose: where simulation gives the user UNDERSTANDING of a system, narrative-experience gives the user PRESENCE inside a place. Three structural substitutions, each in service of felt-experience: spine (the dramaturgy — authored moments, some anchored to time/scroll, some waiting in space to be found) replaces loop; reveals (the act of attention — gentle progressive discovery, plus body-carrying navigation when the scene is walkable) replaces controls; ambient (the soundscape — the room listening back) is a new first-class channel. Walkable 3D lives inside the 3d-environment paradigm; freedom of movement is the breathing room WITHIN the script, not absence of authorship. Collaborates with visual-planner for raster imagery — painterly plates, character portraits, artifact close-ups, texture maps — so every asset inherits the brief's styleCue and the piece reads as one. Concept-lens scores against felt-state successFeel ('the room holds them', 'they leave quieter'), never informational outcomes.",
-
+  "subagentName": "narrative-experience-planner",
+  "playbookPath": ".claude/agents/narrative-experience-planner.md",
+  "description": "Crafts pieces where the user walks into a place and leaves changed: a museum microsite that lives, an exhibition extension that breathes, a memorial that holds, a character portrait at depth, an editorial scrollytelling piece that earns its long-form. Inherits simulation-planner's discipline (4 paradigms \u2014 2d-illustrative / 3d-environment / iconographic-anim / hybrid \u2014 pipeline shape, scene-builder fanout, lens trio, multi-draft at the moments of creative divergence, cross-drawer coherence review). What changes is purpose: where simulation gives the user UNDERSTANDING of a system, narrative-experience gives the user PRESENCE inside a place. Three structural substitutions, each in service of felt-experience: spine (the dramaturgy \u2014 authored moments, some anchored to time/scroll, some waiting in space to be found) replaces loop; reveals (the act of attention \u2014 gentle progressive discovery, plus body-carrying navigation when the scene is walkable) replaces controls; ambient (the soundscape \u2014 the room listening back) is a new first-class channel. Walkable 3D lives inside the 3d-environment paradigm; freedom of movement is the breathing room WITHIN the script, not absence of authorship. Collaborates with visual-planner for raster imagery \u2014 painterly plates, character portraits, artifact close-ups, texture maps \u2014 so every asset inherits the brief's styleCue and the piece reads as one. Concept-lens scores against felt-state successFeel ('the room holds them', 'they leave quieter'), never informational outcomes.",
   "triggers": [
-    { "mode": "chat",       "title": "Bare Intent — chat",
-      "rule": "When the user's message mentions an immersive walk-into-this-place piece — 'inside the studio', 'walk into the painting', 'sit inside the room', 'let me feel the world of X', 'the world breathing through the window', 'memorial visualisation', 'emotional portrait at depth', 'museum microsite that lives' — FIRST action is a Task call to narrative-experience-planner in BARE-INTENT MODE.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Narrative experiences: dispatch narrative-experience-planner FIRST'" },
-    { "mode": "onboarding", "title": "Stage I — bp_proto_build Phase 2d (future)",
-      "rule": "For each row in the PRD's Narrative-experience table (PRD_VISUAL_RULES §7, future), bp_proto_build Phase 2d dispatches a per-nxId bp_narrative_build agent which spawns narrative-experience-planner.",
-      "ruleSource": "editor/prompts/node_agent_preambles.py — bp_proto_build Phase 2d + bp_narrative_build preamble (future)" }
+    {
+      "mode": "chat",
+      "title": "Path A \u2014 \"build a site with this piece\"",
+      "rule": "User wants the experience embedded in a larger app/site (rare for narrative \u2014 most are whole-page). Top-level Claude scaffolds the shell (with nx-placeholder slot), then dispatches narrative-experience-planner per slot, drives the build, embeds per the playbook.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-planner' Path A"
+    },
+    {
+      "mode": "chat",
+      "title": "Path B \u2014 Bare intent (the default for narrative)",
+      "rule": "User wants the piece itself (museum microsite, memorial, walk-into-the-room). Default for narrative. Top-level Claude dispatches narrative-experience-planner directly in BARE-INTENT MODE.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-planner' Path B"
+    }
   ],
-
   "dispatches": {
     "research": [
       "nx-research-precedent",
@@ -40,25 +43,33 @@
     "collaborators": [
       "visual-planner"
     ],
-    "lenses": ["craft-lens", "aesthetic-lens", "concept-lens"]
-  },
-
-  "skills": [],
-
-  "nodeKinds": {
-    "container":         ["narrative-experience"],
-    "agent_overrides": [
-      "bp_narrative_build",
-      "nx_research_*", "nx_spine_*", "nx_scene_*",
-      "nx_ambient_*", "nx_reveal_*", "nx_overlay_*", "nx_runtime_*",
-      "cp_nx_scene_pick_*", "cp_nx_ambient_pick_*",
-      "cp_nx_runtime_pick_*", "cp_nx_gate_*"
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
     ]
   },
-
+  "skills": [],
+  "nodeKinds": {
+    "container": [
+      "narrative-experience"
+    ],
+    "agent_overrides": [
+      "nx_research_*",
+      "nx_spine_*",
+      "nx_scene_*",
+      "nx_ambient_*",
+      "nx_reveal_*",
+      "nx_overlay_*",
+      "nx_runtime_*",
+      "cp_nx_scene_pick_*",
+      "cp_nx_ambient_pick_*",
+      "cp_nx_runtime_pick_*",
+      "cp_nx_gate_*"
+    ]
+  },
   "documents": {
-    "designDoc":   "docs/features/simulation-and-interactive-planners.md (narrative section TBD)",
-    "calibration": null,
-    "policy":      null
+    "designDoc": "docs/features/simulation-and-interactive-planners.md",
+    "calibration": ".claude/lens-calibration/fixtures/nx-*"
   }
 }

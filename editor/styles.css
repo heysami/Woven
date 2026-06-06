@@ -615,6 +615,66 @@ button {
   gap: 16px;
 }
 
+/* ── v3.5 — New-project modal (lightweight; onboarding wizard removed) ── */
+.newproj-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 10, 14, 0.55);
+  padding: 24px;
+}
+.newproj-card {
+  width: 100%; max-width: 420px;
+  background: var(--bg, #f7f4ec);
+  color: var(--text, #1a1a1a);
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: 6px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.35);
+  display: flex; flex-direction: column;
+}
+.newproj-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px 0;
+}
+.newproj-card-head h2 {
+  margin: 0; font: 600 16px/1.2 var(--font-sans, -apple-system, system-ui, sans-serif);
+}
+.newproj-close {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 22px; line-height: 1; padding: 4px 8px; color: var(--text, #1a1a1a);
+  border-radius: 4px;
+}
+.newproj-close:hover { background: rgba(0,0,0,0.05); }
+.newproj-card-body { padding: 16px 22px; display: flex; flex-direction: column; gap: 10px; }
+.newproj-field { display: flex; flex-direction: column; gap: 6px; }
+.newproj-label { font: 600 11px/1.2 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; }
+.newproj-field input {
+  font: 400 14px/1.4 var(--font-sans, system-ui, sans-serif);
+  padding: 10px 12px;
+  border: 1px solid var(--border, rgba(0,0,0,0.18));
+  border-radius: 4px;
+  background: white;
+  color: var(--text, #1a1a1a);
+}
+.newproj-field input:focus { outline: 2px solid var(--accent, #2c5fff); outline-offset: 1px; }
+.newproj-meta { font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif); opacity: 0.7; display: flex; gap: 6px; flex-wrap: wrap; }
+.newproj-meta code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono, ui-monospace, monospace); }
+.newproj-warning { color: #b04a00; }
+.newproj-error { color: #b00020; font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif); }
+.newproj-card-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--border, rgba(0,0,0,0.08));
+}
+.newproj-cancel, .newproj-create {
+  font: 600 13px/1.2 var(--font-sans, system-ui, sans-serif);
+  padding: 8px 16px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
+}
+.newproj-cancel { background: transparent; color: var(--text, #1a1a1a); border-color: var(--border, rgba(0,0,0,0.18)); }
+.newproj-cancel:hover:not(:disabled) { background: rgba(0,0,0,0.04); }
+.newproj-create { background: var(--text, #1a1a1a); color: var(--bg, white); }
+.newproj-create:hover:not(:disabled) { opacity: 0.88; }
+.newproj-create:disabled, .newproj-cancel:disabled { opacity: 0.45; cursor: not-allowed; }
+
 /* ── v3.3 — Landing tabs (Projects | System) — DARK (sits on the dark
  * header backdrop, so it keeps the dark-mode treatment regardless of the
  * cream landing body below). ─────────────────────────────────────────── */

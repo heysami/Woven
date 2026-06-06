@@ -19,7 +19,7 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/sim-research-constraint.md" \
 
 ## 1. Input envelope
 
-Same as `sim-research-precedent` §1. You ALSO read the PRD's Audience truths section (`source/{branch}/prd.md`, the Audience truths block produced by `bp_research` + `bp_prd_refine`) to discover platform/perf assumptions for THIS project.
+Same as `sim-research-precedent` §1. If the project has a `source/{branch}/NOTES.md` or any uploaded brief at project root, read it for platform/perf hints (audience device class, expected concurrency, accessibility goals). When no project-level brief is available, infer reasonable defaults for the public web (mobile + desktop, broad accessibility) and surface the inference in your output as an assumption flag the synthesiser can over-ride.
 
 Your `outputPath` is `source/{branch}/simulations/{simId}/_research/constraint.md`.
 

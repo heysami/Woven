@@ -159,212 +159,18 @@ KINDS = {
             "scaffold downstream nodes."
         ),
         "perIdOverrides": {
-            "bp_research": {
-                "outputsRoot": "source/{branch}/",
-                "completion": {"requires": ["files: source/{branch}/research.md exists"]},
-                "notes": "WebSearch + WebFetch + write source/{branch}/research.md.",
-            },
-            "bp_proto_build": {
-                "outputsRoot": "source/{branch}/",
-                "extendsGraph": True,
-                "graphExtensionScope": "per-image-slot subagent trios",
-                "completion": {"requires": ["files: source/{branch}/index.html exists"]},
-            },
-            "bp_design_brief": {
-                "outputsRoot": "DESIGN_BRIEF.html",
-                "extendsGraph": True,
-                "graphExtensionScope": "per-screen breakdown subagents",
-            },
-            "bp_ds_update": {
-                "outputsRoot": "DS_PROPOSAL.md",
-                "extendsGraph": True,
-                "graphExtensionScope": "per-section + per-shell subagents",
-            },
-            "cp_ds_pick": {
-                "notes": "Minimal decision agent. Writes DECISION_cp_ds_pick.json.",
-                "completion": {"requires": ["files: DECISION_cp_ds_pick.json exists with non-empty values"]},
-            },
-            "cp_remix_pick": {
-                "notes": "Like cp_ds_pick, but for the 3 picks across remixed pages.",
-                "completion": {"requires": ["files: DECISION_cp_remix_pick.json exists with 3 values"]},
-            },
-            # D6 migration targets — bs_html_* moves from skill·llm to agent.
-            # Outputs are FLAT files (source/<branch>/_pages/page_N.html) so the
-            # downstream `bs_html_N_asset` card + the orchestrator skill's
-            # path table + runRemix's fetch all resolve to the same place.
-            # An earlier experiment used a folder convention
-            # (`_pages/page_N/index.html`) but the scaffold + orchestrator
-            # never migrated, so downstream fetches 404'd — the source of the
-            # user-visible "could not read upstream HTML" error.
-            "bs_html_1": {
-                "outputsRoot": "source/{branch}/_pages/page_1.html",
-                "completion": {"requires": ["files: source/{branch}/_pages/page_1.html exists, non-empty"]},
-                "downstreamLink": "br_remix_p1",
-                "notes": "Generates one full HTML page. Visible subprocess. Dispatched in parallel with siblings bs_html_2/3.",
-            },
-            "bs_html_2": {
-                "outputsRoot": "source/{branch}/_pages/page_2.html",
-                "completion": {"requires": ["files: source/{branch}/_pages/page_2.html exists, non-empty"]},
-                "downstreamLink": "br_remix_p2",
-            },
-            "bs_html_3": {
-                "outputsRoot": "source/{branch}/_pages/page_3.html",
-                "completion": {"requires": ["files: source/{branch}/_pages/page_3.html exists, non-empty"]},
-                "downstreamLink": "br_remix_p3",
-            },
-            # Long-form PRD writes — complex artifact, must be agent-kind not skill·llm.
-            "bp_prd_refine":   {"outputsRoot": "source/{branch}/prd.md",         "completion": {"requires": ["files: source/{branch}/prd.md exists"]}},
-            "bp_prd_final":    {"outputsRoot": "source/{branch}/prd-final.md",   "completion": {"requires": ["files: source/{branch}/prd-final.md exists"]}},
-            "bp_prd_align":    {"outputsRoot": "source/{branch}/prd-aligned.md", "completion": {"requires": ["files: source/{branch}/prd-aligned.md exists"]}},
-            # ── COHERENCE PASS (Subagent 11) — see COHERENCE_PHASE_PLAN.md ───────
-            # Upstream contract producers: ONE source of truth before page generation.
-            # cp_fixture canonicalises every numeric/named fact (entities) so pages
-            # cannot drift (the `38` vs `312` super bug).
-            "cp_fixture": {
-                "outputsRoot": "source/{branch}/_coherence/",
-                "completion": {"requires": [
-                    "files: source/{branch}/_coherence/model.json exists",
-                    "files: source/{branch}/data.js exists",
-                ]},
-                "extendsGraph": False,
-                "notes": (
-                    "Reads the PRD's 'System mechanics + data model' section and writes "
-                    "BOTH model.json (canonical entity store; every fact declared once) "
-                    "AND data.js (window.DEMO surface views, each value REFERENCED from "
-                    "model.json, never re-typed). Downstream bs_html_* generators consume "
-                    "data.js; they MUST NOT author numeric/named facts inline. If a fact "
-                    "isn't in the model, request it — don't invent it."
-                ),
-            },
-            # cp_chrome writes ONE chrome contract every page must include.
-            "cp_chrome": {
-                "outputsRoot": "source/{branch}/_coherence/",
-                "completion": {"requires": [
-                    "files: source/{branch}/_coherence/chrome.html exists",
-                    "files: source/{branch}/_coherence/chrome.contract.json exists",
-                ]},
-                "notes": (
-                    "Reads the DS (shells + styles.css) + PRD page-to-shell map; writes "
-                    "chrome.html (the canonical partial: ONE brand <symbol>, ONE nav, ONE seal slot) "
-                    "+ chrome.contract.json (machine-readable assertion target: "
-                    "{brandSymbolId, navItems[], sealSelector, navLocation}). Page generators "
-                    "include the partial verbatim and may set only the active nav item; "
-                    "they must NOT redefine the brand, nav, or seal."
-                ),
-            },
-            # Downstream auditors: read the canonical contracts + final pages, emit COHERENCE_REPORT.json.
-            "lint_data_coherence": {
-                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
-                "completion": {"requires": [
-                    "files: source/{branch}/COHERENCE_REPORT.json exists",
-                ]},
-                "notes": (
-                    "Reads model.json + every final source/<branch>/*.html + data.js. "
-                    "Lint rules (block severity on 1-3): "
-                    "(1) No contradiction — facts in prose that map to a model entity must "
-                    "equal the model value. "
-                    "(2) Single value per key — same entity must not resolve to two values. "
-                    "(3) Cross-surface continuity — same caseId carries same grade/confidence "
-                    "everywhere. "
-                    "(4 warn) — orphan facts: prose figures with no backing model entity."
-                ),
-            },
-            "lint_chrome_consistency": {
-                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
-                "completion": {"requires": [
-                    "files: source/{branch}/COHERENCE_REPORT.json exists",
-                ]},
-                "notes": (
-                    "Reads chrome.contract.json + every final page. "
-                    "Lint rules (block on 1, 2, 4): "
-                    "(1) Identical brand — <symbol>/markup hashes equal across pages. "
-                    "(2) Identical nav — same item set, order, classes, and LOCATION. "
-                    "(3 warn) Fixed seal — same selector/position/scale everywhere. "
-                    "(4) One nav paradigm — flag pages whose nav diverges from "
-                    "contract.navLocation (the left-rail-vs-top-bar split in super)."
-                ),
-            },
-            # Vision-verify is per-asset; node id is "v_<assetId>".
-            # We document the contract under a wildcard key the validator falls
-            # back to when checking per-id.
-            "v_": {
-                "outputsRoot": "source/{branch}/COHERENCE_REPORT.json",
-                "completion": {"requires": [
-                    # No file required beyond the appended verdict; the report
-                    # accumulates entries from many v_<id> commits.
-                ]},
-                "notes": (
-                    "Vision-verify node appended to every visual trio "
-                    "(prompt → skill → asset → VERIFY). Reads the generated PNG + the "
-                    "asset's intent + constraints[]. Flags: medium mismatch (diagram vs "
-                    "photographic still); constraint violation (recognizable person, "
-                    "saturated where intent said desaturated); duplication (asset redraws "
-                    "something already rendered live, e.g. the coord-graph); subject "
-                    "mismatch. On fail, AUTO-RETRY the prompt drawer ONCE with the failure "
-                    "reason fed back; on second fail, mark block and escalate."
-                ),
-            },
-            # Final release gate before prototype: aggregates lint + verify reports,
-            # emits <decision-request> on any block-severity finding.
-            "cp_coherence_gate": {
-                "outputsRoot": "DECISION_cp_coherence.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_coherence.json exists with non-empty values",
-                ]},
-                "notes": (
-                    "Reads COHERENCE_REPORT.json. If all findings are warn-or-lower, "
-                    "commits DECISION_cp_coherence.json with value='clear' and releases "
-                    "the prototype node. If any block-severity finding exists, emits a "
-                    "<decision-request> via workflow-orchestrator with options: "
-                    "Retry (re-run offending generator with finding fed back) · "
-                    "Patch (Subagent 11 applies minimal source fix, e.g. reconcile a "
-                    "number to the model) · Accept-override (human waives, recorded)."
-                ),
-            },
-
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — SIMULATION + INTERACTIVE-MEDIA planners.
-            # See docs/features/simulation-and-interactive-planners.md.
+            # v3.5 — Onboarding cut. The guided-new-project pipeline (research,
+            # PRD, DS, source-scaffold, brainstorm, coherence-pass, vision-verify)
+            # was removed wholesale. The visual / simulation / interactive /
+            # narrative planners stay; their drawer overrides + per-id wildcards
+            # are below. Chat dispatches planners directly via Path A/B in
+            # capabilities.py — no bp_*_build harness intermediary anymore.
             # Wildcard keys end in "_" per kind_contract's longest-prefix-match.
             # Node-id convention: <family>_<component>_<assetId>
             #   sim_scene_warehouse_floor       (NOT sim_warehouse_floor_scene)
             #   im_input_tone_mood_painter_mic  (etc.)
             # ──────────────────────────────────────────────────────────────────
-
-            # ── Family planners (exact match) ─────────────────────────────────
-            "bp_simulation_build": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/",
-                "extendsGraph": True,
-                "graphExtensionScope": (
-                    "per-simId multi-trio: research / entities / scene / loop / "
-                    "controls / overlay / runtime / container"
-                ),
-                "completion": {"requires": [
-                    "files: source/{branch}/simulations/{simId}/runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
-                ]},
-                "notes": (
-                    "Dispatches simulation-planner for ONE simId. The planner does "
-                    "the multi-drawer fanout, runs the §8.3 loop-until-bar lens "
-                    "pass internally, and only commits done when ≥2/3 lenses pass."
-                ),
-            },
-            "bp_interactive_build": {
-                "outputsRoot": "source/{branch}/interactives/{imId}/",
-                "extendsGraph": True,
-                "graphExtensionScope": (
-                    "per-imId multi-trio: research / modality-research / "
-                    "input[] / mapping / output[] / runtime / container"
-                ),
-                "completion": {"requires": [
-                    "files: source/{branch}/interactives/{imId}/runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
-                ]},
-                "notes": (
-                    "Dispatches interactive-media-planner for ONE imId. Permission "
-                    "gates surfaced to the canvas BEFORE Run."
-                ),
-            },
 
             # ── Simulation component drawers (wildcard prefixes) ──────────────
             "sim_research_": {
@@ -561,26 +367,6 @@ KINDS = {
             # Node-id convention: nx_<component>_<nxId>
             #   nx_scene_vermeer_studio    (NOT nx_vermeer_studio_scene)
             # ──────────────────────────────────────────────────────────────────
-
-            # ── Family planner (exact match) ──────────────────────────────────
-            "bp_narrative_build": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/",
-                "extendsGraph": True,
-                "graphExtensionScope": (
-                    "per-nxId multi-trio: research / spine / scene / camera / "
-                    "ambient / reveal / overlay / runtime / container"
-                ),
-                "completion": {"requires": [
-                    "files: source/{branch}/narratives/{nxId}/runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
-                ]},
-                "notes": (
-                    "Dispatches narrative-experience-planner for ONE nxId. "
-                    "The planner does the multi-drawer fanout, runs the §8.3 "
-                    "loop-until-bar lens pass internally, and only commits "
-                    "done when ≥2/3 lenses pass on the final runtime."
-                ),
-            },
 
             # ── Narrative component drawers (wildcard prefixes) ───────────────
             "nx_research_": {

@@ -1,23 +1,26 @@
 {
-  "id":             "interactive-media-planner",
-  "label":          "Interactive media",
-  "tagline":        "TouchDesigner-flavoured pieces the user drives with body or device",
-  "version":        "v3.3",
+  "id": "interactive-media-planner",
+  "label": "Interactive media",
+  "tagline": "TouchDesigner-flavoured pieces the user drives with body or device",
+  "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName":   "interactive-media-planner",
-  "playbookPath":   ".claude/agents/interactive-media-planner.md",
-
-  "description":    "Orchestrates a generative interactive piece where the user's body/device (mic, camera, mouse, gyro, MIDI, gamepad) becomes a creative material and the output is real-time generative response (shader, particles, 3D, audio). Runs 5-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; §8.3 loop-until-bar; multi-draft at mapping + runtime + output cruxes; §8.5 cross-drawer coherence review before final commit. Permission UX gates camera/mic via two-gate pattern (canvas-side + iframe-side Start).",
-
+  "subagentName": "interactive-media-planner",
+  "playbookPath": ".claude/agents/interactive-media-planner.md",
+  "description": "Orchestrates a generative interactive piece where the user's body/device (mic, camera, mouse, gyro, MIDI, gamepad) becomes a creative material and the output is real-time generative response (shader, particles, 3D, audio). Runs 5-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar; multi-draft at mapping + runtime + output cruxes; \u00a78.5 cross-drawer coherence review before final commit. Permission UX gates camera/mic via two-gate pattern (canvas-side + iframe-side Start).",
   "triggers": [
-    { "mode": "chat",       "title": "Bare Intent — chat",
-      "rule": "When the user's message mentions a distinct creative or playful interactive piece (TouchDesigner-style, voice-reactive, music-reactive, camera-driven, body-driven generative response) — FIRST action is a Task call to interactive-media-planner in BARE-INTENT MODE.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Interactive pieces: dispatch interactive-media-planner FIRST'" },
-    { "mode": "onboarding", "title": "Stage I — bp_proto_build Phase 2c",
-      "rule": "For each row in the PRD's Interactive-piece table (PRD_VISUAL_RULES §6), bp_proto_build Phase 2c dispatches a per-imId bp_interactive_build agent which spawns interactive-media-planner.",
-      "ruleSource": "editor/prompts/node_agent_preambles.py — bp_proto_build Phase 2c + bp_interactive_build preamble" }
+    {
+      "mode": "chat",
+      "title": "Path A \u2014 \"build an app with this piece\"",
+      "rule": "User wants the interactive piece embedded in an app. Top-level Claude scaffolds the app shell (with im-placeholder slot + allow= attribute), then dispatches interactive-media-planner per slot (Mode A). After hand-off, Claude drives the build per simulation-planner.md \u00a75.1.0 (same shape + \u00a78.5 coherence) and embeds the runtime.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-planner' Path A"
+    },
+    {
+      "mode": "chat",
+      "title": "Path B \u2014 Bare intent",
+      "rule": "User wants the piece itself (\"voice-reactive shader\", \"TouchDesigner-style\"). Top-level Claude dispatches interactive-media-planner directly in BARE-INTENT MODE.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-planner' Path B"
+    }
   ],
-
   "dispatches": {
     "research": [
       "im-research-precedent",
@@ -28,29 +31,42 @@
       "im-research-synthesiser"
     ],
     "components": [
-      "im-input-mic", "im-input-camera",
-      "im-input-mouse-touch", "im-input-gyro-orientation", "im-input-midi-gamepad",
+      "im-input-mic",
+      "im-input-camera",
+      "im-input-mouse-touch",
+      "im-input-gyro-orientation",
+      "im-input-midi-gamepad",
       "im-mapping-author",
-      "im-output-shader-particle", "im-output-3d", "im-output-audio",
+      "im-output-shader-particle",
+      "im-output-3d",
+      "im-output-audio",
       "im-runtime-composer"
     ],
-    "lenses": ["craft-lens", "aesthetic-lens", "concept-lens"]
-  },
-
-  "skills": [],
-
-  "nodeKinds": {
-    "container":         ["interactive-media"],
-    "agent_overrides": [
-      "bp_interactive_build",
-      "im_research_*", "im_input_*", "im_mapping_*", "im_output_*", "im_runtime_*",
-      "cp_im_mapping_pick_*", "cp_im_runtime_pick_*", "cp_im_output_pick_*", "cp_im_gate_*"
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
     ]
   },
-
+  "skills": [],
+  "nodeKinds": {
+    "container": [
+      "interactive-media"
+    ],
+    "agent_overrides": [
+      "im_research_*",
+      "im_input_*",
+      "im_mapping_*",
+      "im_output_*",
+      "im_runtime_*",
+      "cp_im_mapping_pick_*",
+      "cp_im_runtime_pick_*",
+      "cp_im_output_pick_*",
+      "cp_im_gate_*"
+    ]
+  },
   "documents": {
-    "designDoc":   "docs/features/simulation-and-interactive-planners.md",
-    "calibration": ".claude/lens-calibration/fixtures/im-*",
-    "policy":      ".claude/agents/onboarding-visual-policy.md (INTERACTIVITY_PIPELINE block)"
+    "designDoc": "docs/features/simulation-and-interactive-planners.md",
+    "calibration": ".claude/lens-calibration/fixtures/im-*"
   }
 }

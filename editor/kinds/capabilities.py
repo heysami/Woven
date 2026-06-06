@@ -406,7 +406,7 @@ If the user's message contains framing words like **app, web app, dashboard, pag
         description: "Plan + build sim for slot <simId>",
         prompt: "Mode A envelope: slotFile=source/<branch>/<page>.html, slotLine=<line of placeholder div>, simId=<simId>, branch=<branch>, projectRoot=<absolute project root>. The placeholder is <div class='sim-placeholder' data-sim='<simId>' data-paradigm-hint='<hint>' data-entities='<scale>' style='aspect-ratio: <W>/<H>'>. User's intent: <verbatim>. successFeel: <ask user if vague>. Run §2 research fleet → §3 user steerage → §4 scaffold drawers → §5 hand-off envelope. Per §5.1.1: the build phase (which I drive) will replace the placeholder with the iframe embed after runtime.html is committed.")
    ```
-3. **THIRD — drive the build + embed.** After the planner returns its hand-off envelope, YOU drive the build phase per `bp_simulation_build` preamble — dispatch drawers, run lens trios, commit container. The container commit MUST include the embed step (sim-planner playbook §5.1.1): read the slot file, replace the placeholder div with the iframe embed below, write back. Without this step the runtime exists but isn't IN the app.
+3. **THIRD — drive the build + embed.** After the planner returns its hand-off envelope, YOU drive the build phase per `simulation-planner.md §5.1.0` (the compact harness pseudocode): dispatch each scaffolded drawer in dependency order via `POST /__workflow/node/<id>/run`, run the lens trio per lens-gated drawer (loop-until-bar, cap 5 outer iterations × 3 lens dispatches each, ≥2/3 pass advances), embed the runtime into the slot file per `simulation-planner.md §5.1.1`, then commit the `sim_<simId>` container with `outputs.lensVerdict: "pass"`. Without the embed step, the runtime exists at `simulations/<simId>/runtime.html` but isn't IN the app.
    ```html
    <div class="sim-mount" data-sim="<simId>" style="aspect-ratio: <W>/<H>; width:100%;">
      <iframe
@@ -471,7 +471,7 @@ If the user names something that *looks like a system with stateful parts that i
 
 - ❌ "Should I scaffold a simulation for you?" → **No.** Yes. Dispatch.
 - ❌ "What paradigm do you want — 2D map, 3D environment, or iconographic?" → **No.** Research fleet decides; user can steer at the §12.5 interrupt.
-- ❌ "Let me first build out a PRD…" → **No.** Bare Intent mode bypasses onboarding.
+- ❌ "Let me first build out a PRD…" → **No.** There is no PRD step. Path A goes /prototype → planner → embed; Path B goes planner direct.
 - ❌ Writing entity / loop / scene / overlay / runtime files directly → **No.** simulation-planner orchestrates the drawers.
 - ❌ Inlining `<canvas>` + raw simulation JS into a source page → **No.** That's the wrong family (visual-planner's `canvas-gen` skill is for AMBIENT decoration, not entity-state simulations).
 - ❌ **Going to Path B when the user said "app".** This is the bzzzzz bug. If the user typed "generate a web app to monitor X", the answer is Path A: scaffold the app first, then dispatch the planner for the slot. The simulation is NOT the app.
@@ -556,7 +556,7 @@ When the user wants to make a piece where someone **walks into a place and leave
 
 The user wants the experience embedded in a larger app or site. First scaffold via `/prototype` (or hand-write the HTML), writing a `<div class="nx-placeholder" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" style="aspect-ratio: <W>/<H>"></div>` at the slot. Then dispatch `narrative-experience-planner` per nxId. The runtime embeds at the placeholder.
 
-(Note: `nx-placeholder` is the convention parallel to `sim-placeholder` and `im-placeholder`. The `bp_proto_build` scaffolder already understands the `narratives/{nxId}/` output path per the registry.)
+(Note: `nx-placeholder` is the convention parallel to `sim-placeholder` and `im-placeholder`. The narrative runtime lives at `source/{branch}/narratives/{nxId}/runtime.html`; the embed step in narrative-experience-planner.md mirrors simulation-planner.md §5.1.1.)
 
 ### Path B — "the piece IS the artefact, no surrounding app"
 

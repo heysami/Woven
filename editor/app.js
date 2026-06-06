@@ -11735,534 +11735,96 @@ function ProjectHomeButton({ info }) {
   `;
 }
 
-/* ────────── New-project wizard (Phase 1 of onboarding orchestration) ──────────
-   Multi-step modal that replaces the old single-line "id + label" inline form.
-   Walks the user through scope selection, then optionally intent / reference /
-   existing inputs based on what the scope needs. Submits an extended body to
-   POST /__projects/new which writes brand-spec.md / reference.md / prd.md /
-   _attachments + a `.onboarding-pending` marker. Blank scope = no marker, no
-   auto-launch, identical to old behavior.
-
-   See docs/features/onboarding-orchestration-plan.md §Phase 1 for the
-   acceptance criteria. */
-function NewProjectWizard({ workspaceProjects, existingDsList, onClose, onCreated }) {
-  // Step indexes are computed dynamically because some steps are skipped per
-  // scope. We track the "logical step" the user is on and resolve the
-  // visible-step index from the active scope.
-  const [step, setStep] = useState("name");      // "name" | "scope" | "custom" | "intent" | "reference" | "existing" | "review"
+/* ────────── New-project form (v3.5 — onboarding cut) ──────────
+   Simple modal: name input + Create button. POSTs `{id, label}` to
+   /__projects/new, which scaffolds an empty source/main/ + editor/data.js
+   and returns. The wizard's earlier multi-step scope / intent / reference /
+   PRD upload flow was removed when the guided onboarding was deleted; the
+   user drops into an empty workflow canvas and builds from chat or the
+   library. */
+function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  // Form state — accumulated across steps.
-  const [id, setId] = useState("");
-  const [label, setLabel] = useState("");
-  // v3.1 — Blank is auto-selected (and visually dominant — see the 2-col
-  // wide card in the scope-picker grid). Most first-time users want a clean
-  // canvas; the guided / DS / PRD scopes are for users who already know
-  // what the orchestrator does.
-  const [scopeId, setScopeId] = useState("blank");
-  const [customToggles, setCustomToggles] = useState({
-    refinePrd: false, generateDs: false, quickDesigns: false, updateDs: false, buildPrototype: false,
-  });
-  // v2.7c — runResearch is a SCOPE OPTION (not a stage). Defaults on; user
-  // can opt out (Custom step toggle) when the WebSearch grounding step
-  // isn't worth its latency / cost for a given project.
-  const [runResearch, setRunResearch] = useState(true);
-  // "I already have one" — only consulted when the corresponding toggle is on.
-  const [haveAlready, setHaveAlready] = useState({
-    havePrd: "no",  // "no" (write fresh) | "text" | "upload"
-    haveDs:  "no",  // "no" (brainstorm fresh) | "workspace" | "upload"
-  });
-  const [intent, setIntent] = useState({ app: "", audience: "", emotion: "" });
-  const [reference, setReference] = useState({
-    mode: "brainstorm",         // "match" | "brainstorm"
-    screenshots: [],            // [{ name, dataUri, mime, bytes }]
-    url: "",
-    text: "",
-  });
-  const [existing, setExisting] = useState({
-    prdText:     "",
-    prdFile:     null,          // { name, text }
-    dsWorkspace: null,          // id of a workspace DS
-    dsUpload:    null,          // { styles, gallery, designMd, label }
-  });
+  const existingIds = useMemo(
+    () => new Set((workspaceProjects || []).map(p => (p.id || "").toLowerCase())),
+    [workspaceProjects]
+  );
 
-  // Compute the resolved scope (preset or synthesized-from-custom).
-  const preset = ONBOARDING_SCOPE_PRESETS.find(p => p.id === scopeId);
-  const resolvedStages = useMemo(() => {
-    if (scopeId === "custom") {
-      const out = new Set();
-      // Intake A is implicit when ANY toggle is on (so the agent has context).
-      const anyOn = Object.values(customToggles).some(Boolean);
-      if (anyOn) out.add("A");
-      for (const t of ONBOARDING_CUSTOM_TOGGLES) {
-        if (!customToggles[t.id]) continue;
-        for (const s of t.stagesIfOn) out.add(s);
-      }
-      return [...out].sort();
-    }
-    return preset?.stages || [];
-  }, [scopeId, customToggles, preset]);
-  const isBlank = scopeId === "blank" || resolvedStages.length === 0;
+  // Slugify the visible name into a safe project id. Falls back to "project"
+  // if the user typed only invalid characters.
+  const slugId = useMemo(() => {
+    const s = (name || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return s || "project";
+  }, [name]);
 
-  // Decide which optional steps are needed.
-  const needsIntent    = resolvedStages.includes("A");
-  // Reference is meaningful only for scopes that produce visuals (C/D, E/F).
-  const needsReference = needsIntent && resolvedStages.some(s => ["C", "D", "E"].includes(s));
-  // Existing-inputs prompts only apply to CUSTOM scope where the user opted
-  // OUT of a producing stage but IN to a downstream stage that needs the
-  // output. The five presets are tuned so this never arises — Quick designs
-  // and Design system both skip PRD on purpose and let the agent use
-  // brand-spec.md inline; Full guided produces everything.
-  const needsExistingPrd = scopeId === "custom"
-    && (customToggles.updateDs || customToggles.buildPrototype)
-    && !customToggles.refinePrd;
-  const needsExistingDs = scopeId === "custom"
-    && (customToggles.quickDesigns || customToggles.updateDs || customToggles.buildPrototype)
-    && !customToggles.generateDs;
-  const needsExisting = needsExistingPrd || needsExistingDs;
+  const collision = existingIds.has(slugId);
+  const canSubmit = !busy && name.trim().length > 0 && !collision;
 
-  const stepOrder = useMemo(() => {
-    const order = ["name", "scope"];
-    if (scopeId === "custom") order.push("custom");
-    if (needsIntent)    order.push("intent");
-    if (needsReference) order.push("reference");
-    if (needsExisting)  order.push("existing");
-    order.push("review");
-    return order;
-  }, [scopeId, needsIntent, needsReference, needsExisting]);
-  const stepIdx = stepOrder.indexOf(step);
-  const isLastStep = step === "review";
-
-  const canAdvance = (() => {
-    if (step === "name")     return !!(id.trim()) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id.trim());
-    if (step === "scope")    return !!scopeId;
-    if (step === "custom")   return Object.values(customToggles).some(Boolean);
-    if (step === "intent")   return intent.app.trim().length > 0;
-    if (step === "reference")return true;  // optional fields
-    if (step === "existing") {
-      if (needsExistingPrd && haveAlready.havePrd !== "no" && !existing.prdText.trim() && !existing.prdFile) return false;
-      if (needsExistingDs  && haveAlready.haveDs  !== "no" && !existing.dsWorkspace && !existing.dsUpload) return false;
-      return true;
-    }
-    return true;
-  })();
-
-  const goNext = () => {
-    if (!canAdvance) return;
-    const next = stepOrder[stepIdx + 1];
-    if (next) setStep(next);
-  };
-  const goBack = () => {
-    const prev = stepOrder[stepIdx - 1];
-    if (prev) setStep(prev);
-  };
-
-  const create = async () => {
-    setErr(null);
-    setBusy(true);
+  const submit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!canSubmit) return;
+    setBusy(true); setErr(null);
     try {
-      const body = {
-        id: id.trim(),
-        label: (label || id).trim(),
-        template: "blank",
-      };
-      if (!isBlank) {
-        body.scope = {
-          id:     scopeId === "custom" ? "custom" : scopeId,
-          stages: resolvedStages,
-          // v2.7c — runResearch is an OPTION, not a stage. Presets default
-          // ON; Custom users can opt out via the wizard toggle. The
-          // scaffolder reads scope.options.runResearch.
-          options: {
-            runResearch: runResearch,
-          },
-        };
-        if (needsIntent) {
-          body.intent = {
-            app:      intent.app.trim(),
-            audience: intent.audience.trim(),
-            emotion:  intent.emotion.trim(),
-          };
-        }
-        if (needsReference) {
-          body.reference = {
-            mode:        reference.mode,
-            screenshots: reference.screenshots.map(s => ({ name: s.name, mime: s.mime, dataUri: s.dataUri })),
-            url:         reference.url.trim(),
-            text:        reference.text.trim(),
-          };
-        }
-        if (needsExisting) {
-          body.existing = {};
-          if (needsExistingPrd && haveAlready.havePrd !== "no") {
-            body.existing.prd = haveAlready.havePrd === "text"
-              ? { kind: "text",   text: existing.prdText }
-              : { kind: "upload", text: existing.prdFile?.text || "", name: existing.prdFile?.name };
-          }
-          if (needsExistingDs && haveAlready.haveDs !== "no") {
-            body.existing.ds = haveAlready.haveDs === "workspace"
-              ? { kind: "workspace", id: existing.dsWorkspace }
-              : { kind: "upload",    trio: existing.dsUpload };
-          }
-        }
-      }
       const r = await fetch(apiUrl("/__projects/new"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ id: slugId, label: name.trim() }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      // The daemon writes brand-spec.md / reference.md / prd.md best-effort
-      // and returns any per-artifact write failures here. Failing silently
-      // bit us hard: the marker reports hasBrandSpec/hasReference based on
-      // wizard intent, not on whether the files actually landed, so the
-      // downstream orchestrator would happily plan against blank intake.
-      // Surface them loudly so they can't be missed again.
-      if (Array.isArray(j.onboardingWarnings) && j.onboardingWarnings.length) {
-        console.warn("[onboarding] some intake artifacts failed to write:", j.onboardingWarnings);
-        throw new Error(
-          "Project created, but some intake files failed to write:\n  • " +
-          j.onboardingWarnings.join("\n  • ") +
-          "\nThe orchestrator would build on a blank brief — please report this."
-        );
+      if (!r.ok) {
+        setErr(j && j.error ? String(j.error) : ("HTTP " + r.status));
+        setBusy(false);
+        return;
       }
-      onCreated && onCreated({ id: body.id, scope: body.scope || null });
-    } catch (e) {
-      setErr(e.message || String(e));
-    } finally {
+      onCreated && onCreated({ id: j.id || slugId });
+    } catch (e2) {
+      setErr(String((e2 && e2.message) || e2));
       setBusy(false);
     }
   };
 
-  // Esc closes the wizard.
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === "Escape" && !busy) onClose();
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        if (isLastStep) create();
-        else goNext();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, isLastStep, canAdvance, stepOrder, stepIdx]);
-
-  const handleScreenshotFiles = async (fileList) => {
-    const next = [...reference.screenshots];
-    for (const f of fileList) {
-      if (next.length >= 3) break;
-      if (!/^image\//.test(f.type)) continue;
-      if (f.size > 4 * 1024 * 1024) { setErr(`${f.name}: image too large (>4 MB)`); continue; }
-      const dataUri = await new Promise((res, rej) => {
-        const reader = new FileReader();
-        reader.onload = () => res(reader.result);
-        reader.onerror = () => rej(reader.error);
-        reader.readAsDataURL(f);
-      });
-      next.push({ name: f.name, mime: f.type, dataUri, bytes: f.size });
-    }
-    setReference(r => ({ ...r, screenshots: next }));
-  };
-  const handlePrdFile = async (file) => {
-    if (!file) return;
-    if (file.size > 1 * 1024 * 1024) { setErr("PRD file too large (>1 MB)"); return; }
-    const text = await file.text();
-    setExisting(e => ({ ...e, prdFile: { name: file.name, text } }));
-  };
-
   return html`
-    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div className="modal modal-wizard" role="dialog" aria-modal="true">
-        <div className="wizard-head">
-          <div>
-            <div className="wizard-eyebrow">Step ${stepIdx + 1} of ${stepOrder.length}</div>
-            <div className="wizard-title">${WIZARD_TITLES[step] || "Create a project"}</div>
+    <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <form className="newproj-card" onSubmit=${submit}>
+        <header className="newproj-card-head">
+          <h2>New project</h2>
+          <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+        </header>
+        <div className="newproj-card-body">
+          <label className="newproj-field">
+            <span className="newproj-label">Name</span>
+            <input
+              type="text"
+              autoFocus
+              value=${name}
+              onInput=${(e) => setName(e.target.value)}
+              placeholder="e.g. mosquito-monitor"
+              maxLength=${64}
+              disabled=${busy}
+            />
+          </label>
+          <div className="newproj-meta">
+            <span>Project id: <code>${slugId}</code></span>
+            ${collision && html`<span className="newproj-warning">— already exists</span>`}
           </div>
-          <button className="modal-x" onClick=${onClose} disabled=${busy} aria-label="Close"><${Icon.X}/></button>
+          ${err && html`<div className="newproj-error">${err}</div>`}
         </div>
-        <div className="wizard-body">
-          ${step === "name" && html`
-            <div className="wizard-field">
-              <label className="landing-field">
-                <span className="landing-field-label">id <span className="landing-field-hint">— folder name, alphanumeric + . _ -</span></span>
-                <input className="landing-input" placeholder="e.g. landing-site" value=${id} onInput=${e => setId(e.target.value)} autoFocus/>
-              </label>
-              <label className="landing-field">
-                <span className="landing-field-label">label <span className="landing-field-hint">— display name (optional)</span></span>
-                <input className="landing-input" placeholder=${id || "Display name"} value=${label} onInput=${e => setLabel(e.target.value)}/>
-              </label>
-            </div>
-          `}
-
-          ${step === "scope" && html`
-            <div className="wizard-presets">
-              ${ONBOARDING_SCOPE_PRESETS.map(p => {
-                // v3.1 — Blank is the default and visually dominant: it
-                // spans the full grid row (2 columns wide) and sits at the
-                // top of the picker. The other presets are smaller, denser
-                // tiles below — the user's eye lands on Blank first, and
-                // only diverges into a guided scope if they actively want
-                // automation.
-                const isBlank = p.id === "blank";
-                return html`
-                  <button
-                    key=${p.id}
-                    className=${"wizard-preset"
-                      + (scopeId === p.id ? " is-selected" : "")
-                      + (isBlank ? " wizard-preset-wide wizard-preset-blank" : "")}
-                    onClick=${() => setScopeId(p.id)}>
-                    <div className="wizard-preset-head">
-                      <span className="wizard-preset-glyph">${p.glyph}</span>
-                      <span className="wizard-preset-title">${p.title}</span>
-                      ${isBlank && html`<span className="wizard-preset-rec">default</span>`}
-                      ${/* v3.5 — Every non-blank guided path is currently alpha.
-                            Blank is the only stable path, so it's the only one
-                            without the badge. */ null}
-                      ${!isBlank && html`<span className="wizard-preset-rec wizard-preset-alpha">Alpha feature</span>`}
-                    </div>
-                    <div className="wizard-preset-desc">${p.desc}</div>
-                    ${!isBlank && html`
-                      <div className="wizard-preset-stages">
-                        ${stagesChain(p.stages)}
-                      </div>
-                    `}
-                  </button>
-                `;
-              })}
-              <button
-                className=${"wizard-preset wizard-preset-custom" + (scopeId === "custom" ? " is-selected" : "")}
-                onClick=${() => setScopeId("custom")}>
-                <div className="wizard-preset-head">
-                  <span className="wizard-preset-glyph"><${Icon.Gear}/></span>
-                  <span className="wizard-preset-title">Custom</span>
-                </div>
-                <div className="wizard-preset-desc">Pick stages individually + tell us what you already have.</div>
-              </button>
-            </div>
-          `}
-
-          ${step === "custom" && html`
-            <div className="wizard-custom">
-              <div className="wizard-hint">Pick what you want the agent to do. Intake (3 questions) is included by default whenever any stage is selected.</div>
-              ${ONBOARDING_CUSTOM_TOGGLES.map(t => {
-                // v2.8 — a toggle with `requires: "<otherId>"` is disabled
-                // unless the required toggle is on (and forced off otherwise).
-                // designBrief requires buildPrototype: no prototype, nothing to brief.
-                const disabled = t.requires && !customToggles[t.requires];
-                const checked  = !disabled && !!customToggles[t.id];
-                return html`
-                  <label key=${t.id} className=${"wizard-toggle" + (disabled ? " is-disabled" : "")}>
-                    <input
-                      type="checkbox"
-                      checked=${checked}
-                      disabled=${disabled}
-                      onChange=${(e) => setCustomToggles(c => ({ ...c, [t.id]: e.target.checked }))}
-                    />
-                    <span className="wizard-toggle-label">
-                      ${t.label}
-                      ${disabled && html`<span className="wizard-toggle-req"> · needs ${t.requires}</span>`}
-                    </span>
-                    <span className="wizard-toggle-stage">${t.stagesIfOn.map(stageShort).join(" + ")}</span>
-                  </label>
-                `;
-              })}
-              <!-- v2.7c — separator + options row. Options aren't stages
-                   (they don't add to stages[]), they're per-scope flags
-                   the daemon reads to gate infra behavior. -->
-              <div className="wizard-custom-options">
-                <div className="wizard-custom-options-eyebrow">Options</div>
-                <label className="wizard-toggle">
-                  <input
-                    type="checkbox"
-                    checked=${runResearch}
-                    onChange=${(e) => setRunResearch(e.target.checked)}
-                  />
-                  <span className="wizard-toggle-label">
-                    Research-ground the intake first
-                    <span className="wizard-toggle-req"> · uses WebSearch + WebFetch, adds ~30–90s before the rest of the pipeline</span>
-                  </span>
-                </label>
-              </div>
-            </div>
-          `}
-
-          ${step === "intent" && html`
-            <div className="wizard-field">
-              <label className="landing-field">
-                <span className="landing-field-label">What is the app going to be? <span className="landing-field-hint">— 1–3 sentences</span></span>
-                <textarea className="landing-input wizard-textarea" rows=${3} value=${intent.app} onInput=${e => setIntent(i => ({ ...i, app: e.target.value }))} autoFocus/>
-              </label>
-              <label className="landing-field">
-                <span className="landing-field-label">Who is the audience?</span>
-                <textarea className="landing-input wizard-textarea" rows=${2} value=${intent.audience} onInput=${e => setIntent(i => ({ ...i, audience: e.target.value }))}/>
-              </label>
-              <label className="landing-field">
-                <span className="landing-field-label">What is the emotion?</span>
-                <input className="landing-input" placeholder="e.g. calm, focused, playful" value=${intent.emotion} onInput=${e => setIntent(i => ({ ...i, emotion: e.target.value }))}/>
-                <div className="wizard-chips">
-                  ${["calm", "focused", "playful", "trustworthy", "premium", "energetic", "cozy", "minimalist"].map(c => html`
-                    <button key=${c} className=${"wizard-chip" + (intent.emotion === c ? " is-selected" : "")} onClick=${() => setIntent(i => ({ ...i, emotion: c }))}>${c}</button>
-                  `)}
-                </div>
-              </label>
-            </div>
-          `}
-
-          ${step === "reference" && html`
-            <div className="wizard-field">
-              <div className="wizard-radio-group">
-                <label className="wizard-radio">
-                  <input type="radio" name="ref-mode" checked=${reference.mode === "match"} onChange=${() => setReference(r => ({ ...r, mode: "match" }))}/>
-                  <span>Match an existing aesthetic</span>
-                </label>
-                <label className="wizard-radio">
-                  <input type="radio" name="ref-mode" checked=${reference.mode === "brainstorm"} onChange=${() => setReference(r => ({ ...r, mode: "brainstorm" }))}/>
-                  <span>Brainstorm fresh</span>
-                </label>
-              </div>
-              ${reference.mode === "match" && html`
-                <label className="landing-field">
-                  <span className="landing-field-label">Screenshots <span className="landing-field-hint">— up to 3, max 4 MB each</span></span>
-                  <div className="wizard-dropzone" onClick=${() => document.getElementById("wizard-shot-input").click()}>
-                    <input id="wizard-shot-input" type="file" multiple accept="image/*" style=${{ display: "none" }} onChange=${(e) => handleScreenshotFiles(e.target.files)}/>
-                    ${reference.screenshots.length === 0 ? "Drop or click to add" : reference.screenshots.map((s, i) => html`
-                      <div key=${s.name + i} className="wizard-shot">
-                        <img src=${s.dataUri} alt=${s.name}/>
-                        <button className="wizard-shot-x" onClick=${(e) => { e.stopPropagation(); setReference(r => ({ ...r, screenshots: r.screenshots.filter((_, j) => j !== i) })); }}>✕</button>
-                      </div>
-                    `)}
-                  </div>
-                </label>
-                <label className="landing-field">
-                  <span className="landing-field-label">URL <span className="landing-field-hint">— optional, agent uses as hint</span></span>
-                  <input className="landing-input" placeholder="https://example.com" value=${reference.url} onInput=${e => setReference(r => ({ ...r, url: e.target.value }))}/>
-                </label>
-              `}
-              <label className="landing-field">
-                <span className="landing-field-label">Free-text vibe <span className="landing-field-hint">— e.g. "Apple-clean", "cozy Notion", "trading-floor"</span></span>
-                <textarea className="landing-input wizard-textarea" rows=${2} value=${reference.text} onInput=${e => setReference(r => ({ ...r, text: e.target.value }))}/>
-              </label>
-            </div>
-          `}
-
-          ${step === "existing" && html`
-            <div className="wizard-field">
-              ${needsExistingPrd && html`
-                <div className="wizard-section">
-                  <div className="wizard-section-title">PRD</div>
-                  <div className="wizard-radio-group">
-                    <label className="wizard-radio"><input type="radio" name="have-prd" checked=${haveAlready.havePrd === "no"}     onChange=${() => setHaveAlready(h => ({ ...h, havePrd: "no" }))}/>I don't have one</label>
-                    <label className="wizard-radio"><input type="radio" name="have-prd" checked=${haveAlready.havePrd === "text"}   onChange=${() => setHaveAlready(h => ({ ...h, havePrd: "text" }))}/>Paste text</label>
-                    <label className="wizard-radio"><input type="radio" name="have-prd" checked=${haveAlready.havePrd === "upload"} onChange=${() => setHaveAlready(h => ({ ...h, havePrd: "upload" }))}/>Upload .md</label>
-                  </div>
-                  ${haveAlready.havePrd === "text" && html`
-                    <textarea className="landing-input wizard-textarea" rows=${6} placeholder="# Title&#10;&#10;Paste your PRD here…" value=${existing.prdText} onInput=${e => setExisting(x => ({ ...x, prdText: e.target.value }))}/>
-                  `}
-                  ${haveAlready.havePrd === "upload" && html`
-                    <div className="wizard-file-picker">
-                      <input type="file" accept=".md,text/markdown,text/plain" onChange=${(e) => handlePrdFile(e.target.files[0])}/>
-                      ${existing.prdFile && html`<span className="wizard-file-name">${existing.prdFile.name} — ${Math.round((existing.prdFile.text || "").length / 100) / 10} kB</span>`}
-                    </div>
-                  `}
-                </div>
-              `}
-              ${needsExistingDs && html`
-                <div className="wizard-section">
-                  <div className="wizard-section-title">Design system</div>
-                  <div className="wizard-radio-group">
-                    <label className="wizard-radio"><input type="radio" name="have-ds" checked=${haveAlready.haveDs === "no"}        onChange=${() => setHaveAlready(h => ({ ...h, haveDs: "no" }))}/>I don't have one</label>
-                    <label className="wizard-radio"><input type="radio" name="have-ds" checked=${haveAlready.haveDs === "workspace"} onChange=${() => setHaveAlready(h => ({ ...h, haveDs: "workspace" }))}/>Pick from workspace</label>
-                    <label className="wizard-radio"><input type="radio" name="have-ds" checked=${haveAlready.haveDs === "upload"}    onChange=${() => setHaveAlready(h => ({ ...h, haveDs: "upload" }))}/>Upload trio</label>
-                  </div>
-                  ${haveAlready.haveDs === "workspace" && html`
-                    <select className="landing-input" value=${existing.dsWorkspace || ""} onChange=${e => setExisting(x => ({ ...x, dsWorkspace: e.target.value }))}>
-                      <option value="">Pick a DS…</option>
-                      ${(existingDsList || []).map(d => html`<option key=${d.id} value=${d.id}>${d.label || d.id}</option>`)}
-                    </select>
-                  `}
-                  ${haveAlready.haveDs === "upload" && html`
-                    <div className="wizard-hint">DS upload is v2 — for now please pick from workspace or brainstorm fresh.</div>
-                  `}
-                </div>
-              `}
-            </div>
-          `}
-
-          ${step === "review" && html`
-            <div className="wizard-review">
-              <div className="wizard-review-row"><span>Name</span><b>${id} ${label && label !== id ? `(${label})` : ""}</b></div>
-              <div className="wizard-review-row"><span>Scope</span><b>${(preset && preset.title) || (scopeId === "custom" ? "Custom" : "Blank")}</b></div>
-              <div className="wizard-review-row">
-                <span>Stages</span>
-                <${StagesDAG} stages=${resolvedStages} runResearch=${runResearch}/>
-              </div>
-              ${needsIntent && html`
-                <div className="wizard-review-row"><span>App</span><b>${intent.app || "—"}</b></div>
-                <div className="wizard-review-row"><span>Audience</span><b>${intent.audience || "—"}</b></div>
-                <div className="wizard-review-row"><span>Emotion</span><b>${intent.emotion || "—"}</b></div>
-              `}
-              ${needsReference && html`
-                <div className="wizard-review-row"><span>Aesthetic</span><b>${reference.mode === "match" ? `Match (${reference.screenshots.length} screenshots${reference.url ? ", URL" : ""})` : "Brainstorm fresh"}</b></div>
-                ${reference.text && html`<div className="wizard-review-row"><span>Vibe</span><b>${reference.text}</b></div>`}
-              `}
-              ${needsExistingPrd && haveAlready.havePrd !== "no" && html`
-                <div className="wizard-review-row"><span>PRD</span><b>${haveAlready.havePrd === "text" ? "Pasted" : (existing.prdFile?.name || "Uploaded")}</b></div>
-              `}
-              ${needsExistingDs && haveAlready.haveDs !== "no" && html`
-                <div className="wizard-review-row"><span>DS</span><b>${haveAlready.haveDs === "workspace" ? existing.dsWorkspace : "Uploaded"}</b></div>
-              `}
-              ${!isBlank && html`
-                <div className="wizard-review-foot">
-                  After create, the agent auto-launches in workflow mode and runs the chosen stages. You can intervene at any time.
-                </div>
-              `}
-              ${isBlank && html`
-                <div className="wizard-review-foot">
-                  Blank project — no auto-launch. You'll land on an empty workflow canvas.
-                </div>
-              `}
-            </div>
-          `}
-
-          ${err && html`<div className="landing-err">${err}</div>`}
-        </div>
-        <div className="wizard-foot">
-          <div className="wizard-foot-progress">
-            ${stepOrder.map((s, i) => html`<span key=${s} className=${"wizard-dot" + (i === stepIdx ? " is-active" : i < stepIdx ? " is-done" : "")}/>`)}
-          </div>
-          <div className="wizard-foot-actions">
-            ${stepIdx > 0 && html`<button className="tbtn" disabled=${busy} onClick=${goBack}>← Back</button>`}
-            ${isLastStep ? html`
-              <button className="tbtn tbtn-primary" disabled=${busy} onClick=${create}>${busy ? "Creating…" : "Create & open"}</button>
-            ` : html`
-              <button className="tbtn tbtn-primary" disabled=${busy || !canAdvance} onClick=${goNext}>Next →</button>
-            `}
-          </div>
-        </div>
-      </div>
+        <footer className="newproj-card-foot">
+          <button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
+          <button type="submit" className="newproj-create" disabled=${!canSubmit}>
+            ${busy ? "Creating…" : "Create"}
+          </button>
+        </footer>
+      </form>
     </div>
   `;
 }
-const WIZARD_TITLES = {
-  name:      "Name your project",
-  scope:     "How much should the agent help?",
-  custom:    "Pick stages individually",
-  intent:    "Tell us about the app",
-  reference: "Visual references",
-  existing:  "What you already have",
-  review:    "Review & create",
-};
 
-/* Sub-card rendered inside <ModelSetupCard/> when the user picks "Use CLI".
-   Lists every supported CLI agent with its install snippet so the user can
-   actually act on the choice without leaving the page. Reads /__agents so
-   we can flip a CLI from "install" to "✓ ready" the instant the user has
-   it on PATH (after running the install command in a separate terminal).
-   "Refresh" re-polls /__agents AND /__media_config so the parent setup
-   card unblocks the empty state. */
 function ModelSetupCliPicker({ onRefresh, onBack }) {
   const { agents, loaded, reload: reloadAgents } = useAgents();
   const claude = (agents || []).find(a => a.id === "claude");
@@ -13646,7 +13208,6 @@ function ProjectsLanding({ info, projects, onReload }) {
 
         ${activeTab === "projects" && creating && html`<${NewProjectWizard}
           workspaceProjects=${projects}
-          existingDsList=${dsList}
           onClose=${() => { setCreating(false); setErr(null); }}
           onCreated=${onWizardCreated}
         />`}
@@ -14300,64 +13861,11 @@ function WorkflowCanvas() {
     return () => { try { es && es.close(); } catch {} };
   }, [branch]);
 
-  // Phase 6 — auto-launch the workflow-orchestrator chat on first entry to
-  // workflow mode for a freshly-created non-Blank project. The daemon's
-  // `/__onboarding/status` endpoint exposes the `.onboarding-pending` marker
-  // (written by the Phase 1 wizard) so we can decide here:
-  //   • marker absent                          → Blank scope / completed → no-op
-  //   • marker present, no real progress       → fresh OR aborted-early; auto-spawn
-  //   • marker present, real progress observed → user is mid-run; defer to manual
-  //     "+ New chat" so we don't stomp an in-flight orchestrator.
-  //
-  // v2.16 — "real progress" used to mean "any prior freeform run exists on
-  // this branch," but that was way too aggressive: an aborted orchestrator
-  // that managed to spawn bp_research then died counts as a prior, and so
-  // does any chat the user opened by hand. Once any prior existed, auto-
-  // launch silently no-op'd forever (Phase 7's "Resume?" banner was never
-  // shipped, and `marker.completedStages` is never written to — it stays
-  // [] for the lifetime of the marker). Now we suppress only when there's
-  // observable progress: completedStages non-empty, OR bp_brief_seed has
-  // non-empty text (orchestrator at least populated step 1). Idempotency
-  // is fine — re-spawning re-reads the marker + current node state and
-  // picks up where it actually stands.
-  const orchestrationAutoLaunchedRef = useRef(false);
-  useEffect(() => {
-    if (orchestrationAutoLaunchedRef.current) return;
-    if (chatRun) return;  // user already opened a chat manually — defer.
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(apiUrl("/__onboarding/status"));
-        if (!r.ok) return;
-        const j = await r.json().catch(() => ({}));
-        if (cancelled || !j.pending || !j.marker) return;
-        // v2.16 — only suppress when there's observable orchestrator progress.
-        const completed = Array.isArray(j.marker.completedStages) ? j.marker.completedStages : [];
-        if (completed.length > 0) return;  // mid-run; don't stomp.
-        // Check bp_brief_seed.text as a fallback progress signal (since
-        // completedStages is rarely updated in practice). If the seed is
-        // populated, the orchestrator at least made it past step 1.
-        try {
-          const seedR = await fetch(apiUrl("/__workflow/node/bp_brief_seed"));
-          if (seedR.ok) {
-            const seedJ = await seedR.json().catch(() => ({}));
-            const seedText = (seedJ && seedJ.node && typeof seedJ.node.text === "string") ? seedJ.node.text : "";
-            if (seedText.trim().length > 0) return;  // seed populated → mid-run.
-          }
-          // If the seed lookup 404s (no bp_brief_seed in this scope), fall
-          // through and auto-spawn — that's the Blank/PRD-only/DS-only case
-          // where the marker is the only signal of intent.
-        } catch { /* seed lookup failed — fall through and spawn anyway */ }
-        if (cancelled) return;
-        orchestrationAutoLaunchedRef.current = true;
-        await spawnWorkflowChat("Start the onboarding workflow.");
-      } catch {
-        // Network / JSON / spawn failure — silently no-op. The user can
-        // still trigger the chat manually via "+ New chat".
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [chatRun, branch, spawnWorkflowChat]);
+  // v3.5 — onboarding cut. The auto-spawn-orchestrator-on-marker-presence
+  // effect was deleted along with the guided new-project flow. Fresh
+  // projects drop into an empty canvas; the user starts a chat by clicking
+  // "+ New chat" or by adding a node from the library.
+
 
   useEffect(() => {
     let cancelled = false;

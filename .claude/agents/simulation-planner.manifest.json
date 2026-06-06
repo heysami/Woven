@@ -1,23 +1,26 @@
 {
-  "id":             "simulation-planner",
-  "label":          "Simulation",
-  "tagline":        "Intuitive visualisation of real-world physical or temporal systems",
-  "version":        "v3.3",
+  "id": "simulation-planner",
+  "label": "Simulation",
+  "tagline": "Intuitive visualisation of real-world physical or temporal systems",
+  "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName":   "simulation-planner",
-  "playbookPath":   ".claude/agents/simulation-planner.md",
-
-  "description":    "Researches the right representation paradigm for a domain (2d-spatial-map / 3d-environment / iconographic-anim / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; §8.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix.",
-
+  "subagentName": "simulation-planner",
+  "playbookPath": ".claude/agents/simulation-planner.md",
+  "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 3d-environment / iconographic-anim / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix.",
   "triggers": [
-    { "mode": "chat",       "title": "Bare Intent — chat",
-      "rule": "When the user's message mentions a physical or temporal system to model (warehouse stock, garden, traffic, kitchen mid-service, power grid, aquarium, render farm, shift schedule, etc.) — FIRST action is a Task call to simulation-planner in BARE-INTENT MODE.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Simulation surfaces: dispatch simulation-planner FIRST'" },
-    { "mode": "onboarding", "title": "Stage I — bp_proto_build Phase 2b",
-      "rule": "For each row in the PRD's Simulation table (PRD_VISUAL_RULES §5), bp_proto_build Phase 2b dispatches a per-simId bp_simulation_build agent which spawns simulation-planner.",
-      "ruleSource": "editor/prompts/node_agent_preambles.py — bp_proto_build Phase 2b + bp_simulation_build preamble" }
+    {
+      "mode": "chat",
+      "title": "Path A \u2014 \"build an app\"",
+      "rule": "User says \"build a web app / dashboard / page that monitors X system\" with app-framing words. Top-level Claude scaffolds the app shell first (with sim-placeholder slot), then dispatches simulation-planner per slot (Mode A envelope with slotFile/slotLine). After the planner returns the hand-off envelope, top-level Claude drives the build phase per simulation-planner.md \u00a75.1.0 and embeds the runtime per \u00a75.1.1.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-planner' Path A"
+    },
+    {
+      "mode": "chat",
+      "title": "Path B \u2014 Bare intent",
+      "rule": "User says \"model X for me / simulate Y / show me how Z works\" with no app framing. Top-level Claude dispatches simulation-planner directly in BARE-INTENT MODE. Runtime IS the artefact; no app shell.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-planner' Path B"
+    }
   ],
-
   "dispatches": {
     "research": [
       "sim-research-precedent",
@@ -36,24 +39,32 @@
       "sim-overlay-author",
       "sim-runtime-composer"
     ],
-    "lenses": ["craft-lens", "aesthetic-lens", "concept-lens"]
-  },
-
-  "skills": [],
-
-  "nodeKinds": {
-    "container":         ["simulation"],
-    "agent_overrides": [
-      "bp_simulation_build",
-      "sim_research_*", "sim_entities_*", "sim_scene_*", "sim_loop_*",
-      "sim_controls_*", "sim_overlay_*", "sim_runtime_*",
-      "cp_sim_scene_pick_*", "cp_sim_loop_pick_*", "cp_sim_gate_*"
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
     ]
   },
-
+  "skills": [],
+  "nodeKinds": {
+    "container": [
+      "simulation"
+    ],
+    "agent_overrides": [
+      "sim_research_*",
+      "sim_entities_*",
+      "sim_scene_*",
+      "sim_loop_*",
+      "sim_controls_*",
+      "sim_overlay_*",
+      "sim_runtime_*",
+      "cp_sim_scene_pick_*",
+      "cp_sim_loop_pick_*",
+      "cp_sim_gate_*"
+    ]
+  },
   "documents": {
-    "designDoc":   "docs/features/simulation-and-interactive-planners.md",
-    "calibration": ".claude/lens-calibration/fixtures/sim-*",
-    "policy":      ".claude/agents/onboarding-visual-policy.md (SIMULATION_PIPELINE block)"
+    "designDoc": "docs/features/simulation-and-interactive-planners.md",
+    "calibration": ".claude/lens-calibration/fixtures/sim-*"
   }
 }
