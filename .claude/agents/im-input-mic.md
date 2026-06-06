@@ -1,6 +1,6 @@
 ---
 name: im-input-mic
-description: Write the microphone input feature-extraction module for ONE interactive piece. Sets up MediaDevices.getUserMedia({audio:true}) + AudioContext + AnalyserNode (and optionally Meyda for richer features), emits a feature vector stream consumable by im-mapping. Permission gated behind a user gesture per im-research-permission-ux. Lens-gated on craft (permission UX correctness, latency budget); aesthetic + concept typically skip per their rules.
+description: Write the microphone input feature-extraction module for ONE interactive piece. Sets up MediaDevices.getUserMedia({audio:true}) + AudioContext + AnalyserNode (and optionally Meyda for richer features), emits a feature vector stream consumable by im-mapping. Permission gated behind a user gesture per im-research-technique §2.4. Lens-gated on craft (permission UX correctness, latency budget); aesthetic + concept typically skip per their rules.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs
 ---
 

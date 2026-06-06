@@ -213,8 +213,8 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_entities_<simId>/commit?pr
   }'
 ```
 
-The simulation-planner picks up and either re-dispatches `sim-research-synthesiser` with the contradiction OR surfaces via decision-request.
+The simulation-planner picks up and either re-dispatches `sim-research-technique` with the contradiction OR surfaces via decision-request.
 
 ---
 
-*Read upstream from [sim-research-synthesiser.md](sim-research-synthesiser.md). Read downstream by [sim-loop-author.md](sim-loop-author.md), `sim-2d-spatial-scene-builder` / `sim-3d-scene-builder` / `sim-iconographic-anim-builder`, `sim-controls-author`, `sim-overlay-author`.*
+*Read upstream from [sim-research-technique.md](sim-research-technique.md). Read downstream by [sim-loop-author.md](sim-loop-author.md), `sim-2d-spatial-scene-builder` / `sim-3d-scene-builder` / `sim-iconographic-anim-builder`, `sim-controls-author`, `sim-overlay-author`.*

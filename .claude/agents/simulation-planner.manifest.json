@@ -23,11 +23,7 @@
   ],
   "dispatches": {
     "research": [
-      "sim-research-precedent",
-      "sim-research-technique",
-      "sim-research-mental-model",
-      "sim-research-constraint",
-      "sim-research-synthesiser"
+      "sim-research-technique"
     ],
     "components": [
       "sim-entities-author",

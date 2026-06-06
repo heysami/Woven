@@ -391,13 +391,32 @@ Also: when the planner returns, verify `workflow/visual-plan.json.qa` exists wit
 
 **Emulating visual-planner from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
 
-## Simulation surfaces: scaffold-then-planner, the visual-planner pattern (v3.4 hard rule)
+## Simulation surfaces: scaffold-then-planner, the visual-planner pattern (v3.5 hard rule)
 
-When the user wants to **see a system whose parts have state and change** — *whatever the parts are made of* — there are **TWO paths**, and you MUST pick the right one based on whether the user is asking for a *whole app* OR for *just the simulation*. This mirrors visual-planner's split exactly.
+When the user wants to **see a system whose parts have state and change** — *whatever the parts are made of* — there are **TWO paths**, and you pick by asking ONE question about the shape of the request. No keyword matching. The question is:
 
-### Path A — "build an app / dashboard / page / tool / site that does X"  (the bzzzzz case)
+> **"Is the user asking for a *standalone* X, or are they asking for *something larger* that has X inside it?"**
 
-If the user's message contains framing words like **app, web app, dashboard, page, site, tool, monitor, monitoring tool, tracker, viewer, system, platform, prototype** alongside the system they want visualised, the flow is THREE steps — exactly parallel to how visual-planner sits inside a prototype build:
+- *Standalone* = the X is the artefact. The user wants the thing itself: "model the warehouse for me", "make a swarm of agents I can poke", "show me a globe with the jets". → **Path B**.
+- *Something larger* = the X is going to live inside an app / page / site / experience the user is also asking for. They want a thing-with-X-in-it. → **Path A**.
+
+The "something larger" wording isn't about a magic keyword (app / dashboard / site / monitor / tracker / page / tool / microsite / console — these are all the same shape and listing them exhaustively is a fool's errand). It's about whether the user's request implies a *container* that wraps X. If yes, the container gets scaffolded first; X becomes one slot inside it. If no, X is the whole thing.
+
+### The mememem failure mode (don't repeat it)
+
+mememem typed *"generate a web app to monitor dengue mosquitoes in Singapore"*. That's Path A — the **web app** is the container, the **mosquito-system-over-Singapore** is the X inside. The correct sequence:
+
+1. Scaffold the app shell (header, navigation, copy, layout) with a `sim-placeholder` exactly where the mosquito-system-view belongs.
+2. Dispatch `simulation-planner` for that slot.
+3. Drive the build per simulation-planner.md §5.1.0, embed per §5.1.1.
+
+What actually happened: the app got scaffolded, but the mosquito-system-view was hand-rolled as a static SVG-island + chart + DOM markers inside the prototype's own `app.js`. **The simulation surface was baked inline as if it were just data visualisation.** Sim-planner never ran. The research fleet never ran. The lens trio never ran.
+
+The mistake is reading "monitor X" as "show static data about X" instead of "watch X happen." If the user's brief involves anything where **state changes over time or across a space the user wants to look at** — a live view of where the mosquitoes are, a chart that updates as the data ticks, a swarm moving, a queue draining, a fleet sliding, a heatmap pulsing — **that surface is a sim-placeholder, filled by sim-planner, end of conversation.** You don't decide to inline it because you "could just write the code." The research fleet's job is to pick the right paradigm (real-world map library? hand-rolled SVG? 3D? iconographic?) — your job is to dispatch and let it work.
+
+### Path A — the request implies a larger container around X
+
+Three steps, in this order:
 
 1. **FIRST — scaffold the app shell.** Dispatch the `/prototype` skill (or scaffold the app HTML+CSS+JS into `source/<branch>/` yourself if `/prototype` doesn't fit). The shell has pages, navigation, layout, copy, the chrome — everything that makes it feel like an app.
 2. **SECOND — add the placeholder + brief the planner.** If `/prototype` didn't already drop one in, hand-edit the relevant source page to insert a `<div class="sim-placeholder" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" style="aspect-ratio: <W>/<H>"></div>` exactly where the simulation belongs (main panel, sidebar widget, full-bleed hero — wherever the user's intent puts it). Then dispatch `simulation-planner` with the slot info in Mode A:
@@ -433,17 +452,13 @@ Task(subagent_type: "simulation-planner",
      prompt: "BARE-INTENT MODE. The user wants: <one-line intent>. No app shell — runtime.html IS the artefact. Run your Mode B intake, etc.")
 ```
 
-### Disambiguation rule (when in doubt)
+### Disambiguation (when the shape of the request is ambiguous)
 
-If the user says BOTH "I want X simulation" AND uses an app-framing word, **Path A wins**. The default for ambiguous requests is Path A — apps are easy to throw away if the user only wanted the bare sim, but a bare sim with no surrounding app cannot be retrofitted into an app without rebuilding.
+If you cannot tell from the brief whether the user wants a standalone sim or a thing-with-sim-inside, **default to Path A**. An app shell with one sim slot is trivial to throw away if the user only wanted the bare sim; a bare sim with no surrounding app cannot be retrofitted into an app without rebuilding the whole runtime as an embedded iframe.
 
-### The abstract pattern (this is what the simulation trigger is, not a keyword list)
+### The abstract pattern (this is what a "simulation surface" is, not a keyword list)
 
 A simulation surface — wherever it lives, app slot or standalone — is anything with:
-
-### The abstract pattern (this is what the trigger is, not a keyword list)
-
-A simulation surface is anything with:
 
 1. **Entities** — discrete parts of the thing. Could be physical (bins, vehicles, animals, people), digital (agents, requests, messages, tasks, signals), conceptual (ideas in a process, items in a queue, branches of a decision), informational (records, events, transactions), biological (cells, organisms, populations), or compositional (modules in a pipeline, stages in a workflow).
 2. **State** — each entity has attributes (position, status, level, score, age, health, payload, location, relationship to others) that hold values at a moment.
@@ -474,21 +489,24 @@ If the user names something that *looks like a system with stateful parts that i
 - ❌ "Let me first build out a PRD…" → **No.** There is no PRD step. Path A goes /prototype → planner → embed; Path B goes planner direct.
 - ❌ Writing entity / loop / scene / overlay / runtime files directly → **No.** simulation-planner orchestrates the drawers.
 - ❌ Inlining `<canvas>` + raw simulation JS into a source page → **No.** That's the wrong family (visual-planner's `canvas-gen` skill is for AMBIENT decoration, not entity-state simulations).
-- ❌ **Going to Path B when the user said "app".** This is the bzzzzz bug. If the user typed "generate a web app to monitor X", the answer is Path A: scaffold the app first, then dispatch the planner for the slot. The simulation is NOT the app.
-- ❌ Dispatching the planner before any app shell exists in Path A. The planner expects a `sim-placeholder` slot in source/; without one, the runtime.html has nowhere to live and the user ends up with a standalone sim instead of an app — the exact bug we are fixing.
+- ❌ **Path B when the request implies a container around the sim.** This is the bzzzzz + mememem bug. If the user's brief implies a *thing-with-X-inside* (an app, a page, a site, a microsite, a console, a monitoring view, whatever shape) — even if the word "simulation" never appears — that's Path A.
+- ❌ **Baking the simulation surface inline as static-data viz** because Claude judged "this is really just a data dashboard." If state changes over time or space anywhere the user wants to look at it, the surface is a `sim-placeholder` filled by sim-planner. Claude rolling its own `<canvas>` / chart / SVG-map renderer inline is the mememem failure. Don't.
+- ❌ Dispatching the planner before the app shell exists in Path A. The planner expects a `sim-placeholder` slot in source/; without one, the runtime.html has nowhere to live and the user ends up with a standalone sim outside the app.
 
-### Decision rule:
+### Decision shape (not a keyword decision table)
 
-| User said… | Path | First move |
+Ask one question about the shape of the brief:
+
+| Question | Answer = yes → | Answer = no → |
 |---|---|---|
-| "generate a **web app** to monitor X" | **A** | `/prototype` (with sim-placeholder slot) → then `Task(simulation-planner)` for the slot |
-| "build a **dashboard** that tracks Y" | **A** | `/prototype` → then `Task(simulation-planner)` per sim slot |
-| "build a **page / site / tool / system** that shows Z" | **A** | `/prototype` → then `Task(simulation-planner)` per sim slot |
-| "build a **prototype / monitor / viewer** for X" | **A** | `/prototype` → then `Task(simulation-planner)` per sim slot |
-| "model the warehouse for me" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
-| "simulate <real-world system>" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
-| "I want to SEE how <system> works" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
-| "show me where <Y> are right now" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
+| Does the brief imply a *container* the sim lives inside (the user wants a thing-with-sim-inside, not just the sim)? | **Path A** | **Path B** |
+
+That is the whole rule. Examples of each:
+
+- *Path A shape:* "build me a web app to monitor mosquitoes", "make a dashboard that shows fleet positions", "create a microsite about my warehouse rhythm", "page that lets visitors watch the queue", "make a tool for tracking dengue clusters" — every one is "container around an X-that-is-a-system". Container gets scaffolded; X becomes a sim-placeholder.
+- *Path B shape:* "model the warehouse for me", "show me a globe with the jets moving", "make me a swarm of agents I can poke", "a sim of how the traffic flows", "visualise the queue draining" — every one is "X itself is the artefact." No container. Runtime IS the page.
+
+If both readings fit, default Path A.
 
 ## Interactive pieces: scaffold-then-planner, same as simulation (v3.4 hard rule)
 
@@ -556,7 +574,7 @@ When the user wants to make a piece where someone **walks into a place and leave
 
 The user wants the experience embedded in a larger app or site. First scaffold via `/prototype` (or hand-write the HTML), writing a `<div class="nx-placeholder" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" style="aspect-ratio: <W>/<H>"></div>` at the slot. Then dispatch `narrative-experience-planner` per nxId. The runtime embeds at the placeholder.
 
-(Note: `nx-placeholder` is the convention parallel to `sim-placeholder` and `im-placeholder`. The narrative runtime lives at `source/{branch}/narratives/{nxId}/runtime.html`; the embed step in narrative-experience-planner.md mirrors simulation-planner.md §5.1.1.)
+(Note: `nx-placeholder` is the convention parallel to `sim-placeholder` and `im-placeholder`. The narrative runtime lives at `source/{{branch}}/narratives/{{nxId}}/runtime.html`; the embed step in narrative-experience-planner.md mirrors simulation-planner.md §5.1.1.)
 
 ### Path B — "the piece IS the artefact, no surrounding app"
 

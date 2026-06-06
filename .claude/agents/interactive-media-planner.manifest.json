@@ -23,12 +23,7 @@
   ],
   "dispatches": {
     "research": [
-      "im-research-precedent",
-      "im-research-technique",
-      "im-research-mapping-philosophy",
-      "im-research-permission-ux",
-      "im-research-constraint",
-      "im-research-synthesiser"
+      "im-research-technique"
     ],
     "components": [
       "im-input-mic",

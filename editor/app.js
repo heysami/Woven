@@ -11752,18 +11752,24 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     [workspaceProjects]
   );
 
-  // Slugify the visible name into a safe project id. Falls back to "project"
-  // if the user typed only invalid characters.
+  // Slugify what the user typed into a project-id we'd send to the daemon.
+  // Empty string when there's nothing yet (we suppress the hint line then).
   const slugId = useMemo(() => {
-    const s = (name || "")
+    return (name || "")
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "");
-    return s || "project";
   }, [name]);
 
-  const collision = existingIds.has(slugId);
-  const canSubmit = !busy && name.trim().length > 0 && !collision;
+  const collision = !!slugId && existingIds.has(slugId);
+  const canSubmit = !busy && slugId.length > 0 && !collision;
+
+  // Allow Esc to close.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const submit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -11788,6 +11794,18 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     }
   };
 
+  // Hint line: nothing typed → blank (no fake "project" id). Typed → echo the
+  // slug we'll send (lets the user see odd chars get folded into dashes).
+  // Collides with an existing id → warn.
+  let hint = null;
+  if (slugId) {
+    hint = collision
+      ? html`<span className="newproj-hint newproj-hint-warn">${slugId} already exists — pick another name</span>`
+      : (slugId !== name.trim().toLowerCase()
+          ? html`<span className="newproj-hint">id: <code>${slugId}</code></span>`
+          : null);
+  }
+
   return html`
     <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
       <form className="newproj-card" onSubmit=${submit}>
@@ -11797,27 +11815,23 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
         </header>
         <div className="newproj-card-body">
           <label className="newproj-field">
-            <span className="newproj-label">Name</span>
             <input
               type="text"
               autoFocus
               value=${name}
               onInput=${(e) => setName(e.target.value)}
-              placeholder="e.g. mosquito-monitor"
+              placeholder="Project name"
               maxLength=${64}
               disabled=${busy}
             />
           </label>
-          <div className="newproj-meta">
-            <span>Project id: <code>${slugId}</code></span>
-            ${collision && html`<span className="newproj-warning">— already exists</span>`}
-          </div>
+          ${hint && html`<div className="newproj-hintrow">${hint}</div>`}
           ${err && html`<div className="newproj-error">${err}</div>`}
         </div>
         <footer className="newproj-card-foot">
           <button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
           <button type="submit" className="newproj-create" disabled=${!canSubmit}>
-            ${busy ? "Creating…" : "Create"}
+            ${busy ? "Creating…" : "+ Create"}
           </button>
         </footer>
       </form>

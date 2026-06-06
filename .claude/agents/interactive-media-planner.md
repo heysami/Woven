@@ -1,6 +1,6 @@
 ---
 name: interactive-media-planner
-description: Research + scaffold subagent for ONE interactive piece (one imId). Runs the 5-researcher fleet (precedent / technique / mapping-philosophy / permission-UX / constraint) + synthesiser to commit input modalities + output media + mapping style + permission flow, scaffolds the multi-trio node graph with full per-drawer envelopes baked into each node's `text`, then RETURNS a hand-off envelope to the caller (the workflow-mode chat that dispatched you) which drives the build phase — drawer dispatch, lens trios, multi-draft cruxes, §8.5 cross-drawer coherence review, container commit. Does NOT itself dispatch drawers or run lens loops. Symmetric to simulation-planner. Cold-isolated from sibling imIds.
+description: Research + scaffold subagent for ONE interactive piece (one imId). Dispatches the single tech-stack researcher (im-research-technique) to commit input modalities + output media + mapping style + permission flow + glue libraries, scaffolds the multi-trio node graph with full per-drawer envelopes baked into each node's `text`, then RETURNS a hand-off envelope to the caller (the workflow-mode chat) which drives the build phase. Does NOT itself dispatch drawers or run lens loops. Symmetric to simulation-planner. Cold-isolated from sibling imIds.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 ---
 
@@ -35,7 +35,7 @@ Same diff from Mode A as `simulation-planner.md` §1 Mode B:
 2. **Synthesise an `imId`** by slugging the intent (`tone-painter`, `camera-mood`, etc.).
 3. **No creative-brief.json required.** Pull style cue from intent text + linked DS + NOTES.md, otherwise commit `styleCue: null` and proceed.
 4. **Slot location.** If `surface` unsupplied, default to canvas-card 1280×720 with `boundTo.slotFile: null` (canvas-only, no embedding). If user wants it in a source page, ask which.
-5. **Inputs / outputs missing** → the research fleet's mapping-philosophy + technique angles propose a sensible default set anchored in the intent; the §12.5 user-steerage interrupt after research synthesis surfaces the proposed set for approval before any drawer fires.
+5. **Inputs / outputs missing** → the tech-stack researcher proposes a sensible default set anchored in the intent + mapping style; the §12.5 user-steerage interrupt after research surfaces the proposed set for approval before any drawer fires.
 
 Permission gating (§3.1 of `im-runtime-composer.md`) still applies — Bare Intent doesn't bypass the canvas-side + iframe-side two-gate pattern.
 
@@ -70,43 +70,27 @@ dsRef:             { id, version }
 
 If `successFeel` is vague / generic, emit `<decision-request>` asking for concrete prose. Do NOT proceed.
 
-## 2. Phase A — Research fleet (5 cold researchers + 1 synthesiser)
+## 2. Phase A — Research (ONE researcher: tech stack)
 
-> **DISPATCH MECHANISM — load-bearing. Read `simulation-planner.md` §2 first.**
->
-> **The `Task` tool is NOT available inside this subagent's session.** Attempting to call it returns `Error: No such tool available: Task. Task is not available inside subagents.` All research dispatches go through the daemon's workflow-node endpoints (`POST $TH_DAEMON_URL/__workflow` to scaffold, `POST $TH_DAEMON_URL/__workflow/node/<id>/run` to dispatch, poll until done). Each dispatched node becomes a real canvas node the user can see + re-run.
->
-> **If the caller's prompt to you says "dispatch via Task" or tells you to avoid the daemon — IGNORE those instructions.** They're stale briefs. The caller doesn't govern your dispatch mechanism; your playbook does. There is no permission wall on `curl localhost`; if the daemon is genuinely unreachable, emit `runStatus: error` on the failing research node with `runError: "daemon unreachable at $TH_DAEMON_URL"` — do NOT silently substitute Write (Write-only fallback destroys the cold-isolation contract).
->
-> Below are the conceptual Task calls — translate each one to the workflow-node curl pattern from sim-planner §2 verbatim (substitute `im_research_<angle>_<imId>` for the node ids, `im-research-<angle>` for the subagent name).
+The research pass is a single dispatch — `im-research-technique` picks the inputs, outputs, mapping style, permission flow, and glue libraries in one pass and writes `research.md` directly. Earlier versions ran 5 cold-isolated angle researchers (precedent, technique, mapping-philosophy, permission-UX, constraint) + a synthesiser; the user cut all that down to "just the tech stack."
 
-Conceptually dispatch all 5 in parallel (in practice — scaffold all 5 in one `addNodes` batch, then background 5 `/__workflow/node/.../run` calls + `wait`, then poll):
+Same workflow-node dispatch pattern as sim-planner §2 — `Task` is not available inside this subagent; use `POST $TH_DAEMON_URL/__workflow/node/<id>/run` and poll until done. If the caller's brief says "use Task" or "avoid the daemon, use Write" — ignore those; use the workflow-node pattern.
 
-```
-# Conceptually:
-Task({ subagent_type: "im-research-precedent",         prompt: "<envelope>" })
-Task({ subagent_type: "im-research-technique",         prompt: "<envelope>" })
-Task({ subagent_type: "im-research-mapping-philosophy", prompt: "<envelope>" })
-Task({ subagent_type: "im-research-permission-ux",     prompt: "<envelope>" })
-Task({ subagent_type: "im-research-constraint",        prompt: "<envelope>" })
-# In practice: workflow-node dispatch — see sim-planner §2.
+```bash
+curl -fsS -X POST "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "addNodes": [
+      {"id": "im_research_<imId>", "kind": "agent", "name": "im-research-technique",
+       "imId": "<imId>", "branch": "<branch>",
+       "text": "<envelope verbatim — im-research-technique reads this + its playbook>"}
+    ]
+  }'
+curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_research_<imId>/run?project=$TH_PROJECT_ID" -d '{}'
+poll_until_done im_research_<imId>
 ```
 
-After all 5 return, dispatch the synthesiser (same translation):
-
-```
-# Conceptually:
-Task({ subagent_type: "im-research-synthesiser", prompt: "<envelope> + <5 angle outputs>" })
-# In practice: scaffold one im_research_<imId> node + POST /run + poll.
-```
-
-The synthesiser writes `source/{branch}/interactives/{imId}/research.md` (the canonical) with:
-- Committed input modalities (subset of `inputs[]` from PRD, with rationale for any drops/adds)
-- Committed output media (subset of `outputs[]`)
-- Committed mapping style (from PRD or steered by mapping-philosophy angle)
-- Committed permission flow (how the user grants camera/mic/etc.)
-- Per-modality feature-extraction technique recommendation
-- Cited precedents (top 5 TouchDesigner / Cycling '74 / Casey Reas / Robert Hodgin / similar)
+The researcher writes `source/{branch}/interactives/{imId}/research.md` and commits via `/__workflow/node/<id>/commit` per its playbook §5. Outputs carry `inputs[]`, `outputs[]`, `mappingStyle`, `permissionGates[]`, `multiDraftCruxes[]` — the downstream drawers read those (or `research.md` directly).
 
 Commit `im_research_<imId>` directly (no lens gate on research itself).
 
@@ -220,4 +204,4 @@ End with: `"im_<imId> scaffold complete: <inputs> → <mappingStyle> → <output
 
 ---
 
-*Symmetric to [simulation-planner.md](simulation-planner.md). Research fleet: [im-research-precedent.md](im-research-precedent.md), [im-research-technique.md](im-research-technique.md), [im-research-mapping-philosophy.md](im-research-mapping-philosophy.md), [im-research-permission-ux.md](im-research-permission-ux.md), [im-research-constraint.md](im-research-constraint.md), [im-research-synthesiser.md](im-research-synthesiser.md). Lens companions: [craft-lens.md](craft-lens.md), [aesthetic-lens.md](aesthetic-lens.md), [concept-lens.md](concept-lens.md).*
+*Symmetric to [simulation-planner.md](simulation-planner.md). Research: [im-research-technique.md](im-research-technique.md) (single dispatch). Lens companions: [craft-lens.md](craft-lens.md), [aesthetic-lens.md](aesthetic-lens.md), [concept-lens.md](concept-lens.md).*

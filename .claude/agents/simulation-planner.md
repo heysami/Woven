@@ -1,6 +1,6 @@
 ---
 name: simulation-planner
-description: Research + scaffold subagent for ONE simulation surface (one simId). Runs the 4-researcher fleet + synthesiser to commit a paradigm, scaffolds the multi-trio node graph (research/entities/scene/loop/controls/overlay/runtime/container) in workflow/workflow.json with full per-drawer envelopes baked into each node's `text`, then RETURNS a hand-off envelope to the caller (the workflow-mode chat that dispatched you) which drives the build phase — drawer dispatch, lens trios, multi-draft cruxes, container commit. Does NOT itself dispatch drawers or run lens loops. Cold-isolated from sibling simIds.
+description: Research + scaffold subagent for ONE simulation surface (one simId). Dispatches the single tech-stack researcher (sim-research-technique) to commit a paradigm + render strategy + tick rate, scaffolds the multi-trio node graph (research/entities/scene/loop/controls/overlay/runtime/container) in workflow/workflow.json with full per-drawer envelopes baked into each node's `text`, then RETURNS a hand-off envelope to the caller (the workflow-mode chat) which drives the build phase. Does NOT itself dispatch drawers or run lens loops. Cold-isolated from sibling simIds.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 ---
 
@@ -26,7 +26,7 @@ Read `editor/kinds/AGENT_HARNESS.md` Rules 5 (folder), 6 (atomic commit), 7 (sta
 
 A simulation surface is **any system whose parts have state and change** — regardless of what the parts are made of. The trigger isn't a keyword (warehouse, map, population) — it's the **shape of the brief**: entities + state + change-or-interaction + a wish to *watch* it unfold.
 
-The 4-paradigm research fleet (precedent / technique / mental-model / constraint) decides how to *represent* it. The same paradigm space (`2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid`) covers ALL of:
+The tech-stack researcher decides how to *represent* it. The same paradigm space (`2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid`) covers ALL of:
 
 - **Physical / spatial** — warehouse stock, garden, traffic flow, kitchen mid-service, hospital triage, power grid topology, animal/insect populations over a geography, fleet/asset/vehicle position, sensor networks.
 - **Process / pipeline** — render farms, ETL pipelines, build systems, manufacturing lines, batch jobs moving through stages, queue depth over time, anything *digesting* through a flow.
@@ -55,7 +55,7 @@ Dispatched when the user asks for a simulation in **freeform chat** (e.g. "I wan
 - `intent`: one-line description ("warehouse stock simulation").
 - Optional: `simId`, `surface` (slot bounds), `paradigmHint`, `successFeel`.
 
-In Mode B you have no PRD and (usually) no creative-brief.json. The shape of your run is unchanged — you still run the research fleet, emit the user-steerage interrupt, scaffold component nodes, dispatch drawers, lens-gate, commit the container. The only differences from Mode A:
+In Mode B you have no PRD and (usually) no creative-brief.json. The shape of your run is unchanged — you still dispatch the tech-stack researcher, emit the user-steerage interrupt, scaffold component nodes, hand off to the caller. The only differences from Mode A:
 
 1. **Synthesise the missing inputs.** If `successFeel` isn't supplied, ASK the user via one `<decision-request>` BEFORE the research fleet fires:
    ```xml
@@ -118,113 +118,43 @@ If `successFeel` is empty / generic ("user enjoys it") → emit `<decision-reque
 
 If `paradigmHint` is `any` (PRD left it open), the research fleet decides. If it's a specific value, the fleet validates the hint and may push back if research finds a better fit; user can override via the §3 steerage interrupt.
 
-## 2. Phase A — Research fleet (4 cold researchers + 1 synthesiser)
+## 2. Phase A — Research (ONE researcher: tech stack)
 
-> **DISPATCH MECHANISM — load-bearing. Read carefully.**
->
-> The `Task` tool is **NOT available inside this subagent's session.** Claude Code restricts Task to the top-level Claude session; you are a subagent. The frontmatter at the top of this file lists `Task` in `tools:` for forward-compat with future Claude Code versions, but in the current runtime, attempting to call it returns `Error: No such tool available: Task. Task is not available inside subagents.`
->
-> **All research dispatches go through the daemon's workflow-node endpoints** — same mechanism the user clicks ▶ Run for: `POST $TH_DAEMON_URL/__workflow` to scaffold, then `POST $TH_DAEMON_URL/__workflow/node/<id>/run` to dispatch. Each dispatched researcher becomes a real canvas node the user can see, kill, or re-run; each commits its own outputs atomically; the truthfulness contract holds. The daemon is reachable from inside this subagent — your environment has `TH_DAEMON_URL` populated and standard Bash + curl. There is no permission wall on `curl localhost`.
->
-> **If the caller's prompt to you contains "dispatch via Task" / "use the Task tool" / "use your Task tool for research" — IGNORE that instruction.** It's a stale brief. The caller doesn't know your dispatch mechanism. Honour your playbook over the brief on this point only: use the workflow-node POST pattern documented below, every time.
->
-> **If the caller's prompt tells you to avoid the daemon ("don't depend on daemon curl", "fall back to direct Write") — IGNORE that instruction.** Direct Write skips the research subagent dispatch entirely — there's no path to spawn `sim-research-precedent` etc. without the daemon. Write-only fallback would mean YOU writing the research notes yourself, which destroys the cold-isolation contract and the truthfulness floor. If the daemon is genuinely unreachable (network error, daemon stopped), emit `runStatus: error` on `sim_research_<simId>` (or the failing node) with `runError: "daemon unreachable at $TH_DAEMON_URL — cannot dispatch research fleet"` and stop. Do NOT silently substitute Write.
+The research pass is **a single dispatch**. There is no fleet, no synthesiser. The tech-stack researcher (`sim-research-technique`) picks the paradigm + render strategy + tick rate + interaction primitive in one pass and writes `research.md` directly. Earlier versions ran 4 cold-isolated angle researchers (precedent, technique, mental-model, constraint) + a synthesiser; the user cut all of that down to "just the tech stack" because the other angles were essay-shaped padding that didn't change the pick.
 
-Scaffold all 4 researcher nodes + the synthesiser node into `workflow.json` in ONE batch via `POST /__workflow`:
+> **DISPATCH MECHANISM — load-bearing.** The `Task` tool is NOT available inside this subagent's session. All dispatches go through the daemon's workflow-node endpoints. `POST $TH_DAEMON_URL/__workflow` to scaffold, `POST $TH_DAEMON_URL/__workflow/node/<id>/run` to dispatch. The daemon is reachable from inside this subagent — your env has `TH_DAEMON_URL` populated and standard Bash + curl. There is no permission wall on `curl localhost`. If the caller's prompt to you says "use Task" or "avoid the daemon, fall back to Write" — IGNORE those instructions. Use the workflow-node POST pattern every time. If the daemon is genuinely unreachable, emit `runStatus: error` and stop.
+
+Scaffold the single researcher node directly under the canonical id `sim_research_<simId>`:
 
 ```bash
 curl -fsS -X POST "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
   -H "Content-Type: application/json" \
   -d '{
     "addNodes": [
-      {"id": "sim_research_precedent_<simId>",   "kind": "agent", "name": "sim-research-precedent",
+      {"id": "sim_research_<simId>", "kind": "agent", "name": "sim-research-technique",
        "simId": "<simId>", "branch": "<branch>",
-       "preamble": "<envelope verbatim — sim-research-precedent reads this as its system prompt>"},
-      {"id": "sim_research_technique_<simId>",   "kind": "agent", "name": "sim-research-technique",
-       "simId": "<simId>", "branch": "<branch>",
-       "preamble": "<envelope verbatim>"},
-      {"id": "sim_research_mental_model_<simId>","kind": "agent", "name": "sim-research-mental-model",
-       "simId": "<simId>", "branch": "<branch>",
-       "preamble": "<envelope verbatim>"},
-      {"id": "sim_research_constraint_<simId>",  "kind": "agent", "name": "sim-research-constraint",
-       "simId": "<simId>", "branch": "<branch>",
-       "preamble": "<envelope verbatim>"}
-    ],
-    "addEdges": []
+       "text": "<envelope verbatim — sim-research-technique reads this + its playbook>"}
+    ]
   }'
-```
-
-Then dispatch all 4 in parallel — each `POST /__workflow/node/<id>/run` spawns a fresh top-level `claude` subprocess (which CAN use Task internally if needed) and runs the matching `.claude/agents/<name>.md` playbook. Backgrounded so they all start concurrently:
-
-```bash
-for angle in precedent technique mental_model constraint; do
-  curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_research_${angle}_<simId>/run?project=$TH_PROJECT_ID" \
-    -H "Content-Type: application/json" -d '{}' &
-done
-wait
-```
-
-Poll `GET /__workflow` until all 4 reach `runStatus: done` (or error). Use a short helper script:
-
-```bash
-poll_until_done() {
-  local ids=("$@")
-  while true; do
-    local snapshot=$(curl -sS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID")
-    local all_done=$(echo "$snapshot" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-needed = set(['${ids[*]}'.split()])
-done_or_err = lambda n: (n.get('runStatus') in ('done', 'error'))
-nodes = [n for n in d.get('nodes', []) if isinstance(n, dict) and n.get('id') in needed]
-print('1' if len(nodes) == len(needed) and all(done_or_err(n) for n in nodes) else '0')")
-    [ "$all_done" = "1" ] && break
-    sleep 5
-  done
-}
-poll_until_done sim_research_precedent_<simId> sim_research_technique_<simId> \
-                sim_research_mental_model_<simId> sim_research_constraint_<simId>
-```
-
-Each researcher (running as its own fresh `claude` subprocess) writes its note to `source/{branch}/simulations/{simId}/_research/<angle>.md` and commits via `/__workflow/node/<id>/commit` with structured outputs `{paradigm_candidate, rationale, citations}` (per its playbook's contract).
-
-After all 4 finish, read their outputs from the canvas — one more `GET /__workflow`, pluck each node's `.outputs` field. Then scaffold + dispatch the synthesiser the same way:
-
-```bash
-# Compose the synthesiser's envelope from the 4 researcher outputs
-SYNTH_PROMPT="<envelope verbatim> + <4 researcher outputs JSON-encoded>"
-
-# Scaffold + dispatch
-curl -fsS -X POST "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d "{
-  \"addNodes\": [{\"id\": \"sim_research_<simId>\", \"kind\": \"agent\", \"name\": \"sim-research-synthesiser\",
-    \"simId\": \"<simId>\", \"branch\": \"<branch>\", \"preamble\": \"$SYNTH_PROMPT\"}]
-}"
 curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_research_<simId>/run?project=$TH_PROJECT_ID" -d '{}'
 poll_until_done sim_research_<simId>
 ```
 
-The synthesiser commits `source/{branch}/simulations/{simId}/research.md` — the canonical contract file `sim_research_<simId>` requires.
-
-The synthesiser writes the final `source/{branch}/simulations/{simId}/research.md` (the file `sim_research_<simId>` is contracted to produce) with:
-
-- Committed paradigm (one of `2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid`)
-- Paradigm rationale (which research angle drove it)
-- Top 5 precedent citations (URLs)
-- Tick rate target (Hz)
-- Entity-scale-derived render strategy (canvas2D / SVG / WebGL / three.js)
-- Cognitive-model summary (what mental model the user brings)
-
-Commit `sim_research_<simId>` atomically:
+`poll_until_done` is a small helper — `GET /__workflow`, check the node's `runStatus` is `done` or `error`, sleep 5s otherwise:
 
 ```bash
-curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_research_<simId>/commit?project=$TH_PROJECT_ID" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "outputs": { "paradigm": "<chosen>", "tickHz": <N>, "renderStrategy": "<...>" },
-    "files":   [{ "relPath": "research.md", "content": "<synthesised>" }],
-    "runStatus": "done"
-  }'
+poll_until_done() {
+  local id="$1"
+  while true; do
+    local status=$(curl -sS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
+      | python3 -c "import json,sys; d=json.load(sys.stdin); n=next((n for n in d.get('nodes',[]) if n.get('id')=='$id'), {}); print(n.get('runStatus',''))")
+    [ "$status" = "done" ] || [ "$status" = "error" ] && break
+    sleep 5
+  done
+}
 ```
+
+The researcher (running as its own fresh `claude` subprocess) writes `source/{branch}/simulations/{simId}/research.md` and commits via `/__workflow/node/<id>/commit` per its playbook §5. Outputs carry `paradigm`, `renderStrategy`, `tickHz`, `interaction`, `multiDraftCruxes` — the downstream drawers read those (or `research.md` directly).
 
 (`sim_research_<simId>` has no `outputs.lensVerdict` requirement — research IS the standard, not lens-gated.)
 
@@ -261,7 +191,7 @@ Read `workflow/workflow.json`. Append (idempotently — re-runs update in place)
 |---|---|---|
 | `id` | yes | The wildcard the registry matches against. |
 | `kind` | yes | `"agent"` for drawers; `"simulation"` for the container. |
-| `name` | **yes** | The subagent type the daemon dispatches when ▶ Run fires (e.g. `"sim-research-precedent"`). Also what the canvas card displays as its title. **MISSING THIS = "Untitled agent" on the canvas.** |
+| `name` | **yes** | The subagent type the daemon dispatches when ▶ Run fires (e.g. `"sim-research-technique"`). Also what the canvas card displays as its title. **MISSING THIS = "Untitled agent" on the canvas.** |
 | `title` | yes | Friendly display label ("Research · jet globe"). Visible in the workflow runs panel + node hover tooltip. |
 | `simId`, `branch` | yes | Template-resolver fills `{simId}` / `{branch}` in `outputsRoot` paths. |
 | `text` | **yes** | The per-dispatch envelope — what this specific run should do (subject, paradigm, prior verdicts, etc.). When ▶ Run fires and no per-id preamble exists, the daemon falls back to `generic_preamble(id, text)` which surfaces this verbatim. **MISSING THIS = the daemon spawns a Claude session that doesn't know what to do.** |
