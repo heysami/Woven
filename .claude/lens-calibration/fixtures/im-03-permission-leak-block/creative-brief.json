@@ -1,0 +1,8 @@
+{
+  "styleCue":              "ambient generative audio-reactive piece",
+  "interactionPhilosophy": "user sings; visuals respond",
+  "sensoryTargets": { "visual": "smooth gradients", "motion": "soft easing", "audio": "none", "haptic": "no haptic" },
+  "antiPatterns":          ["permission prompt without explanation"],
+  "references":            ["https://example.com/audio-reactive.html"],
+  "successFeel":           "the user feels invited and grants permission willingly because they understand what the piece will do"
+}

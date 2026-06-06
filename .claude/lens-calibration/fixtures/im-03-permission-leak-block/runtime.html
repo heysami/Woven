@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>im-03 — CRAFT-FAIL (permission leak) fixture</title>
+<style>body,html{margin:0;height:100%;overflow:hidden;background:#222}#scene{display:block;width:100%;height:100%}</style></head>
+<body><canvas id="scene"></canvas>
+<script type="module">
+// ─── BAD PATTERN — runtime calls getUserMedia() at MODULE LOAD without
+// any user-gesture gate. No Start screen. Browser permission prompt
+// fires immediately on iframe load. craft-lens §3.1 (interactive rubric
+// "Permission requested behind a user gesture") must catch this.
+
+const canvas = document.getElementById('scene');
+const gl = canvas.getContext('webgl2');
+function resize(){canvas.width=innerWidth*Math.min(2,devicePixelRatio);canvas.height=innerHeight*Math.min(2,devicePixelRatio);gl.viewport(0,0,canvas.width,canvas.height)}
+addEventListener('resize',resize); resize();
+
+const vs = `#version 300 es\nin vec2 a;void main(){gl_Position=vec4(a,0,1);}`;
+const fs = `#version 300 es\nprecision highp float;out vec4 c;uniform float u_v;void main(){c=vec4(u_v,u_v*0.5,1.-u_v,1.);}`;
+function compile(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh}
+const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); gl.useProgram(p);
+const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const a = gl.getAttribLocation(p,'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+const uV = gl.getUniformLocation(p,'u_v');
+
+const inputVec = new Float32Array(8);
+const outputVec = new Float32Array(1);
+let analyser = null, timeBuf = null, fpsAvg = 0, fpsFrames = 0, fpsT0 = 0;
+
+// ❌ FAILURE — getUserMedia at MODULE LOAD. No user gesture. No Start gate.
+// Permission prompt fires immediately on iframe load.
+const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+const audioCtx = new AudioContext();
+// ❌ AudioContext also created without user gesture — autoplay policy will refuse
+const source = audioCtx.createMediaStreamSource(stream);
+analyser = audioCtx.createAnalyser(); analyser.fftSize = 256; source.connect(analyser);
+timeBuf = new Float32Array(analyser.fftSize);
+
+function frame(now) {
+  if (analyser) {
+    analyser.getFloatTimeDomainData(timeBuf);
+    let s = 0; for (let i = 0; i < timeBuf.length; i++) s += timeBuf[i] * timeBuf[i];
+    inputVec[0] = Math.min(1, Math.sqrt(s / timeBuf.length) * 8);
+  }
+  outputVec[0] = inputVec[0];
+  gl.uniform1f(uV, outputVec[0]);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  fpsFrames++;
+  if (now - fpsT0 > 1000) { fpsAvg = fpsFrames*1000/(now-fpsT0); fpsFrames = 0; fpsT0 = now; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(t => { fpsT0 = t; requestAnimationFrame(frame); });
+
+window.__im = {
+  get inputVec(){return inputVec}, get outputVec(){return outputVec},
+  fps: { get avg(){return fpsAvg}, max: 0 },
+  injectFakeInput() { /* no fake-input path; runtime calls getUserMedia at load */ },
+  devtools: {}
+};
+</script></body></html>

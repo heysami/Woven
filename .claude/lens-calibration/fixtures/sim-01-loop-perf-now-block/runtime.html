@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sim-01-loop-perf-now-block — CRAFT-FAIL fixture</title>
+<style>
+  body, html { margin: 0; padding: 0; height: 100%; background: #1a1a1f; color: #ccc;
+               font-family: system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #devtools { position: absolute; bottom: 8px; right: 8px; font-size: 11px;
+              background: rgba(0,0,0,0.6); padding: 4px 8px; }
+</style>
+</head>
+<body>
+<canvas id="scene" width="720" height="540"></canvas>
+<div id="devtools">fps: <span id="fps">—</span></div>
+<script>
+// ─── BAD PATTERN: tick callback reads performance.now() directly ────────
+// craft-lens §3.1 should flag this as block-severity:
+// "Deterministic time stepping — NO performance.now()/Date.now() in tick".
+
+const ctx = document.getElementById('scene').getContext('2d');
+
+const state = { t: 0, entities: {} };
+for (let i = 0; i < 50; i++) {
+  state.entities['e-' + i] = {
+    id: 'e-' + i, kind: 'bin',
+    x: 50 + (i % 10) * 60, y: 100 + Math.floor(i / 10) * 80,
+    lastUpdate: 0   // ← the variable that betrays the non-determinism
+  };
+}
+
+function tick(state) {
+  // ❌ FAILURE — reads wall-clock inside the tick callback.
+  const now = performance.now();
+  for (const e of Object.values(state.entities)) {
+    const dt = (now - e.lastUpdate) / 1000;
+    e.x += Math.sin(now / 1000 + e.y) * dt;
+    e.lastUpdate = now;
+  }
+  state.t = now / 1000;
+}
+
+function render(state) {
+  ctx.fillStyle = '#1a1a1f'; ctx.fillRect(0, 0, 720, 540);
+  ctx.fillStyle = '#5cb85c';
+  for (const e of Object.values(state.entities)) {
+    ctx.fillRect(e.x, e.y, 40, 30);
+  }
+}
+
+let frameCount = 0;
+let fpsAccum = 0, fpsT0 = performance.now();
+function frame() {
+  tick(state);          // ← tick called per rAF with implicit dt-from-clock
+  render(state);
+  frameCount++;
+  const now = performance.now();
+  if (now - fpsT0 > 1000) {
+    fpsAccum = frameCount * 1000 / (now - fpsT0);
+    document.getElementById('fps').textContent = fpsAccum.toFixed(0);
+    frameCount = 0; fpsT0 = now;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Devtools surface (§12.3)
+window.__sim = {
+  state, fps: { avg: 0, max: 0, _samples: [] },
+  loop: { tickCount: 0, fps: { avg: 0, max: 0 } },
+  injectFakeInput() { /* no-op — sim has no input here */ },
+  devtools: { pause() {}, play() {}, step() {} }
+};
+setInterval(() => { window.__sim.fps.avg = fpsAccum; }, 500);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "family":           "simulation",
+  "simId":            "warehouse_floor_flat",
+  "subject":          "warehouse stock + pick paths",
+  "paradigm":         "2d-spatial-map",
+  "entityScale":      "~80 bins",
+  "userIntervention": "none",
+  "surface":          "Dashboard, 720×540",
+  "successFeel":      "a stranger looking at the screen for 5 seconds can identify: this is a warehouse, those are bins, that one is low stock"
+}

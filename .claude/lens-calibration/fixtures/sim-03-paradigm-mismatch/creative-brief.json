@@ -1,0 +1,13 @@
+{
+  "styleCue":              "spare warehouse-management UI, monospaced labels, slate palette",
+  "interactionPhilosophy": "operator-grade — reads at a glance",
+  "sensoryTargets": {
+    "visual": "top-down rectilinear bin grid; flat shapes; status-tinted",
+    "motion": "discrete tick-by-tick; no orbiting cameras; no continuous rotation",
+    "audio":  "no audio",
+    "haptic": "no haptic"
+  },
+  "antiPatterns": ["3D scenes", "orbiting cameras", "decorative depth cues", "continuous rotation"],
+  "references":   ["https://example.com/wms-flat-floorplan.png"],
+  "successFeel":  "the operator reads stock state at a glance — flat top-down floorplan, bins where they are, status tinted"
+}

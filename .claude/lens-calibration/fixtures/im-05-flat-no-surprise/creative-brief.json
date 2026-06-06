@@ -1,0 +1,13 @@
+{
+  "styleCue":              "soft watercolour washes; warm palette; gestural painting",
+  "interactionPhilosophy": "input drives output; the user shapes the experience",
+  "sensoryTargets": {
+    "visual": "painterly, warm",
+    "motion": "soft easing; responsive to input",
+    "audio":  "none in this fixture",
+    "haptic": "no haptic"
+  },
+  "antiPatterns": ["screensaver-style time-only animation", "input ignored", "background visual disconnected from gestures"],
+  "references":   ["https://memo.tv/works/aspects-of-the-self/"],
+  "successFeel":  "the user feels the painting respond to their voice — gesture and field move together"
+}

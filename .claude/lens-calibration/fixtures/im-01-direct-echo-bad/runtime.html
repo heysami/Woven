@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>im-01 — DIRECT-ECHO BAD fixture</title>
+<style>body,html{margin:0;height:100%;overflow:hidden;background:#000}
+#scene{display:block;width:100%;height:100%}
+#start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;flex-direction:column;gap:16px;font-family:system-ui}
+#start-gate.hidden{display:none}
+#start-btn{padding:10px 24px;background:#888;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:16px}</style></head>
+<body>
+<canvas id="scene"></canvas>
+<div id="start-gate"><h2>Voice Painter</h2><p>Sing to paint the field.</p><button id="start-btn">Start</button></div>
+<script type="module">
+// ─── BAD PATTERN — brief committed to mapping idiom 'accumulative'
+// ("the painting holds — strokes accumulate, the room remembers") but
+// runtime ships a DIRECT 1:1 echo: output.hue = input.rms. Aesthetic-lens
+// must flag antiPattern '1:1 direct echo mapping'; concept-lens must
+// fail surpriseScore (drive mic; output decays to 0 instantly on silence).
+//
+// Craft is fine: getUserMedia is gated behind Start gate, devtools harness
+// exposes injectFakeInput, no autoplay audio, valid HTML.
+
+const canvas = document.getElementById('scene');
+const gl = canvas.getContext('webgl2');
+function resize() { canvas.width = innerWidth * Math.min(2, devicePixelRatio); canvas.height = innerHeight * Math.min(2, devicePixelRatio); gl.viewport(0,0,canvas.width,canvas.height); }
+addEventListener('resize', resize); resize();
+
+const vsSrc = `#version 300 es
+in vec2 a; void main(){gl_Position=vec4(a,0,1);}`;
+const fsSrc = `#version 300 es
+precision highp float;
+out vec4 c;
+uniform vec2 u_res; uniform float u_hue;
+vec3 hsv2rgb(vec3 v){vec4 K=vec4(1.,2./3.,1./3.,3.);vec3 p=abs(fract(v.xxx+K.xyz)*6.-K.www);return v.z*mix(K.xxx,clamp(p-K.xxx,0.,1.),v.y);}
+void main(){c=vec4(hsv2rgb(vec3(u_hue,0.7,0.8)),1.);}`;
+function compile(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh}
+const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc)); gl.linkProgram(p); gl.useProgram(p);
+const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const a = gl.getAttribLocation(p, 'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+const uRes = gl.getUniformLocation(p, 'u_res'); const uHue = gl.getUniformLocation(p, 'u_hue');
+
+// Mapping state — INTENTIONALLY trivial direct echo (the bad pattern)
+const inputVec = new Float32Array(8);  // [0]=RMS proxy
+const outputVec = new Float32Array(1); // [0]=hue
+function map(input, output) {
+  // ❌ Direct 1:1 — brief said "accumulative" but we just echo
+  output[0] = input[0];
+}
+
+let fakeInputVec = null;
+let fpsAvg = 0, fpsFrames = 0, fpsT0 = 0;
+
+document.getElementById('start-btn').addEventListener('click', async () => {
+  document.getElementById('start-gate').classList.add('hidden');
+  let audioCtx = null, source = null, analyser = null, timeBuf = null;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (AudioContext || webkitAudioContext)(); await audioCtx.resume();
+    source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 256; source.connect(analyser);
+    timeBuf = new Float32Array(analyser.fftSize);
+  } catch (e) { /* mic denied; rely on fakeInput */ }
+
+  function frame(now) {
+    if (fakeInputVec) {
+      for (let i = 0; i < inputVec.length; i++) inputVec[i] = fakeInputVec[i];
+    } else if (analyser) {
+      analyser.getFloatTimeDomainData(timeBuf);
+      let s = 0; for (let i = 0; i < timeBuf.length; i++) s += timeBuf[i] * timeBuf[i];
+      inputVec[0] = Math.min(1, Math.sqrt(s / timeBuf.length) * 8);
+    }
+    map(inputVec, outputVec);
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uHue, outputVec[0]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    fpsFrames++;
+    if (now - fpsT0 > 1000) { fpsAvg = fpsFrames*1000/(now-fpsT0); fpsFrames = 0; fpsT0 = now; }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(t => { fpsT0 = t; requestAnimationFrame(frame); });
+});
+
+window.__im = {
+  get inputVec(){return inputVec}, get outputVec(){return outputVec},
+  fps: { get avg(){return fpsAvg}, max: 0 },
+  injectFakeInput(d) { if (!fakeInputVec) fakeInputVec = new Float32Array(inputVec.length);
+    if (d.features) for (let i = 0; i < d.features.length; i++) fakeInputVec[i] = d.features[i]; },
+  clearFakeInput() { fakeInputVec = null; },
+  devtools: { skipStart() { document.getElementById('start-btn').click(); } }
+};
+</script></body></html>

@@ -1,0 +1,10 @@
+{
+  "family":         "interactive",
+  "imId":           "voice_painter_unresponsive",
+  "concept":        "voice → painterly field that responds to gesture",
+  "inputs":         ["mic"],
+  "outputs":        ["shader"],
+  "mappingStyle":   "accumulative",
+  "surface":        "Hero, 1280×720",
+  "successFeel":    "the user feels the painting respond to their voice — gesture and field move together"
+}

@@ -1,0 +1,13 @@
+{
+  "styleCue":              "spare warehouse-management UI, monospaced labels, slate palette",
+  "interactionPhilosophy": "operator-grade — reads at a glance",
+  "sensoryTargets": {
+    "visual": "rectilinear, restrained, structured bin grid",
+    "motion": "discrete tick-by-tick",
+    "audio":  "no audio",
+    "haptic": "no haptic"
+  },
+  "antiPatterns": ["unstructured scatter", "abstract field"],
+  "references":   ["https://example.com/wms-floorplan.png"],
+  "successFeel":  "a stranger looking at the screen for 5 seconds can identify: this is a warehouse, those are bins, that one is low stock"
+}

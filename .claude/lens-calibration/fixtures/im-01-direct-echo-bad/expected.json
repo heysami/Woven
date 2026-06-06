@@ -1,0 +1,19 @@
+{
+  "_intent": "AESTHETIC + CONCEPT-FAIL fixture — brief committed mapping idiom 'accumulative' AND listed '1:1 direct echo mapping' as explicit antiPattern. Runtime ships output.hue = input[0] (literal direct echo). Concept-lens should drive synthetic mic input via injectFakeInput, then 0-vector, observe hue snap back instantly → surpriseScore very low. Craft is clean (permission gated, has injectFakeInput).",
+  "craft": {
+    "verdict": "pass",
+    "ground_truth_reason": "getUserMedia is inside user-gesture handler; Start gate present; injectFakeInput exposed; no autoplay audio"
+  },
+  "aesthetic": {
+    "verdict": "fail",
+    "must_cite": ["1:1 direct echo mapping", "antiPattern"],
+    "expected_failure_check": "No antiPatterns[] element appears in the artefact",
+    "ground_truth_reason": "brief.antiPatterns explicitly lists '1:1 direct echo mapping' and 'instant-snap to zero on silence' — runtime's map() function literally implements direct echo (output[0] = input[0])"
+  },
+  "concept": {
+    "verdict": "fail",
+    "must_cite": ["surpriseScore", "successFeel", "painting holds"],
+    "expected_failure_check": "Surprise / non-triviality",
+    "ground_truth_reason": "drove mic with synthetic input then silence; output snaps to 0 instantly with no decay; successFeel quote 'the painting holds — strokes accumulate, the room remembers' is unmet"
+  }
+}

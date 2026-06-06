@@ -1,0 +1,10 @@
+{
+  "family":           "simulation",
+  "simId":            "warehouse_floor_3d_wrong",
+  "subject":          "warehouse stock + pick paths",
+  "paradigm":         "2d-spatial-map",
+  "entityScale":      "~80 bins",
+  "userIntervention": "none in this fixture",
+  "surface":          "Dashboard middle panel, 720×540",
+  "successFeel":      "the operator reads stock state at a glance — flat top-down floorplan, bins where they are, status tinted"
+}

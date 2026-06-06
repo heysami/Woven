@@ -98,10 +98,17 @@ def _resolve_path_template(template, node, project_root):
         return None
     # node may carry branch/variant/dsId in various places
     repl = {
-        "branch":  node.get("branch") or "main",
-        "variant": node.get("variant") or "",
-        "dsId":    node.get("dsId") or "main",
-        "id":      node.get("id") or "",
+        "branch":   node.get("branch")   or "main",
+        "variant":  node.get("variant")  or "",
+        "dsId":     node.get("dsId")     or "main",
+        "id":       node.get("id")       or "",
+        # v3.3 — simulation + interactive-media + narrative-experience families.
+        # The planner sets these on each component node when it scaffolds.
+        "simId":    node.get("simId")    or "",
+        "imId":     node.get("imId")     or "",
+        "nxId":     node.get("nxId")     or "",
+        "modality": node.get("modality") or "",
+        "medium":   node.get("medium")   or "",
     }
     out = template
     for k, v in repl.items():
@@ -156,15 +163,33 @@ def _check_files_exist(node, contract, project_root):
                     if not matches:
                         viols.append(_violation(FILE_MISSING,
                             f"no .{ext} files in {left}", path=left))
-        # outputs.X set / non-empty
+        # outputs.X set / non-empty / in {a, b, c}
+        # v3.3 — value-membership assertions are the truthfulness floor for
+        # lens-gated completion (see docs/features/simulation-and-interactive-
+        # planners.md §12.4). A lens drawer commits outputs.verdict = "pass"
+        # or "fail"; the component contract requires outputs.lensVerdict
+        # in {pass} so a "fail" verdict cannot satisfy status:done.
         elif rs.startswith("outputs."):
-            field = rs.split(" ", 1)[0][len("outputs."):]
+            tail = rs[len("outputs."):]
             outputs = node.get("outputs") or {}
-            val = outputs.get(field)
-            empty = (val is None) or (isinstance(val, (str, list, dict)) and len(val) == 0)
-            if empty:
-                viols.append(_violation(REQUIRED_MISSING,
-                    f"required output missing or empty: {field}", field=field))
+            import re as _re
+            m = _re.match(r"^(\S+)\s+in\s+\{([^}]*)\}\s*$", tail)
+            if m:
+                field, valstr = m.group(1), m.group(2)
+                allowed = {v.strip() for v in valstr.split(",") if v.strip()}
+                val = outputs.get(field)
+                if val is None or str(val) not in allowed:
+                    viols.append(_violation(REQUIRED_MISSING,
+                        f"output {field!r} not in {sorted(allowed)}: got {val!r}",
+                        field=field, allowed=sorted(allowed), got=val))
+            else:
+                # Existing "outputs.X" or "outputs.X non-empty" behaviour.
+                field = tail.split(" ", 1)[0]
+                val = outputs.get(field)
+                empty = (val is None) or (isinstance(val, (str, list, dict)) and len(val) == 0)
+                if empty:
+                    viols.append(_violation(REQUIRED_MISSING,
+                        f"required output missing or empty: {field}", field=field))
         # consumeFrom: 0 unhandled files — caller verifies separately
         elif rs.startswith("consumeFrom:"):
             pass  # handled by validate_consume

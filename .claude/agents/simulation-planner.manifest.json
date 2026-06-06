@@ -1,0 +1,59 @@
+{
+  "id":             "simulation-planner",
+  "label":          "Simulation",
+  "tagline":        "Intuitive visualisation of real-world physical or temporal systems",
+  "version":        "v3.3",
+  "defaultEnabled": true,
+  "subagentName":   "simulation-planner",
+  "playbookPath":   ".claude/agents/simulation-planner.md",
+
+  "description":    "Researches the right representation paradigm for a domain (2d-spatial-map / 3d-environment / iconographic-anim / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; §8.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix.",
+
+  "triggers": [
+    { "mode": "chat",       "title": "Bare Intent — chat",
+      "rule": "When the user's message mentions a physical or temporal system to model (warehouse stock, garden, traffic, kitchen mid-service, power grid, aquarium, render farm, shift schedule, etc.) — FIRST action is a Task call to simulation-planner in BARE-INTENT MODE.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Simulation surfaces: dispatch simulation-planner FIRST'" },
+    { "mode": "onboarding", "title": "Stage I — bp_proto_build Phase 2b",
+      "rule": "For each row in the PRD's Simulation table (PRD_VISUAL_RULES §5), bp_proto_build Phase 2b dispatches a per-simId bp_simulation_build agent which spawns simulation-planner.",
+      "ruleSource": "editor/prompts/node_agent_preambles.py — bp_proto_build Phase 2b + bp_simulation_build preamble" }
+  ],
+
+  "dispatches": {
+    "research": [
+      "sim-research-precedent",
+      "sim-research-technique",
+      "sim-research-mental-model",
+      "sim-research-constraint",
+      "sim-research-synthesiser"
+    ],
+    "components": [
+      "sim-entities-author",
+      "sim-2d-spatial-scene-builder",
+      "sim-3d-scene-builder",
+      "sim-iconographic-anim-builder",
+      "sim-loop-author",
+      "sim-controls-author",
+      "sim-overlay-author",
+      "sim-runtime-composer"
+    ],
+    "lenses": ["craft-lens", "aesthetic-lens", "concept-lens"]
+  },
+
+  "skills": [],
+
+  "nodeKinds": {
+    "container":         ["simulation"],
+    "agent_overrides": [
+      "bp_simulation_build",
+      "sim_research_*", "sim_entities_*", "sim_scene_*", "sim_loop_*",
+      "sim_controls_*", "sim_overlay_*", "sim_runtime_*",
+      "cp_sim_scene_pick_*", "cp_sim_loop_pick_*", "cp_sim_gate_*"
+    ]
+  },
+
+  "documents": {
+    "designDoc":   "docs/features/simulation-and-interactive-planners.md",
+    "calibration": ".claude/lens-calibration/fixtures/sim-*",
+    "policy":      ".claude/agents/onboarding-visual-policy.md (SIMULATION_PIPELINE block)"
+  }
+}

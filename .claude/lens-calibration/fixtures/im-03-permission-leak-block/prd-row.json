@@ -1,0 +1,10 @@
+{
+  "family":         "interactive",
+  "imId":           "audio_reactive_leak",
+  "concept":        "voice → visual response",
+  "inputs":         ["mic"],
+  "outputs":        ["shader"],
+  "mappingStyle":   "direct",
+  "surface":        "Hero, 1280×720",
+  "successFeel":    "the user feels invited and grants permission willingly because they understand what the piece will do"
+}

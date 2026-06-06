@@ -75,6 +75,10 @@ Used by: Stage B (`bp_prd_refine` prompt) and Stage G (`bp_prd_final` prompt).
 > 3. **Key imagery list** — explicit list of visual artefacts the prototype must produce: login splash imagery, hero illustration, empty-state illustration, success illustration, error illustration, avatar placeholders, hero photography, decorative imagery. For each: a one-line treatment ("warm photographic, soft-focus background", "line illustration, single accent colour", "abstract data viz, no people"). This drives the asset spec downstream.
 > 4. **Page-to-shell map** — for every page named in the page inventory, name the recommended shell from BRAINSTORM_SHELL_RULES with a one-line rationale ("alert detail = centered-narrow because read-decide-act, not monitoring"). Format as a small markdown table.
 >
+> 5. **Simulation table** — REQUIRED when the app's value depends on intuitive visualisation of a real-world physical or temporal system (warehouse stock, garden, traffic, kitchen-mid-service, sleep cycle, power grid, aquarium, etc.). Omit ONLY when the app is purely informational / transactional. Markdown table with one row per simulation surface, columns: `simId` (kebab-case slug — STABLE; downstream nodes key on this), `subject` (one line — the physical/temporal system being modelled), `paradigmHint` (`2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid` / `any`), `entityScale` (rough count + active subset — drives tick rate), `userIntervention` (what the user can do to mutate sim state), `surface` (which page + dimensions — drives the slot's CSS), `successFeel` (1-2 sentence prose — describes what "this hit the bar" looks like from the user's POV; load-bearing for the §8.4 concept lens — a vague successFeel produces vague QA, so be CONCRETE: not "user enjoys it" but "a one-look gut sense of warehouse rhythm — busy or calm, jammed or fluid, where the bottlenecks are"). Drives SIMULATION_PIPELINE downstream.
+>
+> 6. **Interactive-piece table** — REQUIRED when the app's value depends on a distinct creative / playful interactive piece (TouchDesigner-grade). Omit ONLY when the app has no such surface. Markdown table with one row per piece, columns: `imId` (kebab-case slug), `concept` (one-line creative brief — "voice + camera control a generative shader"), `inputs[]` (whitelist from `{mic, camera, mouse, touch, scroll, gyro, midi, gamepad, hand-tracking}`), `outputs[]` (whitelist from `{shader, particle, 3d, audio}`), `mappingStyle` (`direct` / `accumulative` / `threshold-triggered` / `ml-classified`), `surface` (page + dimensions), `successFeel` (load-bearing prose — be concrete: "the user paints with their voice and the painting holds — strokes accumulate, the room remembers" not "feels interactive"). Drives INTERACTIVITY_PIPELINE downstream.
+>
 > Existing standard PRD sections (Problem, Audience, Goals, Pages, Key flows, Tone) ALSO remain required — these visual sections are additive, not replacements.
 
 ---
@@ -117,6 +121,91 @@ Used by: Stage C (`bs_ds_a/b/c`), Stage E (`bs_html_*`), Stage F (`br_remix_p*` 
 > ### When the user re-runs orchestration
 >
 > If stages D + H regenerate the DS (different palette, different mood), the visual-planner doesn't auto-re-trigger — image regeneration would be wasteful when only some assets need updates. The user re-runs the per-asset nodes manually from the canvas (each is a first-class node). Future v3 might auto-detect DS changes that imply imagery re-gen.
+
+---
+
+## SIMULATION_PIPELINE
+
+Used by: Stage I (`bp_proto_build`). v3.3 — NEW.
+
+> Some apps live or die on whether the user gets an intuitive mental model of a real-world physical or temporal system: stock on a warehouse floor, plants in a garden, packages in transit, traffic, a kitchen mid-service, a power grid, a sleep cycle, an aquarium. For these apps, the simulation IS the value — a static page can't convey rhythm-and-bottleneck-ness.
+>
+> The PRD declares a **simulation table** with one row per simulation surface (see PRD_VISUAL_RULES additions below). Each row carries `simId`, `subject`, `paradigmHint`, `entityScale`, `userIntervention`, `surface`, and a load-bearing `successFeel` field.
+>
+> ### How it works
+>
+> The Source subagent (Subagent 1, dispatched by stage I) writes HTML with **simulation slot markers** instead of inline canvas/three.js code:
+>
+> ```html
+> <div class="sim-placeholder"
+>      data-sim="warehouse-floor"
+>      data-paradigm-hint="2d-spatial-map"
+>      data-entities="~200"
+>      style="aspect-ratio: 4/3"></div>
+> ```
+>
+> Each slot's `data-sim` (the simId, kebab-case) keys into the PRD's simulation table. The slot is inert until the simulation-planner runs.
+>
+> After source is written, stage I dispatches one **`bp_simulation_build` agent per `simId`** declared in the PRD's simulation table. That agent in turn dispatches the **simulation-planner** subagent (`.claude/agents/simulation-planner.md`). The planner:
+>
+> 1. Runs a 4-researcher fleet (precedent / technique / mental-model / constraint) + 1 synthesiser to commit a paradigm + rationale + citations.
+> 2. Emits a `<decision-request>` summarising the committed paradigm — user can Approve / Steer / Reject before any drawer fires.
+> 3. Scaffolds the multi-trio node graph for the simulation (research + entities + scene + loop + controls + overlay + runtime + container — see registry.py `sim_*_` wildcards).
+> 4. Dispatches the 7 component drawers in dependency order, each running its own §12.1 internal refinement loop + lens trio gate.
+> 5. At the §8.7 cruxes (`sim_scene_remix_<id>`, `sim_loop_remix_<id>`), runs 3 cold-isolated drafts via `iterator-remix` + a `cp_sim_*_pick_<id>` checkpoint for the user to pick.
+> 6. Commits the `simulation` container node with `outputs.lensVerdict: "pass"` only when ≥2/3 lenses pass on every component.
+>
+> ### What stage I (`bp_proto_build`) must do
+>
+> 1. **Phase 1 (source skeleton):** Honour the PRD's simulation table. For each row, write a `<div class="sim-placeholder" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>">` slot at the surface named in the row. No inline canvas/three.js/p5 code for these slots — they go through the planner.
+> 2. **Phase 2b (after visual-planner returns):** For each row in the PRD's simulation table, dispatch a `bp_simulation_build` agent with the simId in the envelope. Run all simIds in parallel via the Task tool (siblings-parallel, cold-isolated).
+> 3. **Forbidden:** inline `<canvas data-three>` / `<canvas>` + raw simulation JS in source for any slot declared as a `sim-placeholder`. The visual-planner's `canvas-gen` / `threejs` skills are for AMBIENT visual decoration, NOT for simulation surfaces. If you find yourself authoring entity-mutating JS inline, STOP — that's the planner's job.
+>
+> ### When the user re-runs orchestration
+>
+> The simulation-planner doesn't auto-re-trigger on DS regeneration — entity logic doesn't change with palette. The user re-runs individual `sim_*_<simId>` component nodes from the canvas (each is a first-class node with its own Run button).
+
+---
+
+## INTERACTIVITY_PIPELINE
+
+Used by: Stage I (`bp_proto_build`). v3.3 — NEW.
+
+> Some apps live or die on having a distinct, surprising, TouchDesigner-flavoured interactive piece — the user's body / device becomes a creative input and the output is real-time generative response. For these apps, the interactive piece IS the value; a screenshot can't convey it.
+>
+> The PRD declares an **interactive-piece table** with one row per piece. Each row carries `imId`, `concept`, `inputs[]`, `outputs[]`, `mappingStyle`, `surface`, and a load-bearing `successFeel` field.
+>
+> ### How it works
+>
+> The Source subagent writes HTML with **interactive-media slot markers** instead of inline WebAudio / MediaDevices / shader code:
+>
+> ```html
+> <div class="im-placeholder"
+>      data-im="tone-mood-painter"
+>      data-inputs="mic,camera,mouse"
+>      data-outputs="shader,audio-gen"
+>      data-mapping="accumulative"
+>      style="aspect-ratio: 16/9"></div>
+> ```
+>
+> After source is written, stage I dispatches one **`bp_interactive_build` agent per `imId`** declared in the PRD's interactive table. That agent dispatches the **interactive-media-planner** subagent (`.claude/agents/interactive-media-planner.md`). The planner:
+>
+> 1. Runs a 5-researcher fleet (precedent / technique / mapping-philosophy / permission-UX / constraint) + 1 synthesiser.
+> 2. Emits a `<decision-request>` summarising committed inputs + outputs + mapping style + permission flow — user can Approve / Steer / Reject.
+> 3. Scaffolds the multi-trio node graph (research + modality / input[] / mapping / output[] / runtime / container — see registry.py `im_*_` wildcards).
+> 4. Dispatches per-modality input drawers + per-medium output drawers + mapping drawer + runtime composer in dependency order, each with its own internal refinement + lens trio gate.
+> 5. At the §8.7 cruxes (`im_mapping_remix_<id>`, `im_runtime_remix_<id>`, `im_output_remix_<id>`), runs 3 cold-isolated drafts + `cp_im_*_pick_<id>` checkpoints.
+> 6. Runs a §8.5 cross-drawer coherence review before final container commit — does the audio output feel of-a-piece with the shader output, does the mapping FEEL non-trivial, does the runtime onboarding match the brief's "onboarding feel"?
+>
+> ### What stage I (`bp_proto_build`) must do
+>
+> 1. **Phase 1:** For each PRD interactive row, write a `<div class="im-placeholder" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>">` slot at the named surface. No inline `getUserMedia()` calls, no inline WebAudio, no inline shader markup in source for these slots.
+> 2. **Phase 2c (after visual-planner returns; runs in parallel with Phase 2b):** For each imId, dispatch `bp_interactive_build` with the imId in the envelope.
+> 3. **Forbidden in source:** naked `navigator.mediaDevices.getUserMedia(...)`, naked `new AudioContext()`, inline WebMIDI / DeviceOrientation handlers. All input/output gating goes through the planner so the permission UX is consistent (canvas-side gate BEFORE the iframe runs + in-iframe Start button BEFORE the browser permission prompt fires).
+>
+> ### When the user re-runs orchestration
+>
+> Like simulation, the interactive-media-planner doesn't auto-re-trigger on DS regeneration. The user re-runs individual `im_*_<imId>` component nodes from the canvas.
 
 ---
 

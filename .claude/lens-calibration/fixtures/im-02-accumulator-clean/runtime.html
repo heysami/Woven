@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>im-02 — ALL-PASS (accumulator clean) fixture</title>
+<style>body,html{margin:0;height:100%;overflow:hidden;background:#000}
+#scene{display:block;width:100%;height:100%}
+#start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;flex-direction:column;gap:16px;font-family:Georgia,serif}
+#start-gate.hidden{display:none}
+#start-btn{padding:12px 28px;background:#c9a76a;color:#2a1f1a;border:0;border-radius:4px;cursor:pointer;font-size:16px;font-family:Georgia,serif}</style></head>
+<body>
+<canvas id="scene"></canvas>
+<div id="start-gate"><h2 style="font-weight:300">Voice Painter</h2><p style="opacity:0.7;max-width:480px;text-align:center">Sing softly. The field will hold what you give it.</p><p style="font-size:11px;opacity:0.5">microphone stays in your browser</p><button id="start-btn">Begin</button></div>
+<script type="module">
+// ─── CLEAN PATTERN — accumulative mapping with proper decay; matches
+// brief's mapping idiom + watercolor visual register. All 3 lenses pass.
+
+const canvas = document.getElementById('scene');
+const gl = canvas.getContext('webgl2');
+function resize(){canvas.width=innerWidth*Math.min(2,devicePixelRatio);canvas.height=innerHeight*Math.min(2,devicePixelRatio);gl.viewport(0,0,canvas.width,canvas.height)}
+addEventListener('resize', resize); resize();
+
+const vs = `#version 300 es\nin vec2 a; void main(){gl_Position=vec4(a,0,1);}`;
+const fs = `#version 300 es
+precision highp float;
+out vec4 c;
+uniform vec2 u_res; uniform float u_field;
+// Soft warm-watercolor palette — sand → ochre → terracotta
+vec3 palette(float t){
+  vec3 a = vec3(0.36, 0.27, 0.20);
+  vec3 b = vec3(0.78, 0.57, 0.32);
+  vec3 d = vec3(0.92, 0.78, 0.55);
+  return a + b * t + d * t * t * 0.6;
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  // Soft watercolor gradient driven by accumulated field
+  float vignette = 1.0 - length(uv - 0.5) * 0.8;
+  vec3 col = palette(u_field) * vignette;
+  c = vec4(col, 1.0);
+}`;
+function compile(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh}
+const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); gl.useProgram(p);
+const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+const a = gl.getAttribLocation(p,'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+const uRes = gl.getUniformLocation(p,'u_res'); const uField = gl.getUniformLocation(p,'u_field');
+
+// ✅ Accumulative mapping with explicit decay calibrated per research:
+// decayPerSec ≈ 0.9 → decayPerFrame at 60fps ≈ 0.985.
+const inputVec = new Float32Array(8);
+const outputVec = new Float32Array(1);
+const state = { field: new Float32Array(1) };
+const DECAY = 0.985;
+function map(input, output, state) {
+  // Integrate input into field; decay each frame.
+  state.field[0] = state.field[0] * DECAY + input[0] * 0.04;
+  output[0] = Math.min(1, state.field[0]);
+}
+
+let fakeInputVec = null;
+let fpsAvg = 0, fpsFrames = 0, fpsT0 = 0;
+
+document.getElementById('start-btn').addEventListener('click', async () => {
+  document.getElementById('start-gate').classList.add('hidden');
+  let audioCtx = null, analyser = null, timeBuf = null;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (AudioContext || webkitAudioContext)(); await audioCtx.resume();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 256; source.connect(analyser);
+    timeBuf = new Float32Array(analyser.fftSize);
+  } catch (e) { /* mic denied; fakeInput still works */ }
+
+  function frame(now) {
+    if (fakeInputVec) {
+      for (let i = 0; i < inputVec.length; i++) inputVec[i] = fakeInputVec[i];
+    } else if (analyser) {
+      analyser.getFloatTimeDomainData(timeBuf);
+      let s = 0; for (let i = 0; i < timeBuf.length; i++) s += timeBuf[i] * timeBuf[i];
+      inputVec[0] = Math.min(1, Math.sqrt(s / timeBuf.length) * 8);
+    }
+    map(inputVec, outputVec, state);
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uField, outputVec[0]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    fpsFrames++;
+    if (now - fpsT0 > 1000) { fpsAvg = fpsFrames*1000/(now-fpsT0); fpsFrames = 0; fpsT0 = now; }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(t => { fpsT0 = t; requestAnimationFrame(frame); });
+});
+
+window.__im = {
+  get inputVec(){return inputVec}, get outputVec(){return outputVec},
+  get state(){return state},
+  fps: { get avg(){return fpsAvg}, max: 0 },
+  injectFakeInput(d) { if (!fakeInputVec) fakeInputVec = new Float32Array(inputVec.length);
+    if (d.features) for (let i = 0; i < d.features.length; i++) fakeInputVec[i] = d.features[i]; },
+  clearFakeInput() { fakeInputVec = null; },
+  devtools: { skipStart() { document.getElementById('start-btn').click(); } }
+};
+</script></body></html>

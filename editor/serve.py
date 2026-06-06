@@ -3653,24 +3653,43 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
             f.write(serialized + "\n")
 
 
-def _chat_jsonl_scan_historical(project_root: str) -> dict:
-    """v3.1 — branches deprecated. Reads the single editor/chat.jsonl
-    (falling back to legacy editor/branches/*.chat.jsonl files if found,
-    so existing in-flight installs aren't lost on upgrade)."""
-    out: dict = {}
-    candidate_files = []
+def _chat_jsonl_candidate_files(project_root: str) -> list:
+    """Single source of truth for "where chat.jsonl lives for this project".
+
+    Returns [(abs_path, branch_slug)] in read priority order: the flat v3.1
+    layout (editor/chat.jsonl, slug="main") first, then any legacy
+    editor/branches/*.chat.jsonl files for in-flight installs that haven't
+    been migrated yet.
+
+    Every reader that wants to scan chat history MUST go through here. If you
+    are adding a new layout (or removing the legacy fallback), this is the
+    only function that should change. See historical incident: v3.1 missed
+    updating _rehydrate_run_from_jsonl when the flat layout shipped, which
+    broke session resume for every project created after the migration."""
+    out = []
     flat = os.path.join(project_root, "editor", "chat.jsonl")
     if os.path.isfile(flat):
-        candidate_files.append(flat)
+        out.append((flat, "main"))
     branches_dir = os.path.join(project_root, "editor", "branches")
     if os.path.isdir(branches_dir):
         try:
             for name in os.listdir(branches_dir):
                 if name.endswith(".chat.jsonl"):
-                    candidate_files.append(os.path.join(branches_dir, name))
+                    out.append((
+                        os.path.join(branches_dir, name),
+                        name[:-len(".chat.jsonl")],
+                    ))
         except OSError:
             pass
-    for path in candidate_files:
+    return out
+
+
+def _chat_jsonl_scan_historical(project_root: str) -> dict:
+    """v3.1 — branches deprecated. Reads the single editor/chat.jsonl
+    (falling back to legacy editor/branches/*.chat.jsonl files if found,
+    so existing in-flight installs aren't lost on upgrade)."""
+    out: dict = {}
+    for path, _branch_slug in _chat_jsonl_candidate_files(project_root):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 for raw in f:
@@ -3729,25 +3748,19 @@ def _chat_jsonl_scan_historical(project_root: str) -> dict:
 def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
     """v2.29b — when an /__run/<id>/* endpoint is hit after a daemon restart
     (RUNS is in-memory only — every restart wipes it), the runId 404s even
-    though the conversation is persisted on disk. This helper scans branch
-    JSONLs for the run, extracts session_id + metadata, and constructs a
+    though the conversation is persisted on disk. This helper scans the chat
+    JSONL(s) for the run, extracts session_id + metadata, and constructs a
     minimal RunState so the existing resume / stop / chat endpoints can do
     their work without spawning a fresh chat from scratch. Returns the
     RunState on success, None if the run isn't found or session_id is
     missing (can't resume without it).
-    """
-    branches_dir = os.path.join(project_root, "editor", "branches")
-    if not os.path.isdir(branches_dir):
+
+    Layout knowledge lives in _chat_jsonl_candidate_files — do not duplicate
+    the flat-vs-branches scan logic here."""
+    candidates = _chat_jsonl_candidate_files(project_root)
+    if not candidates:
         return None
-    try:
-        names = os.listdir(branches_dir)
-    except OSError:
-        return None
-    for name in names:
-        if not name.endswith(".chat.jsonl"):
-            continue
-        path = os.path.join(branches_dir, name)
-        branch_slug = name[:-len(".chat.jsonl")]
+    for path, branch_slug in candidates:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -4956,6 +4969,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._ds_proposals_save(qs)
             if parsed.path == "/__upload_font":
                 return self._upload_font_post(qs)
+            if parsed.path == "/__planners/disable":
+                return self._planners_disable(qs)
             if parsed.path == "/__media_config":
                 return self._media_config_set()
             if parsed.path == "/__media_config/test":
@@ -5141,6 +5156,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
             return self._capabilities()
+        if url_path == "/__planners":
+            return self._planners_registry(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__workspace":
             return self._workspace_info()
         if url_path == "/__projects":
@@ -5790,7 +5807,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                         if nid in deleted_ids: continue  # user tombstone — don't restore
                         # Visual-planner / drawer namespace AND onboarding-orchestrator
                         # namespace (bp_/bs_/br_/cp_ — see onboarding plan §Phase 2).
-                        if nid[:2] in ("p_", "s_", "r_", "a_") or nid[:3] in ("bp_", "bs_", "br_", "cp_"):
+                        # v3.3 — simulation / interactive-media / narrative-experience
+                        # families (sim_/im_/nx_) are also background-writer namespaces:
+                        # the *-planner subagents + their component drawers scaffold node
+                        # trios the editor hasn't refetched yet. Without this guard a
+                        # debounced editor canvas-save races the planner's research-fleet
+                        # write and silently clobbers the whole sim_<id> trio (observed:
+                        # a mid-research "Update workflow canvas" save wiped all four
+                        # sim_research_* nodes for an in-flight simulation).
+                        if (nid[:2] in ("p_", "s_", "r_", "a_")
+                                or nid[:3] in ("bp_", "bs_", "br_", "cp_", "im_", "nx_")
+                                or nid[:4] == "sim_"):
                             preserved_nodes.append(n)
                     # Preserve edges whose endpoints both still exist (in
                     # either posted or preserved nodes).
@@ -6833,6 +6860,7 @@ class H(http.server.SimpleHTTPRequestHandler):
               for k, v in (("branch", node.get("branch") or "main"),
                            ("variant", node.get("variant") or ""),
                            ("dsId", node.get("dsId") or "main"),
+                           ("simId", node.get("simId") or ""),
                            ("id", node_id)):
                 resolved = resolved.replace("{" + k + "}", str(v))
               if "{" in resolved or "}" in resolved:
@@ -10855,6 +10883,91 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, get_capabilities())
         except Exception as e:
             return self._reply(500, {"error": f"capabilities load failed: {e}"})
+
+    # ── Planner registry routes (v3.3) ──────────────────────────────────
+    #
+    # GET  /__planners?project=<id>             — list every planner manifest
+    #                                              + per-planner enabled state
+    #                                              for this project.
+    # POST /__planners/disable?project=<id>     — body {plannerId, enabled}
+    #                                              flips one planner's toggle.
+    #
+    # Planners are auto-discovered from `.claude/agents/<name>.manifest.json`.
+    # Per-project disable state persists at `<projectRoot>/.planners-disabled.json`.
+    # The capabilities preamble (capabilities.capabilities_preamble) reads the
+    # enabled set and omits hard-rule blocks for disabled planners, so agents
+    # spawned in that project never see "dispatch <X>-planner FIRST" cues for
+    # off planners.
+
+    def _planners_disable_target(self, qs):
+        """Resolve where to read/write the planner disable state.
+
+        Priority:
+          1. `?project=<id>` present → that project's root.
+          2. WORKSPACE_DIR set (no project) → workspace dir (landing-page case;
+             toggle affects every project in the workspace).
+          3. single-project install → install root (legacy).
+
+        Returns a path string or raises ValueError if no target can be determined."""
+        try:
+            return resolve_project_root(qs)
+        except ValueError:
+            if WORKSPACE_DIR:
+                return WORKSPACE_DIR
+            return os.getcwd()
+
+    def _planners_registry(self, qs):
+        """GET /__planners?project=<id> — return aggregated manifests + state.
+
+        When called without a ?project= param, falls back to the workspace
+        disable state (landing-page case). Toggles made there affect every
+        project in the workspace until per-project overrides land."""
+        target = self._planners_disable_target(qs)
+        try:
+            import planners as _pl
+            reg = _pl.get_registry(target)
+            reg["scope"]      = "project" if "?project=" in qs.__class__.__name__ else (
+                                  "workspace" if target == WORKSPACE_DIR else "project")
+            reg["targetRoot"] = target
+            return self._reply(200, reg)
+        except Exception as e:
+            return self._reply(500, {"error": f"planners load failed: {e}"})
+
+    def _planners_disable(self, qs):
+        """POST /__planners/disable?project=<id>
+        Body: {"plannerId": "<id>", "enabled": <bool>}
+        Returns the updated disable list.
+
+        Without ?project=, writes to the workspace disable file (landing-page
+        scope) so the toggle affects every project until per-project overrides
+        land. See `_planners_disable_target`."""
+        try:
+            project_root = self._planners_disable_target(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body() or {}
+        except Exception as e:
+            return self._reply(400, {"error": f"invalid JSON body: {e}"})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        planner_id = body.get("plannerId")
+        enabled    = body.get("enabled")
+        if not isinstance(planner_id, str) or not planner_id:
+            return self._reply(400, {"error": "plannerId required (string)"})
+        if not isinstance(enabled, bool):
+            return self._reply(400, {"error": "enabled required (boolean)"})
+        try:
+            import planners as _pl
+            new_disabled = _pl.set_planner_enabled(project_root, planner_id, enabled)
+            return self._reply(200, {
+                "ok":          True,
+                "plannerId":   planner_id,
+                "enabled":     enabled,
+                "disabledIds": new_disabled,
+            })
+        except Exception as e:
+            return self._reply(500, {"error": f"planner toggle failed: {e}"})
 
     # ── Workspace routes (Phase 6) ───────────────────────────────────────
 

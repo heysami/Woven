@@ -1,0 +1,13 @@
+{
+  "styleCue":              "soft watercolour washes; warm ochre/terracotta palette; painterly accumulation",
+  "interactionPhilosophy": "the user paints over time; gestures accumulate and the field remembers",
+  "sensoryTargets": {
+    "visual": "painterly, slow-easing, accumulated colour fields; warm palette",
+    "motion": "soft easing; no snap; persistence over seconds",
+    "audio":  "none in this fixture",
+    "haptic": "no haptic"
+  },
+  "antiPatterns": ["1:1 direct echo mapping", "instant-snap to zero on silence", "snappy linear easing", "neon palette"],
+  "references":   ["https://memo.tv/works/aspects-of-the-self/"],
+  "successFeel":  "the user paints with their voice and the painting holds — strokes accumulate, the room remembers"
+}

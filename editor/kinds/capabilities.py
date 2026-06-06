@@ -213,20 +213,73 @@ def get_capabilities() -> dict:
     }
 
 
-def capabilities_preamble() -> str:
+def _strip_disabled_planner_blocks(text: str, enabled_ids: set) -> str:
+    """v3.3 — Remove the hard-rule block for any planner not in `enabled_ids`.
+
+    Each planner's hard-rule block is a markdown section starting with one of
+    the SECTIONS headers below; it runs until the next `\n## ` heading (or EOF).
+    We remove `[start_of_section .. start_of_next_section)` for disabled IDs.
+
+    Conservative: if a section header isn't found, leave the text alone — the
+    preamble is the source of truth and any inconsistency between this
+    filter's known headers and the actual prose surfaces as a no-op."""
+    SECTIONS = [
+        ("## Image creation: dispatch visual-planner FIRST",                       "visual-planner"),
+        ("## Simulation surfaces: dispatch simulation-planner FIRST",              "simulation-planner"),
+        ("## Interactive pieces: dispatch interactive-media-planner FIRST",        "interactive-media-planner"),
+        ("## Narrative experiences: dispatch narrative-experience-planner FIRST",  "narrative-experience-planner"),
+    ]
+    for header_marker, planner_id in SECTIONS:
+        if planner_id in enabled_ids:
+            continue
+        start = text.find(header_marker)
+        if start == -1:
+            continue
+        next_section = text.find("\n## ", start + len(header_marker))
+        end = next_section + 1 if next_section != -1 else len(text)
+        # Trim trailing blank lines after the removed block to keep the prose tidy.
+        text = text[:start].rstrip() + ("\n\n" if end < len(text) else "\n") + text[end:].lstrip("\n")
+    return text
+
+
+def capabilities_preamble(project_root: Optional[str] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes — not the full catalog — so the agent
     knows what EXISTS without burning 3KB of tokens. For details the agent
-    can `curl /__capabilities`."""
+    can `curl /__capabilities`.
+
+    v3.3 — `project_root` lets the preamble respect the project's planner
+    disable list (`.planners-disabled.json`). Hard-rule blocks for disabled
+    planners are stripped out before return so spawned agents in that project
+    do not see "dispatch <X>-planner FIRST" cues for off planners."""
     caps = get_capabilities()
     provider_line = ", ".join(p["label"] for p in caps["providers"][:20])
+    # v3.3 — cap bumped from 30 to 60 to fit the simulation + interactive-media
+    # planner families (14 sim + 11 im + 3 lenses + the pre-existing visual
+    # family + housekeeping = ~42 today, leaving headroom).
     subagent_lines = "\n".join(
-        f"  • {sa['name']} — {sa['description'][:140]}" for sa in caps["subagents"][:30]
+        f"  • {sa['name']} — {sa['description'][:140]}" for sa in caps["subagents"][:60]
     )
     endpoint_lines = "\n".join(
         f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
     )
-    return f"""## App capabilities — read this before saying "I don't have <X>"
+    # v3.3 — Resolve which planners are enabled for this project. On import
+    # failure or no project context, default to "all enabled" (the safest
+    # fallback — the agent sees every planner rule, never silently misses one).
+    enabled_planners = None
+    try:
+        # Late import — capabilities.py is sometimes imported before planners
+        # in tests/tooling, so avoid a top-level circular risk.
+        import sys, os
+        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _editor_dir not in sys.path:
+            sys.path.insert(0, _editor_dir)
+        import planners as _pl
+        enabled_planners = _pl.enabled_planner_ids(project_root)
+    except Exception:
+        pass
+
+    _preamble = f"""## App capabilities — read this before saying "I don't have <X>"
 
 If the user asks for a feature, model, provider, subagent, or endpoint and you don't recognize the name, **check this catalog (or `GET $TH_DAEMON_URL/__capabilities`) before answering**. The app catalog is authoritative; your training-data knowledge is not.
 
@@ -338,4 +391,247 @@ Also: when the planner returns, verify `workflow/visual-plan.json.qa` exists wit
 
 **Emulating visual-planner from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
 
+## Simulation surfaces: scaffold-then-planner, the visual-planner pattern (v3.4 hard rule)
+
+When the user wants to **see a system whose parts have state and change** — *whatever the parts are made of* — there are **TWO paths**, and you MUST pick the right one based on whether the user is asking for a *whole app* OR for *just the simulation*. This mirrors visual-planner's split exactly.
+
+### Path A — "build an app / dashboard / page / tool / site that does X"  (the bzzzzz case)
+
+If the user's message contains framing words like **app, web app, dashboard, page, site, tool, monitor, monitoring tool, tracker, viewer, system, platform, prototype** alongside the system they want visualised, the flow is THREE steps — exactly parallel to how visual-planner sits inside a prototype build:
+
+1. **FIRST — scaffold the app shell.** Dispatch the `/prototype` skill (or scaffold the app HTML+CSS+JS into `source/<branch>/` yourself if `/prototype` doesn't fit). The shell has pages, navigation, layout, copy, the chrome — everything that makes it feel like an app.
+2. **SECOND — add the placeholder + brief the planner.** If `/prototype` didn't already drop one in, hand-edit the relevant source page to insert a `<div class="sim-placeholder" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" style="aspect-ratio: <W>/<H>"></div>` exactly where the simulation belongs (main panel, sidebar widget, full-bleed hero — wherever the user's intent puts it). Then dispatch `simulation-planner` with the slot info in Mode A:
+   ```
+   Task(subagent_type: "simulation-planner",
+        description: "Plan + build sim for slot <simId>",
+        prompt: "Mode A envelope: slotFile=source/<branch>/<page>.html, slotLine=<line of placeholder div>, simId=<simId>, branch=<branch>, projectRoot=<absolute project root>. The placeholder is <div class='sim-placeholder' data-sim='<simId>' data-paradigm-hint='<hint>' data-entities='<scale>' style='aspect-ratio: <W>/<H>'>. User's intent: <verbatim>. successFeel: <ask user if vague>. Run §2 research fleet → §3 user steerage → §4 scaffold drawers → §5 hand-off envelope. Per §5.1.1: the build phase (which I drive) will replace the placeholder with the iframe embed after runtime.html is committed.")
+   ```
+3. **THIRD — drive the build + embed.** After the planner returns its hand-off envelope, YOU drive the build phase per `bp_simulation_build` preamble — dispatch drawers, run lens trios, commit container. The container commit MUST include the embed step (sim-planner playbook §5.1.1): read the slot file, replace the placeholder div with the iframe embed below, write back. Without this step the runtime exists but isn't IN the app.
+   ```html
+   <div class="sim-mount" data-sim="<simId>" style="aspect-ratio: <W>/<H>; width:100%;">
+     <iframe
+       src="simulations/<simId>/runtime.html"
+       style="width:100%; height:100%; border:0; display:block; aspect-ratio: <W>/<H>;"
+       title="<simId> simulation"
+       loading="lazy">
+     </iframe>
+   </div>
+   ```
+   (iframe src is relative to the slot file's directory — `source/<branch>/<page>.html` + `simulations/<simId>/runtime.html` resolves to the right runtime path.)
+
+This is the **visual-planner pattern**. The app exists; the planner is a delegated subprocess for the sim slot; the build phase wires the runtime back into the app. The simulation is NEVER the whole artefact when the user asked for an app.
+
+Repeat steps 2+3 per `<simId>` — multiple sims in one app are normal (e.g. a dashboard with a fleet map + a queue depth viz + a heat field).
+
+### Path B — "model / simulate / show me JUST the X" (no app shell, just the sim itself)
+
+If the user asks for the simulation as the artefact itself — "model the warehouse for me", "make me a swarm of agents", "show me how the traffic flows" — with NO app/dashboard/page framing, then dispatch `simulation-planner` in BARE-INTENT MODE directly. The runtime IS the artefact. There's no app to embed it in.
+
+```
+Task(subagent_type: "simulation-planner",
+     description: "Plan + build standalone simulation",
+     prompt: "BARE-INTENT MODE. The user wants: <one-line intent>. No app shell — runtime.html IS the artefact. Run your Mode B intake, etc.")
+```
+
+### Disambiguation rule (when in doubt)
+
+If the user says BOTH "I want X simulation" AND uses an app-framing word, **Path A wins**. The default for ambiguous requests is Path A — apps are easy to throw away if the user only wanted the bare sim, but a bare sim with no surrounding app cannot be retrofitted into an app without rebuilding.
+
+### The abstract pattern (this is what the simulation trigger is, not a keyword list)
+
+A simulation surface — wherever it lives, app slot or standalone — is anything with:
+
+### The abstract pattern (this is what the trigger is, not a keyword list)
+
+A simulation surface is anything with:
+
+1. **Entities** — discrete parts of the thing. Could be physical (bins, vehicles, animals, people), digital (agents, requests, messages, tasks, signals), conceptual (ideas in a process, items in a queue, branches of a decision), informational (records, events, transactions), biological (cells, organisms, populations), or compositional (modules in a pipeline, stages in a workflow).
+2. **State** — each entity has attributes (position, status, level, score, age, health, payload, location, relationship to others) that hold values at a moment.
+3. **Change or interaction** — those attributes evolve over time, OR the entities transform each other, OR they move through a structure, OR they pass things between themselves, OR they respond to inputs / events / each other.
+4. **A wish to see it happen** — the user wants the SYSTEM, not a static snapshot of it. They want to watch the bins fill, the agents talk, the requests propagate, the queue drain, the pipeline digest, the populations shift, the signals flow, the energy redistribute. Some kind of *temporal or relational unfolding* is the heart of the brief.
+
+If those four properties are present, this is the right planner — regardless of vocabulary. The user might say "monitoring tool", "dashboard", "visualization", "interactive demo", "explorer", "app to see", "thing that shows me how X works", "agent network", "process pipeline", "information flow", "ecosystem", "swarm", "feedback loop", "supply chain", "queue depth", "render farm", "neural-network-style visualization of <abstract thing>", "show how X talks to Y over time" — same answer.
+
+### Range of what this covers (illustrative — not exhaustive, not authoritative)
+
+The vocabulary is deliberately wide:
+
+- **Physical / spatial**: warehouse stock + pick paths, garden, traffic, kitchen mid-service, power grid, aquarium, hospital triage, shift schedules.
+- **Population / ecological**: disease vectors over a geography, animal/insect/plant populations, ecosystem dynamics.
+- **Asset / fleet**: vehicles, drones, satellites, sensors — wherever they are, however they move.
+- **Process / pipeline**: build systems, render farms, ETL pipelines, manufacturing lines, queue processors, batch jobs digesting through stages.
+- **Agent / multi-actor**: agents passing information to each other, an org's people doing work and handing off, mailing list / inbox traffic, a multi-agent system with delegations, a swarm.
+- **Network / flow**: information flow through a graph, packets through a topology, money through markets, energy through a grid, signals through a feedback loop, narratives spreading through groups.
+- **Computational / abstract**: a neural network's activations, a memory hierarchy, a cache eviction policy, a consensus protocol, anything with stateful nodes interacting.
+- **Domain-specific**: scientific simulations (cell biology, climate, fluid), engineering systems (traffic, logistics), social systems (voting, polarization, diffusion), economic systems (market microstructure, supply chains).
+
+If the user names something that *looks like a system with stateful parts that interact or change*, you dispatch this planner. The 4-paradigm research fleet decides downstream how to represent it — spatial map, 3D environment, iconographic anim, hybrid — based on the system's actual cognitive model. Don't pre-decide the representation from the trigger; that's the planner's job.
+
+### Do NOT do any of these:
+
+- ❌ "Should I scaffold a simulation for you?" → **No.** Yes. Dispatch.
+- ❌ "What paradigm do you want — 2D map, 3D environment, or iconographic?" → **No.** Research fleet decides; user can steer at the §12.5 interrupt.
+- ❌ "Let me first build out a PRD…" → **No.** Bare Intent mode bypasses onboarding.
+- ❌ Writing entity / loop / scene / overlay / runtime files directly → **No.** simulation-planner orchestrates the drawers.
+- ❌ Inlining `<canvas>` + raw simulation JS into a source page → **No.** That's the wrong family (visual-planner's `canvas-gen` skill is for AMBIENT decoration, not entity-state simulations).
+- ❌ **Going to Path B when the user said "app".** This is the bzzzzz bug. If the user typed "generate a web app to monitor X", the answer is Path A: scaffold the app first, then dispatch the planner for the slot. The simulation is NOT the app.
+- ❌ Dispatching the planner before any app shell exists in Path A. The planner expects a `sim-placeholder` slot in source/; without one, the runtime.html has nowhere to live and the user ends up with a standalone sim instead of an app — the exact bug we are fixing.
+
+### Decision rule:
+
+| User said… | Path | First move |
+|---|---|---|
+| "generate a **web app** to monitor X" | **A** | `/prototype` (with sim-placeholder slot) → then `Task(simulation-planner)` for the slot |
+| "build a **dashboard** that tracks Y" | **A** | `/prototype` → then `Task(simulation-planner)` per sim slot |
+| "build a **page / site / tool / system** that shows Z" | **A** | `/prototype` → then `Task(simulation-planner)` per sim slot |
+| "build a **prototype / monitor / viewer** for X" | **A** | `/prototype` → then `Task(simulation-planner)` per sim slot |
+| "model the warehouse for me" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
+| "simulate <real-world system>" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
+| "I want to SEE how <system> works" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
+| "show me where <Y> are right now" (no app framing) | **B** | `Task(simulation-planner, BARE-INTENT MODE)` directly |
+
+## Interactive pieces: scaffold-then-planner, same as simulation (v3.4 hard rule)
+
+When the user's message mentions a **distinct creative or playful interactive piece** — TouchDesigner-style, voice-reactive, camera-driven, music-visualising, generative shader they can poke, gestural canvas, anything where THE USER'S BODY/DEVICE becomes a creative material and the OUTPUT is real-time generative response — same two-path rule as simulation.
+
+### Path A — "build an app / page / site that has this interactive piece in it"
+
+The user wants the interactive piece embedded in an app. First scaffold the app via `/prototype` (or hand-write the HTML), writing a `<div class="im-placeholder" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" style="aspect-ratio: <W>/<H>"></div>` at the slot. Then dispatch `interactive-media-planner` per imId.
+
+### Path B — "make me JUST the interactive piece"
+
+The user wants the piece itself, no app shell. Dispatch `interactive-media-planner` in BARE-INTENT MODE directly. The piece IS the artefact.
+
+```
+# Path B example
+Task(subagent_type: "interactive-media-planner",
+     description: "Plan + build interactive piece",
+     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'voice-reactive generative shader'>. Run your Mode B intake — ask for the concrete successFeel + propose default inputs/outputs/mappingStyle via <decision-request>, synthesise an imId, run the 5-researcher fleet + synthesiser, scaffold the multi-trio, dispatch input/mapping/output drawers + runtime composer + lens trio + cross-drawer coherence review per playbook §5/§6. Permission gates surfaced to canvas BEFORE Run.")
+```
+
+### Disambiguation (same as simulation)
+
+App-framing words ("app", "page", "site", "dashboard") → Path A. Pure piece-framing ("make me a voice-reactive shader", "I want a TouchDesigner-style piece") → Path B. If ambiguous, default to Path A — easier to throw away than rebuild.
+
+### Do NOT do any of these:
+
+- ❌ "What inputs do you want — mic, camera, mouse?" → **No** to gate-keep. Yes to ASK after research synthesis when the planner emits its §12.5 interrupt with a proposed set. Don't substitute your judgement.
+- ❌ Calling `getUserMedia()` directly from chat-rendered HTML → **No.** Permission UX goes through the planner's two-gate pattern.
+- ❌ Writing a shader inline in chat → **Use shader skill for ad-hoc visualisation in chat (triple-backtick `shader` fenced block). Use interactive-media-planner when the user wants a PERSISTENT INTERACTIVE PIECE on the canvas they can interact with.**
+- ❌ Treating this as a visual-planner job → visual-planner is for IMAGES + DECORATIVE ambient motion. Interactive-media-planner is for surfaces the user DRIVES with their body/device.
+- ❌ Path B when the user said "app" → same bzzzzz bug, same fix: Path A.
+
+### Decision rule:
+
+| User said… | Path | First move |
+|---|---|---|
+| "build an **app / page / site** with a voice-reactive scene" | **A** | `/prototype` (im-placeholder slot) → `Task(interactive-media-planner)` |
+| "build an **interactive demo / installation / portfolio** featuring X" | **A** | `/prototype` (im-placeholder slot) → `Task(interactive-media-planner)` |
+| "TouchDesigner-style <X>" (no app framing) | **B** | `Task(interactive-media-planner, BARE-INTENT MODE)` |
+| "voice-reactive <X>" / "music-reactive <X>" / "camera-driven <X>" (no app framing) | **B** | `Task(interactive-media-planner, BARE-INTENT MODE)` |
+| "playful generative <X>" / "interactive piece where I <Y>" (no app framing) | **B** | `Task(interactive-media-planner, BARE-INTENT MODE)` |
+| "show me a chart of X" (ad-hoc, no interaction) | — | Render inline in chat (fenced block) — NOT a planner |
+
+### Distinguishing the four planners (v3.3):
+
+| User wants | Dispatch |
+|---|---|
+| An IMAGE / icon / illustration / decorative ambient motion | `visual-planner` |
+| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
+| A piece the user DRIVES with body/device for generative response | `interactive-media-planner` |
+| An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-planner` |
+
+A "warehouse dashboard" with a static stock chart → visual-planner (chart is an image).
+A "warehouse dashboard" where bins fill/empty over time → **simulation-planner**.
+A "voice-painter on the warehouse data" → **interactive-media-planner**.
+A "memorial that the user walks into and feels held" → **narrative-experience-planner**.
+
+The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic — museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
+
+## Narrative experiences: scaffold-then-planner, same as simulation + interactive (v3.4 hard rule)
+
+When the user wants to make a piece where someone **walks into a place and leaves changed** — a museum microsite that lives, an exhibition extension that breathes, a memorial that holds, a character portrait at depth, an editorial scrollytelling piece that earns its long-form, a walkable 3D reconstruction of a room/garden/studio — same two-path rule as simulation + interactive.
+
+### Path A — "build an app / site / page that contains this immersive piece"
+
+The user wants the experience embedded in a larger app or site. First scaffold via `/prototype` (or hand-write the HTML), writing a `<div class="nx-placeholder" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" style="aspect-ratio: <W>/<H>"></div>` at the slot. Then dispatch `narrative-experience-planner` per nxId. The runtime embeds at the placeholder.
+
+(Note: `nx-placeholder` is the convention parallel to `sim-placeholder` and `im-placeholder`. The `bp_proto_build` scaffolder already understands the `narratives/{nxId}/` output path per the registry.)
+
+### Path B — "the piece IS the artefact, no surrounding app"
+
+Most narrative pieces are this — a museum microsite where the experience IS the site, a memorial that fills the viewport, a scrollytelling piece that is the whole page. Dispatch `narrative-experience-planner` in BARE-INTENT MODE directly. The runtime IS the artefact.
+
+### Disambiguation
+
+For narrative the default leans Path B — most museum microsites / memorials / scrollytelling pieces are the artefact themselves. Path A only when the user clearly wants the experience inside something larger (a museum's main site WITH a microsite section, an exhibition program WITH an embedded piece). When ambiguous → Path B for narrative (the opposite default vs. simulation + interactive, because narrative pieces are usually whole-page).
+
+Trigger phrases include: "inside the studio", "walk into the painting", "sit inside the room", "let me feel the world of X", "the world breathing through the window", "memorial visualisation", "emotional portrait at depth", "museum microsite that lives", "walkable 3D space", "explore the room freely", "first-person walkthrough of <place>", "wander the garden", "architectural reconstruction the user can move through", "free-roam exhibition", "scrollytelling", "snow-fall-style piece", "the piece holds the user", "they leave changed".
+
+The planner picks one of four paradigms (mirrors simulation's structure): `2d-illustrative` (scrollytelling), `3d-environment` (anywhere from a scripted flythrough to a fully walkable room — same paradigm covers all; the degree of inhabitation is decided downstream by the scene drawer's multi-draft + the user's pick), `iconographic-anim` (a held sequence of tableaux), or `hybrid`. The user asking for "walk through Vermeer's studio" and the user asking for "scroll through Vermeer's studio" both land here — the research fleet decides which vessel the felt-experience inhabits.
+
+**The script is the heart, even in walkable pieces.** A fully free-roam room still has authored light, authored sound-anchors, authored artifacts placed where the curator chose them. Freedom of movement is breathing room WITHIN the dramaturgy, not the absence of authorship. If the user describes "let them just explore" without any sense of the felt-state they should land in, push back via decision-request asking what the user should FEEL after 60 seconds inside — that prose is what concept-lens scores against.
+
+**Collaborates with `visual-planner`** for every raster image the piece relies on — painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-planner in Bare Intent mode for each asset; the brief's styleCue propagates so every plate reads as the same piece.
+
+```
+Task(subagent_type: "narrative-experience-planner",
+     description: "Plan + build immersive narrative experience",
+     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'walk into Vermeer's studio at depth, the light shifts as the user lingers'>. Run your Mode B intake — ask for a concrete felt-state successFeel via <decision-request> (NOT 'the user understands X' — needs to be a feeling: 'the room remembers them', 'they leave changed', etc.), synthesise an nxId, run the 5-researcher fleet + synthesiser, scaffold the multi-trio in workflow/workflow.json, dispatch the 7 component drawers (spine/scene/camera/ambient/reveal/overlay/runtime) + 3-lens trio per iteration, multi-draft at scene + camera + ambient + runtime cruxes via iterator-remix, run §8.5 cross-drawer coherence before final container commit.")
+```
+
+### Do NOT do any of these:
+
+- ❌ "Let me first generate the hero image…" → **No.** The narrative planner DOES need visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative planner first — its scene + overlay drawers will call visual-planner for raster assets in-flight, with the brief's styleCue propagated so every plate reads as the same piece.
+- ❌ Treating this as simulation-planner because it has a 3D scene → **No.** Simulation gives the user UNDERSTANDING of a system (warehouse, garden, traffic — functional, readable, deterministic). Narrative gives the user PRESENCE in a place (Vermeer's studio, a memorial garden, a room of memory — dramaturgical, emotional, authored).
+- ❌ Treating this as interactive-media-planner because it has interactivity → **No.** Interactive is TouchDesigner-style generative response — the body IS the creative material. Narrative's interactivity is the act of attention — it earns discovery, never becomes the piece. Reveals reward stillness, not speed. The CAMERA is the narrator; the user is the witness who chooses how long to stay.
+- ❌ Accepting "the user understands Vermeer better" as a successFeel → **No.** Concept-lens needs felt-state ("they leave quieter", "the room holds them for 90 seconds", "the painting kept looking back"). Informational outcomes are not the target. Push back via decision-request.
+- ❌ Building a static page mockup with `html-page` skill → **No.** That's a snapshot. The narrative planner produces a runnable composed piece with authored progression — scripted in its bones, even where the user moves freely.
+- ❌ Letting the scene drawer generate raster imagery itself → **No.** It dispatches visual-planner per asset. Same for the overlay drawer with vector marks. Cross-asset coherence depends on this single style channel.
+
+### Decision rule:
+
+| User said… | Your first move |
+|---|---|
+| "let me walk INTO <thing>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "sit inside <place>" / "feel the world of <X>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "museum microsite that doesn't feel like a brochure" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "memorial / portrait / character at depth" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "exhibition extension that lives" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "scrollytelling / immersive narrative" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "snow fall / NYT-magazine-style article" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "walkable 3D <place>" / "explore <space> freely" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "first-person walkthrough of <place>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "architectural reconstruction the user moves through" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "WebGL space the user can wander" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+
+### Distinguishing from siblings (v3.3 — four-way):
+
+| User wants | Dispatch |
+|---|---|
+| An IMAGE / icon / illustration / decorative ambient motion | `visual-planner` |
+| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
+| A piece the user DRIVES with body/device for generative response (input → mapping → output) | `interactive-media-planner` |
+| An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-planner` |
+
+A "warehouse dashboard" with a static stock chart → visual-planner.
+A "warehouse dashboard" where bins fill/empty over time → simulation-planner.
+A "voice-painter on the warehouse data" → interactive-media-planner.
+A "memorial the user walks into and feels held" → **narrative-experience-planner**.
+A "walkable 3D reconstruction of a Vermeer studio" → **narrative-experience-planner** (the walkability serves felt-presence, not a generative input→output mapping).
+A "scrollytelling article about Vermeer" → **narrative-experience-planner** (2.5D end of the same spectrum).
+
+### When TWO planners feel plausible:
+
+- **Walkable 3D where the player has goals / gameplay** → not yet covered; this family will need a `game-experience-planner` someday. For now, narrative-experience can stretch if the goals are exploratory (look at all 5 paintings) but not if they're competitive (beat the level).
+- **Walkable 3D where the user's body movement DRIVES generative output** (e.g., walking faster makes the room more abstract) → that's `interactive-media-planner`'s lane: input → mapping → output. Narrative-experience's interactivity is gentle progressive reveal, never input-as-creative-material.
+- **Immersive 3D system simulation** (e.g., a "walkable" warehouse where you're inside watching pickers move) → if the goal is to UNDERSTAND the system, `simulation-planner` with a 3D scene-builder. If the goal is to FEEL the place's atmosphere/history, `narrative-experience-planner`.
+
 Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying the app can't do something."""
+
+    # Strip hard-rule blocks for disabled planners (no-op when enabled_planners
+    # is None — see the import-failure fallback above).
+    if enabled_planners is not None:
+        _preamble = _strip_disabled_planner_blocks(_preamble, enabled_planners)
+    return _preamble

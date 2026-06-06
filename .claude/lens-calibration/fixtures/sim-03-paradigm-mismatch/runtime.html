@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>sim-03 — CONCEPT-FAIL (paradigm mismatch) fixture</title>
+<style>body,html{margin:0;height:100%;background:#1a1a1f;color:#ccc;font-family:system-ui;overflow:hidden}canvas{display:block}</style></head>
+<body><canvas id="scene3d" width="720" height="540"></canvas>
+<script type="module">
+// ─── BAD PATTERN — PRD declared paradigm="2d-spatial-map" but runtime ────
+// renders a 3D environment instead. concept-lens §4 (simulation rubric)
+// must catch this: "paradigmFit" check fails as block-severity.
+//
+// Craft is fine (deterministic three.js scene). Aesthetic — the scene is
+// well-rendered, but the paradigm contradiction makes it irrelevant.
+// The concept lens is the load-bearing one here.
+
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
+
+const canvas = document.getElementById('scene3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth/canvas.clientHeight, 0.1, 100);
+camera.position.set(0, 2, 5);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const light = new THREE.DirectionalLight(0xffffff, 1); light.position.set(2,4,3); scene.add(light);
+
+// ❌ FAILURE: rendering bins as floating 3D cubes when PRD said top-down 2d-spatial-map.
+const count = 80;
+const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+const mat = new THREE.MeshStandardMaterial({ color: 0x4a5a78 });
+const mesh = new THREE.InstancedMesh(geo, mat, count);
+const dummy = new THREE.Object3D();
+for (let i = 0; i < count; i++) {
+  dummy.position.set((Math.random()-0.5)*4, Math.random()*1.5, (Math.random()-0.5)*4);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(i, dummy.matrix);
+}
+mesh.instanceMatrix.needsUpdate = true;
+scene.add(mesh);
+
+// Deterministic fixed-step driver (good craft)
+const TICK_HZ = 30, DT = 1/TICK_HZ;
+const state = { t: 0, entities: {} };
+for (let i = 0; i < count; i++) state.entities['bin-'+i] = { id: 'bin-'+i, kind: 'bin' };
+
+function tick(state, dt) { state.t += dt; }
+let acc = 0, last = 0, tickCount = 0, fpsAvg = 0, fpsFrames = 0, fpsT0 = 0;
+function frame(wallNow) {
+  acc += (wallNow-last)/1000; last = wallNow;
+  if (acc > 0.25) acc = 0.25;
+  while (acc >= DT) { tick(state, DT); acc -= DT; tickCount++; }
+  scene.rotation.y += 0.001; renderer.render(scene, camera);
+  fpsFrames++;
+  if (wallNow - fpsT0 > 1000) { fpsAvg = fpsFrames*1000/(wallNow-fpsT0); fpsFrames = 0; fpsT0 = wallNow; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(t => { last = t; fpsT0 = t; requestAnimationFrame(frame); });
+
+window.__sim = { state, loop: { get tickCount(){return tickCount}, fps: { get avg(){return fpsAvg} } },
+  fps: { get avg(){return fpsAvg}, max: 0 }, injectFakeInput(){}, devtools: { pause(){}, play(){}, step(){} } };
+</script></body></html>

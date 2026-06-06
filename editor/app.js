@@ -6757,6 +6757,27 @@ function composeModeAwarePrompt(mode, userText) {
       "The user is looking at the workflow node canvas — a ComfyUI-style graph that connects prompt → skill → asset nodes to generate ideas and visual content. Bias your responses toward: node graph operations (add / remove / wire nodes), prompt engineering for visual generation, evaluating + remixing asset outputs, dispatching skills (generate-image, svg-gen, shader, threejs, rembg, etc.).",
       "Editor data (frames, IA, user flow, entities) is secondary context — only touch editor/data.js or source/ files if the user explicitly asks.",
       "",
+      "[Planner family — v3.4 split]",
+      "When the user asks for a SIMULATION (any system with entities + state + change — warehouse, traffic, populations, agent systems, network flow, etc.), an INTERACTIVE PIECE (TouchDesigner-style — body/mic/camera/midi mapped to generative output), or a NARRATIVE EXPERIENCE (walk-into-this-place piece — museum microsite, memorial, character portrait, scrollytelling), you may dispatch the matching planner subagent via the Task tool:",
+      "  • simulation-planner       — for simulation surfaces",
+      "  • interactive-media-planner — for interactive pieces",
+      "  • narrative-experience-planner — for narrative experiences",
+      "",
+      "These planners do RESEARCH + SCAFFOLD ONLY. They run the research fleet, emit the user-steerage decision-request, scaffold the multi-trio node graph (research/component drawers/container) into workflow/workflow.json with per-drawer envelopes baked into each node's `text` field, then return a hand-off envelope and stop. They DO NOT dispatch the drawers, run lens trios, or commit the container — that is the BUILD PHASE.",
+      "",
+      "YOU drive the build phase from this thread, because this thread already has the user's permissions. The build phase loops over each scaffolded drawer in dependency order (curl POST /__workflow/node/<id>/run), runs the §8.3 loop-until-bar lens trio per lens-gated component (craft / aesthetic / concept lenses dispatched as workflow nodes per iteration; cap 5 outer iterations; ≥2/3 pass advances), runs §8.7 multi-draft cruxes at the planner-declared crux drawers via `iterator-remix` + `cp_*_pick_*` checkpoints, runs the §8.5 cross-drawer coherence review (interactive + narrative only), and commits the container with `outputs.lensVerdict: \"pass\"` only when every lens-gated drawer has passed.",
+      "",
+      "The full build-phase harness pseudocode lives in editor/prompts/node_agent_preambles.py — the bp_simulation_build / bp_interactive_build / bp_narrative_build preambles. Read whichever matches the family before driving the build; the planner's hand-off envelope tells you which one.",
+      "",
+      "Reason for the split: subagent permission gates compound. If a planner subagent tries to drive the build, every Bash/curl/Write call re-gates and the build stalls mid-session against an approval wall — the bug that surfaced in hubu and earlier sessions. Keep the planner's scope to research + scaffold; keep the build in this thread.",
+      "",
+      "[How to brief a planner — read carefully]",
+      "When you write the prompt body for a planner Task call, brief the WHAT, not the HOW. Give the planner: the user's intent, the resolved decisions (successFeel, granularity, etc.), the simId/imId/nxId you've synthesised, any locked constraints (geography, register), and the style cue. Then STOP. Do NOT tell the planner which tool to use for its own research dispatches, do NOT tell it to avoid the daemon, and do NOT tell it to fall back to direct Write if daemon is unreachable.",
+      "",
+      "Why this matters: the planner runs as a subagent. The `Task` tool is NOT available inside subagents — Claude Code restricts Task to the top-level session, which is YOU. If you write 'dispatch the researchers via the Task tool' in the planner's prompt, the planner will try it and immediately hit `Error: No such tool available: Task. Task is not available inside subagents.` The planner's playbook already knows the right mechanism — POST /__workflow/node/<id>/run against the local daemon at $TH_DAEMON_URL, which spawns each research subagent as its own canvas node. The daemon IS reachable from inside subagents; the previous permission-wall bug was about CASCADING approval prompts during the build phase (drawer dispatch + lens trios), not about daemon access being blocked outright. Don't write defensive 'avoid daemon, use Write' instructions — they actively break the planner.",
+      "",
+      "If a planner returns an error like 'No such tool available: Task' or 'Task is not available inside subagents', it's because your prompt to it included a 'use Task' instruction. Re-dispatch the planner with a clean prompt that doesn't name dispatch tools.",
+      "",
       text,
     ].join("\n");
   }
@@ -12728,6 +12749,658 @@ function ModelInstallDialog({ onClose, onRefresh }) {
    with no ?project= in the URL. Card grid scales to N projects; click a
    card to enter the project (URL gets ?project=<id>), hover for rename/
    delete actions, big "+ New project" tile at the end. */
+// ─── SystemLanding ────────────────────────────────────────────────────────
+// v3.3 — System reference surface. Sidebar nav with 4 sections:
+//   1. Planners      — the new toggleable orchestrator registry
+//   2. Skills        — the 14 generator skills (Pathway A vendor API or B Claude-writes)
+//   3. Subagents     — every .claude/agents/*.md, grouped by family
+//   4. Node kinds    — registry.py KINDS, grouped by category
+//
+// Each subview renders differently. Skills + Subagents + Node kinds are
+// read-only reference; Planners has its toggle. State lives here; sidebar
+// items show counts so the user knows the size of each surface before clicking.
+function SystemLanding() {
+  const [activeSection, setActiveSection] = useState("planners");
+
+  // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
+  const [caps, setCaps]         = useState(null);
+  const [plannersData, setPlannersData] = useState(null);
+  useEffect(() => {
+    fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
+    fetch(apiUrl("/__planners")).then(r => r.ok ? r.json() : null).then(setPlannersData).catch(() => {});
+  }, []);
+  const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+
+  const sections = [
+    { id: "planners",   label: "Planners",   count: plannersData ? plannersData.count : 3,
+      hint: "Orchestrators that dispatch families of subagents" },
+    { id: "skills",     label: "Skills",     count: skills.length,
+      hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
+    { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 48,
+      hint: "Every .claude/agents/*.md — drawers, lenses, planners, cross-cutting" },
+    { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
+      hint: "Canvas node types — what each does + how to use it" },
+  ];
+
+  return html`
+    <div className="system-landing">
+      <nav className="system-sidebar" aria-label="System sections">
+        <div className="system-sidebar-header">System reference</div>
+        <div className="system-sidebar-subhead">What this app can do, what's available to dispatch, and what each piece is for.</div>
+        ${sections.map(s => html`
+          <button
+            key=${s.id}
+            className=${"system-nav-item" + (activeSection === s.id ? " is-active" : "")}
+            onClick=${() => setActiveSection(s.id)}
+            aria-pressed=${activeSection === s.id}
+            title=${s.hint}
+          >
+            <span className="system-nav-label">${s.label}</span>
+            <span className="system-nav-count">${s.count}</span>
+            <span className="system-nav-hint">${s.hint}</span>
+          </button>
+        `)}
+      </nav>
+      <div className="system-content">
+        ${activeSection === "planners"   && html`<${PlannersLanding} scopeLabel="workspace"/>`}
+        ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
+        ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
+        ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
+      </div>
+    </div>
+  `;
+}
+
+
+// ─── SkillsLanding ────────────────────────────────────────────────────────
+// v3.3 — Skills inventory. Pulls from window.TH_MEDIA.skills (the canonical
+// SKILLS array in editor/prompts/media-models.js). Grouped by pathway so the
+// user immediately sees the API-key-required ones vs the Claude-writes-file ones.
+function SkillsLanding() {
+  const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+  const imageModels = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
+  const textModels  = (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
+  const videoModels = (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
+  const allModels = [...imageModels, ...textModels, ...videoModels];
+
+  const [expanded, setExpanded] = useState({});
+  const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
+
+  // Group by pathway
+  const groups = {
+    "A": { label: "Pathway A — vendor API call", desc: "Daemon POSTs to a provider (OpenAI / fal.ai / Anthropic / etc.) and receives bytes back. Requires the provider's API key in Settings.", items: [] },
+    "B": { label: "Pathway B — Claude writes the file", desc: "Spawns a Claude Code subprocess with a curated system prompt. The agent writes one self-contained file (HTML / SVG / JSON) per Run. No external API key beyond Claude.", items: [] },
+    "Local": { label: "Pathway Local — local binary", desc: "Runs a Python package installed via pip (e.g. rembg) on the daemon machine. No network call, no API key.", items: [] },
+  };
+  for (const sk of skills) {
+    const p = sk.pathway || "B";
+    if (groups[p]) groups[p].items.push(sk);
+  }
+
+  return html`
+    <div className="ref-root">
+      <div className="ref-header">
+        <div className="ref-header-title">${skills.length} skills available</div>
+        <div className="ref-header-meta">A skill is a unit of generation. A Skill node on the canvas wires a Prompt node's output into a chosen skill, runs it, and writes the result to the wired Asset node.</div>
+      </div>
+
+      ${Object.entries(groups).map(([key, g]) => g.items.length === 0 ? null : html`
+        <div key=${key} className="ref-group">
+          <div className="ref-group-head">
+            <div className="ref-group-title">${g.label} <span className="ref-group-count">${g.items.length}</span></div>
+            <div className="ref-group-desc">${g.desc}</div>
+          </div>
+          <div className="ref-grid">
+            ${g.items.map(sk => html`
+              <div key=${sk.id} className="skill-card" data-pathway=${sk.pathway}>
+                <div className="skill-card-head">
+                  <span className="skill-glyph">${sk.glyph}</span>
+                  <div className="skill-card-head-text">
+                    <div className="skill-card-name">
+                      <span className="skill-label">${sk.label}</span>
+                      <code className="skill-id">${sk.id}</code>
+                    </div>
+                    <div className="skill-card-hint">${sk.hint}</div>
+                  </div>
+                  <span className=${"skill-pathway skill-pathway-" + sk.pathway}>${sk.pathway}</span>
+                </div>
+
+                <div className="skill-section">
+                  <div className="skill-row">
+                    <span className="skill-row-label">Inputs</span>
+                    <div className="skill-chip-row">
+                      ${(sk.inputs || []).map(i => html`<code key=${i} className="skill-chip skill-chip-input">${i}</code>`)}
+                    </div>
+                  </div>
+                  <div className="skill-row">
+                    <span className="skill-row-label">Output</span>
+                    <code className=${"skill-chip skill-chip-output skill-chip-output-" + sk.output}>${sk.output}</code>
+                  </div>
+                  ${sk.hasAspect && html`
+                    <div className="skill-row">
+                      <span className="skill-row-label">Aspect</span>
+                      <span className="skill-row-value">configurable per Run</span>
+                    </div>
+                  `}
+                  ${sk.defaultModel && html`
+                    <div className="skill-row">
+                      <span className="skill-row-label">Default model</span>
+                      <code className="skill-chip skill-chip-model">${sk.defaultModel}</code>
+                      ${(() => {
+                        const m = allModels.find(mm => mm.id === sk.defaultModel);
+                        return m ? html`<span className="skill-row-value-meta">${m.label} · ${m.provider}</span>` : null;
+                      })()}
+                    </div>
+                  `}
+                  ${sk.pathwayBExt && html`
+                    <div className="skill-row">
+                      <span className="skill-row-label">Output file</span>
+                      <code className="skill-chip skill-chip-ext">.${sk.pathwayBExt}</code>
+                    </div>
+                  `}
+                </div>
+
+                ${sk.pathwayBSystem && html`
+                  <div className="skill-section">
+                    <button
+                      className="skill-expand-btn"
+                      onClick=${() => toggle(sk.id)}
+                      aria-expanded=${expanded[sk.id] ? "true" : "false"}
+                    >
+                      ${expanded[sk.id] ? "▼" : "▶"} System prompt (${sk.pathwayBSystem.length} chars)
+                    </button>
+                    ${expanded[sk.id] && html`
+                      <pre className="skill-system-prompt">${sk.pathwayBSystem}</pre>
+                    `}
+                  </div>
+                `}
+
+                <div className="skill-section skill-howto">
+                  <div className="skill-howto-label">How to use</div>
+                  <div className="skill-howto-body">
+                    Drop a Skill node on the canvas, set its <code>skill</code> to <code>${sk.id}</code>, wire a Prompt
+                    node into <code>.in</code>, wire <code>.out</code> to an Asset node. Click Run.
+                    ${sk.pathway === "A" && " The daemon posts to the provider; ensure the API key is set in Settings."}
+                    ${sk.pathway === "B" && " A Claude Code subprocess will spawn with the system prompt above; visible in the run panel."}
+                    ${sk.pathway === "Local" && " The daemon runs the local binary; no API key needed but the package must be pip-installed."}
+                  </div>
+                </div>
+              </div>
+            `)}
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+
+// ─── SubagentsLanding ─────────────────────────────────────────────────────
+// v3.3 — Subagents inventory. Read from /__capabilities (which scans
+// .claude/agents/*.md frontmatter). Grouped by family for navigation —
+// planners / lenses / visual drawers / simulation / interactive / other —
+// since the flat 48-item list is hard to scan.
+function SubagentsLanding({ caps }) {
+  const agents = (caps && caps.subagents) || [];
+  const [openId, setOpenId] = useState(null);
+  const [familyFilter, setFamilyFilter] = useState("all");
+
+  const families = {
+    planners:   { label: "Planners",          glyph: "⊕", agents: [] },
+    lenses:     { label: "Quality lenses",    glyph: "◎", agents: [] },
+    visual:     { label: "Visual drawers",    glyph: "◇", agents: [] },
+    simulation: { label: "Simulation family", glyph: "▦", agents: [] },
+    interactive:{ label: "Interactive family",glyph: "✦", agents: [] },
+    other:      { label: "Cross-cutting",     glyph: "·", agents: [] },
+  };
+  const VISUAL_NAMES = new Set(["raster-foreground","raster-photo","vector-icon","vector-mark","shader","particle-2d","particle-gl","lottie","3d","video"]);
+  const PLANNER_NAMES = new Set(["visual-planner","simulation-planner","interactive-media-planner"]);
+  for (const a of agents) {
+    const n = a.name || "";
+    let key = "other";
+    if (PLANNER_NAMES.has(n)) key = "planners";
+    else if (n.endsWith("-lens") || n.includes("lens")) key = "lenses";
+    else if (n.startsWith("sim-")) key = "simulation";
+    else if (n.startsWith("im-"))  key = "interactive";
+    else if (VISUAL_NAMES.has(n))  key = "visual";
+    families[key].agents.push(a);
+  }
+
+  const visibleFamilies = familyFilter === "all"
+    ? Object.entries(families)
+    : Object.entries(families).filter(([k]) => k === familyFilter);
+
+  return html`
+    <div className="ref-root">
+      <div className="ref-header">
+        <div className="ref-header-title">${agents.length} subagents available</div>
+        <div className="ref-header-meta">Each subagent is a cold-isolated Claude session with a focused playbook. The orchestrator (or another agent) dispatches one via the Task tool with <code>subagent_type: "&lt;name&gt;"</code>.</div>
+      </div>
+
+      <div className="ref-filter-row">
+        <button className=${"ref-filter-chip" + (familyFilter === "all" ? " is-active" : "")} onClick=${() => setFamilyFilter("all")}>All <span className="ref-filter-count">${agents.length}</span></button>
+        ${Object.entries(families).filter(([_, f]) => f.agents.length > 0).map(([k, f]) => html`
+          <button key=${k} className=${"ref-filter-chip" + (familyFilter === k ? " is-active" : "")} onClick=${() => setFamilyFilter(k)}>
+            ${f.label} <span className="ref-filter-count">${f.agents.length}</span>
+          </button>
+        `)}
+      </div>
+
+      ${visibleFamilies.map(([k, f]) => f.agents.length === 0 ? null : html`
+        <div key=${k} className="ref-group">
+          <div className="ref-group-head">
+            <div className="ref-group-title">${f.glyph} ${f.label} <span className="ref-group-count">${f.agents.length}</span></div>
+          </div>
+          <div className="subagent-list">
+            ${f.agents.map(a => html`
+              <div key=${a.name} className=${"subagent-card" + (openId === a.name ? " is-open" : "")}>
+                <button className="subagent-card-head" onClick=${() => setOpenId(p => p === a.name ? null : a.name)} aria-expanded=${openId === a.name}>
+                  <span className="subagent-name"><code>${a.name}</code></span>
+                  <span className="subagent-summary">${(a.description || "").slice(0, 120)}${(a.description || "").length > 120 ? "…" : ""}</span>
+                  <span className="subagent-toggle">${openId === a.name ? "▼" : "▶"}</span>
+                </button>
+                ${openId === a.name && html`
+                  <div className="subagent-card-body">
+                    <div className="subagent-section">
+                      <div className="subagent-section-title">Description</div>
+                      <div className="subagent-description">${a.description}</div>
+                    </div>
+                    ${a.tools && html`
+                      <div className="subagent-section">
+                        <div className="subagent-section-title">Tools available</div>
+                        <div className="ref-chip-row">
+                          ${a.tools.split(",").map(t => t.trim()).filter(Boolean).map(t => html`
+                            <code key=${t} className="ref-chip ref-chip-tool">${t}</code>
+                          `)}
+                        </div>
+                      </div>
+                    `}
+                    <div className="subagent-section">
+                      <div className="subagent-section-title">How to dispatch</div>
+                      <div className="subagent-howto">
+                        <pre className="subagent-codeblock">Task({
+  subagent_type: "${a.name}",
+  description:   "Brief one-liner shown in run panel",
+  prompt:        "Full envelope — see the playbook for shape"
+})</pre>
+                      </div>
+                    </div>
+                    ${a.file && html`
+                      <div className="subagent-section">
+                        <div className="subagent-section-title">Playbook</div>
+                        <code className="ref-chip ref-chip-path">${a.file}</code>
+                      </div>
+                    `}
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+
+// ─── NodeKindsLanding ─────────────────────────────────────────────────────
+// v3.3 — Node-kinds inventory. Fetches /__kinds/registry for the FULL
+// contracts (inputs/outputs/dispatch/fanOut/completion/notes), then groups
+// by category and renders an expandable detail block per kind.
+function NodeKindsLanding() {
+  const [registry, setRegistry] = useState(null);
+  const [openKind, setOpenKind] = useState(null);
+  useEffect(() => {
+    fetch(apiUrl("/__kinds/registry")).then(r => r.ok ? r.json() : null).then(setRegistry).catch(() => {});
+  }, []);
+
+  if (!registry) return html`<div className="ref-loading">Loading node kinds…</div>`;
+
+  const KINDS = registry.KINDS || {};
+  const entries = Object.entries(KINDS);
+
+  // Group by category
+  const groups = {
+    container:  { label: "Container",  desc: "Display surfaces — render their content but don't dispatch.", kinds: [] },
+    producer:   { label: "Producer",   desc: "Generate output by calling the daemon (skill) or spawning a Claude session (agent).", kinds: [] },
+    consumer:   { label: "Consumer",   desc: "Read from an upstream producer's outputsRoot and route every file per consumeFrom rules.", kinds: [] },
+    iterator:   { label: "Iterator",   desc: "Run N siblings in parallel (remix / repeater) OR loop two agents (refiner) OR blend N inputs into 1.", kinds: [] },
+    decoration: { label: "Decoration", desc: "Pure UI grouping; no behaviour. Manual only.", kinds: [] },
+  };
+  for (const [kind, c] of entries) {
+    const cat = c.category || "other";
+    if (groups[cat]) groups[cat].kinds.push([kind, c]);
+  }
+
+  return html`
+    <div className="ref-root">
+      <div className="ref-header">
+        <div className="ref-header-title">${entries.length} node kinds</div>
+        <div className="ref-header-meta">Every node on the workflow canvas has a kind — its contract for inputs / outputs / dispatch / completion. Drop kinds from the Library panel in workflow mode.</div>
+      </div>
+
+      ${Object.entries(groups).map(([catKey, g]) => g.kinds.length === 0 ? null : html`
+        <div key=${catKey} className="ref-group">
+          <div className="ref-group-head">
+            <div className="ref-group-title">${g.label} <span className="ref-group-count">${g.kinds.length}</span></div>
+            <div className="ref-group-desc">${g.desc}</div>
+          </div>
+          <div className="kind-list">
+            ${g.kinds.map(([kindName, c]) => html`
+              <div key=${kindName} className=${"kind-card" + (openKind === kindName ? " is-open" : "")}>
+                <button className="kind-card-head" onClick=${() => setOpenKind(p => p === kindName ? null : kindName)} aria-expanded=${openKind === kindName}>
+                  <code className="kind-name">${kindName}</code>
+                  <span className="kind-title">${c.title || kindName}</span>
+                  <span className=${"kind-dispatch kind-dispatch-" + (c.dispatch || "none").replace(/[^a-z]/gi, "-")}>${c.dispatch || "none"}</span>
+                  <span className="kind-toggle">${openKind === kindName ? "▼" : "▶"}</span>
+                </button>
+                ${openKind === kindName && html`
+                  <div className="kind-card-body">
+                    ${c.notes && html`
+                      <div className="kind-section">
+                        <div className="kind-section-title">What it does</div>
+                        <div className="kind-notes">${c.notes}</div>
+                      </div>
+                    `}
+                    ${c.inputs && Object.keys(c.inputs).length > 0 && html`
+                      <div className="kind-section">
+                        <div className="kind-section-title">Inputs</div>
+                        <div className="kind-fields">
+                          ${Object.entries(c.inputs).map(([k, spec]) => html`
+                            <div key=${k} className="kind-field">
+                              <code className="kind-field-name">${k}</code>
+                              <code className=${"kind-field-type kind-field-type-" + (spec.type || "any")}>${spec.type || "any"}</code>
+                              ${spec.required && html`<span className="kind-field-required">required</span>`}
+                              ${spec.userEditable === false && html`<span className="kind-field-locked">system-set</span>`}
+                              ${spec.label && html`<span className="kind-field-label">${spec.label}</span>`}
+                              ${spec.doc && html`<div className="kind-field-doc">${spec.doc}</div>`}
+                            </div>
+                          `)}
+                        </div>
+                      </div>
+                    `}
+                    ${c.outputs && Object.keys(c.outputs).length > 0 && html`
+                      <div className="kind-section">
+                        <div className="kind-section-title">Outputs</div>
+                        <div className="kind-fields">
+                          ${Object.entries(c.outputs).map(([k, spec]) => html`
+                            <div key=${k} className="kind-field">
+                              <code className="kind-field-name">${k}</code>
+                              <code className=${"kind-field-type kind-field-type-" + (spec.type || "any")}>${spec.type || "any"}</code>
+                              ${spec.required && html`<span className="kind-field-required">required</span>`}
+                              ${spec.doc && html`<div className="kind-field-doc">${spec.doc}</div>`}
+                            </div>
+                          `)}
+                        </div>
+                      </div>
+                    `}
+                    ${c.outputsRoot && html`
+                      <div className="kind-section kind-section-row">
+                        <div className="kind-section-title">outputsRoot</div>
+                        <code className="ref-chip ref-chip-path">${c.outputsRoot}</code>
+                      </div>
+                    `}
+                    ${c.fanOut && html`
+                      <div className="kind-section">
+                        <div className="kind-section-title">Fan-out</div>
+                        <div className="kind-fanout">
+                          <div><strong>kind:</strong> ${c.fanOut.kind} · <strong>isolation:</strong> ${c.fanOut.isolation} · <strong>parallelism:</strong> ${c.fanOut.parallelism}</div>
+                          <div><strong>count:</strong> <code>${c.fanOut.count}</code> · <strong>diverger:</strong> <code>${c.fanOut.diverger}</code></div>
+                        </div>
+                      </div>
+                    `}
+                    ${c.completion && Array.isArray(c.completion.requires) && c.completion.requires.length > 0 && html`
+                      <div className="kind-section">
+                        <div className="kind-section-title">Completion (required for status:done)</div>
+                        <ul className="kind-completion-list">
+                          ${c.completion.requires.map((req, i) => html`<li key=${i}><code>${req}</code></li>`)}
+                        </ul>
+                      </div>
+                    `}
+                    <div className="kind-section kind-howto">
+                      <div className="kind-section-title">How to use</div>
+                      <div className="kind-howto-body">
+                        ${c.dispatch === "none" && html`<span>User-driven. Drop on canvas, edit inline. No Run button or it's user-triggered (e.g. ▶ Run on a prototype reloads the iframe).</span>`}
+                        ${c.dispatch === "inline-server-call" && html`<span>Click ▶ Run on the node and the daemon makes a synchronous call. Result lands in the node's output. Use for cheap text ops.</span>`}
+                        ${c.dispatch === "single-subprocess" && html`<span>Click ▶ Run on the node — a Claude Code subprocess spawns with the per-id preamble. Visible in the run panel; click ⏹ to stop.</span>`}
+                        ${c.dispatch === "task-subagents" && html`<span>Click ▶ Run on the node — N cold-isolated Task subagents fan out in parallel. Each writes to its own variant folder; downstream consumer routes files per consumeFrom rules.</span>`}
+                        ${c.dispatch === "client-iterator" && html`<span>Browser-side loop. Hits the daemon for child agent dispatches; runs until a [STOP] sentinel or maxTurns.</span>`}
+                      </div>
+                    </div>
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+
+// ─── PlannersLanding ──────────────────────────────────────────────────────
+// v3.3 — Planner registry surface. Fetches `/__planners` (which aggregates
+// `.claude/agents/*.manifest.json` + the project's disable state), renders one
+// card per planner with description / triggers / dispatches / skills /
+// node-kinds, and a toggle that POSTs `/__planners/disable` to persist.
+//
+// Adding a new planner is a single-file operation: drop a manifest next to
+// the playbook and this view picks it up — no UI code change needed.
+function PlannersLanding({ scopeLabel }) {
+  const [data, setData] = useState(null);
+  const [err, setErr]   = useState(null);
+  const [busy, setBusy] = useState(null);
+
+  const load = async () => {
+    setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__planners"));
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setData(j);
+    } catch (e) {
+      setErr(e.message || String(e));
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggle = async (plannerId, enabled) => {
+    setBusy(plannerId);
+    try {
+      const r = await fetch(apiUrl("/__planners/disable"), {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ plannerId, enabled }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      await load();
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (err)  return html`<div className="planners-error">Failed to load planners: ${err}</div>`;
+  if (!data) return html`<div className="planners-loading">Loading planners…</div>`;
+
+  return html`
+    <div className="planners-root">
+      <div className="planners-header">
+        <div className="planners-header-title">${data.count} planner${data.count === 1 ? "" : "s"} available</div>
+        <div className="planners-header-meta">
+          <span className="planners-scope">scope: ${scopeLabel || "workspace"}</span>
+          ${data.disabledIds && data.disabledIds.length > 0 && html`
+            <span className="planners-disabled-summary">
+              ${data.disabledIds.length} disabled
+            </span>
+          `}
+        </div>
+      </div>
+      <div className="planners-info">
+        Planners are the high-level orchestrators that dispatch families of subagents to produce
+        complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from
+        its <code>.claude/agents/&lt;name&gt;.manifest.json</code>. Disabling a planner removes its
+        hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} —
+        the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.
+      </div>
+      <div className="planners-grid">
+        ${data.planners.map(p => html`
+          <${PlannerCard}
+            key=${p.id}
+            planner=${p}
+            busy=${busy === p.id}
+            onToggle=${() => toggle(p.id, !p.enabled)}
+          />
+        `)}
+      </div>
+      ${data.planners.length === 0 && html`
+        <div className="planners-empty">
+          No planner manifests found under <code>.claude/agents/*.manifest.json</code>.
+          Drop a manifest there next to a planner's playbook to register it.
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function PlannerCard({ planner, busy, onToggle }) {
+  const p = planner;
+  const d = p.dispatches || {};
+  // Flatten dispatched subagent groups for a single count + glance grouping.
+  const dispatchGroups = [];
+  for (const [key, label] of [["research", "Research drawers"],
+                                ["components", "Component drawers"],
+                                ["drawers", "Per-medium drawers"],
+                                ["lenses", "Quality lenses"],
+                                ["collaborators", "Collaborates with"]]) {
+    const arr = d[key];
+    if (Array.isArray(arr) && arr.length > 0) dispatchGroups.push({ key, label, items: arr });
+  }
+  const totalDispatched = dispatchGroups.reduce((acc, g) => acc + g.items.length, 0);
+
+  const nodeKinds      = p.nodeKinds || {};
+  const containerKinds = nodeKinds.container || [];
+  const agentOverrides = nodeKinds.agent_overrides || [];
+  const trios          = nodeKinds.trios_scaffolded || [];
+
+  return html`
+    <div
+      className=${"planner-card" + (p.enabled ? "" : " is-disabled")}
+      data-planner-id=${p.id}
+      data-enabled=${p.enabled ? "true" : "false"}
+    >
+      <div className="planner-card-head">
+        <div className="planner-card-head-text">
+          <div className="planner-card-name">
+            <span className="planner-card-label">${p.label}</span>
+            <code className="planner-card-id">${p.id}</code>
+            <span className="planner-card-version">${p.version || ""}</span>
+          </div>
+          <div className="planner-card-tagline">${p.tagline}</div>
+        </div>
+        <button
+          className=${"planner-toggle" + (busy ? " is-busy" : "")}
+          data-enabled=${p.enabled ? "true" : "false"}
+          disabled=${busy}
+          onClick=${onToggle}
+          title=${p.enabled
+            ? "Disable this planner — its dispatch hard-rule will be removed from the spawn preamble"
+            : "Enable this planner — restore its dispatch hard-rule in the spawn preamble"}
+        >
+          <span className="planner-toggle-track"><span className="planner-toggle-knob"/></span>
+          <span className="planner-toggle-label">${p.enabled ? "ON" : "OFF"}</span>
+        </button>
+      </div>
+
+      <div className="planner-card-description">${p.description}</div>
+
+      ${Array.isArray(p.triggers) && p.triggers.length > 0 && html`
+        <div className="planner-section">
+          <div className="planner-section-title">Triggers (${p.triggers.length})</div>
+          <ul className="planner-trigger-list">
+            ${p.triggers.map((t, i) => html`
+              <li key=${i} className="planner-trigger">
+                <span className=${"planner-trigger-mode planner-trigger-mode-" + (t.mode || "other")}>${t.mode || "other"}</span>
+                <span className="planner-trigger-title">${t.title}</span>
+                <div className="planner-trigger-rule">${t.rule}</div>
+                ${t.ruleSource && html`<div className="planner-trigger-source">↳ ${t.ruleSource}</div>`}
+              </li>
+            `)}
+          </ul>
+        </div>
+      `}
+
+      ${dispatchGroups.length > 0 && html`
+        <div className="planner-section">
+          <div className="planner-section-title">Subagents (${totalDispatched})</div>
+          ${dispatchGroups.map(g => html`
+            <div key=${g.key} className="planner-dispatch-group">
+              <div className="planner-dispatch-group-title">${g.label} <span className="planner-dispatch-count">${g.items.length}</span></div>
+              <div className="planner-chip-row">
+                ${g.items.map(name => html`<code key=${name} className="planner-chip planner-chip-agent">${name}</code>`)}
+              </div>
+            </div>
+          `)}
+        </div>
+      `}
+
+      ${Array.isArray(p.skills) && p.skills.length > 0 && html`
+        <div className="planner-section">
+          <div className="planner-section-title">Skills (${p.skills.length})</div>
+          <div className="planner-chip-row">
+            ${p.skills.map(s => html`<code key=${s} className="planner-chip planner-chip-skill">${s}</code>`)}
+          </div>
+        </div>
+      `}
+
+      ${(containerKinds.length > 0 || agentOverrides.length > 0 || trios.length > 0) && html`
+        <div className="planner-section">
+          <div className="planner-section-title">Node kinds summoned</div>
+          ${containerKinds.length > 0 && html`
+            <div className="planner-dispatch-group">
+              <div className="planner-dispatch-group-title">Container kinds <span className="planner-dispatch-count">${containerKinds.length}</span></div>
+              <div className="planner-chip-row">
+                ${containerKinds.map(k => html`<code key=${k} className="planner-chip planner-chip-kind">${k}</code>`)}
+              </div>
+            </div>
+          `}
+          ${agentOverrides.length > 0 && html`
+            <div className="planner-dispatch-group">
+              <div className="planner-dispatch-group-title">Agent per-id overrides <span className="planner-dispatch-count">${agentOverrides.length}</span></div>
+              <div className="planner-chip-row">
+                ${agentOverrides.map(k => html`<code key=${k} className="planner-chip planner-chip-override">${k}</code>`)}
+              </div>
+            </div>
+          `}
+          ${trios.length > 0 && html`
+            <div className="planner-dispatch-group">
+              <div className="planner-dispatch-group-title">Trios scaffolded <span className="planner-dispatch-count">${trios.length}</span></div>
+              <div className="planner-chip-row">
+                ${trios.map(k => html`<code key=${k} className="planner-chip planner-chip-trio">${k}</code>`)}
+              </div>
+            </div>
+          `}
+        </div>
+      `}
+
+      ${p.documents && (p.documents.designDoc || p.documents.calibration || p.documents.policy) && html`
+        <div className="planner-section planner-section-docs">
+          <div className="planner-section-title">Reference</div>
+          <div className="planner-doc-list">
+            ${p.documents.designDoc   && html`<code className="planner-doc">${p.documents.designDoc}</code>`}
+            ${p.documents.calibration && html`<code className="planner-doc">${p.documents.calibration}</code>`}
+            ${p.documents.policy      && html`<code className="planner-doc">${p.documents.policy}</code>`}
+            ${p.playbookPath           && html`<code className="planner-doc">${p.playbookPath}</code>`}
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -12736,6 +13409,9 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // v3.3 — Top-level landing tabs. "projects" is the legacy default; "planners"
+  // surfaces the planner registry (per .claude/agents/*.manifest.json).
+  const [activeTab, setActiveTab] = useState("projects");
   const mediaCfg = useMediaConfig();
   // v3.4.41 — Required local skills (rembg). The setup card stays open
   // until every required skill is installed, even after the model is
@@ -12914,35 +13590,51 @@ function ProjectsLanding({ info, projects, onReload }) {
             </div>
           </div>
           <div className="landing-titlebar">
-            <div>
-              <h1 className="landing-title">Projects</h1>
-              <div className="landing-subtitle">${projects.length} project${projects.length === 1 ? "" : "s"} in this workspace</div>
-            </div>
-            <div className="landing-actions">
-              ${projects.length > 0 && html`
-                <input
-                  className="landing-filter"
-                  placeholder="Filter by id or label…"
-                  value=${filter}
-                  onInput=${e => setFilter(e.target.value)}
-                />
-              `}
+            <div className="landing-tabs">
               <button
-                className="landing-new-btn"
-                disabled=${setupNeeded}
-                data-disabled=${setupNeeded}
-                title=${
-                  !mediaCfg.configured
-                    ? "Connect a model first — see the setup card below."
-                    : (!localSkills.allRequiredInstalled
-                        ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
-                        : "Create a new project")
-                }
-                onClick=${() => { if (setupNeeded) return; setCreating(true); setErr(null); }}>
-                <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
-                <span>New project</span>
+                className=${"landing-tab" + (activeTab === "projects" ? " is-active" : "")}
+                onClick=${() => setActiveTab("projects")}
+                aria-pressed=${activeTab === "projects"}
+              >
+                <span className="landing-tab-label">Projects</span>
+                <span className="landing-tab-count">${projects.length}</span>
+              </button>
+              <button
+                className=${"landing-tab" + (activeTab === "system" ? " is-active" : "")}
+                onClick=${() => setActiveTab("system")}
+                aria-pressed=${activeTab === "system"}
+                title="System reference — planners, skills, subagents, and node kinds the app ships."
+              >
+                <span className="landing-tab-label">System</span>
               </button>
             </div>
+            ${activeTab === "projects" && html`
+              <div className="landing-actions">
+                ${projects.length > 0 && html`
+                  <input
+                    className="landing-filter"
+                    placeholder="Filter by id or label…"
+                    value=${filter}
+                    onInput=${e => setFilter(e.target.value)}
+                  />
+                `}
+                <button
+                  className="landing-new-btn"
+                  disabled=${setupNeeded}
+                  data-disabled=${setupNeeded}
+                  title=${
+                    !mediaCfg.configured
+                      ? "Connect a model first — see the setup card below."
+                      : (!localSkills.allRequiredInstalled
+                          ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
+                          : "Create a new project")
+                  }
+                  onClick=${() => { if (setupNeeded) return; setCreating(true); setErr(null); }}>
+                  <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
+                  <span>New project</span>
+                </button>
+              </div>
+            `}
           </div>
         </div>
       </header>
@@ -12950,14 +13642,16 @@ function ProjectsLanding({ info, projects, onReload }) {
       <main className="landing-main">
         <div className="landing-main-inner">
 
-        ${creating && html`<${NewProjectWizard}
+        ${activeTab === "system" && html`<${SystemLanding}/>`}
+
+        ${activeTab === "projects" && creating && html`<${NewProjectWizard}
           workspaceProjects=${projects}
           existingDsList=${dsList}
           onClose=${() => { setCreating(false); setErr(null); }}
           onCreated=${onWizardCreated}
         />`}
 
-        ${projects.length === 0 && !creating && wizardOpen && onboardingReady && html`
+        ${activeTab === "projects" && projects.length === 0 && !creating && wizardOpen && onboardingReady && html`
           <${ModelSetupCard}
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
@@ -12976,7 +13670,7 @@ function ProjectsLanding({ info, projects, onReload }) {
             onAcknowledge=${() => setSetupAcknowledged(true)}/>
         `}
 
-        ${projects.length === 0 && !creating && !setupNeeded && !wizardOpen && html`
+        ${activeTab === "projects" && projects.length === 0 && !creating && !setupNeeded && !wizardOpen && html`
           <div className="landing-empty">
             <div className="landing-empty-icon">▣</div>
             <div className="landing-empty-title">No projects yet</div>
@@ -12991,7 +13685,7 @@ function ProjectsLanding({ info, projects, onReload }) {
           </div>
         `}
 
-        ${projects.length > 0 && html`
+        ${activeTab === "projects" && projects.length > 0 && html`
           <div className="landing-grid">
             ${filtered.map(p => editingId === p.id ? html`
               <div key=${p.id} className="landing-card landing-card-editing">
@@ -23843,6 +24537,60 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "simulation").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="simulation"
+                zoom=${zoom}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "interactive-media").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="interactive"
+                zoom=${zoom}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "narrative-experience").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="narrative"
+                zoom=${zoom}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "asset").map(n => html`
               <${WorkflowAssetNode}
                 key=${n.id}
@@ -28850,6 +29598,242 @@ function WorkflowCodePanel({ node, onClose, zoom }) {
   `;
 }
 
+// ─── WorkflowSimOrInteractiveNode ─────────────────────────────────────────
+// v3.3 — Container renderer for the `simulation` + `interactive-media` kinds.
+// Slim companion to WorkflowPrototypeNode: an iframe pointing at the
+// container's runtime.html, a lens-verdict badge in the title bar, an
+// iteration-count chip, a devtools toggle that flips `?devtools=1` on the
+// iframe URL, and (for interactive-media) permission-gate chips listing the
+// modalities the runtime will request behind its Start gate.
+//
+// Why share one component for two kinds: the visual chrome is identical;
+// the only divergences are (a) the path prefix (`simulations/{simId}` vs
+// `interactives/{imId}`) and (b) the permission-gates row, both gated by
+// the `family` prop. Keeps the editor bundle leaner and the visual language
+// consistent across the two new container types.
+//
+// What this does NOT replicate from WorkflowPrototypeNode:
+//   • DS audit pipeline — these containers don't carry a DS audit affordance;
+//     the simulation/interactive component drawers each run their own §12.1
+//     internal lens self-test instead.
+//   • Expose flow — exposed-assets are derived from the container's
+//     component children, not user-curated like prototype's.
+//   • Code panel — none of the container's own fields are user-editable;
+//     the user edits per-component nodes (sim_loop_*, im_mapping_*, …).
+//   • Lock / orphan banners — the container's lifecycle is planner-driven;
+//     it doesn't have a "user navigated away" failure mode.
+function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
+  const [dragging, setDragging] = useState(false);
+  const [devtools, setDevtools] = useState(false);
+  const iframeRef = useRef(null);
+
+  const branch  = node.branch || "main";
+  // v3.3 — narrative-experience containers (`nxId`, `source/{branch}/narratives/{nxId}/`)
+  // join sim + interactive on this renderer; same iframe + lens-verdict chrome,
+  // only path/ID/label differ. Future per-family chrome (e.g. narrative beat
+  // counter) can fork from the `family` switch below.
+  const assetId = family === "simulation" ? node.simId
+                : family === "interactive" ? node.imId
+                : family === "narrative"   ? node.nxId
+                : null;
+  const folder  = family === "simulation" ? "simulations"
+                : family === "interactive" ? "interactives"
+                : family === "narrative"   ? "narratives"
+                : "";
+  const familyLabel = family === "simulation" ? "sim"
+                    : family === "interactive" ? "im"
+                    : family === "narrative"   ? "nx"
+                    : family;
+
+  // Build iframe src targeting the runtime.html the planner committed.
+  // Same path resolution as the per-id agent override's outputsRoot;
+  // see editor/kinds/registry.py — sim_runtime_* / im_runtime_*.
+  const runtimePath = `/source/${encodeURIComponent(branch)}/${folder}/${encodeURIComponent(assetId || "")}/runtime.html`;
+
+  // Nonce bumped on devtools toggle + asset-changed events so React fully
+  // remounts the iframe (same pattern as WorkflowPrototypeNode).
+  const [nonce, setNonce] = useState(0);
+  const iframeSrc = useMemo(() => {
+    let src = apiUrl(runtimePath);
+    if (devtools) src += (src.includes("?") ? "&" : "?") + "devtools=1";
+    if (nonce > 0) src += (src.includes("?") ? "&" : "?") + "_n=" + nonce;
+    return src;
+  }, [runtimePath, devtools, nonce]);
+
+  // Refresh on asset-changed events scoped to this container's folder —
+  // but only while the container is still BEING BUILT. Once committed
+  // (runStatus done + lensVerdict pass), the runtime owns its own
+  // state and rAF loop; any further file-watcher events (planner cleanup,
+  // reconciler touches, agent re-saves with identical content) would
+  // remount the iframe via the React key, restart the sim from scratch,
+  // and leave a blank canvas (per sim-runtime-composer §3.8). The user
+  // sees this as "the sim works for a while then it gone."
+  //
+  // Mirror of the WorkflowAssetNode v3.3 fix for HTML assets under
+  // simulations/ / interactives/ / narratives/. Symmetric reasoning:
+  // long-running interactive content can't be auto-remounted without
+  // killing the loop. Users who want a fresh load can use the devtools
+  // toggle (bumps nonce explicitly) or remove + re-add the node.
+  const _isCommitted = node.runStatus === "done" && node.outputs?.lensVerdict === "pass";
+  useEffect(() => {
+    if (_isCommitted) return;   // skip listener entirely once committed
+    const handler = (e) => {
+      const paths = (e && e.detail && e.detail.paths) || [];
+      if (paths.length === 0) return;
+      const scope = `source/${branch}/${folder}/${assetId}/`;
+      if (paths.some(p => p && p.startsWith(scope))) {
+        setNonce(n => n + 1);
+      }
+    };
+    window.addEventListener("th:asset-refresh", handler);
+    return () => window.removeEventListener("th:asset-refresh", handler);
+  }, [branch, folder, assetId, _isCommitted]);
+
+  // Title-bar lens-verdict badge: pass / fail / running / queued.
+  const lensVerdict = node.outputs?.lensVerdict;
+  const verdictBadge = (() => {
+    if (node.runStatus === "running") return { label: "verifying", className: "is-running", title: "Planner is running lens trio" };
+    if (lensVerdict === "pass")       return { label: "pass",      className: "is-pass",    title: "≥2/3 lenses passed; container committed" };
+    if (lensVerdict === "fail")       return { label: "fail",      className: "is-fail",    title: "Lens trio rejected; awaiting user decision" };
+    if (node.runStatus === "error")   return { label: "error",     className: "is-error",   title: node.runError || "Planner errored" };
+    return { label: "queued", className: "is-queued", title: "Not yet built" };
+  })();
+
+  const iterationCount = node.outputs?.iterationCount;
+
+  // Permission-gates row — interactive only. The container's
+  // `permissionGates` array (or fallback: derived from `declaredInputs`)
+  // lists modalities the runtime will request behind its Start gate.
+  // Surfaced here BEFORE the iframe so the user knows what's coming.
+  const permissionGates = useMemo(() => {
+    if (family !== "interactive") return [];
+    if (Array.isArray(node.permissionGates) && node.permissionGates.length) return node.permissionGates;
+    const declared = Array.isArray(node.declaredInputs) ? node.declaredInputs : [];
+    return declared.filter(i => ["mic", "camera", "gyro", "orientation", "midi"].includes(i));
+  }, [family, node.permissionGates, node.declaredInputs]);
+  const PERMISSION_GLYPH = { mic: "🎤", camera: "📷", gyro: "📱", orientation: "📱", midi: "🎹", gamepad: "🎮" };
+
+  // Drag-handle (title bar) — relative-delta pattern matching every other
+  // node renderer (see `dragHandler` helper). Earlier versions used absolute
+  // deltas from the initial mousedown; with the canvas-store's relative
+  // `onMove(dx, dy)` shape that caused runaway drift. The shared helper
+  // tracks lastX/lastY between events, so we use it directly.
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+
+  // Bottom-right corner resize handle — same shape as every other node
+  // (color-palette, prototype, asset, …). Without this, the node had no
+  // resize affordance at all and was stuck at its initial w×h.
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+
+  // Body region is the node minus the ~32px title bar minus the optional
+  // permission-gates row (≈22px on interactive only). Same scale-to-fit
+  // strategy as the prototype renderer — decouple node size from runtime
+  // viewport so the runtime's intended layout survives node resizing.
+  // Default viewport / node sizing per family. Narrative leans cinematic-wide
+  // (immersive 3D / illustrated scenes look best at 16:9); interactive leans
+  // square-wide (camera/gesture inputs); sim leans 4:3 (top-down maps + HUDs).
+  const vp = node.viewport || {};
+  const _defaultVp = family === "interactive" ? { w: 1280, h: 720 }
+                    : family === "narrative"   ? { w: 1920, h: 1080 }
+                    : { w: 720, h: 540 };
+  const vw = (typeof vp.w === "number" && vp.w > 0) ? vp.w : _defaultVp.w;
+  const vh = (typeof vp.h === "number" && vp.h > 0) ? vp.h : _defaultVp.h;
+  const _defaultNode = family === "interactive" ? { w: 720, h: 480 }
+                      : family === "narrative"   ? { w: 800, h: 450 }
+                      : { w: 540, h: 400 };
+  const w = Math.max(280, node.w || _defaultNode.w);
+  const h = Math.max(220, node.h || _defaultNode.h);
+  const titleH = 32;
+  const permsH = (family === "interactive" && permissionGates.length) ? 22 : 0;
+  const bodyW = Math.max(1, w);
+  const bodyH = Math.max(1, h - titleH - permsH);
+  const scale = Math.min(bodyW / vw, bodyH / vh);
+
+  return html`
+    <div
+      className=${"workflow-node workflow-node-" + family}
+      data-dragging=${dragging ? "true" : "false"}
+      data-orphan=${orphaned ? "true" : "false"}
+      data-selected=${selected ? "true" : "false"}
+      data-run-status=${node.runStatus || ""}
+      data-lens-verdict=${lensVerdict || ""}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      title=${node.runStatus === "error" && node.runError ? ("Error: " + node.runError) : undefined}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">${family === "simulation" ? "◎" : family === "narrative" ? "❧" : "✦"}</span>
+        <span className="workflow-node-label">${familyLabel}:${assetId || "(unset)"}</span>
+        <span
+          className=${"workflow-node-lens-badge " + verdictBadge.className}
+          title=${verdictBadge.title}
+        >${verdictBadge.label}</span>
+        ${typeof iterationCount === "number" && iterationCount > 0 && html`
+          <span
+            className="workflow-node-iter-chip"
+            title=${"Total outer iterations across components: " + iterationCount}
+          >${iterationCount}↻</span>
+        `}
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip}
+          className=${"workflow-node-action" + (devtools ? " is-active" : "")}
+          tip=${devtools
+            ? "Devtools active — runtime is rendering with ?devtools=1 (FPS counter, input echo, mapping visualiser)"
+            : "Toggle devtools overlay — surfaces FPS / sim state / mapping graph for debugging"}
+          ariaLabel="Toggle devtools"
+          onClick=${(e) => { e.stopPropagation(); setDevtools(v => !v); setNonce(n => n + 1); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >⚙</>
+        <${HoverTip}
+          className="workflow-node-close"
+          tip="Remove this container from the canvas (does not delete files on disk)."
+          ariaLabel="Remove from canvas"
+          onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >×</>
+      </div>
+
+      ${family === "interactive" && permissionGates.length > 0 && html`
+        <div
+          className="workflow-node-perms-row"
+          title=${"This piece will request: " + permissionGates.join(", ") + " — behind an in-iframe Start gate."}
+        >
+          <span className="workflow-node-perms-label">will request:</span>
+          ${permissionGates.map(p => html`
+            <span key=${p} className=${"workflow-node-perm-chip perm-" + p}>${PERMISSION_GLYPH[p] || "·"} ${p}</span>
+          `)}
+        </div>
+      `}
+
+      <div className="workflow-node-iframe-scale">
+        <iframe
+          key=${node.id + "-" + nonce}
+          ref=${iframeRef}
+          className="workflow-node-iframe"
+          data-container-id=${node.id}
+          data-family=${family}
+          src=${iframeSrc}
+          title=${familyLabel + ":" + (assetId || "")}
+          allow=${family === "interactive" ? "microphone; camera; gyroscope; accelerometer; midi" : ""}
+          style=${{
+            width:  vw + "px",
+            height: vh + "px",
+            transform: "scale(" + scale + ")",
+            transformOrigin: "top left",
+          }}
+        />
+      </div>
+
+      <div
+        className="workflow-node-resize-corner"
+        onMouseDown=${onResizeDown}
+        title="Drag to resize"
+      />
+    </div>
+  `;
+}
+
 function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
@@ -31121,14 +32105,42 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       },
     });
   }, [onChange, node.size]);
+  // v3.3 — Long-running interactive HTML (a simulation runtime, an
+  // interactive piece, a narrative experience runtime) owns its OWN state
+  // and rAF loop inside the iframe. Auto-busting the iframe on every
+  // asset-refresh event would remount it via the React `key` binding,
+  // restart the loop from scratch, and (per sim-runtime-composer §3.8)
+  // leave a blank canvas until the next rAF baseline-renders. The user
+  // sees this as "the sim works for a while then it gone."
+  //
+  // The library thumbnail iframe doesn't have this binding — its src is
+  // stable, no key tied to bust, so it never remounts. That's why the
+  // thumbnail keeps running while the canvas card goes blank.
+  //
+  // Detect those long-running paths and skip auto-bust. Manual reload
+  // affordances (path edit, explicit user action) still work because they
+  // set bust through other channels. Ordinary Pathway-B HTML output
+  // (DS-brainstorm pages, ad-hoc iterator variants, generic source/<branch>/*.html)
+  // continues to auto-refresh as before — that's the desired behaviour
+  // for the "I just regenerated this page, show me the new bytes" loop.
+  // Note: `path` (the normalized form) is declared further down in this
+  // component; we can't reference it here without a TDZ error. node.path
+  // is the raw stored value, which may have a leading slash on some
+  // legacy nodes — strip it once before the regex test.
+  const _isLongRunningInteractive = useMemo(() => {
+    if (typeof node.path !== "string") return false;
+    const probe = node.path.startsWith("/") ? node.path.slice(1) : node.path;
+    return /^source\/[^/]+\/(simulations|interactives|narratives)\//.test(probe);
+  }, [node.path]);
   useEffect(() => {
+    if (_isLongRunningInteractive) return;   // skip listener entirely for sim/im/nx HTML
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
       if (paths.includes(node.path)) setBust(b => b + 1);
     };
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);
-  }, [node.path]);
+  }, [node.path, _isLongRunningInteractive]);
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
     e.preventDefault();

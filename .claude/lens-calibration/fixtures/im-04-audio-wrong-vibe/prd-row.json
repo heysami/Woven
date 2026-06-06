@@ -1,0 +1,10 @@
+{
+  "family":         "interactive",
+  "imId":           "tone_painter_wrong_synth",
+  "concept":        "mouse → warm tone painting",
+  "inputs":         ["mouse"],
+  "outputs":        ["audio-gen"],
+  "mappingStyle":   "direct",
+  "surface":        "Hero, 1280×720",
+  "successFeel":    "the room feels warmer and slightly altered while the user plays — like atmosphere thickening"
+}

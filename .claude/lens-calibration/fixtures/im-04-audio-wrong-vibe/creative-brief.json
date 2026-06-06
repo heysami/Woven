@@ -1,0 +1,13 @@
+{
+  "styleCue":              "warm FM textures; low-passed; no synthetic transients; ambient room",
+  "interactionPhilosophy": "the user shapes a slowly-shifting tone field with the mouse",
+  "sensoryTargets": {
+    "visual": "minimal; tone is the medium",
+    "motion": "soft glide; no snap",
+    "audio":  "warm FM, low-passed, no synthetic transients, no bright supersaw leads",
+    "haptic": "no haptic"
+  },
+  "antiPatterns": ["sawtooth lead", "bright resonant filter", "supersaw", "white-noise hiss", "synthetic transients"],
+  "references":   ["https://generative.fm"],
+  "successFeel":  "the room feels warmer and slightly altered while the user plays — like atmosphere thickening"
+}

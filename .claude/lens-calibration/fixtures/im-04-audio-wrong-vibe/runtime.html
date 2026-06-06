@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>im-04 — AESTHETIC-FAIL (wrong vibe audio) fixture</title>
+<style>body,html{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui}
+#stage{display:flex;align-items:center;justify-content:center;height:100%}
+#start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);flex-direction:column;gap:16px}
+#start-gate.hidden{display:none}
+#start-btn{padding:10px 24px;background:#888;color:#fff;border:0;border-radius:4px;cursor:pointer}</style></head>
+<body>
+<div id="stage"><h2>Tone Painter</h2></div>
+<div id="start-gate"><h2>Tone Painter</h2><p>Move the mouse to play.</p><button id="start-btn">Start</button></div>
+<script type="module">
+// ─── BAD PATTERN — brief committed to "warm FM, low-passed, no synthetic
+// transients" but runtime ships sawtooth lead OscillatorNode + bright
+// resonant filter + no warmth. aesthetic-lens §3.1 antiPattern check +
+// §3.4 sensoryTargets.audio match must catch.
+//
+// Craft is mostly fine: AudioContext gated behind Start; limiter present.
+
+let audioCtx = null, master = null, limiter = null, osc = null, filter = null;
+const inputVec = new Float32Array(8);
+const outputVec = new Float32Array(2); // [0]=mouse-x → freq, [1]=mouse-y → cutoff
+
+document.getElementById('start-btn').addEventListener('click', async () => {
+  document.getElementById('start-gate').classList.add('hidden');
+  audioCtx = new (AudioContext || webkitAudioContext)(); await audioCtx.resume();
+
+  master = audioCtx.createGain(); master.gain.value = 0;
+  limiter = audioCtx.createDynamicsCompressor(); limiter.threshold.value = -1;
+  master.connect(limiter).connect(audioCtx.destination);
+
+  // ❌ Sawtooth LEAD — brief said "warm FM, no synthetic transients"
+  osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 220;
+  filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.Q.value = 12;      // ❌ Bright resonant peak — fights "warm" register
+  filter.frequency.value = 3000;
+  osc.connect(filter).connect(master);
+  osc.start();
+  master.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.05);
+
+  document.addEventListener('pointermove', (e) => {
+    inputVec[0] = e.clientX / innerWidth;
+    inputVec[1] = e.clientY / innerHeight;
+    outputVec[0] = 220 + inputVec[0] * 800;
+    outputVec[1] = 500 + inputVec[1] * 8000;
+    const t = audioCtx.currentTime;
+    osc.frequency.linearRampToValueAtTime(outputVec[0], t + 0.02);
+    filter.frequency.linearRampToValueAtTime(outputVec[1], t + 0.02);
+  });
+});
+
+let fpsAvg = 60;
+window.__im = {
+  get inputVec(){return inputVec}, get outputVec(){return outputVec},
+  fps: { get avg(){return fpsAvg}, max: 0 },
+  audioCtxState() { return audioCtx?.state ?? 'pending'; },
+  injectFakeInput(d) { if (d.features) { inputVec[0] = d.features[0]; inputVec[1] = d.features[1] ?? 0; } },
+  devtools: { skipStart() { document.getElementById('start-btn').click(); } }
+};
+</script></body></html>

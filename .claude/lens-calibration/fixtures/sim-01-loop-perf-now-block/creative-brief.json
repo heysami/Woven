@@ -1,0 +1,13 @@
+{
+  "styleCue":              "spare warehouse-management UI, monospaced labels, slate palette",
+  "interactionPhilosophy": "operator-grade — reads at a glance, mutates with intent",
+  "sensoryTargets": {
+    "visual": "rectilinear, restrained, status-tinted bin grid",
+    "motion": "discrete tick-by-tick updates; no continuous tweens",
+    "audio":  "no audio",
+    "haptic": "no haptic"
+  },
+  "antiPatterns": ["continuous-motion tweens", "snappy easing", "decorative animation"],
+  "references":   ["https://example.com/manhattan-wms-screenshot.png"],
+  "successFeel":  "a one-look gut sense of warehouse rhythm — busy or calm, jammed or fluid, where the bottlenecks are"
+}

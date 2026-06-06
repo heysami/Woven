@@ -321,6 +321,388 @@ KINDS = {
                     "number to the model) · Accept-override (human waives, recorded)."
                 ),
             },
+
+            # ──────────────────────────────────────────────────────────────────
+            # v3.3 — SIMULATION + INTERACTIVE-MEDIA planners.
+            # See docs/features/simulation-and-interactive-planners.md.
+            # Wildcard keys end in "_" per kind_contract's longest-prefix-match.
+            # Node-id convention: <family>_<component>_<assetId>
+            #   sim_scene_warehouse_floor       (NOT sim_warehouse_floor_scene)
+            #   im_input_tone_mood_painter_mic  (etc.)
+            # ──────────────────────────────────────────────────────────────────
+
+            # ── Family planners (exact match) ─────────────────────────────────
+            "bp_simulation_build": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/",
+                "extendsGraph": True,
+                "graphExtensionScope": (
+                    "per-simId multi-trio: research / entities / scene / loop / "
+                    "controls / overlay / runtime / container"
+                ),
+                "completion": {"requires": [
+                    "files: source/{branch}/simulations/{simId}/runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Dispatches simulation-planner for ONE simId. The planner does "
+                    "the multi-drawer fanout, runs the §8.3 loop-until-bar lens "
+                    "pass internally, and only commits done when ≥2/3 lenses pass."
+                ),
+            },
+            "bp_interactive_build": {
+                "outputsRoot": "source/{branch}/interactives/{imId}/",
+                "extendsGraph": True,
+                "graphExtensionScope": (
+                    "per-imId multi-trio: research / modality-research / "
+                    "input[] / mapping / output[] / runtime / container"
+                ),
+                "completion": {"requires": [
+                    "files: source/{branch}/interactives/{imId}/runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Dispatches interactive-media-planner for ONE imId. Permission "
+                    "gates surfaced to the canvas BEFORE Run."
+                ),
+            },
+
+            # ── Simulation component drawers (wildcard prefixes) ──────────────
+            "sim_research_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/research.md",
+                "completion": {"requires": ["files: research.md exists, non-empty"]},
+                "notes": "Synthesised paradigm pick + citations from the 4-researcher fleet.",
+            },
+            "sim_entities_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/entities.js",
+                "completion": {"requires": ["files: entities.js exists, non-empty"]},
+                "notes": "Entity schema + initial state. SoT for scene/loop/controls.",
+            },
+            "sim_scene_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/scene.html",
+                "completion": {"requires": [
+                    "files: scene.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": "Renderer. Medium picked by paradigm. Lens-gated.",
+            },
+            "sim_loop_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/loop.js",
+                "completion": {"requires": [
+                    "files: loop.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Deterministic accumulator tick. Lens-gated on craft "
+                    "(no performance.now() in tick callback)."
+                ),
+            },
+            "sim_controls_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/controls.js",
+                "completion": {"requires": ["files: controls.js exists, non-empty"]},
+                "notes": "DOM events → state mutations.",
+            },
+            "sim_overlay_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/overlay.svg",
+                "completion": {"requires": ["files: overlay.svg exists"]},
+                "notes": "Chrome over the scene.",
+            },
+            "sim_runtime_": {
+                "outputsRoot": "source/{branch}/simulations/{simId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": "Glue. Lens-gated on craft + aesthetic + concept.",
+            },
+
+            # ── Interactive component drawers (wildcard prefixes) ─────────────
+            "im_research_": {
+                "outputsRoot": "source/{branch}/interactives/{imId}/research.md",
+                "completion": {"requires": ["files: research.md exists, non-empty"]},
+            },
+            "im_input_": {
+                "outputsRoot": "source/{branch}/interactives/{imId}/input-{modality}.js",
+                "completion": {"requires": ["files: input-{modality}.js exists, non-empty"]},
+                "notes": (
+                    "Per-modality input drawer. "
+                    "{modality} ∈ {mic, camera, mouse, gyro, midi, gamepad}."
+                ),
+            },
+            "im_mapping_": {
+                "outputsRoot": "source/{branch}/interactives/{imId}/mapping.js",
+                "completion": {"requires": [
+                    "files: mapping.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Pure-function input→output transforms. Lens-gated on craft "
+                    "(no side effects) + aesthetic (non-triviality vs brief)."
+                ),
+            },
+            "im_output_": {
+                "outputsRoot": "source/{branch}/interactives/{imId}/output-{medium}.html",
+                "completion": {"requires": [
+                    "files: output-{medium}.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Per-medium output drawer. "
+                    "{medium} ∈ {shader, particle, 3d, audio}."
+                ),
+            },
+            "im_runtime_": {
+                "outputsRoot": "source/{branch}/interactives/{imId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": "Glue + permission UX. Lens-gated on all three lenses.",
+            },
+
+            # ── Lens agents (wildcard — one dispatch per drawer iteration) ────
+            "craft_lens_": {
+                "outputsRoot": "source/{branch}/QUALITY_REPORT.json",
+                "completion": {"requires": [
+                    "files: QUALITY_REPORT.json exists",
+                    "outputs.verdict in {pass, fail}",
+                ]},
+                "notes": (
+                    "Code health / perf / deterministic stepping / permission UX. "
+                    "Cold-isolated. Appends one verdict to QUALITY_REPORT.json. "
+                    "See .claude/agents/craft-lens.md."
+                ),
+            },
+            "aesthetic_lens_": {
+                "outputsRoot": "source/{branch}/QUALITY_REPORT.json",
+                "completion": {"requires": [
+                    "files: QUALITY_REPORT.json exists",
+                    "outputs.verdict in {pass, fail}",
+                ]},
+                "notes": (
+                    "Style coherence vs workflow/creative-brief.json. "
+                    "Cold-isolated. See .claude/agents/aesthetic-lens.md."
+                ),
+            },
+            "concept_lens_": {
+                "outputsRoot": "source/{branch}/QUALITY_REPORT.json",
+                "completion": {"requires": [
+                    "files: QUALITY_REPORT.json exists",
+                    "outputs.verdict in {pass, fail}",
+                ]},
+                "notes": (
+                    "Delivers PRD successFeel? Hardest lens; skips cheap "
+                    "component kinds with verdict=pass+skipped=true. "
+                    "See .claude/agents/concept-lens.md."
+                ),
+            },
+
+            # ── Multi-draft pick checkpoints (mirror cp_remix_pick) ───────────
+            "cp_sim_scene_pick_": {
+                "outputsRoot": "DECISION_cp_sim_scene_pick_{simId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sim_scene_pick_{simId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 scene drafts produced by iterator-remix.",
+            },
+            "cp_sim_loop_pick_": {
+                "outputsRoot": "DECISION_cp_sim_loop_pick_{simId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sim_loop_pick_{simId}.json exists with non-empty values",
+                ]},
+            },
+            "cp_im_mapping_pick_": {
+                "outputsRoot": "DECISION_cp_im_mapping_pick_{imId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_im_mapping_pick_{imId}.json exists with non-empty values",
+                ]},
+            },
+            "cp_im_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_im_runtime_pick_{imId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_im_runtime_pick_{imId}.json exists with non-empty values",
+                ]},
+            },
+            "cp_im_output_pick_": {
+                "outputsRoot": "DECISION_cp_im_output_pick_{imId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_im_output_pick_{imId}.json exists with non-empty values",
+                ]},
+            },
+
+            # ── Family release gates (mirror cp_coherence_gate) ───────────────
+            "cp_sim_gate_": {
+                "outputsRoot": "DECISION_cp_sim_gate_{simId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sim_gate_{simId}.json exists with non-empty values",
+                ]},
+                "notes": (
+                    "Reads QUALITY_REPORT.json. If all lens verdicts for this simId "
+                    "are pass, commits value='clear' and releases the simulation "
+                    "container. On any block-fail at iteration 5, emits "
+                    "<decision-request> with Retry / Patch / Accept-override. "
+                    "Direct clone of cp_coherence_gate semantics."
+                ),
+            },
+            "cp_im_gate_": {
+                "outputsRoot": "DECISION_cp_im_gate_{imId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_im_gate_{imId}.json exists with non-empty values",
+                ]},
+                "notes": "Same as cp_sim_gate_ for interactive-media family.",
+            },
+
+            # ──────────────────────────────────────────────────────────────────
+            # v3.3 — NARRATIVE-EXPERIENCE planner (the poetic cousin of sim).
+            # See docs/features/simulation-and-interactive-planners.md
+            # (narrative addendum). Mirrors sim's contract shape with three
+            # substitutions: spine (scripted timeline) instead of loop,
+            # camera (path-driven progression) instead of controls, ambient
+            # (soundscape) as a new first-class channel.
+            # Node-id convention: nx_<component>_<nxId>
+            #   nx_scene_vermeer_studio    (NOT nx_vermeer_studio_scene)
+            # ──────────────────────────────────────────────────────────────────
+
+            # ── Family planner (exact match) ──────────────────────────────────
+            "bp_narrative_build": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/",
+                "extendsGraph": True,
+                "graphExtensionScope": (
+                    "per-nxId multi-trio: research / spine / scene / camera / "
+                    "ambient / reveal / overlay / runtime / container"
+                ),
+                "completion": {"requires": [
+                    "files: source/{branch}/narratives/{nxId}/runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Dispatches narrative-experience-planner for ONE nxId. "
+                    "The planner does the multi-drawer fanout, runs the §8.3 "
+                    "loop-until-bar lens pass internally, and only commits "
+                    "done when ≥2/3 lenses pass on the final runtime."
+                ),
+            },
+
+            # ── Narrative component drawers (wildcard prefixes) ───────────────
+            "nx_research_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/research.md",
+                "completion": {"requires": ["files: research.md exists, non-empty"]},
+                "notes": (
+                    "Synthesised aesthetic + emotional register + pacing + "
+                    "camera idiom + sonic register + spine outline + citations "
+                    "from the 5-researcher fleet."
+                ),
+            },
+            "nx_spine_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/spine.js",
+                "completion": {"requires": [
+                    "files: spine.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Scripted timeline — what's revealed when, by which voice, "
+                    "at what depth. Lens-gated on craft (clean module shape) + "
+                    "concept (do the beats earn the successFeel)."
+                ),
+            },
+            "nx_scene_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/scene.html",
+                "completion": {"requires": [
+                    "files: scene.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "three.js / WebGL scene of the 'place'. §8.7 crux — "
+                    "3-draft remix on aestheticRegister axis (painterly / "
+                    "volumetric / sketch-like). All 3 lenses gate."
+                ),
+            },
+            "nx_ambient_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/ambient.html",
+                "completion": {"requires": [
+                    "files: ambient.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Soundscape (ambient room-tone + optional voice tracks). "
+                    "§8.7 crux — 3-draft remix on sonicRegister axis "
+                    "(silence-dominant / room-tone-dominant / voice-led). "
+                    "Permission-gated via INTERACTIVITY_PIPELINE pattern "
+                    "(canvas-side gate + iframe-side Start)."
+                ),
+            },
+            "nx_reveal_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/reveals.js",
+                "completion": {"requires": [
+                    "files: reveals.js exists, non-empty",
+                ]},
+                "notes": (
+                    "Gentle interactive accents (hover to brighten, click to "
+                    "expand, dwell to deepen). Lightly lens-gated — craft + "
+                    "restrained aesthetic (must NOT feel gamey)."
+                ),
+            },
+            "nx_overlay_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/overlay.svg",
+                "completion": {"requires": [
+                    "files: overlay.svg exists",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Poetic captions / mood text overlaid on the scene at "
+                    "spine-driven moments. Lens-gated on aesthetic + concept "
+                    "(does the language land the felt-state at each beat?)."
+                ),
+            },
+            "nx_runtime_": {
+                "outputsRoot": "source/{branch}/narratives/{nxId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Glue file — composes scene + camera + ambient + reveals + "
+                    "overlay + spine + scroll handling + §12.3 dev harness. "
+                    "§8.7 crux — 3-draft remix on pacingFeel axis (slow-bath / "
+                    "progressive-reveal / immediate-immersion). Full lens trio "
+                    "— this IS the composed user-facing artefact."
+                ),
+            },
+
+            # ── Multi-draft pick checkpoints (mirror cp_remix_pick) ───────────
+            "cp_nx_scene_pick_": {
+                "outputsRoot": "DECISION_cp_nx_scene_pick_{nxId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_nx_scene_pick_{nxId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 scene drafts (aestheticRegister axis).",
+            },
+            "cp_nx_ambient_pick_": {
+                "outputsRoot": "DECISION_cp_nx_ambient_pick_{nxId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_nx_ambient_pick_{nxId}.json exists with non-empty values",
+                ]},
+            },
+            "cp_nx_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_nx_runtime_pick_{nxId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_nx_runtime_pick_{nxId}.json exists with non-empty values",
+                ]},
+            },
+
+            # ── Family release gate (mirror cp_coherence_gate) ────────────────
+            "cp_nx_gate_": {
+                "outputsRoot": "DECISION_cp_nx_gate_{nxId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_nx_gate_{nxId}.json exists with non-empty values",
+                ]},
+                "notes": (
+                    "Reads QUALITY_REPORT.json. If all lens verdicts for this "
+                    "nxId are pass, commits value='clear' and releases the "
+                    "narrative-experience container. On any block-fail at "
+                    "iteration 5, emits <decision-request> with Retry / Patch "
+                    "/ Accept-override. Direct clone of cp_sim_gate_ semantics."
+                ),
+            },
         },
     },
 
@@ -800,6 +1182,147 @@ KINDS = {
         "completion":   {"requires": []},
         "pauseAfter":   False,
         "notes": "User-driven. Renders Mermaid source via the CDN bundle in editor/index.html.",
+    },
+
+    # ── simulation (v3.3 — live iframe for runnable simulation) ──────────
+    # See docs/features/simulation-and-interactive-planners.md §6.4.
+    # Mirrors `prototype` shape; the component drawers that produce the
+    # files this container points at are agent-kind per-id overrides
+    # (sim_research_*, sim_scene_*, sim_loop_*, etc.).
+    "simulation": {
+        "title":        "Simulation (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "simId":          {"type": "text",   "userEditable": False, "required": True},
+            "paradigm":       {"type": "enum",
+                                "values": ["2d-spatial-map", "3d-environment",
+                                           "iconographic-anim", "hybrid"],
+                                "userEditable": False},
+            "exposedAssets":  {"type": "array",  "userEditable": False},
+            "lockedState":    {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/entities/scene/loop/controls/overlay/runtime)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of a runnable simulation. User-driven. Run re-builds "
+            "via re-dispatching simulation-planner (bp_simulation_build). "
+            "Component children own their own files and lens verdicts; this "
+            "container is marked done only when the planner's commit carries "
+            "outputs.lensVerdict='pass'."
+        ),
+    },
+
+    # ── interactive-media (v3.3 — live iframe for TouchDesigner-grade pieces)
+    # See docs/features/simulation-and-interactive-planners.md §7.4.
+    "interactive-media": {
+        "title":        "Interactive media (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "imId":             {"type": "text",   "userEditable": False, "required": True},
+            "declaredInputs":   {"type": "array",  "userEditable": False},
+            "declaredOutputs":  {"type": "array",  "userEditable": False},
+            "mappingStyle":     {"type": "enum",
+                                  "values": ["direct", "accumulative",
+                                             "threshold-triggered", "ml-classified"],
+                                  "userEditable": False},
+            "permissionGates":  {"type": "array",  "userEditable": False},
+            "exposedAssets":    {"type": "array",  "userEditable": False},
+            "lockedState":      {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/modality/input[]/mapping/output[]/runtime)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of an interactive piece. permissionGates surfaced "
+            "to the canvas BEFORE Run so the user grants camera/mic/etc. "
+            "consent at the canvas-side prompt rather than being surprised "
+            "by the iframe. Component children own their files + lens verdicts."
+        ),
+    },
+
+    # ── narrative-experience (v3.3 — poetic cousin of `simulation`) ──────
+    # The user-facing artefact container for one immersive walk-into-this-
+    # place piece. Mirrors `simulation` shape with three substitutions:
+    # spine (scripted timeline) instead of loop, camera-as-narrator instead
+    # of free controls, ambient (soundscape) as a new first-class channel.
+    # See `narrative-experience-planner.md` + `bp_narrative_build` per-id.
+    "narrative-experience": {
+        "title":        "Narrative experience (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "nxId":              {"type": "text",   "userEditable": False, "required": True},
+            "paradigm":          {"type": "enum",
+                                   "values": ["2d-illustrative",
+                                              "3d-environment",
+                                              "iconographic-anim",
+                                              "hybrid"],
+                                   "userEditable": False,
+                                   "doc": "Same shape as simulation's paradigm field. 3d-environment covers EVERYTHING from scripted three.js flythroughs to walkable WASD/orbit-controlled spaces — how the camera binds + how much freedom the user has is a property of how the spine + camera drawers are written, not a separate field."},
+            "aestheticRegister": {"type": "enum",
+                                   "values": ["painterly", "volumetric", "sketch", "mixed-media"],
+                                   "userEditable": False},
+            "emotionalRegister": {"type": "enum",
+                                   "values": ["contemplative", "reverent", "wistful",
+                                              "unsettling", "luminous"],
+                                   "userEditable": False},
+            "pacingFeel":        {"type": "enum",
+                                   "values": ["slow-bath", "progressive-reveal",
+                                              "immediate-immersion"],
+                                   "userEditable": False},
+            "exposedAssets":     {"type": "array",  "userEditable": False},
+            "lockedState":       {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/spine/scene/camera/ambient/reveal/overlay/runtime)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of an immersive narrative experience. Same 4-paradigm "
+            "structure as `simulation` (2d-illustrative / 3d-environment / "
+            "iconographic-anim / hybrid) with three substitutions in the drawer "
+            "family: spine (scripted timeline; may contain free regions) "
+            "replaces loop; reveals (user input → progressive discovery OR "
+            "free-roam navigation) replaces controls; ambient (soundscape) is "
+            "a new first-class channel. Walkable 3D pieces live inside the "
+            "3d-environment paradigm — how much freedom the user has is a "
+            "property of how spine + camera-handling are written, not a "
+            "separate enum. Permission UX gates ambient audio via the two-"
+            "gate pattern (canvas-side + iframe-side Start) inherited from "
+            "INTERACTIVITY_PIPELINE — audio context requires user gesture."
+        ),
     },
 
     # ── section (manual-only) ─────────────────────────────────────────────

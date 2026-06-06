@@ -1,0 +1,10 @@
+{
+  "family":         "interactive",
+  "imId":           "voice_painter_clean",
+  "concept":        "voice → generative shader field that accumulates over time",
+  "inputs":         ["mic"],
+  "outputs":        ["shader"],
+  "mappingStyle":   "accumulative",
+  "surface":        "Hero, full-bleed 1280×720",
+  "successFeel":    "the user paints with their voice and the painting holds — strokes accumulate, the room remembers"
+}

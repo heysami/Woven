@@ -1,0 +1,49 @@
+{
+  "id":             "visual-planner",
+  "label":          "Visual",
+  "tagline":        "Images, icons, illustrations, decorative ambient motion",
+  "version":        "v3.2",
+  "defaultEnabled": true,
+  "subagentName":   "visual-planner",
+  "playbookPath":   ".claude/agents/visual-planner.md",
+
+  "description":    "Classifies every visual slot (img, background-image, canvas, declared shader/lottie/3d paths) by medium and dispatches one per-medium drawer per slot. Modes: HTML-enumeration (post source-write) and Bare Intent (chat-triggered ad-hoc image requests). Step 8 QA checks style coherence + composition + cutout + text contrast after assets land.",
+
+  "triggers": [
+    { "mode": "chat",       "title": "Bare Intent — chat",
+      "rule": "When the user's message mentions ANY visual content (image, illustration, mascot, character, icon, logo, shader, particle, 3D, lottie, video) — FIRST action is a Task call to visual-planner.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Image creation: dispatch visual-planner FIRST'" },
+    { "mode": "onboarding", "title": "Stage I — bp_proto_build Phase 2a",
+      "rule": "After source HTML is written by bp_proto_build Phase 1, Phase 2a dispatches visual-planner against the source tree for HTML-enumeration.",
+      "ruleSource": "editor/prompts/node_agent_preambles.py — bp_proto_build Phase 2a" }
+  ],
+
+  "dispatches": {
+    "drawers": [
+      "raster-foreground", "raster-photo",
+      "vector-icon", "vector-mark",
+      "shader", "particle-2d", "particle-gl",
+      "lottie", "3d", "video"
+    ],
+    "lenses": []
+  },
+
+  "skills": [
+    "generate-image", "rembg", "upscale",
+    "shader", "viz", "html-page",
+    "svg-gen", "threejs",
+    "lottie-gen", "video-gen", "motion-gen", "canvas-gen"
+  ],
+
+  "nodeKinds": {
+    "container":       [],
+    "agent_overrides": [],
+    "trios_scaffolded": ["p_<assetId>", "s_<assetId>", "r_<assetId>", "a_<assetId>"]
+  },
+
+  "documents": {
+    "designDoc":   null,
+    "calibration": null,
+    "policy":      ".claude/agents/onboarding-visual-policy.md (IMAGERY_PIPELINE block)"
+  }
+}
