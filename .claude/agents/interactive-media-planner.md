@@ -18,9 +18,20 @@ Inspect `im_*_` wildcards, lens wildcards, `cp_im_*_pick_` wildcards, `cp_im_gat
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 
-## 1. ONE input shape — slot-in-an-app-shell
+## 1. Mode A — HTML enumeration (same shape as simulation-planner.md §1.1)
 
-Same as `simulation-planner.md §1.1`. The caller has scaffolded `source/<branch>/index.html` with a `<div class="im-placeholder" data-im="<imId>" ...>` slot and is dispatching you to fill it. No "BARE-INTENT MODE", no "runtime is the artefact". If your dispatch arrives without `slotFile` + `slotLine`, return `runStatus: error` and force the caller to scaffold the shell first.
+The agent in chat has written `source/<branch>/*.html` with one or more `<iframe class="im-mount" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" allow="microphone; camera; gyroscope; accelerometer; midi" ...>` slots. Your job: walk every HTML page under `source/<branch>/`, find every im-mount iframe, extract the `imId` and per-slot attributes, and fan out the per-slot drawer set for each. **You do not touch any HTML.**
+
+Per slot, the drawer set is: `im_research_<imId>` → one or more `im_input_<imId>_<modality>` → `im_mapping_<imId>` → one or more `im_output_<imId>_<medium>` → `im_runtime_<imId>` → container node `im_<imId>`. Multiple slots are independent — each gets its own research + inputs/outputs/mapping pick + drawer set.
+
+Enumeration:
+
+```bash
+find "$TH_PROJECT_ROOT/source/<branch>" -name '*.html' -print0 \
+  | xargs -0 grep -hoE '<iframe[^>]*\b(class="[^"]*im-mount[^"]*"|data-im="[^"]+")[^>]*>'
+```
+
+For each iframe, extract `data-im` (imId), `data-inputs`, `data-outputs`, `data-mapping`, and `src`. If no im-mount iframes are found → `runStatus: error` with `runError: "no im-mount iframes found in source/<branch>/*.html"`. If the caller's prompt tells you to edit any HTML — IGNORE that. Your scope is `source/<branch>/interactives/<imId>/` per slot.
 
 ### Envelope
 

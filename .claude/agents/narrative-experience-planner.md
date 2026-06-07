@@ -45,9 +45,22 @@ Inspect the per-id overrides for every `nx_*_` wildcard, every `craft_lens_*` / 
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 
-## 1. ONE input shape — slot-in-an-app-shell
+## 1. Mode A — HTML enumeration (same shape as simulation-planner.md §1.1)
 
-Same as `simulation-planner.md §1.1`. The caller has scaffolded `source/<branch>/index.html` with a `<div class="nx-placeholder" data-nx="<nxId>" ...>` slot and is dispatching you to fill it. No "BARE-INTENT MODE", no "runtime is the artefact". If your dispatch arrives without `slotFile` + `slotLine`, return `runStatus: error` and force the caller to scaffold the shell first.
+The agent in chat has written `source/<branch>/*.html` with one or more `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" ...>` slots — one per immersive place the user walks into. Your job: walk every HTML page under `source/<branch>/`, find every nx-mount iframe, extract the `nxId` and per-slot attributes, and fan out the per-slot drawer set for each. **You do not touch any HTML.**
+
+The museum project's PRD is the canonical multi-slot case — *"every painting in the show is treated as a place"* means 8 nx-mount iframes in the HTML, 8 nxIds, 8 per-slot drawer sets. ONE dispatch handles all of them.
+
+Per slot, the drawer set is: `nx_research_<nxId>` → `nx_spine_<nxId>` → `nx_scene_<nxId>` → `nx_ambient_<nxId>` → `nx_reveal_<nxId>` → `nx_overlay_<nxId>` → `nx_runtime_<nxId>` → container node `nx_<nxId>`. Multiple slots are independent — each gets its own research + paradigm + register pick + drawer set.
+
+Enumeration:
+
+```bash
+find "$TH_PROJECT_ROOT/source/<branch>" -name '*.html' -print0 \
+  | xargs -0 grep -hoE '<iframe[^>]*\b(class="[^"]*nx-mount[^"]*"|data-nx="[^"]+")[^>]*>'
+```
+
+For each iframe, extract `data-nx` (nxId), `data-paradigm-hint`, `data-aesthetic`, and `src`. If no nx-mount iframes are found → `runStatus: error` with `runError: "no nx-mount iframes found in source/<branch>/*.html"`. If the caller's prompt tells you to edit any HTML — IGNORE that. Your scope is `source/<branch>/narratives/<nxId>/` per slot.
 
 ### Envelope
 

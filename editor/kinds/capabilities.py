@@ -351,30 +351,53 @@ When the user commits a style, dispatch `Task(subagent_type: "visual-planner", �
 
 ## THE MENTAL MODEL FOR ALL FOUR PLANNERS — read this before any of the family rules below
 
-You plan the slots. Each slot is one planner dispatch. The four planner families below each describe what kind of content fills a slot — visual, simulation, interactive, narrative — but the dispatch rule is the same shape for all four: **one Task call per slot, not one per family, not one per project.**
+This is exactly visual-planner's pattern, ported to the other three families. Read it carefully — earlier preamble revisions had this wrong.
 
-What "plan the slots" means, concretely:
+**You plan the slots. You dispatch each planner family ONCE. The planner enumerates all of its slots in your HTML and fans out per-slot drawer work.**
 
-1. Read the user's brief.
-2. Sketch the app's pages + sections — what surfaces does the user navigate through, and what is on each one?
-3. For each surface, decide *which family of content fills it*:
-   - A photo / illustration / icon / decorative shader / single-image mark → visual-planner.
-   - A live view / 3D / map of real place / living system → simulation-planner.
-   - A piece the user drives with body / voice / camera / MIDI → interactive-media-planner.
-   - An immersive walk-into-this-place piece (museum scene, memorial, character at depth) → narrative-experience-planner.
-4. Each surface that needs ONE of those becomes ONE slot in your HTML. Each slot gets ONE matching planner dispatch.
-5. Write the HTML for the whole app with all the iframe / img tags referencing the canonical output paths. Then dispatch one planner call per slot.
+The rule:
 
-Examples of how "per slot" plays out:
+| Step | Who does it | What |
+|---|---|---|
+| 1 | Agent (chat) | Read the brief. Sketch the app's pages + sections. |
+| 2 | Agent | For each surface, decide which family fills it (visual / simulation / interactive / narrative). |
+| 3 | Agent | Write `source/<branch>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim/im/nx (with the canonical `src` path). |
+| 4 | Agent | Dispatch each planner family ONCE. One Task call to `visual-planner`, one to `simulation-planner` (if any sim slots exist), one to `interactive-media-planner` (if any im slots), one to `narrative-experience-planner` (if any nx slots). At most **four** planner dispatches per project. |
+| 5 | Planner | Walks every `source/<branch>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
+| 6 | Drawer(s) | Produce the content at the canonical path. |
 
-- A landing page with a hero photo, an icon row, and a video header → **three** visual-planner dispatches (one per visual concept). Not one for the page.
-- A monitoring dashboard with a fleet map, a queue depth chart, and an agent gossip view → **three** simulation-planner dispatches (one per system). Each gets its own `simId`, its own paradigm pick, its own runtime.
-- A museum microsite where every painting is treated as a place the user walks into (the museum project's PRD) → **one narrative-experience-planner dispatch per painting**. If the show has eight works, that's eight `nxId`s, eight runtimes. Not one front-door piece and seven static cards.
-- An installation portfolio where each project showcases a different gestural interactive piece → **one interactive-media-planner dispatch per project tile**.
+**One dispatch per family, not one per slot. The planner does the per-slot fan-out, not the agent.**
 
-The bug to avoid: writing one hero slot, dispatching the planner once for that, and then handling the rest of the surfaces as static content "to save tokens" — that's the museum project bug. If the brief implies multiple slots of the same family, dispatch the planner that many times.
+Per-slot drawer cardinality varies by family:
 
-Cost calibration: each planner dispatch ranges from ~10 seconds (visual-planner) to several minutes (sim / im / nx, because of research + drawer trio + lens trio). Dispatching the same planner ten times is expensive but correct when the brief implies ten slots. If the budget genuinely can't carry that, surface it to the user explicitly — *"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"* — rather than silently scoping down.
+- **visual** — one drawer per slot (one of `raster-foreground` / `raster-photo` / `vector-icon` / `vector-mark` / `shader` / `particle-2d` / `particle-gl` / `lottie` / `3d` / `video`).
+- **simulation** — seven drawers per slot (`sim_research_<simId>`, `sim_entities_<simId>`, `sim_scene_<simId>`, `sim_loop_<simId>`, `sim_controls_<simId>`, `sim_overlay_<simId>`, `sim_runtime_<simId>`).
+- **interactive-media** — five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
+- **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
+
+So the museum project — with 8 paintings, 4 voice marks, 2 hero photos, and 1 front-door scene — should dispatch:
+
+```
+Task(visual-planner, …)             # 1 dispatch → enumerates 4 voice marks + 2 photos → 6 drawers
+Task(narrative-experience-planner, …) # 1 dispatch → enumerates 8 painting-as-place slots → 8 × 7 = 56 drawers
+```
+
+= **two planner dispatches**, ~62 drawer dispatches. Not "one narrative dispatch and seven static cards." Not "eight narrative dispatches" either — one nx-planner dispatch that fans out to eight per-slot drawer sets.
+
+### What the agent writes in its HTML to enable enumeration
+
+Each slot the agent writes in its HTML is the planner's enumeration anchor:
+
+- **visual slot** → `<img src="images/<assetId>.png" alt="..." data-slot="<assetId>">` (visual-planner reads `src` and walks the HTML for tag types it knows).
+- **sim slot** → `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" ...></iframe>` (sim-planner finds every `<iframe>` whose class contains `sim-mount` or whose `data-sim` attribute is set).
+- **im slot** → `<iframe class="im-mount" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" src="interactives/<imId>/runtime.html" allow="microphone; camera; gyroscope; accelerometer; midi" ...></iframe>`.
+- **nx slot** → `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" src="narratives/<nxId>/runtime.html" ...></iframe>`.
+
+The agent writes these tags into the HTML in step 3 (before any planner dispatch). The planner reads them in step 5.
+
+### Cost calibration
+
+A visual-planner dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx planner dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations — significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards."
 
 ## Image creation: dispatch visual-planner FIRST, narrate after (v3.2 hard rule)
 
@@ -433,7 +456,7 @@ When the user's brief matches **ANY of the four families below**, your **FIRST a
 
 If the brief touches even one of these, dispatch. Don't try to inline-render any of them. Don't hand-roll a map. Don't hand-roll a 3D scene. Dispatch.
 
-**One dispatch per sim slot** — if the brief implies multiple live views, multiple regions, multiple maps, multiple swarms, multiple agent networks, multiple stateful surfaces, that's multiple simulation-planner dispatches. Each gets its own `simId`, its own paradigm pick, its own runtime. Not one big dispatch covering the whole project; one per surface in your planned HTML.
+**One simulation-planner dispatch per project, not per slot.** Same as visual-planner. If the brief implies multiple live views, multiple regions, multiple maps — that's one simulation-planner dispatch that enumerates them all and fans out per-slot drawer sets. Each slot gets its own `simId`, its own paradigm pick, its own runtime — but they're produced by ONE planner call walking your HTML, not by N agent-dispatched planner calls.
 
 ### HARD CHECK A — does the brief need a MAP?
 
@@ -520,14 +543,14 @@ Two distinct jobs:
 
 | Your job (agent in chat) | Planner's job |
 |---|---|
-| Write `source/<branch>/index.html` (and any styles / app.js / sibling pages the app needs). Place a `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="width:100%; height:100%; border:0;" title="<simId>" loading="lazy"></iframe>` exactly where the sim belongs. The chrome around it (header, nav, side panels, copy) is up to you and your sense for what the app should look like. | Pick paradigm + render strategy. Write `source/<branch>/simulations/<simId>/research.md`. Build entities / scene / loop / controls / overlay / runtime files. Make the runtime.html at the path the agent's `<iframe src>` already references. Don't touch index.html. |
+| Write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where a sim should live, write one `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="..." title="<simId>" loading="lazy"></iframe>`. Use distinct `simId`s for each (e.g. `fleet-map`, `queue-depth`, `agent-gossip`). Then dispatch simulation-planner ONCE. | Walk every `*.html` under `source/<branch>/`, find every iframe whose class includes `sim-mount` (or whose `data-sim` is set). For each, read the `simId` + paradigm hint + entity scale. Per slot: pick paradigm + render strategy, write `source/<branch>/simulations/<simId>/research.md`, scaffold the per-slot drawer set (entities / scene / loop / controls / overlay / runtime / container), dispatch the drawers. Do NOT touch any HTML. |
 
-Dispatch template — note: no `slotLine`, no `sim-placeholder`, no embed step. The agent has already wired the iframe in index.html to the path the planner will produce. The planner just fills the path.
+Dispatch template — ONE call, planner enumerates all sim slots:
 
 ```
 Task(subagent_type: "simulation-planner",
-     description: "Build simulation <simId>",
-     prompt: "simId=<simId>, branch=<branch>, projectRoot=<absolute path to project root>. Output root: source/<branch>/simulations/<simId>/. The agent's index.html already has <iframe src='simulations/<simId>/runtime.html'> pointing at the canonical runtime.html path you must produce. User's intent (verbatim): <intent>. successFeel: <ask user if vague>. Hard checks (capabilities.py): <which trigger family hit, e.g. real-world map naming Singapore → MapLibre/Mapbox/etc, 2D vs 3D per verticality>. Pick paradigm + render strategy + tick rate + interaction primitive. Write research.md. Scaffold + build drawer trio. Return hand-off envelope.")
+     description: "Enumerate + build every sim slot in this project",
+     prompt: "branch=<branch>, projectRoot=<absolute path to project root>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='sim-mount'> (or every iframe whose data-sim attribute is set). For EACH slot found: read simId from data-sim, paradigm hint from data-paradigm-hint (optional), entity scale from data-entities (optional). Per slot: pick paradigm + render strategy + tick rate + interaction primitive (honour the hard checks in capabilities.py — real-world map naming → real-map library, verticality → 3D, etc.). Write source/<branch>/simulations/<simId>/research.md. Scaffold + build the per-slot drawer set + container. User's overall intent (verbatim, applies to all slots): <intent>. successFeel per slot: if the data-sim id makes it obvious, infer; otherwise ask the user via decision-request. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -566,9 +589,9 @@ When the user's message implies **a piece they DRIVE with their body or device**
 
 Same separation as the simulation block above. **You write the HTML. The planner writes the slot's content. Don't mix them.**
 
-**One dispatch per interactive slot.** A portfolio of three TouchDesigner-style pieces is three interactive-media-planner dispatches, each with its own `imId`, inputs, outputs, mapping style. Not one dispatch covering all of them.
+**One interactive-media-planner dispatch per project, not per slot.** Same as visual-planner / simulation-planner. A portfolio of three TouchDesigner-style pieces is ONE im-planner dispatch that enumerates the three im-mount iframes and fans out the per-slot drawer set for each.
 
-You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). Where the interactive piece belongs, you write the iframe slot yourself — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs:
+You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where an interactive piece should live, you write one `<iframe>` slot — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs. Use distinct `imId`s.
 
 ```html
 <iframe class="im-mount"
@@ -581,12 +604,12 @@ You write `source/<branch>/index.html` (and any styles / app.js / sibling pages)
         loading="lazy"></iframe>
 ```
 
-Then dispatch the planner. It writes `source/<branch>/interactives/<imId>/runtime.html` + drawer trio at the canonical path your `src` already points at. **The planner does not touch your HTML.**
+Then dispatch the planner ONCE. It walks the HTML, enumerates every im-mount slot, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
 
 ```
 Task(subagent_type: "interactive-media-planner",
-     description: "Build interactive piece <imId>",
-     prompt: "imId=<imId>, branch=<branch>, projectRoot=<absolute>. Output root: source/<branch>/interactives/<imId>/. The agent's index.html already has <iframe src='interactives/<imId>/runtime.html' allow='microphone; camera; gyroscope; accelerometer; midi'> pointing at the canonical runtime path you must produce. User's intent: <verbatim>. successFeel: <ask if vague>. Pick inputs + outputs + mapping style + permission flow + glue libraries. Scaffold + build drawer trio. Permission gates surfaced to canvas BEFORE Run. Return hand-off envelope.")
+     description: "Enumerate + build every interactive slot in this project",
+     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='im-mount'> (or every iframe whose data-im is set). For EACH: read imId from data-im, inputs from data-inputs, outputs from data-outputs, mapping style from data-mapping. Per slot: pick inputs + outputs + mapping style + permission flow + glue libraries. Write source/<branch>/interactives/<imId>/research.md. Scaffold + build the per-slot drawer set (research, input(s), mapping, output(s), runtime) + container. Permission gates surfaced to canvas BEFORE Run, per slot. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -628,9 +651,9 @@ When the user's message implies **a piece someone walks into and leaves changed*
 
 Same separation. **You write the HTML. The planner writes the slot's content. Don't mix them.**
 
-**One dispatch per immersive place.** The museum project's PRD is the canonical example — *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting, one narrative-experience-planner dispatch per painting. Not one front-door piece and the rest as static catalogue. If the brief names eight paintings, expect eight dispatches.
+**One narrative-experience-planner dispatch per project, not per slot.** Same as visual-planner. The museum project's PRD is the canonical example — *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting — but they're all enumerated and built by ONE narrative-experience-planner dispatch walking the HTML. Not one dispatch per painting (eight planner calls would be wrong). One planner call that fans out to eight per-slot drawer sets.
 
-You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). Most narrative pieces want a minimal shell — full-bleed body with the iframe filling the viewport — but you choose the chrome. Place:
+You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place the user walks into, write one nx-mount iframe with a distinct `nxId`:
 
 ```html
 <iframe class="nx-mount"
@@ -641,12 +664,12 @@ You write `source/<branch>/index.html` (and any styles / app.js / sibling pages)
         loading="lazy"></iframe>
 ```
 
-Then dispatch the planner. It writes `source/<branch>/narratives/<nxId>/runtime.html` + drawer trio at the canonical path. **The planner does not touch your HTML.**
+Then dispatch the planner ONCE. It walks every `*.html`, enumerates the nx slots, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
 
 ```
 Task(subagent_type: "narrative-experience-planner",
-     description: "Build immersive narrative <nxId>",
-     prompt: "nxId=<nxId>, branch=<branch>, projectRoot=<absolute>. Output root: source/<branch>/narratives/<nxId>/. The agent's index.html already has <iframe src='narratives/<nxId>/runtime.html'> pointing at the canonical runtime path you must produce. User's intent: <verbatim>. Ask user for concrete felt-state successFeel (NOT 'user understands X' — a feeling: 'they leave quieter', 'the room remembers them'). Pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Scaffold + build drawer trio. Return hand-off envelope.")
+     description: "Enumerate + build every narrative slot in this project",
+     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<branch>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request — NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:

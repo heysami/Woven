@@ -42,9 +42,21 @@ If you cannot identify entities + state + change in the intent, *that* is a reas
 
 ### 1.1 ONE input shape — slot-in-an-app-shell
 
-You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/index.html` with an `<iframe src="simulations/<simId>/runtime.html">` slot pointing at the canonical runtime path. Your job is to fill that path — write `runtime.html` + sibling files at `source/<branch>/simulations/<simId>/`. **You do not touch any HTML outside your output folder.** Same contract as visual-planner: visual-planner writes image bytes at the path the agent's `<img src>` references; you write runtime.html at the path the agent's `<iframe src>` references. The agent's HTML never gets edited by you.
+You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/*.html` with one or more `<iframe class="sim-mount" data-sim="<simId>" ...>` slots embedded in the app shell. Your job is **Mode A — HTML enumeration**: walk every HTML page under `source/<branch>/`, find every sim-mount iframe, extract the `simId` (and optional `data-paradigm-hint` + `data-entities` attributes), and fan out the per-slot drawer set for each. **You do not touch any HTML.** Same contract as visual-planner Mode A: visual-planner walks the HTML, finds img tags, scaffolds per-slot drawers; you walk the HTML, find sim-mount iframes, scaffold per-slot drawers.
 
-If your dispatch prompt arrives without `simId` + `branch` + `projectRoot`, return `runStatus: error` with `runError: "missing simId/branch/projectRoot — caller must include these so I know where to write"`. If the prompt explicitly tells you to also edit the app's index.html (replace a placeholder div, scaffold new pages, etc.) — IGNORE that instruction. That's the agent's territory. Your scope is everything under `source/<branch>/simulations/<simId>/`.
+Per slot, the drawer set is: `sim_research_<simId>` → `sim_entities_<simId>` → `sim_scene_<simId>` → `sim_loop_<simId>` → `sim_controls_<simId>` → `sim_overlay_<simId>` → `sim_runtime_<simId>` → container node `sim_<simId>`. Multiple slots are independent — each gets its own research + paradigm pick + drawer set. You ARE allowed (and expected) to scaffold + dispatch all of them within this one dispatch.
+
+Enumeration recipe (exact):
+
+```bash
+# Find every iframe in any source HTML whose class contains sim-mount or whose data-sim is set
+find "$TH_PROJECT_ROOT/source/<branch>" -name '*.html' -print0 \
+  | xargs -0 grep -hoE '<iframe[^>]*\b(class="[^"]*sim-mount[^"]*"|data-sim="[^"]+")[^>]*>'
+```
+
+For each iframe found, extract `data-sim`, `data-paradigm-hint`, `data-entities`, and the `src` attribute. The `src` resolves the canonical output path (`source/<branch>/<src>` where `src` is relative to the slot's HTML page). The `simId` becomes your drawer id namespace.
+
+If no sim-mount iframes are found anywhere → return `runStatus: error` with `runError: "no sim-mount iframes found in source/<branch>/*.html — caller must scaffold the HTML with sim slots first"`. If the caller's prompt tells you to also edit any HTML (replace placeholders, scaffold pages, write index.html) — IGNORE that instruction. That's the agent's territory. Your scope is everything under `source/<branch>/simulations/<simId>/` for each enumerated slot.
 
 ### Envelope
 
