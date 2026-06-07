@@ -10,7 +10,6 @@ Two classes of drift:
     ORPHAN_VARIANT      — folder under producer's outputsRoot has no node
     LYING_STATUS        — node claims queued but completion satisfied (or vice versa)
     PHANTOM_DECISION    — DECISION points at a node that doesn't exist (self-resolves after orphan promote)
-    PREMATURE_STAGE     — .onboarding-pending lists stage complete but canvas disagrees
 
   MANUAL_HEAL — surfaces a Heal button, no silent action:
     UNHANDLED_OUTPUT    — consumer has unrouted upstream files
@@ -31,7 +30,6 @@ from . import versioning as _vsn
 ORPHAN_VARIANT     = "ORPHAN_VARIANT"
 LYING_STATUS       = "LYING_STATUS"
 PHANTOM_DECISION   = "PHANTOM_DECISION"
-PREMATURE_STAGE    = "PREMATURE_STAGE"
 UNHANDLED_OUTPUT   = "UNHANDLED_OUTPUT"
 ABANDONED_STAGING  = "ABANDONED_STAGING"
 COHERENCE_NOT_RUN  = "COHERENCE_NOT_RUN"
@@ -465,46 +463,11 @@ def _detect_coherence(workflow, project_root, drifts):
                 })
 
 
-def _detect_premature_stage(workflow, project_root, drifts):
-    """`.onboarding-pending.completedStages` lists stage X complete, but the
-    nodes for stage X aren't all done."""
-    pending = os.path.join(project_root, ".onboarding-pending")
-    if not os.path.isfile(pending): return
-    try:
-        with open(pending) as f:
-            ob = json.load(f)
-    except Exception:
-        return
-    completed = ob.get("completedStages") or []
-    if not completed: return
-    # Map stage codes to id prefixes (rough heuristic)
-    stage_prefixes = {
-        "A": ["cp_ctx_"],
-        "B": ["bp_brief_", "bp_prd_refine", "bp_prd_text"],
-        "C": ["bs_ds_"],
-        "D": ["bp_ds_gen", "cp_ds_pick"],
-        "E": ["bp_chunks", "bs_html_"],
-        "F": ["br_remix_"],
-        "G": ["bp_prd_final", "cp_remix_pick"],
-        "H": ["bp_ds_update"],
-        "I": ["bp_proto_build"],
-        "J": ["bp_design_brief"],
-    }
-    nodes = workflow.get("nodes") or []
-    for code in completed:
-        prefixes = stage_prefixes.get(code, [])
-        if not prefixes: continue
-        stage_nodes = [n for n in nodes if isinstance(n, dict) and any(n.get("id", "").startswith(p) for p in prefixes)]
-        if not stage_nodes: continue
-        not_done = [n for n in stage_nodes if (n.get("runStatus") or "queued") != "done"]
-        if not_done:
-            drifts.append({
-                "type":     PREMATURE_STAGE,
-                "stage":    code,
-                "queuedNodes": [n.get("id") for n in not_done],
-                "class":    "auto",
-                "suggest":  f"recompute .onboarding-pending.completedStages from canvas; stage {code} has unfinished nodes",
-            })
+# v3.5 — `_detect_premature_stage` deleted. It mapped onboarding stage
+# letters (A/B/C/.../J) to bp_*_build / bp_prd_* / bs_html_* / etc. node id
+# prefixes for the guided-onboarding flow. Both the flow and the bp_*
+# preambles are gone; nothing writes `.onboarding-pending` anymore, so this
+# detector had no inputs to act on. Removed wholesale.
 
 
 _VISUAL_ASSET_KINDS = ("image", "svg", "video", "audio", "3d", "shader")
@@ -729,28 +692,7 @@ def _autoheal_lying_status(workflow, drift):
     return False
 
 
-def _autoheal_premature_stage(workflow, drift, project_root):
-    """Recompute .onboarding-pending.completedStages from canvas truth."""
-    stage = drift.get("stage")
-    if not stage: return False
-    pending = os.path.join(project_root, ".onboarding-pending")
-    if not os.path.isfile(pending): return False
-    try:
-        with open(pending, "r") as f:
-            ob = json.load(f)
-    except Exception:
-        return False
-    completed = ob.get("completedStages") or []
-    if stage in completed:
-        completed.remove(stage)
-        ob["completedStages"] = completed
-        try:
-            with open(pending, "w") as f:
-                json.dump(ob, f, indent=2)
-            return True
-        except Exception:
-            return False
-    return False
+# v3.5 — `_autoheal_premature_stage` deleted along with its detector.
 
 
 def _now_iso():
@@ -765,9 +707,8 @@ def _now_iso():
 # closes the loop: file watcher → reconcile → auto-mount.
 
 # Subdirs that look like prototype folders but are project-level scratch
-# space — never get a prototype node. The leading underscore convention
-# matches what the orchestrator's bp_proto_build / bs_html_* / br_remix_*
-# scaffold under source/ (see registry.py outputsRoots).
+# space — never get a prototype node. Leading-underscore is the standing
+# convention for scratch under source/.
 _PROTOTYPE_FOLDER_SKIP_PREFIXES = ("_",)
 _PROTOTYPE_FOLDER_SKIP_NAMES = {
     "_attachments", "_coherence", "_pages", "_remix", "_ds_brainstorm",
@@ -929,8 +870,6 @@ def apply_auto_heals(project_root):
                 applied = _autoheal_orphan_variant(workflow, drift, project_root)
             elif t == LYING_STATUS:
                 applied = _autoheal_lying_status(workflow, drift)
-            elif t == PREMATURE_STAGE:
-                applied = _autoheal_premature_stage(workflow, drift, project_root)
             elif t == KIND_MIGRATION:
                 applied = _autoheal_kind_migration(workflow, drift)
             elif t == ORPHAN_ASSET_NO_PROTOTYPE_EDGE:
@@ -1029,9 +968,6 @@ def reconcile(project_root):
 
     try: _detect_abandoned_staging(wf, project_root, drifts)
     except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"staging"})
-
-    try: _detect_premature_stage(wf, project_root, drifts)
-    except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"stage"})
 
     try: _detect_coherence(wf, project_root, drifts)
     except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"coherence"})

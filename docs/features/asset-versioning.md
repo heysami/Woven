@@ -61,7 +61,7 @@ For an asset with no sub-asset upstream (e.g. a single image), the composition a
       "pinned": false,
       "branchedFrom": null,            // { nodeId, versionId } if this version was seeded by a branch
       "consumedVersions": {
-        "bp_prd_final": { "outputHash": "sha256:..." }          // non-asset upstream (no compositions)
+        "<upstream-id>": { "outputHash": "sha256:..." }         // non-asset upstream (no compositions)
       },
       "compositions": [
         {
@@ -262,7 +262,7 @@ Two-pane layout: versions on the left, compositions on the right.
 
 - Each asset card with upstream inputs shows one chip per upstream:
   - **Asset / sub-asset upstream**: `← img_hero v2` (neutral) when active composition's recorded pin == upstream's current active version; `← img_hero v2 → v3` (warm color) when upstream has moved on. A small **↥ follow** glyph on the chip flips the upstream's active to match this composition's pin.
-  - **Non-asset upstream**: `← bp_prd_final` with a subtle dot; warm dot when stored `outputHash` differs from current.
+  - **Non-asset upstream**: `← <upstream-id>` with a subtle dot; warm dot when stored `outputHash` differs from current.
 - Click a chip → focus the upstream node + open its picker scrolled to the consumed version.
 
 ### 6.4 Snapshot capture flow (thumbnails)
@@ -363,7 +363,7 @@ Per-id overrides may:
 
 ## 9. Subagent contract impact
 
-Subagents that produce asset content (notably `bs_html_*`, `bp_proto_build`, the `1V-*` drawers, `cp_chrome`, `cp_fixture`) need ONE change: emit a `MANIFEST.json` in their write root listing the files they produced. The daemon's snapshot step reads this to know exactly what to copy. Without it, the daemon falls back to scanning the declared `outputsRoot`, which works but is fuzzier when subagents write outside their declared scope.
+Subagents that produce asset content (notably the `1V-*` drawers) need ONE change: emit a `MANIFEST.json` in their write root listing the files they produced. The daemon's snapshot step reads this to know exactly what to copy. Without it, the daemon falls back to scanning the declared `outputsRoot`, which works but is fuzzier when subagents write outside their declared scope.
 
 Manifest format:
 

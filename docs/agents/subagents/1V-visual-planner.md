@@ -18,7 +18,7 @@ You handle **two** dispatch shapes. Branch your behavior on the first words of y
 
 ### Mode A — HTML enumeration (default)
 
-Dispatched by Subagent 1 / `bp_proto_build` after HTML is written. Envelope:
+Dispatched by the workflow-mode chat after HTML is scaffolded (via `/prototype` or by hand). Envelope:
 
 - `slug`, `sourceRoot`, `projectRoot`, `intent`
 - `workflowJsonPath` = `<projectRoot>/workflow/workflow.json` (may not exist yet — create with `{ pan: { x:0, y:0 }, zoom: 1, nodes: [], edges: [] }`)

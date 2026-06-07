@@ -104,7 +104,7 @@ design-system  →  design-systems/{dsId}/
                       *.css
                     docs/
 
-agent[bp_research]    → source/{branch}/research.md
+agent[<id>]           → <its per-id outputsRoot from the registry>
 agent[bs_html_1]      → source/{branch}/_pages/page_1/index.html + assets/
 ```
 

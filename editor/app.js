@@ -772,8 +772,7 @@ function StagesDAG({ stages, runResearch = true }) {
   }));
   // Filter edges to those whose both endpoints survived the subset filter.
   // v2.15 — when H2 mediates between G and I, drop the direct G→I shortcut
-  // so the DAG mirrors the scaffolder (which routes I from bp_prd_align_text,
-  // not bp_prd_final_text, whenever H is in scope).
+  // so the DAG mirrors how the scaffolder wired the stages.
   const edges = STAGE_EDGES
     .filter(([a,b]) => set.has(a) && set.has(b))
     .filter(([a,b]) => !(set.has("H2") && a === "G" && b === "I"))
@@ -14160,7 +14159,7 @@ function WorkflowCanvas() {
               // v2.20 — also pull `runId` (the canonical field WorkflowAgentNode
               // reads to find the SSE-backed transcript). Daemon now writes both
               // names; the merge needs to surface `runId` too so the chat tab
-              // on bp_research / bp_ds_update / bp_proto_build / bp_design_brief
+              // on agent nodes
               // can fetch the conversation while the run is in flight.
               runId:     disk.runId,
               output:    disk.output,
@@ -21213,7 +21212,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // prompt text node). v2.10b — if the upstream prompt is wired but
       // empty, REFUSE to run instead of producing nonsense from the
       // "(none wired)" placeholder. Previous behavior silently fell through
-      // when bp_brief_seed wasn't populated by the orchestrator, producing
+      // when the seed input wasn't populated by the orchestrator, producing
       // an interview about thin air. Two valid states now: (1) something
       // wired and non-empty → run; (2) nothing wired at all → run with the
       // placeholder seed (legacy library-drop behavior). Empty-wired upstream
@@ -21259,7 +21258,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // refiner (refinerId.out → <something>.in where <something>.kind ===
       // "prompt"), reuse THAT node as the output sink instead of spawning a
       // duplicate. This avoids the "two refined-prompt sinks" problem in
-      // the onboarding orchestration (where bp_brief_output is pre-wired).
+      // the onboarding orchestration (where the output is pre-wired).
       // For library-drop usage (no downstream wiring), the fallback spawns
       // a new output node as before.
       let existingOutId = null;
@@ -41371,7 +41370,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
 
   // v2.10 — `prompt-refiner` (my v2.7 kind) was deleted. The existing
   // `iterator-refiner` (2-agent loop) library node is the correct tool for
-  // brief refinement; bp_brief_refine now uses that kind, rendered by its
+  // brief refinement uses that kind, rendered by its
   // own WorkflowRefinerNode component (no skill-node fallback needed).
 
   // v2.4 — skill=llm gets a dedicated rendering with a prompt editor + the

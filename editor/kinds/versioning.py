@@ -1097,7 +1097,7 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
 
     # Find downstream versionable nodes. v3.2 — was `is_asset(n)`, which
     # silently skipped prototype + design-system children even though both
-    # are in VERSIONABLE_KINDS. Producer-completion (bp_proto_build,
+    # are in VERSIONABLE_KINDS. Producer-completion (
     # ds-builder, etc.) snapshots now cover all three kinds, matching the
     # file-watcher's `snapshot_changed_assets` coverage.
     downstream_asset_ids: List[str] = []

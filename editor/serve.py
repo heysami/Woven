@@ -4773,7 +4773,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             pass
         # v2.17c — display hydration for auto:true intermediary prompt nodes.
         # These nodes sit between a skill dispatch and its downstream consumers
-        # (e.g. bp_prd_text between bp_prd_refine and the downstream stages).
+        # (e.g. an intermediate text node between the producer and consumer).
         # The daemon's upstream walk for downstream /run calls reads the
         # upstream skill's .output directly, bypassing the intermediary — so
         # the intermediary's .text stays empty on disk forever even when real
@@ -4814,7 +4814,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     up_text = up_out
                 if up_text.strip():
                     # Annotate the projected source so the frontend can label
-                    # it ("from bp_prd_refine.output") rather than imply this
+                    # it ("from <producer>.output") rather than imply this
                     # is user-edited text.
                     n["text"] = up_text
                     n["textProjectedFrom"] = upstream_id
@@ -5137,8 +5137,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # existing node, certain fields are owned by the DAEMON (not the
             # editor) and must NEVER be overwritten by what the editor sent:
             #   - `text` of `auto:true` intermediary nodes — these are populated
-            #     by the orchestrator via POST /status (e.g. bp_brief_seed gets
-            #     the intake aggregate, bp_brief_output gets the refined brief).
+            #     by the orchestrator via POST /status.
             #     The editor renders them empty and would otherwise erase the
             #     orchestrator's writes on its next debounced save. Same root
             #     cause as v2.12a but for prompt-intermediary `text` rather than
@@ -5742,8 +5741,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # app.js:11297); `runId` is what WorkflowAgentNode (app.js
                 # :26435 and ~12 other sites) actually reads to fetch the
                 # SSE-backed transcript via /__run/<id>. Without `runId` the
-                # chat tab on bp_research / bp_ds_update / bp_proto_build /
-                # bp_design_brief shows nothing even though the subprocess
+                # chat tab on agent nodes shows nothing even though the subprocess
                 # is producing events the daemon captured.
                 node["runId"]    = run_id
                 node["runRunId"] = run_id

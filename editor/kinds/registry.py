@@ -16,24 +16,12 @@ CRITICAL RULES (from §1 Principles + §4 AGENT_HARNESS):
     everything in the upstream folder per consumeFrom rules.
 """
 
-# ── STAGES — the canonical pipeline phases (mirrors prompts/stages.py) ───
-#
-# `pauseAfter: True` stages cause the orchestrator to halt and ask for user
-# confirmation before advancing. C and F have inherent decision checkpoints
-# (cp_ds_pick / cp_remix_pick) so they don't need pauseAfter.
-STAGES = [
-    {"code": "A",  "short": "Intake",            "pauseAfter": False, "title": "Intake (3 questions + reference)"},
-    {"code": "B",  "short": "Refine PRD",        "pauseAfter": False, "title": "Refine PRD"},
-    {"code": "C",  "short": "DS brainstorm",     "pauseAfter": False, "title": "DS brainstorm — N variants"},
-    {"code": "D",  "short": "Generate DS",       "pauseAfter": True,  "title": "Generate Design System"},
-    {"code": "E",  "short": "Quick HTML",        "pauseAfter": False, "title": "Chunk PRD → 3 quick HTML pages"},
-    {"code": "F",  "short": "Remix alts",        "pauseAfter": False, "title": "Remix — 3 alternatives per page"},
-    {"code": "G",  "short": "Refine with pick",  "pauseAfter": True,  "title": "Refine PRD with picked alts"},
-    {"code": "H",  "short": "Update DS",         "pauseAfter": False, "title": "Update DS from refined PRD"},
-    {"code": "H2", "short": "Realign PRD",       "pauseAfter": False, "title": "Realign PRD with updated DS"},
-    {"code": "I",  "short": "Build prototype",   "pauseAfter": False, "title": "Build prototype source"},
-    {"code": "J",  "short": "Design brief",      "pauseAfter": False, "title": "Design brief + storyboard"},
-]
+# ── STAGES — gone in v3.5 (onboarding cut) ──
+# The guided pipeline (A through J) was wired to bp_* preambles that no
+# longer exist. STAGES is now an empty list, kept only because /__kinds
+# legacy clients still read the key. `stage_pause_after` always returns
+# False. Both will be removed entirely once no client references remain.
+STAGES: list = []
 
 
 # Common dispatch shapes (for documentation in entries):
@@ -1003,7 +991,7 @@ KINDS = {
         "pauseAfter":   False,
         "notes": (
             "Live iframe of a runnable simulation. User-driven. Run re-builds "
-            "via re-dispatching simulation-planner (bp_simulation_build). "
+            "via re-dispatching simulation-planner. "
             "Component children own their own files and lens verdicts; this "
             "container is marked done only when the planner's commit carries "
             "outputs.lensVerdict='pass'."
@@ -1054,7 +1042,7 @@ KINDS = {
     # place piece. Mirrors `simulation` shape with three substitutions:
     # spine (scripted timeline) instead of loop, camera-as-narrator instead
     # of free controls, ambient (soundscape) as a new first-class channel.
-    # See `narrative-experience-planner.md` + `bp_narrative_build` per-id.
+    # See `narrative-experience-planner.md`.
     "narrative-experience": {
         "title":        "Narrative experience (live iframe)",
         "category":     "container",
@@ -1171,11 +1159,8 @@ def kind_contract(node_kind: str, node_id: str = None):
     return base
 
 
-def stage_pause_after(code: str) -> bool:
-    """True if the orchestrator must halt for user confirmation after this stage."""
-    for s in STAGES:
-        if s["code"] == code:
-            return bool(s.get("pauseAfter"))
+def stage_pause_after(code: str) -> bool:  # noqa: ARG001 — kept for API compat
+    """Legacy stage-pause check. STAGES list is empty post-v3.5, so always False."""
     return False
 
 
