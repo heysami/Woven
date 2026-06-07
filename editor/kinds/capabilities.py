@@ -225,7 +225,7 @@ def _strip_disabled_planner_blocks(text: str, enabled_ids: set) -> str:
     filter's known headers and the actual prose surfaces as a no-op."""
     SECTIONS = [
         ("## Image creation: dispatch visual-planner FIRST",                      "visual-planner"),
-        ("## Live view: dispatch simulation-planner FIRST",                       "simulation-planner"),
+        ("## Live view, 3D, real-world map, or living system: dispatch simulation-planner FIRST", "simulation-planner"),
         ("## Interactive piece: dispatch interactive-media-planner FIRST",        "interactive-media-planner"),
         ("## Immersive narrative: dispatch narrative-experience-planner FIRST",   "narrative-experience-planner"),
     ]
@@ -393,22 +393,91 @@ Also: when the planner returns, verify `workflow/visual-plan.json.qa` exists wit
 
 **Emulating visual-planner from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
 
-## Live view: dispatch simulation-planner FIRST (v3.7 hard rule)
+## Live view, 3D, real-world map, or living system: dispatch simulation-planner FIRST (v3.8 hard rule)
 
-When the user wants to **see things over a region or over time** — a live view, a map of where they are, a tracker, a monitor, a dashboard that shows stuff happening, a watch-this-unfold piece — your **FIRST action is a Task call to `simulation-planner`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
+When the user's brief matches **ANY of the four families below**, your **FIRST action is a Task call to `simulation-planner`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
 
-This is broad on purpose. Anything along the lines of:
+### The four families (any one of these → dispatch)
 
-- "birdwatch across Singapore" — birds (entities) across a region (space). Live view. Dispatch.
-- "monitor dengue mosquitoes" — mosquito clusters (entities) over Singapore (space). Live view. Dispatch.
-- "track our delivery fleet" — vehicles over a region. Dispatch.
-- "map of where the satellites are" — satellites over a globe. Dispatch.
-- "show me the queue draining" — items in a queue over time. Dispatch.
-- "live feed of NEA reports per zone" — points-on-map updating. Dispatch.
-- "see the swarm" / "watch the agents talk" / "follow the build pipeline" — same shape, dispatch.
-- "render farm dashboard" / "warehouse view" / "inbox view of mail flowing" — dispatch.
+1. **Live view of changing or positioned things.** A view, map, tracker, monitor, dashboard, watch-this-unfold piece. Population over a region, fleet over a route, queue draining, swarm moving, packets through a topology, sensor feed updating. Anything where the user is *looking at* state.
+2. **Exploratory 3D environment.** A space the user moves through or rotates around — a globe, a city block in 3D, a museum interior, a building at scale, a flythrough, a walkable studio, an architectural reconstruction. Even if "exploration" is mostly orbit/spin and not WASD, it's 3D-environment territory.
+3. **Living / real-time-interacting system.** Agents talking to each other, organisms in an ecosystem, services emitting signals, pipelines digesting, neural networks firing, markets responding, anything **alive** that the user wants to watch react. "Living" includes both biological (cells, mosquitoes, birds) and software-living (agents, services, models gossiping).
+4. **Anything anchored in real-world physical reality.** A real city, a real region, a real flight route, a real building's floor plan, a real reef, a real route between coordinates. If the place exists on Earth and the brief names it (or implies geographic registration), this family applies.
 
-If the brief is about LOOKING AT changing or positioned things (not just laying out static content), this is the right planner — no matter what vocabulary the user used.
+If the brief touches even one of these, dispatch. Don't try to inline-render any of them. Don't hand-roll a map. Don't hand-roll a 3D scene. Dispatch.
+
+### HARD CHECK A — does the brief need a MAP?
+
+Ask: *if I built this piece, would there be a map somewhere in it?*
+
+If **yes** → it is a simulation. Dispatch sim-planner. **And the map must be a real map** (see HARD CHECK C). Examples:
+  - "birdwatch across Singapore" → yes, a map of Singapore is in there → sim
+  - "track our fleet across Europe" → yes, map of Europe → sim
+  - "monitor dengue mosquitoes" → yes, map of Singapore → sim
+  - "show how packets propagate through the AWS network" → yes, world map or region map → sim
+  - "where are my drones right now" → yes, map → sim
+  - "compare crime rates by district" — yes, choropleth map → sim
+  - "Singapore weather widget" — yes, even a small inset map → sim
+
+If **no** (zero maps anywhere in the piece) → could still be a sim (queue / swarm / agents / 3D environment), keep reading.
+
+### HARD CHECK B — does the brief name a REAL PLACE on Earth?
+
+Real place = a real city, country, region, route, building, coastline, body of water, neighbourhood, indoor space, coordinates, named landmark. If yes → **always sim, always real map.** No exceptions.
+
+Decide 2D map vs 3D globe vs 3D environment by *what the user is doing in that place*:
+
+| What the user is looking at | Render shape |
+|---|---|
+| Things across a city, country, or any region where verticality doesn't matter (mosquitoes, birds, deliveries, traffic, weather, crime, demographic data) | **2D map** (MapLibre / Mapbox / Leaflet, optionally deck.gl overlay) |
+| Things across a globe or planet-scale (satellites, flight network, intercontinental traffic, climate, ocean currents) | **3D globe** (globe.gl / three-globe / Cesium) |
+| Indoor space where the layout matters but height doesn't (floor plan, retail store map, queue inside a hall) | **2D floor plan** (SVG or canvas2D top-down) |
+| Verticality matters — things at different heights inside a city / building / outdoor scene | **3D environment** (three.js + real terrain or city geometry) |
+
+**Verticality matters when** (research extension — surface examples + add the list):
+  - **Buildings** at human scale or larger (skyscraper density, urban block massing, campus layout)
+  - **Billboard / out-of-home advertising** at height (the height IS the product placement axis)
+  - **Drones / UAVs / aircraft** at altitude
+  - **Paintings / artifacts on walls** at specific heights inside a room
+  - **Signage / wayfinding** placed at varying heights along a route
+  - **Verticality in nature** — bird flocks at different altitudes, tree canopy layers, ocean depth zones, coral reef strata, geological strata
+  - **Construction / engineering** — crane reach, structural heights, scaffolding
+  - **Sound / lighting design** in venues (speaker height matters for audio coverage)
+  - **Surveillance / coverage** — cameras at height, drone coverage zones
+  - **Climbing / sports** — climbing routes on a wall, ski slope verticals
+  - **Astronomical** — satellite orbits at altitude, ISS / station heights
+
+If ANY of these apply → 3D. Otherwise → 2D map or 2D floor plan.
+
+When ambiguous, default to 2D map for region-scale, 3D for indoor + verticality-bearing scenes.
+
+### HARD CHECK C — NEVER hand-roll the map
+
+This is non-negotiable. If the brief involves a real place, you do **NOT**:
+
+- ❌ Draw an SVG silhouette of Singapore from your training-data knowledge
+- ❌ Hand-render a "stylised" map with `<path>` elements based on GeoJSON you sketched
+- ❌ Use a static image of a map (PNG / JPG / placeholder)
+- ❌ Generate a "fake" map shape with shaders or noise
+- ❌ Approximate the geography "close enough" — coast outlines, district boundaries, country borders
+
+The reason: the user said "Singapore" / "London" / "the Atlantic" because they expect to **recognise** it. A hand-rolled silhouette doesn't look like the place; it looks like Claude's best guess at the place. That's the bzzzzz failure mode — user asked for Singapore, got an outline that didn't look like Singapore.
+
+What sim-planner does instead: the tech-stack researcher's §2.0 REAL-WORLD CHECK mandates real map library candidates (MapLibre / Mapbox / Leaflet / deck.gl for region-scale, globe.gl / three-globe / Cesium for planet-scale) and the chosen library renders the actual tile data, GeoJSON boundaries, satellite imagery, or terrain mesh — not Claude's hallucinated approximation.
+
+**Always real map. Never your own.**
+
+### The other vocabulary the user might use (same answer — dispatch)
+
+If the brief is about LOOKING AT or MOVING THROUGH something stateful, positioned, or alive, this is the right planner — no matter what vocabulary the user used. Some shapes:
+
+- "birdwatch across Singapore", "watch the migration", "see where the herds are"
+- "monitor X" / "tracker for Y" / "dashboard for Z"
+- "watch the agents talk" / "see the swarm" / "follow the build pipeline"
+- "render farm view" / "warehouse view" / "inbox flowing"
+- "explore Vermeer's studio in 3D" / "fly through the city" / "walk into the building"
+- "the world feels alive" / "things responding to each other in real time"
+- "real Singapore map with X" / "real-time fleet on a map" / "live feed of points on a region"
 
 ```
 Task(subagent_type: "simulation-planner",
