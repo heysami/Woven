@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/sami/Documents/Woven/.claude/hooks/require-visual-planner.sh"
+            "command": "/Users/sami/Documents/Woven/.claude/hooks/require-planner.sh"
           }
         ]
       }
