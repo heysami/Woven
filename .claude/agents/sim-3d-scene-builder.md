@@ -10,6 +10,31 @@ Same lens-gating + multi-draft + envelope as `sim-2d-spatial-scene-builder.md`. 
 
 ## 1. Hard craft requirements (additional to §3 of sim-2d-spatial-scene-builder)
 
+### 1.0 3D must feel 3D (block: craft, aesthetic, concept — all three)
+
+If the paradigm is `3d-environment`, the result MUST give the user one of the following — otherwise it reads as a flat image and the user (correctly) wonders why we went to 3D at all:
+
+- **For environments — at minimum, look-around + move-inside.** The user MUST be able to (a) **look around** by dragging or pointer-locking the camera, AND (b) **move inside** the environment — either WASD/touch joystick (true walkable), or programmatic camera transitions between authored vantage points (clicking a marker flies you there), or a scripted but non-trivial dolly path the user can pause/scrub. Static, locked-camera 3D is not 3D.
+- **For 3D objects in the scene (instanced meshes, single hero meshes, etc.) — at least one of:**
+  1. **Interactive movement** — the object rotates/spins/orbits in response to pointer drag, or to the loop's state. The user grabs it and turns it.
+  2. **Self-motion** — the object animates: turntable rotation, swaying, breathing, drifting. Continuous enough to read as 3D.
+  3. **Three-dimensional light response** — at minimum a `DirectionalLight` + an `AmbientLight` casting visible per-face shading; ideally a slow-moving light source (or moving camera) so the highlight migrates across the surface. Flat-lit / single-shaded 3D objects look like vector art.
+
+Anti-patterns that earn a block-severity finding from any of the three lenses:
+
+- ❌ Static orthographic camera on a 3D scene with no controls. (Use `2d-spatial-map` paradigm instead.)
+- ❌ `OrbitControls` constructed but `enabled: false` or never `.update()`-d.
+- ❌ Hero 3D mesh sitting motionless under a `MeshBasicMaterial` (zero light response).
+- ❌ Walkable scene where the WASD handler is wired but the camera has `collision` or `boundary` constraints so tight the user can't actually move.
+- ❌ Cinematic-fly path that's a single 2-second loop with no pause/restart affordance.
+
+Self-check before commit:
+1. **Look-around test.** Open scene.html in `preview_start`. `preview_eval` a synthetic pointer-drag across the canvas. Take screenshots before + after. The view should clearly change (not just pan slightly — the camera should rotate around the scene).
+2. **Move-inside test.** For walkable: `preview_eval` a synthetic WASD keydown. Screenshot before + after. The camera position should change. For vantage-point: click a marker, screenshot, verify camera transitioned. For cinematic-fly: let it run 5s, screenshot, verify the camera moved meaningfully.
+3. **Light-response test (for hero objects).** Take screenshots at t=0 and t=2s (with light or camera moving). Pixel-compare regions that should be lit vs shadowed. If the object looks identical, the light response is broken.
+
+These tests run as part of the craft lens's preview check. Failing any of them is a craft block.
+
 ### 1.1 three.js with InstancedMesh / BatchedMesh for ≥500 entities
 
 Single-mesh-per-entity won't hold framerate above ~500 entities. Use `THREE.InstancedMesh` (r155+) or `BatchedMesh` (r163+) with per-instance matrices updated each frame from `state.entities`.

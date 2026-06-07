@@ -528,6 +528,34 @@ What sim-planner does instead: the tech-stack researcher's §2.0 REAL-WORLD CHEC
 
 **Always real map. Never your own.**
 
+### HARD CHECK D — 3D must feel 3D (block on craft, aesthetic, and concept)
+
+If the paradigm lands on `3d-environment` (sim or narrative) or the output medium includes a 3D scene (interactive), the result MUST give the user one of these. Otherwise the choice of 3D is wasted; it reads as a flat image and the user (correctly) wonders why we went to 3D.
+
+**For a 3D environment (the user is *inside* a space):**
+- **Look around** — at minimum, mouse-drag / touch-drag rotates the camera. `OrbitControls`, `PointerLockControls`, or equivalent. Not a static locked camera.
+- **AND move inside** — at least one of:
+  1. **WASD / touch joystick** — true walkable (the dominant pattern for warehouse walkthroughs, gallery rooms, walkable studios).
+  2. **Click-to-fly between vantage points** — authored anchors the user clicks; the camera transitions there with a tween. (The dominant pattern for guided museum scenes.)
+  3. **Scripted dolly path the user can pause/scrub** — for marketing-grade cinematic flythroughs.
+
+Static, locked-camera 3D is **not** 3D. Use `2d-spatial-map` paradigm instead.
+
+**For 3D objects in the scene (instanced meshes, single hero meshes, etc.):**
+At least one of:
+1. **Interactive rotation** — user drag spins the object, or it rotates in response to the loop's state.
+2. **Continuous self-motion** — turntable rotation, swaying, breathing, drifting. Enough to read as 3D at first glance.
+3. **Three-dimensional light response** — `DirectionalLight` + `AmbientLight` (or HDR env map) casting visible per-face shading; ideally a slow-moving light so highlights migrate. Flat-lit `MeshBasicMaterial` 3D objects look like vector art.
+
+Anti-patterns that earn block-severity findings from the lens trio:
+- ❌ Static orthographic camera, no controls → use 2D paradigm
+- ❌ `OrbitControls` constructed but `enabled: false` or never `.update()`-d
+- ❌ Hero mesh sitting motionless under `MeshBasicMaterial`
+- ❌ Walkable scene where collision/boundary constraints are so tight the user can't actually move
+- ❌ Cinematic-fly that's a single 2-second loop with no pause/restart
+
+The scene drawer's craft-lens preview check runs these as automated probes (synthetic pointer-drag, synthetic WASD, light-position screenshot diffs). The full rule + self-tests live in `sim-3d-scene-builder.md §1.0`; narrative's 3d-environment paradigm inherits the same contract via the scene drawer dispatched by narrative-experience-planner.
+
 ### The other vocabulary the user might use (same answer — dispatch)
 
 If the brief is about LOOKING AT or MOVING THROUGH something stateful, positioned, or alive, this is the right planner — no matter what vocabulary the user used. Some shapes:
