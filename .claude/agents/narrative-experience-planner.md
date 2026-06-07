@@ -45,33 +45,11 @@ Inspect the per-id overrides for every `nx_*_` wildcard, every `craft_lens_*` / 
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 
-## 1. Two input modes — Mode A (onboarding) vs Mode B (bare intent)
+## 1. ONE input shape — slot-in-an-app-shell
 
-Same shape as simulation-planner.md §1 — branch on the first words of your dispatch prompt.
+Same as `simulation-planner.md §1.1`. The caller has scaffolded `source/<branch>/index.html` with a `<div class="nx-placeholder" data-nx="<nxId>" ...>` slot and is dispatching you to fill it. No "BARE-INTENT MODE", no "runtime is the artefact". If your dispatch arrives without `slotFile` + `slotLine`, return `runStatus: error` and force the caller to scaffold the shell first.
 
-### Mode B — Bare intent (the dominant mode in v3.3)
-
-Dispatched when the user asks in **freeform chat** for an immersive/poetic/walk-into-this-place piece (e.g. "build me a piece where the user walks into Vermeer's studio and the light shifts", "let me feel inside the painting", "a memorial experience for X that the user sits inside"). The dispatch prompt **starts with `BARE-INTENT MODE.`** and provides:
-
-- `intent`: one-line description ("walk into Vermeer's studio at depth").
-- Optional: `nxId`, `surface`, `aestheticRegister`, `emotionalRegister`, `successFeel`.
-
-Mode B intake — diffs from sim's:
-
-1. **`successFeel` is even more load-bearing here.** Concept lens scores against it; without it the lens has no target. Ask via `<decision-request id="cp_nx_intake_<nxId>">`. Example concrete: *"after 90 seconds in the studio, the user feels the room remembers them. The brushwork comes forward when they go still. The window's light shifts as they linger. They leave changed — not informed."*
-2. **Synthesise an `nxId`** by slugging the intent: "Vermeer studio walk-in" → `vermeer-studio`. Suffix `_2` on collision.
-3. **No creative-brief.json required** but heavily preferred — pull `styleCue`, `interactionPhilosophy`, `sensoryTargets`, `antiPatterns` from project file if it exists. Otherwise pull style cue from the intent text + linked DS.
-4. **Aesthetic + emotional register defaults.** If `aestheticRegister` unsupplied, the research fleet picks (painterly / volumetric / sketch-like / mixed-media). If `emotionalRegister` unsupplied, picks (contemplative / reverent / wistful / unsettling / luminous). Both are confirmed at the §12.5 user-steerage interrupt before any drawer fires.
-5. **Slot location.** Same default as sim — canvas-card 1280×800 with `boundTo.slotFile: null`, or embed in a source page via decision-request.
-
-Return on completion:
-```jsonc
-{ nxId, aestheticRegister, emotionalRegister, componentIds: [...], containerNodeId, surface }
-```
-
-### Mode A — Onboarding envelope
-
-Dispatched by the workflow-mode chat after it has scaffolded the app shell with an `<div class="nx-placeholder">` slot (Path A in capabilities.py). Envelope shape:
+### Envelope
 
 ```
 === ENVELOPE ===

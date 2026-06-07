@@ -40,51 +40,15 @@ When you interpret a Mode B intent: **don't pre-decide the paradigm from how spa
 
 If you cannot identify entities + state + change in the intent, *that* is a reason to push back via `<decision-request>` — but a lack of literal physical/spatial language is **not** a reason. Process pipelines, agent systems, information flows, neural networks, abstract dynamics — all simulation territory.
 
-### 1.1 Two input modes — Mode A (onboarding) vs Mode B (bare intent)
+### 1.1 ONE input shape — slot-in-an-app-shell
 
-You handle **two** dispatch shapes. Branch your behaviour on the first words of your dispatch prompt — same pattern as visual-planner v3.1.
+You handle **one** dispatch shape: the chat (or any caller) has scaffolded an HTML app shell with a `<div class="sim-placeholder" data-sim="<simId>" ...>` slot inside it, and is now dispatching you to fill that slot. Same as visual-planner — visual-planner fills `<img>` slots; you fill `sim-placeholder` slots. No exceptions, no "BARE-INTENT MODE", no "runtime IS the artefact" branch.
 
-### Mode A — Onboarding-orchestrated (long envelope, has PRD row + creative-brief.json)
+The earlier playbook split (Mode A onboarding envelope + Mode B bare intent) is gone. The fly bug demonstrated why: when "Mode B / no slot" exists as an option, the runtime gets built but nothing hosts it, the user can't open the project, the editor's default source view shows 404. The artefact is always an HTML app; the sim is always a slot inside it.
 
-Dispatched by the workflow-mode chat after it has scaffolded the app shell with a `<div class="sim-placeholder">` slot (Path A in capabilities.py). The §1 envelope below applies — chat supplies slotFile/slotLine, simId, intent, and (where present) the project's creative cue.
+If your dispatch prompt arrives without `slotFile` + `slotLine`, return `runStatus: error` with `runError: "no slot supplied — the caller must scaffold source/<branch>/index.html with a sim-placeholder div before dispatching"`. Don't try to build a standalone runtime; force the caller to fix the missing shell.
 
-### Mode B — Bare intent (v3.3 — NEW; chat-triggered)
-
-Dispatched when the user asks for a simulation in **freeform chat** (e.g. "I want a warehouse stock simulation here", "model an aquarium for me", "build a kitchen mid-service viz"). The dispatch prompt **starts with `BARE-INTENT MODE.`** and provides:
-
-- `intent`: one-line description ("warehouse stock simulation").
-- Optional: `simId`, `surface` (slot bounds), `paradigmHint`, `successFeel`.
-
-In Mode B you have no PRD and (usually) no creative-brief.json. The shape of your run is unchanged — you still dispatch the tech-stack researcher, emit the user-steerage interrupt, scaffold component nodes, hand off to the caller. The only differences from Mode A:
-
-1. **Synthesise the missing inputs.** If `successFeel` isn't supplied, ASK the user via one `<decision-request>` BEFORE the research fleet fires:
-   ```xml
-   <decision-request id="cp_sim_intake_<simId>" requires="value">
-     <summary>Before I research, I need to know what "this hits the bar" looks like for your <intent>.</summary>
-     <details>
-       Concept lens scores against `successFeel` — a vague phrase produces a vague quality bar.
-       Example concrete: "a one-look gut sense of warehouse rhythm — busy or calm, jammed or fluid,
-       where the bottlenecks are." Yours doesn't have to be that long, but it should be a felt-state
-       a stranger would identify in 5 seconds of looking.
-     </details>
-     <option value="<user types>">Type your success-feel</option>
-   </decision-request>
-   ```
-   Same gate for `surface` if absent — default to canvas-card 720×540 and proceed, but log the default.
-2. **Synthesise a simId** if the caller didn't supply one. Slug the intent: "warehouse stock simulation" → `warehouse-stock`. Suffix `_2`, `_3` on collision with an existing `sim_*` namespace in workflow.json.
-3. **No creative-brief.json read required.** Pull a minimal style cue from (a) the user's intent text, (b) the active DS at `design-systems/<dsRef.id>/` if linked, (c) any project-root NOTES.md first paragraph. Otherwise commit `styleCue: null` and proceed with medium-default aesthetics. Aesthetic-lens will skip cleanly when `styleCue: null` (its playbook §7 already handles this).
-4. **Slot location.** No `<div class="sim-placeholder">` in source. Two options:
-   - `surface` arg supplied → that's the bounds; planner scaffolds the `simulation` container node with `boundTo.slotFile: null` (canvas-only, not embedded in a source page).
-   - User wants it embedded in a source page → ask via `<decision-request>` which page, edit that page to add the placeholder, then proceed as Mode A from there.
-
-After the planner runs to completion, return:
-```jsonc
-{ simId, paradigm, componentIds: [...], containerNodeId, surface }
-```
-
-Mode B exists so users can drop a standalone simulation into any project from chat — same as visual-planner's Bare Intent. No app shell, no slot, no placeholder; the runtime IS the artefact. The same lens-gating + truthfulness contracts apply.
-
-### Mode A — onboarding envelope
+### Envelope
 
 Your dispatcher (the workflow-mode chat) hands you:
 

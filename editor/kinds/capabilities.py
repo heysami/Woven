@@ -479,71 +479,80 @@ If the brief is about LOOKING AT or MOVING THROUGH something stateful, positione
 - "the world feels alive" / "things responding to each other in real time"
 - "real Singapore map with X" / "real-time fleet on a map" / "live feed of points on a region"
 
+### THE STRUCTURE (same shape as visual-planner — no exceptions, no alternate path)
+
+The artefact is **always an HTML app**. The sim is a slot inside it. Same as visual-planner: an image is a slot inside an HTML page, never the artefact itself. Three steps, every time:
+
+1. **Scaffold the app shell first.** Write `source/<branch>/index.html` (and any sibling files the app needs — `styles.css`, `app.js`, layout copy). Place a `<div class="sim-placeholder" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" style="aspect-ratio: <W>/<H>"></div>` where the sim belongs. The shell can be elaborate (header + nav + side panels around the sim) or minimal (just a full-bleed `<body>` containing the placeholder) — either way it's an HTML page with a slot.
+2. **Dispatch `simulation-planner` for the slot.** Hand it `slotFile=source/<branch>/index.html` + `slotLine` + `simId` + the user's intent. The planner picks the paradigm, writes `research.md`, scaffolds the drawer trio, returns a hand-off envelope. Then you drive the build per simulation-planner.md §5.1.0.
+3. **Embed the runtime into the slot.** After the build phase finishes, replace the placeholder div with an iframe pointing at `simulations/<simId>/runtime.html` (the simulation-planner playbook §5.1.1 carries the exact iframe HTML). Now `source/<branch>/index.html` is what the user opens — it's the app — and the sim lives inside it.
+
 ```
+# Task call template (use this verbatim, fill in the angle-bracket bits)
 Task(subagent_type: "simulation-planner",
-     description: "Plan + build simulation surface",
-     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'monitor dengue mosquitoes in Singapore'>. Slot context: <if the user said app/dashboard/page, also include slotFile + slotLine of a sim-placeholder div you scaffold first; if it's just the sim, no slot>. Pick paradigm + render strategy + tick rate + interaction primitive. Write research.md. Scaffold the drawer trio + container. Return hand-off envelope.")
+     description: "Plan + build sim for slot <simId>",
+     prompt: "slotFile=source/<branch>/index.html, slotLine=<line of placeholder div>, simId=<simId>, branch=<branch>, projectRoot=<absolute project root>. The placeholder is <div class='sim-placeholder' data-sim='<simId>' data-paradigm-hint='<hint>' data-entities='<scale>' style='aspect-ratio: <W>/<H>'>. User's intent: <verbatim>. successFeel: <ask user if vague>. Pick paradigm + render strategy + tick rate + interaction primitive. Write research.md. Scaffold the drawer trio + container. Return hand-off envelope.")
 ```
 
-### Do NOT do any of these (every one is the mememem bug):
+### Do NOT do any of these:
 
-- ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts that read from data.js" → **No.** That's the mememem bug. The dengue map IS a sim-placeholder. Dispatch sim-planner; let it pick the real-world map library.
-- ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → **No.** Dispatch sim-planner; the scene drawer handles canvas/WebGL/SVG choice.
-- ❌ "It's really just data viz" → **No.** If state changes over time or across space anywhere the user wants to look at it, that surface IS a sim. Dispatch.
-- ❌ "Should I build a sim or just a dashboard?" → **No.** Dispatch sim-planner; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim).
-- ❌ "What paradigm — 2D map or 3D?" → **No.** Research picks. User can steer at the §12.5 interrupt.
-- ❌ Writing entity / loop / scene / overlay / runtime files directly → **No.** sim-planner orchestrates the drawers.
-- ❌ Calling /prototype skill AND THEN baking the sim inline as static charts → **No.** /prototype is fine for the app shell; the sim surface inside the shell still gets a `sim-placeholder` div + a sim-planner dispatch. Don't hand-roll the surface.
+- ❌ **Skipping the app shell because "it's just a sim."** That's the fly bug. The user typed *"generate a globe monitoring system for billionaire private jets"*, the simulation got built at `source/main/simulations/billionaire-jets-globe/runtime.html`, but no `source/main/index.html` was scaffolded. The editor's default view (`source/<branch>/index.html`) showed 404 — the sim existed but the user couldn't reach it because there was no app to host it. Always scaffold the index.html shell, even when the brief sounds like "just the sim."
+- ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts" → the dashboard chrome scaffolds fine but the map IS a sim-placeholder. Dispatch sim-planner for that slot; don't hand-render the map. (mememem bug.)
+- ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → the sim surface is a slot. Dispatch sim-planner.
+- ❌ "Should I build a sim or just a dashboard?" → dispatch sim-planner; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim) per the hard checks above.
+- ❌ "What paradigm — 2D map or 3D?" → research picks. User steers at the §12.5 interrupt.
+- ❌ Writing entity / loop / scene / overlay / runtime files directly → sim-planner orchestrates the drawers.
 
 ### Decision rule (no judgement involved):
 
 | User said… | Your first move |
 |---|---|
-| "monitor X" / "track Y" / "watch Z over time" | `Task(simulation-planner, …)` |
-| "model the warehouse" / "simulate the traffic" / "show me the swarm" | `Task(simulation-planner, …)` |
-| "make a [globe / map / view] showing X moving" | `Task(simulation-planner, …)` |
-| "dashboard for X" where X is a stateful system | First `/prototype` (with sim-placeholder slot) → then `Task(simulation-planner, …)` for the slot |
-| "build a web app to do X" where X is a stateful system | First `/prototype` (with sim-placeholder slot) → then `Task(simulation-planner, …)` for the slot |
-| "show me a chart of static data" (no state change) | NOT a sim. Render inline or via visual-planner. |
-
-### Path A vs Path B — same planner, different envelope
-
-- **Path A** (the brief implies a container around the sim — app / dashboard / page / site / microsite / console / etc.): scaffold the app shell first via `/prototype` or hand-write HTML, drop a `<div class="sim-placeholder" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" style="aspect-ratio: <W>/<H>"></div>` where the sim belongs, THEN dispatch `simulation-planner` in Mode A with `slotFile` + `slotLine`. The build phase replaces the placeholder with an iframe pointing at `simulations/<simId>/runtime.html` (see simulation-planner.md §5.1.1).
-- **Path B** (the brief is just the sim — "model the warehouse", "show me a globe with jets"): dispatch `simulation-planner` directly in BARE-INTENT MODE. The runtime IS the artefact, no embed step.
-
-When the request shape is ambiguous, default Path A — an app shell with one sim slot is easy to throw away; a bare sim cannot be retrofitted into an app.
+| Anything in any of the four families above (live view / 3D / real-world place / living system) | Scaffold app shell (with sim-placeholder slot) → `Task(simulation-planner, …)` for the slot |
+| "show me a chart of static data" (no state change, no real place, no 3D, no living) | NOT a sim. Render inline or via visual-planner. |
 
 ### Why this is non-negotiable
 
-simulation-planner's job is to: dispatch the tech-stack researcher (which picks `paradigm` + `renderStrategy` + library — including real-world map libraries when the brief names a place); scaffold the entity / scene / loop / controls / overlay / runtime drawer trio; run the §8.3 lens-trio loop-until-bar (craft / aesthetic / concept) per drawer; commit the container only when ≥2/3 lenses pass. Hand-rolling the sim inline as static HTML+canvas skips all of that — no research, no lens grading, no embed step, no canvas card the user can re-run. The user sees the sim work for 30 seconds and then realises nothing about it can be iterated on.
+The visual-planner pattern is: **app exists, planner fills a slot.** Same here. The sim is content for a slot, not an artefact on its own. Reasons:
 
-**Emulating simulation-planner from your own knowledge is the bug.** Dispatch the real thing.
+- The editor's source view defaults to `source/<branch>/index.html`. No index.html = user can't open it (the fly bug).
+- The app shell is the user's natural entry point. Even a one-line "I want the globe" expectation is "I want to open something that shows me the globe" — which is a page, not a folder of runtime files.
+- Adding chrome later (a title, a legend, controls in a side panel) is trivial when the shell exists. Retrofitting a shell around a standalone runtime that imports its own modules + has its own viewport sizing is invasive.
+- Cross-asset coherence (visual-planner styling the sidebar icons, narrative-planner adding a callout next to the sim) requires the shell to exist as a single HTML page they share.
+
+**Emulating simulation-planner from your own knowledge — or shipping a sim without the surrounding app — is the bug.** Dispatch the real thing into a real slot.
 
 ## Interactive piece: dispatch interactive-media-planner FIRST (v3.6 hard rule)
 
 When the user's message implies **a piece they DRIVE with their body or device** — voice-reactive, camera-driven, music-visualising, gestural, TouchDesigner-style, generative shader they poke, anything where input from mic / camera / mouse / gyro / MIDI / gamepad maps to real-time generative output — your **FIRST action is a Task call to `interactive-media-planner`**. Not your second action. Not after asking. Not after planning.
 
 ```
+### THE STRUCTURE (same shape as visual-planner — no exceptions)
+
+Same three-step structure as the simulation block above. The artefact is **always an HTML app**; the interactive piece is a slot inside it.
+
+1. Scaffold `source/<branch>/index.html` (and siblings) with an `<div class="im-placeholder" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" style="aspect-ratio: <W>/<H>"></div>` at the slot.
+2. Dispatch `interactive-media-planner` with `slotFile` + `slotLine` + `imId` + the user's intent. The planner picks inputs / outputs / mapping style / permission flow / glue libraries, writes `research.md`, scaffolds the drawer trio + container.
+3. After the build phase finishes, replace the placeholder with an `<iframe>` pointing at `interactives/<imId>/runtime.html` (im-runtime-composer playbook §3.x carries the exact iframe — note the `allow="microphone; camera; gyroscope; accelerometer; midi"` attribute, mandatory for permission requests to reach the iframe's APIs).
+
+```
 Task(subagent_type: "interactive-media-planner",
-     description: "Plan + build interactive piece",
-     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'voice-reactive generative shader'>. Pick inputs + outputs + mapping style + permission flow + glue libraries. Scaffold input / mapping / output / runtime drawer trio + container. Permission gates surfaced to canvas BEFORE Run. Return hand-off envelope.")
+     description: "Plan + build interactive piece for slot <imId>",
+     prompt: "slotFile=source/<branch>/index.html, slotLine=<line of placeholder div>, imId=<imId>, branch=<branch>, projectRoot=<absolute>. User's intent: <verbatim>. successFeel: <ask if vague>. Pick inputs + outputs + mapping style + permission flow + glue libraries. Scaffold input / mapping / output / runtime drawer trio + container. Permission gates surfaced to canvas BEFORE Run. Return hand-off envelope.")
 ```
 
 ### Do NOT do any of these:
 
-- ❌ "What inputs do you want — mic, camera, mouse?" → **No.** Dispatch; research picks the default; user steers at the §12.5 interrupt.
-- ❌ Calling `getUserMedia()` directly from chat-rendered HTML → **No.** Permission UX goes through the planner's two-gate pattern.
-- ❌ Writing a shader inline in chat fenced block when the user asked for a piece they interact with → **No.** That's the shader skill for ad-hoc viz. Interactive-media-planner is for PERSISTENT INTERACTIVE PIECES on the canvas.
-- ❌ Treating this as a visual-planner job → visual-planner is for IMAGES + DECORATIVE ambient motion. Interactive is for body/device-driven generative response.
+- ❌ **Skipping the app shell.** Same trap as the fly bug. Without `source/<branch>/index.html`, the user has no way to open the piece. Always scaffold the shell first.
+- ❌ "What inputs do you want — mic, camera, mouse?" → Dispatch; research picks the default; user steers at the §12.5 interrupt.
+- ❌ Calling `getUserMedia()` directly from chat-rendered HTML → Permission UX goes through the planner's two-gate pattern inside the piece's runtime.
+- ❌ Writing a shader inline in chat when the user asked for a piece they interact with → that's the shader skill for ad-hoc viz; interactive-media-planner is for PERSISTENT INTERACTIVE PIECES.
+- ❌ Treating this as a visual-planner job → visual-planner is for IMAGES + DECORATIVE motion. Interactive is body/device-driven generative response.
 
 ### Decision rule:
 
 | User said… | Your first move |
 |---|---|
-| "TouchDesigner-style X" | `Task(interactive-media-planner, …)` |
-| "voice-reactive X" / "music-reactive X" / "camera-driven X" / "gestural X" | `Task(interactive-media-planner, …)` |
-| "interactive piece where I <do something with my body/voice>" | `Task(interactive-media-planner, …)` |
-| "build an **app / page / site** with a voice-reactive scene inside" | First `/prototype` (im-placeholder slot) → then `Task(interactive-media-planner, …)` |
+| Anything body/device-driven generative — TouchDesigner-style, voice-reactive, music-reactive, camera-driven, gestural, "piece where I do X with my voice/body" | Scaffold app shell (with im-placeholder slot) → `Task(interactive-media-planner, …)` for the slot |
 | "show me a chart of X" (ad-hoc, no interaction) | NOT a planner. Render inline or via visual-planner. |
 
 ### Distinguishing the four planners (v3.3):
@@ -566,19 +575,28 @@ The narrative-experience family is the POETIC cousin of simulation: same pipelin
 
 When the user's message implies **a piece someone walks into and leaves changed** — a museum microsite, an exhibition extension, a memorial, a character portrait at depth, an editorial scrollytelling piece, a walkable 3D reconstruction of a room or garden or studio, anything where the user's role is *witness* and the felt-state is the point — your **FIRST action is a Task call to `narrative-experience-planner`**.
 
+### THE STRUCTURE (same shape as the others)
+
+Same three-step structure. The artefact is **always an HTML app**; the immersive piece is a slot inside it.
+
+1. Scaffold `source/<branch>/index.html` (and siblings) with a `<div class="nx-placeholder" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" style="aspect-ratio: <W>/<H>"></div>` at the slot. For most narrative pieces the shell is minimal — a full-bleed `<body>` with the placeholder filling the viewport — but it's still HTML at index.html.
+2. Dispatch `narrative-experience-planner` with `slotFile` + `slotLine` + `nxId` + the user's intent. The planner picks paradigm + aesthetic + emotional + pacing registers, writes `research.md`, scaffolds the drawer trio + container.
+3. After the build phase finishes, replace the placeholder with an `<iframe>` pointing at `narratives/<nxId>/runtime.html`.
+
 ```
 Task(subagent_type: "narrative-experience-planner",
-     description: "Plan + build immersive narrative piece",
-     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'walk into Vermeer's studio at depth'>. Ask the user for a concrete felt-state successFeel (NOT 'user understands X' — a feeling: 'they leave quieter', 'the room remembers them'). Pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Scaffold spine / scene / ambient / reveal / overlay / runtime drawer trio + container. Return hand-off envelope.")
+     description: "Plan + build immersive narrative piece for slot <nxId>",
+     prompt: "slotFile=source/<branch>/index.html, slotLine=<line of placeholder div>, nxId=<nxId>, branch=<branch>, projectRoot=<absolute>. User's intent: <verbatim>. Ask user for concrete felt-state successFeel (NOT 'user understands X' — a feeling: 'they leave quieter', 'the room remembers them'). Pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Scaffold spine / scene / ambient / reveal / overlay / runtime drawer trio + container. Return hand-off envelope.")
 ```
 
 ### Do NOT do any of these:
 
-- ❌ "Let me first generate the hero image…" → **No.** The narrative planner needs visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative planner first; its drawers call visual-planner for raster assets in-flight with the brief's styleCue propagated.
-- ❌ Treating this as simulation-planner because it has a 3D scene → **No.** Simulation gives understanding of a system. Narrative gives presence in a place. Functional vs. dramaturgical.
-- ❌ Treating this as interactive-media because there's interactivity → **No.** Interactive is body-as-creative-material. Narrative's interactivity is the act of attention — reveals reward stillness, not speed. Camera is the narrator; user is the witness.
-- ❌ Accepting "the user understands Vermeer better" as a successFeel → **No.** Concept-lens needs felt-state. Push back via decision-request.
-- ❌ Building a static HTML page mockup → **No.** That's a snapshot. The narrative planner produces a runnable composed piece with authored progression — scripted in its bones, even where the user moves freely.
+- ❌ **Skipping the app shell.** Same trap as the fly bug.
+- ❌ "Let me first generate the hero image…" → The narrative planner needs visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative planner first; its drawers call visual-planner for raster assets in-flight with the brief's styleCue propagated.
+- ❌ Treating this as simulation-planner because it has a 3D scene → Simulation gives understanding of a system. Narrative gives presence in a place. Functional vs. dramaturgical.
+- ❌ Treating this as interactive-media because there's interactivity → Interactive is body-as-creative-material. Narrative's interactivity is the act of attention.
+- ❌ Accepting "the user understands Vermeer better" as a successFeel → Concept-lens needs felt-state. Push back via decision-request.
+- ❌ Building a static HTML page mockup → that's a snapshot, not a runnable composed piece.
 
 ### Decision rule:
 

@@ -18,33 +18,11 @@ Inspect `im_*_` wildcards, lens wildcards, `cp_im_*_pick_` wildcards, `cp_im_gat
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 
-## 1. Two input modes — Mode A (onboarding) vs Mode B (bare intent)
+## 1. ONE input shape — slot-in-an-app-shell
 
-Same shape as [simulation-planner.md §1](simulation-planner.md) — branch on the first words of your dispatch prompt.
+Same as `simulation-planner.md §1.1`. The caller has scaffolded `source/<branch>/index.html` with a `<div class="im-placeholder" data-im="<imId>" ...>` slot and is dispatching you to fill it. No "BARE-INTENT MODE", no "runtime is the artefact". If your dispatch arrives without `slotFile` + `slotLine`, return `runStatus: error` and force the caller to scaffold the shell first.
 
-### Mode B — Bare intent (v3.3 — NEW; chat-triggered)
-
-Dispatched when the user asks for an interactive piece in **freeform chat** (e.g. "make me a TouchDesigner-style voice-reactive shader", "build a playful music visualiser", "I want a generative piece that responds to my camera"). The dispatch prompt **starts with `BARE-INTENT MODE.`** and provides:
-
-- `intent`: one-line description ("voice-reactive generative shader").
-- Optional: `imId`, `surface`, `inputs`, `outputs`, `mappingStyle`, `successFeel`.
-
-Same diff from Mode A as `simulation-planner.md` §1 Mode B:
-
-1. **Synthesise missing `successFeel`** via `<decision-request id="cp_im_intake_<imId>">` — concept lens is unusable against vague success-feels. Example concrete: "the user paints with their voice and the painting holds — strokes accumulate, the room remembers."
-2. **Synthesise an `imId`** by slugging the intent (`tone-painter`, `camera-mood`, etc.).
-3. **No creative-brief.json required.** Pull style cue from intent text + linked DS + NOTES.md, otherwise commit `styleCue: null` and proceed.
-4. **Slot location.** If `surface` unsupplied, default to canvas-card 1280×720 with `boundTo.slotFile: null` (canvas-only, no embedding). If user wants it in a source page, ask which.
-5. **Inputs / outputs missing** → the tech-stack researcher proposes a sensible default set anchored in the intent + mapping style; the §12.5 user-steerage interrupt after research surfaces the proposed set for approval before any drawer fires.
-
-Permission gating (§3.1 of `im-runtime-composer.md`) still applies — Bare Intent doesn't bypass the canvas-side + iframe-side two-gate pattern.
-
-After the planner runs to completion, return:
-```jsonc
-{ imId, declaredInputs, declaredOutputs, mappingStyle, componentIds: [...], containerNodeId, surface }
-```
-
-### Mode A — onboarding envelope
+### Envelope
 
 ```
 === ENVELOPE ===
