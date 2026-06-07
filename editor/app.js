@@ -7954,6 +7954,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // Track the runId we last reset state for so we can tell apart "fresh
   // run" from "same run, new SSE epoch."
   const prevRunIdRef = useRef(null);
+  // v3.5.1 — Whether the SSE useEffect has completed at least one open for
+  // the CURRENT runId. The "seed status from run.done" path runs only on the
+  // first open; subsequent epoch bumps (post-error reconnect, post-/resume)
+  // would otherwise re-stomp the freshly-set "streaming" status using the
+  // stale `run.done` flag that the parent's polled snapshot still carries.
+  // Reset to false whenever the runId actually changes (cold-mount of a
+  // different chat thread), via the prevRunIdRef branch below.
+  const sseHadFirstOpenRef = useRef(false);
   // stick-to-bottom tracking. The previous "check threshold AFTER commit" was
   // backwards: by then, the new event had already pushed the user >80px off
   // the bottom and auto-scroll never fired. Instead: assume sticky until the
@@ -8025,6 +8033,8 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       // to land at "done" on first paint, treat it as already-fired.
       completedRef.current = (run.done || run.turnDone) ? "done" : false;
       prevRunIdRef.current = run.runId;
+      // Allow seed-from-done on the upcoming first open for this new runId.
+      sseHadFirstOpenRef.current = false;
     }
     const ctl = new AbortController();
     let cancelled = false;
@@ -8034,7 +8044,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     // Hydrate from the per-branch chat.jsonl one-shot, then mark the drawer
     // done. The composer reads `processEnded` from the same status, so a
     // historical run automatically renders read-only.
-    if (run.historical) {
+    //
+    // v3.5.1 — `historical: true` is sticky on the parent's polled snapshot
+    // even after /resume kicks off a fresh live process for the run. Without
+    // the `run.done !== false` guard, every Send to a previously-rehydrated
+    // chat went through the read-only historical IIFE: one-shot hydrate, no
+    // SSE tail, agent's reply landed in jsonl with no one listening — the
+    // user had to close+reopen the drawer to force a fresh hydrate that
+    // picked it up. If the daemon now reports the run as live (`done` is
+    // explicitly `false`), drop out of the historical branch into the normal
+    // SSE flow so the agent's reply streams in.
+    if (run.historical && run.done !== false) {
       // v3.4.38 — Cache hit on a historical run: no need to re-fetch /__chat
       // (the cache has every event we ever rendered and historical runs never
       // get new ones). Just return the cleanup; status was already seeded above.
@@ -8158,9 +8178,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       // → the user had to Stop then reply. The run object (from /__runs)
       // carries the real lifecycle flags; trust them as the floor. A live
       // tail event (new turn) will flip back to "streaming" on its own.
-      if (run.done || run.turnDone) {
+      //
+      // v3.5.1 — Only seed-from-done on the INITIAL mount. Subsequent epoch
+      // bumps (caused by /resume or post-error SSE reconnects in ChatComposer)
+      // would otherwise stomp the "streaming" status that onSent / onResumed
+      // just set — because the `run` prop carries the stale done=true flag
+      // until the next /__runs poll. Tracking via a ref keeps the first-mount
+      // safety net while letting recovery flows succeed.
+      if ((run.done || run.turnDone) && !sseHadFirstOpenRef.current) {
         setStatus(prev => (prev === "error" ? prev : "done"));
       }
+      sseHadFirstOpenRef.current = true;
       try {
         await readSSE(apiUrl(`/__stream?runId=${encodeURIComponent(run.runId)}&after=${lastIdRef.current}`), {
           signal: ctl.signal,
@@ -8372,9 +8400,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         </div>
         <div className="chat-status-group">
           <${ChatStatusChip} status=${status} error=${error}/>
-          ${status !== "done" && status !== "error" && html`
-            <button className="chat-action chat-action-stop" onClick=${stopRun} title="Stop the agent">Stop</button>
-          `}
           <button
             className="chat-action chat-action-fullscreen"
             onClick=${() => setFullscreen(f => !f)}
@@ -8417,6 +8442,8 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
+        runStatus=${status}
+        onStop=${stopRun}
         onStartNewChat=${onStartNewChat}
         onResumed=${() => {
           // /resume succeeded — bump sseEpoch so the SSE consumer re-opens
@@ -8426,9 +8453,24 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           setSseEpoch(e => e + 1);
         }}
         onSent=${() => {
-          // Snap back to sticky + streaming so the user sees the agent's reply.
+          // Snap back to sticky so the user sees the agent's reply.
           stickRef.current = true;
-          setStatus(prev => (prev === "error" ? prev : "streaming"));
+          // v3.5.1 — UNCONDITIONALLY bump the SSE epoch on every send. The
+          // SSE consumer in an already-open drawer has been silently dying
+          // in too many edge cases (post-`end` socket close, daemon
+          // resume/turn-done state drift, mid-stream network blips) — and
+          // when it dies, the agent's reply lands in the jsonl but never
+          // reaches the rendered events array. Forcing a reconnect on every
+          // send guarantees the drawer behaves the same way "close + reopen
+          // the chat" does: it re-hydrates from /__chat and tails fresh
+          // events from `lastIdRef.current`. The reconnect is cheap and
+          // dedupes via `_seenSeqRef` so the UI doesn't replay events the
+          // user has already seen. Trying to be clever about when to bump
+          // kept landing the user back in the "I have to refresh" state.
+          setError(null);
+          setStatus("streaming");
+          setSseEpoch(e => e + 1);
+          completedRef.current = false;
         }}
       />
       <div className="chat-footer">
@@ -8456,7 +8498,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
    resets state.turn_done so the chip flips back to streaming. Disabled
    while the agent is mid-turn (status === "streaming" / "connecting").
    Cmd/Ctrl+Enter sends; plain Enter inserts a newline. */
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -8599,7 +8641,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   //                 keeping FULL conversation context. Same runId, same
   //                 drawer, same event log — just a new process under it.
   //   default     → live run, Send hits /user-message.
-  const isResuming = locked && !isNew;
+  //
+  // v3.5.1 — When the chat is currently showing a stream error we ALSO route
+  // through /resume, even if no `end` event has been logged yet. The previous
+  // shape (status=error but locked=false → /user-message) would POST to a
+  // process that's likely dead, the daemon returned 4xx, the composer caught
+  // and surfaced the error, and onSent never fired — so the SSE-reconnect /
+  // status-clear path in the parent never ran. /resume always respawns and
+  // gets us back to a known-good state.
+  const isResuming = (locked && !isNew) || (!isNew && runStatus === "error");
 
   const canSend = (!!text.trim() || attachments.length > 0) && !busy && !disabled
                   && (isNew ? !!onStartNewChat : !!runId);
@@ -8615,18 +8665,80 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         if (onSent) onSent(body);
         return;
       }
-      const endpoint = isResuming ? "resume" : "user-message";
-      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${endpoint}`), {
+      // Two endpoints, each with its own "wrong endpoint" failure mode. We try
+      // the one our local state thinks is right, then fall back when the daemon
+      // disagrees — without ever throwing back to the user:
+      //
+      //   • /user-message — daemon process is alive, accepts stdin
+      //     Fails 404/410 or "not found/running/exited" when our SSE missed
+      //     the process exit. Recovery: retry via /resume.
+      //   • /resume — daemon process has exited cleanly, can be respawned
+      //     Fails 409 "run is still active" when our `end` event was for a
+      //     prior turn but the most-recent resume is still alive. Recovery:
+      //     retry via /user-message.
+      //
+      // This used to be a one-way handoff; v3.5.1 makes it bidirectional so
+      // the client→daemon state-machine drift that follows multi-resume
+      // sessions can't strand the user on a page that requires a refresh.
+      const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: body }),
       });
+      let r = await postTo(isResuming ? "resume" : "user-message");
+      let usedResume = isResuming;
+      let didFallback = false;
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${r.status}`);
+        const msg = String(j.error || "").toLowerCase();
+        if (!usedResume) {
+          const processGone = r.status === 404 || r.status === 410
+            || msg.includes("not found") || msg.includes("not running")
+            || msg.includes("exited")   || msg.includes("no such");
+          if (processGone) {
+            r = await postTo("resume");
+            usedResume = true;
+            didFallback = true;
+          } else {
+            throw new Error(j.error || `HTTP ${r.status}`);
+          }
+        } else {
+          const stillActive = r.status === 409
+            || msg.includes("still active") || msg.includes("use /user-message");
+          if (stillActive) {
+            r = await postTo("user-message");
+            usedResume = false;
+            didFallback = true;
+          } else {
+            throw new Error(j.error || `HTTP ${r.status}`);
+          }
+        }
+        if (!r.ok) {
+          const j2 = await r.json().catch(() => ({}));
+          throw new Error(j2.error || `HTTP ${r.status}`);
+        }
       }
       setText(""); setAttachments([]);
-      if (isResuming && onResumed) onResumed();
+      // v3.5.1 — ALWAYS bump SSE after any send while the chat wasn't already
+      // actively streaming. The bug this catches:
+      //   1. The daemon's run finished a turn → emits `end` → its `_run_stream`
+      //      loop sees `state.done && not have_more` → breaks → closes the SSE.
+      //   2. The client's status flips to "done" via the `end` handler.
+      //   3. /resume is later called → daemon resets state.done=False and
+      //      appends new events → BUT the client's SSE socket is already
+      //      closed, so nothing reaches the UI until a page refresh runs a
+      //      fresh hydrate.
+      // Even routing directly to /user-message (when the daemon's most-recent
+      // resume left it `turnDone:true, done:false` and the previous SSE may
+      // have closed) is exposed to the same staleness. Bump unconditionally
+      // unless we're sending mid-stream to a confirmed-live SSE. The reconnect
+      // is cheap: it deduplicates against `_seenSeqRef` and tails from
+      // `lastIdRef.current` so the UI never replays events it has already
+      // rendered. Skipping mid-stream bumps avoids unnecessary thrash during
+      // a live agent turn.
+      const sseProbablyStale = runStatus !== "streaming";
+      const needBump = usedResume || didFallback || sseProbablyStale;
+      if (needBump && onResumed) onResumed();
       if (onSent) onSent(body);
     } catch (e) {
       setError(e.message || String(e));
@@ -8728,6 +8840,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         onKeyDown=${onKeyDown}
         onPaste=${onPaste}
       />
+      ${(runStatus === "streaming" || runStatus === "connecting") && onStop && html`
+        <button
+          className="chat-composer-stop"
+          type="button"
+          onClick=${onStop}
+          title="Stop the agent"
+        >Stop</button>
+      `}
       <button
         className="chat-composer-send"
         onClick=${send}
@@ -9753,51 +9873,16 @@ function ToolResultPane({ result, compact, label }) {
             const src = img.url
               ? img.url
               : ("data:" + (img.mediaType || "image/png") + ";base64," + (img.data || ""));
-            // v3.2 — Chrome / Firefox / Safari block top-level navigation
-            // to `data:` URLs as an anti-phishing measure (since ~2018).
-            // Clicking <a href="data:..."> opens a blank tab.
-            // Workaround: convert to a blob URL at click time and open
-            // THAT. Blob URLs aren't blocked. Remote `https:` URLs are
-            // navigated normally.
-            const openFullSize = (e) => {
-              e.preventDefault();
-              if (img.url) {
-                window.open(img.url, "_blank", "noreferrer");
-                return;
-              }
-              try {
-                // data: URL → Blob → blob: URL
-                const m = src.match(/^data:([^;,]+)(?:;[^,]*)?,(.*)$/);
-                if (!m) { window.open(src, "_blank"); return; }
-                const mime = m[1] || "image/png";
-                const data = m[2] || "";
-                let bytes;
-                if (src.includes(";base64,")) {
-                  const bin = atob(data);
-                  bytes = new Uint8Array(bin.length);
-                  for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
-                } else {
-                  bytes = new TextEncoder().encode(decodeURIComponent(data));
-                }
-                const blob = new Blob([bytes], { type: mime });
-                const url = URL.createObjectURL(blob);
-                window.open(url, "_blank", "noreferrer");
-                // Revoke after a delay so the new tab has time to read it.
-                // 60s is comfortably more than any decode + paint cycle.
-                setTimeout(() => URL.revokeObjectURL(url), 60_000);
-              } catch (err) {
-                console.error("[tool-result image] failed to open full size:", err);
-              }
-            };
-            return html`<a
+            // v3.5.1 — Click opens the in-page lightbox overlay (instead of
+            // a new tab). The lightbox is mounted once at the Root and
+            // listens for `th:chat-image-zoom`; we just fire the event.
+            return html`<button
               key=${i}
+              type="button"
               className="tool-result-image-wrap"
-              href=${src}
-              onClick=${openFullSize}
-              target="_blank"
-              rel="noreferrer"
-              title="Open full size in new tab"
-            ><img className="tool-result-image" src=${src} alt=${"tool result image " + (i + 1)} loading="lazy"/></a>`;
+              title="Click to expand"
+              onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(src, "tool result image " + (i + 1)); }}
+            ><img className="tool-result-image" src=${src} alt=${"tool result image " + (i + 1)} loading="lazy"/></button>`;
           })}
         </div>
       `}
@@ -10435,11 +10520,13 @@ function DecisionOptionPreview({ preview, label }) {
   const lower = preview.toLowerCase().split("?")[0];
   const isImage = /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(lower);
   if (isImage) {
+    const imgSrc = apiUrl("/" + preview.replace(/^\/+/, ""));
     return html`<img
       className="chat-decision-preview chat-decision-preview-img"
-      src=${apiUrl("/" + preview.replace(/^\/+/, ""))}
+      src=${imgSrc}
       alt=${label || "preview"}
       loading="lazy"
+      onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(imgSrc, label || "preview"); }}
     />`;
   }
   // Default: treat as HTML file path.
@@ -10790,6 +10877,37 @@ function ToolCard({ block, runId, answers, onAnswered }) {
   return html`<${GenericToolCard} toolUse=${toolUse} toolResult=${toolResult}/>`;
 }
 
+/* Sum SDK usage{} into a turn-meaningful token count.
+   Returns null if usage is missing or all-zero (we don't render a "0 tok"
+   line — it's just noise).
+
+   We deliberately count ONLY input_tokens + output_tokens. The Anthropic SDK
+   also surfaces cache_creation_input_tokens and cache_read_input_tokens, but
+   both distort the turn-level reading:
+
+     • cache_creation_input_tokens is a one-time write of the conversation
+       context into the model's KV cache. A simple "okay" reply can rack up
+       96k of cache-write here even though the user typed two characters.
+     • cache_read_input_tokens is the cheap re-read of that cache on every
+       later turn — adds tens of thousands more without representing new
+       work the user prompted.
+
+   `input_tokens + output_tokens` is "tokens the model actually had to think
+   about THIS turn" — matches what most chat UIs (the Anthropic Console
+   playground, Claude.ai's usage chip, the OpenAI dashboard) display. */
+function totalTokensFromUsage(u) {
+  if (!u || typeof u !== "object") return null;
+  const i = +u.input_tokens || 0;
+  const o = +u.output_tokens || 0;
+  const total = i + o;
+  return total > 0 ? total : null;
+}
+function fmtTokens(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)     return (n / 1_000    ).toFixed(1) + "k";
+  return String(n);
+}
+
 /* Final block dispatcher — replaces ChatEventRow for rendering. ChatEventRow
    stays in the file as the fallback / debug renderer for unrecognised events. */
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
@@ -10904,7 +11022,8 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       const d = block.data;
       const bits = [d.label || "status"];
       if (d.durationMs != null) bits.push(`${(d.durationMs/1000).toFixed(1)}s`);
-      if (d.costUsd != null) bits.push(`$${d.costUsd.toFixed(4)}`);
+      const t = totalTokensFromUsage(d.usage);
+      if (t != null) bits.push(`${fmtTokens(t)} tok`);
       return html`<div className="chat-row chat-status">${bits.join(" · ")}${d.promptPreview ? html` — ${d.promptPreview}` : ""}</div>`;
     }
     case "usage": {
@@ -10968,7 +11087,8 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
       const bits = [data.label || "status"];
       if (data.model) bits.push(data.model);
       if (data.durationMs != null) bits.push(`${(data.durationMs/1000).toFixed(1)}s`);
-      if (data.costUsd != null) bits.push(`$${data.costUsd.toFixed(4)}`);
+      const t = totalTokensFromUsage(data.usage);
+      if (t != null) bits.push(`${fmtTokens(t)} tok`);
       return html`<div className="chat-row chat-status">${bits.join(" · ")}${data.promptPreview ? html` — ${data.promptPreview}` : ""}</div>`;
     }
     if (data.type === "usage") {
@@ -13117,6 +13237,46 @@ function ProjectsLanding({ info, projects, onReload }) {
     });
     return dispose;
   }, []);
+
+  // v3.5.1 — Auto-flip card text to white when the card sits over the dark
+  // header band (the diamond field draws a dark zone the top `boundaryFn` px
+  // of the viewport; the canvas is `position: fixed` so the dark band stays
+  // at the top regardless of scroll — see SHADER_BG). We compare each card's
+  // title-row centre to the boundary every animation frame and toggle
+  // `data-on-dark="true"`; the CSS override above paints label/id/stats white
+  // when set. A continuous rAF loop is the simplest correct strategy here
+  // because the landing's scroll container varies (window vs .landing-root)
+  // and we'd miss frames if we missed a listener. A bbox read + integer
+  // compare on ≤ a few dozen cards is sub-100µs per frame — cheaper than
+  // wiring multiple event sources.
+  useEffect(() => {
+    // Watch each card's title row with an IntersectionObserver whose root is
+    // the viewport but whose top margin is shrunk by the header height (the
+    // dark band depth). When a head is NOT intersecting (i.e. it's above the
+    // shrunken root, meaning it's sitting in the dark band over the header
+    // shader zone), set data-on-dark="true"; the CSS rule above paints the
+    // upper-card text white. IntersectionObserver is cheaper than rAF-poll
+    // for this and fires on layout / scroll without any explicit listener.
+    if (typeof IntersectionObserver === "undefined") return;
+    const headerEl = document.querySelector(".landing-header");
+    const boundary = headerEl ? headerEl.offsetHeight : 150;
+    const heads = document.querySelectorAll(".landing-card .landing-card-head");
+    if (!heads.length) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const card = e.target.closest(".landing-card");
+        if (!card) continue;
+        if (e.isIntersecting) card.removeAttribute("data-on-dark");
+        else                  card.setAttribute("data-on-dark", "true");
+      }
+    }, {
+      root: null,
+      rootMargin: `-${boundary}px 0px 0px 0px`,
+      threshold: 0,
+    });
+    heads.forEach((h) => io.observe(h));
+    return () => io.disconnect();
+  }, [projects.length, filter, activeTab]);
 
   return html`
     <div className="landing-root">
@@ -23935,13 +24095,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             if (nodeEl) {
               const id = nodeEl.getAttribute("data-node-id");
               if (e.shiftKey) {
+                // Shift-toggle commits on mousedown so the user sees the
+                // toggle flicker immediately (no drag follows a shift-click).
                 toggleNodeInSelection(id);
-              } else if (!selectedNodeIds.has(id)) {
-                selectNodeId(id);
+              } else if (selectedNodeIds.has(id)) {
+                // Already in selection — keep the set intact so the
+                // upcoming drag moves the whole group.
+              } else {
+                // v3.5.1 — Defer the "fresh select" commit to mouseup so a
+                // mousedown-into-drag doesn't flash the node as selected on
+                // the way out. The user explicitly asked for "select only on
+                // mouseup" — this makes HTML asset nodes feel identical to
+                // prototype nodes (whose iframe used to swallow the mousedown
+                // into the iframe content, accidentally producing the same
+                // behaviour). Mouseup ALWAYS commits selection — whether the
+                // user clicked or dragged — so the dragged-node still ends
+                // up selected at rest. startNodeDrag's selection path is
+                // already suppressed by armSelectSuppression() below.
+                const onUp = () => {
+                  window.removeEventListener("mouseup", onUp);
+                  selectNodeId(id);
+                };
+                window.addEventListener("mouseup", onUp);
               }
-              // Else: id is already in selection — keep the set intact so
-              // the upcoming drag moves the whole group.
-              //
               // In ALL three cases, arm select-suppression: subsequent
               // downstream calls (node.onSelect, startNodeDrag) would
               // otherwise re-collapse the multi-set.
@@ -23951,6 +24127,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             // Empty-canvas mousedown. Pan still wins for space/alt/middle —
             // we only initiate marquee for plain left-click.
             if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || spaceHeld) return;
+            // v3.5.1 — When the workflow is empty the WorkflowEmptyComposer
+            // mounts as a child of the canvas. Clicks on its textarea / inputs
+            // bubble up as "empty-canvas" because they're not inside a
+            // [data-node-id] ancestor. The preventDefault below would then
+            // block the browser's default caret-placement behaviour and the
+            // user can't position the cursor (or even focus the field). Same
+            // hazard for any clickable form control rendered atop the canvas.
+            if (e.target.closest && e.target.closest(
+              ".workflow-empty-composer, input, textarea, select, [contenteditable=\"true\"], button"
+            )) return;
             const wp = screenToWorld(e.clientX, e.clientY);
             // Stash starting coords in WORLD space. mousemove will compute
             // the rect; mouseup will intersect with node bounds.
@@ -44516,6 +44702,56 @@ async function saveFile(suggestedName, contents, mime = "application/octet-strea
   return { cancelled: false, path: "Downloads/" + suggestedName, picker: false };
 }
 
+/* Global lightbox for any image rendered inside chat (tool-result images,
+   decision-card previews, etc.). Listen for `th:chat-image-zoom` window
+   events with detail = { src, alt? }. Click anywhere on the overlay or
+   press Esc to dismiss. Portals to document.body so it escapes all
+   transforms / overflow contexts. */
+function dispatchChatImageZoom(src, alt) {
+  if (!src) return;
+  window.dispatchEvent(new CustomEvent("th:chat-image-zoom", { detail: { src, alt } }));
+}
+function ChatImageLightbox() {
+  const [target, setTarget] = useState(null);
+  useEffect(() => {
+    const onZoom = (ev) => {
+      const d = ev?.detail || {};
+      if (d.src) setTarget({ src: d.src, alt: d.alt || "" });
+    };
+    window.addEventListener("th:chat-image-zoom", onZoom);
+    return () => window.removeEventListener("th:chat-image-zoom", onZoom);
+  }, []);
+  useEffect(() => {
+    if (!target) return;
+    const onKey = (e) => { if (e.key === "Escape") setTarget(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [target]);
+  if (!target) return null;
+  return createPortal(html`
+    <div
+      className="chat-image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image preview"
+      onClick=${() => setTarget(null)}
+    >
+      <img
+        className="chat-image-lightbox-img"
+        src=${target.src}
+        alt=${target.alt}
+        onClick=${(e) => e.stopPropagation()}
+      />
+      <button
+        className="chat-image-lightbox-close"
+        type="button"
+        aria-label="Close (Esc)"
+        onClick=${() => setTarget(null)}
+      >×</button>
+    </div>
+  `, document.body);
+}
+
 /* Root — picks between the project gallery (workspace mode, no ?project=),
    the live prototype iframe (?view=prototype), the workflow canvas
    (?view=workflow), and the in-project editor (everything else). Lives at
@@ -44539,9 +44775,15 @@ function Root() {
   // Project-scoped alternates. Both bypass <App> entirely so their chrome is
   // self-contained and the editor's heavy bootstrap stays out of the way.
   if (hasProject && view === "prototype") return html`<${PrototypeDoor}/>`;
-  if (hasProject && view === "workflow")  return html`<${WorkflowCanvas}/>`;
+  if (hasProject && view === "workflow")  return html`<${React.Fragment}>
+    <${WorkflowCanvas}/>
+    <${ChatImageLightbox}/>
+  <//>`;
   // Otherwise the regular editor for the active project (or single-mode legacy).
-  return html`<${App}/>`;
+  return html`<${React.Fragment}>
+    <${App}/>
+    <${ChatImageLightbox}/>
+  <//>`;
 }
 
 createRoot(document.getElementById("root")).render(html`<${Root}/>`);

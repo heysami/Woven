@@ -1457,6 +1457,11 @@ button {
           drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
   pointer-events: none;
 }
+/* v3.5.1 — Default text colours (dark) for cards sitting on the LIGHT side of
+   the diamond field. Cards over the DARK header band get `[data-on-dark="true"]`
+   stamped on them by the JS sampler (see ProjectsLanding mount effect) and the
+   override block below flips the upper-card text to white. The starred-prototype
+   panel has its own opaque white surface and is intentionally NOT flipped. */
 .landing-card-label {
   font-family: var(--font-display), "Bricolage Grotesque", var(--font-sans);
   font-family: "Bricolage Grotesque", var(--font-sans);
@@ -1467,12 +1472,14 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.18s ease;
 }
 .landing-card-id {
   font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
   font-size: 11.5px;
   color: var(--text-faint);
   letter-spacing: 0.02em;
+  transition: color 0.18s ease;
 }
 .landing-card-stats {
   display: flex;
@@ -1480,7 +1487,19 @@ button {
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
+  transition: color 0.18s ease;
 }
+.landing-card[data-on-dark="true"] .landing-card-label { color: #ffffff; }
+.landing-card[data-on-dark="true"] .landing-card-id    { color: rgba(255, 255, 255, 0.7); }
+.landing-card[data-on-dark="true"] .landing-card-stats { color: rgba(255, 255, 255, 0.78); }
+/* v3.5.1 — Hover solidifies the card to opaque white (see .landing-card:hover
+   rule above). The dark-band text-flip becomes invisible against that white
+   surface, so revert the upper-card text back to its dark defaults on hover
+   regardless of whether the card was flagged on-dark. Specificity beats the
+   plain `[data-on-dark="true"]` rules above (extra :hover pseudo-class). */
+.landing-card[data-on-dark="true"]:hover .landing-card-label { color: var(--text); }
+.landing-card[data-on-dark="true"]:hover .landing-card-id    { color: var(--text-faint); }
+.landing-card[data-on-dark="true"]:hover .landing-card-stats { color: var(--text-muted); }
 .landing-card-stat-sep { color: var(--text-faint); }
 .landing-card-actions {
   display: inline-flex;
@@ -12695,8 +12714,12 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Composer — reply input + send button, sits above the perm-mode footer */
 .chat-composer {
   display: grid;
-  /* attach (image, 4d) · upload (multi-file, 5c) · textarea · send */
-  grid-template-columns: auto auto 1fr auto;
+  /* attach (image, 4d) · upload (multi-file, 5c) · textarea · stop · send.
+     v3.5.1 — the stop column is `auto` and only painted when the agent is
+     streaming (conditional render in ChatComposer), so it collapses to
+     zero width otherwise and the row reads as a clean four-column layout
+     in the idle state. */
+  grid-template-columns: auto auto 1fr auto auto;
   gap: 8px;
   align-items: end;
   padding: 8px 10px;
@@ -12766,6 +12789,22 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 0;
   flex-shrink: 0;
 }
+/* v3.5.1 — Stop button moved from the chat header down next to Send so the
+   user can interrupt the agent from the same spot they reply. Visually a
+   neutral pill that doesn't compete with the accent Send button. */
+.chat-composer-stop {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+.chat-composer-stop:hover { background: var(--surface-3); border-color: var(--text-faint); }
 .chat-composer-send:hover:not([disabled]) { filter: brightness(1.05); }
 .chat-composer-send[disabled] {
   background: var(--surface-3);
@@ -13551,6 +13590,12 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface-2);
   overflow: hidden;
   transition: border-color 0.12s, transform 0.08s;
+  /* v3.5.1 — was an <a>, now a <button>. Reset the user-agent button look. */
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: zoom-in;
 }
 .tool-result-image-wrap:hover {
   border-color: var(--accent);
@@ -16572,7 +16617,61 @@ a.ds-badge:hover, button.ds-badge:hover {
   pointer-events: none;  /* the parent button handles the click */
 }
 .chat-decision-preview-iframe { display: block; }
-.chat-decision-preview-img    { object-fit: cover; display: block; }
+.chat-decision-preview-img    {
+  object-fit: cover;
+  display: block;
+  /* v3.5.1 — the parent .chat-decision-preview has pointer-events:none so the
+     outer button's onClick handles selection. Re-enable on the image so a
+     click on the image opens the lightbox (event handler stops propagation
+     so the parent button doesn't also fire). */
+  pointer-events: auto;
+  cursor: zoom-in;
+}
+.chat-decision-preview-img:hover { filter: brightness(1.04); }
+
+/* Full-screen image lightbox for chat images. Mounted at document.body so
+   it escapes every transform / overflow context. Click anywhere to close. */
+.chat-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(8, 8, 12, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: chatLightboxIn 0.16s ease-out both;
+  cursor: zoom-out;
+}
+@keyframes chatLightboxIn { from { opacity: 0; } to { opacity: 1; } }
+.chat-image-lightbox-img {
+  max-width: min(96vw, 1800px);
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+.chat-image-lightbox-close {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+}
+.chat-image-lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
 
 /* Grouped multi-pick: stack groups vertically; each group's options sit in
    a horizontal row when there are 2–3 of them, else wrap. */
