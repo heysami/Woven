@@ -4013,9 +4013,16 @@ def _ensure_harness_settings() -> "str | None":
     """Generate INSTALL_ROOT/.claude/settings-harness.json on demand and
     return its absolute path. Returns None if the hook script itself is
     missing (in which case spawn sites silently skip --settings — the
-    enforcement is unavailable but the daemon keeps working)."""
+    enforcement is unavailable but the daemon keeps working).
+
+    The hook is the per-family planner gate (require-planner.sh) — it
+    routes by file path: simulations/ → simulation-planner, interactives/
+    → interactive-media-planner, narratives/ → narrative-experience-planner,
+    and the visual binary slots elsewhere → visual-planner. Renamed from
+    the legacy require-visual-planner.sh in v3.6 when sim/im/nx planners
+    landed."""
     hook_path     = os.path.join(INSTALL_ROOT, ".claude", "hooks",
-                                  "require-visual-planner.sh")
+                                  "require-planner.sh")
     settings_path = os.path.join(INSTALL_ROOT, ".claude",
                                   "settings-harness.json")
     if not os.path.isfile(hook_path):
@@ -11138,11 +11145,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         # For Claude Code in -p mode this MUST be set or every tool auto-denies.
         permission_mode = (body.get("permissionMode") or defs.get("permission_default") or "").strip()
         spawn_args = list(defs["args"])
-        # v2.45 — see _spawn_node_agent for the rationale. "bypassPermissions"
-        # in Claude Code 2.1.150 no longer skips Bash/Write prompts; only
-        # --dangerously-skip-permissions does.
+        # v2.45 / v3.8.1 — Claude Code 2.1.163 split the bypass into TWO
+        # flags. --dangerously-skip-permissions alone no longer skips
+        # prompts; --allow-dangerously-skip-permissions must ENABLE the
+        # bypass first. See `claude --help`:
+        #   --allow-dangerously-skip-permissions   Enable bypassing all permission checks
+        #   --dangerously-skip-permissions         Bypass all permission checks.
+        # The /__run path at this site was missed when the other spawn
+        # site (_spawn_node_agent) was patched — every chat spawn from
+        # the editor UI flows through here, so the missing flag is what
+        # made "i try to run and nothing happens" — the spawn would
+        # succeed structurally but the subprocess hit a permission wall
+        # on its first tool call and emitted empty text.
         if permission_mode == "bypassPermissions":
-            spawn_args += ["--dangerously-skip-permissions"]
+            spawn_args += [
+                "--allow-dangerously-skip-permissions",
+                "--dangerously-skip-permissions",
+            ]
         elif defs.get("permission_flag") and permission_mode:
             spawn_args += [defs["permission_flag"], permission_mode]
         # v3.1 — Hide user-level slash commands so /prototype etc. don't
@@ -11829,12 +11848,13 @@ if __name__ == "__main__":
     # anyway.
     _settings_path = _ensure_harness_settings()
     if _settings_path:
-        print(f"  hook gate: PreToolUse Write/Edit/MultiEdit blocks visual "
-              f"asset writes until visual-planner is dispatched", flush=True)
+        print(f"  hook gate: PreToolUse Write/Edit/MultiEdit routes by path "
+              f"to the right family planner (simulation / interactive / "
+              f"narrative / visual)", flush=True)
         print(f"    settings: {_settings_path}", flush=True)
     else:
         _hook_path = os.path.join(INSTALL_ROOT, ".claude", "hooks",
-                                  "require-visual-planner.sh")
+                                  "require-planner.sh")
         print(f"  hook gate: hook script missing at {_hook_path}; writes are NOT gated",
               flush=True)
     # If a stale symlink was left over from the earlier CLAUDE_CONFIG_DIR
