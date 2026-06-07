@@ -3084,11 +3084,25 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
         done = False
         events = []
         seq = 0
+        # v3.8.3 — also rehydrate permission_mode from the persisted
+        # `spawned` event. Earlier this was dropped, so after a daemon
+        # restart every /resume spawn fell through both branches of
+        # _run_resume's flag-selector (state.permission_mode == None)
+        # and the subprocess was launched with NO bypass flags at all.
+        # Symptom: every Edit / Write came back as "Claude requested
+        # permissions to write to … but you haven't granted it yet."
+        # The JSONL's `spawned` event has carried permissionMode since
+        # v2.x so we just read it back here.
+        permission_mode = None
         for rec in run_lines:
             data = rec.get("data") or {}
             # Capture session_id from any agent frame that carries it
             if isinstance(data, dict) and data.get("sessionId") and not session_id:
                 session_id = data["sessionId"]
+            # Capture permission_mode from the initial spawn event
+            if isinstance(data, dict) and data.get("label") == "spawned" \
+                    and data.get("permissionMode") and permission_mode is None:
+                permission_mode = data["permissionMode"]
             if rec.get("type") == "__finish":
                 done = True
                 ec = data.get("exitCode") if isinstance(data, dict) else None
@@ -3111,6 +3125,9 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
         state.done = done
         state.exit_code = exit_code
         state.events = events
+        # Fall back to the daemon default if the spawn event predates the
+        # permissionMode field (old runs from before that field landed).
+        state.permission_mode = permission_mode or AGENT_DEFS.get(agent_id, {}).get("permission_default")
         with RUNS_LOCK:
             RUNS[run_id] = state
         return state
@@ -11594,9 +11611,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"agent '{state.agent_id}' binary not found"})
 
         spawn_args = list(defs["args"])
-        # v2.45 — same mapping as _run_create / _spawn_node_agent.
+        # v2.45 / v3.8.2 — third spawn site (continuing an existing chat
+        # via /__run/<id>/resume) also needs BOTH bypass flags. Claude
+        # Code 2.1.163 split the bypass into --allow-… (enables the
+        # option) + --dangerously-… (activates it); passing only the
+        # second one makes every subsequent Edit/Write prompt the user,
+        # which in -p stream-json mode silently denies. The two other
+        # spawn sites (_run_create, _spawn_node_agent) were patched in
+        # 19aab27 / 26d13f3 but this one was missed — and it's the path
+        # the editor hits every time the user types in an existing
+        # chat, so the symptom looked like "permissions are still
+        # broken even after the fix landed."
         if state.permission_mode == "bypassPermissions":
-            spawn_args += ["--dangerously-skip-permissions"]
+            spawn_args += [
+                "--allow-dangerously-skip-permissions",
+                "--dangerously-skip-permissions",
+            ]
         elif defs.get("permission_flag") and state.permission_mode:
             spawn_args += [defs["permission_flag"], state.permission_mode]
         # v3.1 — match the freeform / node-agent paths: hide user slash commands.
@@ -11625,6 +11655,17 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
+
+        # v3.8.3 — log just the permission-related flags so a future
+        # regression in this code path is immediately visible in the
+        # daemon log without leaking the system prompt or settings path.
+        try:
+            _flags = [a for a in spawn_args if a.startswith("--allow-")
+                      or a.startswith("--dangerously-") or a.startswith("--permission-")]
+            print(f"[resume-spawn] runId={run_id} sessionId={state.session_id} "
+                  f"permission_mode={state.permission_mode!r} permission_flags={_flags!r}", flush=True)
+        except Exception:
+            pass
 
         try:
             proc = subprocess.Popen(
