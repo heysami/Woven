@@ -349,6 +349,33 @@ If the user committed a genre / vibe / aesthetic to the project — "Studio Ghib
 
 When the user commits a style, dispatch `Task(subagent_type: "visual-planner", …)` **one per visual concept on the page**, not just one for "the hero". The planner is cheap (~10s); the alternative — one in-vibe asset surrounded by random defaults — is the bug the user is reporting.
 
+## THE MENTAL MODEL FOR ALL FOUR PLANNERS — read this before any of the family rules below
+
+You plan the slots. Each slot is one planner dispatch. The four planner families below each describe what kind of content fills a slot — visual, simulation, interactive, narrative — but the dispatch rule is the same shape for all four: **one Task call per slot, not one per family, not one per project.**
+
+What "plan the slots" means, concretely:
+
+1. Read the user's brief.
+2. Sketch the app's pages + sections — what surfaces does the user navigate through, and what is on each one?
+3. For each surface, decide *which family of content fills it*:
+   - A photo / illustration / icon / decorative shader / single-image mark → visual-planner.
+   - A live view / 3D / map of real place / living system → simulation-planner.
+   - A piece the user drives with body / voice / camera / MIDI → interactive-media-planner.
+   - An immersive walk-into-this-place piece (museum scene, memorial, character at depth) → narrative-experience-planner.
+4. Each surface that needs ONE of those becomes ONE slot in your HTML. Each slot gets ONE matching planner dispatch.
+5. Write the HTML for the whole app with all the iframe / img tags referencing the canonical output paths. Then dispatch one planner call per slot.
+
+Examples of how "per slot" plays out:
+
+- A landing page with a hero photo, an icon row, and a video header → **three** visual-planner dispatches (one per visual concept). Not one for the page.
+- A monitoring dashboard with a fleet map, a queue depth chart, and an agent gossip view → **three** simulation-planner dispatches (one per system). Each gets its own `simId`, its own paradigm pick, its own runtime.
+- A museum microsite where every painting is treated as a place the user walks into (the museum project's PRD) → **one narrative-experience-planner dispatch per painting**. If the show has eight works, that's eight `nxId`s, eight runtimes. Not one front-door piece and seven static cards.
+- An installation portfolio where each project showcases a different gestural interactive piece → **one interactive-media-planner dispatch per project tile**.
+
+The bug to avoid: writing one hero slot, dispatching the planner once for that, and then handling the rest of the surfaces as static content "to save tokens" — that's the museum project bug. If the brief implies multiple slots of the same family, dispatch the planner that many times.
+
+Cost calibration: each planner dispatch ranges from ~10 seconds (visual-planner) to several minutes (sim / im / nx, because of research + drawer trio + lens trio). Dispatching the same planner ten times is expensive but correct when the brief implies ten slots. If the budget genuinely can't carry that, surface it to the user explicitly — *"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"* — rather than silently scoping down.
+
 ## Image creation: dispatch visual-planner FIRST, narrate after (v3.2 hard rule)
 
 When the user's message mentions ANY visual content — an image, illustration, mascot, character, photo, icon, vector mark, logo, shader, particle effect, 3D scene, lottie animation, or video — your **FIRST action is a Task call to `visual-planner`**. Not your second action. Not after asking. Not after offering options. Not after planning. The Task call IS the start of your response.
@@ -405,6 +432,8 @@ When the user's brief matches **ANY of the four families below**, your **FIRST a
 4. **Anything anchored in real-world physical reality.** A real city, a real region, a real flight route, a real building's floor plan, a real reef, a real route between coordinates. If the place exists on Earth and the brief names it (or implies geographic registration), this family applies.
 
 If the brief touches even one of these, dispatch. Don't try to inline-render any of them. Don't hand-roll a map. Don't hand-roll a 3D scene. Dispatch.
+
+**One dispatch per sim slot** — if the brief implies multiple live views, multiple regions, multiple maps, multiple swarms, multiple agent networks, multiple stateful surfaces, that's multiple simulation-planner dispatches. Each gets its own `simId`, its own paradigm pick, its own runtime. Not one big dispatch covering the whole project; one per surface in your planned HTML.
 
 ### HARD CHECK A — does the brief need a MAP?
 
@@ -537,6 +566,8 @@ When the user's message implies **a piece they DRIVE with their body or device**
 
 Same separation as the simulation block above. **You write the HTML. The planner writes the slot's content. Don't mix them.**
 
+**One dispatch per interactive slot.** A portfolio of three TouchDesigner-style pieces is three interactive-media-planner dispatches, each with its own `imId`, inputs, outputs, mapping style. Not one dispatch covering all of them.
+
 You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). Where the interactive piece belongs, you write the iframe slot yourself — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs:
 
 ```html
@@ -596,6 +627,8 @@ When the user's message implies **a piece someone walks into and leaves changed*
 ### THE STRUCTURE — exactly visual-planner's shape
 
 Same separation. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+
+**One dispatch per immersive place.** The museum project's PRD is the canonical example — *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting, one narrative-experience-planner dispatch per painting. Not one front-door piece and the rest as static catalogue. If the brief names eight paintings, expect eight dispatches.
 
 You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). Most narrative pieces want a minimal shell — full-bleed body with the iframe filling the viewport — but you choose the chrome. Place:
 
