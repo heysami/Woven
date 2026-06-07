@@ -29161,22 +29161,29 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   }, [runtimePath, devtools, nonce]);
 
   // Refresh on asset-changed events scoped to this container's folder —
-  // but only while the container is still BEING BUILT. Once committed
-  // (runStatus done + lensVerdict pass), the runtime owns its own
-  // state and rAF loop; any further file-watcher events (planner cleanup,
-  // reconciler touches, agent re-saves with identical content) would
-  // remount the iframe via the React key, restart the sim from scratch,
-  // and leave a blank canvas (per sim-runtime-composer §3.8). The user
-  // sees this as "the sim works for a while then it gone."
+  // but ONLY while the container is actively being built (`runStatus ===
+  // "running"`). Every other state (null / queued / done / error) keeps
+  // the iframe stable so the runtime's own rAF loop + WebGL context
+  // survive any noise from the file watcher.
   //
-  // Mirror of the WorkflowAssetNode v3.3 fix for HTML assets under
-  // simulations/ / interactives/ / narratives/. Symmetric reasoning:
-  // long-running interactive content can't be auto-remounted without
-  // killing the loop. Users who want a fresh load can use the devtools
-  // toggle (bumps nonce explicitly) or remove + re-add the node.
-  const _isCommitted = node.runStatus === "done" && node.outputs?.lensVerdict === "pass";
+  // Earlier versions checked `runStatus === "done" && lensVerdict ===
+  // "pass"` and only stopped reloading once *fully committed*. That broke
+  // for containers built in older Woven versions (or containers the user
+  // manually scaffolded outside the lens pipeline) — they have a fully
+  // built `runtime.html` on disk but `runStatus === null`, so the
+  // listener stayed active and the iframe remounted on every asset
+  // refresh, never getting to render. The birdbird project surfaced
+  // this: runtime served fine standalone, MapLibre + canvas loaded, but
+  // the workflow-canvas iframe was caught in a permanent reload loop.
+  //
+  // Active-only is the right rule. While the build is running, drawers
+  // commit new files and we want the user to see progress; once the run
+  // finishes (regardless of pass/fail/cleanup state), the iframe goes
+  // stable. Users who want a fresh load can use the devtools toggle
+  // (bumps nonce explicitly) or remove + re-add the node.
+  const _isActivelyBuilding = node.runStatus === "running";
   useEffect(() => {
-    if (_isCommitted) return;   // skip listener entirely once committed
+    if (!_isActivelyBuilding) return;   // stable iframe in every non-running state
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
       if (paths.length === 0) return;
@@ -29187,7 +29194,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
     };
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);
-  }, [branch, folder, assetId, _isCommitted]);
+  }, [branch, folder, assetId, _isActivelyBuilding]);
 
   // Title-bar lens-verdict badge: pass / fail / running / queued.
   const lensVerdict = node.outputs?.lensVerdict;
