@@ -1042,23 +1042,26 @@ def _qs_get(qs_or_body, key, default=None):
     return v
 
 
-def resolve_project_root(qs_or_body=None, *, require_explicit=False):
+def resolve_project_root(qs_or_body=None, *, require_explicit=True):
     """Return absolute path to the active project's root.
 
     Single-project mode (TH_WORKSPACE_DIR unset): always DEFAULT_PROJECT_ROOT.
     The `project` param is silently ignored so legacy URLs keep working.
 
-    Workspace mode: reads `project` from qs/body.
+    Workspace mode: reads `project` from qs/body. By default (v3.7) every
+    request MUST carry an explicit `?project=<id>` when more than one
+    project exists — the route raises `ValueError` and its handler returns
+    400. This makes cross-project leaks impossible: the daemon never has
+    to guess which project an agent meant.
 
-    By default, falls back to the first discovered project so a fresh tab
-    without `?project=` still resolves to something instead of 400'ing.
-
-    `require_explicit=True` disables that fallback when more than one project
-    exists — the route raises `ValueError` and its handler returns 400. Use
-    on mutation endpoints (write/generate/run) where the silent fallback
-    has caused agent subagents to misroute output into the wrong project
-    (e.g. assets landing in the alphabetically-first project instead of the
-    one the agent thought it was targeting).
+    `require_explicit=False` re-enables the legacy silent fallback to the
+    first-discovered project. Reserved for a small number of UI-only read
+    endpoints whose absence of `?project=` is intentional (e.g. landing-
+    page polls before any project is open). Mutation endpoints + every
+    endpoint reachable from a per-project subagent context must keep the
+    default. Loose-fallback historic bug: musem chat curl'd /__workflow
+    without ?project= and received the install's brand-landing workflow
+    (27 unrelated nodes from project=changing).
     """
     if not WORKSPACE_DIR:
         return DEFAULT_PROJECT_ROOT
