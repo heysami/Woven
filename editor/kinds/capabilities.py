@@ -225,7 +225,7 @@ def _strip_disabled_planner_blocks(text: str, enabled_ids: set) -> str:
     filter's known headers and the actual prose surfaces as a no-op."""
     SECTIONS = [
         ("## Image creation: dispatch visual-planner FIRST",                      "visual-planner"),
-        ("## System simulation: dispatch simulation-planner FIRST",               "simulation-planner"),
+        ("## Live view: dispatch simulation-planner FIRST",                       "simulation-planner"),
         ("## Interactive piece: dispatch interactive-media-planner FIRST",        "interactive-media-planner"),
         ("## Immersive narrative: dispatch narrative-experience-planner FIRST",   "narrative-experience-planner"),
     ]
@@ -391,9 +391,22 @@ Also: when the planner returns, verify `workflow/visual-plan.json.qa` exists wit
 
 **Emulating visual-planner from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
 
-## System simulation: dispatch simulation-planner FIRST (v3.6 hard rule)
+## Live view: dispatch simulation-planner FIRST (v3.7 hard rule)
 
-When the user's message implies **a system whose parts have state and change** — anything where the user wants to *watch* something unfold (a population moving, a queue draining, agents talking, a fleet sliding across a region, a swarm pulsing, traffic flowing, a render farm digesting, a heatmap shifting, packets propagating, neurons firing, a globe rotating with markers, mosquitoes spreading, mail moving through an inbox) — your **FIRST action is a Task call to `simulation-planner`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
+When the user wants to **see things over a region or over time** — a live view, a map of where they are, a tracker, a monitor, a dashboard that shows stuff happening, a watch-this-unfold piece — your **FIRST action is a Task call to `simulation-planner`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
+
+This is broad on purpose. Anything along the lines of:
+
+- "birdwatch across Singapore" — birds (entities) across a region (space). Live view. Dispatch.
+- "monitor dengue mosquitoes" — mosquito clusters (entities) over Singapore (space). Live view. Dispatch.
+- "track our delivery fleet" — vehicles over a region. Dispatch.
+- "map of where the satellites are" — satellites over a globe. Dispatch.
+- "show me the queue draining" — items in a queue over time. Dispatch.
+- "live feed of NEA reports per zone" — points-on-map updating. Dispatch.
+- "see the swarm" / "watch the agents talk" / "follow the build pipeline" — same shape, dispatch.
+- "render farm dashboard" / "warehouse view" / "inbox view of mail flowing" — dispatch.
+
+If the brief is about LOOKING AT changing or positioned things (not just laying out static content), this is the right planner — no matter what vocabulary the user used.
 
 ```
 Task(subagent_type: "simulation-planner",
