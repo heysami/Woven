@@ -30,7 +30,7 @@ Read `editor/kinds/AGENT_HARNESS.md` Rules 5 (folder), 6 (atomic commit), 7 (sta
 
 ## 1. What counts as a scrapbook-experience + the input mode
 
-### 1.0 What counts (read before interpreting any Mode B intent)
+### 1.0 What counts
 
 A scrapbook-experience surface is **any piece whose aesthetic cannot be reached by CSS + restrained typography alone**. The trigger isn't a keyword (scrapbook, collage) — it's the **shape of the brief**: dense raster composition with overlapping textured layers + a named image-driven aesthetic + a wish to *inhabit* the world the imagery proposes.
 
@@ -49,7 +49,7 @@ The core aesthetics this planner serves natively (each one becomes the brief's a
 
 Hybrid is fine ("vaporwave-meets-cottagecore," "Y2K-internetcore-fanzine"). The research drawer commits the anchor.
 
-When you interpret a Mode B intent: **don't pre-decide the aesthetic from one keyword**. "I want a Y2K-feeling site" + "for a memorial" might land as Y2K-cottagecore-hybrid (frosted plastic meets pressed flowers) — let the research drawer commit the synthesis. Your job is the BRIEF, not the literal aesthetic name.
+When you interpret an intent: **don't pre-decide the aesthetic from one keyword**. "I want a Y2K-feeling site" + "for a memorial" might land as Y2K-cottagecore-hybrid (frosted plastic meets pressed flowers) — let the research drawer commit the synthesis. Your job is the BRIEF, not the literal aesthetic name.
 
 If you cannot identify a raster-heavy aesthetic in the intent, *that* is a reason to push back via `<decision-request>` — but CSS-restrained pieces (Bauhaus, Swiss grid, Apple Bento, terminal-on-web, neogrotesque) are a sign the brief belongs to `visual-planner` (for hero assets in an otherwise-CSS-restrained app), NOT to scrapbook-experience. Redirect.
 
@@ -390,5 +390,9 @@ Failures *after* the hand-off (a drawer fails its lens trio after 5 iterations, 
 Companion: [simulation-planner.md](simulation-planner.md), [interactive-media-planner.md](interactive-media-planner.md), [narrative-experience-planner.md](narrative-experience-planner.md), [game-experience-planner.md](game-experience-planner.md). Heavy collaborator: [visual-planner.md](visual-planner.md). Lens companions: [craft-lens.md](craft-lens.md), [aesthetic-lens.md](aesthetic-lens.md), [concept-lens.md](concept-lens.md).
 
 End with one summary line: `"sb_<sbId> scaffold complete: core=<aesthetic>, density=<X>, motion=<X>, inventory=<N> assets, multiDraftCruxes=<list> — handing off to caller for build phase."`
+
+**ALSO include verbatim in your final return text** (so the caller sees the polish requirement explicitly):
+
+> **REQUIRED NEXT ACTION for the caller** (NOT this subagent): once you've driven the build phase to completion (every drawer `done`, container committed), dispatch `interactive-polish-planner` BEFORE Step-8 QA and BEFORE marking the user task complete. The polish pass is what gives the piece its living touches — microanimations, hover surprises, scroll-driven effects, shader overlays. Skipping it ships a build that feels lifeless.
 
 > **Architectural note (do not edit this section out).** The harness pseudocode (drawer dispatch, §8.3 loop-until-bar, §8.7 multi-draft cruxes, visual-planner sub-dispatch fanout) lives in §5.1.0 of this playbook — compact form. The caller (workflow-mode chat) reads it to drive the build. Do NOT add a Phase D *drive-the-build-yourself* section here. Doing so re-introduces the permission-wall bug where this subagent re-gates every Bash/curl on behalf of the caller, blocking the build phase mid-session.

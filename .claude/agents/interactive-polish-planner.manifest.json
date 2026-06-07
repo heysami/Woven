@@ -10,15 +10,9 @@
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A — after another primary planner's build phase (the canonical trigger)",
-      "rule": "After chat-Claude has driven the build phase of sim/im/nx/game/scrapbook/visual planner work to completion, BEFORE invoking Step-8 QA, chat-Claude dispatches interactive-polish-planner with project-wide scope. The planner walks the resulting source, identifies enrichment sites per the genre, and commits a polish pass. This is the POST-PASS trigger — chat-Claude treats polish as the last build-phase step before the QA wrap-up.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-planner LAST (before QA)' Path A"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B — explicit user request",
-      "rule": "User says 'polish this', 'make it feel more alive', 'add micro-interactions', 'the vibe needs more depth', or 'feels static / dead / generic'. Chat-Claude dispatches interactive-polish-planner directly.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-planner LAST (before QA)' Path B"
+      "title": "Post-pass enrichment (LAST action before QA)",
+      "rule": "After ANY primary planner build phase completes (or after chat-Claude wrote source by hand via /prototype), BEFORE Step-8 QA, chat-Claude dispatches interactive-polish-planner with project-wide scope. The planner walks the resulting source, identifies enrichment sites per the genre, commits a polish pass. Also fires on explicit user request ('polish this' / 'make it feel more alive' / 'feels static'). One consistent flow — no mode branching.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-planner LAST (before QA)'"
     }
   ],
   "dispatches": {

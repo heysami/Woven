@@ -31,9 +31,9 @@ Inspect every `game_*_` wildcard, every `craft_lens_*` / `aesthetic_lens_*` / `c
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5 (folder), 6 (atomic commit), 7 (status never lies), 10 (per-asset scaffolding).
 
-## 1. What counts as a game-experience + the input mode
+## 1. What counts as a game-experience + the input shape
 
-### 1.0 What counts as game-experience (read before interpreting any Mode B intent)
+### 1.0 What counts as game-experience
 
 A game-experience surface is **a living interactive world the user manipulates toward a stated objective**. The trigger isn't a keyword (game, score, level) — it's the **shape of the brief**: a world + agency + objective + feedback loop + a wish to PLAY.
 
@@ -45,13 +45,13 @@ The four sibling paradigms map onto game-experience naturally — pick the one t
 - **`iconographic-physics`** — abstract / particle-systems / soft-bodies / fluid that the user pokes. Camera is locked or fluidly framing. Best for: toy-grade interaction where the medium IS the system (Soda Constructor, Powder, Cloth Toy, Lloopp).
 - **`hybrid`** — multi-paradigm composition (e.g. a 2D-side platformer with a 3D-environment puzzle inside it).
 
-When you interpret a Mode B intent: **don't pre-decide the paradigm from how spatial the brief sounds**. "Throw a paper plane" can be 2d-side (gravity arc with hand-drawn world), 3d-environment (first-person throw into a Pixar office), or iconographic-physics (the plane IS the whole world, a soft-body the user flings). The research fleet picks. Your job is to commit to the BRIEF, not to a representation.
+Game-experience includes BOTH arcade-physical patterns (throw / fling / collect / dodge / aim / score / streak) AND the nurturing / companion / care-game family (Pou, Tamagotchi, Neko Atsume, Stardew animal-care, Finch self-care, Pokemon Sleep, Pip-the-glade, Totoro-feed-the-forest) — anything with **OBJECTIVE + FEEDBACK LOOP** where the user's actions feed visible progress (growth, score, streak, milestone, bloom-payoff). Don't pre-decide the paradigm from how spatial the brief sounds — a feeding game can be 2d-topdown (top-down garden), 3d-environment (walk among your pets), or iconographic-physics (poke a soft-body creature that grows). The research drawer picks. Your job is to commit to the BRIEF, not to a representation.
 
 If you cannot identify a goal/objective in the intent, *that* is a reason to push back via `<decision-request>` — a game-experience without an objective is interactive-media, not game-experience. Force the user to commit to one.
 
 ### 1.1 Input shape — slot-in-an-app-shell
 
-You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/*.html` with one or more `<iframe class="game-mount" data-game="<gameId>" ...>` slots embedded in the app shell. Your job is **Mode A — HTML enumeration**: walk every HTML page under `source/<branch>/`, find every game-mount iframe, extract the `gameId` (and optional `data-paradigm-hint` + `data-objective` + `data-inputs` + `data-juice` attributes), and fan out the per-slot drawer set for each. **You do not touch any HTML.** Same contract as the other four planners.
+You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/*.html` with one or more `<iframe class="game-mount" data-game="<gameId>" ...>` slots embedded in the app shell. Walk every HTML page under `source/<branch>/`, find every game-mount iframe, extract the `gameId` (and optional `data-paradigm-hint` + `data-objective` + `data-inputs` + `data-juice` attributes), and fan out the per-slot drawer set for each. **You do not touch any HTML.** Same contract as the other four planners.
 
 Per slot, the drawer set is: `game_research_<gameId>` → `game_objective_<gameId>` → `game_world_<gameId>` → `game_physics_<gameId>` → `game_input_<gameId>_<modality>` (one or more) → `game_feedback_<gameId>` → `game_loop_<gameId>` → `game_overlay_<gameId>` → `game_runtime_<gameId>` → container node `game_<gameId>`. Multiple slots are independent.
 
@@ -436,5 +436,9 @@ Failures *after* the hand-off (a drawer fails its lens trio after 5 iterations, 
 Companion: [simulation-planner.md](simulation-planner.md), [interactive-media-planner.md](interactive-media-planner.md), [narrative-experience-planner.md](narrative-experience-planner.md). Lens companions: [craft-lens.md](craft-lens.md), [aesthetic-lens.md](aesthetic-lens.md), [concept-lens.md](concept-lens.md). Drawer vertical slice: [game-runtime-composer.md](game-runtime-composer.md).
 
 End with one summary line: `"game_<gameId> scaffold complete: paradigm=<X>, objective=<one-line>, juice=<register>, <N> drawer nodes scaffolded — handing off to caller for build phase."`
+
+**ALSO include verbatim in your final return text** (so the caller sees the polish requirement explicitly):
+
+> **REQUIRED NEXT ACTION for the caller** (NOT this subagent): once you've driven the build phase to completion (every drawer `done`, container committed), dispatch `interactive-polish-planner` BEFORE Step-8 QA and BEFORE marking the user task complete. The polish pass is what gives the piece its living touches — microanimations, hover surprises, scroll-driven effects, shader overlays. Skipping it ships a build that feels lifeless.
 
 > **Architectural note (do not edit this section out).** The harness pseudocode (drawer dispatch, §8.3 loop-until-bar, §8.7 multi-draft cruxes) lives in §5.1.0 of this playbook — compact form. The caller (workflow-mode chat) reads it to drive the build. Do NOT add a Phase D *drive-the-build-yourself* section here. Doing so re-introduces the permission-wall bug where this subagent re-gates every Bash/curl on behalf of the caller, blocking the build phase mid-session.

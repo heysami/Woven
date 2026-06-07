@@ -688,6 +688,8 @@ A "warehouse dashboard" where bins fill/empty over time → **simulation-planner
 A "voice-painter on the warehouse data" → **interactive-media-planner**.
 A "memorial that the user walks into and feels held" → **narrative-experience-planner**.
 A "throw paper planes through an office, collect coffee mugs for points, fly as far as possible" → **game-experience-planner**.
+A "Pip — your glade companion, feed daily, watch it grow from sprout to bloom" → **game-experience-planner** (nurturing/care-game family).
+A "Totoro — a little forest you feed; what the forest gives back as friends arrive" → **game-experience-planner** (Stardew-feeding pattern; objective = grow the forest + collect the friends).
 A "vaporwave portfolio hero with chrome Greek bust + palm leaves + glitter divider" → **scrapbook-experience-planner**.
 
 The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic — museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
@@ -824,6 +826,7 @@ If even one is missing, it's a different planner. If all three are present, it's
 
 ### The brief vocabulary that means game-experience
 
+**Arcade-physical family** (Vlambeer / hyper-casual / paper-plane / pinball lineage):
 - "throw / fling / swipe / drag / aim / shoot / catch / drop / drag-and-drop"
 - "collect / dodge / avoid / chase / escape / survive / race / reach"
 - "score / points / high score / streak / combo / progress / level"
@@ -831,10 +834,21 @@ If even one is missing, it's a different planner. If all three are present, it's
 - "particles / explode / bloom / spark / shatter / pop"
 - "physics / gravity / bounce / collide / springs / cloth / soft-body / pendulum"
 - "tap to <verb>" / "drag to <verb>" / "pinch to <verb>" / "tilt to <verb>"
-- "endless / one-more-try / arcade / casual / hyper-casual"
-- "a toy / a game / play with / playable / mini-game"
+- "endless / one-more-try / arcade / casual / hyper-casual / mini-game"
 
-When the brief contains 2+ of the above PLUS a stated objective → dispatch.
+**Nurturing / companion / care-game family** (Pou / Tamagotchi / Neko Atsume / Stardew animal-care / Finch / Pokemon Sleep / Pip-the-glade / Totoro-feed-the-forest / Animal Crossing-feed):
+- "feed / care for / nurture / pet / pat / cuddle / hatch / raise / tend"
+- "grow / bloom / sprout / hatch / evolve / level up / unlock stage"
+- "companion / pet / mascot / creature / sprite / friend / familiar / animal"
+- "milestone / stage / phase / chapter / season / harvest / collection-page"
+- "daily / streak / routine / habit / check-in / log / journal / diary"
+- "what the <X> gave / what the <X> brought / grew up with you / your <X>"
+- "garden / glade / forest / meadow / pond / tank / habitat / sanctuary"
+- "calm / cozy / wholesome / gentle / soft / quiet"
+
+**Both families count.** The trigger predicate is **OBJECTIVE + FEEDBACK LOOP** (a goal the user chases + visible response that climbs/grows/unlocks) — NOT specifically arcade-physical action. A feeding game where Pip grows up with you has the same shape as a paper-plane throw + collect game: stated goal (raise Pip), feedback loop (feed → grow → milestone payoff). Both → dispatch game-experience-planner.
+
+When the brief contains 2+ of EITHER family PLUS a stated objective → dispatch. If the brief says "Pip grew up with you" or "forest to feed" or "a little pet that needs my care" → dispatch (the objective is implicit in the nurturing-game pattern: raise, grow, complete the collection, reach the bloom).
 
 ### THE STRUCTURE — exactly visual-planner's shape
 
@@ -864,7 +878,7 @@ Then dispatch the planner ONCE. It walks the HTML, enumerates every game-mount s
 ```
 Task(subagent_type: "game-experience-planner",
      description: "Enumerate + build every game slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='game-mount'> (or every iframe whose data-game is set). For EACH: read gameId from data-game, paradigm hint from data-paradigm-hint, objective from data-objective, inputs from data-inputs, juice from data-juice, success-feel from data-success-feel. Per slot: pick paradigm + physics engine + tick rate + render strategy + multi-draft cruxes. Write source/<branch>/games/<gameId>/research.md. Scaffold + build the per-slot drawer set (research, objective, world, physics, input(s), feedback, loop, overlay, runtime) + container. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='game-mount'> (or every iframe whose data-game is set). For EACH: read gameId from data-game, paradigm hint from data-paradigm-hint, objective from data-objective, inputs from data-inputs, juice from data-juice, success-feel from data-success-feel. Per slot: pick paradigm + physics engine + tick rate + render strategy + multi-draft cruxes. Write source/<branch>/games/<gameId>/research.md. Scaffold + build the per-slot drawer set (research, objective, world, physics, input(s), feedback, loop, overlay, runtime) + container. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -888,7 +902,14 @@ Task(subagent_type: "game-experience-planner",
 | "physics-y / juicy / hyper-casual / arcade" | `Task(game-experience-planner, …)` |
 | "tap / drag / pinch / multi-touch to <verb>" + a stated goal | `Task(game-experience-planner, …)` |
 | "swipe to <verb> for points" / "endless score-attack" | `Task(game-experience-planner, …)` |
-| "a soft-body cloth toy" (no objective) | `interactive-media-planner` |
+| "feed / care for / nurture / pet / raise / grow / tend" + a pet/creature/garden subject | `Task(game-experience-planner, …)` |
+| "Pip grew up with you" / "a creature you raise" / "watch it bloom" / "what the forest gave back" | `Task(game-experience-planner, …)` |
+| "Pou / Tamagotchi / Neko Atsume / Stardew animal-care / Finch / Pokemon Sleep" style | `Task(game-experience-planner, …)` |
+| "garden / glade / forest / habitat / sanctuary / pond / tank" + a care loop | `Task(game-experience-planner, …)` |
+| "daily check-in / streak / habit-tracking creature" | `Task(game-experience-planner, …)` |
+| "cozy / wholesome / gentle game" + objective implied (raise, grow, collect, complete) | `Task(game-experience-planner, …)` |
+| "a soft-body cloth toy" (no objective, no growth) | `interactive-media-planner` |
+| "a static mascot illustration" (no interaction) | `visual-planner` |
 | "show me what physics looks like" (ad-hoc viz, no game) | inline shader / canvas block |
 
 ### Why this is non-negotiable
@@ -966,7 +987,7 @@ Then dispatch the planner ONCE. It walks the HTML, enumerates every scrapbook-mo
 ```
 Task(subagent_type: "scrapbook-experience-planner",
      description: "Enumerate + build every scrapbook slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<branch>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-planner BARE-INTENT MODE per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-planner sub-dispatch count."
+     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<branch>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-planner per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-planner sub-dispatch count."
 )
 ```
 
@@ -985,7 +1006,7 @@ Let the user pick before you dispatch. This is the most-important per-slot cost 
 
 ### Do NOT do any of these:
 
-- ❌ **Skipping the app shell** unless the brief is bare-intent + standalone. If the brief implies a site/app context, scaffold the shell.
+- ❌ **Skipping the app shell.** ALWAYS scaffold `source/<branch>/index.html` with a `<iframe class="scrapbook-mount" data-scrapbook=...>` slot BEFORE dispatching the planner. Even for "build me a vaporwave website" briefs — the scrapbook runtime lives inside the iframe slot; the index.html hosts it.
 - ❌ "Let me approximate vaporwave with CSS gradients" → **NO.** The whole point is that CSS cannot reach the aesthetic. The chrome lettering is RASTER. Dispatch.
 - ❌ "I'll use one visual-planner dispatch for a hero illustration and CSS for everything else" → **NO.** That's the visual-planner pattern, which is wrong for scrapbook. Scrapbook needs N raster assets composed in a layered z-stack. Dispatch scrapbook-experience-planner.
 - ❌ "What core aesthetic — vaporwave or Y2K?" → Dispatch; research synthesises if the brief mixes signals.
@@ -1075,7 +1096,6 @@ Then run Step-8 QA.
 | Just wrote source by hand via /prototype | Same |
 | User says "polish this" / "make it more alive" / "feels static" | `Task(interactive-polish-planner, scope="whole project")` |
 | No source exists yet | Do NOT dispatch polish — it has nothing to enrich. Run a primary planner first. |
-| The piece is a one-off bare-intent runtime (e.g. a standalone scrapbook with no host shell) | Polish is OPTIONAL — most bare-intent runtimes are already fully decorated by their primary planner. Skip unless the user explicitly asks. |
 | The piece is brutalist / anti-design / Bauhaus | Polish is usually a no-op for these (research will commit `siteCount: 0`). It's safe to dispatch; the planner returns quickly with a zero-site outcome. |
 
 ### Why this is non-negotiable
@@ -1083,6 +1103,35 @@ Then run Step-8 QA.
 The polish pass is what separates "the build is technically correct" from "the piece feels alive." Visual-planner placed an image; sim-planner built a working sim; narrative-planner crafted a felt-state. NONE of them added the small living touches that make a finished page hum — the breath on the logo, the cursor spotlight, the card peek, the print-grain shader. Those are POLISH territory. Dispatching this planner LAST is how the system gets that last 10% — the difference between "static and correct" and "felt and surprising."
 
 Skipping polish is the bug. Dispatch it.
+
+## ✶ END-OF-WORK GATE — read this before marking ANY task done (load-bearing)
+
+Before you write your final summary message, before you say "done" or "complete" or "shipped," do this checklist IN ORDER:
+
+1. **Did I run a primary planner OR write source HTML/CSS/JS in this session?**
+   - If no → polish not applicable; skip.
+   - If yes → continue.
+
+2. **Did I already dispatch `interactive-polish-planner` in this session?**
+   - If yes → continue to step 3.
+   - If no → **STOP. Dispatch it right now.**
+     ```
+     Task(subagent_type: "interactive-polish-planner",
+          description: "Polish pass — last build-phase step before declaring done",
+          prompt: "branch=<branch>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Polish register: any (research picks per genre). Walk every source/<branch>/*.html, identify enrichment sites, dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap.")
+     ```
+     Wait for it to return. Apply the integration edits per the instructions. THEN proceed to step 3.
+
+3. **Did polish return a zero-site outcome OR did integration edits land on every host page?**
+   - If zero-site → fine, polish was a no-op for this genre. Continue.
+   - If integration edits applied → fine. Continue.
+   - If polish returned an error → fix it before marking done.
+
+4. **NOW** you may write your final summary and mark the task complete.
+
+This is a **load-bearing gate**, not a suggestion. The polish pass is what separates "static and correct" from "felt and surprising." Every other planner's output is incomplete without it — visual-planner placed images, sim-planner built sims, narrative-planner crafted felt-states, game-planner made playable worlds, scrapbook-planner composed collages. None of them added the small living touches: the breath on the logo, the cursor spotlight, the card peek, the print-grain shader, the scroll-tint, the hover surprise. Those live in POLISH. Skipping the gate ships a build that feels lifeless even when every prior step succeeded.
+
+The user has explicitly said: every shipped project must look like it had a polish pass. If you skip the gate, you are shipping a known regression.
 
 Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying the app can't do something."""
 

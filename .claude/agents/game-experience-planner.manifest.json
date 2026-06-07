@@ -10,15 +10,9 @@
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A — \"build an app/site\" with this game-piece inside",
-      "rule": "User wants the game embedded in a larger surface (a homepage with an interactive hero, an article with a playable diagram, a portfolio with a toy). Top-level Claude scaffolds the app shell (with `<iframe class=\"game-mount\" data-game=...>` slot + `allow=` attribute), then dispatches game-experience-planner per slot (Mode A envelope with slotFile/slotLine). After the planner returns the hand-off envelope, top-level Claude drives the build phase per game-experience-planner.md §5.1.0 and embeds per §5.1.1.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Game-like immersive piece: dispatch game-experience-planner FIRST' Path A"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B — Bare intent (the default for game)",
-      "rule": "User wants the piece itself (a one-shot game / toy / playable artefact). Default for game. Top-level Claude dispatches game-experience-planner directly in BARE-INTENT MODE. The runtime IS the artefact; no app shell needed.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Game-like immersive piece: dispatch game-experience-planner FIRST' Path B"
+      "title": "Game-like piece in a project",
+      "rule": "User wants a game-like piece — anything with objective + feedback loop (score / progress / streak / win-condition / growth-payoff). Includes both arcade-physical patterns (throw / collect / dodge / aim) AND nurturing / companion / care-game patterns (Pou / Tamagotchi / Neko Atsume / Stardew animal-care / Finch / Pip's Glade / forest-feeding). Top-level Claude scaffolds the app shell with `<iframe class=\"game-mount\" data-game=...>` slot + `allow=` attribute, then dispatches game-experience-planner. Same shape as simulation-planner — one consistent flow.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Game-like immersive piece: dispatch game-experience-planner FIRST'"
     }
   ],
   "dispatches": {

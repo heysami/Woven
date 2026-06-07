@@ -10,15 +10,9 @@
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A — \"build a site\" with this scrapbook inside",
-      "rule": "User wants the scrapbook embedded in a larger app/site (a landing hero, an about page, an editorial section). Top-level Claude scaffolds the app shell (with `<iframe class=\"scrapbook-mount\" data-scrapbook=...>` slot), then dispatches scrapbook-experience-planner per slot (Mode A envelope with slotFile/slotLine). After hand-off, top-level Claude drives the build per scrapbook-experience-planner.md §5.1.0 and embeds per §5.1.1.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST' Path A"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B — Bare intent (the default for scrapbook)",
-      "rule": "User wants the piece itself (a vaporwave landing, a cottagecore zine page, a Y2K hero, a dreamcore microsite). Default for scrapbook. Top-level Claude dispatches scrapbook-experience-planner directly in BARE-INTENT MODE. The runtime IS the artefact; no app shell needed unless the user names one.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST' Path B"
+      "title": "Raster-collage / scrapbook / internet-aesthetic piece",
+      "rule": "User wants a raster-heavy collage piece anchored to a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / internetcore / weirdcore) — where the aesthetic LIVES in the imagery and CSS alone cannot reach it. Top-level Claude scaffolds the app shell with `<iframe class=\"scrapbook-mount\" data-scrapbook=...>` slot, then dispatches scrapbook-experience-planner. Same shape as simulation-planner — one consistent flow.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST'"
     }
   ],
   "dispatches": {
