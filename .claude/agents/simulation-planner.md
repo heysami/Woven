@@ -155,9 +155,23 @@ Wait for resolution. On `steer`, re-dispatch the synthesiser with the user's nud
 
 This is the 5%-budget abort point — the user can stop here if the paradigm is wrong, before any drawer or lens fires.
 
-## 4. Phase C — Scaffold the node graph in workflow.json
+## 4. Phase C — Scaffold + dispatch INCREMENTALLY (no batch-then-pray)
 
-Read `workflow/workflow.json`. Append (idempotently — re-runs update in place) the multi-trio nodes for this simId. Node ids follow the `<family>_<component>_<assetId>` convention. Set `simId` on every node so the registry's template-resolver fills `{simId}` correctly.
+**Read this before doing any scaffolding.** Older versions of this playbook batched all 7 drawer nodes + container into `workflow/workflow.json` in one shot, then dispatched them in dependency order. That pattern produced the **biiiird / flyyyy / coolcam stranded-nodes bug**: when the planner stalled mid-loop (subagent permission compounding, daemon timeout, OOM), the canvas showed 7 nodes in `running` or `none` state with no path to recovery. The user saw a canvas full of zombies.
+
+**The new rule is incremental: scaffold one drawer, dispatch it, wait for `done`, then scaffold the next. The container is scaffolded LAST, only after every drawer has committed.**
+
+Build order (each step is "scaffold + dispatch + wait for done" before moving to the next):
+
+1. **`sim_research_<simId>`** — single drawer. Wait for `runStatus: done`.
+2. **`sim_entities_<simId>`** — single drawer. Wait for `done`.
+3. **Parallel batch — scene / loop / controls / overlay.** These four are independent given entities. Scaffold all four, dispatch all four in parallel (background curl, `wait`), poll each until done.
+4. **`sim_runtime_<simId>`** — composes the previous five. Wait for `done`.
+5. **`sim_<simId>`** (container, kind: `simulation`) — scaffold ONLY now, with `runStatus: done` and the outputs the registry expects.
+
+Why this works: if you stall at step 3 (say loop and overlay error out), only those two nodes show `error`; the rest of the canvas stays clean. The user can re-dispatch the failed ones individually. If you stall at step 1 (research never converges), only one node exists on the canvas. No tree of zombies.
+
+**Each scaffolded agent node MUST set these fields** (otherwise the canvas renders the card as "Untitled agent" with no per-dispatch instructions; clicking ▶ Run on it does nothing useful):
 
 **Every scaffolded agent node MUST set these fields** (otherwise the canvas renders the card as "Untitled agent" with no per-dispatch instructions; clicking ▶ Run on it does nothing useful):
 
@@ -362,6 +376,29 @@ Return as your final text:
 ```
 
 The envelope is small on purpose — every per-drawer envelope is already in the scaffolded node's `text` field (you set those in §4). The caller doesn't need you to re-explain them.
+
+## 5.5 Phase E — Step-8 QA pass (mirror of visual-planner's Step 8)
+
+**After every drawer is `done` + the container is committed, run a final QA pass on each slot in the agent's actual app shell.** This is the simulation analogue of visual-planner Step 8. Per-drawer lens trios verify each component in isolation. This step verifies the assembled sim renders inside the agent's HTML, in context, against the brief.
+
+For each enumerated slot:
+
+1. **Locate the host page.** Read the agent's source HTML files and find which page contains the `<iframe data-sim="<simId>">`. Use `grep -lE 'data-sim="<simId>"' source/<branch>/*.html source/<branch>/**/*.html`.
+2. **Open the host page in preview.** `preview_start` against `source/<branch>/<hostPage>?project=<projectId>`. Wait for the iframe to load (give it 3-5 seconds for the runtime + relative imports + any CDN scripts).
+3. **Screenshot the host page.** `preview_screenshot`. Inspect: is the sim visually present in its slot? Is the slot the right size? Does the surrounding chrome cover or crop it?
+4. **Check the iframe's console.** `preview_console_logs` with `level: 'error'`. Any uncaught exceptions = the sim is broken. Note the error text.
+5. **Check the iframe's network.** `preview_network` for 404s. A missing CDN script or sibling file (entities.js, scene.html) breaks the runtime silently.
+6. **Per-slot QA verdict.** Score each on:
+   - **loads** — runtime fetched without 404, parsed without errors. PASS / FAIL.
+   - **renders** — canvas / map / DOM is visibly populated, not a blank rectangle. PASS / FAIL.
+   - **fits the slot** — the iframe respects the slot's aspect ratio + size; not overflowing chrome, not buried under it. PASS / FAIL / NEEDS_LAYOUT_FIX.
+   - **matches the brief** — what the runtime shows reads as the user's intent. PASS / FAIL / SUBJECTIVE.
+7. **Fix where you can.** Two repair levers:
+   - **Edit the agent's HTML** for layout-only fixes (slot too small → bump the iframe height; surrounding chrome covering the sim → add z-index or scrim; iframe missing `allow=` for interactive workloads → add it). Layout-fix only; do NOT rewrite the agent's chrome / nav / copy.
+   - **Re-dispatch a drawer** when the issue is the runtime's content (sim is blank because scene drawer broke; loop ticks too slow because tickHz wrong). PATCH the drawer's `text` field with the failure quote + `priorVerdicts: [{lens: 'qa-step-8', verdict: 'fail', reason: '<quote>'}]`, then POST `/run` again.
+8. **Write the QA log.** Append to `workflow/simulation-plan.json` under a `qa: { checked: [{slot, verdict, fixes, blockers}], blocked: [], ranAt: '<iso>' }` block. The chat caller will read this; if `qa.blocked[]` is non-empty, they relay it to the user.
+
+**This step is NOT optional.** Without it the lens trio's per-component score is the only signal — and three drawers individually passing aesthetic-lens can still combine into a broken iframe in the host page (timing-of-loads, slot-size mismatches, cross-origin gotchas). Step-8 QA is where assembled-in-context quality gets verified.
 
 ## 6. Failure protocol (your scope only)
 

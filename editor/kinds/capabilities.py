@@ -375,6 +375,15 @@ Per-slot drawer cardinality varies by family:
 - **interactive-media** — five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
 - **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
 
+### Two contracts the planner subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
+
+When the planner subagent stalls mid-loop (subagent permission compounding, daemon timeout, large transcript), earlier versions left **trees of stranded "running" or "none" nodes** on the canvas — the user saw 7 nodes and got 2 nodes' worth of value. Two playbook rules fix this:
+
+1. **Incremental scaffold + dispatch.** Planners no longer batch-scaffold all drawer nodes upfront. They scaffold ONE drawer, dispatch it, wait for `done`, then scaffold the next. The container is scaffolded LAST, only after every drawer commits. If the planner stalls at step 3, only the completed nodes exist; the rest of the canvas stays clean.
+2. **Step-8 QA pass.** After all drawers `done` + container committed, the planner opens the agent's host HTML in preview, screenshots + console + network checks the assembled iframe in context, scores per-slot (loads / renders / fits / matches brief), and either Edits the agent's HTML for layout fixes (slot size, `allow=` attributes, surrounding chrome z-index) OR re-dispatches a drawer with the failure quote in `priorVerdicts`. Writes `workflow/<family>-plan.json` with a `qa: { checked: [...], blocked: [...], ranAt: '...' }` block. This is the simulation-side / interactive-side / narrative-side mirror of `visual-planner.md` Step 8. Per-drawer lens scores can pass while the assembled iframe fails in the host shell — Step-8 catches that.
+
+When the planner returns its hand-off envelope, chat should read the `qa` block — if `qa.blocked[]` is non-empty, relay it to the user; don't silently override.
+
 So the museum project — with 8 paintings, 4 voice marks, 2 hero photos, and 1 front-door scene — should dispatch:
 
 ```

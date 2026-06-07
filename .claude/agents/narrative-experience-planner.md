@@ -140,7 +140,23 @@ After research synthesis emit `<decision-request id="cp_nx_research_pick_<nxId>"
 
 Concept-lens needs `successFeel` to be a felt-state, not intuition. If the user steers toward "the user understands Vermeer better" (cognitive) → push back ASK FOR a felt-state: "what does it FEEL like after they leave?"
 
-## 4. Phase C — Scaffold the node graph in workflow.json
+## 4. Phase C — Scaffold + dispatch INCREMENTALLY (no batch-then-pray)
+
+Same rule as `simulation-planner.md §4`. Earlier versions scaffolded all 7 drawer nodes per slot upfront, then ran them in order. When the planner stalled (subagent permission compounding, daemon timeout, large transcript), the canvas filled with stranded "running" and "none" nodes. The museum project's 8-painting brief would have produced 56+ zombies.
+
+**Incremental: scaffold one drawer, dispatch it, wait for `done`, then scaffold the next. Container last.**
+
+Build order per `nxId` — each step is "scaffold + dispatch + wait for done":
+
+1. **`nx_research_<nxId>`** — Wait for `done`.
+2. **`nx_spine_<nxId>`** — the dramaturgical timeline. Wait for `done`.
+3. **Parallel batch — scene / ambient / reveal / overlay.** Independent given research + spine. Scaffold all four, dispatch in parallel, poll each until done.
+4. **`nx_runtime_<nxId>`** — composes everything. Wait for `done`.
+5. **`nx_<nxId>`** (container, kind: `narrative-experience`) — scaffold ONLY now.
+
+If you stall at step 3 (ambient drawer errors), only that one node shows `error`. No tree of zombies.
+
+For multi-slot projects (museum: 8 paintings), complete the full per-slot pipeline for one nxId before starting the next. That way a stall halfway through painting #4 leaves 3 complete paintings + 3 of 4's nodes + 4 untouched paintings = recoverable. Don't fan out all 8 in parallel; that's how 56-zombie disasters happen.
 
 Append (idempotently) — node id convention `<family>_<component>_<assetId>`:
 
@@ -219,6 +235,31 @@ Return as your final text:
 ```
 
 Per-drawer envelopes are baked into each node's `text` in §4 — spine carries dramaturgical beats, scene carries paradigm + brief styleCue + visual-planner dispatch instructions, ambient carries sonic register + permission-gate template, reveal carries input-layer spec, overlay carries the poetic copy contract, runtime carries the spine schedule + scene + ambient + reveal + overlay paths. Caller dispatches; doesn't re-author.
+
+## 5.5 Phase E — Step-8 QA pass (mirror of visual-planner's Step 8)
+
+Same shape as `simulation-planner.md §5.5`. After every drawer is `done` + the container is committed, open the host page in preview and verify the piece **delivers the felt-state** the brief promised, in context, inside the agent's app shell.
+
+Per enumerated `nxId`:
+
+1. **Locate the host page.** `grep -lE 'data-nx="<nxId>"' source/<branch>/*.html source/<branch>/**/*.html`.
+2. **Open in preview + screenshot the opening tableau.** The first few seconds are dramaturgically loaded; the user's first impression IS the brief's promise being made.
+3. **Wait `pacingFeel` seconds, screenshot again.** For `slow-bath`: wait 30s. For `progressive-reveal`: wait the brief's natural cadence between beats. For `immediate-immersion`: 2-3 seconds. Compare the two screenshots — did the piece *unfold*?
+4. **Console + network check.** Errors = the piece is broken. Note them.
+5. **For walkable 3D scenes — `preview_eval` a synthetic camera pan.** Verify the scene actually has spatial depth (not a flat backdrop).
+6. **For ambient — verify AudioContext started.** `preview_eval` checks for an active audio context.
+7. **Per-slot QA verdict.** Score on:
+   - **opens correctly** — first screenshot shows a composed tableau, not a blank rectangle. PASS / FAIL.
+   - **unfolds** — second screenshot meaningfully differs from the first, per the pacing register. PASS / FAIL.
+   - **felt-state landed** — the screenshots match the brief's prose successFeel. SUBJECTIVE — write the brief's successFeel verbatim, then write 1-2 sentences on whether the screenshots deliver it.
+   - **scene + ambient + overlay coherent** — the four channels (visual + audio + text + pace) aren't fighting each other. PASS / FAIL.
+   - **fits the slot** — full-bleed or intentionally framed, not buried under chrome. PASS / FAIL / NEEDS_LAYOUT_FIX.
+8. **Fix where you can.**
+   - **Edit the agent's HTML** for slot framing fixes, viewport sizing.
+   - **Re-dispatch a drawer** when felt-state isn't landing (scene's lighting wrong; ambient's room-tone wrong; spine pacing too fast).
+9. **Write the QA log.** Append to `workflow/narrative-plan.json` under `qa: { checked: [...], blocked: [...], ranAt: '...' }`.
+
+**This step is NOT optional.** Per-drawer lens scores can pass while the assembled piece fails to land its felt-state — the four sensory channels combining can hit different from any one of them alone.
 
 ## 6. Failure protocol (your scope only)
 
