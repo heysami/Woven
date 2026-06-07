@@ -5379,8 +5379,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         # string "bypassPermissions" no longer skips prompts for high-risk
         # tools like Bash and Write; only --dangerously-skip-permissions
         # does. Map the UI's "Auto — bypass" to the actual full-bypass flag.
+        # v3.8 — Claude Code 2.1.163 (and likely later) split it further:
+        # --dangerously-skip-permissions BY ITSELF no longer skips prompts.
+        # You also need --allow-dangerously-skip-permissions to ENABLE the
+        # behaviour. From `claude --help`:
+        #   --allow-dangerously-skip-permissions   Enable bypassing all permission checks
+        #   --dangerously-skip-permissions         Bypass all permission checks.
+        # Skipping the enable flag is what caused museuuum's chat to hit
+        # "Claude requested permissions to write ... but you haven't granted
+        # it yet" after running 4 hours: every Write/Edit/Bash that the
+        # planner subagents triggered queued behind a permission prompt the
+        # user couldn't approve.
         if permission_mode == "bypassPermissions":
-            spawn_args += ["--dangerously-skip-permissions"]
+            spawn_args += [
+                "--allow-dangerously-skip-permissions",
+                "--dangerously-skip-permissions",
+            ]
         elif defs.get("permission_flag"):
             spawn_args += [defs["permission_flag"], permission_mode]
         # v3.1 — Hide user-level slash commands (~/.claude/commands/). The
