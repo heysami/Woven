@@ -11085,11 +11085,20 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__run  body: { branch, agentId?, kind?, prompt?, title?, meta? }
     def _run_create(self, qs):
         body = self._read_json_body()
+        # v3.8 — resolve project from EITHER qs (editor UI puts it there via
+        # apiUrl()) OR body (legacy ad-hoc curl callers). Earlier this only
+        # read from body, which worked when resolve_project_root had a silent
+        # first-project fallback; the v3.7 strict-require flip exposed it as
+        # a hard 400 on every chat spawn from the editor. Merge so either
+        # source resolves; body takes precedence (explicit JSON beats URL).
+        merged = dict(qs) if qs else {}
+        for k, v in body.items():
+            if k == "project" and v: merged["project"] = v
         try:
-            project_root = resolve_project_root(body)
+            project_root = resolve_project_root(merged)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        project_id = (_qs_get(body, "project") or "default").strip() or "default"
+        project_id = (_qs_get(merged, "project") or "default").strip() or "default"
         agent_id = (body.get("agentId") or AGENT_DEFAULT).strip().lower()
         if agent_id not in AGENT_DEFS:
             return self._reply(400, {"error": f"unknown agentId: {agent_id}",
