@@ -228,6 +228,9 @@ def _strip_disabled_planner_blocks(text: str, enabled_ids: set) -> str:
         ("## Live view, 3D, real-world map, or living system: dispatch simulation-planner FIRST", "simulation-planner"),
         ("## Interactive piece: dispatch interactive-media-planner FIRST",        "interactive-media-planner"),
         ("## Immersive narrative: dispatch narrative-experience-planner FIRST",   "narrative-experience-planner"),
+        ("## Game-like immersive piece: dispatch game-experience-planner FIRST",  "game-experience-planner"),
+        ("## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST", "scrapbook-experience-planner"),
+        ("## Interactive polish: dispatch interactive-polish-planner LAST (before QA)", "interactive-polish-planner"),
     ]
     for header_marker, planner_id in SECTIONS:
         if planner_id in enabled_ids:
@@ -374,6 +377,9 @@ Per-slot drawer cardinality varies by family:
 - **simulation** — seven drawers per slot (`sim_research_<simId>`, `sim_entities_<simId>`, `sim_scene_<simId>`, `sim_loop_<simId>`, `sim_controls_<simId>`, `sim_overlay_<simId>`, `sim_runtime_<simId>`).
 - **interactive-media** — five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
 - **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
+- **game-experience** — eight-to-nine drawers per slot (`game_research_<gameId>`, `game_objective_<gameId>`, `game_world_<gameId>`, `game_physics_<gameId>`, one or more `game_input_<gameId>_<modality>`, `game_feedback_<gameId>`, `game_loop_<gameId>`, `game_overlay_<gameId>`, `game_runtime_<gameId>`).
+- **scrapbook-experience** — six drawers per slot (`sb_research_<sbId>`, `sb_composition_<sbId>`, `sb_typography_<sbId>`, `sb_motion_<sbId>`, `sb_interactions_<sbId>`, `sb_runtime_<sbId>`) PLUS N visual-planner BARE-INTENT sub-dispatches per inventory entry (typically 15–45 per slot) — the most visual-planner-heavy planner in the system.
+- **interactive-polish** — POST-PASS planner (different shape). Up to six drawers per project (`polish_research_<polishId>`, `polish_microanimation_<polishId>`, `polish_pointer_<polishId>`, `polish_hover_<polishId>`, `polish_shader_<polishId>`, `polish_runtime_<polishId>`). Drawers may be SKIPPED if their opportunity type has zero sites. No slot tag — operates on the whole project. Optionally co-dispatches visual-planner's shader skill for one procedural overlay.
 
 ### Two contracts the planner subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
 
@@ -401,6 +407,8 @@ Each slot the agent writes in its HTML is the planner's enumeration anchor:
 - **sim slot** → `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" ...></iframe>` (sim-planner finds every `<iframe>` whose class contains `sim-mount` or whose `data-sim` attribute is set).
 - **im slot** → `<iframe class="im-mount" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" src="interactives/<imId>/runtime.html" allow="microphone; camera; gyroscope; accelerometer; midi" ...></iframe>`.
 - **nx slot** → `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" src="narratives/<nxId>/runtime.html" ...></iframe>`.
+- **game slot** → `<iframe class="game-mount" data-game="<gameId>" data-paradigm-hint="<hint>" data-objective="<one-line>" data-inputs="<csv>" data-juice="<register>" src="games/<gameId>/runtime.html" allow="gyroscope; accelerometer" ...></iframe>`.
+- **scrapbook slot** → `<iframe class="scrapbook-mount" data-scrapbook="<sbId>" data-core="<vaporwave|cottagecore|dreamcore|Y2K|lo-fi|mixtape|zine|mood-board|lookbook|hybrid>" data-density="<sparse|medium|dense>" data-motion="<still-with-twitches|drifting-ambient|aggressive-vaporwave>" src="scrapbooks/<sbId>/runtime.html" ...></iframe>`.
 
 The agent writes these tags into the HTML in step 3 (before any planner dispatch). The planner reads them in step 5.
 
@@ -664,7 +672,7 @@ Task(subagent_type: "interactive-media-planner",
 | Anything body/device-driven generative — TouchDesigner-style, voice-reactive, music-reactive, camera-driven, gestural, "piece where I do X with my voice/body" | Scaffold app shell (with im-placeholder slot) → `Task(interactive-media-planner, …)` for the slot |
 | "show me a chart of X" (ad-hoc, no interaction) | NOT a planner. Render inline or via visual-planner. |
 
-### Distinguishing the four planners (v3.3):
+### Distinguishing the six planners (v3.3):
 
 | User wants | Dispatch |
 |---|---|
@@ -672,11 +680,15 @@ Task(subagent_type: "interactive-media-planner",
 | A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
 | A piece the user DRIVES with body/device for generative response | `interactive-media-planner` |
 | An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-planner` |
+| A LIVING WORLD the user plays in toward an OBJECTIVE (score / progress / win-condition; particles, physics, juice) | `game-experience-planner` |
+| A RASTER-COLLAGE / SCRAPBOOK piece with a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board) — where the aesthetic LIVES in the imagery, not in CSS | `scrapbook-experience-planner` |
 
 A "warehouse dashboard" with a static stock chart → visual-planner (chart is an image).
 A "warehouse dashboard" where bins fill/empty over time → **simulation-planner**.
 A "voice-painter on the warehouse data" → **interactive-media-planner**.
 A "memorial that the user walks into and feels held" → **narrative-experience-planner**.
+A "throw paper planes through an office, collect coffee mugs for points, fly as far as possible" → **game-experience-planner**.
+A "vaporwave portfolio hero with chrome Greek bust + palm leaves + glitter divider" → **scrapbook-experience-planner**.
 
 The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic — museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
 
@@ -767,7 +779,7 @@ Task(subagent_type: "narrative-experience-planner",
 | "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
 | "WebGL space the user can wander" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
 
-### Distinguishing from siblings (v3.3 — four-way):
+### Distinguishing from siblings (v3.3 — six-way):
 
 | User wants | Dispatch |
 |---|---|
@@ -775,6 +787,8 @@ Task(subagent_type: "narrative-experience-planner",
 | A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
 | A piece the user DRIVES with body/device for generative response (input → mapping → output) | `interactive-media-planner` |
 | An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-planner` |
+| A LIVING WORLD with an OBJECTIVE — agency, juice, score / progress / win-condition, physics + particles + feedback loop | `game-experience-planner` |
+| A RASTER-COLLAGE piece anchored to a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board) where the aesthetic lives in dense raster composition (CSS alone cannot reach it) | `scrapbook-experience-planner` |
 
 A "warehouse dashboard" with a static stock chart → visual-planner.
 A "warehouse dashboard" where bins fill/empty over time → simulation-planner.
@@ -782,12 +796,293 @@ A "voice-painter on the warehouse data" → interactive-media-planner.
 A "memorial the user walks into and feels held" → **narrative-experience-planner**.
 A "walkable 3D reconstruction of a Vermeer studio" → **narrative-experience-planner** (the walkability serves felt-presence, not a generative input→output mapping).
 A "scrollytelling article about Vermeer" → **narrative-experience-planner** (2.5D end of the same spectrum).
+A "throw paper planes through a pastel office, collect coffee mugs for points, fly as far as possible" → **game-experience-planner**.
+A "swipe to bake a cake; score the better the swirls" → **game-experience-planner**.
+A "soft-body cloth toy with no objective — just drag and watch it react" → `interactive-media-planner` (no objective = not a game).
 
 ### When TWO planners feel plausible:
 
-- **Walkable 3D where the player has goals / gameplay** → not yet covered; this family will need a `game-experience-planner` someday. For now, narrative-experience can stretch if the goals are exploratory (look at all 5 paintings) but not if they're competitive (beat the level).
+- **Walkable 3D where the player has goals / gameplay (competitive or score-driven)** → `game-experience-planner` (the planner this rule used to defer to someday — now it ships).
 - **Walkable 3D where the user's body movement DRIVES generative output** (e.g., walking faster makes the room more abstract) → that's `interactive-media-planner`'s lane: input → mapping → output. Narrative-experience's interactivity is gentle progressive reveal, never input-as-creative-material.
-- **Immersive 3D system simulation** (e.g., a "walkable" warehouse where you're inside watching pickers move) → if the goal is to UNDERSTAND the system, `simulation-planner` with a 3D scene-builder. If the goal is to FEEL the place's atmosphere/history, `narrative-experience-planner`.
+- **Immersive 3D system simulation** (e.g., a "walkable" warehouse where you're inside watching pickers move) → if the goal is to UNDERSTAND the system, `simulation-planner` with a 3D scene-builder. If the goal is to FEEL the place's atmosphere/history, `narrative-experience-planner`. If the goal is to SCORE / PROGRESS / WIN inside the warehouse, `game-experience-planner`.
+- **Toy / soft-body / particle piece with no objective** (Powder, Soda Constructor, Cloth Toy) → `interactive-media-planner` with the `iconographic` paradigm. Drop into `game-experience-planner` ONLY if there's a score / progress / win-condition.
+- **The brief mentions "game" but objective is unclear** → push back via `<question-form>` BEFORE dispatching. Game-experience without a committed objective is the wrong planner.
+
+## Game-like immersive piece: dispatch game-experience-planner FIRST (v3.3 hard rule)
+
+When the user's brief is a **living world with an objective** — anything where the user PLAYS toward a goal inside a full-bleed scene with physics + particle feedback + drag/touch/multi-touch agency — your **FIRST action is a Task call to `game-experience-planner`**. Not your second action. Not after asking. Not after offering options. The Task call IS the start of your response.
+
+### The shape of a game-experience brief
+
+Three load-bearing words define the family. ALL must be present:
+
+1. **Agency** — the user drives with drag / touch / multi-touch / pointer-velocity / gestures. Input feels DIRECT (≤ 50ms input → on-screen response), not menu-driven. Toy-grade, not menu-grade.
+2. **Objective** — a stated goal that the user CHASES: a score that climbs, a progress bar that fills, a streak that survives, a level that unlocks, a high score worth re-launching for. Without this it's `interactive-media-planner`, not game-experience.
+3. **Living world** — the world is FULL-BLEED with NO flat resting state. Ambient motion always plays (parallax, drift, breath, light wavering, idle creatures). When the user acts, physics + particle systems RESPOND with weight + spring + bloom. UI peeks at the edges; it NEVER frames the action.
+
+If even one is missing, it's a different planner. If all three are present, it's game-experience.
+
+### The brief vocabulary that means game-experience
+
+- "throw / fling / swipe / drag / aim / shoot / catch / drop / drag-and-drop"
+- "collect / dodge / avoid / chase / escape / survive / race / reach"
+- "score / points / high score / streak / combo / progress / level"
+- "feel weighty / juicy / satisfying / crunchy / squishy / springy"
+- "particles / explode / bloom / spark / shatter / pop"
+- "physics / gravity / bounce / collide / springs / cloth / soft-body / pendulum"
+- "tap to <verb>" / "drag to <verb>" / "pinch to <verb>" / "tilt to <verb>"
+- "endless / one-more-try / arcade / casual / hyper-casual"
+- "a toy / a game / play with / playable / mini-game"
+
+When the brief contains 2+ of the above PLUS a stated objective → dispatch.
+
+### THE STRUCTURE — exactly visual-planner's shape
+
+Same separation as sim / interactive / narrative. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+
+**One game-experience-planner dispatch per project, not per slot.** A portfolio of three playable demos is ONE planner dispatch that enumerates the three game-mount iframes and fans out the per-slot drawer set for each.
+
+You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where a game should live, you write one `<iframe>` slot — including the critical `allow=` attribute for `gyroscope` / `accelerometer` on mobile-tilt games. Use distinct `gameId`s.
+
+```html
+<iframe class="game-mount"
+        data-game="<gameId>"
+        data-paradigm-hint="2d-side"
+        data-objective="fly as far as possible; collect mugs for +score; hit walls = end"
+        data-inputs="pointer,touch,multi-touch"
+        data-juice="juicy"
+        data-success-feel="every throw feels weighty and the world rewards it"
+        src="games/<gameId>/runtime.html"
+        style="width:100%; height:100%; border:0;"
+        allow="gyroscope; accelerometer"
+        title="<gameId>"
+        loading="lazy"></iframe>
+```
+
+Then dispatch the planner ONCE. It walks the HTML, enumerates every game-mount slot, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
+
+```
+Task(subagent_type: "game-experience-planner",
+     description: "Enumerate + build every game slot in this project",
+     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='game-mount'> (or every iframe whose data-game is set). For EACH: read gameId from data-game, paradigm hint from data-paradigm-hint, objective from data-objective, inputs from data-inputs, juice from data-juice, success-feel from data-success-feel. Per slot: pick paradigm + physics engine + tick rate + render strategy + multi-draft cruxes. Write source/<branch>/games/<gameId>/research.md. Scaffold + build the per-slot drawer set (research, objective, world, physics, input(s), feedback, loop, overlay, runtime) + container. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
+```
+
+### Do NOT do any of these:
+
+- ❌ **Skipping the app shell.** Same trap as the fly / mememe / coolcam bugs. Without `source/<branch>/index.html`, the user has no way to open the piece. ALWAYS scaffold the shell first.
+- ❌ "What physics engine — matter.js or planck?" → Dispatch; research picks.
+- ❌ "What objective shape — score or progress?" → Dispatch; the user's brief tells you the objective; research formalises the shape.
+- ❌ Calling matter.js / cannon-es from chat-rendered HTML → Game-experience runs as a composed piece inside the planner's territory.
+- ❌ Writing a `<canvas>` with the game drawn inline each rAF → the game surface is a slot. Dispatch.
+- ❌ Treating this as `interactive-media-planner` because there's input → `interactive-media-planner` is for input → mapping → output with NO objective; game-experience HAS an objective.
+- ❌ Treating this as `narrative-experience-planner` because the scene is 3D → narrative is for emotional presence; game is for agentic objective. If there's a score, it's game.
+- ❌ Accepting "a fun game" as `successFeel` → push back via `<question-form>` asking for concrete prose ("every throw feels weighty and the world rewards it"; "swirls accumulate; the cake batter remembers"). Generic = guaranteed concept-lens fail.
+- ❌ Accepting "no clear objective" → push back. Game-experience without an objective is the wrong planner. Either commit an objective via `<question-form>` OR redirect to `interactive-media-planner`.
+
+### Decision rule:
+
+| User said… | Your first move |
+|---|---|
+| "throw / catch / collect / dodge / aim / score / fly / chase" | `Task(game-experience-planner, …)` |
+| "make me a game / mini-game / playable toy" | `Task(game-experience-planner, …)` |
+| "physics-y / juicy / hyper-casual / arcade" | `Task(game-experience-planner, …)` |
+| "tap / drag / pinch / multi-touch to <verb>" + a stated goal | `Task(game-experience-planner, …)` |
+| "swipe to <verb> for points" / "endless score-attack" | `Task(game-experience-planner, …)` |
+| "a soft-body cloth toy" (no objective) | `interactive-media-planner` |
+| "show me what physics looks like" (ad-hoc viz, no game) | inline shader / canvas block |
+
+### Why this is non-negotiable
+
+The game-experience pattern is: **app exists, planner fills a slot.** Same shape as the other four. Reasons:
+
+- The world is full-bleed. It needs an iframe slot to occupy edge-to-edge without the host app's chrome.
+- The two-gate permission UX (audio + gyro) needs a canvas-side disclosure BEFORE the iframe loads — `boundTo.permissionGate: ["audio","gyro"]` on the asset node renders that.
+- Physics + particle systems + audio context all have heavy boot costs that benefit from iframe isolation.
+- Adding chrome later (a title, a leaderboard, a share button in the host shell) is trivial when the shell exists. Retrofitting a shell around a standalone runtime is invasive.
+
+**Emulating game-experience-planner from your own knowledge — or shipping a game without the surrounding app — is the bug.** Dispatch the real thing into a real slot.
+
+## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST (v3.3 hard rule)
+
+When the user's brief is a **raster-heavy collage piece anchored to a named internet-aesthetic core** — anything where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it — your **FIRST action is a Task call to `scrapbook-experience-planner`**. Not your second action. Not after asking. Not after offering CSS approximations. The Task call IS the start of your response.
+
+### The shape of a scrapbook-experience brief
+
+The brief names an aesthetic that CANNOT be approximated with CSS + restrained typography alone. It needs photography, illustrated subjects with transparency, scanned textures, hand-drawn elements, handcrafted (raster) typography, looping PNG sequences as a transparent-gif substitute.
+
+### The canonical aesthetic cores this planner serves natively
+
+- **Vaporwave** — chrome lettering, Greek busts, palm leaves, kanji, 80s grids, gradient sunsets
+- **Internetcore** — early 2000s GeoCities banners, marquee scrolls, blinking gifs, glitter graphics
+- **Cottagecore** — handwritten recipes, pressed flowers, scanned linen, mason jars, lace
+- **Dreamcore / Weirdcore / Liminalcore** — unsettling photography, fluorescent rooms, distorted faces
+- **Y2K** — chrome textures, frosted plastic, bubble fonts, frutiger aero photos, lens flares
+- **Lo-fi / lofi** — film grain, VHS scanlines, JPEG artifacts, CRT glow, dust + scratches
+- **Mixtape cover** — handwritten tracklist, marker on cardboard, polaroids, taped photos
+- **Zine / fanzine** — Xerox grain, cut-up text, marker annotations, found-image collage
+- **Mood-board / Pinterest** — clean grid of curated images, paper-clipped notes, polaroid corners
+- **Lookbook / scrapbook-personal** — annotated travel photos, pressed mementos, ticket stubs
+
+Hybrid is fine ("vaporwave-meets-cottagecore", "Y2K-internetcore-fanzine"). The research drawer commits the synthesis.
+
+### The brief vocabulary that means scrapbook-experience
+
+- "vaporwave / aesthetic / vibes / lo-fi / chrome lettering / palm leaves / Greek bust"
+- "cottagecore / pressed flowers / handwritten / mason jar / linen / watercolor"
+- "dreamcore / weirdcore / liminalcore / backrooms / nostalgia horror"
+- "Y2K / frutiger aero / chrome / frosted plastic / bubble fonts / lens flare / holographic"
+- "internetcore / GeoCities / MySpace / glitter / blinking gif / marquee / Y2K web"
+- "mixtape cover / zine / fanzine / cut-up / marker / Xerox / DIY"
+- "Tumblr from 2008 / Pinterest grade / scrapbook / mood-board / collage"
+- "handcrafted typography / hand-lettered / handwritten / marker / sharpie / paint stroke"
+- "polaroid / tape / washi / paper edges / scanned texture / film grain"
+- "lots of images / image-heavy / photographic / textured / real objects"
+
+When the brief contains 2+ of the above AND names a specific image-driven aesthetic → dispatch.
+
+### THE STRUCTURE — exactly visual-planner's shape (with heavy visual-planner co-dispatch)
+
+Same separation as sim / im / nx / game. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+
+**One scrapbook-experience-planner dispatch per project, not per slot.**
+
+You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where a scrapbook should live, you write one `<iframe>` slot. Use distinct `sbId`s.
+
+```html
+<iframe class="scrapbook-mount"
+        data-scrapbook="<sbId>"
+        data-core="vaporwave"
+        data-density="dense"
+        data-motion="drifting-ambient"
+        data-success-feel="finding someone's secret Tumblr from 2008"
+        src="scrapbooks/<sbId>/runtime.html"
+        style="width:100%; height:100%; border:0;"
+        title="<sbId>"
+        loading="lazy"></iframe>
+```
+
+Then dispatch the planner ONCE. It walks the HTML, enumerates every scrapbook-mount slot, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
+
+```
+Task(subagent_type: "scrapbook-experience-planner",
+     description: "Enumerate + build every scrapbook slot in this project",
+     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<branch>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-planner BARE-INTENT MODE per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-planner sub-dispatch count."
+)
+```
+
+### Cost warning — surface to the user BEFORE dispatching
+
+Scrapbook is the most visual-planner-heavy planner in the system. A dense scrapbook with PNG sequences can produce **30–60 visual-planner sub-dispatches per slot**. If the brief implies multiple slots OR dense density, surface the estimate explicitly:
+
+```
+The brief implies a dense vaporwave hero, which means roughly 30–45 raster
+asset dispatches (one per scrapbook element + PNG-sequence frames). Each
+takes ~10s. Shall I proceed at this scope, or scale density down to medium
+(~18–25 assets) or sparse (~10–14)?
+```
+
+Let the user pick before you dispatch. This is the most-important per-slot cost calibration in the system.
+
+### Do NOT do any of these:
+
+- ❌ **Skipping the app shell** unless the brief is bare-intent + standalone. If the brief implies a site/app context, scaffold the shell.
+- ❌ "Let me approximate vaporwave with CSS gradients" → **NO.** The whole point is that CSS cannot reach the aesthetic. The chrome lettering is RASTER. Dispatch.
+- ❌ "I'll use one visual-planner dispatch for a hero illustration and CSS for everything else" → **NO.** That's the visual-planner pattern, which is wrong for scrapbook. Scrapbook needs N raster assets composed in a layered z-stack. Dispatch scrapbook-experience-planner.
+- ❌ "What core aesthetic — vaporwave or Y2K?" → Dispatch; research synthesises if the brief mixes signals.
+- ❌ "Should I make this calm or aggressive vaporwave?" → Dispatch; multi-draft picks at the motion crux when research recommends.
+- ❌ Treating this as `narrative-experience-planner` because it's "immersive" → narrative gives presence in a place; scrapbook gives a WORLD MADE OF IMAGES. If the brief names an internet-aesthetic core, it's scrapbook, not narrative.
+- ❌ Treating this as `visual-planner` (for a one-off image in an otherwise-CSS-driven app) when the brief is asking for a deep collage piece. Visual-planner fills ONE slot per dispatch; scrapbook composes a piece made of MANY slots' worth.
+- ❌ Accepting "make it aesthetic" as the only direction → push back via `<question-form>` asking which named aesthetic core anchors the piece.
+
+### Decision rule:
+
+| User said… | Your first move |
+|---|---|
+| Anything in the named-core list (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / internetcore) | `Task(scrapbook-experience-planner, …)` |
+| "scrapbook / collage / mood-board / Pinterest-grade / Tumblr-grade" + a named aesthetic | `Task(scrapbook-experience-planner, …)` |
+| "heavy photography / real objects / textured / hand-drawn / scanned" + image-driven aesthetic | `Task(scrapbook-experience-planner, …)` |
+| "handlettered / handwritten / handcrafted typography for display" + the brief is broadly raster-aesthetic | `Task(scrapbook-experience-planner, …)` |
+| ONE image / illustration / icon in an otherwise-CSS-driven app | `visual-planner` (NOT scrapbook) |
+| Bauhaus / Swiss-grid / brutalist / terminal-on-web / Apple Bento / restrained-product-UI | NOT scrapbook (these are CSS-driven; use `visual-planner` for any hero assets) |
+| "I want a polaroid as one element on my landing page" | `visual-planner` (single asset) |
+
+### Why this is non-negotiable
+
+The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster assets in a layered z-stack with motion + interaction**. The planner is purpose-built to plan the inventory, co-dispatch visual-planner per entry, compose them, animate them, and interact with them. Reasons:
+
+- CSS gradients cannot produce chrome lettering at quality. Vaporwave fails without raster handlettering.
+- CSS textures cannot produce film-grain, scratched paper, washi tape, scanned linen, polaroid edges. Each is a raster.
+- Transparent GIFs are not reliably generated by current image-generation skills. PNG sequences (one visual-planner dispatch per frame) substitute. The planner orchestrates the frame-by-frame commission + sprite-sheet animation.
+- Handcrafted typography (the signature of scrapbook) is raster — commissioned per word as a visual-planner BARE-INTENT.
+
+**Emulating scrapbook-experience-planner from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
+
+## Interactive polish: dispatch interactive-polish-planner LAST (before QA) (v3.3 hard rule)
+
+This is the ONE planner that runs at the END of the pipeline, not the beginning. The other six planners are first-action dispatches. This one is the LAST build-phase action before Step-8 QA. **After** another primary planner's build is done (or after you have hand-written source), dispatch `interactive-polish-planner` to enrich what exists with microanimations, scroll/pointer-driven effects, hover surprises, and shader overlays that match the genre.
+
+### When to dispatch
+
+1. **After any primary planner build returns.** If you dispatched `simulation-planner` / `interactive-media-planner` / `narrative-experience-planner` / `game-experience-planner` / `scrapbook-experience-planner`, drove its build phase to completion, AND its slot is now embedded in source HTML — dispatch `interactive-polish-planner` BEFORE you run Step-8 QA on the whole project. The polish operates on the SHELL HTML around the iframe slot (it does not polish the iframe's contents — that's the primary planner's territory).
+
+2. **After you wrote source HTML by hand** (or via `/prototype` skill). Before declaring "done," dispatch `interactive-polish-planner` so the genre's signature interactive flourishes get applied.
+
+3. **On explicit user request.** The user says "polish this", "make it feel more alive", "add some interactivity", "the vibe is missing depth", "feels static / dead / generic", "make it less flat".
+
+### What polish-planner does — different from the other six
+
+The planner identifies SITES + TYPES of opportunity (where in the source could be enriched, and with what category: microanimation / pointer / scroll / hover / shader). **The drawers decide WHAT the specific improvement looks like.** Polish is a craft decision — if the planner pre-decided, the drawers would rubber-stamp and quality would drop.
+
+The planner-vs-drawer split here is load-bearing:
+
+- Planner output: "the header logo SVG could have a microanimation (HINT: it's a logo, restrained brief → subtle idle motion fits)"
+- Drawer output: "I picked `idle-breath` — slow scale 1.0 → 1.018 over 4.2s, ease-in-out, infinite, prefers-reduced-motion off"
+
+### Dispatch template
+
+```
+Task(subagent_type: "interactive-polish-planner",
+     description: "Polish pass for the project after primary build",
+     prompt: "branch=<branch>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<branch>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
+```
+
+### After polish-planner returns
+
+Read its hand-off envelope. For each host page in `pagesInScope`:
+
+1. Add `<link rel="stylesheet" href="_polish/<polishId>/composite.css">` right before `</head>`.
+2. Add `<script src="_polish/<polishId>/composite.js" defer></script>` right before `</body>`.
+3. (If the shader drawer ran) Add `<div data-polish-shader-mount aria-hidden="true"><iframe src="_polish/<polishId>/shader.html" loading="lazy" title=""></iframe></div>` right before the script tag.
+
+That's the ENTIRE host page edit. Three tags max per page, and 2 of them are unconditional. The runtime drawer's `integration-instructions.md` spells out the exact location per page.
+
+Then run Step-8 QA.
+
+### Do NOT do any of these:
+
+- ❌ **Dispatch polish-planner FIRST.** It needs source to operate on. Dispatching before any source exists = `runError: scope is empty`.
+- ❌ **Polish the iframe contents** of a primary planner's slot (sim's runtime.html, scrapbook's runtime.html). The polish planner skips these by design; the primary planners own their own motion + interactions.
+- ❌ **Pre-commit the polish behavior in your prompt.** "Add a halftone shader to the hero" is the WRONG level of instruction — let the planner decide if a shader is even appropriate, then let the drawer pick the specific effect. The right prompt is "polish this site".
+- ❌ **Edit host pages yourself BEFORE polish-planner returns the integration-instructions.md.** The planner needs to walk the source first to identify sites; editing pre-emptively breaks its survey.
+- ❌ **Skip the QA after polish.** Polish files are loaded into the host page — a broken polish file can break the host page. Step-8 QA verifies the polished state isn't worse than the baseline.
+- ❌ **Re-dispatch polish on top of polish.** Polish is idempotent for a single polishId, but stacking two passes = the second sees the first's `_polish/<polishId>/composite.css` already loaded + may think "richly polished already" + commit zero sites. To re-polish, dispatch with a NEW polishId (e.g. `main-polish-v2`).
+
+### Decision rule:
+
+| Situation | Your move |
+|---|---|
+| Just finished a primary planner build phase | `Task(interactive-polish-planner, scope="whole project")` BEFORE Step-8 QA |
+| Just wrote source by hand via /prototype | Same |
+| User says "polish this" / "make it more alive" / "feels static" | `Task(interactive-polish-planner, scope="whole project")` |
+| No source exists yet | Do NOT dispatch polish — it has nothing to enrich. Run a primary planner first. |
+| The piece is a one-off bare-intent runtime (e.g. a standalone scrapbook with no host shell) | Polish is OPTIONAL — most bare-intent runtimes are already fully decorated by their primary planner. Skip unless the user explicitly asks. |
+| The piece is brutalist / anti-design / Bauhaus | Polish is usually a no-op for these (research will commit `siteCount: 0`). It's safe to dispatch; the planner returns quickly with a zero-site outcome. |
+
+### Why this is non-negotiable
+
+The polish pass is what separates "the build is technically correct" from "the piece feels alive." Visual-planner placed an image; sim-planner built a working sim; narrative-planner crafted a felt-state. NONE of them added the small living touches that make a finished page hum — the breath on the logo, the cursor spotlight, the card peek, the print-grain shader. Those are POLISH territory. Dispatching this planner LAST is how the system gets that last 10% — the difference between "static and correct" and "felt and surprising."
+
+Skipping polish is the bug. Dispatch it.
 
 Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying the app can't do something."""
 

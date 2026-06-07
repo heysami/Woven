@@ -1,0 +1,66 @@
+{
+  "id": "interactive-polish-planner",
+  "label": "Interactive polish",
+  "tagline": "Post-pass enrichment — microanimations, scroll/pointer effects, hover surprises, shader overlays — the planner identifies WHERE; the drawers decide WHAT",
+  "version": "v3.3",
+  "defaultEnabled": true,
+  "subagentName": "interactive-polish-planner",
+  "playbookPath": ".claude/agents/interactive-polish-planner.md",
+  "description": "The SEVENTH planner sibling, with a DIFFERENT pipeline position. The other six run as the user's FIRST action (chat-Claude dispatches them up-front); this one runs LAST — after another primary planner's build phase has completed (or after chat-Claude has hand-written source), AFTER any content/structure is in place, BEFORE Step-8 QA. Reads existing source HTML/CSS/JS + the committed genre/aesthetic, identifies SITES of opportunity for interactive enrichment, commits a polish register (subtle / playful / theatrical based on genre), and dispatches drawers per opportunity type. THE LOAD-BEARING DISCIPLINE: the planner identifies WHERE + WHAT-TYPE of opportunity (microanimation / scroll-or-pointer-driven / hover-surprise / shader-overlay); the DRAWERS decide WHAT the specific improvement looks like (which microanimation, which shader effect, which hover reveal). Polish is a craft decision; if the planner pre-decides, drawers become rubber-stampers and quality drops. Operates on the whole project — no slot tag, no per-slot fanout. Writes supplemental files to source/<branch>/_polish/<polishId>/ so existing source stays intact; the runtime drawer writes integration-instructions.md describing the minimal <link>/<script> edits the caller applies to each host page. Heavily co-dispatches visual-planner with the shader skill for procedural overlays (halftone print, CRT scanlines, paper grain, glitch, dither). Drawers MAY be skipped — only the opportunity types research flagged dispatch. Pieces that are already richly interactive may commit siteCount=0 (a legitimate outcome).",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Path A — after another primary planner's build phase (the canonical trigger)",
+      "rule": "After chat-Claude has driven the build phase of sim/im/nx/game/scrapbook/visual planner work to completion, BEFORE invoking Step-8 QA, chat-Claude dispatches interactive-polish-planner with project-wide scope. The planner walks the resulting source, identifies enrichment sites per the genre, and commits a polish pass. This is the POST-PASS trigger — chat-Claude treats polish as the last build-phase step before the QA wrap-up.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-planner LAST (before QA)' Path A"
+    },
+    {
+      "mode": "chat",
+      "title": "Path B — explicit user request",
+      "rule": "User says 'polish this', 'make it feel more alive', 'add micro-interactions', 'the vibe needs more depth', or 'feels static / dead / generic'. Chat-Claude dispatches interactive-polish-planner directly.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-planner LAST (before QA)' Path B"
+    }
+  ],
+  "dispatches": {
+    "research": [
+      "polish-research-technique"
+    ],
+    "components": [
+      "polish-microanimation-author",
+      "polish-pointer-author",
+      "polish-hover-author",
+      "polish-shader-author",
+      "polish-runtime-composer"
+    ],
+    "collaborators": [
+      "visual-planner"
+    ],
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
+    ]
+  },
+  "skills": [
+    "shader"
+  ],
+  "nodeKinds": {
+    "container": [
+      "interactive-polish"
+    ],
+    "agent_overrides": [
+      "polish_research_*",
+      "polish_microanimation_*",
+      "polish_pointer_*",
+      "polish_hover_*",
+      "polish_shader_*",
+      "polish_runtime_*",
+      "cp_polish_shader_pick_*",
+      "cp_polish_gate_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/features/interactive-polish-planner.md",
+    "calibration": ".claude/lens-calibration/fixtures/polish-*"
+  }
+}

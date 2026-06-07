@@ -1,0 +1,72 @@
+{
+  "id": "game-experience-planner",
+  "label": "Game experience",
+  "tagline": "Living interactive worlds with an objective — agency, juice, score, feedback loop",
+  "version": "v3.3",
+  "defaultEnabled": true,
+  "subagentName": "game-experience-planner",
+  "playbookPath": ".claude/agents/game-experience-planner.md",
+  "description": "Crafts full-bleed game-like immersive pieces where the user drives with drag / touch / multi-touch and the scene responds with physics + particle feedback toward a stated objective (score / progress / streak / win-condition). The fifth planner sibling — inherits simulation-planner's discipline (paradigm space, research-then-drawers shape, lens trio with loop-until-bar, multi-draft cruxes via iterator-remix, hand-off split). What changes is purpose: where simulation gives the user UNDERSTANDING of a system, interactive-media makes the body the creative material, and narrative-experience gives presence in a place — game-experience gives AGENCY toward an OBJECTIVE inside a LIVING WORLD. Three load-bearing words. Agency means input feels direct (drag / touch / multi-touch / gestures with ≤50ms response). Objective means a goal that climbs (score, progress, streak, level). Living world means full-bleed scenes with no flat resting state — ambient motion always, physics + particles + feedback on action, UI peeks at the edge and never frames the action. Five paradigms (2d-side / 2d-topdown / 3d-environment / iconographic-physics / hybrid) map onto game-experience naturally. Collaborates with visual-planner for hero plates / sprites / texture atlases so every plate inherits the brief's styleCue. Concept-lens scores against felt-game-feel successFeel ('every throw feels weighty and the world rewards it'), never generic claims ('the user has fun').",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Path A — \"build an app/site\" with this game-piece inside",
+      "rule": "User wants the game embedded in a larger surface (a homepage with an interactive hero, an article with a playable diagram, a portfolio with a toy). Top-level Claude scaffolds the app shell (with `<iframe class=\"game-mount\" data-game=...>` slot + `allow=` attribute), then dispatches game-experience-planner per slot (Mode A envelope with slotFile/slotLine). After the planner returns the hand-off envelope, top-level Claude drives the build phase per game-experience-planner.md §5.1.0 and embeds per §5.1.1.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Game-like immersive piece: dispatch game-experience-planner FIRST' Path A"
+    },
+    {
+      "mode": "chat",
+      "title": "Path B — Bare intent (the default for game)",
+      "rule": "User wants the piece itself (a one-shot game / toy / playable artefact). Default for game. Top-level Claude dispatches game-experience-planner directly in BARE-INTENT MODE. The runtime IS the artefact; no app shell needed.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Game-like immersive piece: dispatch game-experience-planner FIRST' Path B"
+    }
+  ],
+  "dispatches": {
+    "research": [
+      "game-research-technique"
+    ],
+    "components": [
+      "game-objective-author",
+      "game-world-builder",
+      "game-physics-author",
+      "game-input-pointer",
+      "game-feedback-author",
+      "game-loop-author",
+      "game-overlay-author",
+      "game-runtime-composer"
+    ],
+    "collaborators": [
+      "visual-planner"
+    ],
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
+    ]
+  },
+  "skills": [],
+  "nodeKinds": {
+    "container": [
+      "game-experience"
+    ],
+    "agent_overrides": [
+      "game_research_*",
+      "game_objective_*",
+      "game_world_*",
+      "game_physics_*",
+      "game_input_*",
+      "game_feedback_*",
+      "game_loop_*",
+      "game_overlay_*",
+      "game_runtime_*",
+      "cp_game_world_pick_*",
+      "cp_game_feedback_pick_*",
+      "cp_game_runtime_pick_*",
+      "cp_game_gate_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/features/game-experience-planner.md",
+    "calibration": ".claude/lens-calibration/fixtures/game-*"
+  }
+}

@@ -477,6 +477,444 @@ KINDS = {
                     "/ Accept-override. Direct clone of cp_sim_gate_ semantics."
                 ),
             },
+
+            # ──────────────────────────────────────────────────────────────────
+            # v3.3 — GAME-EXPERIENCE planner (the fifth sibling).
+            # See docs/features/game-experience-planner.md.
+            # Inherits simulation-planner's contract shape with three
+            # substitutions: objective (goal/score/win-condition) is first-
+            # class; physics is its own engine module; feedback (juice —
+            # particles/screen-shake/audio) is the §8.7 crux drawer alongside
+            # world and runtime. Node-id convention: game_<component>_<gameId>
+            #   game_world_paper_plane_throw   (NOT game_paper_plane_throw_world)
+            # ──────────────────────────────────────────────────────────────────
+
+            # ── Game component drawers (wildcard prefixes) ────────────────────
+            "game_research_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/research.md",
+                "completion": {"requires": ["files: research.md exists, non-empty"]},
+                "notes": (
+                    "Single tech-stack researcher. Picks paradigm + render "
+                    "strategy + physics engine + tick rate + input modalities "
+                    "+ objective shape + juice register + multi-draft cruxes."
+                ),
+            },
+            "game_objective_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/objective.js",
+                "completion": {"requires": [
+                    "files: objective.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Single source of truth for score / streak / progress / "
+                    "win-condition / lose-condition / round reset. Read by "
+                    "every other game drawer. Lens-gated on concept (delivers "
+                    "successFeel?) — the gamification core."
+                ),
+            },
+            "game_world_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/world.html",
+                "completion": {"requires": [
+                    "files: world.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Full-bleed living scene. §8.7 crux — 3-draft remix on "
+                    "camera/perspective axis (2d-side / 2d-topdown / "
+                    "3d-environment / iconographic-physics). Must have "
+                    "ambient motion at rest (no flat resting state). All "
+                    "3 lenses gate."
+                ),
+            },
+            "game_physics_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/physics.js",
+                "completion": {"requires": [
+                    "files: physics.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Physics engine setup (matter.js / planck.js / cannon-es "
+                    "/ rapier3d-compat / custom verlet). Lens-gated on craft "
+                    "(deterministic step, no allocation in step, correct "
+                    "collision categories)."
+                ),
+            },
+            "game_input_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/input-{modality}.js",
+                "completion": {"requires": [
+                    "files: input-{modality}.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Per-modality input drawer. "
+                    "{modality} ∈ {pointer, touch, multi-touch, gyro, gamepad}. "
+                    "Lens-gated on craft (≤50ms latency, no allocation per "
+                    "event, multi-touch correctness)."
+                ),
+            },
+            "game_feedback_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/feedback.js",
+                "completion": {"requires": [
+                    "files: feedback.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Juice / particles / screen-shake / audio cues. §8.7 crux "
+                    "— 3-draft remix on juice axis (restrained / juicy / "
+                    "juice-overload). All 3 lenses gate. The drawer that "
+                    "decides between Vlambeer-juicy and contemplative-restraint."
+                ),
+            },
+            "game_loop_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/loop.js",
+                "completion": {"requires": [
+                    "files: loop.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Master tick loop — fixed-step accumulator composing "
+                    "physics.step → objective.update → feedback.dispatch + "
+                    "spawn rules + win/lose check. Lens-gated on craft "
+                    "(deterministic, no allocation in tick, 60 FPS at peak)."
+                ),
+            },
+            "game_overlay_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/overlay.svg",
+                "completion": {"requires": [
+                    "files: overlay.svg exists",
+                    "files: overlay.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Minimal UI peek (score corner, progress edge, control "
+                    "hint, win/lose card). Lens-gated on aesthetic (must NOT "
+                    "box the world; ≤12% screen coverage during play) + "
+                    "craft (no layout thrash)."
+                ),
+            },
+            "game_runtime_": {
+                "outputsRoot": "source/{branch}/games/{gameId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Glue file — composes world + physics + input(s) + "
+                    "objective + feedback + loop + overlay + §12.3 dev "
+                    "harness + two-gate permission UX (audio + gyro). §8.7 "
+                    "crux — 3-draft remix on pacing axis (meditative / "
+                    "paced / frantic). Full lens trio — this IS the composed "
+                    "user-facing artefact."
+                ),
+            },
+
+            # ── Multi-draft pick checkpoints ──────────────────────────────────
+            "cp_game_world_pick_": {
+                "outputsRoot": "DECISION_cp_game_world_pick_{gameId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_game_world_pick_{gameId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 world drafts (camera/perspective axis).",
+            },
+            "cp_game_feedback_pick_": {
+                "outputsRoot": "DECISION_cp_game_feedback_pick_{gameId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_game_feedback_pick_{gameId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 feedback drafts (juice axis).",
+            },
+            "cp_game_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_game_runtime_pick_{gameId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_game_runtime_pick_{gameId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 runtime drafts (pacing axis).",
+            },
+
+            # ── Family release gate ───────────────────────────────────────────
+            "cp_game_gate_": {
+                "outputsRoot": "DECISION_cp_game_gate_{gameId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_game_gate_{gameId}.json exists with non-empty values",
+                ]},
+                "notes": (
+                    "Reads QUALITY_REPORT.json. If all lens verdicts for this "
+                    "gameId are pass, commits value='clear' and releases the "
+                    "game-experience container. On any block-fail at iteration "
+                    "5, emits <decision-request> with Retry / Patch / "
+                    "Accept-override. Direct clone of cp_sim_gate_ semantics."
+                ),
+            },
+
+            # ──────────────────────────────────────────────────────────────────
+            # v3.3 — SCRAPBOOK-EXPERIENCE planner (the sixth sibling).
+            # See docs/features/scrapbook-experience-planner.md.
+            # Inherits simulation-planner's contract shape with two
+            # distinctives: (1) the composition drawer co-dispatches
+            # visual-planner BARE-INTENT MODE per IMAGE INVENTORY entry —
+            # this is the most visual-planner-heavy drawer in the system;
+            # (2) PNG sequences substitute for transparent GIFs (each frame
+            # is a separate visual-planner sub-dispatch). Node-id
+            # convention: sb_<component>_<sbId>
+            #   sb_composition_vaporwave_portfolio_hero
+            # ──────────────────────────────────────────────────────────────────
+
+            # ── Scrapbook component drawers (wildcard prefixes) ───────────────
+            "sb_research_": {
+                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/research.md",
+                "completion": {"requires": [
+                    "files: research.md exists, non-empty",
+                    "files: inventory.json exists, non-empty",
+                ]},
+                "notes": (
+                    "Single tech-stack + aesthetic researcher. Picks core "
+                    "aesthetic + composition idiom + density + motion register "
+                    "+ interaction primitive + the IMAGE INVENTORY. The "
+                    "inventory.json drives the composition drawer's "
+                    "co-dispatch of visual-planner per asset."
+                ),
+            },
+            "sb_composition_": {
+                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/composition.html",
+                "completion": {"requires": [
+                    "files: composition.html exists, non-empty",
+                    "files: composition.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Layered HTML/CSS scrapbook composition. Co-dispatches "
+                    "visual-planner BARE-INTENT MODE per inventory entry "
+                    "(this drawer is the cost-heavy one). §8.7 crux — "
+                    "3-draft remix on density axis (sparse / medium / dense). "
+                    "All 3 lenses gate."
+                ),
+            },
+            "sb_typography_": {
+                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/typography.css",
+                "completion": {"requires": [
+                    "files: typography.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Web font picks (Google Fonts) + handcrafted raster "
+                    "typography (commissioned via visual-planner BARE-INTENT). "
+                    "Lens-gated on aesthetic (type tone matches coreAesthetic) "
+                    "+ craft (web fonts load without FOIT, raster headlines "
+                    "have correct alt text)."
+                ),
+            },
+            "sb_motion_": {
+                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/motion.css",
+                "completion": {"requires": [
+                    "files: motion.css exists, non-empty",
+                    "files: motion.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "CSS drift animations + PNG-sequence loops (transparent "
+                    "GIF substitute) + scroll-linked parallax + idle wobbles. "
+                    "§8.7 crux — 3-draft remix on motion register axis "
+                    "(still-with-twitches / drifting-ambient / "
+                    "aggressive-vaporwave). All 3 lenses gate."
+                ),
+            },
+            "sb_interactions_": {
+                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/interactions.js",
+                "completion": {"requires": [
+                    "files: interactions.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Hover-tilt / scroll-reveal / drag-to-rearrange / "
+                    "click-to-flip / tap-to-reveal / multi-touch-stack. "
+                    "Lens-gated on craft (no scroll-jacking, no event "
+                    "leaks, ≤50ms hover response, touch-action correctness)."
+                ),
+            },
+            "sb_runtime_": {
+                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Composed runtime — inlines composition + typography + "
+                    "motion + interactions; wires Google Fonts; sets pacing. "
+                    "§8.7 crux — 3-draft remix on pacing axis (calm-browse "
+                    "/ scroll-revelation / interactive-discovery). Full lens "
+                    "trio — this IS the composed user-facing artefact."
+                ),
+            },
+
+            # ── Multi-draft pick checkpoints ──────────────────────────────────
+            "cp_sb_composition_pick_": {
+                "outputsRoot": "DECISION_cp_sb_composition_pick_{sbId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sb_composition_pick_{sbId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 composition drafts (density axis).",
+            },
+            "cp_sb_motion_pick_": {
+                "outputsRoot": "DECISION_cp_sb_motion_pick_{sbId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sb_motion_pick_{sbId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 motion drafts (motion register axis).",
+            },
+            "cp_sb_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_sb_runtime_pick_{sbId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sb_runtime_pick_{sbId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 runtime drafts (pacing axis).",
+            },
+
+            # ── Family release gate ───────────────────────────────────────────
+            "cp_sb_gate_": {
+                "outputsRoot": "DECISION_cp_sb_gate_{sbId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_sb_gate_{sbId}.json exists with non-empty values",
+                ]},
+                "notes": (
+                    "Reads QUALITY_REPORT.json. If all lens verdicts for this "
+                    "sbId are pass, commits value='clear' and releases the "
+                    "scrapbook-experience container. On any block-fail at "
+                    "iteration 5, emits <decision-request> with Retry / Patch "
+                    "/ Accept-override. Direct clone of cp_sim_gate_ semantics."
+                ),
+            },
+
+            # ──────────────────────────────────────────────────────────────────
+            # v3.3 — INTERACTIVE-POLISH planner (the seventh sibling — POST-PASS).
+            # See docs/features/interactive-polish-planner.md.
+            # Unlike the other six planners, this runs LAST in the pipeline:
+            # after another primary planner's build phase (or after chat-Claude
+            # has hand-written source), BEFORE Step-8 QA. The research drawer
+            # identifies SITES + TYPES of opportunity (microanimation / pointer /
+            # scroll / hover-surprise / shader-overlay); the per-type drawers
+            # decide the SPECIFIC implementation. Output goes to
+            # source/<branch>/_polish/<polishId>/ as supplemental files; the
+            # runtime drawer writes integration-instructions.md describing the
+            # minimal <link>/<script> edits the caller applies to host pages.
+            # ──────────────────────────────────────────────────────────────────
+
+            # ── Polish component drawers (wildcard prefixes) ──────────────────
+            "polish_research_": {
+                "outputsRoot": "source/{branch}/_polish/{polishId}/research.md",
+                "completion": {"requires": [
+                    "files: research.md exists, non-empty",
+                    "files: polish-plan.json exists, non-empty",
+                ]},
+                "notes": (
+                    "Surveys existing source HTML/CSS/JS, identifies SITES of "
+                    "opportunity (microanimation / pointer / scroll / "
+                    "hover-surprise / shader-overlay), commits polish register "
+                    "(subtle / playful / theatrical) per genre. The site map "
+                    "drives which drawers fire + which selectors they target. "
+                    "Per planner-vs-drawer split: identifies WHERE + TYPE only — "
+                    "drawers decide WHAT the specific improvement looks like."
+                ),
+            },
+            "polish_microanimation_": {
+                "outputsRoot": "source/{branch}/_polish/{polishId}/microanim.css",
+                "completion": {"requires": [
+                    "files: microanim.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Decides WHAT microanimation each microanimation-typed "
+                    "site becomes (idle-breath, soft-glow, type-on, drop-cap-"
+                    "drop, etc.). Writes microanim.css + optional microanim.js. "
+                    "Lens-gated on craft (compositor-only properties, "
+                    "prefers-reduced-motion) + aesthetic (pattern fits "
+                    "register × genre)."
+                ),
+            },
+            "polish_pointer_": {
+                "outputsRoot": "source/{branch}/_polish/{polishId}/pointer.js",
+                "completion": {"requires": [
+                    "files: pointer.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Decides WHAT each pointer-tinted + scroll-driven site "
+                    "becomes (cursor-spotlight, magnetic-pull, card-tilt-3d, "
+                    "scroll-fade-in, sticky-condensing-nav, parallax-hero, "
+                    "scroll-progress-bar, etc.). Lens-gated on craft (passive "
+                    "listeners, no scroll-jacking, rAF-driven, touch gates)."
+                ),
+            },
+            "polish_hover_": {
+                "outputsRoot": "source/{branch}/_polish/{polishId}/hover.css",
+                "completion": {"requires": [
+                    "files: hover.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Decides WHAT each hover-surprise site becomes (scale-"
+                    "shadow-lift, peek-secondary-content, card-flip-3d, "
+                    "slide-reveal-action, dim-siblings, etc.). Writes hover.css "
+                    "+ optional hover.js. Lens-gated on craft (keyboard "
+                    "equivalent for :hover via :focus-visible, no layout shift)."
+                ),
+            },
+            "polish_shader_": {
+                "outputsRoot": "source/{branch}/_polish/{polishId}/shader.html",
+                "completion": {"requires": [
+                    "files: shader.html exists, non-empty",
+                    "files: shader-mount.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Decides WHAT shader overlay effect (halftone-print, "
+                    "paper-grain, dither, CRT-scanline, chromatic-aberration, "
+                    "glitch, noise-wash, vignette-fade, moire). CO-DISPATCHES "
+                    "visual-planner with the shader skill to commission the "
+                    "actual GLSL. §8.7 crux drawer — multi-draft on shader-"
+                    "effect axis when research recommends. All 3 lenses gate."
+                ),
+            },
+            "polish_runtime_": {
+                "outputsRoot": "source/{branch}/_polish/{polishId}/composite.css",
+                "completion": {"requires": [
+                    "files: composite.css exists",
+                    "files: composite.js exists",
+                    "files: integration-instructions.md exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Concatenates microanim.css + hover.css + shader-mount.css "
+                    "into composite.css; concatenates microanim.js + pointer.js "
+                    "+ hover.js into composite.js; writes integration-"
+                    "instructions.md describing the minimal HTML edits the "
+                    "caller applies per host page (single <link> + <script> + "
+                    "optional shader-mount <div>). Lens-gated on craft."
+                ),
+            },
+
+            # ── Multi-draft pick checkpoint (shader effect only) ──────────────
+            "cp_polish_shader_pick_": {
+                "outputsRoot": "DECISION_cp_polish_shader_pick_{polishId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_polish_shader_pick_{polishId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 shader effect drafts (e.g. halftone vs paper-grain vs dither).",
+            },
+
+            # ── Family release gate ───────────────────────────────────────────
+            "cp_polish_gate_": {
+                "outputsRoot": "DECISION_cp_polish_gate_{polishId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_polish_gate_{polishId}.json exists with non-empty values",
+                ]},
+                "notes": (
+                    "Reads QUALITY_REPORT.json. If all lens verdicts for this "
+                    "polishId are pass, commits value='clear' and releases the "
+                    "interactive-polish container. On any block-fail at "
+                    "iteration 5, emits <decision-request> with Retry / Patch / "
+                    "Drop-site / Accept-override. Direct clone of cp_sim_gate_."
+                ),
+            },
         },
     },
 
@@ -1096,6 +1534,209 @@ KINDS = {
             "separate enum. Permission UX gates ambient audio via the two-"
             "gate pattern (canvas-side + iframe-side Start) inherited from "
             "INTERACTIVITY_PIPELINE — audio context requires user gesture."
+        ),
+    },
+
+    # ── game-experience (v3.3 — fifth sibling of simulation/interactive/narrative)
+    # The user-facing artefact container for one game-like immersive piece.
+    # Same shape as `simulation` with three substitutions: objective (goal /
+    # score / win-condition) is first-class; physics is its own engine module;
+    # feedback (juice — particles / screen-shake / audio) is the §8.7 crux
+    # drawer alongside world and runtime. See `game-experience-planner.md`.
+    "game-experience": {
+        "title":        "Game experience (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "gameId":          {"type": "text",   "userEditable": False, "required": True},
+            "paradigm":        {"type": "enum",
+                                 "values": ["2d-side", "2d-topdown",
+                                            "3d-environment",
+                                            "iconographic-physics", "hybrid"],
+                                 "userEditable": False,
+                                 "doc": "The world's camera/perspective axis. Picked at §8.7 multi-draft crux when research recommends; otherwise from research's single recommendation."},
+            "objective":       {"type": "text",   "userEditable": False,
+                                 "doc": "One-line goal verbatim (e.g. 'fly as far as possible; collect mugs for +score; hit walls = end')."},
+            "juiceRegister":   {"type": "enum",
+                                 "values": ["restrained", "paced", "juicy", "juice-overload"],
+                                 "userEditable": False,
+                                 "doc": "Picked at §8.7 feedback crux when research recommends; otherwise from research."},
+            "pacingFeel":      {"type": "enum",
+                                 "values": ["meditative", "paced", "frantic"],
+                                 "userEditable": False,
+                                 "doc": "Picked at §8.7 runtime crux when research recommends; otherwise from research."},
+            "declaredInputs":  {"type": "array",  "userEditable": False,
+                                 "doc": "Modalities the piece accepts. Subset of {pointer, touch, multi-touch, gyro, gamepad}."},
+            "permissionGates": {"type": "array",  "userEditable": False,
+                                 "doc": "Canvas-side gates the editor renders before Run. Subset of {audio, gyro}."},
+            "exposedAssets":   {"type": "array",  "userEditable": False},
+            "lockedState":     {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/objective/world/physics/input(s)/feedback/loop/overlay/runtime)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of a game-like immersive piece. Same shape as "
+            "`simulation` / `narrative-experience` with three substitutions in "
+            "the drawer family: objective (goal/score/win-condition) is "
+            "first-class; physics is its own engine module; feedback (juice "
+            "— particles/shake/audio) is the §8.7 crux drawer alongside world "
+            "and runtime. The world is full-bleed with NO flat resting state "
+            "— ambient motion always plays. The overlay PEEKS at the edges "
+            "(score corner, progress edge, control hint) — never frames the "
+            "action. Permission UX gates audio (and gyro on mobile) via the "
+            "two-gate pattern (canvas-side + iframe-side Start) inherited "
+            "from INTERACTIVITY_PIPELINE — audio context requires user gesture."
+        ),
+    },
+
+    # ── scrapbook-experience (v3.3 — sixth sibling of simulation/interactive/narrative/game)
+    # The user-facing artefact container for one raster-heavy collage piece.
+    # Aesthetic categories: vaporwave / internetcore / cottagecore / dreamcore /
+    # weirdcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / hybrid.
+    # The composition drawer co-dispatches visual-planner BARE-INTENT MODE per
+    # IMAGE INVENTORY entry — this is the most visual-planner-heavy container
+    # in the system. PNG sequences substitute for transparent GIFs (each frame
+    # = one visual-planner sub-dispatch). See `scrapbook-experience-planner.md`.
+    "scrapbook-experience": {
+        "title":        "Scrapbook experience (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "sbId":              {"type": "text",   "userEditable": False, "required": True},
+            "coreAesthetic":     {"type": "enum",
+                                   "values": ["vaporwave", "internetcore",
+                                              "cottagecore", "dreamcore",
+                                              "weirdcore", "Y2K", "lo-fi",
+                                              "mixtape", "zine", "mood-board",
+                                              "lookbook", "hybrid"],
+                                   "userEditable": False,
+                                   "doc": "Committed by research; multi-draft is a separate axis (density)."},
+            "density":           {"type": "enum",
+                                   "values": ["sparse", "medium", "dense"],
+                                   "userEditable": False,
+                                   "doc": "Picked at §8.7 composition crux when research recommends; otherwise from research."},
+            "motionRegister":    {"type": "enum",
+                                   "values": ["still-with-twitches",
+                                              "drifting-ambient",
+                                              "aggressive-vaporwave"],
+                                   "userEditable": False,
+                                   "doc": "Picked at §8.7 motion crux when research recommends; otherwise from research."},
+            "pacingFeel":        {"type": "enum",
+                                   "values": ["calm-browse",
+                                              "scroll-revelation",
+                                              "interactive-discovery"],
+                                   "userEditable": False,
+                                   "doc": "Picked at §8.7 runtime crux when research recommends; otherwise from research."},
+            "interactionPrimitive": {"type": "enum",
+                                      "values": ["scroll-reveal",
+                                                 "hover-tilt",
+                                                 "drag-to-rearrange",
+                                                 "click-to-flip",
+                                                 "tap-to-reveal",
+                                                 "multi-touch-stack"],
+                                      "userEditable": False},
+            "imageCount":        {"type": "number", "userEditable": False,
+                                   "doc": "Total raster assets in inventory (entries + total PNG-sequence frames)."},
+            "exposedAssets":     {"type": "array",  "userEditable": False},
+            "lockedState":       {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/composition/typography/motion/interactions/runtime) + N visual-planner-co-dispatched asset trios",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of a raster-heavy collage piece. Aesthetics are "
+            "named cores (vaporwave / cottagecore / dreamcore / Y2K / "
+            "lo-fi / etc.) — the planner DOES NOT serve CSS-driven aesthetics "
+            "(Bauhaus / Swiss-grid / terminal-on-web etc.); those redirect to "
+            "visual-planner for hero assets in a CSS-restrained app. Composition "
+            "drawer co-dispatches visual-planner BARE-INTENT MODE per IMAGE "
+            "INVENTORY entry — N entries = N sub-dispatches. PNG sequences "
+            "substitute for transparent GIFs (each frame = one sub-dispatch). "
+            "Typography splits between web fonts (body / microtype via "
+            "Google Fonts) + raster handlettering (display words / "
+            "signatures / marker annotations via visual-planner)."
+        ),
+    },
+
+    # ── interactive-polish (v3.3 — seventh sibling; POST-PASS planner) ────
+    # Different shape from the other six: runs LAST in the pipeline, after
+    # another primary planner's build phase (or after chat-Claude has
+    # hand-written source), BEFORE Step-8 QA. Reads existing source,
+    # identifies SITES of opportunity for interactive enrichment, dispatches
+    # per-type drawers that decide the SPECIFIC improvement. Writes
+    # supplemental files to source/<branch>/_polish/<polishId>/ — existing
+    # source stays intact; the caller applies minimal <link>/<script> edits
+    # per host page from the runtime drawer's integration-instructions.md.
+    # See `interactive-polish-planner.md`.
+    "interactive-polish": {
+        "title":        "Interactive polish (post-pass)",
+        "category":     "container",
+        "inputs": {
+            "polishId":           {"type": "text",   "userEditable": False, "required": True},
+            "polishRegister":     {"type": "enum",
+                                    "values": ["subtle", "playful", "theatrical"],
+                                    "userEditable": False,
+                                    "doc": "Committed by research per genre × envelope."},
+            "siteCount":          {"type": "number", "userEditable": False,
+                                    "doc": "Total enrichment sites across all opportunity types."},
+            "siteCountByType":    {"type": "object", "userEditable": False,
+                                    "doc": "Per-type breakdown: microanimation / pointer-tinted / scroll-driven / hover-surprise / shader-overlay."},
+            "drawersDispatched":  {"type": "array",  "userEditable": False,
+                                    "doc": "Subset of {polish_microanimation_, polish_pointer_, polish_hover_, polish_shader_, polish_runtime_} that ran. Drawers may be SKIPPED if their type has 0 sites — unlike the other six planners where every drawer fires."},
+            "pagesIntegrated":    {"type": "array",  "userEditable": False,
+                                    "doc": "Host pages that received the <link>/<script>/shader-mount edits applied by the caller."},
+            "exposedAssets":      {"type": "array",  "userEditable": False},
+            "lockedState":        {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/microanimation/pointer/hover/shader/runtime) + optional visual-planner-co-dispatched shader trio",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Post-pass enrichment container — runs after another primary "
+            "planner's build phase, before Step-8 QA. Existing source is "
+            "preserved; polish files live in source/<branch>/_polish/<polishId>/. "
+            "Each host page in pagesIntegrated received TWO new tags (a "
+            "single <link> + a single <script>) — and ONE more <div> if the "
+            "shader-overlay drawer ran. Zero-site outcomes (source already "
+            "richly polished, no opportunity types identified) are valid; "
+            "the runtime drawer writes an empty composite.css + composite.js "
+            "+ integration-instructions.md saying 'no edits needed'. The "
+            "interactive-polish container is the ONE post-pass artefact in "
+            "the planner system; the other six containers (prototype, "
+            "simulation, interactive-media, narrative-experience, game-"
+            "experience, scrapbook-experience) are primary build artefacts."
         ),
     },
 

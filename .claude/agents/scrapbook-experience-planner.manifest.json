@@ -1,0 +1,66 @@
+{
+  "id": "scrapbook-experience-planner",
+  "label": "Scrapbook experience",
+  "tagline": "Raster-heavy collage pieces — vaporwave, cottagecore, Y2K, lo-fi, internetcore, dreamcore, mood-board",
+  "version": "v3.3",
+  "defaultEnabled": true,
+  "subagentName": "scrapbook-experience-planner",
+  "playbookPath": ".claude/agents/scrapbook-experience-planner.md",
+  "description": "Crafts deeply-rendered raster-collage pieces where the aesthetic LIVES IN THE IMAGERY rather than in CSS — vaporwave, internetcore, cottagecore, dreamcore, weirdcore, liminalcore, Y2K, lo-fi, mixtape-cover, zine, mood-board, lookbook, Tumblr-grade. The sixth planner sibling. Inherits simulation-planner's discipline (research-then-drawers shape, lens trio with loop-until-bar, multi-draft cruxes via iterator-remix, hand-off split). What changes is purpose: where sim gives understanding, im gives creative-material body, nx gives presence, and game gives agency-toward-objective — scrapbook-experience gives the user A WORLD MADE OF IMAGES. The aesthetic itself is the artefact, communicated through dense raster composition that CSS alone cannot reach. The composition drawer co-dispatches visual-planner BARE-INTENT MODE per IMAGE INVENTORY entry — this is the most visual-planner-heavy of the six planners. PNG sequences substitute for transparent GIFs (generated frame-by-frame and sprite-sheet-animated). Handcrafted typography is first-class: hand-lettered raster headlines + careful web font choices commissioned via visual-planner. Concept-lens scores against successFeel like 'finding someone's secret Tumblr from 2008' or 'a real polaroid I forgot I took' — never generic claims.",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Path A — \"build a site\" with this scrapbook inside",
+      "rule": "User wants the scrapbook embedded in a larger app/site (a landing hero, an about page, an editorial section). Top-level Claude scaffolds the app shell (with `<iframe class=\"scrapbook-mount\" data-scrapbook=...>` slot), then dispatches scrapbook-experience-planner per slot (Mode A envelope with slotFile/slotLine). After hand-off, top-level Claude drives the build per scrapbook-experience-planner.md §5.1.0 and embeds per §5.1.1.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST' Path A"
+    },
+    {
+      "mode": "chat",
+      "title": "Path B — Bare intent (the default for scrapbook)",
+      "rule": "User wants the piece itself (a vaporwave landing, a cottagecore zine page, a Y2K hero, a dreamcore microsite). Default for scrapbook. Top-level Claude dispatches scrapbook-experience-planner directly in BARE-INTENT MODE. The runtime IS the artefact; no app shell needed unless the user names one.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST' Path B"
+    }
+  ],
+  "dispatches": {
+    "research": [
+      "scrapbook-research-technique"
+    ],
+    "components": [
+      "scrapbook-composition-author",
+      "scrapbook-typography-author",
+      "scrapbook-motion-author",
+      "scrapbook-interactions-author",
+      "scrapbook-runtime-composer"
+    ],
+    "collaborators": [
+      "visual-planner"
+    ],
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
+    ]
+  },
+  "skills": [],
+  "nodeKinds": {
+    "container": [
+      "scrapbook-experience"
+    ],
+    "agent_overrides": [
+      "sb_research_*",
+      "sb_composition_*",
+      "sb_typography_*",
+      "sb_motion_*",
+      "sb_interactions_*",
+      "sb_runtime_*",
+      "cp_sb_composition_pick_*",
+      "cp_sb_motion_pick_*",
+      "cp_sb_runtime_pick_*",
+      "cp_sb_gate_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/features/scrapbook-experience-planner.md",
+    "calibration": ".claude/lens-calibration/fixtures/sb-*"
+  }
+}
