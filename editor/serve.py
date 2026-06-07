@@ -4723,10 +4723,22 @@ class H(http.server.SimpleHTTPRequestHandler):
     # <project_root>/workflow/workflow.json. Kept deliberately schema-light
     # so 3.5c/3.5d/Phase-4 can extend nodes[] without daemon updates.
     def _workflow_get(self, qs):
+        # v3.7 — require_explicit=True. In workspace mode with more than one
+        # project, hitting /__workflow without ?project=<id> used to silently
+        # fall back to the first-discovered project, which surfaced as the
+        # musem bug: a chat agent in project=musem ran
+        # `curl $TH_DAEMON_URL/__workflow` (forgetting `?project=$TH_PROJECT_ID`)
+        # and got back the install's brand-landing workflow (27 nodes about
+        # Vermeer's studio). Claude then thought 27 nodes had appeared in
+        # musem and asked the user whether to clear them. The editor UI
+        # always passes ?project= via apiUrl() — only ad-hoc curls need the
+        # explicit failure. require_explicit=True returns 400 with a list of
+        # known project ids when >1 exists; single-project workspaces still
+        # auto-resolve.
         try:
-            project_root = resolve_project_root(qs)
+            project_root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
-            return self._reply(400, {"error": str(e)})
+            return self._reply(400, {"error": str(e), "hint": "append ?project=$TH_PROJECT_ID to the URL"})
         # v3.0 — every workflow GET ensures the file watcher is running so
         # the asset-versioning snapshot hook fires on subsequent writes.
         # Previously only SSE subscribers started the watcher; loads that

@@ -291,6 +291,8 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 **Daemon HTTP endpoints**:
 {endpoint_lines}
 
+> **WORKSPACE MODE — every daemon URL needs `?project=$TH_PROJECT_ID`.** The daemon hosts many projects under one process. Your shell already has `TH_PROJECT_ID` set (your project's id) and `TH_DAEMON_URL` set (the daemon root). When you `curl` an endpoint, append `?project=$TH_PROJECT_ID` (or `&project=$TH_PROJECT_ID` if the URL already has a query). Forgetting it returns `400 workspace mode with N projects requires explicit ?project=<id>` — that's the daemon telling you to fix the URL, not asking what to do. Always use `$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID` (and same shape for every other endpoint), never the bare `$TH_DAEMON_URL/__workflow`. Bug history: the musem chat got back the install's brand-landing workflow (27 unrelated nodes) because of this.
+
 **Node kinds** ({len(caps['kinds'])}): {', '.join(k['kind'] for k in caps['kinds'])}. See `GET /__kinds/registry` for full per-kind contracts.
 
 ## Style cues are non-negotiable (v3.1 hard rule)
