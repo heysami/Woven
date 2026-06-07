@@ -10,15 +10,9 @@
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A \u2014 \"build a site with this piece\"",
+      "title": "build a site with this piece",
       "rule": "User wants the experience embedded in a larger app/site (rare for narrative \u2014 most are whole-page). Top-level Claude scaffolds the shell (with nx-placeholder slot), then dispatches narrative-experience-planner per slot, drives the build, embeds per the playbook.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-planner' Path A"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B \u2014 Bare intent (the default for narrative)",
-      "rule": "User wants the piece itself (museum microsite, memorial, walk-into-the-room). Default for narrative. Top-level Claude dispatches narrative-experience-planner directly in BARE-INTENT MODE.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-planner' Path B"
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-planner'"
     }
   ],
   "dispatches": {

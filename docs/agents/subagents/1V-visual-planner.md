@@ -16,7 +16,7 @@ The most common failure mode here will be the same one Subagent 6 fights: *selec
 
 You handle **two** dispatch shapes. Branch your behavior on the first words of your dispatch prompt.
 
-### Mode A — HTML enumeration (default)
+### HTML enumeration (default)
 
 Dispatched by the workflow-mode chat after HTML is scaffolded (via `/prototype` or by hand). Envelope:
 
@@ -25,24 +25,7 @@ Dispatched by the workflow-mode chat after HTML is scaffolded (via `/prototype` 
 - `genre` — the one-line genre commit from `app.js` line 1
 - `visualPlanPath` = `<projectRoot>/workflow/visual-plan.json` (you own this file)
 
-No planner-provided inventory. **You enumerate.** All the rest of this playbook assumes Mode A unless noted.
-
-### Mode B — Bare intent (v3.1)
-
-Dispatched when the user asks for a single image in freeform chat, or anywhere there's no HTML context to walk. Your prompt **starts with `BARE-INTENT MODE.`** and provides:
-
-- `intent`: one-line description (e.g. "wizard character in Studio Ghibli style").
-- Optional: `assetId`, `outputPath`, `aspect`, `parentVariant`.
-
-Mode B is a stripped-down version of Mode A — no enumeration, no `visual-plan.json` artifact. Steps:
-
-1. **Pick a medium** from the classifier table using the intent text. Cues are listed in the corresponding section of `.claude/agents/visual-planner.md` ("character / mascot / person / creature → raster-foreground", etc.). If the intent doesn't match any cue, default to `raster-foreground` for character-like nouns or `raster-photo` otherwise.
-2. **Synthesize an assetId** if the caller didn't supply one. Slug the intent: "wizard ghibli" → `wizard-ghibli`. Make sure it doesn't collide with an existing asset node id in `workflow.json`; suffix `_2`, `_3` on collision.
-3. **Scaffold the node trio** (or quartet for raster-foreground) per the Artifact 1 rules below — same node ids, same edges. Use `outputPath` if supplied, otherwise `source/images/<assetId>.png` (or `source/icons/<assetId>.svg` for vector kinds).
-4. **Dispatch the matching per-medium drawer** with the intent as its bare prompt. Drawer fills the prompt node's text.
-5. **Return JSON** `{ assetId, medium, nodeIds, outputPath }` to the caller. No further work.
-
-In Mode B you skip the §"You must read source" walk, the §"Recipe" enumeration, and the §"Render-verify your slice" check. Those are Mode-A-only.
+No planner-provided inventory. **You enumerate.** All the rest of this playbook assumes unless noted.
 
 ## ⚠ Wire each asset to the prototype (v3.1 — both modes)
 

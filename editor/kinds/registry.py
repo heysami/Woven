@@ -651,7 +651,7 @@ KINDS = {
             # See docs/features/scrapbook-experience-planner.md.
             # Inherits simulation-planner's contract shape with two
             # distinctives: (1) the composition drawer co-dispatches
-            # visual-planner BARE-INTENT MODE per IMAGE INVENTORY entry —
+            # visual-planner per IMAGE INVENTORY entry —
             # this is the most visual-planner-heavy drawer in the system;
             # (2) PNG sequences substitute for transparent GIFs (each frame
             # is a separate visual-planner sub-dispatch). Node-id
@@ -683,7 +683,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Layered HTML/CSS scrapbook composition. Co-dispatches "
-                    "visual-planner BARE-INTENT MODE per inventory entry "
+                    "visual-planner per inventory entry "
                     "(this drawer is the cost-heavy one). §8.7 crux — "
                     "3-draft remix on density axis (sparse / medium / dense). "
                     "All 3 lenses gate."
@@ -697,7 +697,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Web font picks (Google Fonts) + handcrafted raster "
-                    "typography (commissioned via visual-planner BARE-INTENT). "
+                    "typography (commissioned via visual-planner). "
                     "Lens-gated on aesthetic (type tone matches coreAesthetic) "
                     "+ craft (web fonts load without FOIT, raster headlines "
                     "have correct alt text)."
@@ -1604,7 +1604,7 @@ KINDS = {
     # The user-facing artefact container for one raster-heavy collage piece.
     # Aesthetic categories: vaporwave / internetcore / cottagecore / dreamcore /
     # weirdcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / hybrid.
-    # The composition drawer co-dispatches visual-planner BARE-INTENT MODE per
+    # The composition drawer co-dispatches visual-planner per
     # IMAGE INVENTORY entry — this is the most visual-planner-heavy container
     # in the system. PNG sequences substitute for transparent GIFs (each frame
     # = one visual-planner sub-dispatch). See `scrapbook-experience-planner.md`.
@@ -1670,7 +1670,7 @@ KINDS = {
             "lo-fi / etc.) — the planner DOES NOT serve CSS-driven aesthetics "
             "(Bauhaus / Swiss-grid / terminal-on-web etc.); those redirect to "
             "visual-planner for hero assets in a CSS-restrained app. Composition "
-            "drawer co-dispatches visual-planner BARE-INTENT MODE per IMAGE "
+            "drawer co-dispatches visual-planner per IMAGE "
             "INVENTORY entry — N entries = N sub-dispatches. PNG sequences "
             "substitute for transparent GIFs (each frame = one sub-dispatch). "
             "Typography splits between web fonts (body / microtype via "

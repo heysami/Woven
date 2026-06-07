@@ -378,7 +378,7 @@ Per-slot drawer cardinality varies by family:
 - **interactive-media** — five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
 - **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
 - **game-experience** — eight-to-nine drawers per slot (`game_research_<gameId>`, `game_objective_<gameId>`, `game_world_<gameId>`, `game_physics_<gameId>`, one or more `game_input_<gameId>_<modality>`, `game_feedback_<gameId>`, `game_loop_<gameId>`, `game_overlay_<gameId>`, `game_runtime_<gameId>`).
-- **scrapbook-experience** — six drawers per slot (`sb_research_<sbId>`, `sb_composition_<sbId>`, `sb_typography_<sbId>`, `sb_motion_<sbId>`, `sb_interactions_<sbId>`, `sb_runtime_<sbId>`) PLUS N visual-planner BARE-INTENT sub-dispatches per inventory entry (typically 15–45 per slot) — the most visual-planner-heavy planner in the system.
+- **scrapbook-experience** — six drawers per slot (`sb_research_<sbId>`, `sb_composition_<sbId>`, `sb_typography_<sbId>`, `sb_motion_<sbId>`, `sb_interactions_<sbId>`, `sb_runtime_<sbId>`) PLUS N visual-planner sub-dispatches per inventory entry (typically 15–45 per slot) — the most visual-planner-heavy planner in the system.
 - **interactive-polish** — POST-PASS planner (different shape). Up to six drawers per project (`polish_research_<polishId>`, `polish_microanimation_<polishId>`, `polish_pointer_<polishId>`, `polish_hover_<polishId>`, `polish_shader_<polishId>`, `polish_runtime_<polishId>`). Drawers may be SKIPPED if their opportunity type has zero sites. No slot tag — operates on the whole project. Optionally co-dispatches visual-planner's shader skill for one procedural overlay.
 
 ### Two contracts the planner subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
@@ -423,7 +423,7 @@ When the user's message mentions ANY visual content — an image, illustration, 
 ```
 Task(subagent_type: "visual-planner",
      description: "Classify intent + scaffold image pipeline",
-     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'wizard character in Studio Ghibli style'>. There is no HTML context — pick a medium from the classifier table, propose an asset id, and write the node trio (or quartet for raster-foreground with rembg) into workflow/workflow.json + a stub MANIFEST. Return {{assetId, medium, nodeIds}}.")
+     prompt: "The user wants: <one-line description, e.g. 'wizard character in Studio Ghibli style'>. There is no HTML context — pick a medium from the classifier table, propose an asset id, and write the node trio (or quartet for raster-foreground with rembg) into workflow/workflow.json + a stub MANIFEST. Return {{assetId, medium, nodeIds}}.")
 ```
 
 ### Do NOT do any of these (every one is the bug a user just hit):
@@ -595,7 +595,7 @@ Dispatch template — ONE call, planner enumerates all sim slots:
 ```
 Task(subagent_type: "simulation-planner",
      description: "Enumerate + build every sim slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute path to project root>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='sim-mount'> (or every iframe whose data-sim attribute is set). For EACH slot found: read simId from data-sim, paradigm hint from data-paradigm-hint (optional), entity scale from data-entities (optional). Per slot: pick paradigm + render strategy + tick rate + interaction primitive (honour the hard checks in capabilities.py — real-world map naming → real-map library, verticality → 3D, etc.). Write source/<branch>/simulations/<simId>/research.md. Scaffold + build the per-slot drawer set + container. User's overall intent (verbatim, applies to all slots): <intent>. successFeel per slot: if the data-sim id makes it obvious, infer; otherwise ask the user via decision-request. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "branch=<branch>, projectRoot=<absolute path to project root>. Walk every *.html under source/<branch>/ and find every <iframe class~='sim-mount'> (or every iframe whose data-sim attribute is set). For EACH slot found: read simId from data-sim, paradigm hint from data-paradigm-hint (optional), entity scale from data-entities (optional). Per slot: pick paradigm + render strategy + tick rate + interaction primitive (honour the hard checks in capabilities.py — real-world map naming → real-map library, verticality → 3D, etc.). Write source/<branch>/simulations/<simId>/research.md. Scaffold + build the per-slot drawer set + container. User's overall intent (verbatim, applies to all slots): <intent>. successFeel per slot: if the data-sim id makes it obvious, infer; otherwise ask the user via decision-request. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -654,7 +654,7 @@ Then dispatch the planner ONCE. It walks the HTML, enumerates every im-mount slo
 ```
 Task(subagent_type: "interactive-media-planner",
      description: "Enumerate + build every interactive slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='im-mount'> (or every iframe whose data-im is set). For EACH: read imId from data-im, inputs from data-inputs, outputs from data-outputs, mapping style from data-mapping. Per slot: pick inputs + outputs + mapping style + permission flow + glue libraries. Write source/<branch>/interactives/<imId>/research.md. Scaffold + build the per-slot drawer set (research, input(s), mapping, output(s), runtime) + container. Permission gates surfaced to canvas BEFORE Run, per slot. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='im-mount'> (or every iframe whose data-im is set). For EACH: read imId from data-im, inputs from data-inputs, outputs from data-outputs, mapping style from data-mapping. Per slot: pick inputs + outputs + mapping style + permission flow + glue libraries. Write source/<branch>/interactives/<imId>/research.md. Scaffold + build the per-slot drawer set (research, input(s), mapping, output(s), runtime) + container. Permission gates surfaced to canvas BEFORE Run, per slot. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -720,7 +720,7 @@ Then dispatch the planner ONCE. It walks every `*.html`, enumerates the nx slots
 ```
 Task(subagent_type: "narrative-experience-planner",
      description: "Enumerate + build every narrative slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Mode A — HTML enumeration. Walk every *.html under source/<branch>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<branch>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request — NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<branch>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request — NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -747,12 +747,12 @@ The planner picks one of four paradigms (mirrors simulation's structure): `2d-il
 
 **The script is the heart, even in walkable pieces.** A fully free-roam room still has authored light, authored sound-anchors, authored artifacts placed where the curator chose them. Freedom of movement is breathing room WITHIN the dramaturgy, not the absence of authorship. If the user describes "let them just explore" without any sense of the felt-state they should land in, push back via decision-request asking what the user should FEEL after 60 seconds inside — that prose is what concept-lens scores against.
 
-**Collaborates with `visual-planner`** for every raster image the piece relies on — painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-planner in Bare Intent mode for each asset; the brief's styleCue propagates so every plate reads as the same piece.
+**Collaborates with `visual-planner`** for every raster image the piece relies on — painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-planner for each asset; the brief's styleCue propagates so every plate reads as the same piece.
 
 ```
 Task(subagent_type: "narrative-experience-planner",
      description: "Plan + build immersive narrative experience",
-     prompt: "BARE-INTENT MODE. The user wants: <one-line description, e.g. 'walk into Vermeer's studio at depth, the light shifts as the user lingers'>. Run your Mode B intake — ask for a concrete felt-state successFeel via <decision-request> (NOT 'the user understands X' — needs to be a feeling: 'the room remembers them', 'they leave changed', etc.), synthesise an nxId, run the 5-researcher fleet + synthesiser, scaffold the multi-trio in workflow/workflow.json, dispatch the 7 component drawers (spine/scene/camera/ambient/reveal/overlay/runtime) + 3-lens trio per iteration, multi-draft at scene + camera + ambient + runtime cruxes via iterator-remix, run §8.5 cross-drawer coherence before final container commit.")
+     prompt: "The user wants: <one-line description, e.g. 'walk into Vermeer's studio at depth, the light shifts as the user lingers'>. Run your intake — ask for a concrete felt-state successFeel via <decision-request> (NOT 'the user understands X' — needs to be a feeling: 'the room remembers them', 'they leave changed', etc.), synthesise an nxId, run the 5-researcher fleet + synthesiser, scaffold the multi-trio in workflow/workflow.json, dispatch the 7 component drawers (spine/scene/camera/ambient/reveal/overlay/runtime) + 3-lens trio per iteration, multi-draft at scene + camera + ambient + runtime cruxes via iterator-remix, run §8.5 cross-drawer coherence before final container commit.")
 ```
 
 ### Do NOT do any of these:
@@ -768,18 +768,18 @@ Task(subagent_type: "narrative-experience-planner",
 
 | User said… | Your first move |
 |---|---|
-| "let me walk INTO <thing>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "sit inside <place>" / "feel the world of <X>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "museum microsite that doesn't feel like a brochure" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "memorial / portrait / character at depth" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "exhibition extension that lives" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "scrollytelling / immersive narrative" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "snow fall / NYT-magazine-style article" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "walkable 3D <place>" / "explore <space> freely" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "first-person walkthrough of <place>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "architectural reconstruction the user moves through" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
-| "WebGL space the user can wander" | `Task(narrative-experience-planner, BARE-INTENT MODE)` |
+| "let me walk INTO <thing>" | `Task(narrative-experience-planner, …)` |
+| "sit inside <place>" / "feel the world of <X>" | `Task(narrative-experience-planner, …)` |
+| "museum microsite that doesn't feel like a brochure" | `Task(narrative-experience-planner, …)` |
+| "memorial / portrait / character at depth" | `Task(narrative-experience-planner, …)` |
+| "exhibition extension that lives" | `Task(narrative-experience-planner, …)` |
+| "scrollytelling / immersive narrative" | `Task(narrative-experience-planner, …)` |
+| "snow fall / NYT-magazine-style article" | `Task(narrative-experience-planner, …)` |
+| "walkable 3D <place>" / "explore <space> freely" | `Task(narrative-experience-planner, …)` |
+| "first-person walkthrough of <place>" | `Task(narrative-experience-planner, …)` |
+| "architectural reconstruction the user moves through" | `Task(narrative-experience-planner, …)` |
+| "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-planner, …)` |
+| "WebGL space the user can wander" | `Task(narrative-experience-planner, …)` |
 
 ### Distinguishing from siblings (v3.3 — six-way):
 
@@ -1034,7 +1034,7 @@ The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster
 - CSS gradients cannot produce chrome lettering at quality. Vaporwave fails without raster handlettering.
 - CSS textures cannot produce film-grain, scratched paper, washi tape, scanned linen, polaroid edges. Each is a raster.
 - Transparent GIFs are not reliably generated by current image-generation skills. PNG sequences (one visual-planner dispatch per frame) substitute. The planner orchestrates the frame-by-frame commission + sprite-sheet animation.
-- Handcrafted typography (the signature of scrapbook) is raster — commissioned per word as a visual-planner BARE-INTENT.
+- Handcrafted typography (the signature of scrapbook) is raster — commissioned per word as a visual-planner.
 
 **Emulating scrapbook-experience-planner from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
 

@@ -6,19 +6,13 @@
   "defaultEnabled": true,
   "subagentName": "visual-planner",
   "playbookPath": ".claude/agents/visual-planner.md",
-  "description": "Classifies every visual slot (img, background-image, canvas, declared shader/lottie/3d paths) by medium and dispatches one per-medium drawer per slot. Modes: HTML-enumeration (post source-write) and Bare Intent (chat-triggered ad-hoc image requests). Step 8 QA checks style coherence + composition + cutout + text contrast after assets land.",
+  "description": "Classifies every visual slot (img, background-image, canvas, declared shader/lottie/3d paths) by medium and dispatches one per-medium drawer per slot. Modes: HTML-enumeration (post source-write) and (chat-triggered ad-hoc image requests). Step 8 QA checks style coherence + composition + cutout + text contrast after assets land.",
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A \u2014 \"build an app/page\" with visual slots",
+      "title": "build an app/page\" with visual slots",
       "rule": "After source HTML is scaffolded (by /prototype skill or top-level Claude), dispatch visual-planner against the source tree for HTML-enumeration. The planner enumerates <img> / background-image / canvas / inline-svg slots and dispatches one per-medium drawer per slot.",
       "ruleSource": "editor/kinds/capabilities.py \u2014 visual-planner FIRST hard-rule"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B \u2014 Bare intent",
-      "rule": "User says \"make me an image of X\", \"generate an icon\", \"give me a shader\" etc. Dispatch visual-planner in Bare Intent mode for a single asset; planner picks the medium and generator skill.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 visual-planner Bare Intent"
     }
   ],
   "dispatches": {

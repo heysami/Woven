@@ -22,7 +22,7 @@ Read `editor/kinds/AGENT_HARNESS.md` Rules 5 (folder), 6 (atomic commit), 7 (sta
 
 ## 1. What counts as a simulation + the two input modes
 
-### 1.0 What counts as a simulation (read before interpreting any Mode B intent)
+### 1.0 What counts as a simulation (read before interpreting any intent)
 
 A simulation surface is **any system whose parts have state and change** — regardless of what the parts are made of. The trigger isn't a keyword (warehouse, map, population) — it's the **shape of the brief**: entities + state + change-or-interaction + a wish to *watch* it unfold.
 
@@ -36,13 +36,13 @@ The tech-stack researcher decides how to *represent* it. The same paradigm space
 - **Biological / ecological** — cells, populations, ecosystems, predator/prey, disease spread, immune response.
 - **Conceptual / domain-specific** — anything where the brief reads "I want to *see* how X happens" and X is a system, even if the system is purely abstract.
 
-When you interpret a Mode B intent: **don't pre-decide the paradigm from how spatial it sounds**. "Agents passing information" can be a 2d-spatial-map (positions on a graph), a 3d-environment (a campus of nodes), or an iconographic-anim (a queue of messages flowing through icons). The research fleet picks. Your job is to commit to the BRIEF, not to a representation. The brief says: "this system, made of these parts, doing these things, felt this way." The fleet decides the visual paradigm afterward.
+When you interpret a intent: **don't pre-decide the paradigm from how spatial it sounds**. "Agents passing information" can be a 2d-spatial-map (positions on a graph), a 3d-environment (a campus of nodes), or an iconographic-anim (a queue of messages flowing through icons). The research fleet picks. Your job is to commit to the BRIEF, not to a representation. The brief says: "this system, made of these parts, doing these things, felt this way." The fleet decides the visual paradigm afterward.
 
 If you cannot identify entities + state + change in the intent, *that* is a reason to push back via `<decision-request>` — but a lack of literal physical/spatial language is **not** a reason. Process pipelines, agent systems, information flows, neural networks, abstract dynamics — all simulation territory.
 
 ### 1.1 ONE input shape — slot-in-an-app-shell
 
-You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/*.html` with one or more `<iframe class="sim-mount" data-sim="<simId>" ...>` slots embedded in the app shell. Your job is **Mode A — HTML enumeration**: walk every HTML page under `source/<branch>/`, find every sim-mount iframe, extract the `simId` (and optional `data-paradigm-hint` + `data-entities` attributes), and fan out the per-slot drawer set for each. **You do not touch any HTML.** Same contract as visual-planner Mode A: visual-planner walks the HTML, finds img tags, scaffolds per-slot drawers; you walk the HTML, find sim-mount iframes, scaffold per-slot drawers.
+You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/*.html` with one or more `<iframe class="sim-mount" data-sim="<simId>" ...>` slots embedded in the app shell. walk every HTML page under `source/<branch>/`, find every sim-mount iframe, extract the `simId` (and optional `data-paradigm-hint` + `data-entities` attributes), and fan out the per-slot drawer set for each. **You do not touch any HTML.** Same contract as visual-planner : visual-planner walks the HTML, finds img tags, scaffolds per-slot drawers; you walk the HTML, find sim-mount iframes, scaffold per-slot drawers.
 
 Per slot, the drawer set is: `sim_research_<simId>` → `sim_entities_<simId>` → `sim_scene_<simId>` → `sim_loop_<simId>` → `sim_controls_<simId>` → `sim_overlay_<simId>` → `sim_runtime_<simId>` → container node `sim_<simId>`. Multiple slots are independent — each gets its own research + paradigm pick + drawer set. You ARE allowed (and expected) to scaffold + dispatch all of them within this one dispatch.
 

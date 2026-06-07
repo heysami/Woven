@@ -45,7 +45,7 @@ Inspect the per-id overrides for every `nx_*_` wildcard, every `craft_lens_*` / 
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 
-## 1. Mode A — HTML enumeration (same shape as simulation-planner.md §1.1)
+## 1. — HTML enumeration (same shape as simulation-planner.md §1.1)
 
 The agent in chat has written `source/<branch>/*.html` with one or more `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" ...>` slots — one per immersive place the user walks into. Your job: walk every HTML page under `source/<branch>/`, find every nx-mount iframe, extract the `nxId` and per-slot attributes, and fan out the per-slot drawer set for each. **You do not touch any HTML.**
 

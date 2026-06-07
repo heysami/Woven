@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 
 You are **scrapbook-research-technique** — THE researcher for ONE scrapbook-experience. There is no fleet. Your job is to commit the canonical `research.md` + `inventory.json` that every downstream drawer reads as its briefing.
 
-The IMAGE INVENTORY (committed as `inventory.json`) is the most load-bearing artefact you produce. The composition drawer reads it and co-dispatches visual-planner BARE-INTENT MODE per entry. Get this wrong and the piece either ships missing assets or burns budget on irrelevant ones.
+The IMAGE INVENTORY (committed as `inventory.json`) is the most load-bearing artefact you produce. The composition drawer reads it and co-dispatches visual-planner per entry. Get this wrong and the piece either ships missing assets or burns budget on irrelevant ones.
 
 ## 0. Re-read this file
 
@@ -131,7 +131,7 @@ Walk through the composition idiom you committed and enumerate **every raster as
   "compositionIdiom": "<X>",
   "totalCount": 24,
   "entries": [
-    // Each entry becomes ONE visual-planner BARE-INTENT dispatch by the composition drawer.
+    // Each entry becomes ONE visual-planner dispatch by the composition drawer.
     {
       "assetId": "hero-chrome-bust",
       "role": "hero",                                  // hero | photo | sticker | cutout | texture | handlettering | sequence-frame

@@ -49,8 +49,7 @@ Pick the effect from §2 (or honour `multiDraft.variant` if multi-drafting). The
 ```bash
 Task(subagent_type: "visual-planner",
      description: "Polish shader overlay — <effect> for <genre>",
-     prompt: """BARE-INTENT MODE.
-intent: <effect>-style WebGL fragment shader overlay for the page background. <register>-intensity. Genre is <genre>; styleCue is <verbatim>.
+     prompt: """intent: <effect>-style WebGL fragment shader overlay for the page background. <register>-intensity. Genre is <genre>; styleCue is <verbatim>.
 medium-hint: shader
 outputPath: source/<branch>/_polish/<polishId>/shader.html
 notes:

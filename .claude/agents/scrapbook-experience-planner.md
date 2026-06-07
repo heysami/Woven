@@ -1,6 +1,6 @@
 ---
 name: scrapbook-experience-planner
-description: Research + scaffold subagent for ONE scrapbook-style raster-heavy interactive piece (one sbId). The sixth planner sibling — for pieces where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it. Vaporwave, internetcore, cottagecore, dreamcore, weirdcore, Y2K/Geocities, lo-fi/grainy, scrapbook/collage, zine/mixtape-cover, mood-board, fanzine, lookbook, Pinterest/Tumblr-grade composition. Heavy use of generated raster: photography, illustrated subjects with transparency, scanned textures, hand-drawn elements, handcrafted (raster) typography, looping PNG sequences as a transparent-gif substitute. Dispatches the single tech-stack researcher (scrapbook-research-technique) to commit a core aesthetic + composition idiom + IMAGE INVENTORY + motion strategy + interaction primitive, scaffolds the multi-trio node graph (research / composition / typography / motion / interactions / runtime / container) with full per-drawer envelopes baked into each node's `text`, then RETURNS a hand-off envelope to the caller (the workflow-mode chat that dispatched you) which drives the build phase. Composition drawer co-dispatches visual-planner BARE-INTENT MODE per inventory entry — this is the most visual-planner-heavy of the six planners. Does NOT itself dispatch drawers or run lens loops. Cold-isolated from sibling sbIds.
+description: Research + scaffold subagent for ONE scrapbook-style raster-heavy interactive piece (one sbId). The sixth planner sibling — for pieces where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it. Vaporwave, internetcore, cottagecore, dreamcore, weirdcore, Y2K/Geocities, lo-fi/grainy, scrapbook/collage, zine/mixtape-cover, mood-board, fanzine, lookbook, Pinterest/Tumblr-grade composition. Heavy use of generated raster: photography, illustrated subjects with transparency, scanned textures, hand-drawn elements, handcrafted (raster) typography, looping PNG sequences as a transparent-gif substitute. Dispatches the single tech-stack researcher (scrapbook-research-technique) to commit a core aesthetic + composition idiom + IMAGE INVENTORY + motion strategy + interaction primitive, scaffolds the multi-trio node graph (research / composition / typography / motion / interactions / runtime / container) with full per-drawer envelopes baked into each node's `text`, then RETURNS a hand-off envelope to the caller (the workflow-mode chat that dispatched you) which drives the build phase. Composition drawer co-dispatches visual-planner per inventory entry — this is the most visual-planner-heavy of the six planners. Does NOT itself dispatch drawers or run lens loops. Cold-isolated from sibling sbIds.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 ---
 
@@ -155,7 +155,7 @@ Same rule as `simulation-planner.md §4`. Stranded-nodes bug fix: scaffold one d
 Build order (each step = "scaffold + dispatch + wait for done" before moving to the next):
 
 1. **`sb_research_<sbId>`** — done in §2.
-2. **`sb_composition_<sbId>`** — §8.7 crux. Multi-draft on the **composition-density axis** (sparse / medium / dense) WHEN research recommends. The composition drawer reads the IMAGE INVENTORY and **co-dispatches visual-planner BARE-INTENT MODE per inventory entry**. This step is the LONG one — N visual-planner dispatches happen here. Wait for the composition drawer's overall `done` (which includes all sub-visual-planner returns).
+2. **`sb_composition_<sbId>`** — §8.7 crux. Multi-draft on the **composition-density axis** (sparse / medium / dense) WHEN research recommends. The composition drawer reads the IMAGE INVENTORY and **co-dispatches visual-planner per inventory entry**. This step is the LONG one — N visual-planner dispatches happen here. Wait for the composition drawer's overall `done` (which includes all sub-visual-planner returns).
 3. **`sb_typography_<sbId>`** — handcrafted type strategy. Picks web fonts + commissions raster headlines + hand-lettered pieces via visual-planner sub-dispatch. Wait for `done`.
 4. **`sb_motion_<sbId>`** — §8.7 crux. Multi-draft on the **motion-register axis** (still-with-twitches / drifting-ambient / aggressive-vaporwave) WHEN research recommends. PNG-sequence loop assembly + CSS drift animations + transform pulses. May co-dispatch visual-planner for PNG-sequence frames. Wait for `done`.
 5. **`sb_interactions_<sbId>`** — hover-tilt / scroll-reveal / drag-to-rearrange / click-to-flip / multi-touch. Wait for `done`.
@@ -240,7 +240,7 @@ After §4's scaffold commit, your work is done. Return a hand-off envelope to yo
 
 In dependency order, the caller dispatches each scaffolded drawer via `/__workflow/node/<id>/run`, then runs the lens trio per lens-gated component using the §8.3 loop-until-bar (cap 5 outer iterations × 3 lens dispatches per iteration). Drawer dispatch order is fixed: composition → typography → motion → interactions → runtime.
 
-The composition drawer is the cost-heavy one — it co-dispatches visual-planner BARE-INTENT MODE per inventory entry, in parallel where possible. Each sub-dispatch produces one raster asset at `source/<branch>/scrapbooks/<sbId>/assets/<assetId>.png` (or `.webp`). The composition drawer waits for each, then commits the assembled HTML/CSS layout.
+The composition drawer is the cost-heavy one — it co-dispatches visual-planner per inventory entry, in parallel where possible. Each sub-dispatch produces one raster asset at `source/<branch>/scrapbooks/<sbId>/assets/<assetId>.png` (or `.webp`). The composition drawer waits for each, then commits the assembled HTML/CSS layout.
 
 ### 5.1.0 Build harness pseudocode (caller reads this)
 
@@ -310,7 +310,7 @@ Return as your final text:
   },
   "researchPath": "source/{branch}/scrapbooks/{sbId}/research.md",
   "imageInventoryPath": "source/{branch}/scrapbooks/{sbId}/inventory.json",
-  "expectedSubDispatches": <N visual-planner BARE-INTENT calls the composition drawer will fire>,
+  "expectedSubDispatches": <N visual-planner calls the composition drawer will fire>,
   "nextStep": "Caller dispatches scaffold.drawerNodes[] in order. Composition drawer is the cost-heavy one — it fires N visual-planner sub-dispatches in parallel. Caller runs the §8.3 lens trio per lens-gated component and commits scaffold.containerNode when every lens-gated drawer's lensVerdict == pass."
 }
 ```

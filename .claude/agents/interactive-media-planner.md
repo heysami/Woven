@@ -18,7 +18,7 @@ Inspect `im_*_` wildcards, lens wildcards, `cp_im_*_pick_` wildcards, `cp_im_gat
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 
-## 1. Mode A — HTML enumeration (same shape as simulation-planner.md §1.1)
+## 1. — HTML enumeration (same shape as simulation-planner.md §1.1)
 
 The agent in chat has written `source/<branch>/*.html` with one or more `<iframe class="im-mount" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" allow="microphone; camera; gyroscope; accelerometer; midi" ...>` slots. Your job: walk every HTML page under `source/<branch>/`, find every im-mount iframe, extract the `imId` and per-slot attributes, and fan out the per-slot drawer set for each. **You do not touch any HTML.**
 

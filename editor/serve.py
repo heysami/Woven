@@ -7968,7 +7968,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             medium = "unspecified"
         if medium == "unspecified":
             print(f"[asset-gen audit] {output!r}: medium NOT classified by visual-planner. "
-                  f"Caller should dispatch visual-planner (BARE-INTENT MODE) first.",
+                  f"Caller should dispatch visual-planner () first.",
                   flush=True)
         # Append an audit entry so we can grep call sites later.
         # v3.1 — bounded rotation: when the file exceeds 1 MB, rename it to

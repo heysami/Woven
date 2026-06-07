@@ -175,12 +175,12 @@ Boot the world with the peak entity count from research's performance budget. `p
 
 ## 4. Collaboration with visual-planner
 
-If the world needs hero plates / sprite sheets / texture atlases (always for `2d-side` and `2d-topdown`; often for `3d-environment`), dispatch `visual-planner` BARE-INTENT MODE per asset:
+If the world needs hero plates / sprite sheets / texture atlases (always for `2d-side` and `2d-topdown`; often for `3d-environment`), dispatch `visual-planner` per asset:
 
 ```
 Task(subagent_type: "visual-planner",
      description: "Sprite sheet for game:<gameId>",
-     prompt: "BARE-INTENT MODE. <one-line intent inheriting styleCue verbatim>. Output: source/<branch>/games/<gameId>/plates/<assetId>.png")
+     prompt: "<one-line intent inheriting styleCue verbatim>. Output: source/<branch>/games/<gameId>/plates/<assetId>.png")
 ```
 
 Wait for each. If the dispatch fails, ship the world with procedural fallbacks and note in `// Known issues:`.

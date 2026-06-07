@@ -51,8 +51,8 @@ Pure declarative metadata. Schema:
     { "mode": "chat", "title": "Path A — \"build an app\" with this slot",
       "rule":       "Top-level Claude scaffolds the app shell first (with the planner's placeholder), then dispatches the planner per slot.",
       "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>' Path A" },
-    { "mode": "chat", "title": "Path B — Bare intent",
-      "rule":       "User wants the artefact itself; Claude dispatches the planner directly in BARE-INTENT MODE.",
+    { "mode": "chat", "title": "Path B — ",
+      "rule":       "User wants the artefact itself; Claude dispatches the planner directly in ",
       "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>' Path B" }
   ],
 
@@ -82,7 +82,7 @@ Pure declarative metadata. Schema:
 
 ### 3. The capabilities-preamble hard-rule (if chat-triggerable)
 
-If your planner should be auto-dispatched from chat (Bare Intent), add a
+If your planner should be auto-dispatched from chat (), add a
 hard-rule section to `editor/kinds/capabilities.py:capabilities_preamble()`
 matching the existing pattern:
 
@@ -90,12 +90,10 @@ matching the existing pattern:
 ## <Family> surfaces: dispatch <id>-planner FIRST (v<X> hard rule)
 
 When the user's message mentions <triggers>... your FIRST action is a Task
-call to `<id>-planner` in BARE-INTENT MODE.
-
-\`\`\`
+call to `<id>-planner` in \`\`\`
 Task(subagent_type: "<id>-planner",
      description: "...",
-     prompt: "BARE-INTENT MODE. ...")
+     prompt: "...")
 \`\`\`
 
 ### Do NOT do any of these:
@@ -104,7 +102,7 @@ Task(subagent_type: "<id>-planner",
 ### Decision rule:
 | User said… | Your first move |
 |---|---|
-| "..." | `Task(<id>-planner, BARE-INTENT MODE)` |
+| "..." | `Task(<id>-planner, …)` |
 ```
 
 The section header **must** start with exactly the phrase used in the

@@ -1,6 +1,6 @@
 ---
 name: scrapbook-typography-author
-description: Author the typography strategy for ONE scrapbook-experience — web font choices (commits Google Fonts / adobe fonts link) + commissions raster handlettering pieces via visual-planner BARE-INTENT MODE + hand-lettered marker annotations + handwritten captions. Writes typography.css + dispatches visual-planner per handlettering entry from inventory. Lens-gated on aesthetic (type tone matches coreAesthetic verbatim) + craft (web fonts load without FOIT, raster headlines have correct alt text). Concept skips per its rules.
+description: Author the typography strategy for ONE scrapbook-experience — web font choices (commits Google Fonts / adobe fonts link) + commissions raster handlettering pieces via visual-planner + hand-lettered marker annotations + handwritten captions. Writes typography.css + dispatches visual-planner per handlettering entry from inventory. Lens-gated on aesthetic (type tone matches coreAesthetic verbatim) + craft (web fonts load without FOIT, raster headlines have correct alt text). Concept skips per its rules.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Task, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_screenshot
 ---
 
@@ -67,13 +67,12 @@ Body copy, captions, link text. ALWAYS web font (raster microtype is unreadable 
 
 ### 2.3 — Display (raster handlettering)
 
-For every `inventoryJSON.entries[]` entry with `role: "handlettering"`, the composition drawer should already have dispatched visual-planner. Verify each file exists at `entries[i].outputPath`. If any are missing (composition drawer skipped), dispatch visual-planner BARE-INTENT MODE NOW for the gap:
+For every `inventoryJSON.entries[]` entry with `role: "handlettering"`, the composition drawer should already have dispatched visual-planner. Verify each file exists at `entries[i].outputPath`. If any are missing (composition drawer skipped), dispatch visual-planner NOW for the gap:
 
 ```bash
 Task(subagent_type: "visual-planner",
      description: "Handlettering: <word>",
-     prompt: """BARE-INTENT MODE.
-intent: hand-lettered '<word>' in <coreAesthetic> style, <styleCue verbatim>
+     prompt: """intent: hand-lettered '<word>' in <coreAesthetic> style, <styleCue verbatim>
 medium-hint: raster-foreground
 transparency: rembg
 aspect: <from inventory entry>

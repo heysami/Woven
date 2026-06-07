@@ -10,15 +10,9 @@
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A \u2014 \"build an app with this piece\"",
-      "rule": "User wants the interactive piece embedded in an app. Top-level Claude scaffolds the app shell (with im-placeholder slot + allow= attribute), then dispatches interactive-media-planner per slot (Mode A). After hand-off, Claude drives the build per simulation-planner.md \u00a75.1.0 (same shape + \u00a78.5 coherence) and embeds the runtime.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-planner' Path A"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B \u2014 Bare intent",
-      "rule": "User wants the piece itself (\"voice-reactive shader\", \"TouchDesigner-style\"). Top-level Claude dispatches interactive-media-planner directly in BARE-INTENT MODE.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-planner' Path B"
+      "title": "build an app with this piece",
+      "rule": "User wants the interactive piece embedded in an app. Top-level Claude scaffolds the app shell (with im-placeholder slot + allow= attribute), then dispatches interactive-media-planner per slot (). After hand-off, Claude drives the build per simulation-planner.md \u00a75.1.0 (same shape + \u00a78.5 coherence) and embeds the runtime.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-planner'"
     }
   ],
   "dispatches": {

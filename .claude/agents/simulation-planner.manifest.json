@@ -10,15 +10,9 @@
   "triggers": [
     {
       "mode": "chat",
-      "title": "Path A \u2014 \"build an app\"",
-      "rule": "User says \"build a web app / dashboard / page that monitors X system\" with app-framing words. Top-level Claude scaffolds the app shell first (with sim-placeholder slot), then dispatches simulation-planner per slot (Mode A envelope with slotFile/slotLine). After the planner returns the hand-off envelope, top-level Claude drives the build phase per simulation-planner.md \u00a75.1.0 and embeds the runtime per \u00a75.1.1.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-planner' Path A"
-    },
-    {
-      "mode": "chat",
-      "title": "Path B \u2014 Bare intent",
-      "rule": "User says \"model X for me / simulate Y / show me how Z works\" with no app framing. Top-level Claude dispatches simulation-planner directly in BARE-INTENT MODE. Runtime IS the artefact; no app shell.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-planner' Path B"
+      "title": "build an app",
+      "rule": "User says \"build a web app / dashboard / page that monitors X system\" with app-framing words. Top-level Claude scaffolds the app shell first (with sim-placeholder slot), then dispatches simulation-planner per slot . After the planner returns the hand-off envelope, top-level Claude drives the build phase per simulation-planner.md \u00a75.1.0 and embeds the runtime per \u00a75.1.1.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-planner'"
     }
   ],
   "dispatches": {
