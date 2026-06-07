@@ -479,19 +479,26 @@ If the brief is about LOOKING AT or MOVING THROUGH something stateful, positione
 - "the world feels alive" / "things responding to each other in real time"
 - "real Singapore map with X" / "real-time fleet on a map" / "live feed of points on a region"
 
-### THE STRUCTURE (same shape as visual-planner — no exceptions, no alternate path)
+### THE STRUCTURE — exactly visual-planner's shape
 
-The artefact is **always an HTML app**. The sim is a slot inside it. Same as visual-planner: an image is a slot inside an HTML page, never the artefact itself. Three steps, every time:
+**You write the HTML. The planner writes the slot's content. Don't mix them.**
 
-1. **Scaffold the app shell first.** Write `source/<branch>/index.html` (and any sibling files the app needs — `styles.css`, `app.js`, layout copy). Place a `<div class="sim-placeholder" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" style="aspect-ratio: <W>/<H>"></div>` where the sim belongs. The shell can be elaborate (header + nav + side panels around the sim) or minimal (just a full-bleed `<body>` containing the placeholder) — either way it's an HTML page with a slot.
-2. **Dispatch `simulation-planner` for the slot.** Hand it `slotFile=source/<branch>/index.html` + `slotLine` + `simId` + the user's intent. The planner picks the paradigm, writes `research.md`, scaffolds the drawer trio, returns a hand-off envelope. Then you drive the build per simulation-planner.md §5.1.0.
-3. **Embed the runtime into the slot.** After the build phase finishes, replace the placeholder div with an iframe pointing at `simulations/<simId>/runtime.html` (the simulation-planner playbook §5.1.1 carries the exact iframe HTML). Now `source/<branch>/index.html` is what the user opens — it's the app — and the sim lives inside it.
+Visual-planner doesn't write HTML. When the agent in chat wants an image on a page, the agent writes `<img src="images/hero.png">` into the HTML. Then the agent dispatches visual-planner. visual-planner writes the *bytes* at `source/<branch>/images/hero.png`. The `<img>` tag the agent already wrote now resolves. The planner never touches the HTML.
+
+Same here. When you want a sim on a page, **you write the HTML and the iframe slot yourself** — including the `<iframe src="simulations/<simId>/runtime.html">` pointing at the path the planner will produce. Then you dispatch simulation-planner. The planner writes `source/<branch>/simulations/<simId>/runtime.html` and its sibling files. The `<iframe>` tag you already wrote now resolves. **The planner does not touch your HTML.**
+
+Two distinct jobs:
+
+| Your job (agent in chat) | Planner's job |
+|---|---|
+| Write `source/<branch>/index.html` (and any styles / app.js / sibling pages the app needs). Place a `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="width:100%; height:100%; border:0;" title="<simId>" loading="lazy"></iframe>` exactly where the sim belongs. The chrome around it (header, nav, side panels, copy) is up to you and your sense for what the app should look like. | Pick paradigm + render strategy. Write `source/<branch>/simulations/<simId>/research.md`. Build entities / scene / loop / controls / overlay / runtime files. Make the runtime.html at the path the agent's `<iframe src>` already references. Don't touch index.html. |
+
+Dispatch template — note: no `slotLine`, no `sim-placeholder`, no embed step. The agent has already wired the iframe in index.html to the path the planner will produce. The planner just fills the path.
 
 ```
-# Task call template (use this verbatim, fill in the angle-bracket bits)
 Task(subagent_type: "simulation-planner",
-     description: "Plan + build sim for slot <simId>",
-     prompt: "slotFile=source/<branch>/index.html, slotLine=<line of placeholder div>, simId=<simId>, branch=<branch>, projectRoot=<absolute project root>. The placeholder is <div class='sim-placeholder' data-sim='<simId>' data-paradigm-hint='<hint>' data-entities='<scale>' style='aspect-ratio: <W>/<H>'>. User's intent: <verbatim>. successFeel: <ask user if vague>. Pick paradigm + render strategy + tick rate + interaction primitive. Write research.md. Scaffold the drawer trio + container. Return hand-off envelope.")
+     description: "Build simulation <simId>",
+     prompt: "simId=<simId>, branch=<branch>, projectRoot=<absolute path to project root>. Output root: source/<branch>/simulations/<simId>/. The agent's index.html already has <iframe src='simulations/<simId>/runtime.html'> pointing at the canonical runtime.html path you must produce. User's intent (verbatim): <intent>. successFeel: <ask user if vague>. Hard checks (capabilities.py): <which trigger family hit, e.g. real-world map naming Singapore → MapLibre/Mapbox/etc, 2D vs 3D per verticality>. Pick paradigm + render strategy + tick rate + interaction primitive. Write research.md. Scaffold + build drawer trio. Return hand-off envelope.")
 ```
 
 ### Do NOT do any of these:
@@ -526,18 +533,29 @@ The visual-planner pattern is: **app exists, planner fills a slot.** Same here. 
 When the user's message implies **a piece they DRIVE with their body or device** — voice-reactive, camera-driven, music-visualising, gestural, TouchDesigner-style, generative shader they poke, anything where input from mic / camera / mouse / gyro / MIDI / gamepad maps to real-time generative output — your **FIRST action is a Task call to `interactive-media-planner`**. Not your second action. Not after asking. Not after planning.
 
 ```
-### THE STRUCTURE (same shape as visual-planner — no exceptions)
+### THE STRUCTURE — exactly visual-planner's shape
 
-Same three-step structure as the simulation block above. The artefact is **always an HTML app**; the interactive piece is a slot inside it.
+Same separation as the simulation block above. **You write the HTML. The planner writes the slot's content. Don't mix them.**
 
-1. Scaffold `source/<branch>/index.html` (and siblings) with an `<div class="im-placeholder" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" style="aspect-ratio: <W>/<H>"></div>` at the slot.
-2. Dispatch `interactive-media-planner` with `slotFile` + `slotLine` + `imId` + the user's intent. The planner picks inputs / outputs / mapping style / permission flow / glue libraries, writes `research.md`, scaffolds the drawer trio + container.
-3. After the build phase finishes, replace the placeholder with an `<iframe>` pointing at `interactives/<imId>/runtime.html` (im-runtime-composer playbook §3.x carries the exact iframe — note the `allow="microphone; camera; gyroscope; accelerometer; midi"` attribute, mandatory for permission requests to reach the iframe's APIs).
+You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). Where the interactive piece belongs, you write the iframe slot yourself — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs:
+
+```html
+<iframe class="im-mount"
+        data-im="<imId>"
+        data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>"
+        src="interactives/<imId>/runtime.html"
+        style="width:100%; height:100%; border:0;"
+        allow="microphone; camera; gyroscope; accelerometer; midi"
+        title="<imId>"
+        loading="lazy"></iframe>
+```
+
+Then dispatch the planner. It writes `source/<branch>/interactives/<imId>/runtime.html` + drawer trio at the canonical path your `src` already points at. **The planner does not touch your HTML.**
 
 ```
 Task(subagent_type: "interactive-media-planner",
-     description: "Plan + build interactive piece for slot <imId>",
-     prompt: "slotFile=source/<branch>/index.html, slotLine=<line of placeholder div>, imId=<imId>, branch=<branch>, projectRoot=<absolute>. User's intent: <verbatim>. successFeel: <ask if vague>. Pick inputs + outputs + mapping style + permission flow + glue libraries. Scaffold input / mapping / output / runtime drawer trio + container. Permission gates surfaced to canvas BEFORE Run. Return hand-off envelope.")
+     description: "Build interactive piece <imId>",
+     prompt: "imId=<imId>, branch=<branch>, projectRoot=<absolute>. Output root: source/<branch>/interactives/<imId>/. The agent's index.html already has <iframe src='interactives/<imId>/runtime.html' allow='microphone; camera; gyroscope; accelerometer; midi'> pointing at the canonical runtime path you must produce. User's intent: <verbatim>. successFeel: <ask if vague>. Pick inputs + outputs + mapping style + permission flow + glue libraries. Scaffold + build drawer trio. Permission gates surfaced to canvas BEFORE Run. Return hand-off envelope.")
 ```
 
 ### Do NOT do any of these:
@@ -575,18 +593,27 @@ The narrative-experience family is the POETIC cousin of simulation: same pipelin
 
 When the user's message implies **a piece someone walks into and leaves changed** — a museum microsite, an exhibition extension, a memorial, a character portrait at depth, an editorial scrollytelling piece, a walkable 3D reconstruction of a room or garden or studio, anything where the user's role is *witness* and the felt-state is the point — your **FIRST action is a Task call to `narrative-experience-planner`**.
 
-### THE STRUCTURE (same shape as the others)
+### THE STRUCTURE — exactly visual-planner's shape
 
-Same three-step structure. The artefact is **always an HTML app**; the immersive piece is a slot inside it.
+Same separation. **You write the HTML. The planner writes the slot's content. Don't mix them.**
 
-1. Scaffold `source/<branch>/index.html` (and siblings) with a `<div class="nx-placeholder" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" style="aspect-ratio: <W>/<H>"></div>` at the slot. For most narrative pieces the shell is minimal — a full-bleed `<body>` with the placeholder filling the viewport — but it's still HTML at index.html.
-2. Dispatch `narrative-experience-planner` with `slotFile` + `slotLine` + `nxId` + the user's intent. The planner picks paradigm + aesthetic + emotional + pacing registers, writes `research.md`, scaffolds the drawer trio + container.
-3. After the build phase finishes, replace the placeholder with an `<iframe>` pointing at `narratives/<nxId>/runtime.html`.
+You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). Most narrative pieces want a minimal shell — full-bleed body with the iframe filling the viewport — but you choose the chrome. Place:
+
+```html
+<iframe class="nx-mount"
+        data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>"
+        src="narratives/<nxId>/runtime.html"
+        style="width:100%; height:100%; border:0;"
+        title="<nxId>"
+        loading="lazy"></iframe>
+```
+
+Then dispatch the planner. It writes `source/<branch>/narratives/<nxId>/runtime.html` + drawer trio at the canonical path. **The planner does not touch your HTML.**
 
 ```
 Task(subagent_type: "narrative-experience-planner",
-     description: "Plan + build immersive narrative piece for slot <nxId>",
-     prompt: "slotFile=source/<branch>/index.html, slotLine=<line of placeholder div>, nxId=<nxId>, branch=<branch>, projectRoot=<absolute>. User's intent: <verbatim>. Ask user for concrete felt-state successFeel (NOT 'user understands X' — a feeling: 'they leave quieter', 'the room remembers them'). Pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Scaffold spine / scene / ambient / reveal / overlay / runtime drawer trio + container. Return hand-off envelope.")
+     description: "Build immersive narrative <nxId>",
+     prompt: "nxId=<nxId>, branch=<branch>, projectRoot=<absolute>. Output root: source/<branch>/narratives/<nxId>/. The agent's index.html already has <iframe src='narratives/<nxId>/runtime.html'> pointing at the canonical runtime path you must produce. User's intent: <verbatim>. Ask user for concrete felt-state successFeel (NOT 'user understands X' — a feeling: 'they leave quieter', 'the room remembers them'). Pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Scaffold + build drawer trio. Return hand-off envelope.")
 ```
 
 ### Do NOT do any of these:

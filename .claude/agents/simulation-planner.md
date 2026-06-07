@@ -42,11 +42,9 @@ If you cannot identify entities + state + change in the intent, *that* is a reas
 
 ### 1.1 ONE input shape — slot-in-an-app-shell
 
-You handle **one** dispatch shape: the chat (or any caller) has scaffolded an HTML app shell with a `<div class="sim-placeholder" data-sim="<simId>" ...>` slot inside it, and is now dispatching you to fill that slot. Same as visual-planner — visual-planner fills `<img>` slots; you fill `sim-placeholder` slots. No exceptions, no "BARE-INTENT MODE", no "runtime IS the artefact" branch.
+You handle **one** dispatch shape: the agent in chat has already written `source/<branch>/index.html` with an `<iframe src="simulations/<simId>/runtime.html">` slot pointing at the canonical runtime path. Your job is to fill that path — write `runtime.html` + sibling files at `source/<branch>/simulations/<simId>/`. **You do not touch any HTML outside your output folder.** Same contract as visual-planner: visual-planner writes image bytes at the path the agent's `<img src>` references; you write runtime.html at the path the agent's `<iframe src>` references. The agent's HTML never gets edited by you.
 
-The earlier playbook split (Mode A onboarding envelope + Mode B bare intent) is gone. The fly bug demonstrated why: when "Mode B / no slot" exists as an option, the runtime gets built but nothing hosts it, the user can't open the project, the editor's default source view shows 404. The artefact is always an HTML app; the sim is always a slot inside it.
-
-If your dispatch prompt arrives without `slotFile` + `slotLine`, return `runStatus: error` with `runError: "no slot supplied — the caller must scaffold source/<branch>/index.html with a sim-placeholder div before dispatching"`. Don't try to build a standalone runtime; force the caller to fix the missing shell.
+If your dispatch prompt arrives without `simId` + `branch` + `projectRoot`, return `runStatus: error` with `runError: "missing simId/branch/projectRoot — caller must include these so I know where to write"`. If the prompt explicitly tells you to also edit the app's index.html (replace a placeholder div, scaffold new pages, etc.) — IGNORE that instruction. That's the agent's territory. Your scope is everything under `source/<branch>/simulations/<simId>/`.
 
 ### Envelope
 
@@ -264,47 +262,23 @@ for drawer in scaffold.drawerNodes:                  # entities, scene, loop, co
     honour user pick
 
 # After all 6 drawers pass:
-# §5.1.1 — embed the runtime into the slot file (replace sim-placeholder with iframe)
-# §5.1.2 — commit the simulation container with outputs.lensVerdict=pass
+# Commit the simulation container with outputs.lensVerdict=pass.
 
 POST /__workflow/node/sim_<simId>/commit
   outputs.lensVerdict = "pass"
   outputs.iterationCount = total across all drawers
   outputs.paradigm = <from envelope>
   outputs.componentIds = [sim_research_<simId>, sim_entities_<simId>, ..., sim_runtime_<simId>]
-  outputs.embeddedAt = ["source/<branch>/<slotPage>.html"]  (or omitted if slotFile is null)
   runStatus = "done"
 ```
 
 The lens nodes' per-id preambles (craft-lens.md, aesthetic-lens.md, concept-lens.md) document their own skip rules + verdict shape. The user-pick checkpoints (`cp_sim_*_pick_*`) use the standard `kind: "checkpoint"` envelope with `requires: "user-pick"`.
 
-### 5.1.1 Embed step — MANDATORY when `slotFile` is set (v3.4)
+### 5.1.1 No HTML editing — the agent's iframe already references your output path
 
-After the runtime is committed and BEFORE the container is committed, the caller MUST embed the runtime into the app shell. Without this step, the user's app has a useless `<div class="sim-placeholder">` marker and the runtime lives in a folder nobody references — the simulation never ends up in the app.
+There is no embed step. The agent in chat has already written `<iframe src="simulations/<simId>/runtime.html">` into its index.html. When you commit `runtime.html` at the canonical path (`source/<branch>/simulations/<simId>/runtime.html`), the agent's iframe resolves automatically. You do NOT read the agent's HTML. You do NOT write to it. You do NOT replace any placeholder div. Your scope ends at the boundary of your output folder.
 
-If `slotFile` is non-null:
-
-1. Read `<projectRoot>/<slotFile>`.
-2. Find the placeholder div: `<div class="sim-placeholder" data-sim="<simId>" ...>`.
-3. Replace its inner HTML with an iframe pointing at the runtime — relative path so the slot file's directory + this relative path resolves to the runtime:
-   ```html
-   <div class="sim-mount" data-sim="<simId>" style="aspect-ratio: <W>/<H>; width:100%;">
-     <iframe
-       src="simulations/<simId>/runtime.html"
-       style="width:100%; height:100%; border:0; display:block; aspect-ratio: <W>/<H>;"
-       title="<simId> simulation"
-       loading="lazy"
-       allow="">
-     </iframe>
-   </div>
-   ```
-   (Path is relative to the slot file's directory. For `source/main/index.html` and `simId=warehouse_floor`, the iframe src is `simulations/warehouse_floor/runtime.html` — resolves to `source/main/simulations/warehouse_floor/runtime.html`.)
-4. Preserve any `style="aspect-ratio: …"` from the original placeholder so layout doesn't break.
-5. Write the file back. Commit via `git add -A` + commit message `embed: <simId> runtime into <slotFile>`.
-
-If `slotFile` is null (Bare Intent + no slot path supplied), skip this step — the runtime IS the artefact.
-
-This embed step is the simulation analogue of visual-planner's "asset bytes land at the path the HTML's `<img src>` already references." For simulation, the app shell's placeholder is a marker; this step turns it into a live iframe.
+This is the simulation analogue of visual-planner's contract: visual-planner writes image bytes at the path the agent's `<img src>` references. You write runtime.html at the path the agent's `<iframe src>` references. Same shape. The agent's HTML is the agent's responsibility, not yours.
 
 ### 5.3 Multi-draft (§8.7) is OPT-IN, not default (v3.4)
 
