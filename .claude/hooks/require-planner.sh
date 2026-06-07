@@ -55,6 +55,21 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     esac
 fi
 
+# ── Edits to existing files always pass ─────────────────────────────────
+# Planner gating is for SCAFFOLDING — creating the initial sim/im/nx file
+# tree, where the planner enforces structure, schema, and lens trios. Once
+# those files exist, the editor chat is allowed to apply small targeted
+# fixes (a keyboard-focus bug, a CSS tweak, a typo) without re-dispatching
+# the planner. That's how the visual-planner works too — once an asset is
+# committed, the user can hand-tweak the file.
+#
+# This check fires AFTER the subagent exemption (so a planner subagent
+# creating its initial files still passes) and BEFORE the territory
+# resolution (so we don't bother classifying writes that pass for this
+# reason). If the file exists on disk, this is an Edit/MultiEdit on
+# existing content, not a creation — let it through.
+if [ -f "$FILE_PATH" ]; then exit 0; fi
+
 # ── Decide which planner this write belongs to (if any) ─────────────────
 REQUIRED=""
 KIND=""
