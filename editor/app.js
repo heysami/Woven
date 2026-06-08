@@ -24662,6 +24662,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onClose=${() => setCodePanelNodeId(null)}
               />`;
             })()}
+            ${pickedElement && pickedElement.nodeId && (() => {
+              // v3.4.x — Property inspector dock. Mounts when an element
+              // is picked inside any prototype / asset iframe. Sits to
+              // the right of that owning node — same docking pattern as
+              // the code panel. Reuses zoom-mode's PickedInspectorBody
+              // so future updates land in both places.
+              const host = (data.nodes || []).find(n => n.id === pickedElement.nodeId);
+              if (!host) return null;
+              return html`<${WorkflowPickedInspectorDock}
+                key=${"inspector-" + host.id}
+                node=${host}
+                zoom=${zoom}
+                pickedElement=${pickedElement}
+                pickerIframeRef=${pickerIframeRef}
+                pickedDomRef=${pickedDomRef}
+                onSaveIframeHtml=${_saveIframeHtml}
+                onMoveElement=${reorderPickedElement}
+                isReactManaged=${_isPickedReactManaged}
+                onClose=${() => { setPickedElement(null); }}
+              />`;
+            })()}
             ${(data.nodes || []).filter(n => n.kind === "agent").map(n => {
               // Derive per-port wired content from upstream/downstream nodes.
               // Multiple connections to `input` are allowed — each upstream
@@ -26594,13 +26615,25 @@ function ZoomSlotPicker({ rect, onDelete, onDuplicate, onReplace, onSide, onDril
   `;
 }
 
-/* ─── Zoom Inspector panel ──────────────────────────────────────────────
-   Figma-style right panel — appears when Select tool has picked an
-   element. Sizing (W/H Fill/Hug/Fix + px input), Reorder (↑←→↓ pad,
-   axes filtered by parent's flex direction or grid), Align in parent
-   (justifySelf + alignSelf as L/C/R · T/M/B). Identical contract to
-   the editor canvas's InspectorPanel. */
-function ZoomInspectorPanel({ picked, styles, onStyle, onMove }) {
+/* ─── Picked-element inspector body ─────────────────────────────────────
+   Figma-style right-panel content — Sizing (W/H Fill/Hug/Fix + px input),
+   Reorder (↑←→↓ pad, axes filtered by parent's flex direction or grid),
+   Align in parent (justifySelf + alignSelf as L/C/R · T/M/B).
+   Identical contract to the editor canvas's InspectorPanel.
+
+   v3.4.x — Extracted from ZoomInspectorPanel so the SAME body can render
+   inside zoom-mode's fixed-position aside (ZoomInspectorPanel below) AND
+   inside workflow-mode's docked panel (WorkflowPickedInspectorDock — sits
+   to the right of the host node like the code panel). The user asked
+   that both modes share content so updates propagate: this is that
+   shared content. Wrapper-specific positioning is the only difference.
+
+   Class names keep the legacy `zoom-inspector-*` prefix (instead of
+   renaming to something neutral) because they're referenced from ~18 CSS
+   rules in styles.css; renaming would be a 49-site rewrite for purely
+   semantic cleanup. Both wrappers include this body and inherit those
+   styles unchanged. */
+function PickedInspectorBody({ picked, styles, onStyle, onMove }) {
   if (!picked) return null;
   const lay = picked.parent && picked.parent.layout;
   const isFlex = lay && (lay.display === "flex" || lay.display === "inline-flex");
@@ -26635,77 +26668,88 @@ function ZoomInspectorPanel({ picked, styles, onStyle, onMove }) {
       `)}
     </div>
   `;
-  return html`
-    <aside className="zoom-inspector-panel" onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()}>
+  return html`<${React.Fragment}>
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Element</div>
+      <div className="zoom-inspector-target">${picked.label}</div>
+      <div className="zoom-inspector-context">↳ ${describeParent(picked.parent)}</div>
+    </div>
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Sizing</div>
+      <div className="zoom-inspector-row">
+        <span className="zoom-inspector-axis">W</span>
+        <${Seg} value=${widthMode} onChange=${(v) => setSize("w", v, widthFixed)} options=${[
+          { v: "fill",  l: "Fill" },
+          { v: "hug",   l: "Hug"  },
+          { v: "fixed", l: "Fix"  },
+        ]}/>
+        ${widthMode === "fixed" && html`
+          <input className="zoom-inspector-num" type="number" min="0" value=${widthFixed}
+                 onChange=${e => setSize("w", "fixed", +e.target.value || 0)}/>
+        `}
+      </div>
+      <div className="zoom-inspector-row">
+        <span className="zoom-inspector-axis">H</span>
+        <${Seg} value=${heightMode} onChange=${(v) => setSize("h", v, heightFixed)} options=${[
+          { v: "fill",  l: "Fill" },
+          { v: "hug",   l: "Hug"  },
+          { v: "fixed", l: "Fix"  },
+        ]}/>
+        ${heightMode === "fixed" && html`
+          <input className="zoom-inspector-num" type="number" min="0" value=${heightFixed}
+                 onChange=${e => setSize("h", "fixed", +e.target.value || 0)}/>
+        `}
+      </div>
+    </div>
+    ${(isFlex || isGrid) && html`
       <div className="zoom-inspector-section">
-        <div className="zoom-inspector-label">Element</div>
-        <div className="zoom-inspector-target">${picked.label}</div>
-        <div className="zoom-inspector-context">↳ ${describeParent(picked.parent)}</div>
+        <div className="zoom-inspector-label">Reorder in ${isGrid ? "grid" : "flex"}</div>
+        <div className="zoom-inspector-pad">
+          <div className="zoom-inspector-pad-row">
+            ${(isGrid || !isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward start" onClick=${() => onMove("prev")}>↑</button>`}
+          </div>
+          <div className="zoom-inspector-pad-row">
+            ${(isGrid || isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward start" onClick=${() => onMove("prev")}>←</button>`}
+            <span className="zoom-inspector-pad-center" aria-hidden="true">•</span>
+            ${(isGrid || isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward end" onClick=${() => onMove("next")}>→</button>`}
+          </div>
+          <div className="zoom-inspector-pad-row">
+            ${(isGrid || !isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward end" onClick=${() => onMove("next")}>↓</button>`}
+          </div>
+        </div>
       </div>
       <div className="zoom-inspector-section">
-        <div className="zoom-inspector-label">Sizing</div>
-        <div className="zoom-inspector-row">
-          <span className="zoom-inspector-axis">W</span>
-          <${Seg} value=${widthMode} onChange=${(v) => setSize("w", v, widthFixed)} options=${[
-            { v: "fill",  l: "Fill" },
-            { v: "hug",   l: "Hug"  },
-            { v: "fixed", l: "Fix"  },
-          ]}/>
-          ${widthMode === "fixed" && html`
-            <input className="zoom-inspector-num" type="number" min="0" value=${widthFixed}
-                   onChange=${e => setSize("w", "fixed", +e.target.value || 0)}/>
-          `}
-        </div>
+        <div className="zoom-inspector-label">Align in parent</div>
         <div className="zoom-inspector-row">
           <span className="zoom-inspector-axis">H</span>
-          <${Seg} value=${heightMode} onChange=${(v) => setSize("h", v, heightFixed)} options=${[
-            { v: "fill",  l: "Fill" },
-            { v: "hug",   l: "Hug"  },
-            { v: "fixed", l: "Fix"  },
+          <${Seg} value=${justifySelf} onChange=${v => setAlign("h", v)} options=${[
+            { v: "start",  l: "L", title: "Left" },
+            { v: "center", l: "C", title: "Center" },
+            { v: "end",    l: "R", title: "Right" },
           ]}/>
-          ${heightMode === "fixed" && html`
-            <input className="zoom-inspector-num" type="number" min="0" value=${heightFixed}
-                   onChange=${e => setSize("h", "fixed", +e.target.value || 0)}/>
-          `}
+        </div>
+        <div className="zoom-inspector-row">
+          <span className="zoom-inspector-axis">V</span>
+          <${Seg} value=${alignSelf} onChange=${v => setAlign("v", v)} options=${[
+            { v: "start",  l: "T", title: "Top" },
+            { v: "center", l: "M", title: "Middle" },
+            { v: "end",    l: "B", title: "Bottom" },
+          ]}/>
         </div>
       </div>
-      ${(isFlex || isGrid) && html`
-        <div className="zoom-inspector-section">
-          <div className="zoom-inspector-label">Reorder in ${isGrid ? "grid" : "flex"}</div>
-          <div className="zoom-inspector-pad">
-            <div className="zoom-inspector-pad-row">
-              ${(isGrid || !isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward start" onClick=${() => onMove("prev")}>↑</button>`}
-            </div>
-            <div className="zoom-inspector-pad-row">
-              ${(isGrid || isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward start" onClick=${() => onMove("prev")}>←</button>`}
-              <span className="zoom-inspector-pad-center" aria-hidden="true">•</span>
-              ${(isGrid || isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward end" onClick=${() => onMove("next")}>→</button>`}
-            </div>
-            <div className="zoom-inspector-pad-row">
-              ${(isGrid || !isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward end" onClick=${() => onMove("next")}>↓</button>`}
-            </div>
-          </div>
-        </div>
-        <div className="zoom-inspector-section">
-          <div className="zoom-inspector-label">Align in parent</div>
-          <div className="zoom-inspector-row">
-            <span className="zoom-inspector-axis">H</span>
-            <${Seg} value=${justifySelf} onChange=${v => setAlign("h", v)} options=${[
-              { v: "start",  l: "L", title: "Left" },
-              { v: "center", l: "C", title: "Center" },
-              { v: "end",    l: "R", title: "Right" },
-            ]}/>
-          </div>
-          <div className="zoom-inspector-row">
-            <span className="zoom-inspector-axis">V</span>
-            <${Seg} value=${alignSelf} onChange=${v => setAlign("v", v)} options=${[
-              { v: "start",  l: "T", title: "Top" },
-              { v: "center", l: "M", title: "Middle" },
-              { v: "end",    l: "B", title: "Bottom" },
-            ]}/>
-          </div>
-        </div>
-      `}
+    `}
+  <//>`;
+}
+
+/* v3.4.x — Thin wrapper around PickedInspectorBody that supplies the
+   zoom-mode aside positioning (fixed top-right via .zoom-inspector-panel
+   CSS class). Existing callers still use this name — kept as an alias so
+   the zoom-mode mount site at app.js:28426 doesn't need to change. */
+function ZoomInspectorPanel(props) {
+  if (!props.picked) return null;
+  return html`
+    <aside className="zoom-inspector-panel" onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()}>
+      <${PickedInspectorBody} ...${props}/>
     </aside>
   `;
 }
@@ -29617,6 +29661,241 @@ function WorkflowCodePanel({ node, onClose, zoom }) {
         title="Drag to resize"
         onMouseDown=${startResize}
       />
+    </div>
+  `;
+}
+
+/* v3.4.x — WorkflowPickedInspectorDock ─────────────────────────────────
+   Docked property inspector for workflow-mode pick-mode. Sits to the
+   right of the host node like WorkflowCodePanel; renders the SAME
+   PickedInspectorBody content zoom-mode uses, so updates to the inspector
+   surface propagate to both modes from a single component.
+
+   Inputs (refs come from WorkflowSurface so reads stay live as the user
+   re-picks across iframes):
+     • node              — the host workflow node (prototype or asset)
+     • zoom              — canvas zoom factor (for hostRectW unit math)
+     • pickedElement     — { nodeId, path, outerHTML, tagName } envelope
+     • pickerIframeRef   — ref → currently-active picker iframe
+     • pickedDomRef      — ref → live DOM element
+     • onSaveIframeHtml(doc, label) — persists doc back to /__html_save
+     • onMoveElement(direction) — calls reorderPickedElement with up/down/left/right
+     • isReactManaged(opLabel) — true + flashes a toast if picked is React-rendered
+     • onClose           — close the dock
+*/
+function WorkflowPickedInspectorDock({
+  node, zoom, pickedElement,
+  pickerIframeRef, pickedDomRef,
+  onSaveIframeHtml, onMoveElement, isReactManaged,
+  onClose,
+}) {
+  // Refresh tick — bumps whenever we mutate styles so the inspector
+  // re-reads the current state from the live element.
+  const [refreshTick, setRefreshTick] = useState(0);
+  // Track host-node rendered size (ResizeObserver) so the dock sits flush
+  // against the right edge even when the node auto-sizes. Same pattern as
+  // WorkflowCodePanel.
+  const [hostRectW, setHostRectW] = useState(node.w || 360);
+  const [hostRectH, setHostRectH] = useState(node.h || 360);
+  useEffect(() => {
+    const el = typeof document !== "undefined"
+      ? document.querySelector(`.workflow-node[data-node-id="${node.id}"]`)
+      : null;
+    if (!el) return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      const z = zoom || 1;
+      setHostRectW(Math.round(r.width / z));
+      setHostRectH(Math.round(r.height / z));
+    };
+    sync();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(sync);
+      ro.observe(el);
+    }
+    return () => { if (ro) ro.disconnect(); };
+  }, [node.id, node.w, node.h, node.size, zoom]);
+
+  // Re-derive picked shape + styles on every refreshTick + every
+  // pickedElement change. Reads computed style from the live element +
+  // parent for the inspector body's display logic.
+  const { picked, styles } = useMemo(() => {
+    const ifr = pickerIframeRef.current;
+    const doc = ifr && ifr.contentDocument;
+    const win = ifr && ifr.contentWindow;
+    let el = pickedDomRef.current;
+    // Re-resolve if cached ref went stale across iframe reload.
+    if ((!el || !doc || !doc.contains(el)) && doc && pickedElement && pickedElement.path) {
+      try { el = doc.querySelector(pickedElement.path); } catch { el = null; }
+    }
+    if (!el || !win) return { picked: null, styles: {} };
+    const parent = el.parentElement;
+    let parentInfo = null;
+    if (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML") {
+      try {
+        const pcs = win.getComputedStyle(parent);
+        parentInfo = {
+          tag: parent.tagName.toLowerCase(),
+          layout: {
+            display:             pcs.display,
+            gridTemplateColumns: pcs.gridTemplateColumns,
+            gridTemplateRows:    pcs.gridTemplateRows,
+            flexDirection:       pcs.flexDirection,
+            flexWrap:            pcs.flexWrap,
+            alignItems:          pcs.alignItems,
+            justifyContent:      pcs.justifyContent,
+            gap:                 pcs.gap,
+            padding:             pcs.padding,
+          },
+        };
+      } catch {}
+    }
+    const rect = el.getBoundingClientRect();
+    const labelTag = (pickedElement && pickedElement.tagName) || el.tagName.toLowerCase();
+    // Strip pick-mode editor chrome classes so they don't leak into the
+    // inspector label (the user picked a `.lane-block`, not a `.lane-block.th-pick-selected`).
+    const labelClsList = el.className && typeof el.className === "string"
+      ? el.className.trim().split(/\s+/).filter(c => !c.startsWith("th-pick-"))
+      : [];
+    const labelCls = labelClsList.length > 0
+      ? "." + labelClsList.slice(0, 2).join(".")
+      : "";
+    const cs = win.getComputedStyle(el);
+    // Infer mode from inline style if explicit, else from computed value.
+    const widthInline  = el.style.width  || "";
+    const heightInline = el.style.height || "";
+    const inferMode = (inline, computedKey) => {
+      if (inline === "100%") return "fill";
+      if (inline === "auto") return "hug";
+      if (inline.endsWith("px")) return "fixed";
+      // No inline → look at the computed width for the px fallback only;
+      // we don't claim a mode the user didn't pick.
+      return "auto";
+    };
+    const fixedPx = (inline, computedKey) => {
+      const inlineN = parseFloat(inline);
+      if (Number.isFinite(inlineN)) return Math.round(inlineN);
+      const compN = parseFloat(cs[computedKey]);
+      return Number.isFinite(compN) ? Math.round(compN) : 0;
+    };
+    return {
+      picked: {
+        label: labelTag + (labelCls.length > 1 ? labelCls : ""),
+        parent: parentInfo,
+        rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+      },
+      styles: {
+        widthMode:  inferMode(widthInline,  "width"),
+        widthFixed: fixedPx(widthInline,    "width"),
+        heightMode: inferMode(heightInline, "height"),
+        heightFixed: fixedPx(heightInline,  "height"),
+        justifySelf: (el.style.justifySelf || cs.justifySelf || "auto"),
+        alignSelf:   (el.style.alignSelf   || cs.alignSelf   || "auto"),
+      },
+    };
+  }, [pickedElement, refreshTick]);
+
+  // Apply style update from the inspector. Mirrors zoom-mode's
+  // applyInspectorStyle: writes width/height/justifySelf/alignSelf to
+  // inline style, "auto"/empty values remove the property, then saves
+  // the whole doc back through /__html_save.
+  const applyStyle = useCallback(async (nextStyles) => {
+    if (isReactManaged && isReactManaged("Inspector style change")) return;
+    const ifr = pickerIframeRef.current;
+    const doc = ifr && ifr.contentDocument;
+    const el = pickedDomRef.current;
+    if (!doc || !el) return;
+    const cssKeys = [
+      ["width",       "width"],
+      ["height",      "height"],
+      ["justifySelf", "justify-self"],
+      ["alignSelf",   "align-self"],
+    ];
+    for (const [propJs, propCss] of cssKeys) {
+      const v = nextStyles[propJs];
+      if (v == null || v === "" || v === "auto") {
+        try { el.style.removeProperty(propCss); } catch {}
+      } else {
+        try { el.style.setProperty(propCss, v); } catch {}
+      }
+    }
+    setRefreshTick(t => t + 1);
+    try { await onSaveIframeHtml(doc, "Inspector style"); } catch {}
+  }, [pickerIframeRef, pickedDomRef, onSaveIframeHtml, isReactManaged]);
+
+  // Map prev/next (layout-relative — used by the shared inspector body)
+  // into the absolute up/down/left/right that reorderPickedElement
+  // expects. Read parent layout to decide which axis.
+  const applyMove = useCallback(async (direction) => {
+    const lay = picked && picked.parent && picked.parent.layout;
+    if (!lay) return;
+    const isFlex = lay.display === "flex" || lay.display === "inline-flex";
+    const isRow  = isFlex && !(lay.flexDirection || "row").startsWith("column");
+    const isGrid = lay.display === "grid" || lay.display === "inline-grid";
+    let absDir;
+    if (isFlex && isRow) {
+      absDir = direction === "prev" ? "left" : "right";
+    } else if (isGrid) {
+      // For grids, the prev/next buttons in the pad span both axes; the
+      // shared body emits prev for ←/↑ and next for →/↓ uniformly.
+      // Prefer vertical for grids (matches column-major reading order).
+      absDir = direction === "prev" ? "up" : "down";
+    } else {
+      absDir = direction === "prev" ? "up" : "down";
+    }
+    await onMoveElement(absDir);
+    setRefreshTick(t => t + 1);
+  }, [picked, onMoveElement]);
+
+  const reactBanner = useMemo(() => {
+    const el = pickedDomRef.current;
+    if (!el) return false;
+    try { return zoomIsReactManaged(el); } catch { return false; }
+  }, [refreshTick, pickedElement]);
+
+  const left   = (node.x || 0) + hostRectW;
+  const top    = (node.y || 0);
+  const height = hostRectH;
+  const panelW = 240;
+  const titleText = (pickedElement && pickedElement.tagName)
+    ? `<${pickedElement.tagName}>`
+    : "(no selection)";
+
+  return html`
+    <div
+      className="workflow-inspector-panel"
+      data-host-node-id=${node.id}
+      data-scroll-internally="true"
+      style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
+      onMouseDown=${(e) => e.stopPropagation()}
+      onWheel=${(e) => e.stopPropagation()}
+    >
+      <div className="workflow-inspector-panel-bar">
+        <span className="workflow-inspector-panel-glyph"><${Icon.Cursor}/></span>
+        <span className="workflow-inspector-panel-title" title=${titleText}>Inspector · ${titleText}</span>
+        <button
+          type="button"
+          className="workflow-inspector-panel-close"
+          title="Close inspector"
+          onClick=${(e) => { e.stopPropagation(); onClose && onClose(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >×</button>
+      </div>
+      <div className="workflow-inspector-panel-body">
+        ${reactBanner && html`
+          <div className="workflow-inspector-panel-warn">
+            This element is React-rendered — DOM edits will revert on reload. Edit the App source instead.
+          </div>
+        `}
+        ${picked
+          ? html`<${PickedInspectorBody}
+              picked=${picked}
+              styles=${styles}
+              onStyle=${applyStyle}
+              onMove=${applyMove}/>`
+          : html`<div className="workflow-inspector-panel-empty">Pick an element inside the iframe to start editing.</div>`}
+      </div>
     </div>
   `;
 }

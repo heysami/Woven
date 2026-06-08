@@ -14102,6 +14102,86 @@ a.ds-badge:hover, button.ds-badge:hover {
   overflow: hidden;
   user-select: text;
 }
+
+/* v3.4.x — Workflow-mode property inspector dock. Docks to the right of
+   the host node like .workflow-code-panel. Inner body uses the shared
+   `.zoom-inspector-*` classes (same look as the zoom-mode panel) — only
+   the outer chrome (this block) is workflow-specific. */
+.workflow-inspector-panel {
+  position: absolute;
+  z-index: 6;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 0 8px 8px 0;
+  box-shadow: 4px 4px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: text;
+}
+.workflow-inspector-panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.workflow-inspector-panel-glyph {
+  display: inline-flex;
+  color: var(--accent);
+}
+.workflow-inspector-panel-title {
+  flex: 1;
+  font: 11.5px/1.2 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-inspector-panel-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+.workflow-inspector-panel-close:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.workflow-inspector-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+}
+.workflow-inspector-panel-warn {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: oklch(50% 0.12 50);
+  background: color-mix(in oklch, oklch(70% 0.14 70) 14%, var(--surface));
+  border: 1px solid color-mix(in oklch, oklch(70% 0.14 70) 40%, var(--border));
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 4px 4px 8px;
+}
+.workflow-inspector-panel-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 12px;
+  text-align: center;
+  line-height: 1.45;
+}
 .workflow-code-panel-bar {
   display: flex;
   align-items: center;
