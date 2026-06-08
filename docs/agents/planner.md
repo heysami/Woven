@@ -9,7 +9,7 @@ All paths are **project-root-relative**, never source-relative.
 ## Inputs
 
 - The user's request.
-- Active branch slug (default `main`).
+- Active prototype slug (default `main`).
 - `source/` (may be absent if Subagent 1 needs to create it).
 - Optional override files at repo root: `STATEMACHINE_REQUEST.md` / `TIMELINE_REQUEST.md` / `GRID_REQUEST.md`.
 
@@ -195,7 +195,7 @@ This is the structural check that catches the modals/drawers/toasts blind spot e
 
 Per `docs/agents/data-schema.md` — **this is the canonical schema, no improvisation:**
 
-- `editor/data.js` — `window.EDITOR_DATA = { meta, tokens, primitives, library, frames, arrows, entities, stateMachines, timelines, grids }`. `meta.lanes` lives inside `meta`, not at the top level (editor reads `D.meta.lanes` in `app.js:1083`). Preserve `meta.branch`, `meta.branchLabel`, `meta.exploration` verbatim.
+- `editor/data.js` (or per-prototype `editor/<slug>.data.js`) — `window.EDITOR_DATA = { meta, tokens, primitives, library, frames, arrows, entities, stateMachines, timelines, grids }`. `meta.lanes` lives inside `meta`, not at the top level (editor reads `D.meta.lanes` in `app.js:1083`). Preserve `meta.prototype` (legacy alias: `meta.branch`), `meta.prototypeLabel`, `meta.exploration` verbatim.
 - `source/prototype.json` — flatten `meta` to top-level; omit `tokens` / `primitives` / `library`.
 
 Delete any `<NAME>_REQUEST.md` files at repo root.

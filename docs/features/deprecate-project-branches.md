@@ -1,74 +1,57 @@
-# Deprecate project-level branches
+# Deprecate project-level branches → multi-prototype-per-project
 
-Follow-up to the asset-versioning rewrite ([asset-versioning.md](asset-versioning.md)). The branch feature is being removed: one project = one source tree. The "explore alternatives without losing the current line" need is now served by **per-asset branching** on the workflow canvas (sibling asset nodes, ~~not whole-source forks~~).
+**Status:** v3.7 — branch deprecation finally finished. The lingering `branch` vocabulary has been renamed to `prototype` everywhere it referred to a `source/<slug>/` subtree.
 
-## 1. Goals
+## Backstory
 
-- One project owns one `source/` tree. No `source/<slug>/` nesting.
-- Remove `editor/branches/` directory and the `EDITOR_BRANCHES` registry.
-- Remove Workflows 4 (fork) and 5 (merge), their trigger files (`FORK_REQUEST.md`, `MERGES.md`), and the per-frame promote endpoint.
-- Remove the diff-badge UI (Δ main) — no second tree to diff against.
-- Existing multi-branch projects migrate by picking a surviving branch; the others archive.
+v3.1 declared project-level branches deprecated. Goal at the time: *"One project owns one `source/` tree. No `source/<slug>/` nesting."* Workflows 4 (fork) and 5 (merge) were removed, `EDITOR_BRANCHES` was deleted, the diff-badge UI was ripped out. The deep cleanup landed.
 
-## 2. Out of scope
+But v3.4.31 quietly re-introduced `source/<slug>/` nesting under a new name: **starred prototypes**. The projects-landing surfaces multiple starred prototypes per project; each star clicks into the editor with `?branch=<slug>` in the URL; the editor's `D.meta.sourceRoot` mutates accordingly. Same on-disk shape (`source/<slug>/`) as the old branch storage, new conceptual name.
 
-- Renaming the existing asset-versioning "branch" affordance — it stays. (Sibling asset nodes ARE the new branching primitive.)
-- Touching `design-systems/<id>/`. DS library nodes remain referenced by id; the per-branch `meta.dsRef` becomes a per-project `meta.dsRef`.
-- Replacing the chat-history-per-branch JSONL with a versioned ledger. Chat history flattens to a single project-level `editor/chat.jsonl`; archiving prior branch chats is left to a one-shot migration script.
+The vocabulary lag meant the codebase still called these things "branches" everywhere — `node.branch`, `?branch=`, `meta.branch`, `branch_dir`, `branch-docs`, `_chat_jsonl_path(project_root, branch)`, the registry's `{branch}` template token. Comments routinely said "branch" when they meant "prototype slug." User reports of this confusion (e.g. the demo-inhouse Canvas-frames node showing 404'd content for `main2` because `editor/data.js` was pinned to `main`) triggered this cleanup.
 
-## 3. Surface map (from explore agent)
+## What v3.7 ships
 
-Roughly broken into five concentric rings:
+### Storage model
 
-| Ring | Files | Notes |
-|---|---|---|
-| **A — Path templates** | `editor/kinds/registry.py` 40+ entries with `{branch}` | Mechanical replace `source/{branch}/` → `source/`. |
-| **B — Daemon endpoints** | `editor/serve.py` `_branch_create`, `_branch_promote`, `_frame_promote`, `_compose_initial_prompt`/`_default_run_title` branch params, chat JSONL per-branch | Delete the three endpoints; simplify agent-dispatch helpers to drop the `branch` param. |
-| **C — Editor UI** | `editor/app.js` `EDITOR_BRANCHES`, branch dropdown, `IS_MAIN_BRANCH` diff gates, `?branch=` URL param, `frameDiffsMain`/`primVariantDiffsMain`/`entityDiffsMain` | Largest surgery. Diff badge logic deletes outright; branch fallback chains collapse to `"main"` literal or just drop. |
-| **D — Bootstrap** | `editor/serve.py` `_write_registry()` generating `editor/data.js` with dual-load script | Rewrite to emit a single `data.js` that loads one `EDITOR_DATA` from a single source. |
-| **E — Docs** | `AGENTS.md`, `docs/agents/planner.md`, `docs/agents/data-schema.md`, `docs/agents/conventions.md`, all subagent playbooks (1-source through 10-grids), workflows 0/4/5/6, the visual-policy + media subagents | Remove `branchSlug` from envelopes; delete workflow 4 + 5 playbooks; rewrite `source/<branch>/` references everywhere. |
+- Each project still has ONE `editor/data.js` as a fallback (pre-v3.7 layout).
+- Per-prototype data files live at `editor/<slug>.data.js`. Served by `serve.py:translate_path` when the request carries `?prototype=<slug>` (legacy: `?branch=<slug>`).
+- Layout sidecar `editor/<slug>.layout.js` is now read AND written per-prototype — `index.html`'s inline loader picks the slug from the URL (was hardcoded to `main.layout.js`).
+- Chat history stays project-wide at `editor/chat.jsonl` — no per-prototype chat ledger, consistent with v3.1's earlier decision.
 
-## 4. Phased execution (decisions locked in — no migration needed; no live projects)
+### Vocabulary rename
 
-| Phase | Scope | Risk |
-|---|---|---|
-| **7.A** | Registry path templates: strip `{branch}` from all `outputsRoot`/`completion` entries in `editor/kinds/registry.py`. | Low — mechanical. |
-| ~~7.B~~ | ~~Migration tool~~ — **SKIPPED**: confirmed no live multi-branch projects to migrate. | — |
-| **7.C** | Daemon: delete `/__branch`, `/__promote`, `/__promote_frame`. Drop `branch` parameter from agent-dispatch helpers. Collapse chat JSONL to single file. Rewrite `_write_registry()` to single-data-file bootstrap (`editor/data.js` carries `EDITOR_DATA` directly; `editor/branches/` deleted). | Medium |
-| **7.D** | Editor: remove branch dropdown, `IS_MAIN_BRANCH` gates, `frameDiffsMain` / `primVariantDiffsMain` / `entityDiffsMain` helpers, `?branch=` URL handling, all `EDITOR_BRANCHES` reads, all `EDITOR_MAIN_DATA` sidecar logic, diff-badge rendering throughout. | High |
-| **7.E** | Docs: delete Workflows 4 + 5 outright. Scrub `branchSlug` from subagent envelopes; flatten `source/<branch>/` to `source/` in all references; update `AGENTS.md`, `data-schema.md`, `conventions.md`, `planner.md`, `kinds/README.md`. | Low (high volume) |
-| **7.F** | Cleanup: delete `MERGES.md` / `FORK_REQUEST.md` triggers from allow-lists; remove trigger detection from orchestrator. | Low |
+- URL param: `?prototype=<slug>` is canonical. `?branch=<slug>` accepted as a legacy alias by both the editor boot handler and `serve.py:_qs_prototype()`.
+- Workflow-node field: `node.prototype = "<slug>"` for prototype-kind nodes. `node.branch` accepted as a legacy alias by `nodePrototype(node)` (app.js).
+- Meta keys: `D.meta.prototype` / `D.meta.prototypeLabel` / `D.meta.activePrototype` are canonical. `D.meta.branch` / `D.meta.branchLabel` / `D.meta.activeBranch` mirrored at boot for back-compat.
+- Path template token: `{prototype}` is canonical in `editor/kinds/registry.py` outputsRoot templates. `{branch}` accepted as a legacy alias by the substitution code in `serve.py` and `editor/kinds/reconcile.py`.
+- CSS class: `.prototype-docs` / `.prototype-docs-btn` (was `.branch-docs` / `.branch-docs-btn`). The dead `.branch-picker` / `.branch-trigger` / `.branch-menu` / `.branch-item` classes from the v3.1 deletion are untouched here — they have zero references in `app.js` and can be deleted in a follow-up sweep.
 
-## 5. Locked-in decisions
+### What did NOT change
 
-1. **No migration.** Confirmed no live projects exist. The migration tool and `.archive/branches/` archival concept are dropped from scope.
-2. **Rename:** `editor/branches/main.js` → `editor/data.js`. `editor/branches/` directory deleted entirely. The old `editor/data.js` (registry-bootstrap script) is replaced with a static `window.EDITOR_DATA = {...}` payload.
-3. **Diff-badge UI deleted outright.** `IS_MAIN_BRANCH`, all three `*DiffsMain` helpers, all Δ-main badge rendering. Asset-versioning's lineage chip (Phase 5) is the only "what's changed?" affordance going forward.
-4. **Workflows 4 + 5 deleted from repo.** Git history preserves the prior shape if anyone needs it.
+- **Asset-versioning's "branch" verb stays.** Sibling-asset nodes are still created via `VersioningApi.branch(nodeId, versionId, compositionId)`. That's a different concept from project-level branches — explicitly out of scope per the original v3.1 deprecation doc.
+- **`git branch`** references in comments. Different concept again.
+- **The screenshot job-queue schema** still uses `job.branch` as a field — that daemon owns its own job shape and gets renamed in its own commit.
 
-## 6. Migration script outline (Phase 7.B)
+## Migration
 
-```python
-def migrate_flat(project_root, surviving_branch="main"):
-    # 1. Validate: branches/<surviving_branch>.js exists.
-    # 2. Move source/<surviving_branch>/* → source/* (overwriting source/ if it
-    #    already had loose files; preserve loose files into source/.archive/loose/).
-    # 3. Move other source/<slug>/ → .archive/branches/<slug>/source/.
-    # 4. Move editor/branches/<slug>.* → .archive/branches/<slug>/editor/.
-    # 5. Move editor/branches/<surviving>.js → editor/data.js (replace).
-    # 6. Move editor/branches/<surviving>.chat.jsonl → editor/chat.jsonl.
-    # 7. Delete editor/branches/ entirely.
-    # 8. Rewrite workflow.json:
-    #    - drop meta.branch / meta.branchLabel / meta.exploration / meta.sourceRoot / meta.sourceEntry
-    #    - rewrite asset.path / asset.paths entries that start with "source/<slug>/" to "source/"
-    # 9. Delete MERGES.md and FORK_REQUEST.md (archive into .archive/).
-    return {"ok": True, "archived": [...]}
-```
+No automatic migration is run. Existing projects keep working because:
+- `nodePrototype(node)` reads `node.prototype || node.branch`, so workflow.json files with `branch:` fields keep loading.
+- `_qs_prototype(qs)` reads `prototype || branch` from URL/body, so old browser bookmarks and old client builds keep working.
+- The path-template substitution applies `{prototype}` then `{branch}` so registry contracts written either way both resolve.
+- A project without a per-prototype `editor/<slug>.data.js` falls back to the project-level `editor/data.js`.
 
-Idempotent: re-running on an already-flat project does nothing.
+To MIGRATE a project to per-prototype data files (e.g. so multiple prototypes inside one project each get correct frames + sourceRoot): run the frames+arrows slice of Workflow 1 (`Open canvas frames` on the prototype node — confirm prompt offers to generate when no frames data exists for that prototype slug) targeting `source/<slug>/`. The agent writes `editor/<slug>.data.js`.
 
-## 7. Anti-goals
+## Anti-goals (still anti-goals)
 
-- Don't try to preserve cross-branch diffing semantics in a new form. The diff-badge feature dies.
-- Don't try to expose `.archive/branches/` in the editor. It's a one-way escape hatch for the migration; users who want to browse it use the filesystem.
-- Don't try to add a "soft branch" replacement (project clone). Asset-versioning's sibling-branch already covers the explore-alternatives need.
+- Don't bring back the diff-badge UI. Asset-versioning's lineage chip is the only "what's changed?" affordance going forward.
+- Don't try to expose `.archive/branches/` in the editor. It's a one-way escape hatch for the v3.1 migration; users who want to browse it use the filesystem.
+- Don't add a "soft branch" replacement (project clone). Asset-versioning's sibling-branch + multi-prototype-per-project already cover the explore-alternatives need.
+
+## Follow-up work
+
+- Delete the dead CSS classes (`.branch-picker`, `.branch-trigger`, `.branch-menu`, `.branch-item`, etc.) in `editor/styles.css` once a manual scan confirms zero references.
+- Rename `_chat_jsonl_path(project_root, branch="main")`'s parameter to `_slug` (currently kept for ABI compat, value already ignored).
+- Sweep `docs/agents/**/*.md` for `source/<branch>/` references and rename to `source/<prototype>/` to match `capabilities.py` (already renamed).
+- Consider migrating existing `workflow.json` files on disk to use `prototype:` instead of `branch:` on prototype-kind nodes. The reader handles both — this would just clean up the on-disk shape.

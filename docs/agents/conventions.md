@@ -121,7 +121,7 @@ For single-HTML sources (SPA + hash routing), the base is derived from the route
 
 ### Sub-frame suffix
 
-Sub-frames (useState branches, modals, tabs) take the parent base + `-` + branch slug (NOT a `.` separator — kebab-case throughout):
+Sub-frames (useState branches, modals, tabs) take the parent base + `-` + sub-frame slug (NOT a `.` separator — kebab-case throughout):
 
 - `lxp-apply` + `submitted` useState branch → `lxp-apply-submitted`
 - `home` + `invite-modal` overlay → `home-invite-modal`

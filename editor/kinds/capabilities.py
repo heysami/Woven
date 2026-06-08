@@ -376,9 +376,9 @@ The rule:
 |---|---|---|
 | 1 | Agent (chat) | Read the brief. Sketch the app's pages + sections. |
 | 2 | Agent | For each surface, decide which family fills it. Test each predicate: objective + feedback loop → game; CSS can't reach the aesthetic → scrapbook; system viz → sim; input→mapping→output → im; walk-into-a-place → nx; otherwise visual. |
-| 3 | Agent | Write `source/<branch>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim / im / nx / game / scrapbook (with the canonical `src` path). |
+| 3 | Agent | Write `source/<prototype>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim / im / nx / game / scrapbook (with the canonical `src` path). |
 | 4 | Agent | Dispatch each primary planner family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL that match (e.g. an illustrated game = `visual-planner` + `game-experience-planner`). |
-| 5 | Planner | Walks every `source/<branch>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
+| 5 | Planner | Walks every `source/<prototype>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
 | 6 | Drawer(s) | Produce the content at the canonical path. |
 | 7 | Agent | After ALL primary planners return, dispatch `interactive-polish-planner` ONCE with project-wide scope. This is the post-pass enrichment step — fires LAST, before Step-8 QA. |
 
@@ -623,27 +623,27 @@ If the brief is about LOOKING AT or MOVING THROUGH something stateful, positione
 
 **You write the HTML. The planner writes the slot's content. Don't mix them.**
 
-Visual-planner doesn't write HTML. When the agent in chat wants an image on a page, the agent writes `<img src="images/hero.png">` into the HTML. Then the agent dispatches visual-planner. visual-planner writes the *bytes* at `source/<branch>/images/hero.png`. The `<img>` tag the agent already wrote now resolves. The planner never touches the HTML.
+Visual-planner doesn't write HTML. When the agent in chat wants an image on a page, the agent writes `<img src="images/hero.png">` into the HTML. Then the agent dispatches visual-planner. visual-planner writes the *bytes* at `source/<prototype>/images/hero.png`. The `<img>` tag the agent already wrote now resolves. The planner never touches the HTML.
 
-Same here. When you want a sim on a page, **you write the HTML and the iframe slot yourself** — including the `<iframe src="simulations/<simId>/runtime.html">` pointing at the path the planner will produce. Then you dispatch simulation-planner. The planner writes `source/<branch>/simulations/<simId>/runtime.html` and its sibling files. The `<iframe>` tag you already wrote now resolves. **The planner does not touch your HTML.**
+Same here. When you want a sim on a page, **you write the HTML and the iframe slot yourself** — including the `<iframe src="simulations/<simId>/runtime.html">` pointing at the path the planner will produce. Then you dispatch simulation-planner. The planner writes `source/<prototype>/simulations/<simId>/runtime.html` and its sibling files. The `<iframe>` tag you already wrote now resolves. **The planner does not touch your HTML.**
 
 Two distinct jobs:
 
 | Your job (agent in chat) | Planner's job |
 |---|---|
-| Write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where a sim should live, write one `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="..." title="<simId>" loading="lazy"></iframe>`. Use distinct `simId`s for each (e.g. `fleet-map`, `queue-depth`, `agent-gossip`). Then dispatch simulation-planner ONCE. | Walk every `*.html` under `source/<branch>/`, find every iframe whose class includes `sim-mount` (or whose `data-sim` is set). For each, read the `simId` + paradigm hint + entity scale. Per slot: pick paradigm + render strategy, write `source/<branch>/simulations/<simId>/research.md`, scaffold the per-slot drawer set (entities / scene / loop / controls / overlay / runtime / container), dispatch the drawers. Do NOT touch any HTML. |
+| Write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a sim should live, write one `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="..." title="<simId>" loading="lazy"></iframe>`. Use distinct `simId`s for each (e.g. `fleet-map`, `queue-depth`, `agent-gossip`). Then dispatch simulation-planner ONCE. | Walk every `*.html` under `source/<prototype>/`, find every iframe whose class includes `sim-mount` (or whose `data-sim` is set). For each, read the `simId` + paradigm hint + entity scale. Per slot: pick paradigm + render strategy, write `source/<prototype>/simulations/<simId>/research.md`, scaffold the per-slot drawer set (entities / scene / loop / controls / overlay / runtime / container), dispatch the drawers. Do NOT touch any HTML. |
 
 Dispatch template — ONE call, planner enumerates all sim slots:
 
 ```
 Task(subagent_type: "simulation-planner",
      description: "Enumerate + build every sim slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute path to project root>. Walk every *.html under source/<branch>/ and find every <iframe class~='sim-mount'> (or every iframe whose data-sim attribute is set). For EACH slot found: read simId from data-sim, paradigm hint from data-paradigm-hint (optional), entity scale from data-entities (optional). Per slot: pick paradigm + render strategy + tick rate + interaction primitive (honour the hard checks in capabilities.py — real-world map naming → real-map library, verticality → 3D, etc.). Write source/<branch>/simulations/<simId>/research.md. Scaffold + build the per-slot drawer set + container. User's overall intent (verbatim, applies to all slots): <intent>. successFeel per slot: if the data-sim id makes it obvious, infer; otherwise ask the user via decision-request. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute path to project root>. Walk every *.html under source/<prototype>/ and find every <iframe class~='sim-mount'> (or every iframe whose data-sim attribute is set). For EACH slot found: read simId from data-sim, paradigm hint from data-paradigm-hint (optional), entity scale from data-entities (optional). Per slot: pick paradigm + render strategy + tick rate + interaction primitive (honour the hard checks in capabilities.py — real-world map naming → real-map library, verticality → 3D, etc.). Write source/<prototype>/simulations/<simId>/research.md. Scaffold + build the per-slot drawer set + container. User's overall intent (verbatim, applies to all slots): <intent>. successFeel per slot: if the data-sim id makes it obvious, infer; otherwise ask the user via decision-request. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
 
-- ❌ **Skipping the app shell because "it's just a sim."** That's the fly bug. The user typed *"generate a globe monitoring system for billionaire private jets"*, the simulation got built at `source/main/simulations/billionaire-jets-globe/runtime.html`, but no `source/main/index.html` was scaffolded. The editor's default view (`source/<branch>/index.html`) showed 404 — the sim existed but the user couldn't reach it because there was no app to host it. Always scaffold the index.html shell, even when the brief sounds like "just the sim."
+- ❌ **Skipping the app shell because "it's just a sim."** That's the fly bug. The user typed *"generate a globe monitoring system for billionaire private jets"*, the simulation got built at `source/main/simulations/billionaire-jets-globe/runtime.html`, but no `source/main/index.html` was scaffolded. The editor's default view (`source/<prototype>/index.html`) showed 404 — the sim existed but the user couldn't reach it because there was no app to host it. Always scaffold the index.html shell, even when the brief sounds like "just the sim."
 - ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts" → the dashboard chrome scaffolds fine but the map IS a sim-placeholder. Dispatch sim-planner for that slot; don't hand-render the map. (mememem bug.)
 - ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → the sim surface is a slot. Dispatch sim-planner.
 - ❌ "Should I build a sim or just a dashboard?" → dispatch sim-planner; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim) per the hard checks above.
@@ -661,7 +661,7 @@ Task(subagent_type: "simulation-planner",
 
 The visual-planner pattern is: **app exists, planner fills a slot.** Same here. The sim is content for a slot, not an artefact on its own. Reasons:
 
-- The editor's source view defaults to `source/<branch>/index.html`. No index.html = user can't open it (the fly bug).
+- The editor's source view defaults to `source/<prototype>/index.html`. No index.html = user can't open it (the fly bug).
 - The app shell is the user's natural entry point. Even a one-line "I want the globe" expectation is "I want to open something that shows me the globe" — which is a page, not a folder of runtime files.
 - Adding chrome later (a title, a legend, controls in a side panel) is trivial when the shell exists. Retrofitting a shell around a standalone runtime that imports its own modules + has its own viewport sizing is invasive.
 - Cross-asset coherence (visual-planner styling the sidebar icons, narrative-planner adding a callout next to the sim) requires the shell to exist as a single HTML page they share.
@@ -679,7 +679,7 @@ Same separation as the simulation block above. **You write the HTML. The planner
 
 **One interactive-media-planner dispatch per project, not per slot.** Same as visual-planner / simulation-planner. A portfolio of three TouchDesigner-style pieces is ONE im-planner dispatch that enumerates the three im-mount iframes and fans out the per-slot drawer set for each.
 
-You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where an interactive piece should live, you write one `<iframe>` slot — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs. Use distinct `imId`s.
+You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where an interactive piece should live, you write one `<iframe>` slot — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs. Use distinct `imId`s.
 
 ```html
 <iframe class="im-mount"
@@ -697,12 +697,12 @@ Then dispatch the planner ONCE. It walks the HTML, enumerates every im-mount slo
 ```
 Task(subagent_type: "interactive-media-planner",
      description: "Enumerate + build every interactive slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='im-mount'> (or every iframe whose data-im is set). For EACH: read imId from data-im, inputs from data-inputs, outputs from data-outputs, mapping style from data-mapping. Per slot: pick inputs + outputs + mapping style + permission flow + glue libraries. Write source/<branch>/interactives/<imId>/research.md. Scaffold + build the per-slot drawer set (research, input(s), mapping, output(s), runtime) + container. Permission gates surfaced to canvas BEFORE Run, per slot. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='im-mount'> (or every iframe whose data-im is set). For EACH: read imId from data-im, inputs from data-inputs, outputs from data-outputs, mapping style from data-mapping. Per slot: pick inputs + outputs + mapping style + permission flow + glue libraries. Write source/<prototype>/interactives/<imId>/research.md. Scaffold + build the per-slot drawer set (research, input(s), mapping, output(s), runtime) + container. Permission gates surfaced to canvas BEFORE Run, per slot. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
 
-- ❌ **Skipping the app shell.** Same trap as the fly bug. Without `source/<branch>/index.html`, the user has no way to open the piece. Always scaffold the shell first.
+- ❌ **Skipping the app shell.** Same trap as the fly bug. Without `source/<prototype>/index.html`, the user has no way to open the piece. Always scaffold the shell first.
 - ❌ "What inputs do you want — mic, camera, mouse?" → Dispatch; research picks the default; user steers at the §12.5 interrupt.
 - ❌ Calling `getUserMedia()` directly from chat-rendered HTML → Permission UX goes through the planner's two-gate pattern inside the piece's runtime.
 - ❌ Writing a shader inline in chat when the user asked for a piece they interact with → that's the shader skill for ad-hoc viz; interactive-media-planner is for PERSISTENT INTERACTIVE PIECES.
@@ -745,7 +745,7 @@ Same separation. **You write the HTML. The planner writes the slot's content. Do
 
 **One narrative-experience-planner dispatch per project, not per slot.** Same as visual-planner. The museum project's PRD is the canonical example — *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting — but they're all enumerated and built by ONE narrative-experience-planner dispatch walking the HTML. Not one dispatch per painting (eight planner calls would be wrong). One planner call that fans out to eight per-slot drawer sets.
 
-You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place the user walks into, write one nx-mount iframe with a distinct `nxId`:
+You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place the user walks into, write one nx-mount iframe with a distinct `nxId`:
 
 ```html
 <iframe class="nx-mount"
@@ -761,7 +761,7 @@ Then dispatch the planner ONCE. It walks every `*.html`, enumerates the nx slots
 ```
 Task(subagent_type: "narrative-experience-planner",
      description: "Enumerate + build every narrative slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<branch>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request — NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<prototype>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request — NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
@@ -873,7 +873,7 @@ Same separation as sim / interactive / narrative. **You write the HTML. The plan
 
 **One game-experience-planner dispatch per project, not per slot.** A portfolio of three playable demos is ONE planner dispatch that enumerates the three game-mount iframes and fans out the per-slot drawer set for each.
 
-You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where a game should live, you write one `<iframe>` slot — including the critical `allow=` attribute for `gyroscope` / `accelerometer` on mobile-tilt games. Use distinct `gameId`s.
+You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a game should live, you write one `<iframe>` slot — including the critical `allow=` attribute for `gyroscope` / `accelerometer` on mobile-tilt games. Use distinct `gameId`s.
 
 ```html
 <iframe class="game-mount"
@@ -895,12 +895,12 @@ Then dispatch the planner ONCE. It walks the HTML, enumerates every game-mount s
 ```
 Task(subagent_type: "game-experience-planner",
      description: "Enumerate + build every game slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='game-mount'> (or every iframe whose data-game is set). For EACH: read gameId from data-game, paradigm hint from data-paradigm-hint, objective from data-objective, inputs from data-inputs, juice from data-juice, success-feel from data-success-feel. Per slot: pick paradigm + physics engine + tick rate + render strategy + multi-draft cruxes. Write source/<branch>/games/<gameId>/research.md. Scaffold + build the per-slot drawer set (research, objective, world, physics, input(s), feedback, loop, overlay, runtime) + container. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='game-mount'> (or every iframe whose data-game is set). For EACH: read gameId from data-game, paradigm hint from data-paradigm-hint, objective from data-objective, inputs from data-inputs, juice from data-juice, success-feel from data-success-feel. Per slot: pick paradigm + physics engine + tick rate + render strategy + multi-draft cruxes. Write source/<prototype>/games/<gameId>/research.md. Scaffold + build the per-slot drawer set (research, objective, world, physics, input(s), feedback, loop, overlay, runtime) + container. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
 ### Do NOT do any of these:
 
-- ❌ **Skipping the app shell.** Same trap as the fly / mememe / coolcam bugs. Without `source/<branch>/index.html`, the user has no way to open the piece. ALWAYS scaffold the shell first.
+- ❌ **Skipping the app shell.** Same trap as the fly / mememe / coolcam bugs. Without `source/<prototype>/index.html`, the user has no way to open the piece. ALWAYS scaffold the shell first.
 - ❌ "What physics engine — matter.js or planck?" → Dispatch; research picks.
 - ❌ "What objective shape — score or progress?" → Dispatch; the user's brief tells you the objective; research formalises the shape.
 - ❌ Calling matter.js / cannon-es from chat-rendered HTML → Game-experience runs as a composed piece inside the planner's territory.
@@ -952,7 +952,7 @@ Same separation as sim / im / nx / game. **You write the HTML. The planner write
 
 **One scrapbook-experience-planner dispatch per project, not per slot.**
 
-You write `source/<branch>/index.html` (and any styles / app.js / sibling pages). For EACH place where a scrapbook should live, you write one `<iframe>` slot. Use distinct `sbId`s.
+You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a scrapbook should live, you write one `<iframe>` slot. Use distinct `sbId`s.
 
 ```html
 <iframe class="scrapbook-mount"
@@ -972,7 +972,7 @@ Then dispatch the planner ONCE. It walks the HTML, enumerates every scrapbook-mo
 ```
 Task(subagent_type: "scrapbook-experience-planner",
      description: "Enumerate + build every scrapbook slot in this project",
-     prompt: "branch=<branch>, projectRoot=<absolute>. Walk every *.html under source/<branch>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<branch>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-planner per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-planner sub-dispatch count."
+     prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<prototype>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-planner per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-planner sub-dispatch count."
 )
 ```
 
@@ -991,7 +991,7 @@ Let the user pick before you dispatch. This is the most-important per-slot cost 
 
 ### Do NOT do any of these:
 
-- ❌ **Skipping the app shell.** ALWAYS scaffold `source/<branch>/index.html` with a `<iframe class="scrapbook-mount" data-scrapbook=...>` slot BEFORE dispatching the planner. Even for "build me a vaporwave website" briefs — the scrapbook runtime lives inside the iframe slot; the index.html hosts it.
+- ❌ **Skipping the app shell.** ALWAYS scaffold `source/<prototype>/index.html` with a `<iframe class="scrapbook-mount" data-scrapbook=...>` slot BEFORE dispatching the planner. Even for "build me a vaporwave website" briefs — the scrapbook runtime lives inside the iframe slot; the index.html hosts it.
 - ❌ "Let me approximate vaporwave with CSS gradients" → **NO.** The whole point is that CSS cannot reach the aesthetic. The chrome lettering is RASTER. Dispatch.
 - ❌ "I'll use one visual-planner dispatch for a hero illustration and CSS for everything else" → **NO.** That's the visual-planner pattern, which is wrong for scrapbook. Scrapbook needs N raster assets composed in a layered z-stack. Dispatch scrapbook-experience-planner.
 - ❌ "What core aesthetic — vaporwave or Y2K?" → Dispatch; research synthesises if the brief mixes signals.
@@ -1045,7 +1045,7 @@ The planner-vs-drawer split here is load-bearing:
 ```
 Task(subagent_type: "interactive-polish-planner",
      description: "Polish pass for the project after primary build",
-     prompt: "branch=<branch>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<branch>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
 ```
 
 ### After polish-planner returns
@@ -1097,7 +1097,7 @@ Before you write your final summary message, before you say "done" or "complete"
      ```
      Task(subagent_type: "interactive-polish-planner",
           description: "Polish pass — last build-phase step before declaring done",
-          prompt: "branch=<branch>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Polish register: any (research picks per genre). Walk every source/<branch>/*.html, identify enrichment sites, dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap.")
+          prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap.")
      ```
      Wait for it to return. Apply the integration edits per the instructions. THEN proceed to step 3.
 

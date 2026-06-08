@@ -63,7 +63,7 @@ def _scan_producer_folders(project_root, kind_name, contract):
     if not tmpl: return []
     if "{variant}" not in tmpl: return []
     parent_tmpl = tmpl.split("{variant}", 1)[0].rstrip("/")
-    parent_path = parent_tmpl.replace("{branch}", "main")
+    parent_path = parent_tmpl.replace("{prototype}", "main").replace("{branch}", "main")
     full_parent = os.path.join(project_root, parent_path.lstrip("/"))
     if not os.path.isdir(full_parent):
         return []
@@ -178,7 +178,7 @@ def _detect_lying_status(workflow, project_root, drifts):
         for req in file_reqs:
             spec = req[len("files:"):].strip()
             if outputs_root_full:
-                rel_outputs_root = contract.get("outputsRoot").replace("{branch}", "main").replace(
+                rel_outputs_root = contract.get("outputsRoot").replace("{prototype}", "main").replace("{branch}", "main").replace(
                     "{variant}", n.get("variant") or "").replace("{dsId}", n.get("dsId") or "main").rstrip("/")
                 spec = spec.replace("outputsRoot", rel_outputs_root)
             lower = spec.lower()
@@ -288,7 +288,7 @@ def _detect_unhandled_outputs(workflow, project_root, drifts):
                         ds_contract = KINDS.get("ds-brainstorm") or {}
                         ds_tmpl = ds_contract.get("outputsRoot") or ""
                         upstream = os.path.join(project_root,
-                            ds_tmpl.replace("{branch}", "main")
+                            ds_tmpl.replace("{prototype}", "main").replace("{branch}", "main")
                                    .replace("{variant}", picked)
                                    .rstrip("/"))
                 except Exception:

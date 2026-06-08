@@ -15,7 +15,7 @@ The design system identified by `meta.dsRef` is your **closed vocabulary**. Ever
 
 **You DO:**
 - Write `source/*.html`, `*.js`, `data.js` using DS classes and tokens.
-- Write `source/styles.css` as a thin overlay — layout helpers / page-composition utilities specific to this branch's feature pages. Should be small or empty.
+- Write `source/styles.css` as a thin overlay — layout helpers / page-composition utilities specific to this prototype's feature pages. Should be small or empty.
 - Emit `DS_PROPOSAL.md` entries when feature pages need something outside the DS vocabulary; proceed with closest-fit substitution.
 
 The genre committed in the DS (via `meta.json.genre` and the `// GENRE:` line at the top of `gallery.html`'s inline script) cascades into your feature pages — read it, but don't re-commit it.
@@ -66,7 +66,7 @@ Always: read the active DS — `design-systems/<dsRef.id>/styles.css`, `gallery.
   ```
   See [`docs/features/asset-versioning.md §9`](../../features/asset-versioning.md#9-subagent-contract-impact).
 
-**Not allowed:** writes to `editor/`, `design-systems/`, or other branches' source folders.
+**Not allowed:** writes to `editor/`, `design-systems/`, or other prototypes' source folders.
 
 ## Recipe
 
@@ -76,7 +76,7 @@ Feature page `index.html` (and every multi-HTML page) loads DS styles first:
 
 ```html
 <link rel="stylesheet" href="../../design-systems/<dsRef.id>/styles.css"/>
-<link rel="stylesheet" href="styles.css"/>   <!-- branch overlay; ideally empty -->
+<link rel="stylesheet" href="styles.css"/>   <!-- prototype overlay; ideally empty -->
 ```
 
 If the prototype is multi-actor / multi-HTML, write `index.html` as a **storyboard** (workflow registry with persona-tagged cards linking to per-page HTMLs), not a regular UI page. See `PROTOTYPE.md` for the storyboard pattern.
@@ -151,9 +151,9 @@ Wait for completion. If the planner reports drops with `drop:uncertain` or `drop
 ## Self-audit
 
 - [ ] I read `design-systems/<dsRef.id>/styles.css` and `gallery.html` end-to-end before writing any feature page. (And the parent DS if `parentRef` is set.)
-- [ ] Every feature page `<link>`s the DS stylesheet first, then the optional branch overlay.
+- [ ] Every feature page `<link>`s the DS stylesheet first, then the optional prototype overlay.
 - [ ] Every class composition used in feature pages comes from the DS vocabulary. Drift signatures (closest-fit substitutions) emitted as proposal entries to `DS_PROPOSAL.md`.
-- [ ] No `:root` declarations in `source/styles.css`. No new primitive-shaped class declarations in the branch overlay. (Overlay is layout helpers only.)
+- [ ] No `:root` declarations in `source/styles.css`. No new primitive-shaped class declarations in the prototype overlay. (Overlay is layout helpers only.)
 - [ ] No inline `style="color: #abc"` or raw hex / px literals. Every color and dimension references a DS token.
 - [ ] No new `design-system.html` file written under `source/`. The DS gallery lives at `design-systems/<dsRef.id>/gallery.html` and is owned by Workflow 0 / 6b.
 - [ ] All mock data in `window.DEMO` (no `fetch`, no API)?
@@ -173,7 +173,7 @@ Specific failure modes to check before reporting done:
 
 - **Missing persona pages.** Storyboard references 3 personas but you only wrote pages for 2. Re-read the storyboard `personas: [...]` and confirm every persona has at least one page (or is explicitly out-of-prototype).
 - **Inline styles instead of tokens.** `style="color: #1a1a1a"` in JSX defeats the design system. Reference `var(--text)` (or whichever DS token applies) instead. If no token fits, emit a proposal entry — don't bake a literal.
-- **Silently inventing a class in `source/styles.css`.** Treats the branch overlay as a DS extension. Wrong: anything primitive-shaped goes through `DS_PROPOSAL.md`. The overlay is for layout helpers like `.feature-grid` or `.toolbar-row`, not new `.card-variant`.
+- **Silently inventing a class in `source/styles.css`.** Treats the prototype overlay as a DS extension. Wrong: anything primitive-shaped goes through `DS_PROPOSAL.md`. The overlay is for layout helpers like `.feature-grid` or `.toolbar-row`, not new `.card-variant`.
 - **Missing `dsRef` in the envelope.** If the planner spawned you without a `dsRef`, abort and surface — Workflow 1 was supposed to gate on this. The user needs Workflow 0 to run first.
 - **Hard-coded JSX data.** `<h3>Sami's Project</h3>` instead of `<h3>${row.title}</h3>` over `window.DEMO`. Other subagents grep `DEMO.` to find entities — hard-coded data is invisible to them.
 - **Real `fetch()` / API calls.** Anything that isn't `window.DEMO` is a no-go.
@@ -184,7 +184,7 @@ Specific failure modes to check before reporting done:
 
 ## Don't
 
-- Don't author the design system. The DS is a library asset; you consume it via `design-systems/<dsRef.id>/styles.css` and `gallery.html`. Vocabulary gaps go through `DS_PROPOSAL.md`, never into the branch overlay.
+- Don't author the design system. The DS is a library asset; you consume it via `design-systems/<dsRef.id>/styles.css` and `gallery.html`. Vocabulary gaps go through `DS_PROPOSAL.md`, never into the prototype overlay.
 - Don't write `design-systems/<id>/*`. That folder belongs to Workflow 0 (build) and Workflow 6b (proposal-driven update).
 - Don't pick "default median light-mode SaaS" — the DS already committed a genre; your feature pages inherit it.
 - Don't add a build step / TypeScript / Tailwind / icon library.

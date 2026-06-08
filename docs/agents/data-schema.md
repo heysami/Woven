@@ -239,14 +239,14 @@ Each `source/index.html` (and every multi-HTML page) loads DS styles via a relat
 
 ```html
 <link rel="stylesheet" href="../../design-systems/<dsRef.id>/styles.css"/>
-<link rel="stylesheet" href="styles.css"/>   <!-- optional branch-specific overrides; ideally empty -->
+<link rel="stylesheet" href="styles.css"/>   <!-- optional prototype-specific overrides; ideally empty -->
 ```
 
-DS styles cascade first; branch styles compose on top but **must not** redefine DS-owned class rules. Audit (Subagent 6) checks this.
+DS styles cascade first; prototype styles compose on top but **must not** redefine DS-owned class rules. Audit (Subagent 6) checks this.
 
 ### Versioning
 
-`meta.json.version` is the content hash of the trio (`styles.css + gallery.html + DESIGN.md`). Branches pin to a version in `meta.dsRef.version`. When Workflow 6b accepts a proposal and updates the DS, the hash changes, and all referencing branches are flagged "regen recommended" (not forced). Branches can be re-pinned by re-running Workflow 1.
+`meta.json.version` is the content hash of the trio (`styles.css + gallery.html + DESIGN.md`). Prototypes pin to a version in `meta.dsRef.version`. When Workflow 6b accepts a proposal and updates the DS, the hash changes, and all referencing prototypes are flagged "regen recommended" (not forced). Prototypes can be re-pinned by re-running Workflow 1.
 
 ### Schema and field ownership
 

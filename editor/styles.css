@@ -1752,7 +1752,7 @@ button {
   outline-offset: -1px;
 }
 
-/* Phase 3.5a — Prototype door (full-page iframe of source/<branch>/). */
+/* Phase 3.5a — Prototype door (full-page iframe of source/<prototype>/). */
 .proto-door {
   position: fixed;
   inset: 0;
@@ -14017,21 +14017,21 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--danger);
 }
 
-/* ───── Phase 5a — branch-doc toolbar buttons + doc viewer modal ───── */
-.branch-docs {
+/* ───── Phase 5a — prototype-doc toolbar buttons + doc viewer modal ───── */
+.prototype-docs {
   display: inline-flex;
   align-items: center;
   gap: 2px;
 }
-.branch-docs-btn {
+.prototype-docs-btn {
   padding: 6px 8px;  /* icon-only, tighter than default .tbtn */
 }
-.branch-docs-btn[disabled] {
+.prototype-docs-btn[disabled] {
   opacity: 0.35;
   cursor: not-allowed;
 }
-.branch-docs-btn[disabled]:hover { background: transparent; color: var(--text-muted); }
-.branch-docs-btn[data-exists="true"] {
+.prototype-docs-btn[disabled]:hover { background: transparent; color: var(--text-muted); }
+.prototype-docs-btn[data-exists="true"] {
   color: var(--text);
 }
 

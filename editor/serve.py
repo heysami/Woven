@@ -1042,6 +1042,20 @@ def _qs_get(qs_or_body, key, default=None):
     return v
 
 
+def _qs_prototype(qs_or_body, default="main"):
+    """Read the prototype slug from a parse_qs dict or JSON body. Prefers the
+    new `prototype` key; falls back to legacy `branch` for older clients
+    (workflow.json files written pre-v3.7, URLs minted by older editor
+    builds). Centralised so every endpoint that scopes by prototype reads
+    the same key with the same fallback semantics."""
+    v = _qs_get(qs_or_body, "prototype")
+    if v is None or v == "":
+        v = _qs_get(qs_or_body, "branch")
+    if v is None or v == "":
+        return default
+    return v
+
+
 def resolve_project_root(qs_or_body=None, *, require_explicit=True):
     """Return absolute path to the active project's root.
 
@@ -1090,12 +1104,11 @@ def resolve_project_root(qs_or_body=None, *, require_explicit=True):
 
 
 def _project_paths(project_root: str) -> dict:
-    """Per-project derived paths. v3.1 — branches deprecated; `branch_dir`
-    and `merges` retained for legacy callers but no longer used."""
+    """Per-project derived paths. v3.1 — branches deprecated; `merges`
+    retained for legacy callers but no longer used."""
     return {
         "source_dir": os.path.join(project_root, "source"),
         "editor_dir": os.path.join(project_root, "editor"),
-        "branch_dir": os.path.join(project_root, "editor"),    # legacy alias → editor/
         "registry":   os.path.join(project_root, "editor", "data.js"),
         "merges":     os.path.join(project_root, ".archive", "MERGES.md"),
     }
@@ -4229,6 +4242,23 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _v31_migrate_data_js(project_root)
             except Exception as e:
                 print(f"[v3.1 migrate] {project_root}: {e}", flush=True)
+            # Per-prototype data routing. A project hosting multiple prototypes
+            # (e.g. demo-inhouse has source/main/ + source/main2/) needs its
+            # OWN frames + sourceRoot + entries per prototype. The editor URL
+            # carries ?prototype=<slug> (legacy: ?branch=<slug>) when launched
+            # from a starred prototype star or a canvas-frames node. If
+            # editor/<slug>.data.js exists, serve THAT instead of the project-
+            # level editor/data.js. Falls back transparently to editor/data.js
+            # so single-prototype projects (and pre-migration projects whose
+            # per-prototype files don't exist yet) keep working unchanged.
+            proto_slug = _qs_prototype(qs, default="").strip()
+            # Reject malformed slugs and traversal attempts. Flat slugs only —
+            # nested prototypes (`<name>/<sub>`) still resolve to editor/data.js
+            # for now; per-prototype data.js doesn't support the nested form.
+            if proto_slug and re.match(r"^[A-Za-z0-9_.-]{1,80}$", proto_slug):
+                per_proto = os.path.join(project_root, "editor", f"{proto_slug}.data.js")
+                if os.path.isfile(per_proto):
+                    return per_proto
             return os.path.join(project_root, *parts)
         # Per-project layout sidecar — editor/<slug>.layout.js. Written by
         # /__layout, loaded by index.html before app.js so positions + grid
@@ -4683,9 +4713,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        slug = (qs.get("branch") or ["main"])[0].strip().lower()
+        slug = _qs_prototype(qs).strip().lower()
         if not slug or not SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid branch slug", "slug": slug})
+            return self._reply(400, {"error": "invalid prototype slug", "slug": slug})
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:
             return self._reply(413, {"error": "payload missing or too large", "bytes": length, "max": MAX_BYTES})
@@ -4718,9 +4748,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         gap = meta_in.get("canvasGap")
         if isinstance(gap, int) and gap >= 0:
             sanitized_meta["canvasGap"] = gap
-        dest_dir = _project_paths(project_root)["branch_dir"]
+        dest_dir = _project_paths(project_root)["editor_dir"]
         if not os.path.isdir(dest_dir):
-            return self._reply(404, {"error": "branches dir missing", "dir": dest_dir})
+            return self._reply(404, {"error": "editor dir missing", "dir": dest_dir})
         dest = os.path.join(dest_dir, slug + ".layout.js")
         payload = {"positions": sanitized_positions}
         if sanitized_meta:
@@ -4738,7 +4768,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                               kind="ui-edit",
                               label=f"Layout: {slug}",
                               source="editor",
-                              extra={"branch": slug}):
+                              extra={"prototype": slug}):
             with open(dest, "w", encoding="utf-8") as f:
                 f.write(js)
         return self._reply(200, {"ok": True, "path": rel_dest, "frames": len(sanitized)})
@@ -5632,7 +5662,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                     c = _kc(dkind, to_id)
                     root = c.get("outputsRoot") if c else None
                     if root:
-                        resolved = root.replace("{branch}", node.get("branch") or "main") \
+                        proto_slug = node.get("prototype") or node.get("branch") or "main"
+                        resolved = root.replace("{prototype}", proto_slug) \
+                                       .replace("{branch}", proto_slug) \
                                        .replace("{variant}", dn.get("variant") or "") \
                                        .replace("{dsId}", dn.get("dsId") or "main") \
                                        .replace("{id}", to_id)
@@ -5754,8 +5786,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # context about wired inputs. Returns the runId immediately;
                 # the canvas node flips to "done" / "error" automatically
                 # when the subprocess exits via _drain_stdout's hook.
-                branch = (qs.get("branch") or ["main"])[0] if hasattr(qs, "get") else "main"
-                # Resolve the branch — prefer the project's active branch, else "main".
+                branch = _qs_prototype(qs) if hasattr(qs, "get") else "main"
+                # Resolve the prototype slug — prefer the project's active one, else "main".
                 try:
                     ws_json = os.path.join(project_root, "..", "..", "workspace.json")
                     if os.path.isfile(ws_json):
@@ -6197,7 +6229,9 @@ class H(http.server.SimpleHTTPRequestHandler):
               # trailing slash) the target is a single file at that path —
               # we still write atomically (temp file + rename).
               resolved = outputs_root_tmpl
-              for k, v in (("branch", node.get("branch") or "main"),
+              _proto = node.get("prototype") or node.get("branch") or "main"
+              for k, v in (("prototype", _proto),
+                           ("branch", _proto),   # legacy alias
                            ("variant", node.get("variant") or ""),
                            ("dsId", node.get("dsId") or "main"),
                            ("simId", node.get("simId") or ""),
@@ -6311,8 +6345,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if picked:
                       from kinds.registry import KINDS as _K
                       ds_tmpl = (_K.get("ds-brainstorm") or {}).get("outputsRoot") or ""
+                      _proto = node.get("prototype") or node.get("branch") or "main"
                       upstream_folder = os.path.join(project_root,
-                        ds_tmpl.replace("{branch}", node.get("branch") or "main")
+                        ds_tmpl.replace("{prototype}", _proto)
+                               .replace("{branch}", _proto)
                                .replace("{variant}", picked).rstrip("/"))
                   except Exception: pass
               if upstream_folder:
@@ -8555,9 +8591,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = self._read_json_body(max_bytes=20 * 1024 * 1024)  # 20MB cap
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        branch = (body.get("branch") or _qs_get(qs, "branch") or "main").strip().lower()
+        branch = (
+            body.get("prototype") or body.get("branch")
+            or _qs_prototype(qs)
+        ).strip().lower()
         if not SLUG_OK.match(branch):
-            return self._reply(400, {"error": "invalid branch slug", "slug": branch})
+            return self._reply(400, {"error": "invalid prototype slug", "slug": branch})
         name_in = (body.get("name") or "attachment").strip()
         data_uri = body.get("data_uri") or ""
         if not isinstance(data_uri, str) or not data_uri.startswith("data:"):
@@ -10540,7 +10579,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        branch = (_qs_get(qs, "branch") or "main").strip().lower()
+        branch = _qs_prototype(qs).strip().lower()
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
         run_filter = (_qs_get(qs, "runId") or "").strip()
@@ -10571,7 +10610,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "error": "doc name not allowed",
                 "allowed": sorted(self._BRANCH_DOC_NAMES),
             })
-        branch = (_qs_get(qs, "branch") or "main").strip().lower()
+        branch = _qs_prototype(qs).strip().lower()
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
         # Per-branch sources live at <project_root>/source/<branch>/<name>.
@@ -10701,7 +10740,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   don't double-execute it. Reply shape: `{job: <SsJob.public_dict>}` or
     #   `{job: null}` on timeout (worker reconnects).
     def _screenshot_poll(self, qs):
-        branch = (_qs_get(qs, "branch") or "").strip().lower()
+        branch = _qs_prototype(qs, default="").strip().lower()
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
 
@@ -10896,7 +10935,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
 
-        branch = (_qs_get(qs, "branch") or "main").strip().lower()
+        branch = _qs_prototype(qs).strip().lower()
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
 
@@ -10990,7 +11029,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
 
-        branch = (_qs_get(qs, "branch") or "main").strip().lower()
+        branch = _qs_prototype(qs).strip().lower()
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
 
@@ -11036,7 +11075,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
 
-        branch = (_qs_get(qs, "branch") or "main").strip().lower()
+        branch = _qs_prototype(qs).strip().lower()
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
 

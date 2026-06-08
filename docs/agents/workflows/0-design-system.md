@@ -1,8 +1,8 @@
 # Workflow 0 — Build / update the design system
 
-**Triggers:** "build design system" / "update DS" / DS spec nodes change on the workflow canvas / no DS library node exists for the active branch and Workflow 1 was requested.
+**Triggers:** "build design system" / "update DS" / DS spec nodes change on the workflow canvas / no DS library node exists for the active prototype and Workflow 1 was requested.
 
-**Prerequisite for Workflow 1.** Workflow 1 (regenerate prototype) is gated on the active branch having `meta.dsRef` pointing at a DS library node. If no DS exists, Workflow 0 runs first and Workflow 1 picks up after.
+**Prerequisite for Workflow 1.** Workflow 1 (regenerate prototype) is gated on the active prototype having `meta.dsRef` pointing at a DS library node. If no DS exists, Workflow 0 runs first and Workflow 1 picks up after.
 
 ## What this workflow produces
 
@@ -39,7 +39,7 @@ The spec lives on the workflow canvas; the agent reads it as JSON via the daemon
 
 1. **Read DS spec** from the workflow canvas (the daemon exposes it; ask the user for the exact endpoint when running). Confirm minimum fields: genre, token-preference, primitive-preset.
 
-2. **Determine target `<id>`.** Default to the active branch slug (`main`, `dense-rows-experiment`, …). If the spec includes a `parentRef`, the new DS inherits from that parent — clone its trio as the starting state and apply overrides.
+2. **Determine target `<id>`.** Default to the active prototype slug (`main`, `dense-rows-experiment`, …). If the spec includes a `parentRef`, the new DS inherits from that parent — clone its trio as the starting state and apply overrides.
 
 3. **Spawn Subagent 0 in PLANNER + parallel-section + MERGER mode** (v2.43).
 

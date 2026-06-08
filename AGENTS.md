@@ -6,7 +6,7 @@ The **design system is a separate library asset** that lives at project root und
 
 Your job: keep the project's artifacts consistent — `source/` (feature pages, constrained by DS) ↔ `editor/data.js` (with `meta.dsRef`) ↔ the DS library node it references. Drift between feature pages and DS is reconciled through the proposal flow (Workflows 6 / 6b).
 
-> **v3.1 — project-level branches removed.** The old multi-branch model (`source/<slug>/` per branch plus a fork/merge workflow) has been replaced by **per-asset sibling-node branching** on the workflow canvas. One project owns one `source/` tree; alternatives live as sibling asset nodes on the workflow graph. See [`docs/features/deprecate-project-branches.md`](docs/features/deprecate-project-branches.md).
+> **v3.1 / v3.7 — project-level branches removed; multi-prototype-per-project replaces them.** The old multi-branch model (fork/merge across `source/<slug>/`) has been replaced by **per-asset sibling-node branching** on the workflow canvas. A project may still host multiple PROTOTYPES under `source/<slug>/` (each surfaced as a starred prototype), but they are siblings, not branches — there is no fork/merge between them. Each prototype owns its own `editor/<slug>.data.js`. See [`docs/features/deprecate-project-branches.md`](docs/features/deprecate-project-branches.md).
 
 ## Workspace mode (Phase 6 — multi-project)
 

@@ -44,26 +44,39 @@ if (!window.EDITOR_DATA || !window.EDITOR_DATA.meta) {
   }
 }
 const D = window.EDITOR_DATA;
-// v3.4.31 — Per-prototype editor scope.
-// In v3.1 we collapsed branches into a flat `source/<slug>/` tree. The
-// editor's data.js historically points at ONE slug via
-// `meta.sourceRoot = "../source/<slug>/"`. The projects-landing now
-// surfaces multiple starred prototypes per project, and each star ships
-// with its own "Editor" affordance — clicking it sets `?branch=<slug>`
-// in the URL. Honor that override here, BEFORE any frame iframe URL is
-// computed, so different prototypes feel like different branches inside
-// the editor (frames load from the requested subtree, the chat panel
-// tags new turns with the active slug, etc.). When no `?branch=` is
-// present the slug baked into data.js wins, preserving the legacy
-// behavior.
+// v3.4.31 / v3.7 — Per-prototype editor scope.
+//
+// A project hosts one OR MORE prototypes under source/<slug>/. The
+// projects-landing surfaces every starred prototype with its own
+// "Editor" affordance — clicking it sets `?prototype=<slug>` in the
+// URL. Honor that override here, BEFORE any frame iframe URL is
+// computed, so different prototypes load the right source subtree.
+//
+// Storage: each prototype gets editor/<slug>.data.js (served by the
+// daemon when ?prototype=<slug> is present), with editor/data.js as a
+// legacy fallback for single-prototype projects.
+//
+// Backward compat: the URL param + meta keys + workflow-node field
+// were called "branch" pre-v3.7 (a residue of project-level branches,
+// which were deprecated in v3.1 but the vocabulary lingered). We still
+// READ the old keys so existing projects/workflow.json files keep
+// working; we WRITE the new keys going forward.
 (() => {
   if (!D || !D.meta) return;
-  let urlBranch = null;
-  try { urlBranch = new URLSearchParams(location.search).get("branch"); } catch {}
-  if (!urlBranch) return;
+  let urlSlug = null;
+  try {
+    const qp = new URLSearchParams(location.search);
+    urlSlug = qp.get("prototype") || qp.get("branch");
+  } catch {}
+  // Legacy meta keys: `branch` + `branchLabel` + `activeBranch` rename to
+  // `prototype` + `prototypeLabel` + `activePrototype`. Mirror old→new so
+  // downstream readers can ignore the legacy form.
+  if (D.meta.branch && !D.meta.prototype) D.meta.prototype = D.meta.branch;
+  if (D.meta.branchLabel && !D.meta.prototypeLabel) D.meta.prototypeLabel = D.meta.branchLabel;
+  if (!urlSlug) return;
   // Reject malformed slugs — only the same alphabet the daemon's
   // _starred_prototypes_toggle endpoint accepts.
-  if (!/^[A-Za-z0-9_.-]{1,80}(?:\/[A-Za-z0-9_.-]{1,80})?$/.test(urlBranch)) return;
+  if (!/^[A-Za-z0-9_.-]{1,80}(?:\/[A-Za-z0-9_.-]{1,80})?$/.test(urlSlug)) return;
   const cur = D.meta.sourceRoot || "../source/";
   // Strip the trailing slug segment from the existing sourceRoot (if
   // any) and append the URL one. Handles three shapes the daemon
@@ -82,15 +95,28 @@ const D = window.EDITOR_DATA;
   }
   prefix = segs.join("/");
   if (!prefix.endsWith("source")) prefix = "../source";
-  D.meta.sourceRoot = `${prefix}/${urlBranch}/`;
-  // Stamp the active branch so downstream readers (chat, runs, layout
-  // sidecar fetches) can read it without parsing the URL again.
-  D.meta.activeBranch = urlBranch;
+  D.meta.sourceRoot = `${prefix}/${urlSlug}/`;
+  // Stamp the active prototype so downstream readers (chat, runs, layout
+  // sidecar fetches) can read it without parsing the URL again. Both
+  // legacy + new keys written for one release; readers should prefer new.
+  D.meta.activePrototype = urlSlug;
+  D.meta.activeBranch = urlSlug;
   // If sourceEntry got blanked by a half-migrated data.js, fall back to
   // index.html so the prototype's root page renders. Bare-name entries
   // already pass through resolveEntry() correctly.
   if (!D.meta.sourceEntry) D.meta.sourceEntry = "index.html";
 })();
+
+// Read the prototype slug off a workflow node, accepting both the new
+// `prototype` field and the legacy `branch` field. Pre-v3.7 nodes (every
+// node on disk before this rename) carry `branch`; new nodes write
+// `prototype`. Falls back to "main" so call sites can skip null-checks.
+// This is the canonical reader — every `(node.branch || "main")` site
+// in the codebase should route through here.
+function nodePrototype(node) {
+  if (!node) return "main";
+  return node.prototype || node.branch || "main";
+}
 // Apply the layout sidecar (if loaded by data.js) BEFORE the editor reads
 // frame positions or grid meta. EDITOR_LAYOUT shapes:
 //   new:    { positions: { [frameId]: { col, row } }, meta: { defaultFrame: {w,h}, canvasGap } }
@@ -6575,7 +6601,7 @@ async function togglePrototypeStar(slug, want) {
 // node is the root prototype on whatever branch it sits in.
 function prototypeSlugForNode(node) {
   if (!node) return null;
-  const branch = (node.branch || "main").trim();
+  const branch = nodePrototype(node).trim();
   if (!branch) return null;
   const sub = (node.subpath || "").replace(/^\/+|\/+$/g, "");
   return sub ? `${branch}/${sub}` : branch;
@@ -13173,6 +13199,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const openProject = (pid, view) => {
     const url = new URL(window.location.href);
     url.searchParams.set("project", pid);
+    url.searchParams.delete("prototype");
     url.searchParams.delete("branch");
     if (view) url.searchParams.set("view", view);
     else url.searchParams.delete("view");
@@ -13511,7 +13538,8 @@ function ProjectsLanding({ info, projects, onReload }) {
                               const url = new URL(window.location.href);
                               url.searchParams.set("project", p.id);
                               url.searchParams.set("view", "prototype");
-                              url.searchParams.set("branch", sp.id);
+                              url.searchParams.set("prototype", sp.id);
+                              url.searchParams.delete("branch");
                               url.searchParams.delete("branch_slug");
                               window.location.href = url.toString();
                             }}
@@ -13530,7 +13558,8 @@ function ProjectsLanding({ info, projects, onReload }) {
                               e.stopPropagation();
                               const url = new URL(window.location.href);
                               url.searchParams.set("project", p.id);
-                              url.searchParams.set("branch", sp.id);
+                              url.searchParams.set("prototype", sp.id);
+                              url.searchParams.delete("branch");
                               url.searchParams.delete("view");
                               window.location.href = url.toString();
                             }}
@@ -13556,12 +13585,14 @@ function ProjectsLanding({ info, projects, onReload }) {
   `;
 }
 
-/* Back-to-landing helper. Clears every per-project URL bit (?project=, ?branch=,
-   ?view=) so the workspace boots back into the gallery. Single source of truth
-   for "leave this project" — used by every top-level view that has a back chip. */
+/* Back-to-landing helper. Clears every per-project URL bit (?project=,
+   ?prototype=, ?view=) so the workspace boots back into the gallery.
+   Single source of truth for "leave this project" — used by every
+   top-level view that has a back chip. */
 function backToProjects() {
   const url = new URL(window.location.href);
   url.searchParams.delete("project");
+  url.searchParams.delete("prototype");
   url.searchParams.delete("branch");
   url.searchParams.delete("view");
   window.location.href = url.toString();
@@ -13575,7 +13606,7 @@ function backToProjects() {
    (?project=) resolves source/<branch>/ to the active project's tree. */
 function PrototypeDoor() {
   const params = new URL(window.location.href).searchParams;
-  const branch = params.get("branch") || "main";
+  const branch = params.get("prototype") || params.get("branch") || "main";
   const project = params.get("project") || "";
   // Slug may be nested ("main/sketches") — encode each segment so the
   // path-separator survives the URL but everything else gets escaped.
@@ -14991,8 +15022,10 @@ function ScreenshotWorker({ branchId, setView }) {
           const j = await r.json();
           const job = j && j.job;
           if (!job) continue;  // timeout — reconnect
-          // Run + post result. The branch on the job is authoritative; we
-          // also passed `branchId` so we'd only ever get a job for it.
+          // Run + post result. The prototype slug on the job is authoritative;
+          // we also passed `branchId` so we'd only ever get a job for it.
+          // (Field name kept as `branch` to match the screenshot daemon's
+          // job-queue schema — that's a separate migration.)
           const result = await runScreenshotJob({ ...job, branch: branchId }, { setView });
           await fetch(apiUrl(`/__screenshot/jobs/${encodeURIComponent(job.id)}/result`), {
             method: "POST",
@@ -17132,9 +17165,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // See docs/features/zoom-mode-plan.md.
   const [zoomTarget, setZoomTarget] = useState(null);
   const openZoomForPrototype = useCallback((node) => {
-    // Prototype nodes load `source/<branch>/` (the index of the branch). If
+    // Prototype nodes load `source/<slug>/` (the index of the prototype). If
     // a lockedState pinned them to a sub-path, honour it for the zoom file too.
-    const branch = node.branch || "main";
+    const branch = nodePrototype(node);
     const pathname = node.lockedState?.pathname || "/source/" + branch + "/";
     // /source/<branch>/foo.html  →  source/<branch>/foo.html
     let rel = pathname.startsWith("/") ? pathname.slice(1) : pathname;
@@ -17153,7 +17186,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // prototype-node's top-bar Canvas-frames button.
   const openCanvasFrames = useCallback((protoNode) => {
     if (!protoNode) return;
-    const branch = protoNode.branch || "main";
+    const branch = nodePrototype(protoNode);
     // Best-effort existence check: window.EDITOR_DATA is loaded once per
     // project, frames + arrows live on D directly. A genuinely missing
     // data file or a freshly forked branch shows up as `D.frames.length
@@ -17269,12 +17302,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         id, kind: "prototype",
         x: Math.round(x - w / 2), y: Math.round(y - 18),
         w, h,
-        branch: payload.branch,
+        // v3.7 — `prototype` is the canonical slug field; accept `branch` from
+        // older drag payloads for compat.
+        prototype: payload.prototype || payload.branch,
         instanceId: id,
       };
       // Depth-2 prototypes (e.g. agent-generated source/main/sketches/) drag
       // with a lockedState so the iframe loads at the right sub-path on
-      // first mount instead of the branch root.
+      // first mount instead of the prototype root.
       if (payload.lockedState) newNode.lockedState = payload.lockedState;
       setData(d => ({
         ...d,
@@ -18171,7 +18206,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!prompt) return;
       const host = (data.nodes || []).find(n => n && n.id === det.nodeId);
       if (host && host.kind === "prototype") {
-        const slug = prototypeSlugForNode(host) || (host.branch || "main");
+        const slug = prototypeSlugForNode(host) || nodePrototype(host);
         const folder = `source/${slug}/`;
         const scopeNote = [
           "Scope: refine the ENTIRE prototype rooted at `" + folder + "`.",
@@ -18224,11 +18259,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (origin.kind === "prototype") {
         const prompt = (det.prompt || "").trim();
         if (!prompt) return;
-        const oldSlug = prototypeSlugForNode(origin) || (origin.branch || "main");
+        const oldSlug = prototypeSlugForNode(origin) || nodePrototype(origin);
         const stamp = Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 5);
-        // Forked branch lives one level under the original slug's first
+        // Forked prototype lives one level under the original slug's first
         // segment so workspace browsers still find both side by side.
-        const rootBranch = (origin.branch || "main").split("/")[0];
+        const rootBranch = nodePrototype(origin).split("/")[0];
         const newSlug = `${rootBranch}-fork-${stamp}`;
         const oldFolder = `source/${oldSlug}/`;
         const newFolder = `source/${newSlug}/`;
@@ -18244,7 +18279,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         const body = buildRefineBody(newFolder, "html", prompt, scopeNote, det.rules);
         try { onStartChatWithPrompt && onStartChatWithPrompt(body); } catch (err) { console.error("[proto-quick-fork]", err); }
         // Optimistically spawn a sibling prototype node so the user sees
-        // where the new branch will live on the canvas. The iframe will
+        // where the new prototype will live on the canvas. The iframe will
         // 404 until the agent finishes copying; the iframe key is bumped
         // by the standard th:asset-refresh path once files land.
         const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -18253,7 +18288,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           nodes: [...(d.nodes || []), {
             id: newId,
             kind: "prototype",
-            branch: newSlug,
+            prototype: newSlug,
             x: (origin.x || 0) + (origin.w || 480) + 60,
             y: origin.y || 0,
             w: origin.w || 480,
@@ -18389,7 +18424,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!prompt) return;
       const project = activeProjectId();
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      const branch = (data.nodes || []).find(n => n.kind === "prototype")?.branch || "main";
+      const branch = nodePrototype((data.nodes || []).find(n => n.kind === "prototype"));
       const newId = `n${stamp}`;
       const relPath = `source/${branch}/components/snippet-${stamp}.html`;
       const bundle = det.cssBundle || { css: "", links: [], rootInlineStyle: null };
@@ -18451,7 +18486,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const det = e && e.detail; if (!det) return;
       const project = activeProjectId();
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      const branch = (data.nodes || []).find(n => n.kind === "prototype")?.branch || "main";
+      const branch = nodePrototype((data.nodes || []).find(n => n.kind === "prototype"));
       const newId = `n${stamp}`;
       const relPath = `source/${branch}/components/snippet-${stamp}.html`;
       const bundle = det.cssBundle || { css: "", links: [], rootInlineStyle: null };
@@ -19118,7 +19153,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     flashPickOp("pending", "Pasting as new asset…");
     try {
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      const branch = (data.nodes || []).find(n => n.kind === "prototype")?.branch || "main";
+      const branch = nodePrototype((data.nodes || []).find(n => n.kind === "prototype"));
       const assetId = `n${stamp}`;
       const relPath = `source/${branch}/components/snippet-${stamp}.html`;
       // v3.2.3 — Build the standalone document with the CSS bundle captured
@@ -20001,7 +20036,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         // path so it gets all first-class prototype behavior (expose
         // assets, source-read port, locked-state navigation, iframe
         // refresh on asset-write, etc.). Default size mirrors the
-        // library drop. `branch` chooses which source/<branch>/ folder
+        // library drop. `prototype` chooses which source/<slug>/ folder
         // the iframe loads from — for agent folder-mode output we set
         // this to the agent's chosen folder name.
         nextNode = {
@@ -20009,7 +20044,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           x: Math.round(origin.x + offsetX),
           y: Math.round(origin.y),
           w: opt.w || 720, h: opt.h || 480,
-          branch: opt.branch || "main",
+          prototype: opt.prototype || opt.branch || "main",
           instanceId: newId,
         };
       } else {
@@ -22089,7 +22124,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           const protoBranch = (() => {
             const pid = down.boundTo && down.boundTo.node;
             const proto = pid ? nodeById[pid] : null;
-            return (proto && proto.branch) || "main";
+            return nodePrototype(proto);
           })();
           const hash = down.svgHash || (down.path.split("/").pop() || "asset");
           const derivedPath = `source/${protoBranch}/images/svg-${hash}.png`;
@@ -22098,6 +22133,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             node: down,
             inlineReplace: {
               original_svg: down.src,
+              // Daemon endpoint still reads `branch`; keep the key here.
               branch: protoBranch,
               bbox: down.bbox || null,
             },
@@ -23328,7 +23364,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       return;
     }
     const protoNode = (data.nodes || []).find(n => n.id === target.boundTo.node);
-    const branch = (protoNode && protoNode.branch) || "main";
+    const branch = nodePrototype(protoNode);
     const extOf = (p) => {
       const m = String(p || "").match(/\.([a-z0-9]+)$/i);
       return m ? m[1].toLowerCase() : "";
@@ -24771,7 +24807,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                       summary.inputs.push({ kind: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, dsRefVersion: up.version });
                     }
                   }
-                  if (t.port === "folder-read" && up.kind === "prototype") { summary.folderRead = `source/${up.branch || "main"}/`; summary.folderReadWired = true; }
+                  if (t.port === "folder-read" && up.kind === "prototype") { summary.folderRead = `source/${nodePrototype(up)}/`; summary.folderReadWired = true; }
                   if (t.port === "folder-read" && up.kind === "design-system") { summary.folderRead = `design-systems/${up.dsId || "main"}/`; summary.folderReadWired = true; }
                   // Folder → folder-read: only honored on REGULAR agents.
                   // On the prototype preset, the `ds` port is DS-only; use
@@ -24784,7 +24820,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 if (f2 && f2.node === n.id) {
                   const to = workflowParseEdgeRef(e.to); if (!to) continue;
                   const down = (data.nodes || []).find(nn => nn.id === to.node); if (!down) continue;
-                  if (f2.port === "folder-write" && down.kind === "prototype") summary.folderWrite = `source/${down.branch || "main"}/`;
+                  if (f2.port === "folder-write" && down.kind === "prototype") summary.folderWrite = `source/${nodePrototype(down)}/`;
                   // Output dispatch — accept `output` (new) + legacy aliases.
                   if (f2.port === "output" || f2.port === "output-1" || f2.port === "output-2" || f2.port === "output-3" || f2.port === "file-out") {
                     let targetType = "any";
@@ -25819,7 +25855,7 @@ function WorkflowLibrary() {
                 outputPath: "source/{{branch}}/",
               }));
             }}
-            title="Drag onto canvas — Prototype generator. A preset of the agent node: system prompt is pre-baked (references PROTOTYPE.md), output is preset to source/<branch>/ as a folder picker, and it accepts a DS input port. Wire a Design system node into the agent's input port (uses design-systems/main/ as default if none wired), wire a Prompt node (or use inline prompt text) for the brief, click ▶ Run or 💬 Chat. Same exact chat mechanism as a regular agent node."
+            title="Drag onto canvas — Prototype generator. A preset of the agent node: system prompt is pre-baked (references PROTOTYPE.md), output is preset to source/<prototype>/ as a folder picker, and it accepts a DS input port. Wire a Design system node into the agent's input port (uses design-systems/main/ as default if none wired), wire a Prompt node (or use inline prompt text) for the brief, click ▶ Run or 💬 Chat. Same exact chat mechanism as a regular agent node."
           >
             <span className="workflow-library-item-glyph"><${Icon.Canvas}/></span>
             <span className="workflow-library-item-label">Prototype generator</span>
@@ -26060,7 +26096,7 @@ function WorkflowLibrary() {
                       onDragStart=${(e) => {
                         e.dataTransfer.effectAllowed = "copy";
                         e.dataTransfer.setData("application/x-th-workflow",
-                          JSON.stringify({ kind: "prototype", branch: branchSeg, lockedState }));
+                          JSON.stringify({ kind: "prototype", prototype: branchSeg, lockedState }));
                       }}
                       title=${"Drag onto canvas — " + p.path}
                     >
@@ -26096,7 +26132,7 @@ function WorkflowLibrary() {
                       onDragStart=${(e) => {
                         e.dataTransfer.effectAllowed = "copy";
                         e.dataTransfer.setData("application/x-th-workflow",
-                          JSON.stringify({ kind: "prototype", branch: branchSeg, lockedState }));
+                          JSON.stringify({ kind: "prototype", prototype: branchSeg, lockedState }));
                       }}
                       title=${"Drag onto canvas — " + p.path}
                     >
@@ -29748,7 +29784,7 @@ function WorkflowCodePanel({ node, onClose, zoom }) {
   const resizingRef = useRef(null);
   const textareaRef = useRef(null);
   const isProto = node.kind === "prototype";
-  const branch = isProto ? (node.branch || "main") : "";
+  const branch = isProto ? nodePrototype(node) : "";
 
   // v3.4.35 — Asset path resolution for the code view.
   //
@@ -30497,8 +30533,8 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   const [devtools, setDevtools] = useState(false);
   const iframeRef = useRef(null);
 
-  const branch  = node.branch || "main";
-  // v3.3 — narrative-experience containers (`nxId`, `source/{branch}/narratives/{nxId}/`)
+  const branch  = nodePrototype(node);
+  // v3.3 — narrative-experience containers (`nxId`, `source/{slug}/narratives/{nxId}/`)
   // join sim + interactive on this renderer; same iframe + lens-verdict chrome,
   // only path/ID/label differ. Future per-family chrome (e.g. narrative beat
   // counter) can fork from the `family` switch below.
@@ -30718,7 +30754,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
 // versioning. The frames + arrows the user sees are the same `model.frames`
 // / `model.arrows` the editor-mode Canvas tab reads ([app.js: CanvasView]).
 //
-// Title bar: drag handle, label `Canvas frames · <branch>`, refresh
+// Title bar: drag handle, label `Canvas frames · <prototype>`, refresh
 // (nonce bump → remount iframe), close.
 // Body: scale-to-fit iframe rendered at 1920×1200 native viewport. Resize
 // corner at bottom-right.
@@ -30726,33 +30762,38 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
-  const branch = node.branch || "main";
+  const protoSlug = nodePrototype(node);
 
   // Iframe URL: hits editor/index.html with embed=1 (skip toolbar/chat/
-  // edits panel) + view=canvas (lock first tab) + branch=<branch> (point
-  // editor/data.js scope at the right prototype slug). apiUrl appends
+  // edits panel) + view=canvas (lock first tab) + prototype=<slug> (point
+  // editor/data.js scope at the right prototype). apiUrl appends
   // ?project=... when in workspace mode.
-  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=canvas&branch=${encodeURIComponent(branch)}`);
+  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=canvas&prototype=${encodeURIComponent(protoSlug)}`);
   const iframeSrc = nonce === 0
     ? baseUrl
     : baseUrl + "&_n=" + nonce;
 
-  // Refresh on asset-changed events scoped to source/<branch>/ so the
-  // iframe re-fetches editor/data.js when frames get regenerated (after
-  // the user runs the "generate frames" flow from this same node).
+  // Refresh on asset-changed events scoped to source/<slug>/ so the
+  // iframe re-fetches editor/<slug>.data.js when frames get regenerated
+  // (after the user runs the "generate frames" flow from this same node).
   useEffect(() => {
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
       if (!paths.length) return;
-      const scope = `source/${branch}/`;
+      const scope = `source/${protoSlug}/`;
       const editorData = "editor/data.js";
-      if (paths.some(p => p && (p.startsWith(scope) || p === editorData || p.endsWith("/editor/data.js")))) {
+      const perProtoData = `editor/${protoSlug}.data.js`;
+      if (paths.some(p => p && (
+        p.startsWith(scope) ||
+        p === editorData || p === perProtoData ||
+        p.endsWith("/editor/data.js") || p.endsWith(`/editor/${protoSlug}.data.js`)
+      ))) {
         setNonce(n => n + 1);
       }
     };
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);
-  }, [branch]);
+  }, [protoSlug]);
 
   // Drag + resize — relative-delta helpers shared with every other node.
   const onHandleDown = useCallback((e) => {
@@ -30829,7 +30870,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph"><${Icon.Canvas}/></span>
-        <span className="workflow-node-label">Canvas frames · ${branch}</span>
+        <span className="workflow-node-label">Canvas frames · ${protoSlug}</span>
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}
           className="workflow-node-action"
@@ -30852,7 +30893,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           ref=${iframeRef}
           className="workflow-node-iframe"
           src=${iframeSrc}
-          title=${"Canvas frames: " + branch}
+          title=${"Canvas frames: " + protoSlug}
           style=${{
             width:  vw + "px",
             height: vh + "px",
@@ -30888,7 +30929,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
 function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
-  const branch = node.branch || "main";
+  const branch = nodePrototype(node);
   // DS audit state — `auditing` = pipeline in flight; `auditResult` = the
   // aggregate { filesAudited, totalFixes, totalViolations, perFile[] }
   // produced by the audit. Stored locally (not on the node) since it's a
@@ -31310,7 +31351,8 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
 
   const openInEditor = useCallback(() => {
     const url = new URL(window.location.href);
-    url.searchParams.set("branch", branch);
+    url.searchParams.set("prototype", branch);
+    url.searchParams.delete("branch");
     url.searchParams.delete("view");
     window.open(url.toString(), "_blank", "noopener");
   }, [branch]);
@@ -33831,7 +33873,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           onInput=${(e) => onChange && onChange({ path: e.target.value })}
           onMouseDown=${(e) => e.stopPropagation()}
           spellcheck=${false}
-          title="Output path — Run writes bytes here. Must start with source/<branch>/"
+          title="Output path — Run writes bytes here. Must start with source/<prototype>/"
         />
       `}
       <div
@@ -35250,11 +35292,11 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     setBakeState({ phase: "baking", error: null });
     try {
       const branch = (() => {
-        // Sniff branch from a wired prototype if present, else "main".
+        // Sniff prototype slug from a wired prototype if present, else "main".
         for (const e of (allEdges || [])) {
           const f = (e.from || "").split(".", 1)[0];
           const up = (allNodes || []).find(n => n.id === f);
-          if (up && up.kind === "prototype" && up.branch) return up.branch;
+          if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
         }
         return "main";
       })();
@@ -36668,7 +36710,7 @@ function WorkflowVectorEditorNode({
           const t = (e.to || "").split(".", 1)[0];
           // upstream prototype (rare) or downstream prototype.
           const peer = (allNodes || []).find(n => n.id === (f === node.id ? t : f));
-          if (peer && peer.kind === "prototype" && peer.branch) return peer.branch;
+          if (peer && peer.kind === "prototype") { const s = peer.prototype || peer.branch; if (s) return s; }
         }
         return "main";
       })();
@@ -38623,7 +38665,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
         for (const e of (allEdges || [])) {
           const f = (e.from || "").split(".", 1)[0];
           const up = (allNodes || []).find(n => n.id === f);
-          if (up && up.kind === "prototype" && up.branch) return up.branch;
+          if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
         }
         return "main";
       })();
@@ -40112,7 +40154,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
               disabled=${attaching}
               data-disabled=${attaching}
               onClick=${(e) => { e.stopPropagation(); fileInputRef.current && fileInputRef.current.click(); }}
-              title="Pick one or more files. Each gets uploaded under source/<branch>/_attachments/. Paths are surfaced in the Build prompt so the LLM/agent can decide whether to inline content."
+              title="Pick one or more files. Each gets uploaded under source/<prototype>/_attachments/. Paths are surfaced in the Build prompt so the LLM/agent can decide whether to inline content."
             >${attaching ? "Uploading…" : "📎 Attach files"}</button>
             <input
               className="workflow-node-ds-input workflow-node-ds-attach-url"
@@ -41834,7 +41876,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
               disabled=${attaching}
               data-disabled=${attaching}
               onClick=${(e) => { e.stopPropagation(); fileInputRef.current && fileInputRef.current.click(); }}
-              title="Pick one or more files. Each gets uploaded under source/<branch>/_attachments/. The agent gets the paths in its prompt and decides whether to Read each one."
+              title="Pick one or more files. Each gets uploaded under source/<prototype>/_attachments/. The agent gets the paths in its prompt and decides whether to Read each one."
             >${attaching ? "Uploading…" : "📎 Attach files"}</button>
             <input
               className="workflow-node-ds-input workflow-node-ds-attach-url"
@@ -43338,7 +43380,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         const sub = m ? m[2] : "";
         const isAtBranchRoot = sub === "index.html";
         const upgrade = {
-          kind: "prototype", branch: branchSeg,
+          kind: "prototype", prototype: branchSeg,
           w: guessedW, h: guessedH + 60,
           assetKind: null, path: null, src: null, svgHash: null, svgIndex: null,
         };
@@ -44795,16 +44837,16 @@ function BranchDocsButtons() {
 
   const open  = openName === "NOTES.md" ? notes : openName === "brand-spec.md" ? brand : null;
   const title = openName === "NOTES.md" ? "Notes — decision log" : "Brand spec";
-  // Hide the whole group when neither doc exists on this branch — keeps the
-  // toolbar tidy on greenfield branches that haven't been through Workflow 1
+  // Hide the whole group when neither doc exists on this prototype — keeps the
+  // toolbar tidy on greenfield prototypes that haven't been through Workflow 1
   // or the discovery flow yet.
   const anyExists = notes.exists || brand.exists;
   if (notes.loaded && brand.loaded && !anyExists) return null;
 
   return html`
-    <div className="branch-docs">
+    <div className="prototype-docs">
       ${notes.exists && html`<button
-        className="tbtn branch-docs-btn"
+        className="tbtn prototype-docs-btn"
         data-exists=${notes.exists}
         data-loaded=${notes.loaded}
         data-tip-host="true"
@@ -44816,7 +44858,7 @@ function BranchDocsButtons() {
         <span className="tab-tip">Notes</span>
       </button>`}
       ${brand.exists && html`<button
-        className="tbtn branch-docs-btn"
+        className="tbtn prototype-docs-btn"
         data-exists=${brand.exists}
         data-loaded=${brand.loaded}
         data-tip-host="true"

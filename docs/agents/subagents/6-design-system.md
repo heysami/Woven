@@ -1,6 +1,6 @@
 # Subagent 6 — DS audit (lens: feature pages vs design system)
 
-You audit the **active branch's feature pages against the design system** identified by `meta.dsRef`. Your output is a drift report — a list of feature-page class and token usages that are NOT covered by the DS — written to `DS_PROPOSAL.md` at project root for the user to review.
+You audit the **active prototype's feature pages against the design system** identified by `meta.dsRef`. Your output is a drift report — a list of feature-page class and token usages that are NOT covered by the DS — written to `DS_PROPOSAL.md` at project root for the user to review.
 
 **You do NOT extract primitives. You do NOT write `tokens` / `primitives` / `library` in the branch data file.** Those fields mirror the DS library node and are populated by the planner. You read the DS, you read feature pages, and you diff.
 
@@ -167,7 +167,7 @@ Format per the template above. One section per proposal, numbered. If zero propo
 - **Treating utility classes as drift.** `.mt-2`, `.flex-1`, `.gap-3` are atomic helpers — not DS concerns. Skip them but log the count.
 - **Missing `meta.json.parentRef` inheritance.** If the active DS inherits from a parent, the parent's classes ARE part of the vocabulary. Failing to union them produces false-positive drift.
 - **Inline `style="color: #abc"` not caught.** Run grep E (inline color literals) — these bypass tokens and are a primary form of drift.
-- **Source-file scope.** The audit covers the active branch's `source/` only. Other branches have their own audits.
+- **Source-file scope.** The audit covers the active prototype's `source/` only. Other branches have their own audits.
 - **Grouping miss.** Five files using `.btn-primary.icon.small` should produce ONE proposal with five usage locations, not five identical proposals.
 - **Stale audit against an outdated DS.** Always check `dsRef.version === design-systems/<id>/meta.json.version`. If the DS bumped after the branch was last regen'd, the audit may be flagging things the new DS already handles.
 
@@ -175,6 +175,6 @@ Format per the template above. One section per proposal, numbered. If zero propo
 
 - Don't write `tokens` / `primitives` / `library` to the branch data file. Those are planner-mirrored from the DS.
 - Don't write `DS_PROPOSAL.md` if zero proposals — no empty artifact.
-- Don't read other branches' source folders.
+- Don't read other prototypes' source folders.
 - Don't be permissive. Every drift gets a logged proposal.
 - Don't propose a variant that already exists in DS — that's a "covered" decision, not a proposal.

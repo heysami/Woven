@@ -12,7 +12,7 @@ The second most common failure is *under-rendering the gallery*. The primitive-p
 
 ## Input (envelope only)
 
-- `id` — DS id (typically the active branch slug, or a user-chosen string like `"dense-rows-experiment"`)
+- `id` — DS id (typically the active prototype slug, or a user-chosen string like `"dense-rows-experiment"`)
 - `spec` — the DS spec JSON (see Workflow 0 § "Inputs"):
   - `genre` (string, required)
   - `references` (array of URLs or screenshot refs, optional but recommended)

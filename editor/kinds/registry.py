@@ -162,17 +162,17 @@ KINDS = {
 
             # ── Simulation component drawers (wildcard prefixes) ──────────────
             "sim_research_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/research.md",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/research.md",
                 "completion": {"requires": ["files: research.md exists, non-empty"]},
                 "notes": "Synthesised paradigm pick + citations from the 4-researcher fleet.",
             },
             "sim_entities_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/entities.js",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/entities.js",
                 "completion": {"requires": ["files: entities.js exists, non-empty"]},
                 "notes": "Entity schema + initial state. SoT for scene/loop/controls.",
             },
             "sim_scene_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/scene.html",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/scene.html",
                 "completion": {"requires": [
                     "files: scene.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -180,7 +180,7 @@ KINDS = {
                 "notes": "Renderer. Medium picked by paradigm. Lens-gated.",
             },
             "sim_loop_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/loop.js",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/loop.js",
                 "completion": {"requires": [
                     "files: loop.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -191,17 +191,17 @@ KINDS = {
                 ),
             },
             "sim_controls_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/controls.js",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/controls.js",
                 "completion": {"requires": ["files: controls.js exists, non-empty"]},
                 "notes": "DOM events → state mutations.",
             },
             "sim_overlay_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/overlay.svg",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/overlay.svg",
                 "completion": {"requires": ["files: overlay.svg exists"]},
                 "notes": "Chrome over the scene.",
             },
             "sim_runtime_": {
-                "outputsRoot": "source/{branch}/simulations/{simId}/runtime.html",
+                "outputsRoot": "source/{prototype}/simulations/{simId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -211,11 +211,11 @@ KINDS = {
 
             # ── Interactive component drawers (wildcard prefixes) ─────────────
             "im_research_": {
-                "outputsRoot": "source/{branch}/interactives/{imId}/research.md",
+                "outputsRoot": "source/{prototype}/interactives/{imId}/research.md",
                 "completion": {"requires": ["files: research.md exists, non-empty"]},
             },
             "im_input_": {
-                "outputsRoot": "source/{branch}/interactives/{imId}/input-{modality}.js",
+                "outputsRoot": "source/{prototype}/interactives/{imId}/input-{modality}.js",
                 "completion": {"requires": ["files: input-{modality}.js exists, non-empty"]},
                 "notes": (
                     "Per-modality input drawer. "
@@ -223,7 +223,7 @@ KINDS = {
                 ),
             },
             "im_mapping_": {
-                "outputsRoot": "source/{branch}/interactives/{imId}/mapping.js",
+                "outputsRoot": "source/{prototype}/interactives/{imId}/mapping.js",
                 "completion": {"requires": [
                     "files: mapping.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -234,7 +234,7 @@ KINDS = {
                 ),
             },
             "im_output_": {
-                "outputsRoot": "source/{branch}/interactives/{imId}/output-{medium}.html",
+                "outputsRoot": "source/{prototype}/interactives/{imId}/output-{medium}.html",
                 "completion": {"requires": [
                     "files: output-{medium}.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -245,7 +245,7 @@ KINDS = {
                 ),
             },
             "im_runtime_": {
-                "outputsRoot": "source/{branch}/interactives/{imId}/runtime.html",
+                "outputsRoot": "source/{prototype}/interactives/{imId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -255,7 +255,7 @@ KINDS = {
 
             # ── Lens agents (wildcard — one dispatch per drawer iteration) ────
             "craft_lens_": {
-                "outputsRoot": "source/{branch}/QUALITY_REPORT.json",
+                "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
                 "completion": {"requires": [
                     "files: QUALITY_REPORT.json exists",
                     "outputs.verdict in {pass, fail}",
@@ -267,7 +267,7 @@ KINDS = {
                 ),
             },
             "aesthetic_lens_": {
-                "outputsRoot": "source/{branch}/QUALITY_REPORT.json",
+                "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
                 "completion": {"requires": [
                     "files: QUALITY_REPORT.json exists",
                     "outputs.verdict in {pass, fail}",
@@ -278,7 +278,7 @@ KINDS = {
                 ),
             },
             "concept_lens_": {
-                "outputsRoot": "source/{branch}/QUALITY_REPORT.json",
+                "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
                 "completion": {"requires": [
                     "files: QUALITY_REPORT.json exists",
                     "outputs.verdict in {pass, fail}",
@@ -358,7 +358,7 @@ KINDS = {
 
             # ── Narrative component drawers (wildcard prefixes) ───────────────
             "nx_research_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/research.md",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/research.md",
                 "completion": {"requires": ["files: research.md exists, non-empty"]},
                 "notes": (
                     "Synthesised aesthetic + emotional register + pacing + "
@@ -367,7 +367,7 @@ KINDS = {
                 ),
             },
             "nx_spine_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/spine.js",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/spine.js",
                 "completion": {"requires": [
                     "files: spine.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -379,7 +379,7 @@ KINDS = {
                 ),
             },
             "nx_scene_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/scene.html",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/scene.html",
                 "completion": {"requires": [
                     "files: scene.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -391,7 +391,7 @@ KINDS = {
                 ),
             },
             "nx_ambient_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/ambient.html",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/ambient.html",
                 "completion": {"requires": [
                     "files: ambient.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -405,7 +405,7 @@ KINDS = {
                 ),
             },
             "nx_reveal_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/reveals.js",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/reveals.js",
                 "completion": {"requires": [
                     "files: reveals.js exists, non-empty",
                 ]},
@@ -416,7 +416,7 @@ KINDS = {
                 ),
             },
             "nx_overlay_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/overlay.svg",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/overlay.svg",
                 "completion": {"requires": [
                     "files: overlay.svg exists",
                     "outputs.lensVerdict in {pass}",
@@ -428,7 +428,7 @@ KINDS = {
                 ),
             },
             "nx_runtime_": {
-                "outputsRoot": "source/{branch}/narratives/{nxId}/runtime.html",
+                "outputsRoot": "source/{prototype}/narratives/{nxId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -491,7 +491,7 @@ KINDS = {
 
             # ── Game component drawers (wildcard prefixes) ────────────────────
             "game_research_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/research.md",
+                "outputsRoot": "source/{prototype}/games/{gameId}/research.md",
                 "completion": {"requires": ["files: research.md exists, non-empty"]},
                 "notes": (
                     "Single tech-stack researcher. Picks paradigm + render "
@@ -500,7 +500,7 @@ KINDS = {
                 ),
             },
             "game_objective_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/objective.js",
+                "outputsRoot": "source/{prototype}/games/{gameId}/objective.js",
                 "completion": {"requires": [
                     "files: objective.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -513,7 +513,7 @@ KINDS = {
                 ),
             },
             "game_world_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/world.html",
+                "outputsRoot": "source/{prototype}/games/{gameId}/world.html",
                 "completion": {"requires": [
                     "files: world.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -527,7 +527,7 @@ KINDS = {
                 ),
             },
             "game_physics_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/physics.js",
+                "outputsRoot": "source/{prototype}/games/{gameId}/physics.js",
                 "completion": {"requires": [
                     "files: physics.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -540,7 +540,7 @@ KINDS = {
                 ),
             },
             "game_input_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/input-{modality}.js",
+                "outputsRoot": "source/{prototype}/games/{gameId}/input-{modality}.js",
                 "completion": {"requires": [
                     "files: input-{modality}.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -553,7 +553,7 @@ KINDS = {
                 ),
             },
             "game_feedback_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/feedback.js",
+                "outputsRoot": "source/{prototype}/games/{gameId}/feedback.js",
                 "completion": {"requires": [
                     "files: feedback.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -566,7 +566,7 @@ KINDS = {
                 ),
             },
             "game_loop_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/loop.js",
+                "outputsRoot": "source/{prototype}/games/{gameId}/loop.js",
                 "completion": {"requires": [
                     "files: loop.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -579,7 +579,7 @@ KINDS = {
                 ),
             },
             "game_overlay_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/overlay.svg",
+                "outputsRoot": "source/{prototype}/games/{gameId}/overlay.svg",
                 "completion": {"requires": [
                     "files: overlay.svg exists",
                     "files: overlay.js exists, non-empty",
@@ -593,7 +593,7 @@ KINDS = {
                 ),
             },
             "game_runtime_": {
-                "outputsRoot": "source/{branch}/games/{gameId}/runtime.html",
+                "outputsRoot": "source/{prototype}/games/{gameId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -661,7 +661,7 @@ KINDS = {
 
             # ── Scrapbook component drawers (wildcard prefixes) ───────────────
             "sb_research_": {
-                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/research.md",
+                "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/research.md",
                 "completion": {"requires": [
                     "files: research.md exists, non-empty",
                     "files: inventory.json exists, non-empty",
@@ -675,7 +675,7 @@ KINDS = {
                 ),
             },
             "sb_composition_": {
-                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/composition.html",
+                "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/composition.html",
                 "completion": {"requires": [
                     "files: composition.html exists, non-empty",
                     "files: composition.css exists, non-empty",
@@ -690,7 +690,7 @@ KINDS = {
                 ),
             },
             "sb_typography_": {
-                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/typography.css",
+                "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/typography.css",
                 "completion": {"requires": [
                     "files: typography.css exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -704,7 +704,7 @@ KINDS = {
                 ),
             },
             "sb_motion_": {
-                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/motion.css",
+                "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/motion.css",
                 "completion": {"requires": [
                     "files: motion.css exists, non-empty",
                     "files: motion.js exists, non-empty",
@@ -719,7 +719,7 @@ KINDS = {
                 ),
             },
             "sb_interactions_": {
-                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/interactions.js",
+                "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/interactions.js",
                 "completion": {"requires": [
                     "files: interactions.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -732,7 +732,7 @@ KINDS = {
                 ),
             },
             "sb_runtime_": {
-                "outputsRoot": "source/{branch}/scrapbooks/{sbId}/runtime.html",
+                "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -800,7 +800,7 @@ KINDS = {
 
             # ── Polish component drawers (wildcard prefixes) ──────────────────
             "polish_research_": {
-                "outputsRoot": "source/{branch}/_polish/{polishId}/research.md",
+                "outputsRoot": "source/{prototype}/_polish/{polishId}/research.md",
                 "completion": {"requires": [
                     "files: research.md exists, non-empty",
                     "files: polish-plan.json exists, non-empty",
@@ -816,7 +816,7 @@ KINDS = {
                 ),
             },
             "polish_microanimation_": {
-                "outputsRoot": "source/{branch}/_polish/{polishId}/microanim.css",
+                "outputsRoot": "source/{prototype}/_polish/{polishId}/microanim.css",
                 "completion": {"requires": [
                     "files: microanim.css exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -831,7 +831,7 @@ KINDS = {
                 ),
             },
             "polish_pointer_": {
-                "outputsRoot": "source/{branch}/_polish/{polishId}/pointer.js",
+                "outputsRoot": "source/{prototype}/_polish/{polishId}/pointer.js",
                 "completion": {"requires": [
                     "files: pointer.js exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -845,7 +845,7 @@ KINDS = {
                 ),
             },
             "polish_hover_": {
-                "outputsRoot": "source/{branch}/_polish/{polishId}/hover.css",
+                "outputsRoot": "source/{prototype}/_polish/{polishId}/hover.css",
                 "completion": {"requires": [
                     "files: hover.css exists, non-empty",
                     "outputs.lensVerdict in {pass}",
@@ -859,7 +859,7 @@ KINDS = {
                 ),
             },
             "polish_shader_": {
-                "outputsRoot": "source/{branch}/_polish/{polishId}/shader.html",
+                "outputsRoot": "source/{prototype}/_polish/{polishId}/shader.html",
                 "completion": {"requires": [
                     "files: shader.html exists, non-empty",
                     "files: shader-mount.css exists, non-empty",
@@ -875,7 +875,7 @@ KINDS = {
                 ),
             },
             "polish_runtime_": {
-                "outputsRoot": "source/{branch}/_polish/{polishId}/composite.css",
+                "outputsRoot": "source/{prototype}/_polish/{polishId}/composite.css",
                 "completion": {"requires": [
                     "files: composite.css exists",
                     "files: composite.js exists",
@@ -936,7 +936,7 @@ KINDS = {
             "primaryShell":     {"type": "text", "required": True},
             "compatibleShells": {"type": "array", "required": True},
         },
-        "outputsRoot":  "source/{branch}/_ds_brainstorm/{variant}/",
+        "outputsRoot":  "source/{prototype}/_ds_brainstorm/{variant}/",
         # v2.50 — idTemplate: when the reconciler finds an orphan variant
         # folder on disk that has no matching node, auto-heal substitutes
         # {variant} here to build the new node id. Without this, auto-heal
@@ -1124,7 +1124,7 @@ KINDS = {
             "model":    {"type": "text",   "default": "claude-opus-4-7", "userEditable": True},
         },
         "outputs":      {},
-        "outputsRoot":  "source/{branch}/_remix/p{pageIdx}/",
+        "outputsRoot":  "source/{prototype}/_remix/p{pageIdx}/",
         "consumeFrom": {
             "source": "{upstream.outputsRoot}",
             "rules": [
@@ -1201,7 +1201,7 @@ KINDS = {
             "model":      {"type": "text",   "userEditable": True},
         },
         "outputs":      {},
-        "outputsRoot":  "source/{branch}/_blend/{id}/",
+        "outputsRoot":  "source/{prototype}/_blend/{id}/",
         "consumeFrom": {
             "source": "{upstream[0..n].outputsRoot}",
             "rules":  [{"match": "**/*", "handler": "include-with-weight", "target": "(input)"}],
