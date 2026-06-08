@@ -31,26 +31,49 @@ All five are *inherited from a single chosen genre*. You don't invent any of the
 
 ---
 
-## Step -1 — Read the input before deciding what mode you're in
+## Step -1 — Always confirm direction before building (one carve-out: existing DS)
 
-**Do NOT ask discovery questions when the user's prompt already contains the answers.** The "Decide the genre" section below is for the MINIMAL-PROMPT case — when the user has handed you a one-liner like "build me a dashboard" or "make a marketing page". When the user has already supplied a real brief, you SKIP discovery entirely and go build.
+**Default: ALWAYS pause for a one-message confirmation before committing the genre.** The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large. You only skip the confirmation in the single carve-out below.
 
-A prompt qualifies as "non-minimal — skip discovery" if it carries any of these:
+### The carve-out — existing design system
 
-- An explicit genre or reference product ("Linear-style", "Bloomberg-ish", "looks like Are.na", "Toca Boca warmth meets Headspace calm")
-- A palette specified by hex or token values (e.g. `#FFE9C9`, `oklch(...)`, named colour tokens)
-- A typography stack named ("Inter + JetBrains Mono", "Source Serif 4", "Cormorant + IBM Plex")
-- A list of specific screens / surfaces / pages (≥2 named views)
-- Named characters, personas, brands, or world details ("a creature named Wisp", "the kid's island", "a parent surface and a kid surface")
-- A pre-existing brand spec, design tokens, or DS reference
-- A reference URL, image, or competitor product to match
-- More than ~300 characters of substantive description
+**Check first, before anything else.** If the project already has a committed design system, the visual language is locked and you proceed silently to build. Detection:
 
-If ANY of those apply, commit the genre from the input and proceed straight to Step one. Do NOT enumerate the six axes back at the user as questions. Do NOT print the discovery form. Do NOT ask "what subject? what audience? what activity?" — those are already answered.
+- A `design-systems/<id>/` folder exists at the project root (the canonical Woven location — see §12), OR
+- The brief explicitly names a DS the agent has access to ("use the LXP design system", "extend the PXP DS"), OR
+- The user dropped a brand spec / token file / DS reference into the project tree.
 
-You may ask the user ONE clarification only if the brief is internally contradictory or missing a load-bearing decision (e.g. shell type is ambiguous between two equally good options). Otherwise: build.
+When detected, do NOT ask. Read the DS's `styles.css` + `gallery.html`, inherit its vocabulary, and skip to Step two (shell). The genre commit IS the DS commit.
 
-If the prompt IS minimal (no genre, no palette, no specific screens, no characters, just "make me X") — then yes, run discovery per Step zero below.
+### Otherwise — confirm, regardless of how rich the brief is
+
+Even when the brief is non-minimal (palette named, screens listed, reference product cited, >300 chars of texture), you still surface ONE recap message before building. Shape:
+
+```
+Here's what I'm reading from your brief:
+
+- Genre: <one-line genre commit — e.g. "Bloomberg-dense + scientific-infra marketing">
+- Shell: <best-match shell from §Step two — e.g. "three-column app">
+- Style: <style detail file — e.g. "dense-mono-dark">
+- Aesthetic: <aesthetic detail file or "none" — e.g. "cyberpunk muted">
+- Vibe in one word: <e.g. "ambitious">
+- Screens I'll draw: <2–6 named views>
+
+Confirm to build, or tell me what to swap.
+```
+
+The recap is not the six-axis discovery form. It's a *commit-summary*: what you already inferred, presented for a yes/no/swap. It costs one short turn and removes the entire "subtly off" failure mode.
+
+**Two follow-up behaviours after the recap:**
+
+1. **User confirms** ("yes", "go", "looks good") → build immediately, no further questions.
+2. **User swaps one axis** ("yes but make it warmer", "swap shell to bento") → apply the swap, build, no second confirmation.
+
+Only re-confirm if the swap is large enough to break the whole vibe commit (e.g. user pivots from "finance dashboard" to "kids' app"). Otherwise: apply and go.
+
+### When the brief IS minimal
+
+If the prompt is a one-liner with no genre, no palette, no screens, no characters ("make me a dashboard", "build a marketing page") — then yes, run the six-axis discovery per Step zero AND propose the 3 options per Step one. The recap above does not replace discovery; it sits on top of the silent-commit case the old skip-rule used to cover.
 
 ---
 
@@ -180,7 +203,7 @@ Genre selection is decomposed into independent axes — each picked separately, 
 
 **Why three, not one?** Aesthetic is taste. The AI's tag-intersection top-pick is correct most of the time, but the user may want the second-best for reasons not in the brief (their own preference, brand constraints, what they've already tried). Presenting three options surfaces taste-decisions explicitly instead of burying them in a silent AI commit. The recommended pick stays opinionated; the alternatives respect that the user might know something the brief didn't say.
 
-**When to skip the 3-options step:** when Step -1 fires (the brief is non-minimal — genre / palette / type stack / specific screens / personas already named), OR when the brief is extremely specific ("rebuild this exact Bloomberg dashboard at this URL, same shell same style") AND there's only one plausible recipe match. Default to asking. The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large.
+**When to skip the 3-options step:** when Step -1's DS carve-out fires (an existing `design-systems/<id>/` is committed and the visual language is already locked), OR when the brief is extremely specific ("rebuild this exact Bloomberg dashboard at this URL, same shell same style") AND there's only one plausible recipe match. When the brief is rich but no DS exists, the Step -1 recap REPLACES the 3-options step — you've already committed a direction from the brief and surfaced it for confirmation; don't then offer two alternatives the user didn't ask for. Default to asking. The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large.
 
 **Diversity rule for the 3 options:** the three must differ on at least one axis — ideally the aesthetic axis (because that's the taste call). Don't show three options that are all `mobile-app + claymorphism` with only the aesthetic varying by hue. Show genuine alternatives like `mobile-app + claymorphism + positivity-kawaii` vs `mobile-app + doodle + cottagecore` vs `mobile-app + cream-humanist + (none)` — three distinct vibes for the same brief.
 
