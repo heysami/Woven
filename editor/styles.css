@@ -523,14 +523,21 @@ button {
   --landing-radius:    11px;
   position: fixed;
   inset: 0;
-  overflow: auto;
-  background: oklch(97% 0.004 70);  /* matches the shader's flat-field colour ≈ vec3(0.962…) */
+  /* The ROOT does NOT scroll. Scroll lives on .landing-main below — so
+     the header stays naturally fixed at top (a flex item) and any tab
+     content with its own layout (e.g. SystemLanding's sidebar+content
+     grid) can keep its sidebar in place while only the right content
+     pane scrolls inside landing-main. */
+  overflow: hidden;
+  background: oklch(97% 0.004 70);
   color: var(--text);
   font-family: var(--font-sans);
   display: flex;
   flex-direction: column;
 }
-/* One canvas behind everything draws header texture + teeth + field as one grid */
+/* Background canvas — full viewport, paints the dark band + teeth + light
+   field with diamond pattern. z-index: 0 (the lowest) — it's the
+   absolute background. Cards stack ABOVE it. */
 .landing-bg-canvas {
   position: fixed;
   inset: 0;
@@ -540,16 +547,44 @@ button {
   z-index: 0;
   pointer-events: none;
 }
+/* Dark-band OVERLAY canvas — same geometry as the bg canvas but the shader
+   outputs alpha = dm so only the dark-band + teeth-zigzag area is opaque.
+   z-index: 3 places it ABOVE .landing-main (z=1) so cards scrolling up
+   are visually clipped by the natural teeth zigzag (transparent below the
+   teeth, opaque above). The header content (z=2) lives between this
+   overlay and the bg, painted ON the dark band. */
+.landing-darkband-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 3;
+  pointer-events: none;
+}
 
-/* Header content rides over the dark portion of the canvas. The header itself
-   is transparent — the dark band is painted by the shader. */
+/* Header — a flex item at top, doesn't scroll (root has overflow:hidden).
+   z-index: 4 so the logo / tabs / filter / new-project sit ABOVE the
+   dark-band overlay canvas (z=3). */
 .landing-header {
   position: relative;
-  z-index: 1;
+  z-index: 4;
   background: transparent;
   border-bottom: none;        /* the teeth ARE the boundary now */
   flex: none;
   padding: 0;
+}
+/* Main is the SCROLL CONTAINER. z=1 places content ABOVE the bg canvas
+   (z=0) but BELOW the darkband overlay canvas (z=3) — the darkband
+   shader makes the dark area fully opaque (including the diamond
+   intrusions reaching up from the light field), so any card scrolling
+   into the dark band is cleanly hidden, no white triangles. */
+.landing-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .landing-header-inner {
   position: relative;
@@ -1500,34 +1535,33 @@ button {
 .landing-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
+  gap: 18px;
+  /* Every row clamped to the SAME height — across rows + columns the grid
+     reads as one uniform matrix. Sized to fit:
+       16:9 strip + body (title + id + stats + 1 starred prototype). */
+  grid-auto-rows: 400px;
 }
-/* See-through glass card — the diamond field shows through so the card reads
-   as a frosted pane floating over the grid (see landing-diamonds README §4.2).
-   On hover the card solidifies to white, animated, so the grid stays calm at
-   rest and committed once the user reaches for one. */
+/* Solid-white project card. AT REST: light grey hairline outline, no
+   drop shadow. ON HOVER: shadow lifts in. Clean rest state, clear lift
+   on intent. */
 .landing-card {
   display: grid;
   gap: 10px;
   padding: 20px;
-  align-content: start;  /* don't stretch shorter cards' content to fill the row height */
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  align-content: start;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid var(--border);
   border-radius: var(--landing-radius);
-  box-shadow: 0 3px 12px rgba(40, 34, 26, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  /* v3.5.2 — strong blur so the diamond-grid triangles dissolve into curved
-     smudges behind the glass instead of reading as sharp polygons. The
-     previous 3px barely softened them. */
-  backdrop-filter: blur(16px) saturate(1.25);
-  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  box-shadow: none;
   cursor: pointer;
-  transition: border-color 0.3s ease, box-shadow 0.35s ease, transform 0.2s ease, background 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.35s ease, transform 0.2s ease;
   position: relative;
 }
 .landing-card:hover {
-  background: #ffffff;
-  border-color: var(--border);
-  box-shadow: 0 7px 20px rgba(40, 34, 26, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  /* keep the default light-grey border colour — only the drop shadow
+     lifts in on hover, no darkened outline. */
+  box-shadow: 0 7px 20px rgba(40, 34, 26, 0.11);
 }
 .landing-card:active { transform: translateY(1px); }
 .landing-card:focus-visible {
@@ -1541,10 +1575,14 @@ button {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-/* v3.5.x — Project thumbnail strip. Lives at the top of the landing card
-   when the project has a thumbnail prototype set. The iframe renders the
-   live prototype; pointer-events are off so clicks pass through to the
-   card itself (which routes into the workflow view). */
+/* v3.5.x — Project thumbnail strip. Lives at the top of EVERY landing card —
+   when the project has a thumbnail prototype set the strip renders a live
+   iframe of that page; otherwise it renders a per-project diamond field
+   (shader-driven, cursor-lit, seeded with a stable colour from the project
+   ID so each card has its own identity tone). Both states share the same
+   16:9 ratio so the card layout doesn't shift when a thumbnail is set/cleared.
+   pointer-events are off on the strip itself so clicks pass through to the
+   card (which routes into the workflow view). */
 .landing-card-has-thumb { padding-top: 0; }
 .landing-card-thumb {
   position: relative;
@@ -1556,13 +1594,146 @@ button {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   pointer-events: none;             /* clicks fall through to the card */
 }
-.landing-card-thumb-iframe {
+/* All has-thumb cards (placeholder AND asset) use the SAME row template:
+   strip = auto-sized to its 16:9 aspect-ratio, body row = strict minmax(0, 1fr)
+   so the strip never gets shrunk by body content. Asset cards inherit this
+   so their thumbnail strip has the IDENTICAL height as a placeholder strip
+   in the same row — no more "different sized thumbnails" mismatch. */
+.landing-card.landing-card-has-thumb {
+  gap: 0;                                /* strip + body sit flush */
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;                /* body fills 1fr remainder */
+}
+
+/* Placeholder card: card root and strip are TRANSPARENT (so the bg
+   diamond shader reads through the placeholder strip — the visible
+   "no thumbnail set" affordance). The body wrapper carries the solid
+   white instead, so the title / id / stats area stays clean. Border
+   stays at the default light-grey hairline + hover-only shadow. */
+.landing-card.landing-card-thumb-field {
+  background: transparent;
+}
+.landing-card.landing-card-thumb-field:hover {
+  background: transparent;
+  /* explicit override of the default .landing-card:hover shadow so the
+     same drop shadow is reused — and importantly we wipe any stale inset
+     highlight from earlier iterations so no extra glow leaks in. */
+  box-shadow: 0 7px 20px rgba(40, 34, 26, 0.11);
+}
+.landing-card.landing-card-thumb-field .landing-card-thumb {
+  background: transparent;
+  border-bottom: 0;
+  margin: -20px -20px 0;
+  border-radius: var(--landing-radius) var(--landing-radius) 0 0;
+}
+/* Body wrapper base (applies to ALL has-thumb cards — placeholder + asset).
+   The wrapper is a 2nd-row grid child filling the card below the strip. It
+   uses its own inner grid so the head / id / stats / starred section read
+   the same on both card variants. NO body-level mask — cards without
+   starred prototypes had a weird vignette over empty space. The starred
+   list itself fades its bottom (rule below) when there are more items
+   than fit, so the affordance lives where the content actually overflows. */
+.landing-card.landing-card-has-thumb .landing-card-body {
+  margin: 0 -20px -20px;
+  padding: 32px 20px 20px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  overflow: hidden;
+}
+
+/* Placeholder body: solid white (card root + strip are transparent so
+   the bg shader shows through the strip; the body keeps the clean white
+   tile look). Bleeds to the card edges + rounded bottom corners. */
+.landing-card.landing-card-thumb-field .landing-card-body {
+  border-radius: 0 0 var(--landing-radius) var(--landing-radius);
+  background: #ffffff;
+  transition: background 0.3s ease;
+}
+.landing-card.landing-card-thumb-field:hover .landing-card-body {
+  background: #ffffff;
+}
+/* Hover behaviour for placeholder cards: ONLY the body content area
+   solidifies to white. The strip stays transparent — the diamond shader
+   keeps reading through, with the gradient + cursor halo on top. The
+   user explicitly does NOT want the placeholder strip to turn white. */
+.landing-card.landing-card-thumb-field .landing-card-thumb,
+.landing-card.landing-card-thumb-field .landing-card-field {
+  transition: opacity 0.25s ease;
+}
+/* When a thumbnail asset is the iframe target, render it at a fixed
+   viewport (1280×720) so the page lays out at design-time width, then
+   scale-transform the whole frame down to fit the strip. Without this the
+   iframe content reflows for its actual on-screen pixel size (often
+   ≤ 220 px wide) and the page collapses into a mobile-stacked view. The
+   wrap div hosts the --thumb-scale variable written by the ResizeObserver
+   effect in LandingCardThumbIframe. */
+.landing-card-thumb-iframe-wrap {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.landing-card-thumb-iframe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1280px;
+  height: 720px;
   border: 0;
   display: block;
+  pointer-events: none;
+  transform-origin: top left;
+  /* JS sets --thumb-scale per card via ResizeObserver. The fallback below
+     covers the first paint before measurement lands. */
+  transform: scale(var(--thumb-scale, 0.25));
+}
+/* No-thumbnail variant: a SHEER tinted-glass overlay that lets the
+   background diamond shader read CLEAR through the strip. Two layered
+   fills:
+   1. The colour blend — three seeded palette tones interpolated diagonally
+      at 10% alpha each, so the strip carries a subtle gradient identity
+      without painting over the diamonds.
+   2. The frosted-glass edge — a sharp inset highlight at the top and a
+      hairline ring around the strip. NO backdrop-filter (the user wants
+      the diamond grid visible, not blurred).
+   The ::after layer rides on top and follows the cursor (--field-mx/my)
+   to bloom a soft specular highlight where the user's pointer rests. */
+.landing-card-field {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  overflow: hidden;
+  /* Sheer ~10%-opacity colour mix — three seeded palette tones blended
+     diagonally. The background diamond shader reads CLEAR through this
+     overlay (the parent strip is transparent, the card has no backdrop-
+     filter — see .landing-card.landing-card-thumb-field rules above).
+     NO box-shadow, NO inset highlights — the card root's own border +
+     box-shadow are the ONLY glass plate. Any inset here would read as a
+     second glass element nested inside the card (the "double glass"
+     issue) and that's exactly what we don't want. */
+  background-image: linear-gradient(
+    var(--field-angle, 135deg),
+    color-mix(in srgb, var(--field-c1, #f5f3ef) 16%, transparent) 0%,
+    color-mix(in srgb, var(--field-c2, #f5f3ef) 10%, transparent) 50%,
+    color-mix(in srgb, var(--field-c3, #f5f3ef) 16%, transparent) 100%
+  );
+}
+/* Cursor-driven specular halo. Sits on top of the gradient so it lights up
+   the glass surface at the pointer's location and dims everywhere else.
+   No background-color — the diamonds still read through. */
+.landing-card-field::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      circle at var(--field-mx, 50%) var(--field-my, 50%),
+      rgba(255, 255, 255, calc(0.32 * var(--field-hover, 0))) 0%,
+      rgba(255, 255, 255, calc(0.10 * var(--field-hover, 0))) 22%,
+      transparent 55%
+    );
   pointer-events: none;
 }
 .landing-card-head {
@@ -1747,7 +1918,63 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* max-height caps the visible list region. Sized to ~2 items so the
+     wrapper isn't unnecessarily tall for the common 1–2 starred case. */
+  max-height: 64px;
+  overflow-y: hidden;
 }
+/* For ANY multi-item list (2+ items) — enable scroll capture + add the
+   ::after spacer so the last item can always be scrolled above the fade
+   overlay. Single-item lists stay overflow:hidden so wheel events bubble
+   straight to the page. */
+.landing-card-stars-list.is-multiple {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+.landing-card-stars-list.is-multiple::after {
+  content: "";
+  display: block;
+  height: 40px;
+  flex-shrink: 0;
+}
+/* Visible bottom-fade overlay on the white wrapper when the list has 2+
+   items. A ::after pseudo paints a transparent→white gradient over the
+   bottom 40px of the wrapper so the items underneath fade into the
+   wrapper bg (a visible transition). Pointer-events:none so items
+   beneath still receive clicks/scrolls. */
+.landing-card-stars { position: relative; }
+.landing-card-stars:has(.landing-card-stars-list.is-multiple)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40px;
+  background: linear-gradient(to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.9) 60%,
+    rgba(255, 255, 255, 1) 100%);
+  pointer-events: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  transition: opacity 0.2s ease;
+}
+/* When scrolled to bottom, hide the fade so the last item reads fully. */
+.landing-card-stars:has(.landing-card-stars-list.is-multiple.at-bottom)::after {
+  opacity: 0;
+}
+/* At boundaries, release overscroll-behavior so wheel-up / wheel-down
+   scrolls the PAGE instead of fighting the list. */
+.landing-card-stars-list.is-multiple.at-top,
+.landing-card-stars-list.is-multiple.at-bottom {
+  overscroll-behavior: auto;
+}
+.landing-card-stars-list::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* "STARRED PROTOTYPES" label + star icon hidden on the landing cards —
+   the section's white container + bottom fade are enough signal. The
+   header was eating ~30px of vertical space for no real information. */
+.landing-card-stars-head { display: none; }
 .landing-card-star-row {
   display: flex;
   align-items: stretch;

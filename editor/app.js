@@ -13687,6 +13687,122 @@ function PlannerCard({ planner, busy, onToggle }) {
   `;
 }
 
+// v3.5.x — Per-project diamond field for landing cards that don't have a
+// thumbnail prototype set yet. CSS+SVG diamond tile + JS-driven cursor
+// lighting via CSS custom properties (--mx, --my, --hover). WebGL is OUT:
+// a 21-project landing burns past the browser's per-page WebGL context cap
+// and contexts start getting lost. The CSS approach scales unboundedly,
+// honours prefers-reduced-motion automatically (no rAF), and stays in
+// brand by sharing the same diamond geometry as landing-shaders.
+//
+// Each card hashes its project ID to pick a tint from LANDING_CARD_PALETTE
+// (the SVG inherits that tint via a `background-color` blend), then a
+// radial-gradient layered on top follows the cursor for the live lighting
+// effect. The blob is animated by writing the cursor x/y into the CSS
+// vars from a pointermove handler on the host card.
+function LandingCardField({ seed, hostRef }) {
+  const rootRef = useRef(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    // Walk up to the closest interactive ancestor that actually receives
+    // pointer events. The `.landing-card-thumb` strip is `pointer-events:
+    // none` (clicks fall through to the card) so we must hook the listeners
+    // on `.landing-card` itself — that's the element the user's cursor is
+    // really over.
+    const host = (hostRef && hostRef.current)
+              || (root && root.closest && root.closest(".landing-card"))
+              || (root && root.parentElement);
+    if (!root || !host) return;
+    const pal = (typeof window !== "undefined" && window.LANDING_CARD_PALETTE) || [[0.96, 0.96, 0.94]];
+    // Pick THREE seeded colours from the palette so the gradient blends a
+    // little mix — never just one flat tint. The three offsets are pulled
+    // from the same FNV-1a hash so the choice is stable across reloads
+    // (same project → same trio), but visually distinct from its neighbour.
+    let h = 0x811c9dc5 >>> 0;
+    for (let i = 0; i < (seed || "").length; i++) {
+      h ^= (seed || "").charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    const idx1 = h % pal.length;
+    const idx2 = (Math.floor(h / pal.length) + 3) % pal.length;
+    const idx3 = (Math.floor(h / (pal.length * pal.length)) + 7) % pal.length;
+    const angle = (h % 360);
+    const toCss = (t) => `rgb(${(t[0]*255).toFixed(0)} ${(t[1]*255).toFixed(0)} ${(t[2]*255).toFixed(0)})`;
+    root.style.setProperty("--field-c1", toCss(pal[idx1]));
+    root.style.setProperty("--field-c2", toCss(pal[idx2]));
+    root.style.setProperty("--field-c3", toCss(pal[idx3]));
+    root.style.setProperty("--field-angle", angle + "deg");
+    // Cursor tracking — write the cursor position (relative to the card)
+    // into CSS vars the gradient consumes. Hover signal eases up/down so
+    // the lighting blooms in instead of snapping.
+    let hover = 0, target = 0;
+    let raf = 0;
+    function tick() {
+      hover += (target - hover) * 0.15;
+      root.style.setProperty("--field-hover", hover.toFixed(3));
+      if (Math.abs(target - hover) > 0.005) raf = requestAnimationFrame(tick);
+      else raf = 0;
+    }
+    function onMove(e) {
+      const r = root.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * 100;
+      const y = ((e.clientY - r.top) / r.height) * 100;
+      root.style.setProperty("--field-mx", x.toFixed(1) + "%");
+      root.style.setProperty("--field-my", y.toFixed(1) + "%");
+    }
+    function onEnter() { target = 1; if (!raf) raf = requestAnimationFrame(tick); }
+    function onLeave() { target = 0; if (!raf) raf = requestAnimationFrame(tick); }
+    host.addEventListener("pointermove", onMove);
+    host.addEventListener("pointerenter", onEnter);
+    host.addEventListener("pointerleave", onLeave);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      try {
+        host.removeEventListener("pointermove", onMove);
+        host.removeEventListener("pointerenter", onEnter);
+        host.removeEventListener("pointerleave", onLeave);
+      } catch {}
+    };
+  }, [seed, hostRef]);
+  return html`<div ref=${rootRef} className="landing-card-field" aria-hidden="true"/>`;
+}
+
+// v3.5.x — Thumbnail-iframe scale-to-fit. The iframe renders at a fixed
+// 1280×720 viewport so the page lays out as it would on desktop; this
+// effect measures the strip and writes a --thumb-scale CSS var so the
+// transform: scale(var(--thumb-scale)) fits the page into the strip's
+// actual on-screen width. ResizeObserver re-fires on every grid reflow.
+function LandingCardThumbIframe({ src, title }) {
+  const wrapRef = useRef(null);
+  const iframeRef = useRef(null);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const update = () => {
+      const w = wrap.getBoundingClientRect().width;
+      if (w > 0) wrap.style.setProperty("--thumb-scale", String(w / 1280));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
+  return html`
+    <div ref=${wrapRef} className="landing-card-thumb-iframe-wrap">
+      <iframe
+        ref=${iframeRef}
+        className="landing-card-thumb-iframe"
+        src=${src}
+        title=${title}
+        sandbox="allow-scripts allow-same-origin"
+        scrolling="no"
+        loading="lazy"
+        tabIndex=${-1}
+      />
+    </div>
+  `;
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -13839,17 +13955,58 @@ function ProjectsLanding({ info, projects, onReload }) {
   // context the moment the user enters a project (this component unmounts).
   // ──────────────────────────────────────────────────────────────────────────
   const bgCanvasRef = useRef(null);
+  const darkbandCanvasRef = useRef(null);
   useEffect(() => {
     if (!bgCanvasRef.current || typeof window.mountShader !== "function") return;
-    const dispose = window.mountShader(bgCanvasRef.current, window.SHADER_BG, {
+    const boundaryFn = () => {
+      const h = document.querySelector(".landing-header");
+      return h ? h.offsetHeight : 150;
+    };
+    const disposeBg = window.mountShader(bgCanvasRef.current, window.SHADER_BG, {
       track: window,
-      boundaryFn: () => {
-        const h = document.querySelector(".landing-header");
-        return h ? h.offsetHeight : 150;
-      },
+      boundaryFn,
     });
-    return dispose;
+    // The dark-band overlay canvas sits ABOVE .landing-main so cards
+    // scrolling up are visually clipped by the zigzag teeth (alpha = dm).
+    // Same boundary function so both canvases agree on where the line is.
+    let disposeDark;
+    if (darkbandCanvasRef.current && window.SHADER_DARKBAND) {
+      disposeDark = window.mountShader(darkbandCanvasRef.current, window.SHADER_DARKBAND, {
+        track: window,
+        alpha: true,
+        boundaryFn,
+      });
+    }
+    return () => { if (disposeBg) disposeBg(); if (disposeDark) disposeDark(); };
   }, []);
+
+  // v3.5.x — Sticky landing-header support. The header position-sticks at
+  // top: 0 within .landing-root (which is the scroll container). The bg
+  // canvas is masked to be opaque only down to header.offsetHeight + teeth
+  // height (so the dark band + teeth stick at top while cards scroll behind
+  // them — light-field area below is transparent so cards remain visible).
+  // We need to update the CSS `--dark-band-height` variable whenever the
+  // header height changes (different tab, viewport resize, projects load).
+  useEffect(() => {
+    const root = document.querySelector(".landing-root");
+    const header = document.querySelector(".landing-header");
+    if (!root || !header) return;
+    const update = () => {
+      root.style.setProperty("--dark-band-height", header.offsetHeight + "px");
+    };
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(header);
+      window.addEventListener("resize", update);
+      return () => {
+        ro.disconnect();
+        window.removeEventListener("resize", update);
+      };
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [activeTab, projects.length]);
 
   // v3.5.1 — Auto-flip card text to white when the card sits over the dark
   // header band (the diamond field draws a dark zone the top `boundaryFn` px
@@ -13897,9 +14054,53 @@ function ProjectsLanding({ info, projects, onReload }) {
     return () => io.disconnect();
   }, [projects.length, filter, activeTab]);
 
+  // v3.5.x — Starred-list scroll affordance manager. Each .landing-card-stars-
+  // list element needs:
+  //   • .is-scrollable class when scrollHeight > clientHeight (drives the
+  //     fade-at-bottom mask + flips overflow to auto so wheel works)
+  //   • .at-bottom class when scrolled to the end (drops the mask AND drops
+  //     overscroll-behavior so further wheel scrolls the PAGE not the list)
+  // Without this the default overflow:auto would intercept wheel events on
+  // single-item lists (nothing to scroll, but wheel still consumed) and the
+  // mask would hide the final item when the user is already at the end.
+  useEffect(() => {
+    const lists = document.querySelectorAll(".landing-card-stars-list");
+    if (!lists.length) return;
+    const cleanups = [];
+    lists.forEach((list) => {
+      const update = () => {
+        // `is-multiple` → 2+ starred prototypes. Drives the visible fade
+        // overlay + the ::after scroll-spacer + overflow:auto. Single-
+        // item lists stay clean: no scroll capture, no fade.
+        // `at-top` / `at-bottom` → toggle overscroll-behavior so wheel
+        // events bubble to the page at the list's boundaries.
+        const items = list.querySelectorAll("li").length;
+        const multiple = items > 1;
+        const atTop = multiple && list.scrollTop <= 1;
+        const atBottom = multiple && (list.scrollTop + list.clientHeight >= list.scrollHeight - 2);
+        list.classList.toggle("is-multiple", multiple);
+        list.classList.toggle("at-top", atTop);
+        list.classList.toggle("at-bottom", atBottom);
+      };
+      update();
+      list.addEventListener("scroll", update, { passive: true });
+      let ro = null;
+      if (typeof ResizeObserver !== "undefined") {
+        ro = new ResizeObserver(update);
+        ro.observe(list);
+      }
+      cleanups.push(() => {
+        list.removeEventListener("scroll", update);
+        if (ro) ro.disconnect();
+      });
+    });
+    return () => cleanups.forEach((fn) => fn());
+  }, [projects.length, filter, activeTab]);
+
   return html`
     <div className="landing-root">
       <canvas ref=${bgCanvasRef} className="landing-bg-canvas" aria-hidden="true"></canvas>
+      <canvas ref=${darkbandCanvasRef} className="landing-darkband-canvas" aria-hidden="true"></canvas>
       <header className="landing-header">
         <div className="landing-header-inner">
           <div className="landing-brandrow">
@@ -14041,20 +14242,16 @@ function ProjectsLanding({ info, projects, onReload }) {
                 </div>
               </div>
             ` : html`
-              <div key=${p.id} className=${"landing-card" + (p.thumbnailPrototype && p.thumbnailPrototype.exists ? " landing-card-has-thumb" : "")} onClick=${() => openProject(p.id, "workflow")} role="button" tabIndex=${0} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProject(p.id, "workflow"); } }}>
-                ${p.thumbnailPrototype && p.thumbnailPrototype.exists && html`
-                  <div className="landing-card-thumb">
-                    <iframe
-                      className="landing-card-thumb-iframe"
-                      src=${"/" + p.thumbnailPrototype.path + "?project=" + encodeURIComponent(p.id)}
-                      title=${"Preview of " + (p.thumbnailPrototype.label || p.thumbnailPrototype.id)}
-                      sandbox="allow-scripts allow-same-origin"
-                      scrolling="no"
-                      loading="lazy"
-                      tabIndex=${-1}
-                    />
-                  </div>
-                `}
+              <div key=${p.id} className=${"landing-card landing-card-has-thumb" + (p.thumbnailPrototype && p.thumbnailPrototype.exists ? " landing-card-thumb-asset" : " landing-card-thumb-field")} onClick=${() => openProject(p.id, "workflow")} role="button" tabIndex=${0} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProject(p.id, "workflow"); } }}>
+                <div className="landing-card-thumb">
+                  ${p.thumbnailPrototype && p.thumbnailPrototype.exists
+                    ? html`<${LandingCardThumbIframe}
+                        src=${"/" + p.thumbnailPrototype.path + "?project=" + encodeURIComponent(p.id)}
+                        title=${"Preview of " + (p.thumbnailPrototype.label || p.thumbnailPrototype.id)}
+                      />`
+                    : html`<${LandingCardField} seed=${p.id} hostRef=${null}/>`}
+                </div>
+                <div className="landing-card-body">
                 <div className="landing-card-head">
                   <span className="landing-card-anchor" aria-hidden="true"></span>
                   <div className="landing-card-label">${p.label || p.id}</div>
@@ -14129,6 +14326,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                     </ul>
                   </div>
                 `}
+                </div>
               </div>
             `)}
             ${filter && filtered.length === 0 && html`
