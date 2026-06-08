@@ -16296,9 +16296,14 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
     left: (rect.right - 32) + "px",
     zIndex: 60,
   };
+  // v3.4.x — Tooltip lists the full pick-mode op surface so the user knows
+  // what's available without having to discover each shortcut. Mirrors the
+  // keyboard map at WorkflowSurface.useEffect onKey (app.js:19553+):
+  // Cmd+C copy · Cmd+V paste · Cmd+R replace · Cmd+D duplicate · ←↑→↓
+  // reorder/nudge · Delete · Esc / click any badge to exit.
   const tipText = active
-    ? "Pick any element across iframes · Esc or click any badge to exit"
-    : "Pick element to copy, paste, or delete";
+    ? "Pick · Cmd+C copy · Cmd+V paste · Cmd+R replace · Cmd+D duplicate · ←↑→↓ move · Delete · Esc to exit"
+    : "Pick to copy · paste · replace · duplicate · move · delete";
   // Tooltip placement — auto-flip below if no headroom (same threshold as
   // HoverTip uses for the top-nav case). The badge anchors at top: rect.top
   // - 40 with height 32; bubble sits 6px above its top (or 6px below its
@@ -29503,6 +29508,7 @@ function WorkflowCodePanel({ node, onClose, zoom }) {
     <div
       className="workflow-code-panel"
       data-host-node-id=${node.id}
+      data-scroll-internally="true"
       style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
       onMouseDown=${(e) => e.stopPropagation()}
       onWheel=${(e) => e.stopPropagation()}
