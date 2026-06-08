@@ -561,6 +561,10 @@ const Icon = {
   Alert:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2.5l6 10.5H2z"/><path d="M8 6.5v3M8 11.2v.01"/></svg>`,
   Shuffle:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 4h2.5c1.6 0 2.4 1.2 3.5 2.8M2 12h2.5c1.6 0 2.4-1.2 3.5-2.8"/><path d="M11 4l-2.4 3.6M11 12L8.6 8.4"/><path d="M11 2.5L13.5 4 11 5.5M11 10.5L13.5 12 11 13.5"/></svg>`,
   Loop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4 7a4 4 0 016.4-2.3M12 9a4 4 0 01-6.4 2.3"/><path d="M10 3.2l.6 1.9-1.9.5M6 12.8l-.6-1.9 1.9-.5"/></svg>`,
+  // v3.4.x — Wave: sine-wave glyph used by the quick-refine/remix/fork rule chips
+  // for the "free" state (lock → free → encourage cycle). Reads as "loose / can vary"
+  // visually without leaning on the ~ tilde character.
+  Wave:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 9c1.2-3 2.5-3 3.5 0s2.3 3 3.5 0 2.3-3 3.5 0"/></svg>`,
   Star:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.7 3.9 4.3.4-3.2 2.8 1 4.2L8 11.6 4.2 13.3l1-4.2L2 6.3l4.3-.4z"/></svg>`,
   Code:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4L2 8l4 4M10 4l4 4-4 4"/></svg>`,
   // v3.1 — clarified node-toolbar icons.
@@ -15237,6 +15241,52 @@ function installPickOverlay(iframeEl, onPick) {
   };
 }
 
+/* v3.4.x — Serialize an iframe document for /__html_save WITHOUT leaking
+   pick-mode editing artifacts into the saved bytes. Without this, every
+   Move / Reorder / Duplicate / Nudge / Replace / Paste-style save would
+   bake the injected <style data-th-pick-style> block AND any lingering
+   .th-pick-hover / .th-pick-selected classes into the source file —
+   accumulating multiple style blocks across saves and surfacing as the
+   "I can't clear the red/blue outlines" symptom even after pick-mode
+   exits. The fix clones documentElement, strips the artifacts from the
+   clone, and returns the dt + outerHTML. Live DOM is untouched, so the
+   user's current pick-mode visual state (highlight on the picked target)
+   survives the save.
+
+   Mirrors zoomSerialize's clone-and-strip pattern (see app.js:26088). */
+function pickSerializeClean(doc) {
+  if (!doc || !doc.documentElement) return "";
+  const clone = doc.documentElement.cloneNode(true);
+  try {
+    // Drop the injected style block(s). querySelectorAll returns a static
+    // NodeList over the clone, so iterating-and-removing is safe.
+    clone.querySelectorAll("style[data-th-pick-style]").forEach(s => s.remove());
+    // Strip the pick-mode marker class from the body clone.
+    const bodyClone = clone.querySelector("body");
+    if (bodyClone) bodyClone.classList.remove("th-pick-mode");
+    // Strip per-element highlight classes everywhere in the clone.
+    clone.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
+      el.classList.remove("th-pick-hover");
+      el.classList.remove("th-pick-selected");
+      // If the strip left class="" behind, drop the attribute entirely so
+      // the file doesn't accumulate empty attrs over many saves.
+      if (el.getAttribute("class") === "") el.removeAttribute("class");
+    });
+  } catch (err) {
+    console.warn("[pickSerializeClean] strip failed; saving raw — file may include pick artifacts", err);
+    return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+  }
+  // Preserve the original doctype if present; otherwise default to HTML5.
+  let dt = "<!DOCTYPE html>";
+  if (doc.doctype) {
+    dt = "<!DOCTYPE " + doc.doctype.name;
+    if (doc.doctype.publicId) dt += " PUBLIC \"" + doc.doctype.publicId + "\"";
+    if (doc.doctype.systemId) dt += " \"" + doc.doctype.systemId + "\"";
+    dt += ">";
+  }
+  return dt + "\n" + clone.outerHTML;
+}
+
 /* Compute a CSS-ish path for an element (tagName chain with :nth-of-type).
    Stops at body or after 8 levels — long enough to be unique without
    becoming unreadable. Used as a stable handle the parent can later
@@ -15614,22 +15664,48 @@ function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, on
           <div className="workflow-asset-action-rules-chips">
             ${RULE_KEYS.map(k => {
               const state = rules[k] || "lock";
-              const stateText = state === "lock"      ? "Keep unchanged"
-                              : state === "free"      ? "Free to change"
-                                                      : "Actively explore variation";
-              const tip = RULE_LABELS[k] + " (" + RULE_GROUP_DETAILS[k] + ")  ·  " + stateText;
+              // v3.4.x — Per-state icon component (SVG, not emoji) so the
+              // chip glyph reads with the rest of the icon set.
+              const IconForState = state === "lock"      ? Icon.Lock
+                                 : state === "encourage" ? Icon.Spark
+                                                         : Icon.Wave;
+              // v3.4.x — Multi-line tooltip listing ALL three cycle states with
+              // the current one marked. Uses the existing data-tip-host + tab-tip
+              // pattern (styles.css :8929). The native `title` attr stays as a
+              // fallback for keyboard-focus assistive tech and for users on
+              // platforms where the custom hover tip doesn't fire.
+              const labelText = (st) => st === "lock"      ? "Lock — keep unchanged"
+                                       : st === "free"      ? "Free — allow change"
+                                                            : "Encourage — actively explore";
+              const titleAttr =
+                RULE_LABELS[k] + " (" + RULE_GROUP_DETAILS[k] + ")\n" +
+                "Click to cycle: Lock → Free → Encourage\n" +
+                "Current: " + labelText(state);
               return html`
                 <button
                   key=${k}
                   type="button"
                   className=${"workflow-asset-action-rule-chip is-" + state}
-                  title=${tip}
+                  data-tip-host=""
+                  title=${titleAttr}
                   onClick=${() => cycleRule(k)}>
-                  <span className="workflow-asset-action-rule-icon">${
-                    state === "lock"      ? "🔒" :
-                    state === "encourage" ? "✨" : "〜"
-                  }</span>
+                  <span className="workflow-asset-action-rule-icon"><${IconForState}/></span>
                   <span>${RULE_LABELS[k]}</span>
+                  <span className="tab-tip workflow-asset-action-rule-tip">
+                    <div className="workflow-asset-action-rule-tip-head">
+                      ${RULE_LABELS[k]} · ${RULE_GROUP_DETAILS[k]}
+                    </div>
+                    <div className="workflow-asset-action-rule-tip-row${state === "lock" ? " is-current" : ""}">
+                      <${Icon.Lock}/><span>Lock — keep unchanged</span>
+                    </div>
+                    <div className="workflow-asset-action-rule-tip-row${state === "free" ? " is-current" : ""}">
+                      <${Icon.Wave}/><span>Free — allow change</span>
+                    </div>
+                    <div className="workflow-asset-action-rule-tip-row${state === "encourage" ? " is-current" : ""}">
+                      <${Icon.Spark}/><span>Encourage — actively explore</span>
+                    </div>
+                    <div className="workflow-asset-action-rule-tip-foot">Click to cycle</div>
+                  </span>
                 </button>
               `;
             })}
@@ -15638,10 +15714,14 @@ function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, on
                 type="button"
                 className="workflow-asset-action-rule-chip is-lock is-pinned"
                 disabled=${true}
+                data-tip-host=""
                 title="File extension / asset kind is always locked — changing it would orphan the canvas node."
                 aria-label="Asset kind locked">
-                <span className="workflow-asset-action-rule-icon">🔒</span>
+                <span className="workflow-asset-action-rule-icon"><${Icon.Lock}/></span>
                 <span>Asset kind</span>
+                <span className="tab-tip workflow-asset-action-rule-tip workflow-asset-action-rule-tip-narrow">
+                  Asset kind is always locked — changing the file extension would orphan the canvas node.
+                </span>
               </button>
             `}
           </div>
@@ -16133,8 +16213,21 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // badge lights up so the user knows pick mode applies everywhere.
   // `originatorId` keeps the activator's id for the (subtle) toggle-target
   // semantics in the click handler.
-  const [active, setActive] = useState(false);
-  const [originatorId, setOriginatorId] = useState(null);
+  //
+  // v3.4.x — Initialize from window.__thPickModeNodeId so badges mounting
+  // AFTER pick-mode is already active pick up the canonical state. The
+  // th:pick-mode-changed event only fires when the canonical state
+  // CHANGES — a badge that arrived late never received it and showed OFF
+  // while pick-mode was actually ON. Clicking such a badge dispatched
+  // th:enter-pick-mode (re-seating the originator) instead of
+  // th:exit-pick-mode (turning it off), which the user reported as "im
+  // still in selection mode but the toggle wasn't toggled on".
+  const [active, setActive] = useState(() => {
+    try { return !!window.__thPickModeNodeId; } catch { return false; }
+  });
+  const [originatorId, setOriginatorId] = useState(() => {
+    try { return window.__thPickModeNodeId || null; } catch { return null; }
+  });
   const [rect, setRect] = useState(null);
   const [tipPos, setTipPos] = useState(null);
   useEffect(() => {
@@ -17873,7 +17966,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   const [pickedElement, setPickedElement] = useState(null);
   // Broadcast pick-mode changes so the select badges can update their
   // `is-active` style without prop drilling.
+  //
+  // v3.4.x — ALSO mirror to window.__thPickModeNodeId so badges mounting
+  // AFTER pick-mode is already active can read the canonical state on
+  // mount. Without this mirror the badge's local `active` defaulted to
+  // false for any badge that arrived late (newly-spawned node, virtualised
+  // re-mount, etc.), and clicking it dispatched th:enter-pick-mode instead
+  // of th:exit-pick-mode — symptom the user reported as "im still in
+  // selection mode but the toggle wasn't toggled on".
   useEffect(() => {
+    try { window.__thPickModeNodeId = pickModeNodeId; } catch {}
     window.dispatchEvent(new CustomEvent("th:pick-mode-changed",
       { detail: { activeNodeId: pickModeNodeId } }));
   }, [pickModeNodeId]);
@@ -18590,6 +18692,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       teardowns.clear();
       pickerIframeRef.current = null;
       pickedDomRef.current = null;
+      // v3.4.x — Belt-and-suspenders: sweep EVERY same-origin iframe in the
+      // DOM and strip the th-pick-mode class + injected style if either is
+      // still present. The teardowns map catches the common case, but a
+      // freshly-mounted iframe could have been installed-into between the
+      // last 400ms poll and the cleanup tick — and the load handler's
+      // tryInstall could have raced cleanup. Either way, the cursor would
+      // stick at "+" inside that iframe even after pick-mode exited. This
+      // sweep is idempotent and cheap (querySelectorAll over iframes).
+      try {
+        document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id]').forEach((ifr) => {
+          let doc;
+          try { doc = ifr.contentDocument; } catch { return; }
+          if (!doc) return;
+          try { doc.body && doc.body.classList && doc.body.classList.remove("th-pick-mode"); } catch {}
+          try { doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
+            el.classList.remove("th-pick-hover");
+            el.classList.remove("th-pick-selected");
+          }); } catch {}
+          try { doc.querySelectorAll('style[data-th-pick-style]').forEach(s => s.remove()); } catch {}
+          try { if (ifr.__thPickOnLoad) { ifr.removeEventListener("load", ifr.__thPickOnLoad); delete ifr.__thPickOnLoad; } } catch {}
+        });
+      } catch {}
     };
   }, [pickModeNodeId]);
 
@@ -18638,6 +18762,55 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     else document.body.removeAttribute("data-pick-op-pending");
     return () => { try { document.body.removeAttribute("data-pick-op-pending"); } catch {} };
   }, [pickOpState]);
+
+  // v3.4.x — React-managed-page guard for structural ops.
+  //
+  // Background: prototypes built with htm + React UMD render their tree from
+  // an `App` component inside a <script> block. Any DOM mutation we apply
+  // here (insertBefore for Move/Reorder/Duplicate/Paste, remove for Delete,
+  // setProperty for Nudge / Paste-style, outerHTML rewrite for Replace)
+  // technically lands and `/__html_save` happily writes it to disk — but the
+  // saved bytes are just the live-rendered tree, not the App source. As soon
+  // as the file-watcher debounce elapses and the iframe nonce-bumps to
+  // reload, React re-mounts and re-renders from the unchanged App source
+  // → the user's edit snaps back. Zoom-mode catches this with
+  // zoomDocHasReact() (see app.js:25989-25993); pick-mode used to let the
+  // edit through silently. This guard mirrors zoom-mode's per-element check
+  // and surfaces a clear error toast pointing the user at the JSX/htm source
+  // instead.
+  //
+  // Granularity is per-element: zoomIsReactManaged() looks for __reactProps$
+  // / __reactFiber$ keys on the element itself. Every node under a React
+  // root carries those, so this correctly distinguishes a React-rendered
+  // child (always reverts) from a static-HTML body in the same project
+  // (e.g. demo-inhouse's `index.html` landing has no createRoot at all,
+  // and edits to it persist normally).
+  //
+  // Falls back to a live re-query through pickedElement.path when the cached
+  // pickedDomRef has gone stale (iframe nonce-bumped between pick and op).
+  // We can't use _resolvePickedLive here because that helper is declared
+  // later in the file — and our useCallback's dep array would TDZ.
+  const _isPickedReactManaged = useCallback((opLabel) => {
+    let el = pickedDomRef.current;
+    if (!el || (el.ownerDocument && !el.ownerDocument.contains(el))) {
+      const ifr = pickerIframeRef.current;
+      const doc = ifr && ifr.contentDocument;
+      if (doc && pickedElement && pickedElement.path) {
+        try { el = doc.querySelector(pickedElement.path); } catch { el = null; }
+      } else {
+        el = null;
+      }
+    }
+    if (!el) return false;
+    if (zoomIsReactManaged(el)) {
+      flashPickOp(
+        "error",
+        `${opLabel} won't survive reload — this element is React-rendered. Edit the App component's source (the <script> block in the page) instead.`
+      );
+      return true;
+    }
+    return false;
+  }, [pickedElement, flashPickOp]);
 
   const copyPickedElement = useCallback(() => {
     if (!pickedElement || !pickedElement.outerHTML) return 0;
@@ -18797,6 +18970,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const project = activeProjectId();
     // Path A: there's a picked target inside an iframe → insert as sibling
     if (pickedDomRef.current && pickerIframeRef.current) {
+      if (_isPickedReactManaged("Paste")) return 0;
       const ifr = pickerIframeRef.current;
       // v3.4.4 — Same three-step recovery as copyPickedElement: cached
       // ref → host iframe by nodeId → re-query selector in live doc. This
@@ -18901,7 +19075,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         });
         const path = resolveIframePath();
         if (!path) { flashPickOp("error", "Paste failed: couldn't resolve target file"); return 0; }
-        const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+        const fullHtml = pickSerializeClean(doc);
         const apiU = apiUrl("/__html_save");
         const u = apiU + (apiU.includes("?") ? "&" : "?") + "_paste=" + Date.now();
         const resp = await fetch(u, {
@@ -19021,7 +19195,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       pastePickedElement._inFlight = false;
     }
-  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget]);
+  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, _isPickedReactManaged]);
 
   // v3.4.20 — Cmd+R: replace the currently picked element with the clipboard's
   // content. Same shape as pastePickedElement Path A (live-source re-read,
@@ -19043,6 +19217,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       flashPickOp("error", "Cmd+R: pick a target element first (click one in the iframe).");
       return 0;
     }
+    if (_isPickedReactManaged("Replace")) return 0;
     // Same-element check: if the picked target IS the clipboard's source,
     // a "replace" would copy the element onto itself. That's almost never
     // the user's intent. Flash a hint instead of doing the no-op.
@@ -19143,7 +19318,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         });
         const path = resolveIframePath();
         if (!path) { flashPickOp("error", "Replace failed: couldn't resolve target file"); return 0; }
-        const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+        const fullHtml = pickSerializeClean(doc);
         const apiU = apiUrl("/__html_save");
         const u = apiU + (apiU.includes("?") ? "&" : "?") + "_replace=" + Date.now();
         const resp = await fetch(u, {
@@ -19170,13 +19345,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       replacePickedElement._inFlight = false;
     }
-  }, [pickedElement, resolveIframePath, flashPickOp]);
+  }, [pickedElement, resolveIframePath, flashPickOp, _isPickedReactManaged]);
 
   const deletePickedElement = useCallback(async () => {
     const ifr = pickerIframeRef.current;
     if (!ifr) return 0;
     const doc = ifr.contentDocument;
     if (!doc) { flashPickOp("error", "Delete failed: iframe doc unavailable"); return 0; }
+    if (_isPickedReactManaged("Delete")) return 0;
     // v3.4 — Same re-query as copy/paste: if the iframe reloaded since pick,
     // pickedDomRef.current is detached and `.remove()` would no-op on a
     // ghost element. Re-resolve via the saved CSS path so we delete from
@@ -19200,7 +19376,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       });
       const path = resolveIframePath();
       if (!path) { flashPickOp("error", "Delete failed: couldn't resolve target file"); return 0; }
-      const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+      const fullHtml = pickSerializeClean(doc);
       const apiU = apiUrl("/__html_save");
       const u = apiU + (apiU.includes("?") ? "&" : "?") + "_del=" + Date.now();
       const resp = await fetch(u, {
@@ -19222,7 +19398,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       flashPickOp("error", "Delete failed: " + (err.message || err));
       return 0;
     }
-  }, [resolveIframePath, flashPickOp]);
+  }, [resolveIframePath, flashPickOp, _isPickedReactManaged]);
 
   // v3.4.32 — Arrow-key element movement.
   //
@@ -19243,7 +19419,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const path = resolveIframePath();
     if (!path) { flashPickOp("error", `${label} failed: couldn't resolve target file`); return false; }
     const project = activeProjectId();
-    const fullHtml = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+    const fullHtml = pickSerializeClean(doc);
     const apiU = apiUrl("/__html_save");
     const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
     const resp = await fetch(u, {
@@ -19380,6 +19556,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     if (!clip || clip.type !== "html-style") return 0;
     const { el, doc } = _resolvePickedLive();
     if (!el || !doc) { flashPickOp("error", "Pick a target element first, then paste style."); return 0; }
+    if (_isPickedReactManaged("Paste style")) return 0;
     if (pastePickedStyle._inFlight) return 0;
     pastePickedStyle._inFlight = true;
     try {
@@ -19398,11 +19575,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       pastePickedStyle._inFlight = false;
     }
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
 
   const nudgePickedElement = useCallback(async (dx, dy) => {
     const { el, doc, win } = _resolvePickedLive();
     if (!el || !doc) return 0;
+    if (_isPickedReactManaged("Nudge")) return 0;
     const cs = win.getComputedStyle(el);
     const pos = cs.position;
     if (pos !== "absolute" && pos !== "fixed") return 0;
@@ -19423,7 +19601,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const ok = await _saveIframeHtml(doc, "Nudge");
     if (ok) flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
     return ok ? 1 : 0;
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
 
   const reorderPickedElement = useCallback(async (direction) => {
     // direction: "up" | "down" | "left" | "right"
@@ -19431,6 +19609,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     if (!el || !doc) return 0;
     const parent = el.parentElement;
     if (!parent) return 0;
+    if (_isPickedReactManaged("Move")) return 0;
     const cs = win.getComputedStyle(el);
     // Sticky / inline / table-row-group etc. — bail out rather than guess.
     if (cs.position === "absolute" || cs.position === "fixed") return 0;
@@ -19469,13 +19648,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const ok = await _saveIframeHtml(doc, "Reorder");
     if (ok) flashPickOp("done", `Moved ${direction}`);
     return ok ? 1 : 0;
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
 
   const duplicatePickedElement = useCallback(async () => {
     const { el, doc } = _resolvePickedLive();
     if (!el || !doc) return 0;
     const parent = el.parentElement;
     if (!parent) return 0;
+    if (_isPickedReactManaged("Duplicate")) return 0;
     const tagSnap = (el.tagName || "").toLowerCase();
     flashPickOp("pending", `Duplicating <${tagSnap}>…`);
     // deep clone preserves nested markup + inline styles. We strip the
@@ -19492,7 +19672,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const ok = await _saveIframeHtml(doc, "Duplicate");
     if (ok) flashPickOp("done", `Duplicated <${tagSnap}>`);
     return ok ? 1 : 0;
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp]);
+  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
 
   // Keyboard shortcuts active only while pickModeNodeId is set. Capture
   // phase so they beat the canvas-level copy/paste/delete handler.
@@ -32565,8 +32745,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         `}
         <span className="workflow-node-asset-name" title=${path}>${basename}</span>
         ${node.animated && html`<span className="workflow-node-asset-tag" title="SMIL animation detected">◐</span>`}
-        <${WorkflowAssetKindChip} kind=${node.assetKind || "image"} path=${path}/>
-        <${WorkflowAssetModelChip} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
         <span className="workflow-node-bar-spacer"/>
         <${WorkflowAssetBgColorPicker}
           nodeId=${node.id}
@@ -38591,8 +38769,16 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   const dsId = (node.dsId || "main").toLowerCase();
   const spec = node.spec || {};
   const attachments = Array.isArray(spec.attachments) ? spec.attachments : [];
-  const w = node.w || 340;
-  const h = node.h || 380;
+  // v3.4.x — Default + floor heights raised so the body's seven sections
+  // (Genre · Token preference · Primitive preset · Additional brief ·
+  // Reference folder · Individual attachments · Actions) all fit without
+  // the user having to discover the auto-hide overflow scrollbar. The old
+  // h=380 default cut content off below "Primitive preset", forcing the
+  // user to scroll inside a node that didn't look scrollable. The floor
+  // keeps existing canvases (pre-bump node.h values were stored at 380)
+  // from rendering the old too-small layout.
+  const w = Math.max(320, node.w || 340);
+  const h = Math.max(640, node.h || 720);
 
   // Poll /__design_system?id=<dsId> on mount + on th:ds-refresh. The endpoint
   // returns 404 when the DS folder doesn't exist yet (status stays "Draft"),
@@ -40509,8 +40695,14 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   const [linkDraft, setLinkDraft] = useState("");
   const [attachError, setAttachError] = useState(null);
   const fileInputRef = useRef(null);
-  const w = Math.max(300, node.w || 360);
-  const h = Math.max(280, node.h || 620);
+  const w = Math.max(320, node.w || 360);
+  // v3.4.x — Default + floor heights raised so the body's nine sections
+  // (Theme · Genre · Target audience · Emotion · Sample page · Imagery
+  // subjects · Reference folder · Individual attachments · Actions) all
+  // fit. The old default of 620 cut off "Individual attachments" and the
+  // action buttons, and the 280 floor let resized nodes render with the
+  // brief stub user reported as content-below-the-scroll-line.
+  const h = Math.max(720, node.h || 820);
   const spec = node.spec || {};
   const mode = spec.mode || "any";
   const attachments = Array.isArray(spec.attachments) ? spec.attachments : [];

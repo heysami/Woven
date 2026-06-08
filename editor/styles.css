@@ -2465,7 +2465,19 @@ body[data-canvas-interacting="true"] .workflow-asset-bg-popover {
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
 .workflow-asset-action-rule-chip:hover { background: var(--surface-2); }
-.workflow-asset-action-rule-icon { font-size: 11px; line-height: 1; }
+/* v3.4.x — Icon slot is now an inline SVG (Icon.Lock / Icon.Wave / Icon.Spark)
+   instead of an emoji glyph; size the svg to match the previous 11px caret
+   height and let stroke inherit currentColor from the chip's text color. */
+.workflow-asset-action-rule-icon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.workflow-asset-action-rule-icon svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
 .workflow-asset-action-rule-chip.is-lock {
   color: var(--text-muted);
   background: var(--surface);
@@ -2485,6 +2497,58 @@ body[data-canvas-interacting="true"] .workflow-asset-bg-popover {
 .workflow-asset-action-rule-chip.is-pinned {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+/* v3.4.x — Multi-line tooltip variant for the rule chips. Overrides the
+   default .tab-tip white-space: nowrap (single-line) so the three-state
+   legend fits, and pins width to a readable column. Lays the rows out as
+   icon + label pairs; the .is-current row inverts so the user can spot
+   which state the chip is currently in. */
+.workflow-asset-action-rule-tip {
+  white-space: normal;
+  width: 220px;
+  text-align: left;
+  padding: 8px 10px;
+  line-height: 1.35;
+}
+.workflow-asset-action-rule-tip-narrow {
+  width: 180px;
+}
+.workflow-asset-action-rule-tip-head {
+  font-weight: 600;
+  font-size: 11.5px;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+}
+.workflow-asset-action-rule-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  margin: 1px -4px;
+  border-radius: 3px;
+  font-size: 11px;
+  opacity: 0.72;
+}
+.workflow-asset-action-rule-tip-row svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+.workflow-asset-action-rule-tip-row.is-current {
+  opacity: 1;
+  background: color-mix(in oklch, currentColor 14%, transparent);
+  font-weight: 500;
+}
+.workflow-asset-action-rule-tip-foot {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.6;
 }
 
 /* v3.4.3 — Asset card kind chip + model chip. Sit in the asset bar
