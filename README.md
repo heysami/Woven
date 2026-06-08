@@ -151,36 +151,15 @@ Optional packages (for `particle-gl`, `3d`, etc.) can wait. Install them from th
 
 ## 7. Create your first project
 
-Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up:
+Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header now carries two tabs — **Projects** (your gallery) and **System** (a bundled reference for the planners, skills, subagents, and node kinds the editor ships with) — reachable from anywhere on the landing.
 
 ![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 
-Click **+ New project** (or **+ Create your first project** in the empty state). A 3-step pop-up wizard opens.
+Click **+ New project** (or **+ Create your first project** in the empty state). A single-field modal opens:
 
-### Step 1 of 3 · Name your project
+![New project modal · name only](docs/screenshots/05-new-project-wizard.png)
 
-Type a folder-safe ID (alphanumeric + `.` `_` `-`). The display name auto-fills to match. Change it if you want a prettier label in the gallery.
-
-![New project wizard · step 1 · name](docs/screenshots/05-new-project-wizard.png)
-
-Click **Next →**.
-
-### Step 2 of 3 · Pick a scope
-
-This is where you tell the agent how much help you want for this project. For a first run, leave **Blank** selected (the default, already highlighted in green) so you land on a clean canvas with no automation.
-
-![New project wizard · step 2 · scope = Blank](docs/screenshots/06-wizard-scope.png)
-
-| Scope         | What happens after **Create**                                                              |
-| ------------- | ------------------------------------------------------------------------------------------ |
-| **Blank**     | Empty project, no automation, fresh canvas (recommended for your first run).                |
-| Quick designs | The agent brainstorms 3 visual directions and you pick one.                                  |
-| Design system | The agent generates a full design system from your brand brief.                              |
-| PRD only      | The agent writes a structured PRD from your intent, no visuals.                              |
-| Full guided   | End-to-end: PRD → DS → 9 design mockups → final prototype + design brief.                    |
-| Custom        | Pick stages individually + tell the agent what you already have.                            |
-
-Click **Next →** then **Create & open** on the review step.
+Type a folder-safe id (alphanumeric + `.` `_` `-`) and click **+ Create**. That's it — no scope picker, no multi-step wizard. The earlier "Blank / Quick designs / Design system / PRD only / Full guided / Custom" branching was removed; every fresh project lands on a clean workflow canvas and you tell the agent what you want from chat. Need one of the old guided runs? Just ask the agent in plain English on the next screen ("brainstorm three design directions", "write a PRD first", "do the full guided flow", …) and the orchestrator skill picks the right stages.
 
 ---
 
