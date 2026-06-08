@@ -1190,6 +1190,46 @@ def _starred_for_project(project_root: str) -> list:
     return out
 
 
+def _thumbnail_for_project(project_root: str) -> dict | None:
+    """Read <project>/.thumbnail-prototype.json and resolve the chosen id
+    to a {id, path, label, exists} entry. Returns None if no thumbnail is
+    set. Module-level helper paralleling _starred_for_project."""
+    path = os.path.join(project_root, ".thumbnail-prototype.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+        sid = data.get("id")
+        if not isinstance(sid, str) or not sid:
+            return None
+    except Exception:
+        return None
+    src_root = os.path.join(project_root, "source")
+    found = {}
+    if os.path.isdir(src_root):
+        try:
+            for name in os.listdir(src_root):
+                if name.startswith("."): continue
+                lvl1 = os.path.join(src_root, name)
+                if not os.path.isdir(lvl1): continue
+                if os.path.isfile(os.path.join(lvl1, "index.html")):
+                    found[name] = {"id": name, "path": f"source/{name}/index.html", "label": name, "depth": 1}
+                for sub in os.listdir(lvl1):
+                    if sub.startswith(".") or sub == "index.html": continue
+                    lvl2 = os.path.join(lvl1, sub)
+                    if not os.path.isdir(lvl2): continue
+                    if os.path.isfile(os.path.join(lvl2, "index.html")):
+                        cid = f"{name}/{sub}"
+                        found[cid] = {"id": cid, "path": f"source/{name}/{sub}/index.html", "label": sub, "branch": name, "depth": 2}
+        except OSError:
+            pass
+    if sid in found:
+        e = dict(found[sid]); e["exists"] = True; return e
+    label = sid.rsplit("/", 1)[-1] or sid
+    return {"id": sid, "path": f"source/{sid}/index.html", "label": label, "exists": False}
+
+
 def _list_projects() -> list:
     """In workspace mode: subdirs of WORKSPACE_DIR/projects/ (or WORKSPACE_DIR
     itself as a fallback) with a source/ folder, augmented + ordered by
@@ -1203,6 +1243,7 @@ def _list_projects() -> list:
             "hasSource": os.path.isdir(os.path.join(DEFAULT_PROJECT_ROOT, "source")),
             "lastActivity": _last_activity(DEFAULT_PROJECT_ROOT),
             "starredPrototypes": _starred_for_project(DEFAULT_PROJECT_ROOT),
+            "thumbnailPrototype": _thumbnail_for_project(DEFAULT_PROJECT_ROOT),
         }]
     out: list = []
     seen: set = set()
@@ -1238,6 +1279,7 @@ def _list_projects() -> list:
             "hasSource": os.path.isdir(os.path.join(p, "source")),
             "lastActivity": _last_activity(p),
             "starredPrototypes": _starred_for_project(p),
+            "thumbnailPrototype": _thumbnail_for_project(p),
         })
     # Scan order: projects/ first (canonical), then root (legacy fallback).
     scan_dirs = []
@@ -1263,6 +1305,7 @@ def _list_projects() -> list:
                     "hasSource": True,
                     "lastActivity": _last_activity(p),
                     "starredPrototypes": _starred_for_project(p),
+                    "thumbnailPrototype": _thumbnail_for_project(p),
                 })
         except OSError:
             pass
@@ -4319,6 +4362,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._upload_font_post(qs)
             if parsed.path == "/__planners/disable":
                 return self._planners_disable(qs)
+            if parsed.path == "/__cc_skills/upload":
+                return self._cc_skills_upload()
+            if parsed.path == "/__cc_skills/delete":
+                return self._cc_skills_delete()
             if parsed.path == "/__media_config":
                 return self._media_config_set()
             if parsed.path == "/__media_config/test":
@@ -4335,6 +4382,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._html_save(qs)
             if parsed.path == "/__starred_prototypes/toggle":
                 return self._starred_prototypes_toggle(qs)
+            if parsed.path == "/__thumbnail_prototype/set":
+                return self._thumbnail_prototype_set(qs)
             if parsed.path == "/__component_export":
                 return self._component_export(qs)
             if parsed.path == "/__copy_file":
@@ -4506,6 +4555,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._capabilities()
         if url_path == "/__planners":
             return self._planners_registry(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__cc_skills":
+            return self._cc_skills_list()
         if url_path == "/__workspace":
             return self._workspace_info()
         if url_path == "/__projects":
@@ -4540,6 +4591,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._source_prototypes(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__starred_prototypes":
             return self._starred_prototypes_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__thumbnail_prototype":
+            return self._thumbnail_prototype_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__source_htmls":
             return self._source_htmls(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__local_status":
@@ -9336,6 +9389,75 @@ class H(http.server.SimpleHTTPRequestHandler):
             "now": bool(want),
         })
 
+    # ─────────────────────────────────────────────────────────────────────
+    # Thumbnail prototype — per-project pick of a SINGLE prototype slug
+    # to render as the landing-card preview. Distinct from starred prototypes
+    # (multi-item list, surfaced as a starred list under the card). Storage:
+    # <project>/.thumbnail-prototype.json with shape { "id": "<slug>" } or
+    # { "id": "" } / missing file → no thumbnail. Same slug schema as
+    # /__starred_prototypes and /__source_prototypes ("main", "main/sketches").
+    # ─────────────────────────────────────────────────────────────────────
+    def _thumbnail_prototype_path(self, project_root):
+        return os.path.join(project_root, ".thumbnail-prototype.json")
+
+    def _read_thumbnail_id(self, project_root):
+        path = self._thumbnail_prototype_path(project_root)
+        if not os.path.isfile(path):
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f) or {}
+            sid = data.get("id")
+            return sid if isinstance(sid, str) else ""
+        except Exception:
+            return ""
+
+    def _write_thumbnail_id(self, project_root, sid):
+        path = self._thumbnail_prototype_path(project_root)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"id": sid or ""}, f, indent=2)
+                f.write("\n")
+            return True
+        except OSError:
+            return False
+
+    def _hydrate_thumbnail(self, project_root, sid):
+        """Resolve `sid` to a {id, path, label, exists} entry (or None when
+        no thumbnail is set). Reuses the same depth-1/depth-2 prototype-scan
+        logic as _hydrate_starred so a slug like "main/sketches" resolves to
+        source/main/sketches/index.html. Returns None on empty sid."""
+        if not sid:
+            return None
+        out = self._hydrate_starred(project_root, [sid])
+        return out[0] if out else None
+
+    # GET /__thumbnail_prototype?project=<id>
+    def _thumbnail_prototype_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        sid = self._read_thumbnail_id(project_root)
+        return self._reply(200, {"id": sid, "thumbnail": self._hydrate_thumbnail(project_root, sid)})
+
+    # POST /__thumbnail_prototype/set  body: { id }   ("" to clear)
+    def _thumbnail_prototype_set(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body() or {}
+        sid = (body.get("id") or "").strip()
+        if sid and not re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", sid):
+            return self._reply(400, {"error": "invalid id shape", "id": sid})
+        if not self._write_thumbnail_id(project_root, sid):
+            return self._reply(500, {"error": "write failed"})
+        return self._reply(200, {
+            "id": sid,
+            "thumbnail": self._hydrate_thumbnail(project_root, sid),
+        })
+
     # GET /__source_htmls?project=<id>
     # Walks source/ for every .html / .htm file EXCEPT the index.html files
     # picked up by /__source_prototypes (which already surface as Prototypes
@@ -10344,6 +10466,311 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
         except Exception as e:
             return self._reply(500, {"error": f"planner toggle failed: {e}"})
+
+    # ── Claude Code skills routes ────────────────────────────────────────
+    #
+    # GET  /__cc_skills           — list every SKILL.md the user has
+    #                                installed (~/.claude/skills/*) plus
+    #                                every plugin-bundled SKILL.md under
+    #                                ~/.claude/plugins/marketplaces/.
+    # POST /__cc_skills/upload    — multipart upload. Each part is either a
+    #                                SKILL.md file (installed verbatim) or a
+    #                                .zip whose first top-level dir becomes
+    #                                the skill slug. Lands under
+    #                                ~/.claude/skills/<slug>/.
+    # POST /__cc_skills/delete    — body {"slug": "<name>"} removes
+    #                                ~/.claude/skills/<slug>/. Refuses to
+    #                                touch plugin-bundled skills.
+    #
+    # These are user-owned files in $HOME — keep the writes strictly under
+    # ~/.claude/skills/ and never traverse outside it.
+
+    def _cc_skills_root_user(self):
+        return os.path.join(os.path.expanduser("~"), ".claude", "skills")
+
+    def _cc_skills_root_plugins(self):
+        return os.path.join(os.path.expanduser("~"), ".claude", "plugins", "marketplaces")
+
+    def _parse_skill_md_frontmatter(self, path):
+        """Return {name, description, argument_hint} from a SKILL.md's YAML
+        frontmatter. Tolerates missing fields; returns None if the file
+        isn't readable or has no frontmatter."""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                head = f.read(8192)
+        except OSError:
+            return None
+        if not head.startswith("---"):
+            return None
+        end = head.find("\n---", 3)
+        if end < 0:
+            return None
+        block = head[3:end]
+        meta = {}
+        for line in block.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" not in line:
+                continue
+            k, _, v = line.partition(":")
+            k = k.strip().lower()
+            v = v.strip().strip('"').strip("'")
+            if k in ("name", "description", "argument-hint"):
+                meta[k.replace("-", "_")] = v
+        return meta or None
+
+    def _cc_skills_list(self):
+        """Walk the two skill roots and emit a flat list. Each entry:
+            {slug, name, description, source: "user"|"plugin",
+             plugin: <plugin-slug if any>, path, invocation}"""
+        out = []
+
+        # User-installed skills
+        user_root = self._cc_skills_root_user()
+        if os.path.isdir(user_root):
+            for slug in sorted(os.listdir(user_root)):
+                sk_dir = os.path.join(user_root, slug)
+                if not os.path.isdir(sk_dir):
+                    continue
+                md = os.path.join(sk_dir, "SKILL.md")
+                if not os.path.isfile(md):
+                    continue
+                meta = self._parse_skill_md_frontmatter(md) or {}
+                name = meta.get("name") or slug
+                out.append({
+                    "slug":        slug,
+                    "name":        name,
+                    "description": meta.get("description", ""),
+                    "source":      "user",
+                    "plugin":      None,
+                    "path":        md.replace(os.path.expanduser("~"), "~"),
+                    "invocation":  "/" + slug,
+                })
+
+        # Plugin-bundled skills
+        plug_root = self._cc_skills_root_plugins()
+        if os.path.isdir(plug_root):
+            # Walk down to .../skills/<skill-slug>/SKILL.md anywhere in the tree.
+            for mp in sorted(os.listdir(plug_root)):
+                mp_dir = os.path.join(plug_root, mp)
+                if not os.path.isdir(mp_dir):
+                    continue
+                # Find every "skills" dir under this marketplace.
+                for root, dirs, files in os.walk(mp_dir):
+                    if os.path.basename(root) == "skills" and "SKILL.md" not in files:
+                        # Each subdir of this skills/ is a skill
+                        for slug in sorted(dirs):
+                            sk_dir = os.path.join(root, slug)
+                            md = os.path.join(sk_dir, "SKILL.md")
+                            if not os.path.isfile(md):
+                                continue
+                            meta = self._parse_skill_md_frontmatter(md) or {}
+                            name = meta.get("name") or slug
+                            # Plugin slug: the dir two levels above "skills"
+                            # (e.g. .../<plugin>/skills/<slug>/) when it
+                            # exists; otherwise the marketplace name.
+                            plug = os.path.basename(os.path.dirname(root))
+                            out.append({
+                                "slug":        slug,
+                                "name":        name,
+                                "description": meta.get("description", ""),
+                                "source":      "plugin",
+                                "plugin":      plug,
+                                "path":        md.replace(os.path.expanduser("~"), "~"),
+                                "invocation":  "/" + (plug + ":" + slug if plug and plug != mp else slug),
+                            })
+                        # Don't recurse into skills children.
+                        dirs[:] = []
+
+        # Dedupe by (source, plugin, slug) — multi-marketplace installs can
+        # land the same plugin twice. Stable across reloads.
+        seen = set()
+        deduped = []
+        for s in out:
+            k = (s["source"], s.get("plugin") or "", s["slug"])
+            if k in seen:
+                continue
+            seen.add(k)
+            deduped.append(s)
+
+        return self._reply(200, {"count": len(deduped), "skills": deduped})
+
+    def _cc_skills_upload(self):
+        """POST /__cc_skills/upload — multipart body. Each part is either a
+        SKILL.md (installed as ~/.claude/skills/<filename-without-ext>/SKILL.md)
+        or a .zip whose first directory becomes the skill slug.
+
+        For raw SKILL.md uploads, the slug is derived from the frontmatter
+        `name:` if present, else the upload filename's stem.
+
+        Refuses uploads outside ~/.claude/skills/ (path traversal guard)."""
+        ctype = self.headers.get("content-type", "")
+        if not ctype.lower().startswith("multipart/form-data"):
+            return self._reply(400, {"error": "expected multipart/form-data body"})
+
+        # Reuse the daemon's multipart parser pattern used by /__upload.
+        import cgi
+        try:
+            length = int(self.headers.get("content-length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return self._reply(400, {"error": "missing or zero content-length"})
+
+        # cgi.FieldStorage is the path-of-least-resistance multipart parser
+        # in the stdlib. It's deprecated in 3.13 but still ships.
+        env = {"REQUEST_METHOD": "POST", "CONTENT_TYPE": ctype,
+               "CONTENT_LENGTH": str(length)}
+        try:
+            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
+                                    environ=env, keep_blank_values=False)
+        except Exception as e:
+            return self._reply(400, {"error": f"multipart parse failed: {e}"})
+
+        user_root = self._cc_skills_root_user()
+        os.makedirs(user_root, exist_ok=True)
+
+        installed = []
+        errors    = []
+
+        def safe_slug(s):
+            s = re.sub(r"[^A-Za-z0-9_.-]", "-", s).strip("-").lower()
+            return s[:80] or "skill"
+
+        for key in form.keys():
+            item = form[key]
+            items = item if isinstance(item, list) else [item]
+            for it in items:
+                if not getattr(it, "filename", None):
+                    continue
+                raw_name = it.filename
+                data = it.file.read()
+                lower = raw_name.lower()
+
+                if lower.endswith(".md"):
+                    stem = os.path.splitext(os.path.basename(raw_name))[0]
+                    # Try to harvest slug from frontmatter `name:` if present
+                    head = data[:8192].decode("utf-8", errors="replace")
+                    slug = stem
+                    if head.startswith("---"):
+                        end = head.find("\n---", 3)
+                        if end >= 0:
+                            for line in head[3:end].splitlines():
+                                ll = line.strip().lower()
+                                if ll.startswith("name:"):
+                                    cand = line.split(":", 1)[1].strip().strip('"').strip("'")
+                                    if cand:
+                                        slug = cand
+                                        break
+                    slug = safe_slug(slug)
+                    out_dir = os.path.join(user_root, slug)
+                    # Path-traversal guard
+                    if os.path.commonpath([os.path.abspath(out_dir), os.path.abspath(user_root)]) != os.path.abspath(user_root):
+                        errors.append({"name": raw_name, "reason": "path traversal"})
+                        continue
+                    os.makedirs(out_dir, exist_ok=True)
+                    with open(os.path.join(out_dir, "SKILL.md"), "wb") as f:
+                        f.write(data)
+                    installed.append({"slug": slug, "kind": "md"})
+
+                elif lower.endswith(".zip"):
+                    import io, zipfile
+                    try:
+                        zf = zipfile.ZipFile(io.BytesIO(data))
+                    except zipfile.BadZipFile as e:
+                        errors.append({"name": raw_name, "reason": f"bad zip: {e}"})
+                        continue
+                    # Slug = filename stem; if the zip has a single top-level
+                    # dir, prefer that.
+                    stem = os.path.splitext(os.path.basename(raw_name))[0]
+                    names = zf.namelist()
+                    # Top-level dirs (first segment of every entry path)
+                    tops = set()
+                    for n in names:
+                        n2 = n.lstrip("/").split("/", 1)[0]
+                        if n2:
+                            tops.add(n2)
+                    if len(tops) == 1:
+                        stem = next(iter(tops))
+                    slug = safe_slug(stem)
+                    out_dir = os.path.join(user_root, slug)
+                    if os.path.commonpath([os.path.abspath(out_dir), os.path.abspath(user_root)]) != os.path.abspath(user_root):
+                        errors.append({"name": raw_name, "reason": "path traversal"})
+                        continue
+                    os.makedirs(out_dir, exist_ok=True)
+                    bad = False
+                    for n in names:
+                        # Strip the leading top-level dir if every entry shares one
+                        rel = n
+                        if len(tops) == 1:
+                            top = next(iter(tops))
+                            if rel.startswith(top + "/"):
+                                rel = rel[len(top) + 1:]
+                            elif rel == top:
+                                continue
+                        if not rel:
+                            continue
+                        if rel.endswith("/"):
+                            os.makedirs(os.path.join(out_dir, rel), exist_ok=True)
+                            continue
+                        # Guard against zip-slip
+                        dest = os.path.normpath(os.path.join(out_dir, rel))
+                        if os.path.commonpath([os.path.abspath(dest), os.path.abspath(out_dir)]) != os.path.abspath(out_dir):
+                            bad = True
+                            break
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        with open(dest, "wb") as f:
+                            f.write(zf.read(n))
+                    if bad:
+                        errors.append({"name": raw_name, "reason": "zip slip"})
+                        continue
+                    # Require a SKILL.md to have landed
+                    if not os.path.isfile(os.path.join(out_dir, "SKILL.md")):
+                        errors.append({"name": raw_name, "reason": "no SKILL.md in archive"})
+                        continue
+                    installed.append({"slug": slug, "kind": "zip"})
+                else:
+                    errors.append({"name": raw_name, "reason": "unsupported file type (.md or .zip)"})
+
+        if not installed and errors:
+            return self._reply(400, {"error": "no skill installed", "errors": errors})
+        return self._reply(200, {
+            "ok":        True,
+            "installed": len(installed),
+            "items":     installed,
+            "errors":    errors,
+        })
+
+    def _cc_skills_delete(self):
+        """POST /__cc_skills/delete — body {"slug": "<name>"}.
+        Removes ~/.claude/skills/<slug>/ recursively. Refuses to touch
+        any path outside that root."""
+        try:
+            body = self._read_json_body() or {}
+        except Exception as e:
+            return self._reply(400, {"error": f"invalid JSON body: {e}"})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        slug = body.get("slug")
+        if not isinstance(slug, str) or not slug:
+            return self._reply(400, {"error": "slug required (string)"})
+        # Validate slug: filesystem-safe, no traversal
+        if not re.match(r"^[A-Za-z0-9_.-]{1,80}$", slug):
+            return self._reply(400, {"error": "invalid slug shape"})
+        user_root = self._cc_skills_root_user()
+        target = os.path.join(user_root, slug)
+        # Strict containment check
+        if os.path.commonpath([os.path.abspath(target), os.path.abspath(user_root)]) != os.path.abspath(user_root):
+            return self._reply(400, {"error": "path outside skills root"})
+        if not os.path.isdir(target):
+            return self._reply(404, {"error": "skill not found"})
+        try:
+            import shutil
+            shutil.rmtree(target)
+        except OSError as e:
+            return self._reply(500, {"error": f"delete failed: {e}"})
+        return self._reply(200, {"ok": True, "slug": slug})
 
     # ── Workspace routes (Phase 6) ───────────────────────────────────────
 

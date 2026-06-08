@@ -798,6 +798,21 @@ button {
   margin-top: 4px; font-size: 13px; color: var(--text-muted);
 }
 
+/* Collapsible — head row gets the disclosure chevron; collapsed cards
+   stay slim (just the head row) and sit denser in the grid. */
+.planner-card.is-collapsed { gap: 0; padding: 14px 18px; }
+.planner-card.is-collapsed .planner-card-head { align-items: center; }
+.planner-card-disclosure {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-faint);
+  width: 14px;
+  flex-shrink: 0;
+  padding-top: 4px;
+  user-select: none;
+}
+.planner-card-head:hover .planner-card-disclosure { color: var(--text-muted); }
+
 .planner-card-description {
   font-size: 13px; line-height: 1.6;
   color: var(--text-muted);
@@ -1065,7 +1080,85 @@ button {
   border-radius: 10px;
   box-shadow: 0 1px 3px rgba(40, 34, 26, 0.04);
 }
-.skill-card-head { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }
+.skill-card-head { display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: start; }
+.skill-card-disclosure {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-faint);
+  padding-top: 6px;
+  width: 10px;
+  user-select: none;
+}
+.skill-card.is-collapsed { padding: 12px 14px; gap: 0; }
+.skill-card.is-collapsed .skill-card-head { align-items: center; }
+.skill-card-head:hover .skill-card-disclosure { color: var(--text-muted); }
+.skill-pathway-CC    { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
+.cc-skill-card { border-left: 3px solid oklch(85% 0.07 200); }
+.cc-skill-card[data-source="user"] { border-left-color: var(--accent); }
+.skill-remove-btn {
+  background: transparent;
+  border: 1px solid oklch(85% 0.07 25);
+  color: oklch(45% 0.18 25);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.skill-remove-btn:hover { background: oklch(96% 0.04 25); }
+.skill-remove-btn:disabled { opacity: 0.5; cursor: progress; }
+
+/* ── Skill upload bar ────────────────────────────────────────────────── */
+.skills-upload-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+.skills-upload-btn {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.skills-upload-btn:hover { filter: brightness(1.05); }
+.skills-upload-btn:disabled { opacity: 0.6; cursor: progress; }
+.skills-upload-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  flex: 1;
+  min-width: 200px;
+}
+.skills-upload-hint code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+.skills-upload-msg {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+.skills-upload-msg-err {
+  color: oklch(45% 0.18 25);
+  background: oklch(96% 0.04 25);
+}
+.ref-group-user .ref-group-head { border-left: 3px solid var(--accent); padding-left: 10px; }
 .skill-glyph { font-size: 22px; line-height: 1; padding-top: 2px; color: var(--text-muted); }
 .skill-card-head-text { min-width: 0; }
 .skill-card-name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -1436,6 +1529,30 @@ button {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* v3.5.x — Project thumbnail strip. Lives at the top of the landing card
+   when the project has a thumbnail prototype set. The iframe renders the
+   live prototype; pointer-events are off so clicks pass through to the
+   card itself (which routes into the workflow view). */
+.landing-card-has-thumb { padding-top: 0; }
+.landing-card-thumb {
+  position: relative;
+  margin: -20px -20px 4px;          /* bleed to the card edges */
+  border-radius: var(--landing-radius) var(--landing-radius) 0 0;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  pointer-events: none;             /* clicks fall through to the card */
+}
+.landing-card-thumb-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  pointer-events: none;
+}
 .landing-card-head {
   display: flex;
   align-items: center;
@@ -1752,6 +1869,84 @@ button {
   outline-offset: -1px;
 }
 
+/* v3.5.x — Thumbnail toggle button. Same chassis as the star button but
+   uses a picture-frame glyph and pegs the "set-as-project-thumbnail"
+   semantics. The toggle sits NEXT TO the star (list view) or in the same
+   floating top-right cluster (grid view). When set, the icon flips to the
+   accent fill so it reads at a glance — and the row gets a thin outline
+   parallel to the starred outline. */
+.workflow-library-thumb-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px;
+  margin-left: 4px;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  line-height: 0;
+  flex: 0 0 auto;
+}
+.workflow-library-thumb-btn:hover { color: var(--text); background: var(--surface-2); }
+.workflow-library-thumb-btn svg { display: block; }
+.workflow-library-thumb-btn.is-on,
+.workflow-library-thumb-btn.is-on:hover { color: var(--accent); background: transparent; }
+.workflow-library-thumb-btn.is-on svg rect,
+.workflow-library-thumb-btn.is-on svg path,
+.workflow-library-thumb-btn.is-on svg circle {
+  stroke: var(--accent);
+}
+.workflow-library-thumb-btn-corner {
+  position: absolute;
+  top: 4px;
+  right: 30px; /* leave room for the star corner at right: 4px */
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(2px);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  z-index: 2;
+}
+.workflow-library-thumb-btn-corner:hover { background: #fff; }
+.workflow-library-thumb-btn-corner.is-on,
+.workflow-library-thumb-btn-corner.is-on:hover {
+  background: #fff;
+  border-color: var(--accent);
+}
+.workflow-library-item-generated.is-thumbnail,
+.workflow-library-card-generated.is-thumbnail {
+  outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -1px;
+}
+
+/* Hover-only reveal — the star + thumbnail buttons stay hidden until the
+   row/card is hovered (or keyboard focused), unless the toggle itself is
+   already on (then the persistent state needs to remain visible so the
+   user can see which prototype is starred / set as thumbnail at scan
+   distance). */
+.workflow-library-item-generated .workflow-library-star-btn,
+.workflow-library-item-generated .workflow-library-thumb-btn,
+.workflow-library-card-generated .workflow-library-star-btn,
+.workflow-library-card-generated .workflow-library-thumb-btn {
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.workflow-library-item-generated:hover .workflow-library-star-btn,
+.workflow-library-item-generated:hover .workflow-library-thumb-btn,
+.workflow-library-item-generated:focus-within .workflow-library-star-btn,
+.workflow-library-item-generated:focus-within .workflow-library-thumb-btn,
+.workflow-library-card-generated:hover .workflow-library-star-btn,
+.workflow-library-card-generated:hover .workflow-library-thumb-btn,
+.workflow-library-card-generated:focus-within .workflow-library-star-btn,
+.workflow-library-card-generated:focus-within .workflow-library-thumb-btn,
+.workflow-library-star-btn.is-on,
+.workflow-library-thumb-btn.is-on {
+  opacity: 1;
+}
+
 /* Phase 3.5a — Prototype door (full-page iframe of source/<prototype>/). */
 .proto-door {
   position: fixed;
@@ -2035,10 +2230,32 @@ button {
 }
 .workflow-fullscreen-exit:active { transform: translateY(1px); }
 
+/* Library column — wraps the scrollable library list above the docked
+   minimap. Its grid cell width is var(--workflow-lib-width). The library
+   itself flex-grows; the minimap is a fixed-height footer. */
+.workflow-library-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.workflow-root[data-fullscreen="true"] .workflow-library-col {
+  visibility: hidden;
+  width: 0;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
 /* Library rail */
 .workflow-library {
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -2962,6 +3179,36 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-library-tab.is-active .workflow-library-tab-count {
   color: var(--text);
 }
+
+/* Workflow minimap — docks at the bottom of the library column (a real
+   flex footer, not the floating bottom-left overlay the editor MiniMap
+   uses). Same 200×130 footprint and rendering primitives as the editor
+   minimap, but fits the library width and adopts the panel chrome. */
+.workflow-minimap {
+  flex: 0 0 auto;
+  height: 130px;
+  position: relative;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+.workflow-minimap-inner {
+  position: absolute;
+  inset: 0;
+}
+.workflow-minimap-frame {
+  position: absolute;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 1px;
+}
+.workflow-minimap-viewport {
+  position: absolute;
+  border: 1.5px solid var(--accent);
+  background: oklch(54% 0.16 252 / 0.06);
+  pointer-events: none;
+}
+
 /* v3.4.27 — Sub-tabs under Outputs (Prototypes & components / Visual assets).
    Compacter than the top-level tabs so the hierarchy reads as parent/child:
    slightly smaller font, narrower padding, secondary underline colour. */
@@ -5370,6 +5617,103 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .chat-composer-attach:hover:not([disabled]) { background: var(--surface-2); color: var(--text); }
 .chat-composer-attach[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Slash-command menu over the chat composer ─────────────────────── */
+.chat-composer-input-wrap { display: flex; }
+.chat-slash-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  z-index: 50;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+.chat-slash-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.chat-slash-head-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.chat-slash-head-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.chat-slash-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  grid-column-gap: 10px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  width: 100%;
+}
+.chat-slash-item.is-active { background: var(--accent-soft); }
+.chat-slash-item:hover { background: var(--surface-2); }
+.chat-slash-item.is-active:hover { background: var(--accent-soft); }
+.chat-slash-item-cmd {
+  grid-row: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.chat-slash-item-name {
+  grid-row: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-slash-item-kind {
+  grid-row: 1;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.chat-slash-item-kind-cc    { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
+.chat-slash-item-kind-media { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
+.chat-slash-item-desc {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.4;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-slash-menu-empty { padding: 18px; }
+.chat-slash-empty { font-size: 12px; color: var(--text-faint); text-align: center; }
 
 /* Phase 4c — Agent chat dialog. Wider modal, scroll body, sticky compose. */
 .workflow-agent-modal {

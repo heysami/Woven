@@ -6308,6 +6308,97 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
   `;
 }
 
+/* ────────── Workflow minimap ──────────
+   Sibling of the editor MiniMap, but docked into the bottom of the library
+   rail (a real flow child) instead of floating over the canvas bottom-left.
+   Reads workflow node positions (n.x/n.y/n.w/n.h) — those default to 200×120
+   when unset, same fallback the bounds + drag code uses. Read-only; no pan-
+   on-click (matches the editor MiniMap). */
+function WorkflowMiniMap({ nodes, pan, zoom, wrapRef }) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  const hostRef = useRef(null);
+  // Track the host's measured size so frames + viewport scale to the
+  // actual library column width (which is user-resizable). ResizeObserver
+  // covers library drag-resize + window resize without listener juggling.
+  const [size, setSize] = useState({ w: 200, h: 130 });
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    setSize({ w: el.clientWidth || 200, h: el.clientHeight || 130 });
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(entries => {
+      for (const ent of entries) {
+        const r = ent.contentRect;
+        setSize({ w: Math.max(40, r.width), h: Math.max(40, r.height) });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const bb = useMemo(() => {
+    if (!list.length) return { minX: 0, minY: 0, w: 1, h: 1 };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of list) {
+      const nx = typeof n.x === "number" ? n.x : 0;
+      const ny = typeof n.y === "number" ? n.y : 0;
+      const nw = n.w || 200;
+      const nh = n.h || 120;
+      if (nx        < minX) minX = nx;
+      if (ny        < minY) minY = ny;
+      if (nx + nw   > maxX) maxX = nx + nw;
+      if (ny + nh   > maxY) maxY = ny + nh;
+    }
+    return { minX, minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+  }, [list]);
+  const PAD = 8;
+  const MW = Math.max(20, size.w - 2 * PAD);
+  const MH = Math.max(20, size.h - 2 * PAD);
+  const s = Math.min(MW / bb.w, MH / bb.h);
+  // Center the projected world inside the available inner box so the
+  // minimap doesn't drift to the top-left when the library column is wider
+  // than the projected world (common when nodes are clustered).
+  const projW = bb.w * s;
+  const projH = bb.h * s;
+  const offX  = PAD + (MW - projW) / 2;
+  const offY  = PAD + (MH - projH) / 2;
+
+  const wrap = wrapRef?.current;
+  const vw = wrap ? wrap.clientWidth  : 1200;
+  const vh = wrap ? wrap.clientHeight : 800;
+  const vx = (-pan.x) / zoom;
+  const vy = (-pan.y) / zoom;
+  const vww = vw / zoom;
+  const vhh = vh / zoom;
+
+  return html`
+    <div className="workflow-minimap" ref=${hostRef}>
+      <div className="workflow-minimap-inner">
+        ${list.map(n => {
+          const nx = typeof n.x === "number" ? n.x : 0;
+          const ny = typeof n.y === "number" ? n.y : 0;
+          const nw = n.w || 200;
+          const nh = n.h || 120;
+          return html`
+            <div key=${n.id} className="workflow-minimap-frame" style=${{
+              left: offX + (nx - bb.minX) * s,
+              top:  offY + (ny - bb.minY) * s,
+              width:  Math.max(1, nw * s),
+              height: Math.max(1, nh * s),
+            }}/>
+          `;
+        })}
+        <div className="workflow-minimap-viewport" style=${{
+          left: offX + (vx - bb.minX) * s,
+          top:  offY + (vy - bb.minY) * s,
+          width:  Math.max(2, vww * s),
+          height: Math.max(2, vhh * s),
+        }}/>
+      </div>
+    </div>
+  `;
+}
+
 /* ────────── Diff helpers — what differs from main on this branch ─
    A branch is a scope + prompt, not a copy. These helpers answer "is this thing
    considered changed from main?" — either because it's in the exploration scope
@@ -6595,6 +6686,66 @@ async function togglePrototypeStar(slug, want) {
     return null;
   }
 }
+// v3.5.x — Project thumbnail prototype. Parallel to starred-prototypes
+// but capped at ONE slug per project: which prototype's index.html should
+// be rendered as the live preview on the projects landing card. Persistence:
+// <project>/.thumbnail-prototype.json. Same per-project cache + event-bus
+// pattern as starred so the library button, landing card, and any other
+// listener stay in lockstep.
+function _thumbCache() {
+  if (typeof window === "undefined") return {};
+  if (!window.__TH_THUMB) window.__TH_THUMB = {};
+  return window.__TH_THUMB;
+}
+async function fetchThumbnailPrototype(force) {
+  const proj = activeProjectId();
+  if (!proj) return null;
+  const cache = _thumbCache();
+  if (!force && Object.prototype.hasOwnProperty.call(cache, proj)) return cache[proj];
+  try {
+    const r = await fetch(apiUrl("/__thumbnail_prototype"));
+    if (!r.ok) return cache[proj] ?? null;
+    const j = await r.json();
+    const sid = typeof j.id === "string" ? j.id : "";
+    cache[proj] = sid;
+    try { window.dispatchEvent(new CustomEvent("th:thumbnail-prototype-changed", { detail: { project: proj, id: sid, thumbnail: j.thumbnail || null } })); } catch {}
+    return sid;
+  } catch {
+    return cache[proj] ?? null;
+  }
+}
+function getThumbnailPrototypeSync() {
+  const proj = activeProjectId();
+  if (!proj) return "";
+  return _thumbCache()[proj] || "";
+}
+function isPrototypeThumbnailSync(slug) {
+  if (!slug) return false;
+  return getThumbnailPrototypeSync() === slug;
+}
+// Pass `null` (or "") to clear; pass a slug to set. Toggle semantics live
+// on the call site (UI passes "" when the user clicks the already-set thumb).
+async function setProjectThumbnail(slug) {
+  const proj = activeProjectId();
+  if (!proj) return null;
+  const sid = (slug == null) ? "" : String(slug);
+  try {
+    const r = await fetch(apiUrl("/__thumbnail_prototype/set"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: sid }),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const finalId = typeof j.id === "string" ? j.id : "";
+    _thumbCache()[proj] = finalId;
+    try { window.dispatchEvent(new CustomEvent("th:thumbnail-prototype-changed", { detail: { project: proj, id: finalId, thumbnail: j.thumbnail || null } })); } catch {}
+    return j;
+  } catch {
+    return null;
+  }
+}
+
 // Derive the prototype slug ("main", "main/sketches", ...) for a
 // workflow prototype node. The node carries `branch` (level-1 dir) plus
 // an optional `subpath` for deep prototypes; if neither is present the
@@ -8563,10 +8714,54 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
    resets state.turn_done so the chip flips back to streaming. Disabled
    while the agent is mid-turn (status === "streaming" / "connecting").
    Cmd/Ctrl+Enter sends; plain Enter inserts a newline. */
+// v3.x — Slash-command menu cache. Shared across ChatComposer mounts so the
+// /__cc_skills fetch happens once per page session. Lives at module scope —
+// React state would re-fetch on every mount.
+let __slashSkillCache = null;
+async function __loadSlashSkills() {
+  if (__slashSkillCache) return __slashSkillCache;
+  const media = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+  const items = media.map(sk => ({
+    kind:        "media",
+    slug:        sk.id,
+    name:        sk.label,
+    description: sk.hint,
+    invocation:  "/" + sk.id,
+    source:      sk.pathway === "Local" ? "local" : "media",
+  }));
+  try {
+    const r = await fetch(apiUrl("/__cc_skills"));
+    if (r.ok) {
+      const j = await r.json();
+      for (const s of (j.skills || [])) {
+        items.push({
+          kind:        "cc",
+          slug:        s.slug,
+          name:        s.name,
+          description: s.description || "",
+          invocation:  s.invocation || ("/" + s.slug),
+          source:      s.source || "plugin",
+          plugin:      s.plugin,
+        });
+      }
+    }
+  } catch { /* daemon may not yet have the endpoint — leave media-only list */ }
+  __slashSkillCache = items;
+  return items;
+}
+
 function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Slash-command menu — opens when the user types `/` at the start of an
+  // empty composer (or just after a whitespace boundary). Tracks the active
+  // query (chars after the `/`), the available skills, and the selected
+  // index. Up/Down navigate, Enter/Tab inserts, Esc closes.
+  const [slashOpen,  setSlashOpen]  = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [slashSkills, setSlashSkills] = useState(() => __slashSkillCache || []);
+  const [slashIndex, setSlashIndex] = useState(0);
   // Two distinct kinds of file the user can stage on a chat turn (Phase 5c):
   //
   //   • attachments — IMAGES bound to this single turn. Posted to
@@ -8812,7 +9007,87 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
   };
 
+  // Filter the loaded skill list against the current slash query (chars after
+  // `/`). Match against slug + name + description so users can find skills
+  // they remember by purpose, not just name. Empty query = full list.
+  const filteredSlashSkills = (() => {
+    if (!slashOpen) return [];
+    const q = slashQuery.trim().toLowerCase();
+    if (!q) return slashSkills.slice(0, 12);
+    return slashSkills.filter(s => {
+      const hay = (s.slug + " " + (s.name || "") + " " + (s.description || "")).toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 12);
+  })();
+
+  // Detect a `/` at the START of the textarea — that's the signal to open
+  // the menu. We deliberately do NOT trigger on `/` mid-message to avoid
+  // hijacking the user typing a path like "src/foo.ts".
+  const updateSlashMenu = (newText) => {
+    // `/` must be the first non-whitespace character; query is everything
+    // after it up to the next whitespace.
+    const m = /^\s*\/([A-Za-z0-9_:.-]*)$/.exec(newText);
+    if (m) {
+      if (!slashOpen) {
+        // First open — kick off the skill load if we haven't already.
+        __loadSlashSkills().then(items => {
+          setSlashSkills(items);
+        });
+      }
+      setSlashOpen(true);
+      setSlashQuery(m[1]);
+      setSlashIndex(0);
+      return;
+    }
+    if (slashOpen) setSlashOpen(false);
+  };
+
+  const insertSlashSkill = (sk) => {
+    if (!sk) return;
+    // Replace the entire `/query` prefix with `<invocation> ` — the trailing
+    // space gives the user a cursor position to type their args from.
+    const next = sk.invocation + " ";
+    setText(next);
+    setSlashOpen(false);
+    // Refocus the textarea so the user can keep typing.
+    if (taRef.current) {
+      taRef.current.focus();
+      try {
+        const pos = next.length;
+        taRef.current.setSelectionRange(pos, pos);
+      } catch { /* setSelectionRange not supported on all browsers — fine */ }
+    }
+  };
+
   const onKeyDown = (e) => {
+    // Slash menu key handling takes precedence when open.
+    if (slashOpen && filteredSlashSkills.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex(i => Math.min(i + 1, filteredSlashSkills.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && !(e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        insertSlashSkill(filteredSlashSkills[slashIndex]);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        insertSlashSkill(filteredSlashSkills[slashIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashOpen(false);
+        return;
+      }
+    }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       send();
@@ -8894,17 +9169,52 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         disabled=${uploadBusy || busy}
         title="Upload project files — multi-file, any type, lives in source/uploads/"
       >${uploadBusy ? "…" : html`<${Icon.Folder}/>`}</button>
-      <textarea
-        ref=${taRef}
-        className="chat-composer-input"
-        value=${text}
-        placeholder=${placeholder}
-        rows=${1}
-        disabled=${busy}
-        onInput=${(e) => setText(e.target.value)}
-        onKeyDown=${onKeyDown}
-        onPaste=${onPaste}
-      />
+      <div className="chat-composer-input-wrap" style=${{ position: "relative", flex: 1, minWidth: 0 }}>
+        <textarea
+          ref=${taRef}
+          className="chat-composer-input"
+          value=${text}
+          placeholder=${placeholder}
+          rows=${1}
+          disabled=${busy}
+          onInput=${(e) => { setText(e.target.value); updateSlashMenu(e.target.value); }}
+          onKeyDown=${onKeyDown}
+          onPaste=${onPaste}
+          onBlur=${() => {
+            // Defer close so a mousedown on a menu item gets through first.
+            setTimeout(() => setSlashOpen(false), 120);
+          }}
+        />
+        ${slashOpen && filteredSlashSkills.length > 0 && html`
+          <div className="chat-slash-menu" role="listbox" aria-label="Skills">
+            <div className="chat-slash-head">
+              <span className="chat-slash-head-title">Skills</span>
+              <span className="chat-slash-head-meta">${filteredSlashSkills.length} of ${slashSkills.length} — ↑↓ navigate, ↵ insert, Esc close</span>
+            </div>
+            ${filteredSlashSkills.map((sk, i) => html`
+              <button
+                key=${sk.invocation + ":" + sk.slug + ":" + (sk.plugin || "")}
+                type="button"
+                className=${"chat-slash-item" + (i === slashIndex ? " is-active" : "")}
+                role="option"
+                aria-selected=${i === slashIndex ? "true" : "false"}
+                onMouseEnter=${() => setSlashIndex(i)}
+                onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
+              >
+                <code className="chat-slash-item-cmd">${sk.invocation}</code>
+                <span className="chat-slash-item-name">${sk.name}</span>
+                <span className=${"chat-slash-item-kind chat-slash-item-kind-" + sk.kind}>${sk.kind === "media" ? "media" : (sk.source === "user" ? "yours" : (sk.plugin || "plugin"))}</span>
+                ${sk.description && html`<span className="chat-slash-item-desc">${sk.description}</span>`}
+              </button>
+            `)}
+          </div>
+        `}
+        ${slashOpen && filteredSlashSkills.length === 0 && slashSkills.length > 0 && html`
+          <div className="chat-slash-menu chat-slash-menu-empty">
+            <div className="chat-slash-empty">No skill matches “${slashQuery}”. Esc to dismiss.</div>
+          </div>
+        `}
+      </div>
       ${(runStatus === "streaming" || runStatus === "connecting") && onStop && html`
         <button
           className="chat-composer-stop"
@@ -12553,8 +12863,12 @@ function SystemLanding() {
 
 // ─── SkillsLanding ────────────────────────────────────────────────────────
 // v3.3 — Skills inventory. Pulls from window.TH_MEDIA.skills (the canonical
-// SKILLS array in editor/prompts/media-models.js). Grouped by pathway so the
-// user immediately sees the API-key-required ones vs the Claude-writes-file ones.
+// SKILLS array in editor/prompts/media-models.js) PLUS Claude Code skills
+// surfaced via /__cc_skills (walks ~/.claude/skills/ + plugin marketplaces).
+// Grouped by pathway so the user immediately sees the API-key-required ones
+// vs the Claude-writes-file ones vs the slash-command Claude Code skills.
+// Each card is collapsible — head click expands; body hidden by default so
+// scanning 60+ skills doesn't require a long scroll.
 function SkillsLanding() {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
   const imageModels = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
@@ -12562,10 +12876,54 @@ function SkillsLanding() {
   const videoModels = (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
   const allModels = [...imageModels, ...textModels, ...videoModels];
 
-  const [expanded, setExpanded] = useState({});
-  const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
+  // Claude Code skills: fetched from daemon on mount. The daemon walks
+  // ~/.claude/skills/*/SKILL.md (user-added) plus
+  // ~/.claude/plugins/marketplaces/*/.../skills/*/SKILL.md (plugin-bundled)
+  // and returns {name, description, source, slug, path} for each.
+  const [ccSkills, setCcSkills] = useState(null);    // null = loading, [] = none
+  const [ccError, setCcError]   = useState(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadMsg, setUploadMsg]   = useState(null);
+  const uploadInputRef = useRef(null);
 
-  // Group by pathway
+  const loadCcSkills = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__cc_skills"));
+      if (!r.ok) {
+        // Older daemons without the endpoint return 404 — fall through silently.
+        setCcSkills([]);
+        return;
+      }
+      const j = await r.json();
+      setCcSkills(j.skills || []);
+    } catch (e) {
+      setCcError(e.message || String(e));
+      setCcSkills([]);
+    }
+  }, []);
+  useEffect(() => { loadCcSkills(); }, [loadCcSkills]);
+
+  const onUpload = useCallback(async (files) => {
+    if (!files || !files.length) return;
+    setUploadBusy(true); setUploadMsg(null);
+    try {
+      const fd = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        fd.append(`file${i}`, files[i], files[i].name);
+      }
+      const r = await fetch(apiUrl("/__cc_skills/upload"), { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setUploadMsg(`Installed ${j.installed || files.length} skill(s) to ~/.claude/skills/.`);
+      await loadCcSkills();
+    } catch (e) {
+      setUploadMsg("Upload failed: " + (e.message || e));
+    } finally {
+      setUploadBusy(false);
+    }
+  }, [loadCcSkills]);
+
+  // Group media skills by pathway.
   const groups = {
     "A": { label: "Pathway A — vendor API call", desc: "Daemon POSTs to a provider (OpenAI / fal.ai / Anthropic / etc.) and receives bytes back. Requires the provider's API key in Settings.", items: [] },
     "B": { label: "Pathway B — Claude writes the file", desc: "Spawns a Claude Code subprocess with a curated system prompt. The agent writes one self-contained file (HTML / SVG / JSON) per Run. No external API key beyond Claude.", items: [] },
@@ -12576,12 +12934,71 @@ function SkillsLanding() {
     if (groups[p]) groups[p].items.push(sk);
   }
 
+  // Claude Code skills get their own pseudo-group "CC". Split into
+  // user-added vs plugin-bundled so the user immediately sees what they own.
+  const ccList = Array.isArray(ccSkills) ? ccSkills : [];
+  const ccUser   = ccList.filter(s => s.source === "user");
+  const ccPlugin = ccList.filter(s => s.source !== "user");
+
+  const totalCount = skills.length + ccList.length;
+
   return html`
     <div className="ref-root">
       <div className="ref-header">
-        <div className="ref-header-title">${skills.length} skills available</div>
-        <div className="ref-header-meta">A skill is a unit of generation. A Skill node on the canvas wires a Prompt node's output into a chosen skill, runs it, and writes the result to the wired Asset node.</div>
+        <div className="ref-header-title">${totalCount} skill${totalCount === 1 ? "" : "s"} available</div>
+        <div className="ref-header-meta">A skill is a unit of generation. Media skills run on the canvas; Claude Code skills are invokable via <code>/&lt;skill-name&gt;</code> in the chat composer.</div>
       </div>
+
+      <div className="skills-upload-bar">
+        <input
+          ref=${uploadInputRef}
+          type="file"
+          accept=".md,.zip,.json"
+          multiple
+          style=${{ display: "none" }}
+          onChange=${(e) => {
+            const fs = Array.from(e.target.files || []);
+            if (fs.length) onUpload(fs);
+            e.target.value = "";
+          }}
+        />
+        <button
+          className="skills-upload-btn"
+          type="button"
+          disabled=${uploadBusy}
+          onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
+          title="Upload a SKILL.md (or .zip of SKILL.md + assets) — installed to ~/.claude/skills/<name>/"
+        >${uploadBusy ? "Uploading…" : "+ Add skill"}</button>
+        <div className="skills-upload-hint">
+          Drop a <code>SKILL.md</code> with frontmatter (<code>name</code>, <code>description</code>) — or a <code>.zip</code> containing one — to install a custom Claude Code skill.
+        </div>
+        ${uploadMsg && html`<div className="skills-upload-msg">${uploadMsg}</div>`}
+        ${ccError && html`<div className="skills-upload-msg skills-upload-msg-err">CC skills load error: ${ccError}</div>`}
+      </div>
+
+      ${ccUser.length > 0 && html`
+        <div className="ref-group ref-group-user">
+          <div className="ref-group-head">
+            <div className="ref-group-title">Your skills <span className="ref-group-count">${ccUser.length}</span></div>
+            <div className="ref-group-desc">Claude Code skills you've added under <code>~/.claude/skills/</code>. Invokable in the chat composer with <code>/name</code>.</div>
+          </div>
+          <div className="ref-grid">
+            ${ccUser.map(sk => html`<${CcSkillCard} key=${sk.slug} skill=${sk} reload=${loadCcSkills}/>`)}
+          </div>
+        </div>
+      `}
+
+      ${ccPlugin.length > 0 && html`
+        <div className="ref-group">
+          <div className="ref-group-head">
+            <div className="ref-group-title">Claude Code skills (plugin-bundled) <span className="ref-group-count">${ccPlugin.length}</span></div>
+            <div className="ref-group-desc">Skills shipped by installed plugins (under <code>~/.claude/plugins/marketplaces/</code>). Invokable with <code>/plugin:name</code> or <code>/name</code>.</div>
+          </div>
+          <div className="ref-grid">
+            ${ccPlugin.map(sk => html`<${CcSkillCard} key=${sk.slug + ":" + (sk.path || "")} skill=${sk}/>`)}
+          </div>
+        </div>
+      `}
 
       ${Object.entries(groups).map(([key, g]) => g.items.length === 0 ? null : html`
         <div key=${key} className="ref-group">
@@ -12590,85 +13007,175 @@ function SkillsLanding() {
             <div className="ref-group-desc">${g.desc}</div>
           </div>
           <div className="ref-grid">
-            ${g.items.map(sk => html`
-              <div key=${sk.id} className="skill-card" data-pathway=${sk.pathway}>
-                <div className="skill-card-head">
-                  <span className="skill-glyph">${sk.glyph}</span>
-                  <div className="skill-card-head-text">
-                    <div className="skill-card-name">
-                      <span className="skill-label">${sk.label}</span>
-                      <code className="skill-id">${sk.id}</code>
-                    </div>
-                    <div className="skill-card-hint">${sk.hint}</div>
-                  </div>
-                  <span className=${"skill-pathway skill-pathway-" + sk.pathway}>${sk.pathway}</span>
-                </div>
-
-                <div className="skill-section">
-                  <div className="skill-row">
-                    <span className="skill-row-label">Inputs</span>
-                    <div className="skill-chip-row">
-                      ${(sk.inputs || []).map(i => html`<code key=${i} className="skill-chip skill-chip-input">${i}</code>`)}
-                    </div>
-                  </div>
-                  <div className="skill-row">
-                    <span className="skill-row-label">Output</span>
-                    <code className=${"skill-chip skill-chip-output skill-chip-output-" + sk.output}>${sk.output}</code>
-                  </div>
-                  ${sk.hasAspect && html`
-                    <div className="skill-row">
-                      <span className="skill-row-label">Aspect</span>
-                      <span className="skill-row-value">configurable per Run</span>
-                    </div>
-                  `}
-                  ${sk.defaultModel && html`
-                    <div className="skill-row">
-                      <span className="skill-row-label">Default model</span>
-                      <code className="skill-chip skill-chip-model">${sk.defaultModel}</code>
-                      ${(() => {
-                        const m = allModels.find(mm => mm.id === sk.defaultModel);
-                        return m ? html`<span className="skill-row-value-meta">${m.label} · ${m.provider}</span>` : null;
-                      })()}
-                    </div>
-                  `}
-                  ${sk.pathwayBExt && html`
-                    <div className="skill-row">
-                      <span className="skill-row-label">Output file</span>
-                      <code className="skill-chip skill-chip-ext">.${sk.pathwayBExt}</code>
-                    </div>
-                  `}
-                </div>
-
-                ${sk.pathwayBSystem && html`
-                  <div className="skill-section">
-                    <button
-                      className="skill-expand-btn"
-                      onClick=${() => toggle(sk.id)}
-                      aria-expanded=${expanded[sk.id] ? "true" : "false"}
-                    >
-                      ${expanded[sk.id] ? "▼" : "▶"} System prompt (${sk.pathwayBSystem.length} chars)
-                    </button>
-                    ${expanded[sk.id] && html`
-                      <pre className="skill-system-prompt">${sk.pathwayBSystem}</pre>
-                    `}
-                  </div>
-                `}
-
-                <div className="skill-section skill-howto">
-                  <div className="skill-howto-label">How to use</div>
-                  <div className="skill-howto-body">
-                    Drop a Skill node on the canvas, set its <code>skill</code> to <code>${sk.id}</code>, wire a Prompt
-                    node into <code>.in</code>, wire <code>.out</code> to an Asset node. Click Run.
-                    ${sk.pathway === "A" && " The daemon posts to the provider; ensure the API key is set in Settings."}
-                    ${sk.pathway === "B" && " A Claude Code subprocess will spawn with the system prompt above; visible in the run panel."}
-                    ${sk.pathway === "Local" && " The daemon runs the local binary; no API key needed but the package must be pip-installed."}
-                  </div>
-                </div>
-              </div>
-            `)}
+            ${g.items.map(sk => html`<${MediaSkillCard} key=${sk.id} skill=${sk} allModels=${allModels}/>`)}
           </div>
         </div>
       `)}
+    </div>
+  `;
+}
+
+// Media-generation skill card (from TH_MEDIA.skills). Collapsible — head
+// click toggles the body. Default collapsed so the grid is scannable.
+function MediaSkillCard({ skill: sk, allModels }) {
+  const [open, setOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  return html`
+    <div className=${"skill-card" + (open ? " is-expanded" : " is-collapsed")} data-pathway=${sk.pathway}>
+      <div
+        className="skill-card-head"
+        onClick=${() => setOpen(x => !x)}
+        title=${open ? "Click to collapse" : "Click to expand"}
+        style=${{ cursor: "pointer" }}
+      >
+        <span className="skill-card-disclosure" aria-hidden="true">${open ? "▼" : "▶"}</span>
+        <span className="skill-glyph">${sk.glyph}</span>
+        <div className="skill-card-head-text">
+          <div className="skill-card-name">
+            <span className="skill-label">${sk.label}</span>
+            <code className="skill-id">${sk.id}</code>
+          </div>
+          <div className="skill-card-hint">${sk.hint}</div>
+        </div>
+        <span className=${"skill-pathway skill-pathway-" + sk.pathway}>${sk.pathway}</span>
+      </div>
+
+      ${open && html`
+      <div className="skill-section">
+        <div className="skill-row">
+          <span className="skill-row-label">Inputs</span>
+          <div className="skill-chip-row">
+            ${(sk.inputs || []).map(i => html`<code key=${i} className="skill-chip skill-chip-input">${i}</code>`)}
+          </div>
+        </div>
+        <div className="skill-row">
+          <span className="skill-row-label">Output</span>
+          <code className=${"skill-chip skill-chip-output skill-chip-output-" + sk.output}>${sk.output}</code>
+        </div>
+        ${sk.hasAspect && html`
+          <div className="skill-row">
+            <span className="skill-row-label">Aspect</span>
+            <span className="skill-row-value">configurable per Run</span>
+          </div>
+        `}
+        ${sk.defaultModel && html`
+          <div className="skill-row">
+            <span className="skill-row-label">Default model</span>
+            <code className="skill-chip skill-chip-model">${sk.defaultModel}</code>
+            ${(() => {
+              const m = allModels.find(mm => mm.id === sk.defaultModel);
+              return m ? html`<span className="skill-row-value-meta">${m.label} · ${m.provider}</span>` : null;
+            })()}
+          </div>
+        `}
+        ${sk.pathwayBExt && html`
+          <div className="skill-row">
+            <span className="skill-row-label">Output file</span>
+            <code className="skill-chip skill-chip-ext">.${sk.pathwayBExt}</code>
+          </div>
+        `}
+      </div>
+
+      ${sk.pathwayBSystem && html`
+        <div className="skill-section">
+          <button
+            className="skill-expand-btn"
+            onClick=${() => setPromptOpen(x => !x)}
+            aria-expanded=${promptOpen ? "true" : "false"}
+          >
+            ${promptOpen ? "▼" : "▶"} System prompt (${sk.pathwayBSystem.length} chars)
+          </button>
+          ${promptOpen && html`<pre className="skill-system-prompt">${sk.pathwayBSystem}</pre>`}
+        </div>
+      `}
+
+      <div className="skill-section skill-howto">
+        <div className="skill-howto-label">How to use</div>
+        <div className="skill-howto-body">
+          Drop a Skill node on the canvas, set its <code>skill</code> to <code>${sk.id}</code>, wire a Prompt
+          node into <code>.in</code>, wire <code>.out</code> to an Asset node. Click Run.
+          ${sk.pathway === "A" && " The daemon posts to the provider; ensure the API key is set in Settings."}
+          ${sk.pathway === "B" && " A Claude Code subprocess will spawn with the system prompt above; visible in the run panel."}
+          ${sk.pathway === "Local" && " The daemon runs the local binary; no API key needed but the package must be pip-installed."}
+        </div>
+      </div>
+      `}
+    </div>
+  `;
+}
+
+// Claude Code skill card. Smaller than the media skill card — these come
+// from SKILL.md frontmatter (name + description only). Collapsible same
+// pattern; expanded body shows the slash-command invocation + source path.
+function CcSkillCard({ skill: sk, reload }) {
+  const [open, setOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const onRemove = async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete skill "${sk.name}" from ~/.claude/skills/${sk.slug}/?`)) return;
+    setRemoving(true);
+    try {
+      const r = await fetch(apiUrl("/__cc_skills/delete"), {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ slug: sk.slug }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      if (reload) await reload();
+    } catch (err) {
+      alert("Delete failed: " + (err.message || err));
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const invocation = sk.invocation || ("/" + sk.slug);
+  return html`
+    <div className=${"skill-card cc-skill-card" + (open ? " is-expanded" : " is-collapsed")} data-source=${sk.source}>
+      <div
+        className="skill-card-head"
+        onClick=${() => setOpen(x => !x)}
+        title=${open ? "Click to collapse" : "Click to expand"}
+        style=${{ cursor: "pointer" }}
+      >
+        <span className="skill-card-disclosure" aria-hidden="true">${open ? "▼" : "▶"}</span>
+        <span className="skill-glyph">/</span>
+        <div className="skill-card-head-text">
+          <div className="skill-card-name">
+            <span className="skill-label">${sk.name}</span>
+            <code className="skill-id">${invocation}</code>
+          </div>
+          <div className="skill-card-hint">${sk.description || ""}</div>
+        </div>
+        <span className=${"skill-pathway skill-pathway-CC"}>${sk.source === "user" ? "you" : (sk.plugin || "plugin")}</span>
+      </div>
+
+      ${open && html`
+        <div className="skill-section">
+          <div className="skill-row">
+            <span className="skill-row-label">Invoke</span>
+            <code className="skill-chip skill-chip-output">${invocation}</code>
+            <span className="skill-row-value">in the chat composer (or via Skill tool)</span>
+          </div>
+          ${sk.path && html`
+            <div className="skill-row">
+              <span className="skill-row-label">Source</span>
+              <code className="skill-chip skill-chip-ext">${sk.path}</code>
+            </div>
+          `}
+          ${sk.source === "user" && html`
+            <div className="skill-row">
+              <button className="skill-remove-btn" onClick=${onRemove} disabled=${removing} title="Delete this skill directory">
+                ${removing ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          `}
+        </div>
+      `}
     </div>
   `;
 }
@@ -13503,7 +14010,20 @@ function ProjectsLanding({ info, projects, onReload }) {
                 </div>
               </div>
             ` : html`
-              <div key=${p.id} className="landing-card" onClick=${() => openProject(p.id, "workflow")} role="button" tabIndex=${0} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProject(p.id, "workflow"); } }}>
+              <div key=${p.id} className=${"landing-card" + (p.thumbnailPrototype && p.thumbnailPrototype.exists ? " landing-card-has-thumb" : "")} onClick=${() => openProject(p.id, "workflow")} role="button" tabIndex=${0} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProject(p.id, "workflow"); } }}>
+                ${p.thumbnailPrototype && p.thumbnailPrototype.exists && html`
+                  <div className="landing-card-thumb">
+                    <iframe
+                      className="landing-card-thumb-iframe"
+                      src=${"/" + p.thumbnailPrototype.path + "?project=" + encodeURIComponent(p.id)}
+                      title=${"Preview of " + (p.thumbnailPrototype.label || p.thumbnailPrototype.id)}
+                      sandbox="allow-scripts allow-same-origin"
+                      scrolling="no"
+                      loading="lazy"
+                      tabIndex=${-1}
+                    />
+                  </div>
+                `}
                 <div className="landing-card-head">
                   <span className="landing-card-anchor" aria-hidden="true"></span>
                   <div className="landing-card-label">${p.label || p.id}</div>
@@ -24394,7 +24914,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         }}
       />`}
       <div className="workflow-body" data-chat-active=${chatActive ? "true" : "false"}>
-        <${WorkflowLibrary}/>
+        <div className="workflow-library-col">
+          <${WorkflowLibrary}/>
+          <${WorkflowMiniMap} nodes=${data.nodes || []} pan=${pan} zoom=${zoom} wrapRef=${wrapRef}/>
+        </div>
         <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
         <div
           className="workflow-canvas-wrap"
@@ -25427,33 +25950,39 @@ function WorkflowLibrary() {
   // Re-fetch the library asset + saved-prompt lists. Wired to th:asset-refresh
   // (fires after any successful Run) and th:library-refresh (manual nudges).
   const [starredProtos, setStarredProtos] = useState(() => getStarredPrototypesSync());
+  const [thumbProto, setThumbProto] = useState(() => getThumbnailPrototypeSync());
   const reload = useCallback(async () => {
     try {
-      const [a, p, pr, hp, st] = await Promise.all([
+      const [a, p, pr, hp, st, tb] = await Promise.all([
         fetch(apiUrl("/__assets")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
         fetch(apiUrl("/__prompts")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
         fetch(apiUrl("/__source_prototypes")).then(r => r.ok ? r.json() : { prototypes: [] }).catch(() => ({ prototypes: [] })),
         fetch(apiUrl("/__source_htmls")).then(r => r.ok ? r.json() : { htmls: [] }).catch(() => ({ htmls: [] })),
         fetchStarredPrototypes(true),
+        fetchThumbnailPrototype(true),
       ]);
       setAssets((a && a.items) || []);
       setSavedPrompts((p && p.items) || []);
       setExtraProtos(((pr && pr.prototypes) || []));
       setHtmlPagesRaw((hp && hp.htmls) || []);
       setStarredProtos(Array.isArray(st) ? st : []);
+      setThumbProto(typeof tb === "string" ? tb : "");
     } catch {}
   }, []);
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
     const onRefresh = () => reload();
     const onStars = () => setStarredProtos(getStarredPrototypesSync());
+    const onThumb = () => setThumbProto(getThumbnailPrototypeSync());
     window.addEventListener("th:asset-refresh", onRefresh);
     window.addEventListener("th:library-refresh", onRefresh);
     window.addEventListener("th:starred-prototypes-changed", onStars);
+    window.addEventListener("th:thumbnail-prototype-changed", onThumb);
     return () => {
       window.removeEventListener("th:asset-refresh", onRefresh);
       window.removeEventListener("th:library-refresh", onRefresh);
       window.removeEventListener("th:starred-prototypes-changed", onStars);
+      window.removeEventListener("th:thumbnail-prototype-changed", onThumb);
     };
   }, [reload]);
   // v3.4.27 — Visual-asset sub-grouping. Splits the flat `assets` list into
@@ -26112,10 +26641,11 @@ function WorkflowLibrary() {
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
                   const starred = starredProtos.some(sp => sp && sp.id === p.id);
+                  const isThumb = thumbProto === p.id;
                   return html`
                     <div
                       key=${p.id}
-                      className=${"workflow-library-item workflow-library-item-generated" + (starred ? " is-starred" : "")}
+                      className=${"workflow-library-item workflow-library-item-generated workflow-library-item-protothumbable" + (starred ? " is-starred" : "") + (isThumb ? " is-thumbnail" : "")}
                       draggable=${true}
                       onDragStart=${(e) => {
                         e.dataTransfer.effectAllowed = "copy";
@@ -26127,6 +26657,17 @@ function WorkflowLibrary() {
                       <span className="workflow-library-item-glyph"><${Icon.Play}/></span>
                       <span className="workflow-library-item-label">${p.label}</span>
                       <span className="workflow-library-item-id">${p.id}</span>
+                      <button
+                        type="button"
+                        className=${"workflow-library-thumb-btn" + (isThumb ? " is-on" : "")}
+                        title=${isThumb ? "Unset — clear the project-list thumbnail" : "Set as project-list thumbnail"}
+                        aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
+                        aria-pressed=${isThumb ? "true" : "false"}
+                        onClick=${(e) => { e.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.id); }}
+                        onMouseDown=${(e) => e.stopPropagation()}
+                        draggable=${false}
+                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      ><${Icon.Image}/></button>
                       <button
                         type="button"
                         className=${"workflow-library-star-btn" + (starred ? " is-on" : "")}
@@ -26148,10 +26689,11 @@ function WorkflowLibrary() {
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
                   const starred = starredProtos.some(sp => sp && sp.id === p.id);
+                  const isThumb = thumbProto === p.id;
                   return html`
                     <div
                       key=${p.id}
-                      className=${"workflow-library-card workflow-library-card-generated" + (starred ? " is-starred" : "")}
+                      className=${"workflow-library-card workflow-library-card-generated workflow-library-card-protothumbable" + (starred ? " is-starred" : "") + (isThumb ? " is-thumbnail" : "")}
                       draggable=${true}
                       onDragStart=${(e) => {
                         e.dataTransfer.effectAllowed = "copy";
@@ -26168,6 +26710,17 @@ function WorkflowLibrary() {
                           sandbox="allow-scripts allow-same-origin"
                           scrolling="no"
                         />
+                        <button
+                          type="button"
+                          className=${"workflow-library-thumb-btn workflow-library-thumb-btn-corner" + (isThumb ? " is-on" : "")}
+                          title=${isThumb ? "Unset — clear the project-list thumbnail" : "Set as project-list thumbnail"}
+                          aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
+                          aria-pressed=${isThumb ? "true" : "false"}
+                          onClick=${(e) => { e.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.id); }}
+                          onMouseDown=${(e) => e.stopPropagation()}
+                          draggable=${false}
+                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        ><${Icon.Image}/></button>
                         <button
                           type="button"
                           className=${"workflow-library-star-btn workflow-library-star-btn-corner" + (starred ? " is-on" : "")}
