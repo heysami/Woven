@@ -1146,6 +1146,18 @@ button {
   font-family: ui-monospace, monospace;
   font-size: 11px;
 }
+.skills-upload-root {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+.skills-upload-root code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+}
 .skills-upload-msg {
   flex-basis: 100%;
   font-size: 12px;

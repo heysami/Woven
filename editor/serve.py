@@ -10467,29 +10467,35 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"planner toggle failed: {e}"})
 
-    # ── Claude Code skills routes ────────────────────────────────────────
+    # ── Harness-local skills routes ──────────────────────────────────────
     #
-    # GET  /__cc_skills           — list every SKILL.md the user has
-    #                                installed (~/.claude/skills/*) plus
-    #                                every plugin-bundled SKILL.md under
-    #                                ~/.claude/plugins/marketplaces/.
+    # GET  /__cc_skills           — list every SKILL.md installed in the
+    #                                harness-local skills dir. THIS HARNESS
+    #                                DELIBERATELY DOES NOT READ THE USER'S
+    #                                GLOBAL ~/.claude/ INSTALL — agents
+    #                                spawned by the harness do not get
+    #                                access to the user's Claude Code
+    #                                skill library, so they have to be
+    #                                added to the harness explicitly here.
     # POST /__cc_skills/upload    — multipart upload. Each part is either a
     #                                SKILL.md file (installed verbatim) or a
     #                                .zip whose first top-level dir becomes
-    #                                the skill slug. Lands under
-    #                                ~/.claude/skills/<slug>/.
+    #                                the skill slug. Lands under the
+    #                                harness skills dir.
     # POST /__cc_skills/delete    — body {"slug": "<name>"} removes
-    #                                ~/.claude/skills/<slug>/. Refuses to
-    #                                touch plugin-bundled skills.
+    #                                <skills_dir>/<slug>/.
     #
-    # These are user-owned files in $HOME — keep the writes strictly under
-    # ~/.claude/skills/ and never traverse outside it.
+    # Storage location resolution (first match wins):
+    #   1. WORKSPACE_DIR is set        → <WORKSPACE_DIR>/.harness-skills/
+    #   2. otherwise                   → <INSTALL_ROOT>/.harness-skills/
+    # The route name (/__cc_skills) is kept for backwards compatibility
+    # with the frontend; the prior implementation walked the global
+    # ~/.claude/ tree and was replaced when the harness pivoted to a
+    # closed-skill model.
 
     def _cc_skills_root_user(self):
-        return os.path.join(os.path.expanduser("~"), ".claude", "skills")
-
-    def _cc_skills_root_plugins(self):
-        return os.path.join(os.path.expanduser("~"), ".claude", "plugins", "marketplaces")
+        base = WORKSPACE_DIR if WORKSPACE_DIR else INSTALL_ROOT
+        return os.path.join(base, ".harness-skills")
 
     def _parse_skill_md_frontmatter(self, path):
         """Return {name, description, argument_hint} from a SKILL.md's YAML
@@ -10521,12 +10527,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         return meta or None
 
     def _cc_skills_list(self):
-        """Walk the two skill roots and emit a flat list. Each entry:
-            {slug, name, description, source: "user"|"plugin",
-             plugin: <plugin-slug if any>, path, invocation}"""
-        out = []
+        """Walk the harness skills dir and emit a flat list. Each entry:
+            {slug, name, description, source: "user", path, invocation}
 
-        # User-installed skills
+        Only the harness-local dir is scanned — the user's global
+        ~/.claude/ install is deliberately NOT read. Agents spawned by the
+        harness don't get access to the user's global Claude Code skill
+        library, so a skill the agent should be able to invoke has to be
+        added here explicitly."""
+        out = []
         user_root = self._cc_skills_root_user()
         if os.path.isdir(user_root):
             for slug in sorted(os.listdir(user_root)):
@@ -10538,93 +10547,51 @@ class H(http.server.SimpleHTTPRequestHandler):
                     continue
                 meta = self._parse_skill_md_frontmatter(md) or {}
                 name = meta.get("name") or slug
+                # Path shown to the user — relative to workspace if applicable,
+                # else absolute (still useful for "where did this land?").
+                show_path = md
+                if WORKSPACE_DIR and md.startswith(WORKSPACE_DIR):
+                    show_path = "<workspace>" + md[len(WORKSPACE_DIR):]
                 out.append({
                     "slug":        slug,
                     "name":        name,
                     "description": meta.get("description", ""),
                     "source":      "user",
                     "plugin":      None,
-                    "path":        md.replace(os.path.expanduser("~"), "~"),
+                    "path":        show_path,
                     "invocation":  "/" + slug,
                 })
-
-        # Plugin-bundled skills
-        plug_root = self._cc_skills_root_plugins()
-        if os.path.isdir(plug_root):
-            # Walk down to .../skills/<skill-slug>/SKILL.md anywhere in the tree.
-            for mp in sorted(os.listdir(plug_root)):
-                mp_dir = os.path.join(plug_root, mp)
-                if not os.path.isdir(mp_dir):
-                    continue
-                # Find every "skills" dir under this marketplace.
-                for root, dirs, files in os.walk(mp_dir):
-                    if os.path.basename(root) == "skills" and "SKILL.md" not in files:
-                        # Each subdir of this skills/ is a skill
-                        for slug in sorted(dirs):
-                            sk_dir = os.path.join(root, slug)
-                            md = os.path.join(sk_dir, "SKILL.md")
-                            if not os.path.isfile(md):
-                                continue
-                            meta = self._parse_skill_md_frontmatter(md) or {}
-                            name = meta.get("name") or slug
-                            # Plugin slug: the dir two levels above "skills"
-                            # (e.g. .../<plugin>/skills/<slug>/) when it
-                            # exists; otherwise the marketplace name.
-                            plug = os.path.basename(os.path.dirname(root))
-                            out.append({
-                                "slug":        slug,
-                                "name":        name,
-                                "description": meta.get("description", ""),
-                                "source":      "plugin",
-                                "plugin":      plug,
-                                "path":        md.replace(os.path.expanduser("~"), "~"),
-                                "invocation":  "/" + (plug + ":" + slug if plug and plug != mp else slug),
-                            })
-                        # Don't recurse into skills children.
-                        dirs[:] = []
-
-        # Dedupe by (source, plugin, slug) — multi-marketplace installs can
-        # land the same plugin twice. Stable across reloads.
-        seen = set()
-        deduped = []
-        for s in out:
-            k = (s["source"], s.get("plugin") or "", s["slug"])
-            if k in seen:
-                continue
-            seen.add(k)
-            deduped.append(s)
-
-        return self._reply(200, {"count": len(deduped), "skills": deduped})
+        return self._reply(200, {"count": len(out), "skills": out, "root": user_root})
 
     def _cc_skills_upload(self):
         """POST /__cc_skills/upload — multipart body. Each part is either a
-        SKILL.md (installed as ~/.claude/skills/<filename-without-ext>/SKILL.md)
-        or a .zip whose first directory becomes the skill slug.
+        SKILL.md (installed as <harness_skills>/<slug>/SKILL.md) or a .zip
+        whose first directory becomes the skill slug.
 
         For raw SKILL.md uploads, the slug is derived from the frontmatter
         `name:` if present, else the upload filename's stem.
 
-        Refuses uploads outside ~/.claude/skills/ (path traversal guard)."""
-        ctype = self.headers.get("content-type", "")
+        Refuses uploads outside the harness skills root (path-traversal
+        guard) — the harness deliberately never writes into the user's
+        global ~/.claude/ install."""
+        ctype = self.headers.get("Content-Type", "")
         if not ctype.lower().startswith("multipart/form-data"):
             return self._reply(400, {"error": "expected multipart/form-data body"})
-
-        # Reuse the daemon's multipart parser pattern used by /__upload.
-        import cgi
+        # Reuse the daemon's hand-rolled multipart parser (cgi is gone in
+        # Python 3.13 and FieldStorage was the only stdlib option).
+        m = re.search(r'boundary\s*=\s*"?([^";]+)"?', ctype)
+        if not m:
+            return self._reply(400, {"error": "missing multipart boundary"})
+        boundary = m.group(1).encode("latin-1", errors="replace")
         try:
-            length = int(self.headers.get("content-length") or 0)
+            length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
         if length <= 0:
-            return self._reply(400, {"error": "missing or zero content-length"})
-
-        # cgi.FieldStorage is the path-of-least-resistance multipart parser
-        # in the stdlib. It's deprecated in 3.13 but still ships.
-        env = {"REQUEST_METHOD": "POST", "CONTENT_TYPE": ctype,
-               "CONTENT_LENGTH": str(length)}
+            return self._reply(400, {"error": "missing or zero Content-Length"})
+        body = self.rfile.read(length)
         try:
-            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
-                                    environ=env, keep_blank_values=False)
+            parts = self._upload_parse_multipart(body, boundary)
         except Exception as e:
             return self._reply(400, {"error": f"multipart parse failed: {e}"})
 
@@ -10638,100 +10605,97 @@ class H(http.server.SimpleHTTPRequestHandler):
             s = re.sub(r"[^A-Za-z0-9_.-]", "-", s).strip("-").lower()
             return s[:80] or "skill"
 
-        for key in form.keys():
-            item = form[key]
-            items = item if isinstance(item, list) else [item]
-            for it in items:
-                if not getattr(it, "filename", None):
+        for headers, data in parts:
+            cd = headers.get("content-disposition", "")
+            raw_name = self._upload_extract_filename(cd)
+            if not raw_name:
+                # form-data field without filename — ignore
+                continue
+            lower = raw_name.lower()
+            if lower.endswith(".md"):
+                stem = os.path.splitext(os.path.basename(raw_name))[0]
+                # Try to harvest slug from frontmatter `name:` if present
+                head = data[:8192].decode("utf-8", errors="replace")
+                slug = stem
+                if head.startswith("---"):
+                    end = head.find("\n---", 3)
+                    if end >= 0:
+                        for line in head[3:end].splitlines():
+                            ll = line.strip().lower()
+                            if ll.startswith("name:"):
+                                cand = line.split(":", 1)[1].strip().strip('"').strip("'")
+                                if cand:
+                                    slug = cand
+                                    break
+                slug = safe_slug(slug)
+                out_dir = os.path.join(user_root, slug)
+                # Path-traversal guard
+                if os.path.commonpath([os.path.abspath(out_dir), os.path.abspath(user_root)]) != os.path.abspath(user_root):
+                    errors.append({"name": raw_name, "reason": "path traversal"})
                     continue
-                raw_name = it.filename
-                data = it.file.read()
-                lower = raw_name.lower()
+                os.makedirs(out_dir, exist_ok=True)
+                with open(os.path.join(out_dir, "SKILL.md"), "wb") as f:
+                    f.write(data)
+                installed.append({"slug": slug, "kind": "md"})
 
-                if lower.endswith(".md"):
-                    stem = os.path.splitext(os.path.basename(raw_name))[0]
-                    # Try to harvest slug from frontmatter `name:` if present
-                    head = data[:8192].decode("utf-8", errors="replace")
-                    slug = stem
-                    if head.startswith("---"):
-                        end = head.find("\n---", 3)
-                        if end >= 0:
-                            for line in head[3:end].splitlines():
-                                ll = line.strip().lower()
-                                if ll.startswith("name:"):
-                                    cand = line.split(":", 1)[1].strip().strip('"').strip("'")
-                                    if cand:
-                                        slug = cand
-                                        break
-                    slug = safe_slug(slug)
-                    out_dir = os.path.join(user_root, slug)
-                    # Path-traversal guard
-                    if os.path.commonpath([os.path.abspath(out_dir), os.path.abspath(user_root)]) != os.path.abspath(user_root):
-                        errors.append({"name": raw_name, "reason": "path traversal"})
-                        continue
-                    os.makedirs(out_dir, exist_ok=True)
-                    with open(os.path.join(out_dir, "SKILL.md"), "wb") as f:
-                        f.write(data)
-                    installed.append({"slug": slug, "kind": "md"})
-
-                elif lower.endswith(".zip"):
-                    import io, zipfile
-                    try:
-                        zf = zipfile.ZipFile(io.BytesIO(data))
-                    except zipfile.BadZipFile as e:
-                        errors.append({"name": raw_name, "reason": f"bad zip: {e}"})
-                        continue
-                    # Slug = filename stem; if the zip has a single top-level
-                    # dir, prefer that.
-                    stem = os.path.splitext(os.path.basename(raw_name))[0]
-                    names = zf.namelist()
-                    # Top-level dirs (first segment of every entry path)
-                    tops = set()
-                    for n in names:
-                        n2 = n.lstrip("/").split("/", 1)[0]
-                        if n2:
-                            tops.add(n2)
+            elif lower.endswith(".zip"):
+                import io, zipfile
+                try:
+                    zf = zipfile.ZipFile(io.BytesIO(data))
+                except zipfile.BadZipFile as e:
+                    errors.append({"name": raw_name, "reason": f"bad zip: {e}"})
+                    continue
+                # Slug = filename stem; if the zip has a single top-level
+                # dir, prefer that.
+                stem = os.path.splitext(os.path.basename(raw_name))[0]
+                names = zf.namelist()
+                # Top-level dirs (first segment of every entry path)
+                tops = set()
+                for n in names:
+                    n2 = n.lstrip("/").split("/", 1)[0]
+                    if n2:
+                        tops.add(n2)
+                if len(tops) == 1:
+                    stem = next(iter(tops))
+                slug = safe_slug(stem)
+                out_dir = os.path.join(user_root, slug)
+                if os.path.commonpath([os.path.abspath(out_dir), os.path.abspath(user_root)]) != os.path.abspath(user_root):
+                    errors.append({"name": raw_name, "reason": "path traversal"})
+                    continue
+                os.makedirs(out_dir, exist_ok=True)
+                bad = False
+                for n in names:
+                    # Strip the leading top-level dir if every entry shares one
+                    rel = n
                     if len(tops) == 1:
-                        stem = next(iter(tops))
-                    slug = safe_slug(stem)
-                    out_dir = os.path.join(user_root, slug)
-                    if os.path.commonpath([os.path.abspath(out_dir), os.path.abspath(user_root)]) != os.path.abspath(user_root):
-                        errors.append({"name": raw_name, "reason": "path traversal"})
-                        continue
-                    os.makedirs(out_dir, exist_ok=True)
-                    bad = False
-                    for n in names:
-                        # Strip the leading top-level dir if every entry shares one
-                        rel = n
-                        if len(tops) == 1:
-                            top = next(iter(tops))
-                            if rel.startswith(top + "/"):
-                                rel = rel[len(top) + 1:]
-                            elif rel == top:
-                                continue
-                        if not rel:
+                        top = next(iter(tops))
+                        if rel.startswith(top + "/"):
+                            rel = rel[len(top) + 1:]
+                        elif rel == top:
                             continue
-                        if rel.endswith("/"):
-                            os.makedirs(os.path.join(out_dir, rel), exist_ok=True)
-                            continue
-                        # Guard against zip-slip
-                        dest = os.path.normpath(os.path.join(out_dir, rel))
-                        if os.path.commonpath([os.path.abspath(dest), os.path.abspath(out_dir)]) != os.path.abspath(out_dir):
-                            bad = True
-                            break
-                        os.makedirs(os.path.dirname(dest), exist_ok=True)
-                        with open(dest, "wb") as f:
-                            f.write(zf.read(n))
-                    if bad:
-                        errors.append({"name": raw_name, "reason": "zip slip"})
+                    if not rel:
                         continue
-                    # Require a SKILL.md to have landed
-                    if not os.path.isfile(os.path.join(out_dir, "SKILL.md")):
-                        errors.append({"name": raw_name, "reason": "no SKILL.md in archive"})
+                    if rel.endswith("/"):
+                        os.makedirs(os.path.join(out_dir, rel), exist_ok=True)
                         continue
-                    installed.append({"slug": slug, "kind": "zip"})
-                else:
-                    errors.append({"name": raw_name, "reason": "unsupported file type (.md or .zip)"})
+                    # Guard against zip-slip
+                    dest = os.path.normpath(os.path.join(out_dir, rel))
+                    if os.path.commonpath([os.path.abspath(dest), os.path.abspath(out_dir)]) != os.path.abspath(out_dir):
+                        bad = True
+                        break
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with open(dest, "wb") as f:
+                        f.write(zf.read(n))
+                if bad:
+                    errors.append({"name": raw_name, "reason": "zip slip"})
+                    continue
+                # Require a SKILL.md to have landed
+                if not os.path.isfile(os.path.join(out_dir, "SKILL.md")):
+                    errors.append({"name": raw_name, "reason": "no SKILL.md in archive"})
+                    continue
+                installed.append({"slug": slug, "kind": "zip"})
+            else:
+                errors.append({"name": raw_name, "reason": "unsupported file type (.md or .zip)"})
 
         if not installed and errors:
             return self._reply(400, {"error": "no skill installed", "errors": errors})
@@ -10744,7 +10708,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _cc_skills_delete(self):
         """POST /__cc_skills/delete — body {"slug": "<name>"}.
-        Removes ~/.claude/skills/<slug>/ recursively. Refuses to touch
+        Removes <harness_skills>/<slug>/ recursively. Refuses to touch
         any path outside that root."""
         try:
             body = self._read_json_body() or {}

@@ -9203,7 +9203,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
               >
                 <code className="chat-slash-item-cmd">${sk.invocation}</code>
                 <span className="chat-slash-item-name">${sk.name}</span>
-                <span className=${"chat-slash-item-kind chat-slash-item-kind-" + sk.kind}>${sk.kind === "media" ? "media" : (sk.source === "user" ? "yours" : (sk.plugin || "plugin"))}</span>
+                <span className=${"chat-slash-item-kind chat-slash-item-kind-" + sk.kind}>${sk.kind === "media" ? "media" : "custom"}</span>
                 ${sk.description && html`<span className="chat-slash-item-desc">${sk.description}</span>`}
               </button>
             `)}
@@ -12825,7 +12825,7 @@ function SystemLanding() {
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "skills",     label: "Skills",     count: skills.length,
       hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
-    { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 48,
+    { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 63,
       hint: "Every .claude/agents/*.md — drawers, lenses, planners, cross-cutting" },
     { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
       hint: "Canvas node types — what each does + how to use it" },
@@ -12863,12 +12863,13 @@ function SystemLanding() {
 
 // ─── SkillsLanding ────────────────────────────────────────────────────────
 // v3.3 — Skills inventory. Pulls from window.TH_MEDIA.skills (the canonical
-// SKILLS array in editor/prompts/media-models.js) PLUS Claude Code skills
-// surfaced via /__cc_skills (walks ~/.claude/skills/ + plugin marketplaces).
-// Grouped by pathway so the user immediately sees the API-key-required ones
-// vs the Claude-writes-file ones vs the slash-command Claude Code skills.
-// Each card is collapsible — head click expands; body hidden by default so
-// scanning 60+ skills doesn't require a long scroll.
+// SKILLS array in editor/prompts/media-models.js) PLUS harness-local skills
+// surfaced via /__cc_skills. The harness deliberately DOES NOT read the
+// user's global ~/.claude/ install — agents spawned by the harness don't
+// get access to the user's Claude Code skill library, so any skill the
+// agent should be able to invoke has to be added to this harness here.
+// Each card is collapsible — head click expands; body hidden by default
+// so scanning the full set doesn't require a long scroll.
 function SkillsLanding() {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
   const imageModels = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
@@ -12876,12 +12877,14 @@ function SkillsLanding() {
   const videoModels = (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
   const allModels = [...imageModels, ...textModels, ...videoModels];
 
-  // Claude Code skills: fetched from daemon on mount. The daemon walks
-  // ~/.claude/skills/*/SKILL.md (user-added) plus
-  // ~/.claude/plugins/marketplaces/*/.../skills/*/SKILL.md (plugin-bundled)
-  // and returns {name, description, source, slug, path} for each.
+  // Harness-local skills: fetched from daemon on mount. The daemon walks
+  // the workspace-scoped <workspace>/.harness-skills/ dir (or install-root
+  // fallback) and returns {name, description, source, slug, path} for
+  // each SKILL.md. Nothing from the user's global ~/.claude/ install
+  // is read or invokable.
   const [ccSkills, setCcSkills] = useState(null);    // null = loading, [] = none
   const [ccError, setCcError]   = useState(null);
+  const [ccRoot, setCcRoot]     = useState(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMsg, setUploadMsg]   = useState(null);
   const uploadInputRef = useRef(null);
@@ -12896,6 +12899,7 @@ function SkillsLanding() {
       }
       const j = await r.json();
       setCcSkills(j.skills || []);
+      setCcRoot(j.root || null);
     } catch (e) {
       setCcError(e.message || String(e));
       setCcSkills([]);
@@ -12914,7 +12918,7 @@ function SkillsLanding() {
       const r = await fetch(apiUrl("/__cc_skills/upload"), { method: "POST", body: fd });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      setUploadMsg(`Installed ${j.installed || files.length} skill(s) to ~/.claude/skills/.`);
+      setUploadMsg(`Installed ${j.installed || files.length} skill(s).`);
       await loadCcSkills();
     } catch (e) {
       setUploadMsg("Upload failed: " + (e.message || e));
@@ -12934,11 +12938,10 @@ function SkillsLanding() {
     if (groups[p]) groups[p].items.push(sk);
   }
 
-  // Claude Code skills get their own pseudo-group "CC". Split into
-  // user-added vs plugin-bundled so the user immediately sees what they own.
+  // Harness-local skills. Single group — there's no notion of
+  // "plugin-bundled" here because the harness deliberately ignores the
+  // user's global Claude Code install.
   const ccList = Array.isArray(ccSkills) ? ccSkills : [];
-  const ccUser   = ccList.filter(s => s.source === "user");
-  const ccPlugin = ccList.filter(s => s.source !== "user");
 
   const totalCount = skills.length + ccList.length;
 
@@ -12946,7 +12949,7 @@ function SkillsLanding() {
     <div className="ref-root">
       <div className="ref-header">
         <div className="ref-header-title">${totalCount} skill${totalCount === 1 ? "" : "s"} available</div>
-        <div className="ref-header-meta">A skill is a unit of generation. Media skills run on the canvas; Claude Code skills are invokable via <code>/&lt;skill-name&gt;</code> in the chat composer.</div>
+        <div className="ref-header-meta">A skill is a unit of generation. Media skills run on the canvas; custom skills you add to this harness are invokable via <code>${"/<skill-name>"}</code> in the chat composer.</div>
       </div>
 
       <div className="skills-upload-bar">
@@ -12967,35 +12970,24 @@ function SkillsLanding() {
           type="button"
           disabled=${uploadBusy}
           onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
-          title="Upload a SKILL.md (or .zip of SKILL.md + assets) — installed to ~/.claude/skills/<name>/"
+          title="Upload a SKILL.md (or .zip of SKILL.md + assets) — installed to this harness only"
         >${uploadBusy ? "Uploading…" : "+ Add skill"}</button>
         <div className="skills-upload-hint">
-          Drop a <code>SKILL.md</code> with frontmatter (<code>name</code>, <code>description</code>) — or a <code>.zip</code> containing one — to install a custom Claude Code skill.
+          Drop a <code>SKILL.md</code> with frontmatter (<code>name</code>, <code>description</code>) — or a <code>.zip</code> containing one — to install a custom skill <strong>for this harness only</strong>. Agents spawned here can <code>/invoke</code> the skill; your global Claude Code install is untouched.
+          ${ccRoot && html`<div className="skills-upload-root">Installed under <code>${ccRoot}</code></div>`}
         </div>
         ${uploadMsg && html`<div className="skills-upload-msg">${uploadMsg}</div>`}
-        ${ccError && html`<div className="skills-upload-msg skills-upload-msg-err">CC skills load error: ${ccError}</div>`}
+        ${ccError && html`<div className="skills-upload-msg skills-upload-msg-err">Skills load error: ${ccError}</div>`}
       </div>
 
-      ${ccUser.length > 0 && html`
+      ${ccList.length > 0 && html`
         <div className="ref-group ref-group-user">
           <div className="ref-group-head">
-            <div className="ref-group-title">Your skills <span className="ref-group-count">${ccUser.length}</span></div>
-            <div className="ref-group-desc">Claude Code skills you've added under <code>~/.claude/skills/</code>. Invokable in the chat composer with <code>/name</code>.</div>
+            <div className="ref-group-title">Custom skills <span className="ref-group-count">${ccList.length}</span></div>
+            <div className="ref-group-desc">Skills you've added to this harness. Invokable in the chat composer with <code>/name</code>. Stored locally — not synced to your global Claude Code install.</div>
           </div>
           <div className="ref-grid">
-            ${ccUser.map(sk => html`<${CcSkillCard} key=${sk.slug} skill=${sk} reload=${loadCcSkills}/>`)}
-          </div>
-        </div>
-      `}
-
-      ${ccPlugin.length > 0 && html`
-        <div className="ref-group">
-          <div className="ref-group-head">
-            <div className="ref-group-title">Claude Code skills (plugin-bundled) <span className="ref-group-count">${ccPlugin.length}</span></div>
-            <div className="ref-group-desc">Skills shipped by installed plugins (under <code>~/.claude/plugins/marketplaces/</code>). Invokable with <code>/plugin:name</code> or <code>/name</code>.</div>
-          </div>
-          <div className="ref-grid">
-            ${ccPlugin.map(sk => html`<${CcSkillCard} key=${sk.slug + ":" + (sk.path || "")} skill=${sk}/>`)}
+            ${ccList.map(sk => html`<${CcSkillCard} key=${sk.slug} skill=${sk} reload=${loadCcSkills}/>`)}
           </div>
         </div>
       `}
@@ -13151,7 +13143,7 @@ function CcSkillCard({ skill: sk, reload }) {
           </div>
           <div className="skill-card-hint">${sk.description || ""}</div>
         </div>
-        <span className=${"skill-pathway skill-pathway-CC"}>${sk.source === "user" ? "you" : (sk.plugin || "plugin")}</span>
+        <span className=${"skill-pathway skill-pathway-CC"}>custom</span>
       </div>
 
       ${open && html`
@@ -13192,23 +13184,39 @@ function SubagentsLanding({ caps }) {
   const [familyFilter, setFamilyFilter] = useState("all");
 
   const families = {
-    planners:   { label: "Planners",          glyph: "⊕", agents: [] },
-    lenses:     { label: "Quality lenses",    glyph: "◎", agents: [] },
-    visual:     { label: "Visual drawers",    glyph: "◇", agents: [] },
-    simulation: { label: "Simulation family", glyph: "▦", agents: [] },
-    interactive:{ label: "Interactive family",glyph: "✦", agents: [] },
-    other:      { label: "Cross-cutting",     glyph: "·", agents: [] },
+    planners:   { label: "Planners",            glyph: "⊕", agents: [] },
+    lenses:     { label: "Quality lenses",      glyph: "◎", agents: [] },
+    visual:     { label: "Visual drawers",      glyph: "◇", agents: [] },
+    simulation: { label: "Simulation family",   glyph: "▦", agents: [] },
+    interactive:{ label: "Interactive family",  glyph: "✦", agents: [] },
+    narrative:  { label: "Narrative family",    glyph: "❋", agents: [] },
+    game:       { label: "Game family",         glyph: "▶", agents: [] },
+    scrapbook:  { label: "Scrapbook family",    glyph: "✄", agents: [] },
+    polish:     { label: "Polish family",       glyph: "✦", agents: [] },
+    other:      { label: "Cross-cutting",       glyph: "·", agents: [] },
   };
-  const VISUAL_NAMES = new Set(["raster-foreground","raster-photo","vector-icon","vector-mark","shader","particle-2d","particle-gl","lottie","3d","video"]);
-  const PLANNER_NAMES = new Set(["visual-planner","simulation-planner","interactive-media-planner"]);
+  const VISUAL_NAMES = new Set(["raster-foreground","raster-photo","vector-icon","vector-mark","shader","particle-2d","particle-gl","lottie","3d","video","motion"]);
+  const PLANNER_NAMES = new Set([
+    "visual-planner",
+    "simulation-planner",
+    "interactive-media-planner",
+    "narrative-experience-planner",
+    "game-experience-planner",
+    "scrapbook-experience-planner",
+    "interactive-polish-planner",
+  ]);
   for (const a of agents) {
     const n = a.name || "";
     let key = "other";
     if (PLANNER_NAMES.has(n)) key = "planners";
     else if (n.endsWith("-lens") || n.includes("lens")) key = "lenses";
-    else if (n.startsWith("sim-")) key = "simulation";
-    else if (n.startsWith("im-"))  key = "interactive";
-    else if (VISUAL_NAMES.has(n))  key = "visual";
+    else if (n.startsWith("sim-"))       key = "simulation";
+    else if (n.startsWith("im-"))        key = "interactive";
+    else if (n.startsWith("nx-"))        key = "narrative";
+    else if (n.startsWith("game-"))      key = "game";
+    else if (n.startsWith("scrapbook-") || n.startsWith("sb-")) key = "scrapbook";
+    else if (n.startsWith("polish-"))    key = "polish";
+    else if (VISUAL_NAMES.has(n))        key = "visual";
     families[key].agents.push(a);
   }
 
