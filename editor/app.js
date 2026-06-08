@@ -13007,6 +13007,7 @@ function PlannersLanding({ scopeLabel }) {
 
 function PlannerCard({ planner, busy, onToggle }) {
   const p = planner;
+  const [expanded, setExpanded] = useState(false);
   const d = p.dispatches || {};
   // Flatten dispatched subagent groups for a single count + glance grouping.
   const dispatchGroups = [];
@@ -13027,11 +13028,17 @@ function PlannerCard({ planner, busy, onToggle }) {
 
   return html`
     <div
-      className=${"planner-card" + (p.enabled ? "" : " is-disabled")}
+      className=${"planner-card" + (p.enabled ? "" : " is-disabled") + (expanded ? " is-expanded" : " is-collapsed")}
       data-planner-id=${p.id}
       data-enabled=${p.enabled ? "true" : "false"}
     >
-      <div className="planner-card-head">
+      <div
+        className="planner-card-head"
+        onClick=${(e) => { if (!e.target.closest(".planner-toggle")) setExpanded(x => !x); }}
+        title=${expanded ? "Click to collapse" : "Click to expand"}
+        style=${{ cursor: "pointer" }}
+      >
+        <span className="planner-card-disclosure" aria-hidden="true">${expanded ? "▼" : "▶"}</span>
         <div className="planner-card-head-text">
           <div className="planner-card-name">
             <span className="planner-card-label">${p.label}</span>
@@ -13044,7 +13051,7 @@ function PlannerCard({ planner, busy, onToggle }) {
           className=${"planner-toggle" + (busy ? " is-busy" : "")}
           data-enabled=${p.enabled ? "true" : "false"}
           disabled=${busy}
-          onClick=${onToggle}
+          onClick=${(e) => { e.stopPropagation(); onToggle(); }}
           title=${p.enabled
             ? "Disable this planner — its dispatch hard-rule will be removed from the spawn preamble"
             : "Enable this planner — restore its dispatch hard-rule in the spawn preamble"}
@@ -13054,6 +13061,7 @@ function PlannerCard({ planner, busy, onToggle }) {
         </button>
       </div>
 
+      ${expanded && html`
       <div className="planner-card-description">${p.description}</div>
 
       ${Array.isArray(p.triggers) && p.triggers.length > 0 && html`
@@ -13135,6 +13143,7 @@ function PlannerCard({ planner, busy, onToggle }) {
             ${p.playbookPath           && html`<code className="planner-doc">${p.playbookPath}</code>`}
           </div>
         </div>
+      `}
       `}
     </div>
   `;
@@ -26178,7 +26187,7 @@ function WorkflowLibrary() {
               </div>`)
         }
       </div>
-      <div className="workflow-library-section workflow-library-section-ds-pages">
+      <div className="workflow-library-section">
         <div className="workflow-library-section-head">Design system pages</div>
         ${dsPages.length === 0
           ? html`<div className="workflow-library-empty">No DS pages yet. The DS-brainstorm node writes <code>_ds_brainstorm/&lt;variant&gt;/</code> under <code>source/</code>; any DS library's <code>design-systems/&lt;id&gt;/gallery.html</code> also lands here.</div>`
