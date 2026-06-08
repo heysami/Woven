@@ -24540,6 +24540,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onZoom=${() => openZoomForPrototype(n)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
                 codeOpen=${codePanelNodeId === n.id}
+                hasPickedChild=${pickedElement?.nodeId === n.id}
                 onOpenCanvasFrames=${openCanvasFrames}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
@@ -24634,6 +24635,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onZoom=${() => openZoomForAsset(n)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
                 codeOpen=${codePanelNodeId === n.id}
+                hasPickedChild=${pickedElement?.nodeId === n.id}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -30317,7 +30319,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   `;
 }
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, allNodes, allEdges, onOpenCanvasFrames }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = node.branch || "main";
@@ -31099,7 +31101,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           },
         ]}
       />`}
-      ${selected && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
+      ${selected && !hasPickedChild && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
 }
@@ -32148,7 +32150,7 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   `;
 }
 
-function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, allNodes, allEdges }) {
+function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   // Prompt inspector — opens via the 📜 chip when node.promptDebug is set
   // (i.e. the asset was the output of a remix / repeater / blend run).
@@ -33339,7 +33341,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           },
         ]}
       />`}
-      ${selected && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
+      ${selected && !hasPickedChild && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
 }
