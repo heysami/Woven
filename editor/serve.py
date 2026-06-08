@@ -1191,43 +1191,39 @@ def _starred_for_project(project_root: str) -> list:
 
 
 def _thumbnail_for_project(project_root: str) -> dict | None:
-    """Read <project>/.thumbnail-prototype.json and resolve the chosen id
-    to a {id, path, label, exists} entry. Returns None if no thumbnail is
-    set. Module-level helper paralleling _starred_for_project."""
+    """Read <project>/.thumbnail-prototype.json and resolve the stored
+    target to a {path, label, exists} entry. Returns None if no thumbnail
+    is set. Module-level helper paralleling _starred_for_project.
+
+    Storage shape v2: { "path": "source/<...>/file.html" }
+    Storage shape v1: { "id": "<prototype-slug>" } — promoted on the fly to
+    source/<slug>/index.html so older saves keep working."""
     path = os.path.join(project_root, ".thumbnail-prototype.json")
     if not os.path.isfile(path):
         return None
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f) or {}
-        sid = data.get("id")
-        if not isinstance(sid, str) or not sid:
-            return None
     except Exception:
         return None
-    src_root = os.path.join(project_root, "source")
-    found = {}
-    if os.path.isdir(src_root):
-        try:
-            for name in os.listdir(src_root):
-                if name.startswith("."): continue
-                lvl1 = os.path.join(src_root, name)
-                if not os.path.isdir(lvl1): continue
-                if os.path.isfile(os.path.join(lvl1, "index.html")):
-                    found[name] = {"id": name, "path": f"source/{name}/index.html", "label": name, "depth": 1}
-                for sub in os.listdir(lvl1):
-                    if sub.startswith(".") or sub == "index.html": continue
-                    lvl2 = os.path.join(lvl1, sub)
-                    if not os.path.isdir(lvl2): continue
-                    if os.path.isfile(os.path.join(lvl2, "index.html")):
-                        cid = f"{name}/{sub}"
-                        found[cid] = {"id": cid, "path": f"source/{name}/{sub}/index.html", "label": sub, "branch": name, "depth": 2}
-        except OSError:
-            pass
-    if sid in found:
-        e = dict(found[sid]); e["exists"] = True; return e
-    label = sid.rsplit("/", 1)[-1] or sid
-    return {"id": sid, "path": f"source/{sid}/index.html", "label": label, "exists": False}
+    tp = data.get("path")
+    if not (isinstance(tp, str) and tp):
+        sid = data.get("id")
+        if isinstance(sid, str) and sid:
+            tp = f"source/{sid}/index.html"
+        else:
+            return None
+    norm = tp.replace("\\", "/").lstrip("/")
+    if not norm.startswith("source/") or not (norm.lower().endswith(".html") or norm.lower().endswith(".htm")):
+        return {"path": tp, "label": tp.rsplit("/", 1)[-1] or tp, "exists": False}
+    abs_path = os.path.join(project_root, norm)
+    exists = os.path.isfile(abs_path)
+    parts = norm.split("/")
+    if parts[-1] == "index.html" and len(parts) >= 3:
+        label = "/".join(parts[1:-1])
+    else:
+        label = parts[-1]
+    return {"path": norm, "label": label, "exists": exists}
 
 
 def _list_projects() -> list:
@@ -9400,37 +9396,60 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _thumbnail_prototype_path(self, project_root):
         return os.path.join(project_root, ".thumbnail-prototype.json")
 
-    def _read_thumbnail_id(self, project_root):
+    def _read_thumbnail_path(self, project_root):
+        """Return the project-relative source path of the chosen thumbnail
+        ("" if none). Backwards-compatible read: the v1 shape stored a
+        prototype slug under "id" — if we encounter that we promote it to
+        the v2 path (source/<slug>/index.html) on the fly so old saves keep
+        working without a migration script."""
         path = self._thumbnail_prototype_path(project_root)
         if not os.path.isfile(path):
             return ""
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f) or {}
+            tp = data.get("path")
+            if isinstance(tp, str) and tp:
+                return tp
             sid = data.get("id")
-            return sid if isinstance(sid, str) else ""
+            if isinstance(sid, str) and sid:
+                # v1 → v2 promotion: prototype slug → source path.
+                return f"source/{sid}/index.html"
+            return ""
         except Exception:
             return ""
 
-    def _write_thumbnail_id(self, project_root, sid):
+    def _write_thumbnail_path(self, project_root, tp):
         path = self._thumbnail_prototype_path(project_root)
         try:
             with open(path, "w", encoding="utf-8") as f:
-                json.dump({"id": sid or ""}, f, indent=2)
+                json.dump({"path": tp or ""}, f, indent=2)
                 f.write("\n")
             return True
         except OSError:
             return False
 
-    def _hydrate_thumbnail(self, project_root, sid):
-        """Resolve `sid` to a {id, path, label, exists} entry (or None when
-        no thumbnail is set). Reuses the same depth-1/depth-2 prototype-scan
-        logic as _hydrate_starred so a slug like "main/sketches" resolves to
-        source/main/sketches/index.html. Returns None on empty sid."""
-        if not sid:
+    def _hydrate_thumbnail(self, project_root, tp):
+        """Resolve a project-relative `tp` (e.g. "source/main/index.html",
+        "source/main/page-bento.html", "source/main/_ds/v1/page.html") to
+        a {path, label, exists} entry. Returns None on empty tp. Anything
+        outside source/ is rejected — keeps the thumbnail strictly to
+        user-generated HTML."""
+        if not tp:
             return None
-        out = self._hydrate_starred(project_root, [sid])
-        return out[0] if out else None
+        norm = tp.replace("\\", "/").lstrip("/")
+        if not norm.startswith("source/") or not (norm.lower().endswith(".html") or norm.lower().endswith(".htm")):
+            return {"path": tp, "label": tp.rsplit("/", 1)[-1] or tp, "exists": False}
+        abs_path = os.path.join(project_root, norm)
+        exists = os.path.isfile(abs_path)
+        # Label: for an index.html, surface the parent dir name (prototype
+        # slug); for any other html page, surface its filename.
+        parts = norm.split("/")
+        if parts[-1] == "index.html" and len(parts) >= 3:
+            label = "/".join(parts[1:-1])
+        else:
+            label = parts[-1]
+        return {"path": norm, "label": label, "exists": exists}
 
     # GET /__thumbnail_prototype?project=<id>
     def _thumbnail_prototype_get(self, qs):
@@ -9438,24 +9457,39 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        sid = self._read_thumbnail_id(project_root)
-        return self._reply(200, {"id": sid, "thumbnail": self._hydrate_thumbnail(project_root, sid)})
+        tp = self._read_thumbnail_path(project_root)
+        return self._reply(200, {"path": tp, "thumbnail": self._hydrate_thumbnail(project_root, tp)})
 
-    # POST /__thumbnail_prototype/set  body: { id }   ("" to clear)
+    # POST /__thumbnail_prototype/set  body: { path }   ("" to clear)
+    # Accepts a v1 `id` field too (prototype slug → promoted to source path).
     def _thumbnail_prototype_set(self, qs):
         try:
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         body = self._read_json_body() or {}
-        sid = (body.get("id") or "").strip()
-        if sid and not re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", sid):
-            return self._reply(400, {"error": "invalid id shape", "id": sid})
-        if not self._write_thumbnail_id(project_root, sid):
+        tp = (body.get("path") or "").strip()
+        if not tp:
+            # Back-compat with the v1 caller that sent {id: "<slug>"}.
+            sid = (body.get("id") or "").strip()
+            if sid and re.match(r"^[A-Za-z0-9_.\-]{1,80}(?:/[A-Za-z0-9_.\-]{1,80})?$", sid):
+                tp = f"source/{sid}/index.html"
+        if tp:
+            norm = tp.replace("\\", "/").lstrip("/")
+            # Must be a project-relative html file under source/. No "..",
+            # no absolute paths, length-bounded.
+            if (".." in norm.split("/")
+                    or not norm.startswith("source/")
+                    or not (norm.lower().endswith(".html") or norm.lower().endswith(".htm"))
+                    or len(norm) > 400
+                    or not re.match(r"^[A-Za-z0-9_./\-]+$", norm)):
+                return self._reply(400, {"error": "invalid path", "path": tp})
+            tp = norm
+        if not self._write_thumbnail_path(project_root, tp):
             return self._reply(500, {"error": "write failed"})
         return self._reply(200, {
-            "id": sid,
-            "thumbnail": self._hydrate_thumbnail(project_root, sid),
+            "path": tp,
+            "thumbnail": self._hydrate_thumbnail(project_root, tp),
         })
 
     # GET /__source_htmls?project=<id>

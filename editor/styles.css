@@ -5631,7 +5631,21 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .chat-composer-attach[disabled] { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Slash-command menu over the chat composer ─────────────────────── */
-.chat-composer-input-wrap { display: flex; }
+/* The wrapper sits in the `1fr` textarea column of .chat-composer's grid
+   (auto auto 1fr auto auto). Without these, the textarea inside collapses
+   to its intrinsic size and the placeholder wraps onto three lines. */
+.chat-composer-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: end;
+  min-width: 0;
+  width: 100%;
+}
+.chat-composer-input-wrap > .chat-composer-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
 .chat-slash-menu {
   position: absolute;
   bottom: calc(100% + 6px);
