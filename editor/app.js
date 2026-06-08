@@ -30773,7 +30773,14 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         onMouseDown=${onResizeDown}
       />
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
-      ${selected && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${/* v3.4.x — Badge is now ALWAYS mounted (not gated on `selected`) so
+            when pick-mode is on globally, every prototype's badge can light
+            up via its internal `visible = selected || active` logic. Without
+            this, deselected prototypes had no badge in the DOM and the user
+            couldn't tell pick-mode was active for them. The badge self-hides
+            (returns null) when neither selected nor active, so the "no
+            pick-mode + not selected" case is unchanged. */ ""}
+      <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
       ${selected && html`<${WorkflowNodeTopActions}
         nodeId=${node.id}
         selected=${selected}
@@ -33015,7 +33022,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onClose=${() => setPickerOpen(false)}
         onChange=${onChange}
       />`}
-      ${selected && (kind === "html" || kind === "html-set") && isFileRef && !isInlinePath && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${/* v3.4.x — Same change as the prototype-node badge mount: badge
+            mounts whenever the asset is picker-eligible (HTML asset bound
+            to a real file), regardless of `selected`. The badge's own
+            visibility logic handles the actual hide/show. */ ""}
+      ${(kind === "html" || kind === "html-set") && isFileRef && !isInlinePath && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
       ${selected && html`<${WorkflowNodeTopActions}
         nodeId=${node.id}
         selected=${selected}
