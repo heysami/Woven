@@ -17106,8 +17106,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // users who don't know the affordance exists. Esc exits.
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
-    if (!fullscreen) return;
-    const onKey = (e) => { if (e.key === "Escape") setFullscreen(false); };
+    // Esc exits (only when ON). Cmd/Ctrl+. toggles in both directions —
+    // matches the zoom-mode shortcut so the two "take over the viewport"
+    // modes share one muscle-memory binding. Skip when focus is inside a
+    // text field so the user can still type a period.
+    const onKey = (e) => {
+      if (fullscreen && e.key === "Escape") { setFullscreen(false); return; }
+      if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+        const t = e.target;
+        const tag = t && t.tagName;
+        const editable = tag === "INPUT" || tag === "TEXTAREA" || (t && t.isContentEditable);
+        if (editable) return;
+        e.preventDefault();
+        setFullscreen(f => !f);
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
@@ -24301,7 +24314,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <button
           className="workflow-bar-fullscreen"
-          title="Fullscreen canvas — hides the top bar + library so only the canvas is visible. Press Esc to exit."
+          title="Fullscreen canvas (⌘.) — hides the top bar + library so only the canvas is visible. Press Esc or ⌘. to exit."
           aria-label="Enter fullscreen"
           onClick=${() => setFullscreen(true)}
         >⛶</button>
@@ -24320,7 +24333,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       ${fullscreen && html`
         <button
           className="workflow-fullscreen-exit"
-          title="Exit fullscreen (Esc)"
+          title="Exit fullscreen (Esc or ⌘.)"
           aria-label="Exit fullscreen"
           onClick=${() => setFullscreen(false)}
         >⛶ Exit fullscreen</button>
@@ -26635,7 +26648,188 @@ function ZoomSlotPicker({ rect, onDelete, onDuplicate, onReplace, onSide, onDril
    rules in styles.css; renaming would be a 49-site rewrite for purely
    semantic cleanup. Both wrappers include this body and inherit those
    styles unchanged. */
-function PickedInspectorBody({ picked, styles, onStyle, onMove }) {
+/* v3.4.x — Enumerate CSS custom properties declared on `:root` (or html
+   selectors) anywhere in the iframe's stylesheets. Returns a flat map
+   of { "--name": "<computed value>" }. Used by the inspector's color
+   picker to surface design-system tokens as swatches with visual
+   preview. Cross-origin sheets throw on cssRules access and are skipped
+   silently. Walks every `:root` rule (works for projects with multiple
+   theme blocks). Falls back to reading the computed root style if no
+   rules surfaced anything — covers cases where the daemon serves the
+   stylesheet with cache headers that block rule enumeration. */
+function readIframeCssVars(doc) {
+  const out = {};
+  if (!doc) return out;
+  const collectFromRule = (rule) => {
+    if (!rule || !rule.style) return;
+    for (let i = 0; i < rule.style.length; i++) {
+      const prop = rule.style[i];
+      if (prop && prop.startsWith("--")) {
+        out[prop] = (rule.style.getPropertyValue(prop) || "").trim();
+      }
+    }
+  };
+  try {
+    for (const sheet of doc.styleSheets) {
+      let rules; try { rules = sheet.cssRules; } catch { continue; }
+      for (const rule of rules) {
+        if (rule.type !== 1 /* STYLE_RULE */) continue;
+        const sel = (rule.selectorText || "").trim();
+        if (sel === ":root" || sel === "html" || sel === "html, body" || sel === "body") {
+          collectFromRule(rule);
+        }
+      }
+    }
+  } catch {}
+  // Backstop — read the computed inline values from <html> so even when
+  // we missed a sheet (CORS, lazy load) the tokens are still visible.
+  try {
+    const root = doc.documentElement;
+    const cs = doc.defaultView.getComputedStyle(root);
+    for (let i = 0; i < cs.length; i++) {
+      const prop = cs[i];
+      if (prop.startsWith("--") && !(prop in out)) {
+        out[prop] = (cs.getPropertyValue(prop) || "").trim();
+      }
+    }
+  } catch {}
+  return out;
+}
+
+/* v3.4.x — Classify a CSS variable's resolved value into a kind the
+   inspector can render. "color" → swatch preview. "gradient" → bar
+   preview. "size" / "shadow" / "font" → text. "other" → fallthrough.
+   Keep classification cheap (regex only); the inspector renders the
+   raw value either way. */
+function classifyVarKind(rawVal) {
+  const v = (rawVal || "").trim();
+  if (!v) return "other";
+  if (/^(#[0-9a-f]{3,8}|rgba?\(|hsla?\(|oklch\(|oklab\(|color-mix\(|hwb\()/i.test(v)) return "color";
+  if (/-?\d/.test(v) && /^[a-z]*\(.*gradient/i.test(v)) return "gradient";
+  if (/^(linear|radial|conic)-gradient\(/i.test(v)) return "gradient";
+  if (/^\d+(\.\d+)?(px|rem|em|%|vw|vh|fr|ch)/.test(v)) return "size";
+  if (/^["']/.test(v) || /\bsans|serif|mono\b/i.test(v)) return "font";
+  return "other";
+}
+
+/* v3.4.x — Color-field component used by the augmented inspector body
+   for every color-bearing property (background, color, border-color).
+   Renders a clickable swatch (shows the current color as a visual
+   preview) + a text input for raw values. Clicking the swatch opens a
+   popover that lists every design-system color token from the iframe's
+   :root with a mini preview + name + value. Picking a token sets the
+   value to `var(--name)` so the styled element inherits live token
+   updates.
+
+   Gradients are supported via the text input — paste any
+   `linear-gradient(...)` etc. and the swatch will render it as a
+   preview (CSS background does the work).
+
+   Props:
+     • label    — display label
+     • value    — current raw value
+     • cssVars  — { "--name": "<resolved>" } map from readIframeCssVars
+     • onChange(nextValue) — fires on commit (Enter / blur / pick) */
+function PickedColorField({ label, value, cssVars, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  useEffect(() => { setDraft(value || ""); }, [value]);
+  const tokens = useMemo(() => {
+    if (!cssVars) return [];
+    return Object.entries(cssVars)
+      .filter(([_, v]) => classifyVarKind(v) === "color" || classifyVarKind(v) === "gradient")
+      .map(([k, v]) => ({ name: k, value: v, kind: classifyVarKind(v) }));
+  }, [cssVars]);
+  const commitDraft = () => {
+    const next = draft.trim();
+    if (next !== (value || "")) onChange(next);
+  };
+  // The swatch's `background` reads `value` directly so it shows whatever
+  // CSS the user typed (color, gradient, var() reference, anything).
+  return html`
+    <div className="zoom-inspector-color-row">
+      <button
+        type="button"
+        className="zoom-inspector-color-swatch"
+        title=${"Pick from design system tokens · current: " + (value || "(unset)")}
+        style=${{ background: value || "transparent" }}
+        onClick=${() => setOpen(o => !o)}
+        aria-label=${"Color picker for " + label}
+      >${!value && "—"}</button>
+      <input
+        className="zoom-inspector-color-input"
+        type="text"
+        value=${draft}
+        placeholder=${"e.g. var(--accent) or #fff or linear-gradient(...)"}
+        onChange=${(e) => setDraft(e.target.value)}
+        onBlur=${commitDraft}
+        onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
+        title=${value || ""}
+      />
+      ${open && html`
+        <div className="zoom-inspector-color-pop" onClick=${(e) => e.stopPropagation()}>
+          <div className="zoom-inspector-color-pop-head">
+            <span>Design-system tokens (${tokens.length})</span>
+            <button type="button" className="zoom-inspector-color-pop-close"
+                    onClick=${() => setOpen(false)} title="Close">×</button>
+          </div>
+          <div className="zoom-inspector-color-pop-body">
+            ${tokens.length === 0
+              ? html`<div className="zoom-inspector-color-pop-empty">No color tokens found in the iframe's stylesheets.</div>`
+              : tokens.map(t => html`
+                  <button
+                    key=${t.name}
+                    type="button"
+                    className="zoom-inspector-color-token"
+                    title=${t.name + " → " + t.value}
+                    onClick=${() => { onChange(`var(${t.name})`); setOpen(false); }}
+                  >
+                    <span className="zoom-inspector-color-token-swatch" style=${{ background: t.value }}/>
+                    <span className="zoom-inspector-color-token-name">${t.name}</span>
+                    <span className="zoom-inspector-color-token-value">${t.value.length > 28 ? t.value.slice(0, 26) + "…" : t.value}</span>
+                  </button>
+                `)}
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* v3.4.x — Free-text field for shadows/filters (or any longer CSS
+   property). Commits on blur or Cmd+Enter so the inspector doesn't
+   thrash onStyle for every keystroke. */
+function PickedTextField({ label, value, placeholder, rows, onChange }) {
+  const [draft, setDraft] = useState(value || "");
+  useEffect(() => { setDraft(value || ""); }, [value]);
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== (value || "")) onChange(next);
+  };
+  return rows && rows > 1
+    ? html`
+        <textarea
+          className="zoom-inspector-textfield"
+          value=${draft}
+          placeholder=${placeholder || ""}
+          rows=${rows}
+          onChange=${(e) => setDraft(e.target.value)}
+          onBlur=${commit}
+          onKeyDown=${(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
+        />`
+    : html`
+        <input
+          className="zoom-inspector-input"
+          type="text"
+          value=${draft}
+          placeholder=${placeholder || ""}
+          onChange=${(e) => setDraft(e.target.value)}
+          onBlur=${commit}
+          onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
+        />`;
+}
+
+function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssVars, tree }) {
   if (!picked) return null;
   const lay = picked.parent && picked.parent.layout;
   const isFlex = lay && (lay.display === "flex" || lay.display === "inline-flex");
@@ -26663,6 +26857,8 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove }) {
     const k = axis === "h" ? "justifySelf" : "alignSelf";
     onStyle({ ...styles, [k]: value });
   };
+  // Generic setter — every new field commits via this shape.
+  const set1 = (k, v) => onStyle({ ...styles, [k]: v });
   const Seg = ({ value, options, onChange }) => html`
     <div className="zoom-inspector-segment">
       ${options.map(o => html`
@@ -26670,12 +26866,49 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove }) {
       `)}
     </div>
   `;
+  // Treat empty string ("") + the literal "auto" as "unset" — that way
+  // the Seg buttons render with no active highlight when the element
+  // hasn't had this property set.
+  const styleVal = (k) => (styles[k] || "");
+
   return html`<${React.Fragment}>
     <div className="zoom-inspector-section">
       <div className="zoom-inspector-label">Element</div>
       <div className="zoom-inspector-target">${picked.label}</div>
       <div className="zoom-inspector-context">↳ ${describeParent(picked.parent)}</div>
     </div>
+
+    ${tree && (tree.parent || (tree.children && tree.children.length > 0)) && html`
+      <div className="zoom-inspector-section">
+        <div className="zoom-inspector-label">Tree</div>
+        ${tree.parent && html`
+          <div className="zoom-inspector-tree-row">
+            <span className="zoom-inspector-tree-arrow">↑</span>
+            <button
+              type="button"
+              className="zoom-inspector-tree-link"
+              title=${"Select parent · " + tree.parent.label}
+              onClick=${() => onNavigate && onNavigate(tree.parent.ref)}
+            >${tree.parent.label}</button>
+          </div>
+        `}
+        ${tree.children && tree.children.length > 0 && html`
+          <div className="zoom-inspector-tree-children">
+            <div className="zoom-inspector-tree-children-head">↓ ${tree.children.length} child${tree.children.length === 1 ? "" : "ren"}</div>
+            ${tree.children.map((c, i) => html`
+              <button
+                key=${i}
+                type="button"
+                className="zoom-inspector-tree-link"
+                title=${"Select · " + c.label}
+                onClick=${() => onNavigate && onNavigate(c.ref)}
+              >${c.label}</button>
+            `)}
+          </div>
+        `}
+      </div>
+    `}
+
     <div className="zoom-inspector-section">
       <div className="zoom-inspector-label">Sizing</div>
       <div className="zoom-inspector-row">
@@ -26740,6 +26973,101 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove }) {
         </div>
       </div>
     `}
+
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Fill</div>
+      <${PickedColorField}
+        label="Background"
+        value=${styleVal("background")}
+        cssVars=${cssVars}
+        onChange=${(v) => set1("background", v)}/>
+    </div>
+
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Outline</div>
+      <${PickedColorField}
+        label="Border color"
+        value=${styleVal("borderColor")}
+        cssVars=${cssVars}
+        onChange=${(v) => set1("borderColor", v)}/>
+      <div className="zoom-inspector-row">
+        <span className="zoom-inspector-axis">W</span>
+        <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
+               value=${styleVal("borderWidth")}
+               placeholder="e.g. 1px"
+               onBlur=${(e) => set1("borderWidth", e.target.value.trim())}
+               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+      </div>
+      <div className="zoom-inspector-row">
+        <${Seg} value=${styleVal("borderStyle")} onChange=${v => set1("borderStyle", v)} options=${[
+          { v: "",       l: "—",  title: "Unset" },
+          { v: "solid",  l: "Solid"  },
+          { v: "dashed", l: "Dashed" },
+          { v: "dotted", l: "Dotted" },
+        ]}/>
+      </div>
+    </div>
+
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Radius</div>
+      <div className="zoom-inspector-row">
+        <input className="zoom-inspector-input" type="text"
+               value=${styleVal("borderRadius")}
+               placeholder="e.g. 8px or 8px 12px"
+               onBlur=${(e) => set1("borderRadius", e.target.value.trim())}
+               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+      </div>
+    </div>
+
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Text</div>
+      <${PickedColorField}
+        label="Color"
+        value=${styleVal("color")}
+        cssVars=${cssVars}
+        onChange=${(v) => set1("color", v)}/>
+      <div className="zoom-inspector-row">
+        <span className="zoom-inspector-axis">F</span>
+        <input className="zoom-inspector-input" type="text"
+               value=${styleVal("fontFamily")}
+               placeholder="e.g. Inter, system-ui, sans-serif"
+               onBlur=${(e) => set1("fontFamily", e.target.value.trim())}
+               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+      </div>
+      <div className="zoom-inspector-row">
+        <span className="zoom-inspector-axis">S</span>
+        <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
+               value=${styleVal("fontSize")}
+               placeholder="e.g. 14px"
+               onBlur=${(e) => set1("fontSize", e.target.value.trim())}
+               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+        <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
+               value=${styleVal("fontWeight")}
+               placeholder="e.g. 500 / bold"
+               onBlur=${(e) => set1("fontWeight", e.target.value.trim())}
+               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+      </div>
+    </div>
+
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Shadow</div>
+      <${PickedTextField}
+        label="Box shadow"
+        value=${styleVal("boxShadow")}
+        placeholder="e.g. 0 2px 8px rgba(0,0,0,0.12)"
+        rows=${2}
+        onChange=${(v) => set1("boxShadow", v)}/>
+    </div>
+
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Filter</div>
+      <${PickedTextField}
+        label="Filter"
+        value=${styleVal("filter")}
+        placeholder="e.g. blur(4px) brightness(1.05)"
+        rows=${1}
+        onChange=${(v) => set1("filter", v)}/>
+    </div>
   <//>`;
 }
 
@@ -27623,13 +27951,29 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     if (zoomIsReactManaged(el)) { showToast("Can't restyle a React-managed node"); return; }
     const meta = _docMeta(el);
     const snap = snapshotBefore();
+    // v3.4.x — Extended cssKeys list to match the augmented inspector
+    // body's sections (Fill, Outline, Radius, Text, Shadow, Filter).
+    // Only props PRESENT in nextStyles get touched — partial style edits
+    // (just changing background) don't accidentally clear unrelated props.
     const cssKeys = [
       ["width",        "width"],
       ["height",       "height"],
       ["justifySelf",  "justify-self"],
       ["alignSelf",    "align-self"],
+      ["background",   "background"],
+      ["borderColor",  "border-color"],
+      ["borderWidth",  "border-width"],
+      ["borderStyle",  "border-style"],
+      ["borderRadius", "border-radius"],
+      ["color",        "color"],
+      ["fontFamily",   "font-family"],
+      ["fontSize",     "font-size"],
+      ["fontWeight",   "font-weight"],
+      ["boxShadow",    "box-shadow"],
+      ["filter",       "filter"],
     ];
     for (const [propJs, propCss] of cssKeys) {
+      if (!(propJs in nextStyles)) continue;
       const v = nextStyles[propJs];
       if (v == null || v === "" || v === "auto") {
         try { el.style.removeProperty(propCss); } catch {}
@@ -28468,15 +28812,59 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         />
       </div>
     `);
-    overlayChildren.push(html`
-      <${ZoomInspectorPanel}
-        key="inspector"
-        picked=${picked}
-        styles=${pickedStyles[selectedId] || {}}
-        onStyle=${applyInspectorStyle}
-        onMove=${moveSelectedDom}
-      />
-    `);
+    overlayChildren.push((() => {
+      // v3.4.x — Compute the extra context the shared PickedInspectorBody
+      // wants (cssVars + tree + onNavigate), then mount.
+      //   • cssVars — pulled from THE INNERMOST owning doc (so nested
+      //     imported components see their own token block, not the
+      //     prototype host's). zoomCollectDocs walks every same-origin
+      //     iframe doc; the picked element's ownerDocument is the right
+      //     scope for its tokens.
+      //   • tree    — parent + direct children of the picked element,
+      //     with zoom-mode-flavoured navigateTo that re-picks via
+      //     setSelectedId(targetZid).
+      const pickedEl = zoomFindById(docRef.current, selectedId);
+      const ownDoc = (pickedEl && pickedEl.ownerDocument) || docRef.current;
+      const cssVars = readIframeCssVars(ownDoc);
+      const labelFor = (n) => {
+        const tag = (n.tagName || "").toLowerCase();
+        const clsList = n.className && typeof n.className === "string"
+          ? n.className.trim().split(/\s+/).filter(c => c && !c.startsWith("th-pick-"))
+          : [];
+        const cls = clsList.length > 0 ? "." + clsList.slice(0, 2).join(".") : "";
+        return tag + cls;
+      };
+      let tree = null;
+      if (pickedEl) {
+        const parent = pickedEl.parentElement;
+        const treeParent = (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML")
+          ? { label: labelFor(parent), ref: parent } : null;
+        const treeChildren = pickedEl.children
+          ? Array.from(pickedEl.children).slice(0, 24).map(c => ({ label: labelFor(c), ref: c }))
+          : [];
+        tree = { parent: treeParent, children: treeChildren };
+      }
+      const navigateTo = (targetEl) => {
+        if (!targetEl) return;
+        let zid = targetEl.getAttribute(ZOOM_ID_ATTR);
+        if (!zid) { zid = zoomMakeId(); targetEl.setAttribute(ZOOM_ID_ATTR, zid); }
+        setSelectedId(zid);
+        const info = _capturePicked(targetEl);
+        if (info) { setPicked(info); setSelectionRect(info.rect); }
+      };
+      return html`
+        <${ZoomInspectorPanel}
+          key="inspector"
+          picked=${picked}
+          styles=${pickedStyles[selectedId] || {}}
+          cssVars=${cssVars}
+          tree=${tree}
+          onStyle=${applyInspectorStyle}
+          onMove=${moveSelectedDom}
+          onNavigate=${navigateTo}
+        />
+      `;
+    })());
     if (slotPopoverAt) {
       overlayChildren.push(html`
         <${ZoomSlotPopover}
@@ -29719,10 +30107,10 @@ function WorkflowPickedInspectorDock({
     return () => { if (ro) ro.disconnect(); };
   }, [node.id, node.w, node.h, node.size, zoom]);
 
-  // Re-derive picked shape + styles on every refreshTick + every
-  // pickedElement change. Reads computed style from the live element +
-  // parent for the inspector body's display logic.
-  const { picked, styles } = useMemo(() => {
+  // Re-derive picked shape + styles + tree + cssVars on every refreshTick
+  // and every pickedElement change. Reads computed style from the live
+  // element + parent for the inspector body's display logic.
+  const { picked, styles, tree, cssVars } = useMemo(() => {
     const ifr = pickerIframeRef.current;
     const doc = ifr && ifr.contentDocument;
     const win = ifr && ifr.contentWindow;
@@ -29731,7 +30119,7 @@ function WorkflowPickedInspectorDock({
     if ((!el || !doc || !doc.contains(el)) && doc && pickedElement && pickedElement.path) {
       try { el = doc.querySelector(pickedElement.path); } catch { el = null; }
     }
-    if (!el || !win) return { picked: null, styles: {} };
+    if (!el || !win) return { picked: null, styles: {}, tree: null, cssVars: null };
     const parent = el.parentElement;
     let parentInfo = null;
     if (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML") {
@@ -29754,9 +30142,18 @@ function WorkflowPickedInspectorDock({
       } catch {}
     }
     const rect = el.getBoundingClientRect();
+    // v3.4.x — Strip pick-mode editor chrome classes everywhere we surface
+    // an element's label so they don't leak ("div.lane-block", not
+    // "div.lane-block.th-pick-selected"). Same filter for parent + children.
+    const labelFor = (n) => {
+      const tag = (n.tagName || "").toLowerCase();
+      const clsList = n.className && typeof n.className === "string"
+        ? n.className.trim().split(/\s+/).filter(c => c && !c.startsWith("th-pick-"))
+        : [];
+      const cls = clsList.length > 0 ? "." + clsList.slice(0, 2).join(".") : "";
+      return tag + cls;
+    };
     const labelTag = (pickedElement && pickedElement.tagName) || el.tagName.toLowerCase();
-    // Strip pick-mode editor chrome classes so they don't leak into the
-    // inspector label (the user picked a `.lane-block`, not a `.lane-block.th-pick-selected`).
     const labelClsList = el.className && typeof el.className === "string"
       ? el.className.trim().split(/\s+/).filter(c => !c.startsWith("th-pick-"))
       : [];
@@ -29767,12 +30164,10 @@ function WorkflowPickedInspectorDock({
     // Infer mode from inline style if explicit, else from computed value.
     const widthInline  = el.style.width  || "";
     const heightInline = el.style.height || "";
-    const inferMode = (inline, computedKey) => {
+    const inferMode = (inline) => {
       if (inline === "100%") return "fill";
       if (inline === "auto") return "hug";
       if (inline.endsWith("px")) return "fixed";
-      // No inline → look at the computed width for the px fallback only;
-      // we don't claim a mode the user didn't pick.
       return "auto";
     };
     const fixedPx = (inline, computedKey) => {
@@ -29781,6 +30176,22 @@ function WorkflowPickedInspectorDock({
       const compN = parseFloat(cs[computedKey]);
       return Number.isFinite(compN) ? Math.round(compN) : 0;
     };
+    // v3.4.x — Capture EVERY editable property the inspector body
+    // surfaces. Preference: inline style first (so we see exactly what
+    // we'd write back), then computed style as a faint hint when unset.
+    // We only return the inline value when present — that way the
+    // inspector input shows "" when the user hasn't set the property,
+    // which is the correct "I haven't touched this" state.
+    const readInline = (k) => (el.style && el.style[k]) || "";
+    // v3.4.x — Build tree info: parent (one level up) + every direct
+    // child. Each entry carries a `ref` to the live DOM node so the
+    // inspector's onNavigate can re-pick it. Skip <body>/<html> as the
+    // parent (the user can't usefully pick those).
+    const treeParent = (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML")
+      ? { label: labelFor(parent), ref: parent } : null;
+    const treeChildren = el.children
+      ? Array.from(el.children).slice(0, 24).map(c => ({ label: labelFor(c), ref: c }))
+      : [];
     return {
       picked: {
         label: labelTag + (labelCls.length > 1 ? labelCls : ""),
@@ -29788,20 +30199,39 @@ function WorkflowPickedInspectorDock({
         rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
       },
       styles: {
-        widthMode:  inferMode(widthInline,  "width"),
-        widthFixed: fixedPx(widthInline,    "width"),
-        heightMode: inferMode(heightInline, "height"),
-        heightFixed: fixedPx(heightInline,  "height"),
-        justifySelf: (el.style.justifySelf || cs.justifySelf || "auto"),
-        alignSelf:   (el.style.alignSelf   || cs.alignSelf   || "auto"),
+        widthMode:    inferMode(widthInline),
+        widthFixed:   fixedPx(widthInline,  "width"),
+        heightMode:   inferMode(heightInline),
+        heightFixed:  fixedPx(heightInline, "height"),
+        justifySelf:  (el.style.justifySelf || cs.justifySelf || "auto"),
+        alignSelf:    (el.style.alignSelf   || cs.alignSelf   || "auto"),
+        background:   readInline("background") || readInline("backgroundColor") || "",
+        borderColor:  readInline("borderColor")  || "",
+        borderWidth:  readInline("borderWidth")  || "",
+        borderStyle:  readInline("borderStyle")  || "",
+        borderRadius: readInline("borderRadius") || "",
+        color:        readInline("color")        || "",
+        fontFamily:   readInline("fontFamily")   || "",
+        fontSize:     readInline("fontSize")     || "",
+        fontWeight:   readInline("fontWeight")   || "",
+        boxShadow:    readInline("boxShadow")    || "",
+        filter:       readInline("filter")       || "",
       },
+      tree: { parent: treeParent, children: treeChildren },
+      cssVars: readIframeCssVars(doc),
     };
   }, [pickedElement, refreshTick]);
 
   // Apply style update from the inspector. Mirrors zoom-mode's
-  // applyInspectorStyle: writes width/height/justifySelf/alignSelf to
-  // inline style, "auto"/empty values remove the property, then saves
-  // the whole doc back through /__html_save.
+  // applyInspectorStyle: writes every editable property to inline style,
+  // empty/auto values remove the property, then saves the whole doc back
+  // through /__html_save.
+  //
+  // v3.4.x — cssKeys list expanded to cover the new sections (fill,
+  // outline, radius, text/font, shadow, filter). Same write semantics —
+  // empty value clears the property. The shared inspector body emits
+  // values for all of these via PickedColorField + PickedTextField + the
+  // sizing/align controls.
   const applyStyle = useCallback(async (nextStyles) => {
     if (isReactManaged && isReactManaged("Inspector style change")) return;
     const ifr = pickerIframeRef.current;
@@ -29809,12 +30239,26 @@ function WorkflowPickedInspectorDock({
     const el = pickedDomRef.current;
     if (!doc || !el) return;
     const cssKeys = [
-      ["width",       "width"],
-      ["height",      "height"],
-      ["justifySelf", "justify-self"],
-      ["alignSelf",   "align-self"],
+      ["width",        "width"],
+      ["height",       "height"],
+      ["justifySelf",  "justify-self"],
+      ["alignSelf",    "align-self"],
+      ["background",   "background"],
+      ["borderColor",  "border-color"],
+      ["borderWidth",  "border-width"],
+      ["borderStyle",  "border-style"],
+      ["borderRadius", "border-radius"],
+      ["color",        "color"],
+      ["fontFamily",   "font-family"],
+      ["fontSize",     "font-size"],
+      ["fontWeight",   "font-weight"],
+      ["boxShadow",    "box-shadow"],
+      ["filter",       "filter"],
     ];
     for (const [propJs, propCss] of cssKeys) {
+      // Only touch a property if it appears in nextStyles (so toggling
+      // sizing doesn't accidentally clear the user's border color).
+      if (!(propJs in nextStyles)) continue;
       const v = nextStyles[propJs];
       if (v == null || v === "" || v === "auto") {
         try { el.style.removeProperty(propCss); } catch {}
@@ -29825,6 +30269,36 @@ function WorkflowPickedInspectorDock({
     setRefreshTick(t => t + 1);
     try { await onSaveIframeHtml(doc, "Inspector style"); } catch {}
   }, [pickerIframeRef, pickedDomRef, onSaveIframeHtml, isReactManaged]);
+
+  // v3.4.x — Re-pick a different element from the tree links. Updates
+  // pickedDomRef + dispatches th:element-picked so WorkflowSurface's
+  // pickedElement state catches up. The CSS path is rebuilt here using
+  // the same logic the pick overlay uses (elementCssPath).
+  const navigateTo = useCallback((targetEl) => {
+    if (!targetEl) return;
+    pickedDomRef.current = targetEl;
+    try {
+      const evt = new CustomEvent("th:element-picked", {
+        detail: {
+          nodeId:    (pickedElement && pickedElement.nodeId) || node.id,
+          path:      elementCssPath(targetEl),
+          outerHTML: targetEl.outerHTML || "",
+          tagName:   (targetEl.tagName || "").toLowerCase(),
+        },
+      });
+      window.dispatchEvent(evt);
+    } catch {}
+    // Also visually mark the new pick in the iframe — strip prior
+    // selection class, add to new target.
+    try {
+      const doc = pickerIframeRef.current && pickerIframeRef.current.contentDocument;
+      if (doc) {
+        doc.querySelectorAll(".th-pick-selected").forEach(n => n.classList.remove("th-pick-selected"));
+        targetEl.classList.add("th-pick-selected");
+      }
+    } catch {}
+    setRefreshTick(t => t + 1);
+  }, [pickedDomRef, pickerIframeRef, pickedElement, node.id]);
 
   // Map prev/next (layout-relative — used by the shared inspector body)
   // into the absolute up/down/left/right that reorderPickedElement
@@ -29894,8 +30368,11 @@ function WorkflowPickedInspectorDock({
           ? html`<${PickedInspectorBody}
               picked=${picked}
               styles=${styles}
+              cssVars=${cssVars}
+              tree=${tree}
               onStyle=${applyStyle}
-              onMove=${applyMove}/>`
+              onMove=${applyMove}
+              onNavigate=${navigateTo}/>`
           : html`<div className="workflow-inspector-panel-empty">Pick an element inside the iframe to start editing.</div>`}
       </div>
     </div>
@@ -43797,6 +44274,25 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     if (node.runId) return { runId: node.runId, branch, agentId: "claude" };
     return _freshChatShell();
   });
+
+  // Sync chatRun → node.runId whenever they diverge. Two cases this catches:
+  //   1. The chat is open showing run A, the user clicks ▶ Run on the agent
+  //      node → triggerRun mints run B and patches node.runId. Without this
+  //      sync, chatRun stays pinned to A so the ChatDrawer keeps SSE'ing the
+  //      old (now-dead) run and shows no reply until a full page refresh
+  //      re-seeds chatRun from useState. ChatDrawer already knows how to
+  //      cold-switch runIds (see prevRunIdRef in its main effect) — we just
+  //      have to hand it the new one.
+  //   2. A retry-after-failure path mints a fresh runId from outside the
+  //      drawer (e.g. Continue / resume that respawns under a new id). Same
+  //      symptom, same fix.
+  useEffect(() => {
+    if (!node.runId) return;
+    if (chatRun?.runId !== node.runId) {
+      setChatRun({ runId: node.runId, branch, agentId: "claude" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.runId]);
 
   // The daemon's RUNS dict is in-memory only — when serve.py restarts, every
   // prior runId becomes a 404. Persisted node.runId on the workflow would

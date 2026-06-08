@@ -1947,8 +1947,19 @@ button {
 .workflow-root[data-fullscreen="true"] {
   grid-template-rows: 0 1fr;       /* collapse the bar row */
 }
+/* IMPORTANT: keep the bar in DOM flow (visibility:hidden + zero size)
+   instead of `display: none`. CSS Grid auto-placement *removes*
+   `display:none` items from the flow, which would slide the
+   .workflow-body into row 1 (the collapsed `0` slot) and leave the
+   canvas at height 0 — manifesting as "fullscreen shows empty space".
+   Same trick as the library/handle rule below. */
 .workflow-root[data-fullscreen="true"] .workflow-bar {
-  display: none;
+  visibility: hidden;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
 }
 /* IMPORTANT: keep library + handle in DOM flow (visibility:collapse + zero
    intrinsic size) instead of `display: none`. CSS Grid auto-placement
@@ -14836,6 +14847,198 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .zoom-inspector-pad-btn:hover { background: var(--accent); color: #fff; }
 .zoom-inspector-pad-center { width: 24px; text-align: center; color: var(--muted); }
+
+/* v3.4.x — Augmented inspector body: tree nav + color field + generic
+   text fields. Shared by zoom-mode + workflow-mode (the body classes
+   keep the `zoom-inspector-*` prefix for legacy reasons but render
+   identically in both contexts). */
+.zoom-inspector-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.zoom-inspector-tree-arrow {
+  width: 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.zoom-inspector-tree-children {
+  margin-top: 4px;
+  padding-left: 4px;
+  border-left: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.zoom-inspector-tree-children-head {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.zoom-inspector-tree-link {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  text-align: left;
+  font: 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zoom-inspector-tree-link:hover {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.zoom-inspector-color-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  padding: 2px 0;
+}
+.zoom-inspector-color-swatch {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background-clip: padding-box;
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  background-image:
+    linear-gradient(45deg, oklch(85% 0 0) 25%, transparent 25%),
+    linear-gradient(-45deg, oklch(85% 0 0) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, oklch(85% 0 0) 75%),
+    linear-gradient(-45deg, transparent 75%, oklch(85% 0 0) 75%);
+  background-size: 6px 6px;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0;
+}
+.zoom-inspector-color-input {
+  flex: 1;
+  min-width: 0;
+  font: 10.5px/1.3 var(--font-mono, ui-monospace, monospace);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 5px;
+  color: var(--text);
+}
+.zoom-inspector-color-input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+.zoom-inspector-color-pop {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.zoom-inspector-color-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.zoom-inspector-color-pop-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.zoom-inspector-color-pop-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.zoom-inspector-color-pop-empty {
+  padding: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: center;
+}
+.zoom-inspector-color-token {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 4px;
+  border-radius: 3px;
+  text-align: left;
+  cursor: pointer;
+  font: 11px/1.2 var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+}
+.zoom-inspector-color-token:hover { background: var(--surface-2); }
+.zoom-inspector-color-token-swatch {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background-clip: padding-box;
+}
+.zoom-inspector-color-token-name { overflow: hidden; text-overflow: ellipsis; }
+.zoom-inspector-color-token-value {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+.zoom-inspector-input {
+  flex: 1;
+  min-width: 0;
+  font: 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 5px;
+  color: var(--text);
+}
+.zoom-inspector-input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+.zoom-inspector-input-narrow { max-width: 90px; }
+.zoom-inspector-textfield {
+  width: 100%;
+  box-sizing: border-box;
+  font: 10.5px/1.4 var(--font-mono, ui-monospace, monospace);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 6px;
+  color: var(--text);
+  resize: vertical;
+}
+.zoom-inspector-textfield:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
 
 /* ─── Slot popover (Duplicate / Primitive / Library / Blank) ───────────
    Anchored near the selection ring, opens after the user clicks a side
