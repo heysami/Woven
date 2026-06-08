@@ -32708,7 +32708,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     ` : html`
       <iframe
         ref=${htmlIframeRef}
-        key=${"asset-iframe-" + bust}
+        key=${"asset-iframe-" + bust + "-" + (node.activeVersionId || "live")}
         className="workflow-node-asset-thumb workflow-node-asset-iframe"
         src=${fileSrc}
         title=${basename}
