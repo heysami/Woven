@@ -97,6 +97,71 @@ On `prefers-reduced-motion: reduce`, render a single static frame (no animation 
 //   [2]: turbulence (0..1)
 ```
 
+### 3.9 Optional feedback ping-pong (when research commits `shaderFeedback.enabled: true`)
+
+If `research.md` commits `shaderFeedback.enabled: true` you MUST build the ping-pong FBO pair and route the previous frame as a uniform sampler. The fullscreen-quad single-pass path is NOT acceptable for these pieces — duration/memory/trails IS the brief.
+
+Pattern:
+
+```js
+// Two same-size textures + two FBOs. Each frame: sample texPrev → write texNext → swap → blit texNext to screen.
+function makeFBO(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { tex, fbo };
+}
+let a = makeFBO(W, H), b = makeFBO(W, H);   // ping-pong pair
+
+// Per frame:
+//   1. bind b.fbo, sample a.tex via uniform u_prev, run accumulation shader
+//   2. swap [a, b] = [b, a]
+//   3. bind null (default framebuffer), run blit shader that samples a.tex
+```
+
+The accumulation shader has two NEW uniforms beyond the standard hue/brightness/etc:
+- `uniform float u_feedbackAmount;` — alpha-blend factor between new color and prior-frame sample (0..1)
+- `uniform float u_feedbackWarp;`   — coordinate distortion strength on the prior-frame sample (0..1)
+
+Implement the warp per research's committed warp function:
+- `zoom` — `vec2 prevUV = (uv - 0.5) * (1.0 - 0.01 * u_feedbackWarp) + 0.5;`
+- `swirl` — rotate uv around centre by `0.05 * u_feedbackWarp * length(uv - 0.5)` rad
+- `displace-by-noise` — `prevUV = uv + 0.02 * u_feedbackWarp * vec2(noise(uv + u_time), noise(uv - u_time));`
+- `radial-stretch` — `prevUV = mix(uv, normalize(uv - 0.5) * 0.5 + 0.5, 0.02 * u_feedbackWarp);`
+
+`applyMapping` writes BOTH new slots:
+
+```js
+applyMapping(outputVec) {
+  _hue             = outputVec[0];
+  _brightness      = outputVec[1];
+  _turbulence      = outputVec[2];
+  _feedbackAmount  = outputVec[N];      // index from mapping module's documented shape
+  _feedbackWarp    = outputVec[N+1];
+}
+```
+
+Resize handling: rebuild BOTH FBO textures on `ResizeObserver` callback. Half-float (`RGBA16F`) is required so feedback can accumulate without 8-bit banding. If `EXT_color_buffer_half_float` unavailable, fall back to `RGBA8` and warn.
+
+### 3.10 Optional glue libs (when research commits `shaderGlue: "twgl"` or `shaderGlue: "regl"`)
+
+If `research.md` commits `shaderGlue: "twgl"`: use TWGL for program creation, attribute binding, and FBO helpers (`twgl.createFramebufferInfo`). Shader source stays verbatim GLSL.
+
+If `research.md` commits `shaderGlue: "regl"`: rewrite the draw path as `regl({ frag, vert, attributes, uniforms })` command(s). Multi-pass chains express naturally as multiple regl commands invoked in sequence per frame.
+
+If `shaderGlue: "vanilla"` (default): no library. Hand-write the WebGL2 calls per §5.
+
+CDN ES-module imports (pin per piece in `research.md`):
+- TWGL: `import * as twgl from 'https://cdn.jsdelivr.net/npm/twgl.js@5.5.4/dist/5.x/twgl-full.module.js';`
+- regl: `import createREGL from 'https://cdn.jsdelivr.net/npm/regl@2.1.0/dist/regl.module.js';`
+
 ## 4. Internal refinement loop
 
 3 iterations. Self-test:
@@ -229,7 +294,9 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_output_<imId>_<medium>/comm
       "consumesIndices": [0, 1, 2],
       "matchesSensoryVisual": true,
       "reducedMotionFallback": true,
-      "particleCount": <N or 0>
+      "particleCount": <N or 0>,
+      "shaderFeedback": { "enabled": <bool>, "warp": "<picked | null>" },
+      "shaderGlue": "<vanilla | twgl | regl>"
     },
     "files": [{ "relPath": "output-<medium>.html", "content": "<draft>" }],
     "runStatus": "running"
@@ -243,6 +310,9 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_output_<imId>_<medium>/comm
 - **You do not pick a visual register that fights `sensoryTargets.visual`.** Block.
 - **You do not exceed 50k particles without transform feedback.** Block at perf check.
 - **You do not allocate in `applyMapping`.** Block at scale.
+- **You do not skip the FBO ping-pong when research commits `shaderFeedback.enabled: true`.** Single-pass shipped against a feedback brief = concept-lens block (the trails/duration the brief asked for cannot exist).
+- **You do not enable feedback when research committed `enabled: false`.** Wastes a texture pair + draw call and fights the brief.
+- **You do not silently swap the chosen warp function.** Research picked it; if you think another fits better, surface via runError.
 
 ## 9. Failure protocol
 

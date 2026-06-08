@@ -64,6 +64,20 @@ That's it. No precedent essays. No "mapping philosophy" deep-dives. The §8.3 le
 | `3d` | three.js InstancedMesh or BatchedMesh | Update instance matrices in mapping handler | <16ms |
 | `audio` | WebAudio nodes (Osc / Gain / BiquadFilter / Convolver / AudioWorklet) | Update node params via .value or AudioParam.linearRampToValueAtTime; AudioWorklet for custom DSP | <5ms (audio thread) |
 
+#### 2.2.1 Optional shader sub-flag: `feedback`
+
+For `shader` outputs ONLY, you may commit an optional `feedback: true` sub-flag when the intent's surprise lives in **trails, tunnels, smoke, decaying afterimage, slit-scan, video-feedback hallucinations** — anything where THIS frame must sample LAST frame.
+
+Mechanism: ping-pong FBOs. Two same-size textures + two framebuffers. Each frame samples texture A (prior state), shader writes to texture B (new state), then swap; a final pass draws B to screen. This is the TouchDesigner-style "Feedback TOP" pattern, ~40 lines added to the base shader drawer template.
+
+When you commit `feedback: true`, you ALSO commit two extra mapping output-vector slots that the drawer expects:
+- `feedbackAmount` (0..1) — how much of last frame bleeds through (0 = no feedback, 0.95 = long trails, 1.0 = unstable / runaway)
+- `feedbackWarp` (0..1) — coordinate distortion of the previous-frame sample (0 = direct sample, higher = swirl/zoom/displace per shader's chosen warp function)
+
+Pick `feedback: true` ONLY when the brief's `successFeel` references duration / memory / trails / hallucination. A static procedural background does NOT need feedback — adding it costs a texture pair + an extra draw call per frame.
+
+When `feedback: false` (the default), the drawer uses the single-pass fullscreen quad with no FBOs.
+
 ### 2.3 Mapping style
 
 Pick ONE — this is the load-bearing creative axis for whether the piece feels TouchDesigner-grade or median creative-coding demo. Anchor in the intent's surprise:
@@ -92,8 +106,12 @@ Small set of CDN-pinned libs that fit the stack:
 - **MediaPipe Tasks Vision** (hand / face / pose tracking from camera)
 - **Tone.js** (high-level WebAudio synth + sequencer)
 - **OffscreenCanvas + Worker** (heavy DSP off main thread)
+- **TWGL** (~12KB) — thin sugar over WebGL2 that kills boilerplate (program creation, attribute binding, FBO setup) while keeping you in raw GL. Use when the shader piece needs more than a single fullscreen quad — multi-pass chains, FBO ping-pong, render-to-texture sub-effects.
+- **regl** (~30KB) — functional WebGL wrapper; you describe draw commands as data, regl batches them. The most TouchDesigner-spirited library on the web: a piece's shader graph reads as a series of declarative `regl(...)` commands rather than imperative state mutations. Use when the piece has 3+ chained passes or the brief calls for a node-graph-shaped composition.
 
-Avoid bundlers — the runtime is one .html file. Inline ES modules + importmap for three.js.
+Pick ONE of TWGL / regl per piece — they overlap. Default vanilla WebGL2 (no glue) for single-pass shaders.
+
+Avoid bundlers — the runtime is one .html file. Inline ES modules + importmap for three.js / TWGL / regl.
 
 ## 3. Process
 
@@ -122,8 +140,15 @@ _Tech-stack pick for the interactive piece. All downstream drawers (input / mapp
 - **{input 2}** — ...
 
 ## Committed outputs
-- **{output 1}** — Web API: `{api}`; pattern: `{pattern}`; latency from input: `<{N}ms`; glue: `{vanilla / lib}`
+- **{output 1}** — Web API: `{api}`; pattern: `{pattern}`; latency from input: `<{N}ms`; glue: `{vanilla / twgl / regl / three.js / tone.js}`
 - **{output 2}** — ...
+
+### Shader feedback (if `shader` is among committed outputs)
+
+`feedback: {true | false}`
+{If true:} reason — quote successFeel phrase that requires duration/memory/trails.
+{If true:} extra mapping output-vec slots committed: `feedbackAmount` (0..1), `feedbackWarp` (0..1).
+{If true:} warp function picked — `{zoom | swirl | displace-by-noise | radial-stretch}` (the drawer reads this).
 
 ## Committed mapping style
 **{direct | accumulative | threshold-triggered | chaotic}**
@@ -185,7 +210,9 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_research_<imId>/commit?proj
       "outputs":         [...],   // names of committed output media
       "mappingStyle":    "<committed>",
       "permissionGates": [...],   // modalities that require permission
-      "multiDraftCruxes": [/* per §4 recommendation */]
+      "multiDraftCruxes": [/* per §4 recommendation */],
+      "shaderFeedback":  { "enabled": <bool>, "warp": "<zoom|swirl|displace-by-noise|radial-stretch | null>" },
+      "shaderGlue":      "<vanilla | twgl | regl>"
     },
     "files":   [{"relPath": "research.md", "content": "<note from §4>"}],
     "runStatus": "done"
