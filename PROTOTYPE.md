@@ -3,22 +3,35 @@ name: prototype
 description: Build or update an HTML/CSS/JS prototype in this repo — commits a genre and inherits everything from it. TRIGGER when the user wants to update the design, rebuild the prototype, regenerate components, add a page or overlay, refresh tokens, or change visual direction. Source is htm + React UMD (no Babel, no build); files are index.html, data.js, styles.css, *.js at the repo root. After applying changes, regenerate editor/data.js + DESIGN.md per AGENTS.md.
 ---
 
-# Prototype drawing
+# Prototype Drawing — System Prompt
 
-You **draw** prototypes, you don't architect them. You can't see your own output, so optical correctness must come from structure committed upstream, not tuning at the end.
+You build HTML/CSS/JS **prototypes**, not applications. Your job is to *draw* an interface that feels like a shipped product, not to *architect* one. Every rule below exists because you cannot iterate visually — you cannot see your own output — so optical and compositional correctness has to be a property of the structure you commit upstream, not a tuning pass you perform at the end.
 
-The craft: **decide a genre, commit its vocabulary in `styles.css :root`, let every downstream decision follow mechanically.**
+The whole craft, in one sentence: **decide a genre, commit its vocabulary at the top of one stylesheet, and let every downstream decision follow mechanically.**
 
-Five layers, inherited from genre, never invented:
-1. Page composition — shell, proportions, placement
-2. Component vocabulary — colors, type, spacing, radii, shadows
-3. Shape language — strokes, corners, endcaps, fill style
-4. Content & voice — what strings say and how they sound
-5. Graphics — icons, charts, decoration, imagery
+**Two modes share the same craft:** *drawing genres* (the default — page surfaces drawn with HTML/CSS and at most inline SVG) and *scene-based genres* (3D, real-world maps, deep-zoom imagery, shaders, photoreal capture, spatial audio — see the **Scene-based addendum** below the genre playbook). Scene-based mode is a carve-out earned by briefs that genuinely cannot be drawn with rectangles. **Prototypes are often hybrid** — one drawing genre commits the chrome (nav, type, paper, accent, voice), and one or more scene moments live inside it, each committed to its own scene genre with overlay tokens derived from the chrome. Same discipline either way: commit one genre per scope (chrome / each scene), inherit its vocabulary, refuse the median.
+
+**This skill ships as one entry file + one detail-files folder.** The skeleton (this file) carries the workflow, the orthogonal-axis indices, the Woven-specific carve-outs (storyboard, Demo dock, gallery.html, Subagent 1.V slot annotations), and the pre-flight checklist. The drawing-time detail (per-shell, per-style, per-aesthetic, per-recipe, per-step, scene-runtime) lives in [`./prototype/`](./prototype/). Always `Read` the detail files you've committed to before drawing — the entry file lists the menu; the detail files carry the vocabulary.
 
 ---
 
-## Step -1. Read the input before deciding what mode you're in
+## Core principle — draw, don't architect
+
+A prototype's job is to look and feel correct, not to be correct underneath. The moment you reach for a router, a state library, a build step, or a component abstraction, you've started building software instead of drawing one.
+
+Five layers, all inherited not synthesized:
+
+1. **Page composition** — which shell, which proportions, where things sit
+2. **Component vocabulary** — colors, type, spacing, radii, shadows
+3. **Shape language** — strokes, corners, endcaps, fill style
+4. **Content & voice** — what the strings say and how they sound
+5. **Graphics** — icons, charts, decoration, imagery
+
+All five are *inherited from a single chosen genre*. You don't invent any of them — you replay them. The constraint flow is strictly top-down: genre → shell → panels → components → content + graphics → atomic optical tuning.
+
+---
+
+## Step -1 — Read the input before deciding what mode you're in
 
 **Do NOT ask discovery questions when the user's prompt already contains the answers.** The "Decide the genre" section below is for the MINIMAL-PROMPT case — when the user has handed you a one-liner like "build me a dashboard" or "make a marketing page". When the user has already supplied a real brief, you SKIP discovery entirely and go build.
 
@@ -33,78 +46,197 @@ A prompt qualifies as "non-minimal — skip discovery" if it carries any of thes
 - A reference URL, image, or competitor product to match
 - More than ~300 characters of substantive description
 
-If ANY of those apply, commit the genre from the input and proceed straight to Step 1. Do NOT enumerate the six axes back at the user as questions. Do NOT print the discovery form. Do NOT ask "what subject? what audience? what activity?" — those are already answered.
+If ANY of those apply, commit the genre from the input and proceed straight to Step one. Do NOT enumerate the six axes back at the user as questions. Do NOT print the discovery form. Do NOT ask "what subject? what audience? what activity?" — those are already answered.
 
 You may ask the user ONE clarification only if the brief is internally contradictory or missing a load-bearing decision (e.g. shell type is ambiguous between two equally good options). Otherwise: build.
 
-If the prompt IS minimal (no genre, no palette, no specific screens, no characters, just "make me X") — then yes, run discovery per Section 0 below.
+If the prompt IS minimal (no genre, no palette, no specific screens, no characters, just "make me X") — then yes, run discovery per Step zero below.
 
 ---
 
-## 0. Decide the genre  (only if the input is minimal — see Step -1)
+## Step zero — decide the genre
 
-Single most common cause of "subtly off" AI output. Pick **exactly one** tradition.
+This is the upstream-most decision. Almost every other decision below cascades from it. **Uncommitted genre selection is the single most common cause of "subtly off" AI design output** — every other failure mode is downstream of this one.
 
-**Six axes** (pick where the most align):
-1. **Subject** — trading→Bloomberg, productivity→Linear, magazine→editorial.
-2. **Audience** — engineers tolerate density; designers expect restraint; consumers expect warmth; finance expects mono + status pills.
-3. **Activity** — read (editorial) · scan (dashboard) · decide (focused) · compare (table) · configure (panel-heavy) · browse (masonry). Often beats subject when they conflict.
-4. **Density** — high (control-room), medium (product UI), low (editorial).
-5. **Temperature** — institutional · warm · bold · edgy.
-6. **Tradition fit** — what shipped product would this resemble?
+### The six axes
 
-**Shortcut:** "If this product really shipped, by people who knew what they were doing, what would it most resemble?" The answer is almost always a specific product (Linear, Bloomberg, Read.cv, NYT magazine, Apple product page, Material 3, IDE inspector). That product's tradition is your genre.
+Genre selection is multi-axis pattern matching. The right genre is the one where the most axes align (or, when they conflict, where the most important ones do).
 
-**Refuse the median.** Default median light-mode SaaS (white bg, blue accent, soft shadows on rounded cards, Inter 14, Lucide icons) is the AI tell — not ugly, just uncommitted. With no signal: ask once, propose one, or pick the closest shipped product.
+1. **Subject** — what is this prototype OF?
+   Trading platform → Bloomberg. Productivity tool → Linear-style. Magazine article → editorial. Sets a strong prior but doesn't determine.
 
-**Heuristics**
-- **80/20 test.** What's 80% of the screen? Data→dashboard. Type→editorial. Imagery→marketing. Whitespace→portfolio. Controls→product UI.
-- **Activity beats subject.** A productivity tool that's mostly for reading is closer to editorial than to Linear.
-- **One dominant tradition.** Hybrids need optical judgment you can't perform blind; let conflicting axes contribute a single element, never fight throughout.
+2. **Audience** — who's looking?
+   Engineers tolerate density and dark mode. Designers expect taste and restraint. Mainstream consumers expect warmth and generous spacing. Finance professionals expect mono and status pills. Creatives can handle experimental.
+
+3. **Activity** — what do they DO here?
+   The most underrated axis, often beats subject when they conflict.
+   - Read deeply → editorial
+   - Scan many items → dashboard / list-dense
+   - Decide one thing → focused / minimal
+   - Compare options → grid / table / matrix
+   - Configure / control → panel-heavy product UI
+   - Browse for inspiration → masonry / gallery
+
+4. **Information density** — how much fits on screen at once?
+   High (dozens of panels) → control-room. Medium (a few panels) → product UI. Low (one thing at a time) → editorial or marketing.
+
+5. **Temperature** — how warm or cold?
+   Serious / institutional → restrained. Warm / human → softer (Material, iOS). Bold / statement → editorial or bento. Edgy → brutalist or Y2K.
+
+6. **Tradition fit** — what real shipped product is this closest to?
+   The shortcut question, below.
+
+### The shortcut — the question that almost always works
+
+> **"If this product really shipped, by people who knew what they were doing, what would it most resemble?"**
+
+The answer is almost always a specific existing product (Linear, Bloomberg, Read.cv, Are.na, NYT magazine, Apple's product page, Material 3, IDE inspector). That product's tradition is your genre. This single question solves most genre selection problems.
+
+### Failure mode to refuse
+
+When subject is vague, no reference is named, and no strong cues are present, the default is **median light-mode SaaS**: white background, blue accent, soft drop shadows on rounded cards, sidebar with icon + label rows, Lucide icons, Inter at 14px. This is the AI tell at the genre level. It's not ugly — it's *uncommitted*. Median = no genre = no inheritance = subtly wrong everywhere.
+
+If you have no genre signal: **ask once, propose one, or pick the closest shipped product — but never default to median**.
+
+### The scene gate
+
+A separate, prior question to the six axes: **does this brief require a rendered scene, a real-world map, deep-zoom imagery, a shader, a globe, photoreal capture, or spatially placed audio?** If yes, the drawing genres below cannot honestly express it — placeholder rectangles will lie, and a SaaS shell will collapse the brief into a brochure. Skip to the **Scene-based addendum** below the genre playbook for permitted runtime and scene genres. If no, stay in the drawing genres.
+
+The bar is *honesty*: the brief must call for the scene, not just permit it. A SaaS dashboard with a globe motif is still a SaaS dashboard — use a static SVG world map, not Three.js. A museum microsite that names the painter's studio as the front door cannot fake that with a photo carousel. A logistics tool that shows actual routes on actual streets needs MapLibre, not a stylised line drawing.
+
+Signals that the scene gate is open:
+- The brief says *"inside the X,"* *"walk into,"* *"inhabit,"* *"the place,"* *"immersive,"* *"3D reconstruction,"* *"gaussian splat,"* *"photogrammetry,"* *"WebGL/WebGPU,"* *"shader."*
+- The brief names real geography that must be navigable (cities, terrain, satellite imagery, routes).
+- The brief calls for deep-zoom or gigapixel imagery (paintings, manuscripts, maps, technical diagrams) where the zoom IS the experience.
+- The brief calls for placed voices in a space, not stacked audio clips.
+- The brief calls for a continuous simulation (fluid, particles, generative visual) where the motion IS the content.
+- The brief calls for a **pannable infinite canvas with nodes** (workflow / pipeline / mind-map / whiteboard / agent-graph editors).
+- The brief calls for a **multi-track timeline with scrubber and clip rearrangement** (video / audio editors, animation timelines).
+- The brief calls for a **mechanical or architectural part with measured dimensions and exploded views** (CAD / parametric viewers).
+- The brief calls for a **VR headset session** — room-scale or seated, with hand presence (gallery walks, training, social VR).
+- The brief calls for **camera-passthrough overlay anchored to a face, image, or surface** (AR try-on, in-place visualisation, face filters).
+- The brief calls for **waveform / spectrogram analysis of audio streams** (podcast players, audio annotators, mastering / mixing previews).
+- The brief calls for a **data-bound particle simulation** where each particle has identity and the field is driven by a live or replayed data source.
+
+### Heuristics
+
+- **The 80/20 test.** What is 80% of the screen? Dense data → dashboard. Typography → editorial. Imagery → marketing. Whitespace → restrained portfolio. Interactive controls → product UI.
+- **Activity over subject.** A productivity tool that's mostly *for reading* is closer to editorial than to Linear.
+- **When axes conflict, prioritize subject + activity.** Let conflicting axes contribute single elements (a status pill, a system color), never fight throughout. Hybrid traditions blow up because nothing in training data shows you how their optics negotiate.
 
 ---
 
-## 1. Commit the genre
+## Step one — commit and invoke the genre
 
-Top of `app.js`:
+Write the chosen genre at the top of `app.js` (or in the system prompt) as a one-line commit:
+
 ```js
 // GENRE: Linear-style observability — OKLCH greys, hairline borders, mono for IDs/timestamps,
-// dense rows, single accent in slate-blue. Reference: Datadog meets Linear's project view.
+// dense rows, single accent in slate-blue. Reference: feels like Datadog meets Linear's project view.
 ```
-This single line cascades into shell, tokens, voice, motion, decoration. Drift becomes obvious — reaching for a soft purple gradient is wrong because Linear-style doesn't have those.
+
+This single commit cascades through every step below. It also makes drift obvious — if you find yourself reaching for a soft purple gradient blob, the comment reminds you Linear-style doesn't have those.
+
+**Pick exactly one.** Hybrid genres need optical judgment you cannot perform blind. If a hybrid is required, keep one tradition dominant and let the other contribute *one* element only.
+
+**Prototypes are still clickable.** `useState`-driven tabs, sheets, list-tap-to-detail, pill toggles, completion animations, and sheet-present/dismiss ARE part of drawing the surface — without them, mobile-app genres read as static screenshots. The Forbidden table bans *architecture* (routers, Redux, real backends, `fetch`), not *interaction*.
+
+### Orthogonal-axis workflow
+
+Genre selection is decomposed into independent axes — each picked separately, then layered. **Critical: never commit silently. Always present the user with 3 candidate combinations and wait for their pick before building.** Aesthetic is a taste decision that belongs to the user, not the AI.
+
+**Selection workflow:**
+
+1. **Extract the brief's axes** per Step zero (subject, audience, temperature, density, era if relevant).
+2. **Scan the index** for tag intersections across shell + style + aesthetic. Identify the top candidates — these can be recipes (short-circuit lookups) or ad-hoc combinations of independent axis picks.
+3. **Present exactly 3 candidate options to the user.** Each option = a complete `(shell + style + aesthetic)` triple with a 1-line rationale + a one-word vibe descriptor. Mark **one as recommended** (highest tag intersection — usually the safest pick). The other two should genuinely differ in vibe — not three flavours of the same recipe. Use this exact format:
+
+   ```
+   I see three directions for this brief. Pick one:
+
+   **Option 1 — [recipe-name or ad-hoc-combo-label] (recommended)**
+   - Shell: `shell-X` — [why this shell fits in one phrase]
+   - Style: `style-Y` — [why this surface treatment]
+   - Aesthetic: `aesthetic-Z` (or *none*) — [why this cultural register, or why no aesthetic]
+   - Vibe: [one-word descriptor — playful / austere / nostalgic / dense / cozy / etc.]
+   - Why this is the safest pick: [1 sentence tying it to brief tags]
+
+   **Option 2 — [different direction]**
+   - Shell / Style / Aesthetic triple
+   - Vibe: [different word]
+   - Trade-off: [what you gain vs option 1, what you lose]
+
+   **Option 3 — [third distinct direction]**
+   - Shell / Style / Aesthetic triple
+   - Vibe: [different word]
+   - Trade-off: [what's different]
+
+   Which? (1, 2, 3, or describe a different direction)
+   ```
+
+4. **Wait for the user's pick.** Do not Read detail files or start building yet. If the user picks a number, proceed with that option. If they describe a different direction, re-run steps 1–3 with the new brief signal.
+5. **After the user picks one**, `Read` each axis's detail file from `./prototype/` (shell + style + aesthetic), optionally layer scene moments from the Scene-based addendum.
+6. Execute, inheriting all picks.
+
+**Why three, not one?** Aesthetic is taste. The AI's tag-intersection top-pick is correct most of the time, but the user may want the second-best for reasons not in the brief (their own preference, brand constraints, what they've already tried). Presenting three options surfaces taste-decisions explicitly instead of burying them in a silent AI commit. The recommended pick stays opinionated; the alternatives respect that the user might know something the brief didn't say.
+
+**When to skip the 3-options step:** when Step -1 fires (the brief is non-minimal — genre / palette / type stack / specific screens / personas already named), OR when the brief is extremely specific ("rebuild this exact Bloomberg dashboard at this URL, same shell same style") AND there's only one plausible recipe match. Default to asking. The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large.
+
+**Diversity rule for the 3 options:** the three must differ on at least one axis — ideally the aesthetic axis (because that's the taste call). Don't show three options that are all `mobile-app + claymorphism` with only the aesthetic varying by hue. Show genuine alternatives like `mobile-app + claymorphism + positivity-kawaii` vs `mobile-app + doodle + cottagecore` vs `mobile-app + cream-humanist + (none)` — three distinct vibes for the same brief.
+
+Tag-matching works forward: extract brief axes, scan each index for tag intersections, propose three candidates spanning different vibes, let the user pick.
 
 ---
 
-## 2. Page shell
+## Step two — pick the page shell
 
-Pick one. Internal balance follows mechanically.
+Macro composition comes from a small library of shells. Pick one based on the genre and content density:
 
-| Shell | For | Skeleton |
+| Shell | Best for | Skeleton |
 |---|---|---|
-| Three-column app | Dense product UI, observability | nav · canvas · inspector |
-| Two-column app | CRUD, docs, dashboards | nav · canvas |
-| Top-bar + canvas + footer | Single-canvas tools | header · main · footer |
-| Centered narrow column | Editorial, long-form | `max-width: 65–72ch; margin: 0 auto` |
-| Hero + feature stack | Marketing landing | hero · features · CTA |
-| Bento grid | Showcase, feature matrix | 12-col asymmetric spans |
-| Masonry / gallery | Portfolios, image-led | CSS columns / grid auto-flow dense |
-| Full-bleed + floating panels | Maps, design tools | canvas + glass overlays |
-| Mobile: top + scroll + tab-bar | iOS/Android-style | header · list · bottom tabs |
-| Editorial broken grid | Magazine features | grid-template-areas with overlap |
+| **Three-column app** | Dense product UI, observability, tools | nav · canvas · inspector |
+| **Two-column app** | CRUD, docs, dashboards, settings | nav · canvas |
+| **Top-bar + canvas + status footer** | Single-canvas tools | header · main · footer |
+| **Centered narrow column** | Editorial, long-form, profiles | `max-width: 65–72ch; margin: 0 auto` |
+| **Hero + feature stack** | Marketing landing, product page | hero · feature rows · CTA |
+| **Bento grid** | Showcase, feature matrix | 12-col grid with asymmetric spans |
+| **Masonry / gallery** | Portfolios, image-led | CSS columns or grid auto-flow dense |
+| **Full-bleed canvas + floating panels** | Maps, design tools, video editors | one canvas + glass overlays |
+| **Mobile**: top-bar + scroll + tab-bar | iOS/Android-style apps | header · scrollable list · bottom tabs |
+| **Editorial broken grid** | Magazine features, art-directed | grid-template-areas with deliberate overlap |
 
-- **Density gradient.** Periphery dense and small, center breathable. Identity TL, global state TR, primary action BR or sticky.
-- **Balance by mass.** Heavy left ↔ taller-but-lighter right, or whitespace counterweight. Whitespace has mass.
-- **Recall proportions; don't invent.** `1:2:1`, `25-50-25`, `260px 1fr 320px`, `65–72ch`, two-col docs `260+720+240`.
-- **Repetition → rhythm; one disruption → focus.** 2–3 hierarchy levels (panel → row → cell).
-- **Reading flow matches genre.** F-pattern (dashboards), Z-pattern (marketing), centered stack (editorial), masonry-jump (galleries).
+Once chosen, internal balance follows mechanically:
+
+- **Density gradient.** Periphery dense and small (top bar, footer, status strip). Center breathable. Identity top-left, global state top-right, primary action bottom-right or sticky.
+- **Balance by mass, not symmetry.** Heavy panel left ↔ taller-but-lighter panel right, or whitespace counterweight. Whitespace has mass.
+- **Macro proportions are recalled, not computed.** `1:2:1`, `25%-50%-25%`, pinned `260px 1fr 320px`, editorial `max-width: 65–72ch`, two-column docs `260 + 720 + 240`. Don't invent ratios.
+- **Repetition creates rhythm; disruption creates focus.** 2–3 levels (panel → row → cell), one deliberate break becomes the focal point.
+- **Reading flow matches genre.** F-pattern for dashboards, Z-pattern for marketing, centered stack for editorial, masonry-jump for galleries.
+
+The full shell catalogue (with per-shell skeletons, density classes, and tag intersections for the 3-options pick) is the **Shell index** below.
 
 ---
 
-## 3. The stack
+## Steps three through ten — drawing-time detail (read after committing the genre)
 
-One HTML file, opens by double-clicking. **No build step, no Babel, ever.**
+After committing the genre (Step one) and reading its detail file from `./prototype/`, consult these for drawing-time vocabulary. **Each file is in the local `./prototype/` folder shipped with this skill.**
 
-Use **htm** — JSX-like tagged templates bound to `React.createElement`. No transpile, no `<script type="text/babel">`. Identical when served over HTTP.
+- **Step three — the stack:** [`step-stack.md`](./prototype/step-stack.md) — htm + React UMD via CDN, no build step, file layout, index.html template, JSX-vs-htm syntax differences. **Woven-specific overlay:** see "Woven repo conventions — manifests + storyboard" below for `prototype.json` + multi-HTML `index.html` storyboard pattern.
+- **Step four — token vocabulary:** [`step-tokens.md`](./prototype/step-tokens.md) — categories every prototype needs, OKLCH chroma table by genre, universal token rules
+- **Step five — layout primitives:** [`step-layout.md`](./prototype/step-layout.md) — grid as default, `auto 1fr auto`, `min-width: 0`, gap vs padding, tabular numerals
+- **Step six — optical inheritance:** [`step-optical.md`](./prototype/step-optical.md) — the safe-to-replay values table (icon size, button padding, letter-spacing, line-height by genre)
+- **Step seven — flat components:** [`step-components.md`](./prototype/step-components.md) — copy-paste JSX, inline SVG icons, `useState` drilling, no router/Redux/Context for trivial state
+- **Step eight — content cascade and voice:** [`step-content.md`](./prototype/step-content.md) — slot shapes by component, voice register by genre, specificity at every leaf
+- **Step nine — graphic elements:** [`step-graphics.md`](./prototype/step-graphics.md) — icon/data-viz/illustration/decoration rules by category and genre. **Woven-specific overlay:** see "Slot annotations — handing off to Subagent 1.V" below for `img-placeholder` / `motion-placeholder` discipline.
+- **Step ten — motion budget:** [`step-motion.md`](./prototype/step-motion.md) — transition timings, spring vs ease, per-genre motion permissions. **Woven-specific overlay:** functional motion stays inline in `styles.css`; decorative loops are handed to Subagent 1.V via `motion-placeholder` slots.
+
+---
+
+## Woven repo conventions — manifests + storyboard
+
+These overlay Step three (the stack) with Woven-specific orchestration the global skill doesn't carry.
+
+### File layout
 
 ```
 prototype.json   Declarative manifest of frames / arrows / lanes / links / IA (see AGENTS.md)
@@ -114,17 +246,19 @@ styles.css       :root token block + every class
 *.js             Components by region (or single app.js for small)
 ```
 
-**`prototype.json` is what the editor reads** to build Canvas/Flow/IA/Entities views — it carries the things that can't be inferred from JSX (which `useState`s are frames, which frames belong to which lane, entity↔entity cardinality, etc.). Write it alongside the source whenever you author a prototype. Shape and round-trip rules live in `AGENTS.md → Source manifests`.
+**`prototype.json` is what the editor reads** to build Canvas / Flow / IA / Entities views — it carries the things that can't be inferred from JSX (which `useState`s are frames, which frames belong to which lane, entity↔entity cardinality, etc.). Write it alongside the source whenever you author a prototype. Shape and round-trip rules live in `AGENTS.md → Source manifests`.
 
-**Multi-HTML layout — `index.html` is the storyboard.** When the prototype spans multiple actors / personas / distinct workflows, split into per-page HTMLs and make `index.html` itself the Step 0b storyboard. The editor reads `index.html` as the landing page (`meta.sourceEntry`) AND as the workflow-level documentation that lanes / cross-actor arrows / page inventory are extracted from:
+### Multi-HTML layout — `index.html` is the storyboard
+
+When the prototype spans multiple actors / personas / distinct workflows, split into per-page HTMLs and make `index.html` itself the Step 0b storyboard. The editor reads `index.html` as the landing page (`meta.sourceEntry`) AND as the workflow-level documentation that lanes / cross-actor arrows / page inventory are extracted from:
 
 ```
-prototype.json     Manifest — same shape, but frames declare `entry: "<file>.html"`
-index.html         Storyboard: personas, workflows, links to every workflow page
-                   ↳ NOT a regular UI page; documents the system at the workflow level
-                   ↳ See AGENTS.md → Workflow 1 Step 0b for what to include
-data.js            window.DEMO — shared across all pages (loaded by each)
-styles.css         shared token block + every class (loaded by each)
+prototype.json            Manifest — same shape, but frames declare `entry: "<file>.html"`
+index.html                Storyboard: personas, workflows, links to every workflow page
+                          ↳ NOT a regular UI page; documents the system at the workflow level
+                          ↳ See AGENTS.md → Workflow 1 Step 0b for what to include
+data.js                   window.DEMO — shared across all pages (loaded by each)
+styles.css                shared token block + every class (loaded by each)
 tc-application.html       Workflow page (e.g. TC submits an application)
 pxp-applications.html     Workflow page (e.g. PXP reviews the queue)
 pxp-cancellation.html     Workflow page (e.g. PXP determines a cancellation fee)
@@ -132,6 +266,7 @@ pxp-cancellation.html     Workflow page (e.g. PXP determines a cancellation fee)
 ```
 
 What the storyboard `index.html` must include for Step 0b to parse cleanly:
+
 - **Personas list** — either a `personas: [...]` array exposed in script, or visible persona-tagged sections in the DOM. Names + roles, e.g. `{ id: "TC", label: "Training Coordinator" }`, `{ id: "PXP", label: "Programme Experience Partner" }`.
 - **Workflow cards** — each card tags 1+ personas and links to 1+ pages. A card naming 2+ personas is the signal for a cross-lane handoff arrow. Quote the workflow number / title in the card so it can be lifted into the arrow's `action`.
 - **Page inventory** — every workflow page reachable in the prototype, linked from a card. The editor uses this as the canonical frame list (more trustworthy than "every `.html` is a frame").
@@ -141,237 +276,11 @@ What the storyboard `index.html` must include for Step 0b to parse cleanly:
 
 This pattern is **a strong default for multi-HTML projects, not a hard rule.** If your project is single-HTML or single-actor, skip it — `index.html` is just the landing page (and the editor renders it normally). The storyboard pattern appears the moment you have two or more actors handing work off through the data layer (see AGENTS.md → "Test for cross-actor handoff"). When unsure, either draft the storyboard up front or expect Step 0b's fallback to surface the ambiguity for the human to resolve.
 
-`index.html`:
-```html
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=1440"/>
-  <title>{{Project}}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family={{Sans}}:wght@400;500;600;700&family={{Secondary}}&display=swap"/>
-  <link rel="stylesheet" href="styles.css"/>
-</head>
-<body>
-  <div id="root"></div>
-  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
-  <script src="data.js"></script>
-  <script src="app.js"></script>
-</body>
-</html>
-```
-
-`app.js` header:
-```js
-const { useState, useEffect, useRef, useMemo } = React;
-const { createRoot } = ReactDOM;
-const html = htm.bind(React.createElement);
-
-function App() { return html`<div className="app">Hello ${name}</div>`; }
-
-createRoot(document.getElementById("root")).render(html`<${App}/>`);
-```
-
-**htm vs JSX — only differences:**
-
-| JSX | htm |
-|---|---|
-| `<Comp prop={x}>` | `<${Comp} prop=${x}>` |
-| `</Comp>` | `<//>` |
-| `{value}` | `${value}` |
-| `{...spread}` | `...${spread}` |
-| `style={{ color: "red" }}` | `style=${{ color: "red" }}` |
-| `<>...</>` | `<${React.Fragment}>...<//>` |
-
-Everything else (className, events, refs, keys, conditional `&&`, `.map`, SVG, hooks) is identical.
-
-For pure HTML/CSS prototypes (static editorial, brutalist), skip React/htm entirely.
-
 ---
 
-## 4. Token vocabulary
+## Slot annotations — handing off to Subagent 1.V (the visual planner)
 
-Token block at the top of `styles.css`. Categories are universal; values are genre-specific (see playbook).
-
-```css
-:root {
-  /* Surfaces */
-  --bg: ...; --surface: ...; --surface-2: ...; --border: ...;
-  /* Text */
-  --text: ...; --text-muted: ...; --text-faint: ...;
-  /* Semantic + paired -soft */
-  --accent: ...;  --accent-soft: ...;
-  --success: ...; --success-soft: ...;
-  --warning: ...; --warning-soft: ...;
-  --danger: ...;  --danger-soft: ...;
-  /* Type — sans + one secondary with assigned job */
-  --font-sans: "...", system-ui, sans-serif;
-  --font-secondary: ...;   /* mono for state, serif for editorial, display for marketing */
-  /* Radii (3 steps) */
-  --radius-sm: ...; --radius: ...; --radius-lg: ...;
-  /* Shadows (3 steps) */
-  --shadow-sm: ...; --shadow-md: ...; --shadow-lg: ...;
-  /* Spacing — hand-tuned, NOT 4/8/16 multipliers */
-  --pad: ...; --pad-sm: ...; --gap: ...;
-  /* Shape language — pick ONE per axis */
-  --stroke-thin: 1px; --stroke: 1.4px; --stroke-bold: 1.75px;
-  --endcap: round;          /* round | butt | square */
-  --icon-fill: outline;     /* outline | solid | duotone */
-}
-```
-
-**Universal rules**
-- **OKLCH for color.** RGB lies about lightness. Use `color-mix(in oklch, …)` for states; don't invent state-tokens.
-- **Every semantic has a paired -soft.** Status indicators are pale-bg + dark-fg (or inverse), never raw saturated.
-- **Theme via attribute:** `[data-theme="dark"] { ... }`.
-- **≤5 type sizes**, hand-tuned per genre — not 4/8/16 multipliers.
-- **≤2 fonts.** Second font has an assigned job (mono for state, serif for body).
-- **Line-height does rhythm:** 1.3–1.4 titles, 1.45–1.6 body. Margins don't.
-- **Shape language is one of the tokens** — stroke / endcap / corner / fill picked ONCE and applied everywhere.
-
-**Chroma by genre**
-
-| Genre family | Greys | Semantic |
-|---|---|---|
-| Restrained product UI (Linear, Vercel, Read.cv) | 0.004–0.01 | 0.11–0.16 |
-| Editorial / book / paper-feel | 0.002–0.008 | 0.10–0.14 |
-| Vibrant marketing / consumer | 0.01–0.02 | 0.16–0.22 |
-| Brand-led B2B SaaS | 0.005–0.015 | 0.14–0.20 |
-| Y2K / Memphis / loud editorial | 0.02–0.04 | 0.22–0.32 |
-| Brutalist | 0 (pure greyscale) | rare, 0.30+ when used |
-
-Never exceed 0.22 chroma unless the genre demands loudness.
-
----
-
-## 5. Layout via primitives
-
-~95% of layout from primitives where the math IS the visual answer.
-
-```css
-.row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
-  align-items: start;
-}
-.row-content { min-width: 0; }   /* critical — lets 1fr actually shrink */
-```
-
-- **`auto 1fr auto`** for any leading + content + trailing row.
-- **`min-width: 0`** on the `1fr` cell — the most important invisible line in CSS prototype work.
-- **Tabular content uses a fixed first column:** `130px 1fr` aligns labels at the same x.
-- **`grid-template-areas`** for editorial / asymmetric layouts.
-- **`gap` vs `padding`** — gap is between siblings (rhythm); padding is breathing inside (can be asymmetric to respond to content).
-- **Numbers** in mono auto-align; for sans-font number columns, `font-variant-numeric: tabular-nums`.
-- **Before `position: absolute`,** check whether grid spans / template-areas / flex+gap does it (~80% yes). Reserve absolute for genuine overlays.
-
----
-
-## 6. Optical inheritance — recall, don't compute
-
-| Situation | Recall |
-|---|---|
-| Icon next to multi-line text | `margin-top: 1–2px` on icon |
-| Icon size next to text | 16px for 13–14px text; 14px for 11–12px |
-| Inline SVG icon stroke | 1.4–1.6 for 12px viewBox; 1.5–1.75 for 16px |
-| Letter-spacing on ≥20px headings | `-0.01em` to `-0.02em` |
-| Letter-spacing on uppercase labels | `+0.04–0.06em` |
-| Pill with leading dot — padding | `1–2px 6px 1–2px 4–5px` (left tighter) |
-| Button padding | sm `5 10` · default `7 12` · primary `9 16` |
-| Card padding | sm `12–14` · default `16–20` · feature `24–32` |
-| Section vertical rhythm | sm `32–48` · default `64–80` · hero `96–160` |
-| Body line-height | 1.45 UI · 1.55 docs · 1.6 long-form |
-| Heading line-height | 1.1 display · 1.2 h1 · 1.3 h2/h3 |
-| Card border | `1px solid var(--border)` — never thicker on primary surfaces |
-
----
-
-## 7. Components — flat, no premature abstractions
-
-- **Copy-paste JSX is fine.** Don't extract `<Card>` / `<Button>` / `<Badge>` until used 5+ times.
-- **Inline SVG icons** in a `const Icon = { … }` map. ~12 covers most prototypes.
-- **One CSS file.** Classes per component. No CSS-in-JS, no Tailwind in output.
-- **State is local `useState`,** drilled freely. No Context, Redux, Zustand.
-- **Tabs:** `useState('home')`. **Modals:** conditional JSX overlay. **Forms:** `useState` per field. **Routing:** none.
-
----
-
-## 8. Content cascade
-
-Subject → Genre → Shell → Components → **Slots** → Voice → Drafted content → Specifics.
-
-**You don't draft copy and find a slot. You pick the slot — fixed by genre — and write into its budget.**
-
-| Slot | Length | Form |
-|---|---|---|
-| Button label | 1–3 words | imperative. "Pause stage" not "Click here to pause this stage." |
-| Panel title (uppercase) | 2–4 words | nominal. "Active Runs". |
-| Row primary text | a phrase | declarative. "Microtest plan — objection simulation v3." |
-| Row metadata (mono) | abbreviated | technical. "S2 / quiet-hours / b3". |
-| Status pill | 1 word | uppercase tag. `KEEP` `WARN` `DISCARD`. |
-| Description body | 1–2 sentences | full sentences with periods. |
-| Editorial body | paragraphs | measured prose with rhythm. |
-| Marketing hero | 5–9 words | benefit-led. "Ship when the data says ship." |
-
-A 3-word button slot with 9 words is wrong. Respect the budget.
-
-**Voice — set by genre, applied at every leaf.** One register end-to-end; chatty errors break a terse-technical UI; jokey pills break a poetic hero.
-
-| Genre | Voice |
-|---|---|
-| Control-room / dashboard | Terse, technical, abbreviated, fragments, present tense |
-| Editorial | Measured, narrative, varied sentence length |
-| Marketing | Benefit-first, second person, short declaratives |
-| Brutalist | Blunt, declarative, no qualifiers |
-| iOS / friendly product | Warm, direct, contractions ("you're set") |
-| Bloomberg / finance | Nominal phrases, abbreviations, numbers without commentary |
-| Read.cv / portfolio | Restrained, precise, plainspoken |
-
-**Specifics at every leaf**
-- Named entities, not "Item 1". Real-sounding people, projects, IDs.
-- Specific numbers, not round. `$2.10` and `184k`, not `$2.00` and `200k`.
-- Voiced strings: "Tester confusion ↓ on tone preset switch (0.42 → 0.31)" beats "Confusion decreased."
-- One coherent fictional world. 5–12 high-quality entries beat 50 generic.
-- Language density matches layout density.
-
----
-
-## 9. Graphics
-
-| Category | Function | Decided when |
-|---|---|---|
-| Iconography | Functional | With components |
-| Brand mark / logo | Identity constant | At step 0 |
-| Data viz | Functional (data IS graphic) | Drives panel layout |
-| Empty-state illustrations | Empty + carries tone | With empty-state component |
-| Hero illustrations / shots | Decorative + narrative | With hero section |
-| Background patterns / blobs | Decorative only | Last, only if genre demands |
-| Editorial ornaments | Genre-mandatory decoration | With body component |
-| Photography | Mixed | At the slot |
-
-**Three rules**
-1. **Default to no graphics.** Type + space is enough. Empty panels want bigger type, not illustrations.
-2. **Functional graphics earn pixels by carrying data.** If a number/label conveys the same thing, it's decorative — cut it.
-3. **Decorative graphics earn pixels only when genre demands.** Editorial wants drop caps. Bento wants per-cell treatments. Marketing wants hero imagery. Control-room forbids decoration entirely.
-
-**Rarer = more weight.** One ornament in a sparse design is loud and intentional; five identical ones dilute each other.
-
-**Anti-AI-tell rules**
-1. Build functional graphics from primitives — inline SVG, CSS bars/tracks. Never import a chart library.
-2. Replace illustrations with typography or geometric shapes when possible (big numbers, oversized type, single solid blocks). These inherit the system automatically.
-3. Placeholder rectangles for missing imagery: `<div class="img-placeholder" data-aspect="4:3">PHOTO · café interior</div>`.
-4. If you must have an illustration, name it specifically. "Hand-drawn pencil sketch of a café floor plan" not "hero illustration."
-5. One decorative move per page, max.
-6. Charts use believable data — real shapes with one anomaly, not random noise.
-
-### Slot annotations — handing off to Subagent 1.V (the visual planner)
-
-You don't decide the *medium* per visual slot (raster vs vector vs shader vs particles vs 3D vs lottie vs video). That decision is owned by [`docs/agents/subagents/1V-visual-planner.md`](docs/agents/subagents/1V-visual-planner.md), which runs after you finish source. Your job is to annotate each slot so the planner's classifier can pick correctly.
+This overlays Step nine (graphics) with Woven's visual-planner handoff. You don't decide the *medium* per visual slot (raster vs vector vs shader vs particles vs 3D vs lottie vs video). That decision is owned by [`docs/agents/subagents/1V-visual-planner.md`](docs/agents/subagents/1V-visual-planner.md), which runs after you finish source. Your job is to annotate each slot so the planner's classifier can pick correctly.
 
 **For static-imagery slots** — use `img-placeholder`:
 
@@ -383,7 +292,7 @@ You don't decide the *medium* per visual slot (raster vs vector vs shader vs par
 </div>
 ```
 
-**For motion / animated-loop slots** — use `motion-placeholder` (the new sibling pattern):
+**For motion / animated-loop slots** — use `motion-placeholder` (the sibling pattern):
 
 ```html
 <div class="motion-placeholder" data-aspect="16:9"
@@ -403,39 +312,376 @@ The `data-motion` modifier drives the planner's motion classifier:
 | `wash · …` / `aurora · …` / `noise · …` (gradient or shader pattern) | `shader` |
 | `scene · …` (3D scene with depth) | `3d` |
 
-**Functional motion stays inline.** Hover transitions, state changes, progress bars, "running" pulses — write them in `styles.css` with `@keyframes` per §10. Don't wrap them in a `motion-placeholder`; that's reserved for decorative loops that get a workflow node.
+**Functional motion stays inline.** Hover transitions, state changes, progress bars, "running" pulses — write them in `styles.css` with `@keyframes` per [`step-motion.md`](./prototype/step-motion.md). Don't wrap them in a `motion-placeholder`; that's reserved for decorative loops that get a workflow node.
 
 **Voice / specificity rule applies to `data-asset-intent` and `data-motion` strings.** "Hand-drawn pencil sketch of a café floor plan, top-down view, warm graphite on warm paper" beats "hero illustration". The planner forwards your annotation to the per-medium drawer; specificity in equals specificity out.
 
+The genre guardrail propagates: Subagent 1.V's classifier reads the same motion-budget table as [`step-motion.md`](./prototype/step-motion.md) and refuses to scaffold decorative-loop nodes when the genre forbids them. A brutalist prototype that handed Subagent 1.V a `motion-placeholder` would get a `drop:genre-forbidden` decision; the static fallback is left to you.
+
 ---
 
-## 10. Motion budget
+## Forbidden — overengineering traps
 
-Motion only because *data is changing* or *genre demands it*. Never decoration.
+| Don't | Use instead |
+|---|---|
+| Vite / Next / Webpack / build step · Babel standalone · `<script type="text/babel">` | React UMD + `htm` tagged templates in plain `.js` |
+| TypeScript | Plain JSX |
+| React Router | `useState('tab')` |
+| Redux / Zustand / Context for trivial state | Local `useState`, prop-drill |
+| shadcn / MUI / Chakra / Mantine / Tailwind | One `styles.css` with CSS variables |
+| Lucide / Heroicons / Phosphor | Inline SVG `Icon = {…}` map |
+| Real `fetch` / API calls | `window.DEMO` static blob |
+| Custom hooks for trivial state | Inline `useState` |
+| `<Card>` / `<Button>` wrappers prematurely | Copy-paste JSX; promote at 5+ uses |
+| Generic mock data ("User 1", "Item A") | Named, voiced, specific data |
+| 4/8/16/24 spacing scale rigidly | Hand-tuned values per content shape |
+| Drop shadows on every card | Hairline borders + tiny `--shadow-sm` |
+| Border-radius 12px+ on every box | `4px / 6px / 10px` graded, or `0` for brutalist |
+| Emoji icons in interface | Inline SVG sized to cap-height |
+| Generic stock illustrations | Typography, geometric shapes, or named-specific imagery |
+| Charts with placeholder data | Real data shape with believable story |
+| Decorative animation on entrance | Motion only when data changes (or genre demands) |
+| Skeleton loaders / suspense | Static demo data, no loading states |
+| Inline `Demo:` / persona / stage / view switchers in page layout | Demo dock (see Demo dock §11 below) |
+| `console.log`, commented-out code | Remove before final |
 
-Two columns — different ownership:
+**Scene-based carve-out:** the table above governs *drawing genres*. Scene-based prototypes (see addendum below) explicitly permit Three.js / r3f, MapLibre / Mapbox / Leaflet, deck.gl, OpenSeadragon, gaussian-splat viewers, Web Audio (`PannerNode`), and read-only fetches from public asset providers (IIIF endpoints, OSM tile servers, NASA / USGS imagery, Polyhaven, Natural Earth, Smithsonian / Rijksmuseum / National Gallery / Getty Open Access). The "no build step, opens by double-clicking" rule still holds — scene libraries enter via ESM importmap CDN imports, never Webpack / Vite / Next.
 
-| | **Functional motion** | **Decorative loop** |
+---
+
+## Raster requirements — when SVG will not deliver the genre
+
+Some genres are raster-dependent: their decoration vocabulary is photographic textures, pressed flowers, chrome bokeh, leather grain, pixel sprites, anime portraits, or scrapbook cutouts that **cannot** be faked in SVG, CSS, or geometric primitives. Drawing them as SVG geometry produces wrong-genre output: Skeuomorphism without leather texture reads as Material; Scrapbook without raster cutouts reads as a wireframe; Frutiger Aero without bokeh reads as Aurorism.
+
+Each detail file under `./prototype/` carries a `**⚠ Raster required:**` marker at the top when this applies. The marker names *what kind* of imagery is needed. **No marker = SVG / CSS / typography is sufficient.**
+
+When the committed genre's detail file shows the marker, follow this decision tree **before** drawing anything:
+
+### Step 0 — First: can you generate the assets yourself? Ask the user ONLY if you cannot
+
+**Quick session-capability check (fast — no deep tool-search yet):**
+
+- Does the model have NATIVE image output in this session? (Some Claude / GPT / Gemini configurations ship with it — check before assuming not.)
+- Are image-gen MCPs **already loaded** (not deferred)? Glance at the available-tools list — don't `ToolSearch` deferred ones yet.
+- Is a Figma MCP already loaded with a linked file that might contain assets?
+
+**If yes to any → proceed silently. Generate or retrieve the assets and build.** Do NOT ask the user about raster — they don't need to know. This is the common case for many sessions.
+
+**Only when no native generation route is available → ask the user before doing anything else.** Don't search archives, don't `ToolSearch`, don't burn time on a question the user can answer in 10 seconds: how would they like you to proceed?
+
+The user may want to change their mind on the style, point you at assets you didn't know exist, set up image generation on their end (which takes their time), or pause until they've prepped. Five minutes searching Polyhaven only to discover they have a Pinterest board waiting — or worse, generating a half-broken substitute — is wasteful.
+
+**The ask is contextual, not a fixed script.** Adapt the wording to the specific brief — its tone (kid app vs finance dashboard vs heritage museum), its specific raster need (textures vs cutouts vs anime portraits vs pixel sprites), and the archives / alternatives that are actually relevant to THIS brief.
+
+**Shape of the ask:**
+
+1. Surface the constraint specifically — name the picked style/aesthetic, name what kind of raster it needs (pulled from the detail file's `**⚠ Raster required:**` marker), say honestly that you can't generate in this session.
+2. Offer 3-5 options adapted to THIS brief. Draw from the menu below; pick the ones that fit; word them in the brief's voice register.
+3. Wait. Don't search, don't commit assets, don't start drawing.
+
+**Menu of option types to draw from** (pick the relevant ones, name specifics relevant to THIS brief — never list all of them):
+
+- **Change style** — name 2–3 specific raster-free alternatives that preserve THIS brief's tone (not generic options; brief-fitting ones)
+- **Point me at assets** — folder path / Pinterest / Are.na / brand library / drag-drop into the thread
+- **Set up image generation** — MCP / CLI / web service / paste images one at a time
+- **Let me search archives** — name the SPECIFIC archives relevant to this raster need (Polyhaven for PBR textures · Wikimedia + Met Open Access + Smithsonian for botanical / heritage cutouts · NASA GIBS for atmospheric / planetary · Lospec + OpenGameArt for pixel sprites · William Morris archive for Victorian patterns · etc.) — don't list all of them, list the ones that fit
+- **Wait while you prep** — for users who need time to set up their tooling first
+
+### Step 1 — Execute the user's chosen path
+
+Based on the user's pick:
+
+- **(a) Change style:** loop back to the Step one selection workflow with "no-raster" as a new tag constraint. Present 3 alternative options whose styles AND aesthetics both lack the `Raster required` marker. Common substitutions: `skeuomorphism` → `restrained-hairline` OR `claymorphism` (CSS-only) · `scrapbook-*` → `editorial-magazine` OR `warm-restraint` recipes · `pixel-*` → `outline-wireframe` OR `doodle` · `frutiger-aero` → `aurorism` (mesh-gradient instead of bokeh photography).
+- **(b) Provide assets:** wait for the path / URL / drag-drop. Index what they give you, build with those. Cite source per licence in HTML comments at end of file.
+- **(c) Set up image-gen:** wait for their tool/MCP to come online, or for them to paste images. Use whatever route they provided. If they pasted images, save them as project assets first.
+- **(d) Search archives:** proceed with Step 2.
+- **(e) Wait:** acknowledge and pause. Do NOTHING until pinged again.
+
+### Step 2 — Push hard on the harness, then archive search (only if user chose option (d))
+
+Now go deep. `ToolSearch` for image-related MCPs (`image`, `dalle`, `imagen`, `stable diffusion`, `replicate`, `flux`, `midjourney`, `unsplash`, `pexels`). If anything loads, use it. If not, `WebFetch` + `WebSearch` to pull real images from royalty-free / public-domain sources:
+
+| Genre family need | Public archive |
+|---|---|
+| Skeuomorphism textures (leather, wood, felt, brushed metal, linen, paper) | **Polyhaven Textures** (CC0), Subtle Patterns, Lost & Taken |
+| Scrapbook cutouts (pressed flowers, vintage botanical, antique objects, fabric) | **Wikimedia Commons**, **Met Museum Open Access**, **Smithsonian Open Access**, Rawpixel public-domain |
+| Frutiger Aero motifs (bokeh, sky, water, plants, dolphins, koi) | **Polyhaven HDRIs**, **Unsplash**, **Pexels**, Wikimedia (Vista wallpapers archive) |
+| Pixel-art sprites and tilesets | **Lospec** (palettes + sprite references), **OpenGameArt** CC0, **itch.io** free asset packs, **Kenney.nl** |
+| Holographic / iridescent surfaces | **Polyhaven** (iridescent / pearlescent textures), Unsplash (oil-on-water macro) |
+| Chrome / Y2K / blobject 3D renders | **Sketchfab CC0** (download 3D models, render screenshots), Polyhaven, Wikimedia retro-tech |
+| Photographic backdrops (Glassmorphism / Liquid Glass substrates) | **Unsplash**, **Pexels**, **Polyhaven** |
+| Museum / heritage imagery (Maximalism, art-historical, Atompunk, period) | National Gallery DC, Rijksmuseum, Getty, Yale Center for British Art, Met Museum, Smithsonian — all **IIIF** |
+| NASA / atomic-age / space imagery (Atompunk) | **NASA Image Gallery** (public domain), NARA, ESA |
+| Pattern wallpapers (Maximalism, Victorian, William Morris) | **William Morris archive** (out of copyright), Wikimedia Commons, Met Museum |
+| Vaporwave references (marble busts, palm silhouettes, plaza grids) | Wikimedia Commons (Roman / Greek sculpture), Unsplash (palm trees, malls) |
+| 90s rave / Acid Design / Corporate Grunge textures | archive.org (vintage zines / flyers), Wikimedia Commons, Internet Archive image library |
+| CRT / Cassette Futurism textures | Wikimedia (period hardware photography), archive.org control-panel scans |
+
+Reference real URLs via `<img src>` — do not inline as data URIs unless under 5 KB. **Always credit the source per its licence** in a comment block at the end of the HTML.
+
+### Step 3 — Search project assets in parallel with the archive search
+
+Check the project tree for a reference folder, brand asset library, design system folder, screenshot folder, or moodboard the user may have already dropped without mentioning. Project assets always beat archive fetches in fidelity. If the project has them, switch to using those.
+
+### Step 4 — Archive search failed — REPORT BACK to the user
+
+If Step 2 + Step 3 both come up empty (or yield assets too low-fidelity to use), surface the failure with the new info — don't keep searching silently:
+
+> *"I searched [list specific archives tried] and the project tree but couldn't find suitable assets for [specific raster need]. Three options now:*
+> *(a) **Change the style** — I'll present 3 raster-free alternatives that preserve the brief's tone*
+> *(b) **You still have assets / a board / image-gen** — point me at them now*
+> *(c) **Switch the genre on my judgement** — I'll pick the closest non-raster recipe and explain the substitution*
+>
+> *Which?"*
+
+### Step 5 — If still nothing — switch the genre, do not fake it
+
+If the user has no images and no generation route, **do NOT silently fall back to SVG / CSS shapes.** That produces a different genre wearing the wrong genre's name — and the wrong-genre output is worse than admitting the constraint.
+
+Instead:
+- Pick a non-raster-requiring alternative from the playbook
+- Name the substitution explicitly in your reply: *"Switching from Scrapbook-cottagecore to Editorial-magazine because no cutout source is available. The brief's warmth is preserved through serif typography + warm cream palette + drop-cap ornament instead of raster cutouts."*
+- Build in the substituted genre cleanly, not in wrong-genre-cosplay-via-SVG mode
+
+**Why this matters:** the failure mode of every raster-dependent genre is "AI tried to draw it with primitives and got the genre wrong." Skeuomorphism with CSS gradients reads as Material 3. Scrapbook with SVG icons reads as a wireframe. Frutiger Aero with mesh gradients reads as Aurorism. PC-98 with anti-aliased SVG reads as a generic vintage-coded landing. The substituted-genre output is genuine and shippable; the faked-genre output ships the wrong vibe under the right label.
+
+---
+
+## Shell index — page structure (pick exactly 1)
+
+The shell is page composition: layout, navigation pattern, density class, what kind of interface this is. Independent of visual style and aesthetic — any shell can host any style.
+
+- **mobile-app** `[mobile · top-bar + tab-bar · 1-col-scroll]` — iOS/Android-style apps; 44pt top, scrollable content, 49pt bottom tab-bar. → [`shell-mobile-app.md`](./prototype/shell-mobile-app.md)
+- **three-column-app** `[desktop-app · nav + canvas + inspector · high-density]` — Linear/Bloomberg/Vercel dense product UI; sidebar + content + right inspector. → [`shell-three-column-app.md`](./prototype/shell-three-column-app.md)
+- **two-column-app** `[desktop-app · nav + canvas · medium-density]` — docs sites, CRUD admin, settings panels. → [`shell-two-column-app.md`](./prototype/shell-two-column-app.md)
+- **top-bar-canvas-status** `[single-canvas-tool · header + main + footer · variable]` — single-canvas editor or viewer with status footer. → [`shell-top-bar-canvas.md`](./prototype/shell-top-bar-canvas.md)
+- **centered-narrow-column** `[content · single-column · max 65-72ch]` — editorial longform, blog posts, profile pages. → [`shell-centered-column.md`](./prototype/shell-centered-column.md)
+- **bento-grid** `[marketing · 12-col asymmetric · low-density]` — Apple-style product feature page with large asymmetric cells. → [`shell-bento-grid.md`](./prototype/shell-bento-grid.md)
+- **hero-feature-stack** `[marketing · vertical sections · low-density]` — classic landing page (hero + feature sections + CTA). → [`shell-hero-stack.md`](./prototype/shell-hero-stack.md)
+- **canvas-floating-panels** `[full-bleed · overlay chrome · scene/tool]` — maps, video editors, design tools, immersive scenes. → [`shell-canvas-floating.md`](./prototype/shell-canvas-floating.md)
+- **masonry-gallery** `[showcase · column-flow · image-led]` — portfolios, art galleries, Pinterest/moodboard. → [`shell-masonry.md`](./prototype/shell-masonry.md)
+- **terminal-frame** `[dev-tool · split-pane · mono-grid]` — CLI / dev-tool surfaces with box-drawing borders + status line. → [`shell-terminal-frame.md`](./prototype/shell-terminal-frame.md)
+- **scrapbook-substrate** `[any-aesthetic · raster-cutouts · layered z-order]` — paper / corkboard / fabric base hosting PNG cutouts with rotation + tape decorations. → [`shell-scrapbook-substrate.md`](./prototype/shell-scrapbook-substrate.md)
+- **editorial-broken-grid** `[art-directed · asymmetric · per-spread]` — magazine features with deliberate art-direction per spread. → [`shell-editorial-broken-grid.md`](./prototype/shell-editorial-broken-grid.md)
+- **infinite-canvas** `[node-graph / whiteboard · pannable · z-zoom]` — workflow / canvas / mind-map tools. → [`shell-infinite-canvas.md`](./prototype/shell-infinite-canvas.md)
+
+## Visual styles index — surface treatment (pick exactly 1)
+
+The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, materials, type discipline. Independent of shell — most styles fit most shells.
+
+**Restrained / flat / clean:**
+- **restrained-hairline** `[cool · low-decoration · 2018+]` — Linear/Vercel/Read.cv minimal chrome; OKLCH greys + single accent + hairline borders, no shadows beyond `0 1px`. → [`style-restrained-hairline.md`](./prototype/style-restrained-hairline.md)
+- **flat-design** `[cool · no-depth · 2013-17]` — iOS 7 / Windows 8 Metro pure flat; zero gradients/shadows, Helvetica Neue Light. → [`style-flat-design.md`](./prototype/style-flat-design.md)
+- **outline-wireframe** `[lo-fi · sketchy · timeless]` — outlined shapes, no fills, hairline strokes, on warm paper. → [`style-outline-wireframe.md`](./prototype/style-outline-wireframe.md)
+- **doodle-handdrawn** `[lo-fi/children · sketchy · timeless]` — Excalidraw-style sketchy outlines with hand-drawn icons. → [`style-doodle.md`](./prototype/style-doodle.md)
+
+**Glass / refractive / transparent:**
+- **glassmorphism** `[cool · backdrop-blur · 2020+ · needs-substrate]` — frosted glass with `backdrop-filter` over saturated photographic substrate. → [`style-glassmorphism.md`](./prototype/style-glassmorphism.md)
+- **liquid-glass** `[apple-system · refractive · 2025+ · visionOS]` — Apple's dynamic glass; light-bending refraction over busy content. → [`style-liquid-glass.md`](./prototype/style-liquid-glass.md)
+- **aurorism-mesh-gradient** `[product-marketing · soft-glow · 2020+]` — aurora mesh-gradient backdrop behind sans-serif content. → [`style-aurorism.md`](./prototype/style-aurorism.md)
+
+**Tactile / 3D / soft:**
+- **skeuomorphism** `[warm-tactile · real-textures · 2003-13 or retro · needs-raster]` — leather/wood/felt textures under one committed metaphor. → [`style-skeuomorphism.md`](./prototype/style-skeuomorphism.md)
+- **claymorphism** `[warm-playful · 3D-pastel · 2021+]` — puffy 3D pastel shapes with dual outer + inner highlight shadow. → [`style-claymorphism.md`](./prototype/style-claymorphism.md)
+- **neumorphism** `[mono-tactile · soft-foam · 2019-21]` — monochromatic dual soft shadow simulating pressed/raised foam. → [`style-neumorphism.md`](./prototype/style-neumorphism.md)
+
+**Material / elevation:**
+- **material-elevation-m1m2** `[android · paper-stack · 2014-21]` — Roboto + saturated 500-tile app bar + elevation shadows. → [`style-material-m1m2.md`](./prototype/style-material-m1m2.md)
+- **material-dynamic-m3** `[android · dynamic-color · 2021+]` — Material 3 dynamic color seed + tinted surfaces. → [`style-material-m3.md`](./prototype/style-material-m3.md)
+
+**Density / data / system:**
+- **dense-mono-dark** `[cool-dense · dark · finance/dev]` — Bloomberg-style mono numerals, status pills, dark background, amber/cyan/green accents. → [`style-dense-mono-dark.md`](./prototype/style-dense-mono-dark.md)
+- **mono-box-drawing-terminal** `[dev-tool · monospace-only · 2024+]` — JetBrains Mono + box-drawing chars + ANSI accents. → [`style-terminal-mono.md`](./prototype/style-terminal-mono.md)
+- **sf-pro-system-ios** `[mobile · warm-system · iOS-grouped]` — SF Pro + iOS-grouped lists, the iOS native surface. → [`style-sf-pro-ios.md`](./prototype/style-sf-pro-ios.md)
+
+**Iridescent / experimental:**
+- **holographic-iridescent** `[premium-launch · viewing-angle-shift · 2024+ · needs-raster]` — oil-on-water iridescence; hue-rotate on tilt. → [`style-holographic.md`](./prototype/style-holographic.md)
+
+**Bold / display / marketing:**
+- **bold-display-marketing** `[marketing · oversized-type · low-density]` — Apple product-page hero with bold marketing copy + large display sizes. → [`style-bold-display.md`](./prototype/style-bold-display.md)
+- **oversized-neo-grotesque** `[design-studio/fashion · monochrome · large-display]` — Bureau Borsche-style oversized neo-grotesque + monochrome chrome. → [`style-oversized-neo-grotesque.md`](./prototype/style-oversized-neo-grotesque.md)
+- **neubrutalism-saturated** `[product-launch/dev-tools · saturated-flat · 2021+]` — saturated flat colors + thick black borders + hard offset drop shadows. → [`style-neubrutalism.md`](./prototype/style-neubrutalism.md)
+
+**Editorial / typographic:**
+- **serif-warm-paper-editorial** `[longform · narrative · warm-paper]` — serif body on warm paper with drop caps + dingbats. → [`style-serif-warm-paper.md`](./prototype/style-serif-warm-paper.md)
+- **agate-numeric-broadsheet** `[news/finance · dense · numeric-tables]` — optical-size serif + dedicated agate numeric face for market tables. → [`style-agate-broadsheet.md`](./prototype/style-agate-broadsheet.md)
+- **cream-humanist-serif** `[wellness/skincare · warm · adult-premium]` — cream + warm-grey humanist serif (Aesop/Headspace direction). → [`style-cream-humanist.md`](./prototype/style-cream-humanist.md)
+
+**Raster / pixel / collage:**
+- **raster-cutout-collage** `[scrapbook-shell · raster-images · any-aesthetic · needs-raster]` — PNG cutouts with paper-edge shadow + rotation + tape/staple decorations. → [`style-raster-cutout.md`](./prototype/style-raster-cutout.md)
+- **pixel-grid-bitmap** `[gaming · pixel-perfect · era-parameterized · needs-raster]` — pixel-perfect bitmap sprites; era determines palette + grid size. → [`style-pixel-bitmap.md`](./prototype/style-pixel-bitmap.md)
+
+**Raw / statement:**
+- **brutalist-raw-web** `[statement · edgy · 1990s-revival]` — raw markup, Times/Helvetica only, intentional ugliness, no shadows, underlined links. → [`style-brutalist-raw.md`](./prototype/style-brutalist-raw.md)
+
+## Aesthetics index — cultural reference / era / subculture (optional, pick 0–1)
+
+The aesthetic is the cultural identity: which era, which movement, which subculture. Independent of shell and style — most aesthetics fit multiple shell/style combinations. Many adult-pro briefs (Linear, Bloomberg, Aesop) skip the aesthetic axis entirely. Some aesthetics suggest a specific style (Y2K Futurism implies chrome/gel; pixel-NES-Mario implies pixel-bitmap) — those defaults are noted.
+
+**Modernist movements:**
+- **swiss-modernist** `[cultural · austere · 1950s-revival]` — Müller-Brockmann + Vignelli mathematical grids. → [`aesthetic-swiss-modernist.md`](./prototype/aesthetic-swiss-modernist.md)
+- **bauhaus-pure** `[cultural · primary-color · 1919-33-revival]` — primary RYB + circle/triangle/square + geometric sans. → [`aesthetic-bauhaus.md`](./prototype/aesthetic-bauhaus.md)
+- **constructivism** `[propaganda · bold-geometric · 1917-30-revival]` — Russian avant-garde diagonal red/black/white. → [`aesthetic-constructivism.md`](./prototype/aesthetic-constructivism.md)
+- **de-stijl-neoplasticism** `[art-historical · primary-color · 1917-31-revival]` — Mondrian primary RYB + black grid lines. → [`aesthetic-de-stijl.md`](./prototype/aesthetic-de-stijl.md)
+- **defi-cosmic** `[DeFi-native · dark + cosmic-photo + glass · 2023+]` — swap aggregator dark UI over actual planetary photography. → [`aesthetic-defi-cosmic.md`](./prototype/aesthetic-defi-cosmic.md)
+- **depin-hardware** `[crypto-infrastructure · dark-tech + 3D-render + token-yield · 2022+]` — decentralized physical-infrastructure marketing; hardware product hero with on-chain incentive copy. → [`aesthetic-depin-hardware.md`](./prototype/aesthetic-depin-hardware.md)
+- **anti-design-rams-orthodoxy** `[product-archive · austere · timeless]` — Dieter Rams pure-function with zero ornament. → [`aesthetic-anti-design.md`](./prototype/aesthetic-anti-design.md)
+- **op-art-moire** `[music/cultural · monochrome-optical · 1960s-revival]` — Bridget Riley monochrome optical illusion. → [`aesthetic-op-art.md`](./prototype/aesthetic-op-art.md)
+- **maximalism-considered** `[literary/fashion · period-layered · timeless]` — Wes Anderson + Gentlewoman considered abundance on strict grid. → [`aesthetic-maximalism.md`](./prototype/aesthetic-maximalism.md)
+- **web-brutalism-original** `[statement · edgy · 1990s-revival]` — the original brutalist web tradition. Suggests style: brutalist-raw-web. → [`aesthetic-web-brutalism.md`](./prototype/aesthetic-web-brutalism.md)
+
+**Y2K / Web 2.0 / 2000s graphics:**
+- **y2k-futurism** `[retro-OS · chrome-gel · 1999-2006 · needs-raster]` — Apple Aqua, Sega Dreamcast, Windows XP Luna. → [`aesthetic-y2k-futurism.md`](./prototype/aesthetic-y2k-futurism.md)
+- **y2k-memphis-loud** `[subcultural · maximalist · 1999-2006]` — clashing chroma + multiple display faces + sticker decoration. → [`aesthetic-y2k-memphis-loud.md`](./prototype/aesthetic-y2k-memphis-loud.md)
+- **frutiger-aero** `[web2.0 · glass-nature · 2004-13 · needs-raster]` — Vista Aero glass + blue-green gradients + nature motifs. → [`aesthetic-frutiger-aero.md`](./prototype/aesthetic-frutiger-aero.md)
+- **frutiger-eco** `[eco-tech · green-warm · 2006-12 · needs-raster]` — Method/Wall-E green-tech variant. → [`aesthetic-frutiger-eco.md`](./prototype/aesthetic-frutiger-eco.md)
+- **frutiger-dark-aero** `[enterprise-dark · graphite-neon · 2006-15]` — Vista Aero dark mode; PSP XMB. → [`aesthetic-frutiger-dark-aero.md`](./prototype/aesthetic-frutiger-dark-aero.md)
+- **frutiger-bright-tertiaries** `[mid-2000s-consumer · lime-purple-orange · 2005-14]` — OXO/Skype consumer brightness. → [`aesthetic-frutiger-bright-tertiaries.md`](./prototype/aesthetic-frutiger-bright-tertiaries.md)
+- **frutiger-four-colors** `[consumer-tech-ads · lime/sky/pink/orange · 2003-08]` — iPod Silhouette palette. → [`aesthetic-frutiger-four-colors.md`](./prototype/aesthetic-frutiger-four-colors.md)
+- **frutiger-chromecore** `[Y2K-hardware · cool-chrome · 1999-2006]` — Razr V3, iPod nano hardware chrome. → [`aesthetic-frutiger-chromecore.md`](./prototype/aesthetic-frutiger-chromecore.md)
+- **frutiger-tranquil-serenity** `[spa/wellness · botanical-water · 2008-12]` — Bath & Body Works/Aveda spa Frutiger. → [`aesthetic-frutiger-tranquil-serenity.md`](./prototype/aesthetic-frutiger-tranquil-serenity.md)
+- **frutiger-dorfic** `[industrial-corporate · safety-orange · 2005-16]` — Mirror's Edge stark industrial-corporate-futurism. → [`aesthetic-frutiger-dorfic.md`](./prototype/aesthetic-frutiger-dorfic.md)
+- **vector-2000s-vectordelia** `[consumer-tech · vector-CGI · 2003-13]` — iPod Silhouette psychedelic vector. → [`aesthetic-vector-vectordelia.md`](./prototype/aesthetic-vector-vectordelia.md)
+- **vector-2000s-vectorbloom** `[brand-identity · vector-floral · 2005-12]` — Web 2.0 vector florals. → [`aesthetic-vector-vectorbloom.md`](./prototype/aesthetic-vector-vectorbloom.md)
+- **vector-2000s-vector-musica** `[Latin/anime-music · vector-CGI · 2010s]` — Latin American music marketing vector. → [`aesthetic-vector-vector-musica.md`](./prototype/aesthetic-vector-vector-musica.md)
+- **vector-2000s-hands-up** `[Eurodance · vector-hands · 2005-09]` — Cascada-era Eurodance vectors. → [`aesthetic-vector-hands-up.md`](./prototype/aesthetic-vector-hands-up.md)
+- **vector-2000s-neovectorheart** `[fashion/sport · editorial-vector · 2018+]` — Cory Schmitz/SERXPHIS modern. → [`aesthetic-vector-neovectorheart.md`](./prototype/aesthetic-vector-neovectorheart.md)
+- **avantropop** `[electropop · CMYK-polygon · 2007-12]` — Justice/Ed Banger electropop graphic. → [`aesthetic-avantropop.md`](./prototype/aesthetic-avantropop.md)
+- **acid-design-rave-flyer** `[club/music · neon-rave · 90s-revival]` — David Rudnick/Boiler Room flyers. → [`aesthetic-acid-design.md`](./prototype/aesthetic-acid-design.md)
+- **acid-graphics-modern** `[rave/underground · neon-on-black · 2018-24]` — modern acid revival. → [`aesthetic-acid-graphics.md`](./prototype/aesthetic-acid-graphics.md)
+
+**Retro-futurism / "punks":**
+- **cyberpunk-synthwave** `[dystopian-sci-fi · neon-dark · 1980s+]` — Cyberpunk 2077, Tron, synthwave. → [`aesthetic-cyberpunk.md`](./prototype/aesthetic-cyberpunk.md)
+- **vaporwave** `[music/aesthetic · purple-marble · 2010s+ · needs-raster]` — Macintosh Plus, marble busts, Times New Roman. → [`aesthetic-vaporwave.md`](./prototype/aesthetic-vaporwave.md)
+- **cassette-futurism** `[retro-sci-fi · cool-corporate · 1970s-80s-revival · needs-raster]` — Severance, Alien, CRT phosphor. → [`aesthetic-cassette-futurism.md`](./prototype/aesthetic-cassette-futurism.md)
+- **atompunk** `[retro-futurism · midcentury-optimism · 1950s-60s · needs-raster]` — Fallout, NASA worm, Tomorrowland. → [`aesthetic-atompunk.md`](./prototype/aesthetic-atompunk.md)
+- **solarpunk** `[eco-tech · warm-optimistic · 2010s+]` — biomimicry, plants integrated with tech. → [`aesthetic-solarpunk.md`](./prototype/aesthetic-solarpunk.md)
+- **steampunk** `[fantasy-game · brass-victorian · niche]` — Bioshock Infinite brass + gears + Victorian. → [`aesthetic-steampunk.md`](./prototype/aesthetic-steampunk.md)
+- **dieselpunk-decopunk** `[retro-industrial · oxblood-bronze · interwar-revival]` — Bioshock 1-2, Sky Captain interwar. → [`aesthetic-dieselpunk.md`](./prototype/aesthetic-dieselpunk.md)
+
+**Pixel-art eras (each suggests style: pixel-grid-bitmap):**
+- **pixel-arcade-1978-85** `[arcade-history · 8x8-monochrome · 1978-85]` — Space Invaders, Pac-Man, Donkey Kong. → [`aesthetic-pixel-arcade.md`](./prototype/aesthetic-pixel-arcade.md)
+- **pixel-nes-mario-1985-93** `[NES · 4-color-sprite · 1985-93]` — Super Mario Bros, Mega Man 2 era. → [`aesthetic-pixel-nes-mario.md`](./prototype/aesthetic-pixel-nes-mario.md)
+- **pixel-game-boy-mono-1989-96** `[Game-Boy · DMG-palette · 1989-96]` — Pokemon Red/Blue, Tetris GB. → [`aesthetic-pixel-game-boy-mono.md`](./prototype/aesthetic-pixel-game-boy-mono.md)
+- **pixel-snes-jrpg-1990-96** `[JRPG · 16-bit-warm · 1990-96]` — EarthBound, Chrono Trigger, FF VI. → [`aesthetic-pixel-snes-jrpg.md`](./prototype/aesthetic-pixel-snes-jrpg.md)
+- **pixel-ps1-tactics-ogre-1995-2001** `[strategy-rpg · isometric-ornate · 1995-2001]` — Tactics Ogre, FF Tactics, Vagrant Story. → [`aesthetic-pixel-ps1-tactics-ogre.md`](./prototype/aesthetic-pixel-ps1-tactics-ogre.md)
+- **pixel-modern-cozy-2014+** `[cozy-game/farming · painterly-pixel · 2014+]` — Stardew Valley, Celeste, Sea of Stars. → [`aesthetic-pixel-modern-cozy.md`](./prototype/aesthetic-pixel-modern-cozy.md)
+- **pc-98-anime** `[retro-visual-novel · anime-portrait · 1985-2000 · needs-raster]` — Touhou PC-98, To Heart, Kanon. → [`aesthetic-pc-98.md`](./prototype/aesthetic-pc-98.md)
+
+**Kids / playful / nostalgia:**
+- **positivity-kawaii** `[wellness/kids · pastel-mascot · 2010s+ · needs-raster]` — Pusheen, Sanrio, Headspace. → [`aesthetic-positivity-kawaii.md`](./prototype/aesthetic-positivity-kawaii.md)
+- **wacky-pomo** `[kids-90s · Nickelodeon-splat · 1989-98]` — Nickelodeon Studios, Saved by the Bell, Memphis Milano. → [`aesthetic-wacky-pomo.md`](./prototype/aesthetic-wacky-pomo.md)
+- **curly-girly** `[tween-girls · rainbow-glitter · 90s-00s · needs-raster]` — Lisa Frank, Bratz, Claire's. → [`aesthetic-curly-girly.md`](./prototype/aesthetic-curly-girly.md)
+
+**Hip-hop / urban / brand / gaming:**
+- **urbling** `[hip-hop/bling · diamond-gold · 1997-2005 · needs-raster]` — Juvenile, Master P, Pen & Pixel album covers. → [`aesthetic-urbling.md`](./prototype/aesthetic-urbling.md)
+- **corporate-memphis** `[SaaS-marketing · noodle-people · 2017-22 · needs-raster]` — Slack/Facebook noodle-people illustration. → [`aesthetic-corporate-memphis.md`](./prototype/aesthetic-corporate-memphis.md)
+- **crypto-degen** `[meme-coin/casino · dark + acid-neon · 2024+]` — irreverent on-chain trading culture; emoji-as-CTA, lowercase-defiant voice. → [`aesthetic-crypto-degen.md`](./prototype/aesthetic-crypto-degen.md)
+- **corporate-grunge** `[1990s-corporate-ads · distressed-photocopy · 1993-2005 · needs-raster]` — OK Soda, Ray Gun, Nike. → [`aesthetic-corporate-grunge.md`](./prototype/aesthetic-corporate-grunge.md)
+- **neubrutalism-cultural** `[product-launch/dev-tools · saturated-flat · 2021+]` — Gumroad/Figma Config 2021. Suggests style: neubrutalism-saturated. → [`aesthetic-neubrutalism.md`](./prototype/aesthetic-neubrutalism.md)
+- **rgb-gamer** `[gaming-hardware · neon-on-black · 2010s+]` — Razer, ASUS ROG, NZXT. → [`aesthetic-rgb-gamer.md`](./prototype/aesthetic-rgb-gamer.md)
+
+**Internet aesthetics (commonly paired with scrapbook-substrate shell + raster-cutout-collage style):**
+- **cottagecore** `[lifestyle-blog · pressed-flowers · cream-warm · 2018+]` — pressed wildflowers, vintage cookbooks, country domesticity. → [`aesthetic-cottagecore.md`](./prototype/aesthetic-cottagecore.md)
+- **dark-academia** `[literary-blog · leather-keys · oxblood-sepia · 2018+]` — leather books, brass keys, oxidized ivy, daguerreotypes. → [`aesthetic-dark-academia.md`](./prototype/aesthetic-dark-academia.md)
+- **goblincore** `[forest-blog · mushrooms-mossy · forest-floor · 2019+]` — mushrooms, tarnished silver, mossy stones. → [`aesthetic-goblincore.md`](./prototype/aesthetic-goblincore.md)
+- **coastal-grandmother** `[lifestyle-blog · sand-dollar-linen · Nantucket-cool · 2022+]` — sand dollars, sea glass, hydrangea. → [`aesthetic-coastal-grandmother.md`](./prototype/aesthetic-coastal-grandmother.md)
+- **cluttercore** `[lifestyle-blog · keepsake-chaos · saturated-warm · 2020+]` — 30-50 keepsake cutouts on kraft. → [`aesthetic-cluttercore.md`](./prototype/aesthetic-cluttercore.md)
+- **fairycore** `[fantasy-blog · fairy-dewdrops · pastel-magical · 2019+]` — Cicely Mary Barker fairies, dew, gold leaf. → [`aesthetic-fairycore.md`](./prototype/aesthetic-fairycore.md)
+- **dreamcore** `[liminal-blog · liminal-VHS · off-register-pastel · 2019+]` — liminal spaces, VHS degradation, dim hallways. → [`aesthetic-dreamcore.md`](./prototype/aesthetic-dreamcore.md)
+- **cottagegoth** `[gothic-blog · nightshade-ravens · dark-floral · 2019+]` — black-rose, raven, apothecary, mourning. → [`aesthetic-cottagegoth.md`](./prototype/aesthetic-cottagegoth.md)
+- **angelcore** `[religious-blog · cherub-gilt · Marian-blue · 2019+]` — Renaissance cherubs, gilt fragments, Marian blue. → [`aesthetic-angelcore.md`](./prototype/aesthetic-angelcore.md)
+- **y2k-myspace** `[nostalgia-blog · glitter-GIFs · neon-clash · 2003-08]` — glitter GIFs, AIM stickers, MySpace pages. → [`aesthetic-y2k-myspace.md`](./prototype/aesthetic-y2k-myspace.md)
+
+## Recipes index — known-good (shell + style + aesthetic) bundles (optional short-circuit)
+
+When the brief matches a familiar shipped-product type, pick one of these recipes instead of composing axis-by-axis. Each recipe IS one of the original foundational genres expressed as a combination. Read the recipe file to see all three axis picks at once.
+
+- **recipe-linear-product-ui** `[dev-tools · engineers · cool]` = three-column-app + restrained-hairline + (no aesthetic) + terse-technical voice → [`recipe-linear-product-ui.md`](./prototype/recipe-linear-product-ui.md)
+- **recipe-bloomberg-dashboard** `[finance/dev · dense · dark]` = canvas-floating-panels + dense-mono-dark + (no aesthetic) + nominal-finance voice → [`recipe-bloomberg-dashboard.md`](./prototype/recipe-bloomberg-dashboard.md)
+- **recipe-editorial-magazine** `[longform-reading · narrative · warm-paper]` = centered-narrow-column + serif-warm-paper-editorial + (no aesthetic) + measured-narrative voice → [`recipe-editorial-magazine.md`](./prototype/recipe-editorial-magazine.md)
+- **recipe-newspaper-of-record** `[news/finance · dense · numeric-tables]` = editorial-broken-grid + agate-numeric-broadsheet + (no aesthetic) + byline-factual voice → [`recipe-newspaper-of-record.md`](./prototype/recipe-newspaper-of-record.md)
+- **recipe-swiss-grid-modernist** `[cultural/design-studio · austere · grid-led]` = editorial-broken-grid + oversized-neo-grotesque + aesthetic-swiss-modernist → [`recipe-swiss-grid.md`](./prototype/recipe-swiss-grid.md)
+- **recipe-bento-marketing** `[marketing/product-page · bold-statement · low-density]` = bento-grid + bold-display-marketing + (no aesthetic) + Apple-product voice → [`recipe-bento-marketing.md`](./prototype/recipe-bento-marketing.md)
+- **recipe-brutalist-web** `[statement-site · edgy · raw-zine]` = editorial-broken-grid + brutalist-raw-web + aesthetic-web-brutalism-original → [`recipe-brutalist-web.md`](./prototype/recipe-brutalist-web.md)
+- **recipe-y2k-memphis-loud** `[subcultural · maximalist · loud]` = editorial-broken-grid + bold-display-marketing + aesthetic-y2k-memphis-loud → [`recipe-y2k-memphis-loud.md`](./prototype/recipe-y2k-memphis-loud.md)
+- **recipe-aurora-marketing** `[protocol/AI/infra-marketing · cool-atmospheric · dark]` = hero-stack + aurorism + (no aesthetic) + declarative product-truth voice → [`recipe-aurora-marketing.md`](./prototype/recipe-aurora-marketing.md)
+- **recipe-ai-foundry-dark** `[AI-compute/chip/foundry · dark · oversized-display]` = hero-stack + oversized-neo-grotesque on dark + (no aesthetic) + confident technical voice → [`recipe-ai-foundry-dark.md`](./prototype/recipe-ai-foundry-dark.md)
+- **recipe-devtools-marketing** `[dev-tools/API/infra-SaaS · dense · dark · spec-sheet]` = hero-stack + dense-mono-dark + (no aesthetic) + terse spec-sheet voice → [`recipe-devtools-marketing.md`](./prototype/recipe-devtools-marketing.md)
+- **recipe-restrained-ai-marketing** `[AI-SaaS/modern-tooling · cool-restrained]` = hero-stack + restrained-hairline + (no aesthetic) + restrained product-truth voice → [`recipe-restrained-ai-marketing.md`](./prototype/recipe-restrained-ai-marketing.md)
+- **recipe-scientific-infra-marketing** `[protocol-paper/HPC/research-tooling · paper-as-marketing]` = hero-stack + restrained-hairline + agate-broadsheet accents + (no aesthetic) + scientific-citation voice → [`recipe-scientific-infra-marketing.md`](./prototype/recipe-scientific-infra-marketing.md)
+- **recipe-readcv-portfolio** `[portfolio · restrained · personal]` = centered-narrow-column + restrained-hairline + (no aesthetic) → [`recipe-readcv.md`](./prototype/recipe-readcv.md)
+- **recipe-neo-grotesque-portfolio** `[design-studio/fashion · oversized-type · monochrome]` = masonry-gallery + oversized-neo-grotesque + (no aesthetic) → [`recipe-neo-grotesque-portfolio.md`](./prototype/recipe-neo-grotesque-portfolio.md)
+- **recipe-ios-system** `[mobile-app · warm-system · iOS-grouped]` = mobile-app + sf-pro-system-ios + (no aesthetic) + iOS voice → [`recipe-ios-system.md`](./prototype/recipe-ios-system.md)
+- **recipe-material-3** `[mobile-app · warm-dynamic · paper-stack]` = mobile-app + material-dynamic-m3 + (no aesthetic) → [`recipe-material-3.md`](./prototype/recipe-material-3.md)
+- **recipe-terminal-on-web** `[dev-tools/CLI · monospace · dark]` = terminal-frame + mono-box-drawing-terminal + (no aesthetic) → [`recipe-terminal-on-web.md`](./prototype/recipe-terminal-on-web.md)
+- **recipe-warm-restraint-apothecary** `[wellness/skincare · warm · adult-premium]` = centered-narrow-column + cream-humanist-serif + (no aesthetic) + gentle-imperative voice → [`recipe-warm-restraint.md`](./prototype/recipe-warm-restraint.md)
+
+## Scene-based addendum — when drawing must become rendering
+
+Some prototypes cannot be drawn with rectangles. A painter's studio you can walk inside, a globe you can spin, a deep-zoom document down to brushstroke topography, a city map with real streets, a shader simulating water — these need a runtime. The "draw, don't architect" principle still holds: you draw one *scene*, you don't architect a 3D engine. But the runtime vocabulary expands, and the asset vocabulary stops using placeholder rectangles.
+
+This addendum is only invoked when **the scene gate is open** (see Step zero). If the brief doesn't genuinely require a scene, stay in the drawing genres above — adding Three.js as decoration is its own AI tell.
+
+**Most non-trivial prototypes are hybrid:** a publication-style chrome (editorial / restrained product UI / Read.cv) with one or more scene moments inside it (a studio front door, a deep-zoom work page, a map view, an embedded globe). The chrome stays in a drawing genre; each scene moment commits to its own scene-based genre; tokens flow from chrome down into scene overlays. See **Hybrid composition** below before picking individual scene genres.
+
+### Scene-based drawing-time details
+
+After committing a scene-based genre, read [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) for the permitted-runtime CDN library table, real-asset sources (Polyhaven / IIIF / NASA / Wikimedia), motion budget, performance (one-scene-per-page, pixel-ratio cap), accessibility (aria-label + keyboard controls + reduced-motion), and scene-token additions.
+
+### Hybrid composition — drawing chrome with scene moments
+
+A museum site is editorial chrome + a studio scene front door + deep-zoom IIIF work pages + a small map for "plan your visit." A logistics product is restrained product UI chrome + a real-world MapLibre map view. A portfolio is Read.cv chrome + a shader hero on one project page. These prototypes have **one drawing genre and multiple scene moments**, not "one genre" total.
+
+The compositional rule:
+
+- **One drawing genre commits the chrome.** Page shell, nav, type stack, paper colour, accent, voice register, motion budget for non-scene UI. This is the publication's identity and the visitor's continuous frame.
+- **Each scene moment commits its own scene-based genre.** A studio at the front door and deep-zoom work pages are two scene genres — Immersive 3D and Deep-zoom IIIF — not one blended thing. Never mix scene genres inside a single moment.
+- **Scene moments inherit token vocabulary from the chrome.** The scene overlay tokens (`--scene-overlay-bg`, `--scene-control`, `--scene-accent`) derive via `color-mix` from the drawing genre's paper / ink / accent. Glass panels over a Three.js scene use the same paper-translucent that essay cards use on editorial pages. Otherwise the scene reads as a different site bolted on.
+- **Voice register holds across both modes.** If the essay voice is measured-curatorial, the scene's overlay labels and audio captions are measured-curatorial too. No marketing-flat captions inside the scene; no chatty microcopy in the chrome.
+- **Scenes earn their place individually.** Two scene moments justified by the brief is right. Five scene moments because "more = better" dilutes each one — every additional scene halves the attention each carries, and the GPU bill rises.
+- **One scene instance live at a time.** Mount on route entry, dispose on route exit. The drawing chrome stays mounted. Never hold a Three.js canvas, an OpenSeadragon viewer, and a MapLibre map in memory simultaneously.
+
+#### Three hybrid layout patterns
+
+| Pattern | When | Behaviour |
 |---|---|---|
-| Trigger | State change, data update, user input | Ambient — would still play if the page were paused |
-| Examples | Hover, focus, progress, "running" pulse, page transition | Background particles, aurora wash, mascot loop, hero video, 3D ambient scene |
-| Lives in | `styles.css` `@keyframes` + `animation:` / `transition:` inline | A `motion-placeholder` slot → workflow node owned by [Subagent 1.V](docs/agents/subagents/1V-visual-planner.md) |
-| You write | The CSS yourself | A `data-motion` annotation; the per-medium drawer writes the code |
+| **Full-page scene with floating chrome** | Front door; immersive moments where the scene IS the page | Canvas fills the viewport. Drawing-genre nav, captions, controls float as glass panels styled with the scene-overlay tokens. Chrome is muted; scene dominates. |
+| **Drawing page with embedded scene** | Editorial body with one in-context scene (a small map inside an article, a 3D rotation of a sculpture mid-essay) | Standard editorial layout. Scene occupies a defined content slot — width matches the body column or breaks out by exactly one step. Mount when scrolled into view; pause when out of view. |
+| **Split layout — scene one side, prose the other** | Work pages where the visitor reads about a painting while seeing it deep-zoomed; data-led storytelling | Two-column shell. Scene pane is sticky/locked while the prose scrolls. Pane proportions follow recalled values (1:2, 3:2, 4:5) — not invented. |
 
-- Hover: `0.12s` on `background` / `border-color` / `opacity`.
-- State changes: `0.15–0.2s`.
-- Streaming / progress: `transition: width 0.4s ease`.
-- Live signal: one ambient keyframe on a "running" indicator.
+#### Tokens flow downward, never invented inside the scene
 
-**The split test:** would this motion still play if every state were frozen? Yes → decorative loop, becomes a workflow node. No → functional, lives in `styles.css`.
+Commit the drawing genre's `:root` block first. Derive scene chrome from it:
 
-**By genre:** marketing/portfolio → scroll-driven entrance OK · brutalist → zero motion · editorial → maybe one subtle parallax on hero · iOS/Material → spring-easing on state transitions · product UI/dashboards → motion only for changing data.
+```css
+:root {
+  /* Drawing genre commits — paper, ink, accent */
+  --paper: oklch(96% 0.008 80);
+  --ink: oklch(20% 0.02 80);
+  --accent: oklch(45% 0.12 60);          /* curatorial ochre */
 
-The genre guardrail propagates: Subagent 1.V's classifier reads the same table and refuses to scaffold decorative-loop nodes when the genre forbids them. A brutalist prototype that handed Subagent 1.V a `motion-placeholder` would get a `drop:genre-forbidden` decision; the static fallback is left to you.
+  /* Scene chrome derived from drawing tokens */
+  --scene-overlay-bg: color-mix(in oklch, var(--paper) 78%, transparent);
+  --scene-overlay-border: color-mix(in oklch, var(--ink) 18%, transparent);
+  --scene-control: var(--ink);
+  --scene-accent: var(--accent);          /* same accent, in-canvas */
+}
+```
+
+If the scene's overlay needs to read as "ours," it comes from the publication's palette — never neon picked out of thin air.
+
+### Scene-based genre entries — index
+
+Runtime experiences: 3D, real-world maps, deep-zoom imagery, shaders, simulations, spatial audio, AR/VR, node graphs, timelines. Commit one scene per page; mount on route entry, dispose on exit.
+
+**Workflow:** (1) commit one scene-based genre per scene moment, (2) `Read` [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) for the full runtime vocabulary (library choice, lighting, camera controls, motion, failure mode).
+
+The scene genres themselves (Immersive 3D / Deep-zoom document / Real-world map / Globe / Shader canvas / Gaussian-splat / Spatial audio / Node graph / Timeline / CAD / VR / Real-time data sim / Audio-visual / AR camera-passthrough) are documented inline in [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) — read that file once any scene gate opens; do not invent CDN library choices.
 
 ---
 
-## 11. Demo dock — prototype-only controls
+## §11 — Demo dock: prototype-only controls (Woven-specific)
 
 Anything that lets a viewer switch view / persona / stage / time is **demo scaffolding**, not product UI. Inline placement reads as a real control even with a "Demo:" caption. **The rule:** every prototype-only switcher goes in a single floating **demo dock** in a fixed corner. Never inline.
 
@@ -588,11 +834,9 @@ Anything that lets a viewer switch view / persona / stage / time is **demo scaff
 </script>
 ```
 
-Page wires the `demoview` event to its useState: `document.addEventListener("demoview", e => setCurrentView(e.detail.view))`.
-
 ---
 
-## 12. `gallery.html` — the design system's kitchen-sink page
+## §12 — `gallery.html`: the design system's kitchen-sink page (Woven-specific)
 
 The design system is a **first-class library asset**, not a sibling file under each prototype's source folder. It lives at `design-systems/<id>/` and is owned by Workflow 0 (build) and Workflow 6b (proposal-driven update) — see [`docs/agents/workflows/0-design-system.md`](docs/agents/workflows/0-design-system.md). Feature-page authoring (Subagent 1) **consumes** the DS — it never co-authors the gallery.
 
@@ -771,83 +1015,81 @@ Workflow 0's DS-builder (Subagent 0) writes the gallery from the DS spec. Workfl
 
 ---
 
-## Forbidden
-
-| Don't | Use |
-|---|---|
-| Build step / Babel / TypeScript / `<script type="text/babel">` | React UMD + htm in plain .js |
-| React Router | `useState('tab')` |
-| Redux / Zustand / Context for trivial state | Local `useState`, prop-drill |
-| shadcn / MUI / Chakra / Tailwind | One `styles.css` with CSS vars |
-| Lucide / Heroicons / Phosphor | Inline SVG icon map |
-| Real `fetch` / API calls | `window.DEMO` static blob |
-| Custom hooks for trivial state | Inline `useState` |
-| `<Card>` / `<Button>` wrappers prematurely | Copy-paste; promote at 5+ uses |
-| Generic mock data ("User 1") | Named, voiced, specific |
-| 4/8/16/24 spacing scale rigidly | Hand-tuned per content shape |
-| Drop shadows on every card | Hairlines + tiny `--shadow-sm` |
-| Border-radius 12px+ on every box | `4 / 6 / 10` graded, or `0` brutalist |
-| Emoji icons in interface | Inline SVG at cap-height |
-| Generic stock illustrations | Typography, geometric shapes, named imagery |
-| Charts with placeholder data | Real data shape with believable story |
-| Decorative entrance animation | Motion only when data changes |
-| Skeleton loaders / suspense | Static demo data |
-| Inline `Demo:` / persona / stage / view switchers in page layout | Demo dock (see §11) |
-| `console.log`, commented-out code | Remove before final |
-
----
-
-## Genre playbook — pick exactly one
-
-Each row is a complete vocabulary commit.
-
-**Restrained product UI** (Linear, Vercel, Read.cv-adjacent)
-Shell: 2- or 3-col app · Greys: 0.004–0.008 · Accent: `oklch(48% 0.13 252)` · Type: Inter / IBM Plex + JetBrains Mono · Sizes: 10–10.5 / 11.5 / 12 / 12.5 / 14 / 16 · Radius: 4 / 6 / 10 · Borders: hairline · Shadow-sm: `0 1px 0 oklch(0% 0 0 / 0.04)` · Motion: hover 0.12s, progress 0.4s, one ambient pulse · Mono: only for machine state · Voice: terse, technical · Decoration: forbidden.
-
-**Bloomberg / IDE inspector / dense data**
-Shell: full canvas + floating panels OR 3-col with status footer · Dark default · Greys: 0.008–0.012 · Accents: amber, cyan, green, magenta — chroma 0.13–0.16 · Type: heavy mono (JetBrains Mono Medium) + sans for prose · Sizes: 10 / 11 / 12 / 13 / 14 · Radius: 2 / 3 / 4 · Density: max, `--row: 22–24px` · Shadow: none internal · Voice: nominal phrases · Decoration: forbidden.
-
-**Editorial — magazine / longform**
-Shell: centered narrow, `max-width: 65–72ch` · Bg: warm paper white · Type: serif body (Source Serif, Iowan, Spectral) + grotesque headings · Sizes: 12 / 14 / 17–19 / 24 / 32 / 48 / 72 · Line-height: body 1.55–1.65; headings 1.1–1.2 · Margins: `1.5em` between paragraphs, `2.5–3em` before headings · Drop caps: `:first-letter { float: left; font-size: 4em; line-height: 0.85 }` · Voice: measured, narrative · Decoration: drop caps, dingbats, rules — required.
-
-**Bento — Apple-style feature page**
-Shell: 12-col asymmetric spans (`grid-column: span 8`) · Cells: radius 16–24px, padding 32–48px · Type: SF Pro Display-style, large, `-0.02em` letter-spacing on display · Sizes: 14 / 16 / 20 / 32 / 48 / 64 / 80 · Backgrounds: per-cell · Voice: benefit-first · Motion: scroll-driven OK · Decoration: per-cell visual treatment.
-
-**Brutalist**
-Shell: broken grid OR single column with intentional misalignment · Type: Times New Roman OR Helvetica only · Sizes: 14 / 24 / 96 / 200 · Color: pure black/white + one full-saturation accent · Border-radius: `0` · No shadows, no gradients, no transitions · Underlines on every link, no hover · Voice: blunt · Motion: zero · Decoration: only intentional ugliness (xerox, halftone, blocky type as graphic).
-
-**Read.cv / Cargo personal site**
-Shell: centered single column, generous L/R margin · Bg: `oklch(99% 0.002 80)` warm white · Type: one sans (Söhne, Inter, Geist) at 15–16px body · Sizes: 11 / 13 / 15 / 18 / 24 / 36 · Greys: 0.002–0.005 · Borders: hairlines at oklch 92% · Spacing: 80–120px between sections · Voice: restrained, plainspoken · Decoration: none.
-
-**iOS native feel**
-Shell: top bar (44pt) + scrollable list + bottom tab bar (49pt + safe-area) · Bg: `oklch(96% 0.002 240)` system grey or pure white · Lists: grouped sections with radius 10px, hairline separators inside · Type: SF Pro at 13 / 15 / 17 / 20+ · Voice: warm, direct, contractions · Motion: spring-easing on push, instant on taps.
-
-**Material 3**
-Shell: top app bar + canvas, FAB BR · Color: dynamic from a single seed, OKLCH-derivable · Surfaces: tinted via `color-mix(in oklch, var(--primary) 5–11%, var(--surface))` · Radius: 12–28px graded by elevation · Type: Roboto Flex or Inter · Motion: emphasized easing, ~0.3s for state changes.
-
----
-
 ## Pre-flight checklist
 
-- [ ] Genre decided explicitly (six axes or closest-shipped-product), committed in top-of-file comment.
-- [ ] Page shell matches genre; macro proportions are recalled, not invented; density gradient correct.
-- [ ] Token block covers: surfaces · text · semantic+soft · type · radii · shadows · spacing · **shape language**.
-- [ ] OKLCH for color; chroma calibrated to genre.
-- [ ] ≤5 type sizes, ≤2 fonts, second font has assigned job.
-- [ ] One stroke / endcap / icon-fill style across all graphics.
-- [ ] All list rows share one grid-template-columns; `min-width: 0` on the flex cell.
+- [ ] Genre was decided explicitly using the six axes (or the closest-shipped-product test).
+- [ ] Genre is committed in a top-of-file comment so drift is obvious.
+- [ ] Page shell matches the genre.
+- [ ] Macro proportions are recalled values (1:2:1, `260+1fr`, `65ch`, 12-col bento), not invented.
+- [ ] Density gradient is right: periphery dense, center breathable.
+- [ ] Token block covers: surfaces · text · semantic + `-soft` · type stack · radii · shadows · spacing · **shape language**.
+- [ ] All colors are OKLCH (or hex only where brand-mandated).
+- [ ] Chroma calibrated to genre (see [`step-tokens.md`](./prototype/step-tokens.md)).
+- [ ] At most 5 type sizes; at most 2 fonts; second font has assigned job.
+- [ ] One stroke weight, one endcap style, one icon fill style across all graphics.
+- [ ] All list rows share one grid-template-columns; `min-width: 0` on the flexible cell.
 - [ ] Numbers in columns use mono or `tabular-nums`.
-- [ ] No icon library — inline SVG matching shape-language tokens.
-- [ ] No build step; opens by double-clicking the HTML.
-- [ ] No `fetch`, no API; all data is `window.DEMO`.
-- [ ] Demo data: named entities, specific numbers, voiced microcopy.
-- [ ] Voice consistent across every string; slot budgets respected.
-- [ ] No generic stock illustrations / gradient blobs / isometric scenes.
-- [ ] Functional graphics carry real data; decorative graphics serve genre; ≤1 decorative move per page.
-- [ ] Motion matches genre.
+- [ ] No icon library imported — icons inline SVG matching shape-language tokens.
+- [ ] No build step. Opens by double-clicking the HTML.
+- [ ] No `fetch`, no API. All data is `window.DEMO`.
+- [ ] Demo data has named entities, specific numbers, voiced microcopy.
+- [ ] **Voice is consistent across every string** — panels, buttons, errors, microcopy.
+- [ ] **Slot budgets respected** — buttons aren't paragraphs, descriptions aren't headlines.
+- [ ] **Information density of language matches information density of layout.**
+- [ ] **No generic stock illustrations**, soft gradient blobs, or isometric scenes unless genre-specific imagery was named.
+- [ ] **Functional graphics carry real data** with believable story; decorative graphics earn pixels via genre.
+- [ ] At most one decorative move per page.
+- [ ] Motion matches genre — none in brutalist, ambient in product UI, scroll-driven in marketing.
 - [ ] No drop shadows beyond `--shadow-sm` except on overlays.
+- [ ] No gradients except meaningful data gradients OR genre-mandated.
 - [ ] No `<Card>` / `<Button>` wrappers unless used 5+ times.
-- [ ] Every prototype-only switcher (view / persona / stage / time) is in a demo dock (§11), not inline; dock self-hides when iframed and on `?demo=off`.
+- [ ] No `console.log`, no commented-out code, no unused tokens, no dead CSS.
+
+**Woven repo-specific checks:**
+
+- [ ] `prototype.json` is written alongside the source — frames / arrows / lanes / IA inferred per AGENTS.md.
+- [ ] Multi-HTML projects use `index.html` as a Step 0b storyboard (personas + workflow cards + page inventory + no UI chrome); the storyboard itself is metadata, never a Canvas frame / Flow node / Prototype iframe.
+- [ ] Every prototype-only switcher (view / persona / stage / time) is in a **Demo dock §11**, not inline; dock self-hides when iframed and on `?demo=off`.
 - [ ] `design-systems/<dsRef.id>/gallery.html` (§12) renders every primitive variant in idle state inside `.ds-sample` blocks with REAL product class names. Gallery chrome uses `.ds-*` prefix only; product classes never carry `.ds-*`. Selectors resolve on first load. (Feature-page authors don't write this file — Workflow 0 / 6b owns it. This checkbox is for the DS-builder and DS-update workflows.)
-- [ ] Every visual slot is annotated for Subagent 1.V — `img-placeholder` for static imagery, `motion-placeholder` for decorative loops, each carrying `data-slot` + (`data-asset-intent` or `data-motion`). Functional motion stays inline in `styles.css`.
-- [ ] No `console.log`, no commented-out code, no dead CSS.
+- [ ] Every visual slot is annotated for **Subagent 1.V** — `img-placeholder` for static imagery, `motion-placeholder` for decorative loops, each carrying `data-slot` + (`data-asset-intent` or `data-motion`). Functional motion stays inline in `styles.css`.
+
+**Scene-based prototypes — additional checks (skip if drawing-only):**
+- [ ] Scene gate was opened by the brief itself (inhabitable space, real geography, deep-zoom, shader, globe, splat, spatial audio) — not added as decoration.
+- [ ] If hybrid: one drawing genre committed for the chrome; each scene moment commits its own scene-based genre. No blended scene genres inside a single moment.
+- [ ] Scene-overlay tokens are derived (via `color-mix` or direct reference) from the chrome's drawing-genre tokens — never invented neon.
+- [ ] Voice register is consistent across chrome and scene overlays (no marketing-flat captions inside a curatorial scene).
+- [ ] Only one scene instance live at a time — mount on route entry, dispose on exit. No simultaneous Three.js + OpenSeadragon + MapLibre instances.
+- [ ] Runtime libraries loaded via ESM importmap CDN; no Webpack / Vite / Next.
+- [ ] Real assets named in code with source URL and licence comment — Polyhaven HDRI, public IIIF endpoint, real coordinates, Open Heritage mesh, etc. No untextured grey boxes, no `[0,0]` coordinates.
+- [ ] No default Leaflet pin, no `globe.gl` placeholder texture, no Shadertoy plasma noise.
+- [ ] Motion is held-breath, not entrance fireworks. No scroll-jacked flythroughs.
+- [ ] `prefers-reduced-motion: reduce` falls back to a still.
+- [ ] Keyboard controls present (arrows = orbit, +/− = zoom, Home = reset) and documented in a visible legend.
+- [ ] Every canvas has an `aria-label` and a text/still equivalent reachable from a visible button.
+- [ ] `setPixelRatio` capped at 2; large assets (>10 MB) gated behind a visible Load affordance.
+- [ ] Shader uniforms read from the design tokens (OKLCH accent → `uniform vec3`), not invented neon.
+- [ ] Spatial audio uses `PannerNode` with listener tied to the camera; transcript visible and synced.
+
+---
+
+## When you can't see, structure is everything
+
+The whole craft compresses to:
+
+1. **Decide the genre** using the six axes — or the closest-shipped-product question. **Refuse the median.**
+2. **Commit the genre** in writing → unlocks page shell, vocabulary, voice, shape language, motion budget, decoration rules as one inheritable unit.
+3. **Set up the stack** — build-less, single page, one stylesheet, one data file. Woven additions: `prototype.json` manifest + (multi-actor projects) `index.html` storyboard.
+4. **Commit the vocabulary** (tokens) at the top → fixes color, type, spacing, radii, shadows, shape language once.
+5. **Use primitives where geometry equals optics** → grid, gap, line-height, mono numbers, hairlines do the layout work.
+6. **Inherit, don't synthesize** → recall safe values for common ratios.
+7. **Components flat** → no premature abstractions.
+8. **Content cascades from slot + voice** → respect the slot budget, hold the voice register, name specific entities.
+9. **Graphics: default to none** → functional ones must carry data; decorative ones must serve the genre; one decorative move per page. Woven: every visual slot annotated for Subagent 1.V via `img-placeholder` / `motion-placeholder`.
+10. **Motion only for changing data** (or genre-required). Decorative loops are handed to Subagent 1.V; functional motion stays in `styles.css`.
+11. **Refuse architecture** → no build, no router, no library, no abstraction not yet earned. **Exception:** when the scene gate is open, a CDN-runtime carve-out unlocks Three.js, MapLibre, OpenSeadragon, deck.gl, gaussian-splat viewers, Web Audio, and read-only public assets — see the *Scene-based addendum*.
+12. **Demo scaffolding lives in the Demo dock §11**, never inline.
+13. **The DS gallery (§12) is owned by Workflow 0 / 6b**, never written by feature-page authors.
+
+Get those right and ~95% of the prototype is correct without any tuning. The remaining 5% is recalled values — which only work because you committed a specific genre at Step zero.
+
+**Decide one tradition. Inherit everything. Draw confidently inside its constraints. That's the whole craft.**
