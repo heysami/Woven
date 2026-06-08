@@ -32445,43 +32445,45 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // requests against an absolute path 404. This is a no-op for already-
   // relative paths (`source/...`) and inline:* paths.
   const rawPathLive = node.path || "";
-  // v3.2 — Composition-aware path resolution. Three preference levels:
-  //   1. If the active version has an active composition, prefer the
-  //      materialised view dir at workflow/views/<nodeId>/<vid>/<cid>/.
-  //      That dir is built by `materialise_view()` on the daemon and
-  //      contains the EXACT bytes for this (version, composition) tuple.
-  //      Picking it makes "switch composition" actually re-point the
-  //      iframe at a different rendered tree — the canvas + version
-  //      picker UI assumed this worked, but the frontend was reading
-  //      node.path directly, so composition switches were visually no-op.
-  //   2. Else fall back to version.canonicalPaths[0] — the snapshot
-  //      location (workflow/runs/<nodeId>/<vid>/<file>).
-  //   3. Else fall back to the live `node.path` (the file on disk now,
-  //      not version-pinned).
+  // v3.4.x — Iframe ALWAYS loads from the live source path, regardless of
+  // which version is active. Reasoning:
+  //
+  //   • Library thumbnails already do this — they iframe `/source/<path>` and
+  //     they render every project's HTML correctly (full styles, JS booted,
+  //     React mounted).
+  //   • The previous logic preferred `workflow/views/<nodeId>/<vid>/<cid>/`
+  //     when the active version had a composition. But `materialise_view()`
+  //     only hardlinks the files listed in `version.files`, which for a
+  //     dragged HTML asset is just the single declared `node.path` — sibling
+  //     deps (`shell.js`, `data.js`, `../../design-systems/<id>/styles.css`,
+  //     etc.) are NOT in the snapshot. So the iframe loaded the HTML but
+  //     every relative <script src>/<link href>/<img src> 404'd against the
+  //     snapshot dir, surfacing as the "html breaks / styles gone" symptom
+  //     the user reported for demo-inhouse (and reproducible in any
+  //     project whose HTML references sibling files).
+  //   • The active version BY DEFINITION should correspond to the bytes
+  //     currently on disk — that's what "active" means. So loading from
+  //     `/source/<canonical>` for the active version is correct.
+  //   • Snapshot URLs are still used by the code panel (so the user can
+  //     INSPECT historical bytes textually) and by revert. The iframe just
+  //     stops being where we read them.
+  //
+  // Trade-off accepted: composition-switching no longer reflects visually
+  // in the iframe (the comment at the old code claimed it did, but the
+  // snapshot incompleteness made it broken for the multi-file-HTML case
+  // anyway). If we want composition-aware iframes back, the right fix is
+  // to make the snapshot include all sibling deps — but that's the OTHER
+  // option from the diagnosis discussion; here we ship the simpler one.
+  //
+  // Path preference: canonicalPaths[0] of the active version (which equals
+  // the on-disk live path), else `node.path` straight. No view-dir branch.
   const activeVersion = (node.versions || []).find(
     v => v && v.id === node.activeVersionId
   );
-  const activeCompositionId = activeVersion?.activeCompositionId;
-  const rawPath = (() => {
-    if (activeVersion && activeCompositionId) {
-      // The view dir mirrors the canonical path with "source/" stripped
-      // (see versioning.py:in_version_path). So the file lives at
-      // workflow/views/<nodeId>/<vid>/<cid>/<canon minus "source/">.
-      // Previously I used just the basename here, which 404'd because
-      // the real file is nested several levels deeper (e.g.
-      // .../<cid>/totoro-feeder/assets/bg-clearing.png, not .../<cid>/bg-clearing.png).
-      const canon = (activeVersion.canonicalPaths && activeVersion.canonicalPaths[0])
-                    || node.path || "";
-      const inVersion = canon.startsWith("source/")
-        ? canon.slice("source/".length)
-        : canon;
-      return `workflow/views/${node.id}/${activeVersion.id}/${activeCompositionId}/${inVersion}`;
-    }
-    if (activeVersion && activeVersion.canonicalPaths && activeVersion.canonicalPaths[0]) {
-      return activeVersion.canonicalPaths[0];
-    }
-    return rawPathLive;
-  })();
+  const rawPath = (
+    (activeVersion && activeVersion.canonicalPaths && activeVersion.canonicalPaths[0])
+    || rawPathLive
+  );
   const path = (() => {
     if (!rawPath || !rawPath.startsWith("/")) return rawPath;
     const m = rawPath.match(/\/source\/([^/]+\/.*)$/);
