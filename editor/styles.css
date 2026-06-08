@@ -13240,6 +13240,13 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .chat-composer-input::placeholder {
   color: var(--text-faint);
+  /* Keep the hint on a single line (clip with ellipsis if it overflows)
+     even though the textarea itself wraps typed content normally. Without
+     this the long "Continue the conversation…" placeholder pushed the
+     textarea to two visual rows on initial mount. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chat-composer-input:disabled {
   background: var(--surface-2);

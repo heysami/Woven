@@ -6686,16 +6686,27 @@ async function togglePrototypeStar(slug, want) {
     return null;
   }
 }
-// v3.5.x — Project thumbnail prototype. Parallel to starred-prototypes
-// but capped at ONE slug per project: which prototype's index.html should
-// be rendered as the live preview on the projects landing card. Persistence:
-// <project>/.thumbnail-prototype.json. Same per-project cache + event-bus
-// pattern as starred so the library button, landing card, and any other
-// listener stay in lockstep.
+// v3.5.x — Project thumbnail. Parallel to starred-prototypes but capped
+// at ONE target per project: which HTML file under source/ should render
+// as the live preview on the projects landing card. Works for BOTH
+// prototype index pages (source/<slug>/index.html) AND ad-hoc HTML pages
+// (source/<branch>/page-foo.html, DS brainstorm variants, anything else
+// in the Library's HTML-pages section). Persistence:
+// <project>/.thumbnail-prototype.json — { "path": "source/<...>.html" }.
+// Same per-project cache + event-bus pattern as starred so the library
+// button, landing card, and any other listener stay in lockstep.
 function _thumbCache() {
   if (typeof window === "undefined") return {};
   if (!window.__TH_THUMB) window.__TH_THUMB = {};
   return window.__TH_THUMB;
+}
+// Read the canonical thumbnail-path string out of whatever shape the
+// backend echoes back. v2: { path }. v1 (back-compat): { id } promoted.
+function _readThumbPathFromJson(j) {
+  if (!j || typeof j !== "object") return "";
+  if (typeof j.path === "string" && j.path) return j.path;
+  if (typeof j.id === "string" && j.id) return `source/${j.id}/index.html`;
+  return "";
 }
 async function fetchThumbnailPrototype(force) {
   const proj = activeProjectId();
@@ -6706,10 +6717,10 @@ async function fetchThumbnailPrototype(force) {
     const r = await fetch(apiUrl("/__thumbnail_prototype"));
     if (!r.ok) return cache[proj] ?? null;
     const j = await r.json();
-    const sid = typeof j.id === "string" ? j.id : "";
-    cache[proj] = sid;
-    try { window.dispatchEvent(new CustomEvent("th:thumbnail-prototype-changed", { detail: { project: proj, id: sid, thumbnail: j.thumbnail || null } })); } catch {}
-    return sid;
+    const tp = _readThumbPathFromJson(j);
+    cache[proj] = tp;
+    try { window.dispatchEvent(new CustomEvent("th:thumbnail-prototype-changed", { detail: { project: proj, path: tp, thumbnail: j.thumbnail || null } })); } catch {}
+    return tp;
   } catch {
     return cache[proj] ?? null;
   }
@@ -6719,27 +6730,39 @@ function getThumbnailPrototypeSync() {
   if (!proj) return "";
   return _thumbCache()[proj] || "";
 }
-function isPrototypeThumbnailSync(slug) {
-  if (!slug) return false;
-  return getThumbnailPrototypeSync() === slug;
+// Compare a candidate against the stored thumbnail. The candidate may be
+// either a prototype slug ("main", "main/sketches") OR a source-relative
+// HTML path ("source/main/page-bento.html"). Slugs are promoted to the
+// canonical source/<slug>/index.html form before the compare.
+function isPathThumbnailSync(target) {
+  if (!target) return false;
+  const cur = getThumbnailPrototypeSync();
+  if (!cur) return false;
+  const isPath = target.startsWith("source/") && /\.html?$/i.test(target);
+  const norm = isPath ? target : `source/${target}/index.html`;
+  return cur === norm || cur === target;
 }
-// Pass `null` (or "") to clear; pass a slug to set. Toggle semantics live
-// on the call site (UI passes "" when the user clicks the already-set thumb).
-async function setProjectThumbnail(slug) {
+// Pass `null` / `""` to clear. The arg may be either a source-relative
+// HTML path OR a prototype slug — the body sends `path` when it's already
+// a full source path, else `id` (which the backend promotes).
+async function setProjectThumbnail(target) {
   const proj = activeProjectId();
   if (!proj) return null;
-  const sid = (slug == null) ? "" : String(slug);
+  const t = (target == null) ? "" : String(target);
+  const body = (!t)
+                  ? { path: "" }
+                  : (t.startsWith("source/") && /\.html?$/i.test(t)) ? { path: t } : { id: t };
   try {
     const r = await fetch(apiUrl("/__thumbnail_prototype/set"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: sid }),
+      body: JSON.stringify(body),
     });
     if (!r.ok) return null;
     const j = await r.json();
-    const finalId = typeof j.id === "string" ? j.id : "";
-    _thumbCache()[proj] = finalId;
-    try { window.dispatchEvent(new CustomEvent("th:thumbnail-prototype-changed", { detail: { project: proj, id: finalId, thumbnail: j.thumbnail || null } })); } catch {}
+    const tp = _readThumbPathFromJson(j);
+    _thumbCache()[proj] = tp;
+    try { window.dispatchEvent(new CustomEvent("th:thumbnail-prototype-changed", { detail: { project: proj, path: tp, thumbnail: j.thumbnail || null } })); } catch {}
     return j;
   } catch {
     return null;
@@ -26082,11 +26105,13 @@ function WorkflowLibrary() {
   // existing draggable row; grid shows a scaled-down iframe thumbnail and
   // the path label beneath. Both forms share the same drag payload + delete
   // handler, so the user gets the same affordance in either view.
-  const renderHtmlItem = (p, view) => view === "grid"
+  const renderHtmlItem = (p, view) => {
+    const isThumb = isPathThumbnailSync(p.path);
+    return view === "grid"
     ? html`
         <div
           key=${p.path}
-          className="workflow-library-card workflow-library-card-deletable"
+          className=${"workflow-library-card workflow-library-card-deletable workflow-library-card-generated" + (isThumb ? " is-thumbnail" : "")}
           draggable=${true}
           onDragStart=${(e) => {
             e.dataTransfer.effectAllowed = "copy";
@@ -26102,6 +26127,17 @@ function WorkflowLibrary() {
               scrolling="no"
               title=${p.label}
             />
+            <button
+              type="button"
+              className=${"workflow-library-thumb-btn workflow-library-thumb-btn-corner" + (isThumb ? " is-on" : "")}
+              title=${isThumb ? "Unset — clear the project-list thumbnail" : "Set as project-list thumbnail"}
+              aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
+              aria-pressed=${isThumb ? "true" : "false"}
+              onClick=${(ev) => { ev.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.path); }}
+              onMouseDown=${(ev) => ev.stopPropagation()}
+              draggable=${false}
+              onDragStart=${(ev) => { ev.stopPropagation(); ev.preventDefault(); }}
+            ><${Icon.Image}/></button>
           </div>
           <div className="workflow-library-card-label">${p.label}</div>
           <button
@@ -26115,7 +26151,7 @@ function WorkflowLibrary() {
     : html`
         <div
           key=${p.path}
-          className="workflow-library-item workflow-library-item-deletable workflow-library-item-generated"
+          className=${"workflow-library-item workflow-library-item-deletable workflow-library-item-generated" + (isThumb ? " is-thumbnail" : "")}
           draggable=${true}
           onDragStart=${(e) => {
             e.dataTransfer.effectAllowed = "copy";
@@ -26128,6 +26164,17 @@ function WorkflowLibrary() {
           <span className="workflow-library-item-label">${p.label}</span>
           <span className="workflow-library-item-id">${p.branch}</span>
           <button
+            type="button"
+            className=${"workflow-library-thumb-btn" + (isThumb ? " is-on" : "")}
+            title=${isThumb ? "Unset — clear the project-list thumbnail" : "Set as project-list thumbnail"}
+            aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
+            aria-pressed=${isThumb ? "true" : "false"}
+            onClick=${(ev) => { ev.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.path); }}
+            onMouseDown=${(ev) => ev.stopPropagation()}
+            draggable=${false}
+            onDragStart=${(ev) => { ev.stopPropagation(); ev.preventDefault(); }}
+          ><${Icon.Image}/></button>
+          <button
             className="workflow-library-item-del"
             title=${"Delete " + p.path + " from disk"}
             onClick=${(ev) => { ev.stopPropagation(); deleteHtml(p.path); }}
@@ -26135,6 +26182,7 @@ function WorkflowLibrary() {
           >×</button>
         </div>
       `;
+  };
 
   // Same for raster/svg/video etc. assets. Grid shows a real image preview
   // when the kind is image-ish (image/svg); video shows a tiny preview
@@ -26649,7 +26697,7 @@ function WorkflowLibrary() {
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
                   const starred = starredProtos.some(sp => sp && sp.id === p.id);
-                  const isThumb = thumbProto === p.id;
+                  const isThumb = isPathThumbnailSync(p.id);
                   return html`
                     <div
                       key=${p.id}
@@ -26697,7 +26745,7 @@ function WorkflowLibrary() {
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
                   const starred = starredProtos.some(sp => sp && sp.id === p.id);
-                  const isThumb = thumbProto === p.id;
+                  const isThumb = isPathThumbnailSync(p.id);
                   return html`
                     <div
                       key=${p.id}
