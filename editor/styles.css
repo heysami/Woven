@@ -3631,6 +3631,25 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: auto; height: auto;
 }
 
+/* ─── Canvas-frames body-drag overlay ─────────────────────────────────
+   When the frames node is NOT selected, this layer floats above the
+   pointer-events:none iframe and absorbs body clicks. It both lets the
+   user drag the node from anywhere (not just the title bar) and routes
+   the wrap's mouseup-deferred selection through the standard click
+   handler. The instant the node becomes selected, the overlay un-mounts
+   and the iframe regains pointer-events: auto so the embedded canvas is
+   navigable. Cursor reads as `grab` to telegraph the draggability. */
+.workflow-node-frames-bodydrag {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: grab;
+  background: transparent;
+}
+.workflow-node-frames-bodydrag:active {
+  cursor: grabbing;
+}
+
 /* ─── v3.3 — Simulation + interactive-media container styling ───────────
    Visual language matches .workflow-node-proto with two additions:
    (a) lens-verdict badge on the title bar (pass / fail / running / error

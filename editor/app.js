@@ -29825,8 +29825,23 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
             height: vh + "px",
             transform: "scale(" + scale + ")",
             transformOrigin: "top left",
+            // Iframe is only interactive when the node is SELECTED. Unselected,
+            // the iframe is invisible to the mouse so clicks fall through to
+            // the body-drag overlay below — the user can drag the node around
+            // without accidentally grabbing the embedded editor's canvas pan/
+            // zoom. Selection commits on mouseup (handled by the surface wrap's
+            // capture-phase handler + armSelectSuppression), so mousedown-into-
+            // drag never flashes the iframe as interactive on the way out.
+            pointerEvents: selected ? "auto" : "none",
           }}
         />
+        ${!selected && html`
+          <div
+            className="workflow-node-frames-bodydrag"
+            onMouseDown=${onHandleDown}
+            title="Drag to move · click to select · once selected, the embedded canvas is navigable."
+          />
+        `}
       </div>
       <div
         className="workflow-node-resize-corner"
@@ -30452,13 +30467,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onClick=${(e) => { e.stopPropagation(); openManage(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.List}/><//>
-        ${onOpenCanvasFrames && html`<${HoverTip}
-          className="workflow-node-action workflow-node-action-canvas-frames"
-          tip="Open canvas frames — spawn a node showing the editor's Canvas tab (frames + arrows) for this prototype. Offers to generate the frames data first if none exists."
-          ariaLabel="Open canvas frames"
-          onClick=${(e) => { e.stopPropagation(); onOpenCanvasFrames(node); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        ><${Icon.Canvas}/><//>`}
         <${HoverTip}
           className="workflow-node-close"
           tip="Remove this prototype instance from the canvas (does not delete files on disk)."
@@ -30600,6 +30608,14 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             active: codeOpen,
             onClick: onToggleCode,
             className: "workflow-node-top-action-code",
+          },
+          onOpenCanvasFrames && {
+            key: "canvas-frames",
+            icon: html`<${Icon.Canvas}/>`,
+            tip: "Open canvas frames — spawn a node showing the editor's Canvas tab (frames + arrows) for this prototype. Offers to generate the frames data first if none exists.",
+            ariaLabel: "Open canvas frames",
+            onClick: () => onOpenCanvasFrames(node),
+            className: "workflow-node-top-action-canvas-frames",
           },
           onZoom && {
             key: "zoom",
