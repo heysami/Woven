@@ -25381,9 +25381,24 @@ function WorkflowLibrary() {
   const [extraProtos, setExtraProtos] = useState([]);
   // Discovered HTML files OUTSIDE the prototype index.html set — DS
   // brainstorm outputs (page-*.html, ds-samples.html), iterator variants,
-  // ad-hoc Write outputs. Surfaced as a dedicated Library section so the
-  // user can drag any agent-generated HTML back onto the canvas.
-  const [htmlPages, setHtmlPages] = useState([]);
+  // ad-hoc Write outputs. Surfaced as TWO dedicated Library sections so
+  // the user can drag any agent-generated HTML back onto the canvas:
+  //   • dsPages — design-system pages (gallery.html, ds-samples.html,
+  //     anything under _ds_brainstorm/, design-systems/<id>/*.html).
+  //     Daemon marks these with kind === "ds-page" / "ds-gallery".
+  //   • htmlPages — everything else.
+  const [htmlPagesRaw, setHtmlPagesRaw] = useState([]);
+  const dsPages    = useMemo(() => (htmlPagesRaw || []).filter(p => {
+    const k = (p && p.kind) || "";
+    return k === "ds-page" || k === "ds-gallery"
+        || (p && typeof p.path === "string" && p.path.startsWith("design-systems/"));
+  }), [htmlPagesRaw]);
+  const htmlPages  = useMemo(() => (htmlPagesRaw || []).filter(p => {
+    const k = (p && p.kind) || "";
+    if (k === "ds-page" || k === "ds-gallery") return false;
+    if (p && typeof p.path === "string" && p.path.startsWith("design-systems/")) return false;
+    return true;
+  }), [htmlPagesRaw]);
   // Library is split into two tabs:
   //   - "nodes": buildable node templates (Prototypes, DS, Iterator,
   //     Direction, Text, Tools) — defaults to this so the first thing the
@@ -25415,7 +25430,7 @@ function WorkflowLibrary() {
       setAssets((a && a.items) || []);
       setSavedPrompts((p && p.items) || []);
       setExtraProtos(((pr && pr.prototypes) || []));
-      setHtmlPages((hp && hp.htmls) || []);
+      setHtmlPagesRaw((hp && hp.htmls) || []);
       setStarredProtos(Array.isArray(st) ? st : []);
     } catch {}
   }, []);
@@ -25677,7 +25692,7 @@ function WorkflowLibrary() {
           aria-selected=${tab === "outputs" ? "true" : "false"}
           onClick=${() => setTab("outputs")}
           title="Generated files — HTML pages + visual assets"
-        >Outputs<span className="workflow-library-tab-count">${extraProtos.length + htmlPages.length + assets.length}</span></button>
+        >Outputs<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length + assets.length}</span></button>
       </div>
       ${tab === "nodes" ? html`
       <div className="workflow-library-section">
@@ -26045,7 +26060,7 @@ function WorkflowLibrary() {
           aria-selected=${outputsSubTab === "protos" ? "true" : "false"}
           onClick=${() => setOutputsSubTab("protos")}
           title="Prototypes + generated HTML pages / components"
-        >Prototypes + components<span className="workflow-library-tab-count">${extraProtos.length + htmlPages.length}</span></button>
+        >Prototypes + components<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length}</span></button>
         <button
           role="tab"
           className=${"workflow-library-subtab" + (outputsSubTab === "visual" ? " is-active" : "")}
@@ -26163,10 +26178,18 @@ function WorkflowLibrary() {
               </div>`)
         }
       </div>
+      <div className="workflow-library-section workflow-library-section-ds-pages">
+        <div className="workflow-library-section-head">Design system pages</div>
+        ${dsPages.length === 0
+          ? html`<div className="workflow-library-empty">No DS pages yet. The DS-brainstorm node writes <code>_ds_brainstorm/&lt;variant&gt;/</code> under <code>source/</code>; any DS library's <code>design-systems/&lt;id&gt;/gallery.html</code> also lands here.</div>`
+          : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
+              ${dsPages.map(p => renderHtmlItem(p, outputsView))}
+            </div>`}
+      </div>
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">HTML pages · components</div>
         ${htmlPages.length === 0
-          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Brainstorm a design system, or run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>).</div>`
+          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>) or the DS pages that land in the section above.</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
               ${htmlPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}

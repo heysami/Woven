@@ -2098,6 +2098,13 @@ button {
 .workflow-library-section-pending {
   opacity: 0.55;
 }
+/* v3.7 — DS-pages section sits between Prototypes and HTML pages. Same
+   shape as a regular section but a tinted header so the user reads it
+   as "elevated above the HTML bucket, sibling-of-Prototypes." */
+.workflow-library-section-ds-pages > .workflow-library-section-head {
+  color: var(--accent-text, var(--text));
+  background: var(--accent-soft, transparent);
+}
 .workflow-library-list {
   display: flex;
   flex-direction: column;

@@ -9410,19 +9410,38 @@ class H(http.server.SimpleHTTPRequestHandler):
                     try: st = os.stat(fpath)
                     except Exception: continue
                     rel = os.path.relpath(fpath, project_root).replace("\\", "/")
-                    # Label: folder/file when nested, just file when at branch root.
+                    # Label: folder/file when nested, just file when at prototype root.
                     if len(segs) <= 1:
                         label = fname
                     else:
                         label = "/".join(segs[1:]) + "/" + fname
-                    found.append({
+                    # v3.7 — Classify DS-related pages so the editor can surface
+                    # them in their own Library section ("Design system pages")
+                    # between Prototypes and plain HTML pages. Two signals:
+                    #   • Anywhere under a `_ds_brainstorm/` folder (the
+                    #     Workflow 0 brainstorm fan-out lands here).
+                    #   • Files exactly named `gallery.html` or `ds-samples.html`
+                    #     at any depth (legacy DS scaffolds + one-offs). We DO
+                    #     NOT match `ds-*` or `page-*` generically — those
+                    #     prefixes overlap with regular feature pages
+                    #     (e.g. `page-about.html` is a normal HTML page).
+                    fname_lower = fname.lower()
+                    in_ds_brainstorm = "_ds_brainstorm" in segs
+                    is_ds_named = (
+                        fname_lower == "gallery.html"
+                        or fname_lower == "ds-samples.html"
+                    )
+                    entry = {
                         "path":   rel,
                         "name":   fname,
                         "label":  label,
                         "branch": branch,
                         "size":   st.st_size,
                         "mtime":  time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime)),
-                    })
+                    }
+                    if in_ds_brainstorm or is_ds_named:
+                        entry["kind"] = "ds-page"
+                    found.append(entry)
         except OSError as e:
             return self._reply(500, {"error": f"scan failed: {e}"})
         # Also enumerate design-systems/<id>/gallery.html so DS library
