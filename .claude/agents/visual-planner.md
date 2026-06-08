@@ -1,6 +1,6 @@
 ---
 name: visual-planner
-description: After source HTML/CSS/JS is written, enumerate every visual slot (img tags, background-image rules, canvas elements, inline SVGs, declared shader/particle/lottie/3d/video paths), classify each one's medium (raster-foreground, raster-photo, vector-icon, vector-mark, shader, particle-2d, particle-gl, lottie, 3d, video, or none), SCAFFOLD A NODE TRIO PER ASSET INTO workflow/workflow.json (prompt + skill + asset, with optional rembg for raster-foreground), and dispatch one per-medium subagent per asset. The node trios are first-class workflow canvas nodes — the user sees them appear in the editor and can re-run each pipeline individually like any other workflow node.
+description: After source HTML/CSS/JS is written, enumerate every visual slot (img tags, background-image rules, canvas elements, inline SVGs, <video> tags, declared shader/particle/lottie/3d/video/motion paths), classify each one's medium (raster-foreground, raster-photo, vector-icon, vector-mark, shader, particle-2d, particle-gl, lottie, 3d, video, motion, or none), SCAFFOLD A NODE TRIO PER ASSET INTO workflow/workflow.json (prompt + skill + asset, with optional rembg for raster-foreground), and dispatch one per-medium subagent per asset. The node trios are first-class workflow canvas nodes — the user sees them appear in the editor and can re-run each pipeline individually like any other workflow node.
 tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
 
@@ -52,7 +52,7 @@ For each `keep` asset, append a node TRIO (or quartet for raster-foreground whic
   "x": <auto>, "y": <auto>, "w": 320, "h": 220 }
 
 { "id": "s_<assetId>", "kind": "skill",
-  "skill": "<generate-image | svg-gen | shader | threejs | canvas-gen | lottie-gen | video-gen | rembg>",
+  "skill": "<generate-image | svg-gen | shader | threejs | canvas-gen | lottie-gen | video-gen | motion-gen | rembg>",
   "params": { /* aspect, model, transparent, … */ },
   "code": "",                              // per-medium subagent fills this for Pathway B
   "x": <auto>, "y": <auto>, "w": 280, "h": 220 }
@@ -66,7 +66,7 @@ For each `keep` asset, append a node TRIO (or quartet for raster-foreground whic
 // Asset sink — reuse its id if one already exists from a prior Expose-flow run:
 { "id": "a_<assetId>", "kind": "asset",
   "path": "<outputPath>",                  // e.g. source/images/<assetId>.png
-  "assetKind": "<image|video|svg|lottie|shader|three>",
+  "assetKind": "<image|video|motion|svg|lottie|shader|three>",
   "boundTo": { "node": "<prototypeNodeId-if-known>", "surface": "<slot selector / dom path>" },
   "x": <auto>, "y": <auto> }
 ```
@@ -173,8 +173,8 @@ The key rule: **the vibe is a constraint on every visual choice**, not just on t
 
 ## Steps (do all of these MECHANICALLY, no creative deliberation)
 
-1. **Enumerate** every visual slot in source HTML/CSS/JS via grep — img tags, background-image, canvas, svg, declared shader/particle/lottie/3d/video paths, AND every emoji-bearing element from Step 1 above. ONE grep pass per file type, not a per-slot read.
-2. **Classify** each slot's medium per the table (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / or `none`). Use the classifier table — don't second-guess.
+1. **Enumerate** every visual slot in source HTML/CSS/JS via grep — `<img>` tags, `background-image` rules, `<canvas>`, inline `<svg>`, **`<video>` tags + `.mp4` / `.webm` / `.mov` file references**, declared shader / particle / lottie / 3d / video / motion paths, AND every emoji-bearing element from Step 1 above. ONE grep pass per file type, not a per-slot read.
+2. **Classify** each slot's medium per the table (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / motion / or `none`). Use the classifier table + the **time-based-medium decision rule** below — don't second-guess.
 3. **Extract intent (one line)** from the slot itself. Priority order:
     - `data-intent="…"` attribute on the slot element
     - The slot's `data-slot="<id>"` value or surrounding comment / `aria-label`
@@ -256,7 +256,7 @@ This file is the auditable trail of what you checked, what you fixed, and what y
 
 Claude Code disallows `Task`-from-subagent in many configurations. So **you do not dispatch the per-medium drawers yourself**. Your job ends at step 7 above.
 
-Instead, the parent agent that spawned you reads `workflow/visual-plan.json` AFTER you return, then fans out the per-medium subagents (`raster-foreground`, `raster-photo`, `vector-icon`, `vector-mark`, `shader`, `particle-2d`, `particle-gl`, `lottie`, `3d`, `video`) — one `Task` call per asset, in parallel.
+Instead, the parent agent that spawned you reads `workflow/visual-plan.json` AFTER you return, then fans out the per-medium subagents (`raster-foreground`, `raster-photo`, `vector-icon`, `vector-mark`, `shader`, `particle-2d`, `particle-gl`, `lottie`, `3d`, `video`, `motion`) — one `Task` call per asset, in parallel.
 
 If you find that you CAN successfully invoke Task with a `subagent_type` set to one of those drawers (try once with one asset), great — do it for all assets. If the first attempt fails or returns an error indicating subagent-from-subagent isn't allowed, abandon dispatch and return the manifest to the parent. **Do NOT spend more than one round-trip trying.** Trying every asset and failing each time wastes minutes.
 
@@ -277,7 +277,22 @@ The skill node `s_<id>` you create has a `skill` field that points at the **work
 | particle-gl        | `particle-gl`      | `canvas-gen`      | B       | WebGL particles (.html) |
 | lottie             | `lottie`           | `lottie-gen`      | B       | Claude writes .json (Bodymovin spec) |
 | 3d                 | `3d`               | `threejs`         | B       | Claude writes .html with three.js |
-| video              | `video`            | `video-gen`       | B       | CSS / SVG / canvas motion fallback (.html) — no generative-video API integrated yet |
+| video              | `video`            | `video-gen`       | A       | **fal Veo 3.1 / Luma Ray 2 / Kling / Pika / Hailuo wired in `media-models.js` v3.4.1 (real `.mp4` output)**. Requires `TH_FAL_API_KEY`. If no key → drawer STOPS and surfaces the limitation; you should pick `motion` instead in that case. |
+| motion             | `motion`           | `motion-gen`      | B       | **Hyperframes HTML composition** (https://hyperframes.heygen.com/) — Claude writes ONE `.html` file with a `#stage` root, `data-start` / `data-duration`-timed clips, and a paused GSAP timeline on `window.__timelines`. Plays standalone in browser; renders deterministically to video via the Hyperframes runtime. No API key needed. This is the WORKHORSE for narrative / decorative motion. |
+
+### Time-based-medium decision rule (when to pick video / motion / lottie / particle)
+
+For any slot that needs MOTION (i.e. wouldn't be served by a still image), pick from these four — in priority order:
+
+| The slot needs… | Pick |
+|---|---|
+| **Photographic / filmic realism in motion** — a real face talking, a hand opening a door, footage-like physics, anything that would look uncanny rendered as HTML/CSS | `video` (fal Veo 3.1 / Kling / etc.) → **falls back to `motion` if no fal API key is set** |
+| **Narrative HTML composition** — typography reveals, shape transforms, multi-clip scenes with timing, hero animations, animated section intros, product-tour beats. Anything you'd build in After Effects but ship as a self-contained HTML file. | `motion` (Hyperframes) |
+| **Self-contained UI animation** — a checkmark drawing on, a loading spinner, a logo idle loop, a single-shape morph | `lottie` (Bodymovin .json) |
+| **Decorative ambient motion** — drifting particles, snowfall, sparkles, low-density falling shapes | `particle-2d` |
+| **High-density GPU motion** — fluid sims, dense particle fields, shader-driven generative motion | `particle-gl` or `shader` |
+
+Default for a `<video>` HTML tag with no existing source file: **`video`** if the brief implies photographic/filmic realism, else **`motion`**. When in doubt, pick `motion` — it never blocks on an API key, plays in-browser, and can be rendered to a real video later via Hyperframes.
 
 The **structural rule** from the protocol doc: replace "what visuals did you notice?" with "enumerate this objective grep-derivable set, then classify every member with a medium and a reason." Your output is NOT "here are the visuals I found" — it is "here are the N candidate slots I enumerated; here's the medium + pipeline decision per slot; here's the rejection log for slots that resolved to `none`."
 

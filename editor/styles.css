@@ -1410,8 +1410,11 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: var(--landing-radius);
   box-shadow: 0 3px 12px rgba(40, 34, 26, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(3px) saturate(1.15);
-  -webkit-backdrop-filter: blur(3px) saturate(1.15);
+  /* v3.5.2 — strong blur so the diamond-grid triangles dissolve into curved
+     smudges behind the glass instead of reading as sharp polygons. The
+     previous 3px barely softened them. */
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
   cursor: pointer;
   transition: border-color 0.3s ease, box-shadow 0.35s ease, transform 0.2s ease, background 0.3s ease;
   position: relative;
@@ -1489,17 +1492,19 @@ button {
   color: var(--text-muted);
   transition: color 0.18s ease;
 }
-.landing-card[data-on-dark="true"] .landing-card-label { color: #ffffff; }
-.landing-card[data-on-dark="true"] .landing-card-id    { color: rgba(255, 255, 255, 0.7); }
-.landing-card[data-on-dark="true"] .landing-card-stats { color: rgba(255, 255, 255, 0.78); }
+/* v3.5.2 — Per-line dark-band flip. The IntersectionObserver in app.js
+   stamps `data-on-dark` on EACH text element individually (label, id,
+   stats) so they flip white only when each line itself sits over the dark
+   header band — not as a single all-or-nothing card-wide toggle. */
+.landing-card-label[data-on-dark="true"] { color: #ffffff; }
+.landing-card-id[data-on-dark="true"]    { color: rgba(255, 255, 255, 0.7); }
+.landing-card-stats[data-on-dark="true"] { color: rgba(255, 255, 255, 0.78); }
 /* v3.5.1 — Hover solidifies the card to opaque white (see .landing-card:hover
    rule above). The dark-band text-flip becomes invisible against that white
-   surface, so revert the upper-card text back to its dark defaults on hover
-   regardless of whether the card was flagged on-dark. Specificity beats the
-   plain `[data-on-dark="true"]` rules above (extra :hover pseudo-class). */
-.landing-card[data-on-dark="true"]:hover .landing-card-label { color: var(--text); }
-.landing-card[data-on-dark="true"]:hover .landing-card-id    { color: var(--text-faint); }
-.landing-card[data-on-dark="true"]:hover .landing-card-stats { color: var(--text-muted); }
+   surface, so revert any white-on-dark text back to dark defaults on hover. */
+.landing-card:hover .landing-card-label[data-on-dark="true"] { color: var(--text); }
+.landing-card:hover .landing-card-id[data-on-dark="true"]    { color: var(--text-faint); }
+.landing-card:hover .landing-card-stats[data-on-dark="true"] { color: var(--text-muted); }
 .landing-card-stat-sep { color: var(--text-faint); }
 .landing-card-actions {
   display: inline-flex;

@@ -7126,26 +7126,53 @@ function useAgents() {
    whole poll cycle otherwise). The endpoint is the cheapest GET the daemon
    exposes — returns a tiny JSON describing single/workspace mode — so this is
    safe to run every few seconds across every mounted topbar. */
-// v2.38 — stop polling /__workspace just to color a badge. Other parts of
-// the app are fetching the daemon constantly (workflow loads, history,
-// runs, etc.) — those are sufficient signal. We expose a window-global
-// stamp updated by a fetch wrapper, and the badge reads it. One ping at
-// mount to bootstrap the "up" state, no further polling.
+// Daemon-status model (v3.5 — evidence-based, not silence-based).
+//
+// EARLIER BUG: the badge was computed from "is the LAST OK stamp older than
+// STALE_MS?" — i.e. "have we heard from the daemon recently?" That inferred
+// "down" from SILENCE. With the SSE heartbeat at 25s and the threshold at
+// 15-40s, the badge oscillated to "down" in every quiet gap even though the
+// daemon was perfectly healthy + actively running subprocesses. Silence is
+// not failure.
+//
+// CURRENT MODEL: only positive evidence flips state. We track TWO stamps:
+//   - __thLastDaemonOkAt   — most recent successful same-origin response
+//   - __thLastDaemonFailAt — most recent same-origin network/transport failure
+// The badge is "up" iff okAt >= failAt (we last heard success more recently
+// than failure), "down" iff failAt > okAt. Idle periods preserve the prior
+// state — no false flips just because nothing is happening.
+//
+// LIVE-DETECTION OF "DAEMON DIED DURING IDLE": the only case the evidence
+// model can't catch on its own is "daemon stopped while user was idle, so no
+// failed fetch fired to update failAt." For that we run ONE low-rate active
+// /__healthz ping every 30s. Costs <5ms per ping. The wrapped fetch handles
+// the rest of the bookkeeping automatically.
 if (typeof window !== "undefined") {
-  if (!window.__thLastDaemonOkAt) window.__thLastDaemonOkAt = 0;
-  // Wrap fetch once so every successful response stamps the global.
+  if (!window.__thLastDaemonOkAt)   window.__thLastDaemonOkAt   = 0;
+  if (!window.__thLastDaemonFailAt) window.__thLastDaemonFailAt = 0;
   if (!window.__thFetchWrapped) {
     const _origFetch = window.fetch.bind(window);
     window.fetch = function(...args) {
+      // Resolve same-origin BEFORE awaiting, since args may be a Request
+      // that gets consumed.
+      let sameOrigin = false;
+      try {
+        const urlLike = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
+        const u = new URL(urlLike, window.location.href);
+        sameOrigin = (u.origin === window.location.origin);
+      } catch {}
       const p = _origFetch(...args);
       p.then(r => {
-        try {
-          const u = new URL(r.url || (typeof args[0] === "string" ? args[0] : args[0]?.url || ""), window.location.href);
-          if (u.origin === window.location.origin && r.ok) {
-            window.__thLastDaemonOkAt = Date.now();
-          }
-        } catch {}
-      }).catch(() => {});
+        if (!sameOrigin) return;
+        // ANY response — even 4xx / 5xx — proves the daemon is reachable.
+        // The badge is "is the daemon up", not "did this request succeed."
+        try { window.__thLastDaemonOkAt = Date.now(); } catch {}
+      }).catch(() => {
+        // Transport failure: no response received. THIS is evidence of "down."
+        if (sameOrigin) {
+          try { window.__thLastDaemonFailAt = Date.now(); } catch {}
+        }
+      });
       return p;
     };
     window.__thFetchWrapped = true;
@@ -7157,54 +7184,62 @@ function useDaemonStatus() {
   const [lastOk, setLastOk] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    const STALE_MS = 15000;
-    // Bootstrap ping so the badge isn't stuck on "checking" when no other
-    // fetch has fired yet. v2.50 — targets /__healthz instead of /__workspace
-    // (no locks, no file reads, <5ms even under heavy saves).
-    // v3.4.49 — Retry the bootstrap a few times before declaring "down".
-    // Pre-fix, a single failed ping (slow network, daemon still warming up
-    // after `python3 editor/serve.py` started, the JS racing the first
-    // route registration) flipped the badge to red — users saw a "Daemon
-    // down" flash on every fresh load even though the daemon was fine.
-    // Three tries × 400ms = ~1.2s of grace before the badge actually flips.
+    // Cheap health-check helper used by both the bootstrap and the idle
+    // poller. Uses the wrapped fetch so success/failure stamps the globals
+    // automatically.
+    const pingHealthz = async () => {
+      try {
+        const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+        const to = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
+        const r = await fetch(apiUrl("/__healthz"), { signal: ctrl ? ctrl.signal : undefined, cache: "no-store" });
+        if (to) clearTimeout(to);
+        return !!(r && r.ok);
+      } catch { return false; }
+    };
+    // Bootstrap: 3 tries × 400ms — pre-fix, a single missed ping during
+    // daemon warm-up flashed "down" on every page load. The retries cover
+    // the JS racing first-route-registration.
     (async () => {
-      const tryOnce = async () => {
-        try {
-          const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-          const to = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
-          const r = await fetch(apiUrl("/__healthz"), { signal: ctrl ? ctrl.signal : undefined, cache: "no-store" });
-          if (to) clearTimeout(to);
-          return !!(r && r.ok);
-        } catch {
-          return false;
-        }
-      };
       for (let i = 0; i < 3; i++) {
         if (cancelled) return;
-        if (await tryOnce()) {
+        if (await pingHealthz()) {
           if (cancelled) return;
           setStatus("up"); setLastOk(Date.now());
           return;
         }
-        // Quick backoff between retries — keeps the user under the "checking"
-        // label rather than flipping to red on a single transient miss.
         await new Promise(res => setTimeout(res, 400));
       }
       if (!cancelled) setStatus("down");
     })();
-    // Then ride on the wrapped-fetch stamp: re-render every 4s to recheck
-    // freshness — this is a setState that compares to current state, NOT
-    // a fetch. No network traffic.
-    const t = setInterval(() => {
+    // Recompute the badge every 4s from the stamps. NO time-staleness check —
+    // we only flip state on evidence (a more-recent okAt or failAt). Silence
+    // preserves prior state.
+    const recompute = () => {
       if (cancelled) return;
-      const ok = (window.__thLastDaemonOkAt || 0) > Date.now() - STALE_MS;
+      const okAt   = window.__thLastDaemonOkAt   || 0;
+      const failAt = window.__thLastDaemonFailAt || 0;
       setStatus(prev => {
-        if (ok && prev !== "up") { setLastOk(window.__thLastDaemonOkAt); return "up"; }
-        if (!ok && prev === "up" && (window.__thLastDaemonOkAt || 0) > 0) return "down";
+        if (okAt > 0 && okAt >= failAt) {
+          if (prev !== "up") setLastOk(okAt);
+          return "up";
+        }
+        if (failAt > okAt) return "down";
         return prev;
       });
-    }, 4000);
-    return () => { cancelled = true; clearInterval(t); };
+    };
+    const recomputeTimer = setInterval(recompute, 4000);
+    // Active /__healthz every 30s catches daemon-died-during-idle. The
+    // wrapped fetch handles the stamp; we just need to trigger one request
+    // periodically so the evidence model has fresh data to read.
+    const livenessTimer = setInterval(() => {
+      if (cancelled) return;
+      pingHealthz().then(() => recompute());
+    }, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(recomputeTimer);
+      clearInterval(livenessTimer);
+    };
   }, []);
   return { status, lastOk };
 }
@@ -13250,31 +13285,37 @@ function ProjectsLanding({ info, projects, onReload }) {
   // compare on ≤ a few dozen cards is sub-100µs per frame — cheaper than
   // wiring multiple event sources.
   useEffect(() => {
-    // Watch each card's title row with an IntersectionObserver whose root is
-    // the viewport but whose top margin is shrunk by the header height (the
-    // dark band depth). When a head is NOT intersecting (i.e. it's above the
-    // shrunken root, meaning it's sitting in the dark band over the header
-    // shader zone), set data-on-dark="true"; the CSS rule above paints the
-    // upper-card text white. IntersectionObserver is cheaper than rAF-poll
-    // for this and fires on layout / scroll without any explicit listener.
+    // v3.5.2 — Per-LINE text flip. Earlier version stamped `data-on-dark` on
+    // the whole card so every text element flipped white at the same scroll
+    // position (even the ones still sitting below the dark band — the
+    // "edited 5m ago" line jumping to white while it's clearly over the
+    // light area). Now we observe EACH text line independently: label, id,
+    // and stats each carry their own `data-on-dark` attribute based on
+    // whether THAT line's bounding box sits inside the dark header band.
+    //
+    // IntersectionObserver with a top-shrunken root: when an element is NOT
+    // intersecting (i.e. above the shrunken root), it's in the dark band →
+    // attr on, text goes white. When intersecting → attr off, text goes dark.
     if (typeof IntersectionObserver === "undefined") return;
     const headerEl = document.querySelector(".landing-header");
     const boundary = headerEl ? headerEl.offsetHeight : 150;
-    const heads = document.querySelectorAll(".landing-card .landing-card-head");
-    if (!heads.length) return;
+    const targets = document.querySelectorAll(
+      ".landing-card .landing-card-label, " +
+      ".landing-card .landing-card-id, " +
+      ".landing-card .landing-card-stats"
+    );
+    if (!targets.length) return;
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        const card = e.target.closest(".landing-card");
-        if (!card) continue;
-        if (e.isIntersecting) card.removeAttribute("data-on-dark");
-        else                  card.setAttribute("data-on-dark", "true");
+        if (e.isIntersecting) e.target.removeAttribute("data-on-dark");
+        else                  e.target.setAttribute("data-on-dark", "true");
       }
     }, {
       root: null,
       rootMargin: `-${boundary}px 0px 0px 0px`,
       threshold: 0,
     });
-    heads.forEach((h) => io.observe(h));
+    targets.forEach((t) => io.observe(t));
     return () => io.disconnect();
   }, [projects.length, filter, activeTab]);
 
@@ -16990,6 +17031,101 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     if (rel.endsWith("/")) rel = rel + "index.html";
     setZoomTarget({ filePath: rel, branch, nodeId: node.id });
   }, []);
+
+  // Canvas-frames: spawn a `frames` node on the workflow canvas showing
+  // the editor's Canvas tab (frames + arrows) for this prototype. If the
+  // backing data is missing (empty `window.EDITOR_DATA.frames`), surface
+  // a confirm() that dispatches a frames-slice regen of Workflow 1 before
+  // the node appears. Once generation completes, the SSE `asset-changed`
+  // event scoped to `editor/data.js` bumps the iframe nonce so the canvas
+  // surface populates without a manual reload. Fired from the
+  // prototype-node's top-bar Canvas-frames button.
+  const openCanvasFrames = useCallback((protoNode) => {
+    if (!protoNode) return;
+    const branch = protoNode.branch || "main";
+    // Best-effort existence check: window.EDITOR_DATA is loaded once per
+    // project, frames + arrows live on D directly. A genuinely missing
+    // data file or a freshly forked branch shows up as `D.frames.length
+    // === 0`. We trust the in-memory data — fetching editor/data.js a
+    // second time would just race the page load.
+    const hasFrames = Array.isArray(D && D.frames) && D.frames.length > 0;
+
+    const spawnNode = () => {
+      const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const w = 800, h = 540;
+      const px = typeof protoNode.x === "number" ? protoNode.x : 0;
+      const py = typeof protoNode.y === "number" ? protoNode.y : 0;
+      const pw = typeof protoNode.w === "number" ? protoNode.w : 720;
+      // Place to the RIGHT of the prototype with a 60px gutter. If it'd
+      // collide with another node, the user can drag it after spawn —
+      // we don't try to be clever about collision avoidance here.
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id,
+          kind: "frames",
+          x: Math.round(px + pw + 60),
+          y: Math.round(py),
+          w, h,
+          branch,
+          host: protoNode.id,
+        }],
+      }));
+    };
+
+    if (hasFrames) {
+      spawnNode();
+      return;
+    }
+
+    // No frames data — confirm + dispatch a frames-only generation. The
+    // prompt mirrors `updateFromSource`'s shape but restricts scope to
+    // frames + arrows (skip primitives / entities / state machines /
+    // timelines / grids). Streams into the workflow-mode chat drawer.
+    const ok = confirm(
+      "No canvas frames exist for source/" + branch + "/ yet.\n\n" +
+      "Generate them now? (Runs the frames + arrows slice of Workflow 1; " +
+      "streams in the chat drawer. The Canvas-frames node will appear here " +
+      "and auto-load once generation completes.)"
+    );
+    if (!ok) return;
+
+    // Spawn the node first so the user sees it pulsing while generation
+    // runs (matches the eager-spawn pattern used by skill runs elsewhere).
+    spawnNode();
+
+    // Dispatch the frames-only regen prompt. We piggyback on the
+    // workflow-mode chat surface via onStartChatWithPrompt — same path
+    // the quick-refine / quick-fork buttons use, so permissions /
+    // attribution / streaming are consistent with the rest of workflow
+    // mode. The prompt explicitly tells the agent to constrain output
+    // to frames + arrows.
+    const prompt = [
+      "Workflow 1 — regenerate ONLY canvas frames + arrows for source/" + branch + "/.",
+      "",
+      "Source root: source/" + branch + "/",
+      "Target data file: editor/data.js (window.EDITOR_DATA)",
+      "",
+      "SCOPE — produce ONLY:",
+      "  • frames[]   — one per HTML page under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry",
+      "  • arrows[]   — connections between frames (from/to/action) derived from in-source navigation (links, programmatic routing, hash changes)",
+      "",
+      "DO NOT regenerate / DO NOT touch:",
+      "  • primitives[] · entities[] · stateMachines · timelines · grids · links · lanes",
+      "  • design-systems/ · meta.dsRef",
+      "  • any source/ file — this is a one-way derivation from source → editor/data.js",
+      "",
+      "Read docs/agents/workflows/1-regenerate.md (frames + arrows subagents only) for the playbook. Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written editor/data.js, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
+      "",
+      "Gate check: meta.dsRef should already be set (this is a frames-only regen, not a fresh project bootstrap). If it isn't, ignore and proceed — frames don't depend on DS.",
+    ].join("\n");
+
+    try {
+      onStartChatWithPrompt && onStartChatWithPrompt(prompt);
+    } catch (err) {
+      console.error("[open-canvas-frames]", err);
+    }
+  }, [setData, onStartChatWithPrompt]);
   const openZoomForAsset = useCallback((node) => {
     if (!node || node.assetKind !== "html") return;
     if (!node.path || node.path.startsWith("inline:")) return;
@@ -24219,8 +24355,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onZoom=${() => openZoomForPrototype(n)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
                 codeOpen=${codePanelNodeId === n.id}
+                onOpenCanvasFrames=${openCanvasFrames}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "frames").map(n => html`
+              <${WorkflowFramesNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "simulation").map(n => html`
@@ -29527,7 +29678,166 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   `;
 }
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, allNodes, allEdges }) {
+// ─── WorkflowFramesNode ───────────────────────────────────────────────
+// Spawned from the prototype-node's Canvas-frames button. Embeds the
+// editor's Canvas tab (view=canvas + embed=1) for the prototype's branch
+// inside an iframe. Read-only viewer — no ports, no agent dispatch, no
+// versioning. The frames + arrows the user sees are the same `model.frames`
+// / `model.arrows` the editor-mode Canvas tab reads ([app.js: CanvasView]).
+//
+// Title bar: drag handle, label `Canvas frames · <branch>`, refresh
+// (nonce bump → remount iframe), close.
+// Body: scale-to-fit iframe rendered at 1920×1200 native viewport. Resize
+// corner at bottom-right.
+function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd }) {
+  const [dragging, setDragging] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const iframeRef = useRef(null);
+  const branch = node.branch || "main";
+
+  // Iframe URL: hits editor/index.html with embed=1 (skip toolbar/chat/
+  // edits panel) + view=canvas (lock first tab) + branch=<branch> (point
+  // editor/data.js scope at the right prototype slug). apiUrl appends
+  // ?project=... when in workspace mode.
+  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=canvas&branch=${encodeURIComponent(branch)}`);
+  const iframeSrc = nonce === 0
+    ? baseUrl
+    : baseUrl + "&_n=" + nonce;
+
+  // Refresh on asset-changed events scoped to source/<branch>/ so the
+  // iframe re-fetches editor/data.js when frames get regenerated (after
+  // the user runs the "generate frames" flow from this same node).
+  useEffect(() => {
+    const handler = (e) => {
+      const paths = (e && e.detail && e.detail.paths) || [];
+      if (!paths.length) return;
+      const scope = `source/${branch}/`;
+      const editorData = "editor/data.js";
+      if (paths.some(p => p && (p.startsWith(scope) || p === editorData || p.endsWith("/editor/data.js")))) {
+        setNonce(n => n + 1);
+      }
+    };
+    window.addEventListener("th:asset-refresh", handler);
+    return () => window.removeEventListener("th:asset-refresh", handler);
+  }, [branch]);
+
+  // Drag + resize — relative-delta helpers shared with every other node.
+  const onHandleDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let lastX = e.clientX, lastY = e.clientY;
+    setDragging(true);
+    setCanvasDraggingSync(true);
+    onDragStart && onDragStart();
+    const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
+      const dx = (ev.clientX - lastX) / zoom;
+      const dy = (ev.clientY - lastY) / zoom;
+      lastX = ev.clientX; lastY = ev.clientY;
+      onMove(dx, dy);
+    };
+    const onUp = () => {
+      setDragging(false);
+      setCanvasDraggingSync(false);
+      onDragEnd && onDragEnd();
+      window.removeEventListener("mousemove", onMv);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+    };
+    window.addEventListener("mousemove", onMv);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
+  }, [zoom, onMove, onDragStart, onDragEnd]);
+
+  const onResizeDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let lastX = e.clientX, lastY = e.clientY;
+    setCanvasDraggingSync(true);
+    onDragStart && onDragStart();
+    const onMv = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
+      const dw = (ev.clientX - lastX) / zoom;
+      const dh = (ev.clientY - lastY) / zoom;
+      lastX = ev.clientX; lastY = ev.clientY;
+      onResize && onResize(dw, dh);
+    };
+    const onUp = () => {
+      setCanvasDraggingSync(false);
+      onDragEnd && onDragEnd();
+      window.removeEventListener("mousemove", onMv);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+    };
+    window.addEventListener("mousemove", onMv);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
+  }, [zoom, onResize, onDragStart, onDragEnd]);
+
+  // Native viewport — the editor at 1920×1200 gives the Canvas tab room
+  // to show several frames + their arrows. Scale to node body.
+  const vw = 1920, vh = 1200;
+  const w = Math.max(320, node.w || 800);
+  const h = Math.max(220, node.h || 540);
+  const bodyW = Math.max(1, w);
+  const bodyH = Math.max(1, h - 32);
+  const scale = Math.min(bodyW / vw, bodyH / vh);
+
+  return html`
+    <div
+      className="workflow-node workflow-node-frames"
+      data-dragging=${dragging ? "true" : "false"}
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph"><${Icon.Canvas}/></span>
+        <span className="workflow-node-label">Canvas frames · ${branch}</span>
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip}
+          className="workflow-node-action"
+          tip="Refresh — reload editor/data.js and remount the canvas iframe."
+          ariaLabel="Refresh canvas frames"
+          onClick=${(e) => { e.stopPropagation(); setNonce(n => n + 1); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Refresh}/><//>
+        <${HoverTip}
+          className="workflow-node-close"
+          tip="Remove this canvas-frames view from the canvas (does not delete editor/data.js)."
+          ariaLabel="Remove from canvas"
+          onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >×<//>
+      </div>
+      <div className="workflow-node-iframe-scale">
+        <iframe
+          key=${node.id + "-" + nonce}
+          ref=${iframeRef}
+          className="workflow-node-iframe"
+          src=${iframeSrc}
+          title=${"Canvas frames: " + branch}
+          style=${{
+            width:  vw + "px",
+            height: vh + "px",
+            transform: "scale(" + scale + ")",
+            transformOrigin: "top left",
+          }}
+        />
+      </div>
+      <div
+        className="workflow-node-resize-corner"
+        onMouseDown=${onResizeDown}
+        title="Drag to resize"
+      />
+    </div>
+  `;
+}
+
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, allNodes, allEdges, onOpenCanvasFrames }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = node.branch || "main";
@@ -30142,6 +30452,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onClick=${(e) => { e.stopPropagation(); openManage(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.List}/><//>
+        ${onOpenCanvasFrames && html`<${HoverTip}
+          className="workflow-node-action workflow-node-action-canvas-frames"
+          tip="Open canvas frames — spawn a node showing the editor's Canvas tab (frames + arrows) for this prototype. Offers to generate the frames data first if none exists."
+          ariaLabel="Open canvas frames"
+          onClick=${(e) => { e.stopPropagation(); onOpenCanvasFrames(node); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Canvas}/><//>`}
         <${HoverTip}
           className="workflow-node-close"
           tip="Remove this prototype instance from the canvas (does not delete files on disk)."
@@ -43918,7 +44235,17 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
 
 /* ────────── App ────────── */
 function App() {
-  const [view, setView] = useState("canvas");
+  // Embed mode — when the editor is mounted inside a workflow-mode `frames`
+  // node iframe (workflow → prototype-node → Canvas-frames button), the URL
+  // carries `?embed=1` and (optionally) `?view=canvas`. In that mode we
+  // skip the top toolbar / chat drawer / edits panel / banners and render
+  // ONLY the requested view full-bleed so the workflow node frames the
+  // surface cleanly. View is locked to whatever `?view=` says (or "canvas"
+  // by default) since the toolbar tabs are hidden.
+  const _embedQs = (() => { try { return new URLSearchParams(location.search); } catch { return new URLSearchParams(); } })();
+  const embedMode = _embedQs.get("embed") === "1";
+  const embedView = _embedQs.get("view") || "canvas";
+  const [view, setView] = useState(embedMode ? embedView : "canvas");
   const [tool, setTool] = useState(null);   // 'select' | 'rearrange' | 'comment' | 'text' | 'draw' | null
   const [edits, setEdits] = useState([]);
   // Layout edits — separate channel from `edits`. Frame rearrangements update
@@ -44543,15 +44870,15 @@ function App() {
   };
 
   return html`
-    <div className="app" data-agent-busy=${agentBusy}>
-      ${agentBusy && html`
+    <div className="app" data-agent-busy=${agentBusy} data-embed=${embedMode ? "true" : "false"}>
+      ${!embedMode && agentBusy && html`
         <div className="agent-busy-banner" role="status" aria-live="polite">
           <span className="agent-busy-pulse"/>
           <span>Agent is editing — interactions paused</span>
         </div>
       `}
-      <${DSProposalBanner} onDispatch=${dispatchDsProposals} dispatchDisabled=${runActive}/>
-      <${Toolbar}
+      ${!embedMode && html`<${DSProposalBanner} onDispatch=${dispatchDsProposals} dispatchDisabled=${runActive}/>`}
+      ${!embedMode && html`<${Toolbar}
         view=${view} setView=${setView}
         tool=${tool} setTool=${setTool}
         editsCount=${edits.length} onSubmit=${submit}
@@ -44583,12 +44910,12 @@ function App() {
         historyOpen=${historyOpen}
         onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
         onCloseHistory=${() => setHistoryOpen(false)}
-      />
-      ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
-      <${ScreenshotWorker}
+      />`}
+      ${!embedMode && historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
+      ${!embedMode && html`<${ScreenshotWorker}
         branchId=${"main"}
         setView=${setView}
-      />
+      />`}
       ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke} selectionRef=${editorSelectionRef} onSelectionCountChange=${setEditorSelectionCount}/>`}
       ${view === "prototype" && html`<${PrototypeView}/>`}
       ${view === "flow"      && html`<${FlowView}    model=${model} setEdits=${setEdits}/>`}
@@ -44598,7 +44925,7 @@ function App() {
       ${view === "stateMachine" && html`<${StateMachineView} model=${model} setEdits=${setEdits}/>`}
       ${view === "timeline"     && html`<${TimelineView}     model=${model} setEdits=${setEdits}/>`}
       ${view === "grid"         && html`<${GridView}         model=${model} setEdits=${setEdits}/>`}
-      <${EditsPanel}
+      ${!embedMode && html`<${EditsPanel}
         edits=${edits}
         strokes=${strokes}
         strokeNotes=${strokeNotes}
@@ -44608,8 +44935,8 @@ function App() {
         onSetNote=${setStrokeNote}
         onSubmit=${submit}
         onUpdateSource=${updateSource}
-      />
-      <${ChatDrawer}
+      />`}
+      ${!embedMode && html`<${ChatDrawer}
         run=${chatRun}
         onClose=${() => setChatRun(null)}
         onStop=${() => { /* keep the drawer open so the user can read the final state */ }}
@@ -44625,7 +44952,7 @@ function App() {
         onPermissionModeChange=${onPermissionModeChange}
         onStartNewChat=${spawnFromComposer}
         selectionCount=${editorSelectionCount}
-      />
+      />`}
     </div>
   `;
 }

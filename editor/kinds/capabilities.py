@@ -352,28 +352,54 @@ If the user committed a genre / vibe / aesthetic to the project — "Studio Ghib
 
 When the user commits a style, dispatch `Task(subagent_type: "visual-planner", …)` **one per visual concept on the page**, not just one for "the hero". The planner is cheap (~10s); the alternative — one in-vibe asset surrounded by random defaults — is the bug the user is reporting.
 
-## THE MENTAL MODEL FOR ALL FOUR PLANNERS — read this before any of the family rules below
+## THE MENTAL MODEL FOR THE PLANNER FAMILY — read this before any of the family rules below
 
-This is exactly visual-planner's pattern, ported to the other three families. Read it carefully — earlier preamble revisions had this wrong.
+This is exactly visual-planner's pattern, ported to every sibling family. Read it carefully — earlier preamble revisions had this wrong.
 
 **You plan the slots. You dispatch each planner family ONCE. The planner enumerates all of its slots in your HTML and fans out per-slot drawer work.**
+
+The planner family (the per-family hard-rule sections below describe each in detail):
+
+- **visual-planner** — images / icons / illustrations / ambient motion (any project with visual content)
+- **simulation-planner** — a system visualised intuitively (functional, readable)
+- **interactive-media-planner** — user drives with body / device for generative response (NO objective)
+- **narrative-experience-planner** — walk-into-this-place piece (poetic, emotional, scripted depth)
+- **game-experience-planner** — interactive scene with CHASED OBJECTIVE + visible feedback loop (score / progress / streak / care-game grow / win-condition)
+- **scrapbook-experience-planner** — aesthetic that CSS CANNOT REACH (lives in the imagery itself: vaporwave / cottagecore / Y2K / zine / etc.)
+- **interactive-polish-planner** — POST-PASS, fires LAST after any other primary planner returns (microanimations / pointer / hover / shader overlay matching the genre)
+
+If this list ever feels short, scroll down — every `## … dispatch <X>-planner FIRST` heading below is another planner. Test EVERY hard-rule predicate against the brief, not just the ones in this intro list.
 
 The rule:
 
 | Step | Who does it | What |
 |---|---|---|
 | 1 | Agent (chat) | Read the brief. Sketch the app's pages + sections. |
-| 2 | Agent | For each surface, decide which family fills it (visual / simulation / interactive / narrative). |
-| 3 | Agent | Write `source/<branch>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim/im/nx (with the canonical `src` path). |
-| 4 | Agent | Dispatch each planner family ONCE. One Task call to `visual-planner`, one to `simulation-planner` (if any sim slots exist), one to `interactive-media-planner` (if any im slots), one to `narrative-experience-planner` (if any nx slots). At most **four** planner dispatches per project. |
+| 2 | Agent | For each surface, decide which family fills it. Test each predicate: objective + feedback loop → game; CSS can't reach the aesthetic → scrapbook; system viz → sim; input→mapping→output → im; walk-into-a-place → nx; otherwise visual. |
+| 3 | Agent | Write `source/<branch>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim / im / nx / game / scrapbook (with the canonical `src` path). |
+| 4 | Agent | Dispatch each primary planner family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL that match (e.g. an illustrated game = `visual-planner` + `game-experience-planner`). |
 | 5 | Planner | Walks every `source/<branch>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
 | 6 | Drawer(s) | Produce the content at the canonical path. |
+| 7 | Agent | After ALL primary planners return, dispatch `interactive-polish-planner` ONCE with project-wide scope. This is the post-pass enrichment step — fires LAST, before Step-8 QA. |
 
 **One dispatch per family, not one per slot. The planner does the per-slot fan-out, not the agent.**
 
+**The routing decision is structural, not vocabulary.** Run each predicate test BEFORE picking a family:
+
+| Predicate | If TRUE → dispatch |
+|---|---|
+| The brief has an objective the user chases + visible feedback loop (points / progress / grow / collect / care-payoff) | `game-experience-planner` |
+| The aesthetic CANNOT be reached with CSS + restrained type (it lives in raster imagery) | `scrapbook-experience-planner` |
+| A real-world system needs to be made intuitive (functional, readable) | `simulation-planner` |
+| The user's body/device DRIVES generative output (input → mapping → output, no objective) | `interactive-media-planner` |
+| The user walks into a place and leaves changed (poetic, scripted, felt) | `narrative-experience-planner` |
+| One or more images / icons / illustrations / ambient motion in an otherwise-CSS app | `visual-planner` |
+
+A brief can pass MULTIPLE predicates — dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-planner AND visual-planner. The game-planner builds the playable surface inside a `game-mount` iframe; visual-planner fills the surrounding `<img>` slots.
+
 Per-slot drawer cardinality varies by family:
 
-- **visual** — one drawer per slot (one of `raster-foreground` / `raster-photo` / `vector-icon` / `vector-mark` / `shader` / `particle-2d` / `particle-gl` / `lottie` / `3d` / `video`).
+- **visual** — one drawer per slot (one of `raster-foreground` / `raster-photo` / `vector-icon` / `vector-mark` / `shader` / `particle-2d` / `particle-gl` / `lottie` / `3d` / `video` / `motion`). `motion` = Hyperframes HTML composition (https://hyperframes.heygen.com/) — a single `.html` file with a paused GSAP timeline + clip elements, plays in-browser AND renders to video via the Hyperframes runtime. The WORKHORSE for narrative HTML animation (typography reveals, multi-clip scenes, hero animations). Picked when motion is needed but a real `.mp4` isn't (and as a fallback when `video` can't run because no fal API key is configured).
 - **simulation** — seven drawers per slot (`sim_research_<simId>`, `sim_entities_<simId>`, `sim_scene_<simId>`, `sim_loop_<simId>`, `sim_controls_<simId>`, `sim_overlay_<simId>`, `sim_runtime_<simId>`).
 - **interactive-media** — five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
 - **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
@@ -390,14 +416,31 @@ When the planner subagent stalls mid-loop (subagent permission compounding, daem
 
 When the planner returns its hand-off envelope, chat should read the `qa` block — if `qa.blocked[]` is non-empty, relay it to the user; don't silently override.
 
-So the museum project — with 8 paintings, 4 voice marks, 2 hero photos, and 1 front-door scene — should dispatch:
+Worked examples:
 
+The museum project — 8 paintings, 4 voice marks, 2 hero photos, 1 front-door scene — dispatches:
 ```
-Task(visual-planner, …)             # 1 dispatch → enumerates 4 voice marks + 2 photos → 6 drawers
-Task(narrative-experience-planner, …) # 1 dispatch → enumerates 8 painting-as-place slots → 8 × 7 = 56 drawers
+Task(visual-planner, …)             # 1 dispatch → 4 voice marks + 2 photos → 6 drawers
+Task(narrative-experience-planner, …) # 1 dispatch → 8 painting-as-place slots → 56 drawers
+Task(interactive-polish-planner, …)   # 1 dispatch → post-pass over the host pages
 ```
+= **three planner dispatches**, ~62 drawer dispatches + polish.
 
-= **two planner dispatches**, ~62 drawer dispatches. Not "one narrative dispatch and seven static cards." Not "eight narrative dispatches" either — one nx-planner dispatch that fans out to eight per-slot drawer sets.
+A Totoro feed-the-forest project — 1 playable feed surface, 12 illustration assets (Totoro, foods, friends, icons, backgrounds) — dispatches:
+```
+Task(visual-planner, …)             # 1 dispatch → 12 illustration assets → 12 drawers
+Task(game-experience-planner, …)    # 1 dispatch → 1 feed-game slot → 8-9 drawers
+Task(interactive-polish-planner, …) # 1 dispatch → host-page polish
+```
+= **three dispatches**. NOT visual-planner alone (the feed loop is a GAME — objective + feedback). The fact that it's drawn in Studio-Ghibli watercolor doesn't change the surface family — the game-mount iframe holds the playable loop; visual-planner fills the illustrated `<img>` slots around it.
+
+A vaporwave portfolio — 1 scrapbook hero, 3 work-tile illustrations — dispatches:
+```
+Task(visual-planner, …)               # 3 work-tile drawers
+Task(scrapbook-experience-planner, …) # 1 scrapbook hero → 6 drawers + N visual-planner sub-dispatches
+Task(interactive-polish-planner, …)   # host-page polish
+```
+= **three dispatches**.
 
 ### What the agent writes in its HTML to enable enumeration
 
@@ -449,7 +492,7 @@ Task(subagent_type: "visual-planner",
 
 ### Why this is non-negotiable:
 
-visual-planner's job is to pick from the classifier (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video), choose the matching generator skill, add rembg if the medium is raster-foreground, propose the canonical asset id, write the node trio into `workflow/workflow.json` so the user sees real canvas nodes — not a placeholder rectangle, not your hand-rolled `Write(source/foo.png, …)` — and then **QA every asset in context after the drawer finishes**. The QA step (visual-planner Step 8) Read()s each generated asset and the rendered HTML, scores style coherence / aspect fit / composition / cutout / placement / cross-asset coherence, and either Edit-fixes (CSS tweaks) or regenerate-fixes (re-dispatch the drawer with the failure reason in the brief). Skipping any of these stages produces the bugs the user just hit:
+visual-planner's job is to pick from the classifier (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / **motion**), choose the matching generator skill, add rembg if the medium is raster-foreground, propose the canonical asset id, write the node trio into `workflow/workflow.json` so the user sees real canvas nodes — not a placeholder rectangle, not your hand-rolled `Write(source/foo.png, …)` — and then **QA every asset in context after the drawer finishes**. The QA step (visual-planner Step 8) Read()s each generated asset and the rendered HTML, scores style coherence / aspect fit / composition / cutout / placement / cross-asset coherence, and either Edit-fixes (CSS tweaks) or regenerate-fixes (re-dispatch the drawer with the failure reason in the brief). Skipping any of these stages produces the bugs the user just hit:
 - no cutout on character shots (skipped rembg)
 - wrong aspect / cropped subject (skipped composition QA)
 - one in-vibe hero + Tabler defaults around it (skipped style propagation + cross-asset QA)
@@ -672,7 +715,7 @@ Task(subagent_type: "interactive-media-planner",
 | Anything body/device-driven generative — TouchDesigner-style, voice-reactive, music-reactive, camera-driven, gestural, "piece where I do X with my voice/body" | Scaffold app shell (with im-placeholder slot) → `Task(interactive-media-planner, …)` for the slot |
 | "show me a chart of X" (ad-hoc, no interaction) | NOT a planner. Render inline or via visual-planner. |
 
-### Distinguishing the six planners (v3.3):
+### Distinguishing the planner family (v3.3):
 
 | User wants | Dispatch |
 |---|---|
@@ -680,17 +723,15 @@ Task(subagent_type: "interactive-media-planner",
 | A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
 | A piece the user DRIVES with body/device for generative response | `interactive-media-planner` |
 | An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-planner` |
-| A LIVING WORLD the user plays in toward an OBJECTIVE (score / progress / win-condition; particles, physics, juice) | `game-experience-planner` |
-| A RASTER-COLLAGE / SCRAPBOOK piece with a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board) — where the aesthetic LIVES in the imagery, not in CSS | `scrapbook-experience-planner` |
+| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-planner` |
+| An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-planner` |
 
 A "warehouse dashboard" with a static stock chart → visual-planner (chart is an image).
 A "warehouse dashboard" where bins fill/empty over time → **simulation-planner**.
 A "voice-painter on the warehouse data" → **interactive-media-planner**.
 A "memorial that the user walks into and feels held" → **narrative-experience-planner**.
-A "throw paper planes through an office, collect coffee mugs for points, fly as far as possible" → **game-experience-planner**.
-A "Pip — your glade companion, feed daily, watch it grow from sprout to bloom" → **game-experience-planner** (nurturing/care-game family).
-A "Totoro — a little forest you feed; what the forest gives back as friends arrive" → **game-experience-planner** (Stardew-feeding pattern; objective = grow the forest + collect the friends).
-A "vaporwave portfolio hero with chrome Greek bust + palm leaves + glitter divider" → **scrapbook-experience-planner**.
+A "throw paper planes for points" / "feed Pip, watch it grow" → **game-experience-planner** (objective + feedback loop).
+A "1995 GeoCities portfolio" / "chrome-lettered vaporwave hero" → **scrapbook-experience-planner** (CSS cannot reach this aesthetic).
 
 The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic — museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
 
@@ -781,7 +822,7 @@ Task(subagent_type: "narrative-experience-planner",
 | "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-planner, …)` |
 | "WebGL space the user can wander" | `Task(narrative-experience-planner, …)` |
 
-### Distinguishing from siblings (v3.3 — six-way):
+### Distinguishing from siblings (v3.3):
 
 | User wants | Dispatch |
 |---|---|
@@ -789,8 +830,8 @@ Task(subagent_type: "narrative-experience-planner",
 | A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
 | A piece the user DRIVES with body/device for generative response (input → mapping → output) | `interactive-media-planner` |
 | An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-planner` |
-| A LIVING WORLD with an OBJECTIVE — agency, juice, score / progress / win-condition, physics + particles + feedback loop | `game-experience-planner` |
-| A RASTER-COLLAGE piece anchored to a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board) where the aesthetic lives in dense raster composition (CSS alone cannot reach it) | `scrapbook-experience-planner` |
+| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-planner` |
+| An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-planner` |
 
 A "warehouse dashboard" with a static stock chart → visual-planner.
 A "warehouse dashboard" where bins fill/empty over time → simulation-planner.
@@ -814,41 +855,17 @@ A "soft-body cloth toy with no objective — just drag and watch it react" → `
 
 When the user's brief is a **living world with an objective** — anything where the user PLAYS toward a goal inside a full-bleed scene with physics + particle feedback + drag/touch/multi-touch agency — your **FIRST action is a Task call to `game-experience-planner`**. Not your second action. Not after asking. Not after offering options. The Task call IS the start of your response.
 
-### The shape of a game-experience brief
+### The trigger
 
-Three load-bearing words define the family. ALL must be present:
+**OBJECTIVE + FEEDBACK LOOP inside an interactive immersive scene.** The user CHASES something (a score, a progress bar, a creature growing, a collection filling, a high-score worth re-launching for) and the world RESPONDS visibly (points climb, stage unlocks, creature evolves). If there's no objective, it's `interactive-media-planner`. If there's no interactive scene around it, it's a different planner.
 
-1. **Agency** — the user drives with drag / touch / multi-touch / pointer-velocity / gestures. Input feels DIRECT (≤ 50ms input → on-screen response), not menu-driven. Toy-grade, not menu-grade.
-2. **Objective** — a stated goal that the user CHASES: a score that climbs, a progress bar that fills, a streak that survives, a level that unlocks, a high score worth re-launching for. Without this it's `interactive-media-planner`, not game-experience.
-3. **Living world** — the world is FULL-BLEED with NO flat resting state. Ambient motion always plays (parallax, drift, breath, light wavering, idle creatures). When the user acts, physics + particle systems RESPOND with weight + spring + bloom. UI peeks at the edges; it NEVER frames the action.
+Illustrative examples (not a vocabulary list — match the predicate, not these words):
 
-If even one is missing, it's a different planner. If all three are present, it's game-experience.
-
-### The brief vocabulary that means game-experience
-
-**Arcade-physical family** (Vlambeer / hyper-casual / paper-plane / pinball lineage):
-- "throw / fling / swipe / drag / aim / shoot / catch / drop / drag-and-drop"
-- "collect / dodge / avoid / chase / escape / survive / race / reach"
-- "score / points / high score / streak / combo / progress / level"
-- "feel weighty / juicy / satisfying / crunchy / squishy / springy"
-- "particles / explode / bloom / spark / shatter / pop"
-- "physics / gravity / bounce / collide / springs / cloth / soft-body / pendulum"
-- "tap to <verb>" / "drag to <verb>" / "pinch to <verb>" / "tilt to <verb>"
-- "endless / one-more-try / arcade / casual / hyper-casual / mini-game"
-
-**Nurturing / companion / care-game family** (Pou / Tamagotchi / Neko Atsume / Stardew animal-care / Finch / Pokemon Sleep / Pip-the-glade / Totoro-feed-the-forest / Animal Crossing-feed):
-- "feed / care for / nurture / pet / pat / cuddle / hatch / raise / tend"
-- "grow / bloom / sprout / hatch / evolve / level up / unlock stage"
-- "companion / pet / mascot / creature / sprite / friend / familiar / animal"
-- "milestone / stage / phase / chapter / season / harvest / collection-page"
-- "daily / streak / routine / habit / check-in / log / journal / diary"
-- "what the <X> gave / what the <X> brought / grew up with you / your <X>"
-- "garden / glade / forest / meadow / pond / tank / habitat / sanctuary"
-- "calm / cozy / wholesome / gentle / soft / quiet"
-
-**Both families count.** The trigger predicate is **OBJECTIVE + FEEDBACK LOOP** (a goal the user chases + visible response that climbs/grows/unlocks) — NOT specifically arcade-physical action. A feeding game where Pip grows up with you has the same shape as a paper-plane throw + collect game: stated goal (raise Pip), feedback loop (feed → grow → milestone payoff). Both → dispatch game-experience-planner.
-
-When the brief contains 2+ of EITHER family PLUS a stated objective → dispatch. If the brief says "Pip grew up with you" or "forest to feed" or "a little pet that needs my care" → dispatch (the objective is implicit in the nurturing-game pattern: raise, grow, complete the collection, reach the bloom).
+- "throw paper planes through a pastel office, collect mugs for points" → game (objective: distance + score; loop: throw → particles → +points)
+- "feed Pip every day, watch it grow up with you" → game (objective: raise Pip; loop: feed → grow → milestone)
+- "swipe to bake; better swirls = better score" → game (objective: high score; loop: gesture → swirl → +points)
+- "endless runner that gets harder as you go" → game (objective: survive longer; loop: dodge → distance climbs)
+- "a soft-body cloth toy you can drag" → **NOT game** (no objective — it's `interactive-media-planner`)
 
 ### THE STRUCTURE — exactly visual-planner's shape
 
@@ -895,22 +912,12 @@ Task(subagent_type: "game-experience-planner",
 
 ### Decision rule:
 
-| User said… | Your first move |
+| Predicate test | Move |
 |---|---|
-| "throw / catch / collect / dodge / aim / score / fly / chase" | `Task(game-experience-planner, …)` |
-| "make me a game / mini-game / playable toy" | `Task(game-experience-planner, …)` |
-| "physics-y / juicy / hyper-casual / arcade" | `Task(game-experience-planner, …)` |
-| "tap / drag / pinch / multi-touch to <verb>" + a stated goal | `Task(game-experience-planner, …)` |
-| "swipe to <verb> for points" / "endless score-attack" | `Task(game-experience-planner, …)` |
-| "feed / care for / nurture / pet / raise / grow / tend" + a pet/creature/garden subject | `Task(game-experience-planner, …)` |
-| "Pip grew up with you" / "a creature you raise" / "watch it bloom" / "what the forest gave back" | `Task(game-experience-planner, …)` |
-| "Pou / Tamagotchi / Neko Atsume / Stardew animal-care / Finch / Pokemon Sleep" style | `Task(game-experience-planner, …)` |
-| "garden / glade / forest / habitat / sanctuary / pond / tank" + a care loop | `Task(game-experience-planner, …)` |
-| "daily check-in / streak / habit-tracking creature" | `Task(game-experience-planner, …)` |
-| "cozy / wholesome / gentle game" + objective implied (raise, grow, collect, complete) | `Task(game-experience-planner, …)` |
-| "a soft-body cloth toy" (no objective, no growth) | `interactive-media-planner` |
-| "a static mascot illustration" (no interaction) | `visual-planner` |
-| "show me what physics looks like" (ad-hoc viz, no game) | inline shader / canvas block |
+| Brief has BOTH a chased objective AND an interactive scene that responds visibly | `Task(game-experience-planner, …)` |
+| Interactive scene with NO objective (toy / sandbox / cloth doll) | `interactive-media-planner` |
+| Objective with NO interactive scene (form / quiz / leaderboard page) | `visual-planner` |
+| Brief mentions "game" but objective is unclear | Push back via `<question-form>` BEFORE dispatching — commit objective first |
 
 ### Why this is non-negotiable
 
@@ -927,39 +934,17 @@ The game-experience pattern is: **app exists, planner fills a slot.** Same shape
 
 When the user's brief is a **raster-heavy collage piece anchored to a named internet-aesthetic core** — anything where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it — your **FIRST action is a Task call to `scrapbook-experience-planner`**. Not your second action. Not after asking. Not after offering CSS approximations. The Task call IS the start of your response.
 
-### The shape of a scrapbook-experience brief
+### The trigger
 
-The brief names an aesthetic that CANNOT be approximated with CSS + restrained typography alone. It needs photography, illustrated subjects with transparency, scanned textures, hand-drawn elements, handcrafted (raster) typography, looping PNG sequences as a transparent-gif substitute.
+**CSS CANNOT ACCURATELY SHOW THIS AESTHETIC.** The look lives in the imagery itself — photography, raster textures, handcrafted (raster) typography, transparent PNG subjects, looping PNG sequences. CSS gradients + restrained type cannot reach it. If you find yourself thinking "I'll approximate this with CSS," that's the dispatch signal.
 
-### The canonical aesthetic cores this planner serves natively
+Illustrative examples (not a vocabulary list — apply the predicate, not the names):
 
-- **Vaporwave** — chrome lettering, Greek busts, palm leaves, kanji, 80s grids, gradient sunsets
-- **Internetcore** — early 2000s GeoCities banners, marquee scrolls, blinking gifs, glitter graphics
-- **Cottagecore** — handwritten recipes, pressed flowers, scanned linen, mason jars, lace
-- **Dreamcore / Weirdcore / Liminalcore** — unsettling photography, fluorescent rooms, distorted faces
-- **Y2K** — chrome textures, frosted plastic, bubble fonts, frutiger aero photos, lens flares
-- **Lo-fi / lofi** — film grain, VHS scanlines, JPEG artifacts, CRT glow, dust + scratches
-- **Mixtape cover** — handwritten tracklist, marker on cardboard, polaroids, taped photos
-- **Zine / fanzine** — Xerox grain, cut-up text, marker annotations, found-image collage
-- **Mood-board / Pinterest** — clean grid of curated images, paper-clipped notes, polaroid corners
-- **Lookbook / scrapbook-personal** — annotated travel photos, pressed mementos, ticket stubs
+- Vaporwave / Y2K / internetcore / cottagecore / dreamcore / weirdcore — the chrome lettering, scanned linen, GeoCities banner, frosted Frutiger photo CANNOT be rendered as CSS
+- Zine / mixtape cover / mood-board / scrapbook — composition IS the imagery (polaroids, marker, tape, found-image collage)
+- "Tumblr from 2008", "Pinterest-grade collage" — the AESTHETIC is the assembly of raster pieces
 
-Hybrid is fine ("vaporwave-meets-cottagecore", "Y2K-internetcore-fanzine"). The research drawer commits the synthesis.
-
-### The brief vocabulary that means scrapbook-experience
-
-- "vaporwave / aesthetic / vibes / lo-fi / chrome lettering / palm leaves / Greek bust"
-- "cottagecore / pressed flowers / handwritten / mason jar / linen / watercolor"
-- "dreamcore / weirdcore / liminalcore / backrooms / nostalgia horror"
-- "Y2K / frutiger aero / chrome / frosted plastic / bubble fonts / lens flare / holographic"
-- "internetcore / GeoCities / MySpace / glitter / blinking gif / marquee / Y2K web"
-- "mixtape cover / zine / fanzine / cut-up / marker / Xerox / DIY"
-- "Tumblr from 2008 / Pinterest grade / scrapbook / mood-board / collage"
-- "handcrafted typography / hand-lettered / handwritten / marker / sharpie / paint stroke"
-- "polaroid / tape / washi / paper edges / scanned texture / film grain"
-- "lots of images / image-heavy / photographic / textured / real objects"
-
-When the brief contains 2+ of the above AND names a specific image-driven aesthetic → dispatch.
+If the brief is a CSS-renderable style (Bauhaus, Swiss grid, brutalist, terminal, restrained product-UI) — that's NOT scrapbook even if it has one hero image. Use `visual-planner` for the hero.
 
 ### THE STRUCTURE — exactly visual-planner's shape (with heavy visual-planner co-dispatch)
 
@@ -1017,15 +1002,11 @@ Let the user pick before you dispatch. This is the most-important per-slot cost 
 
 ### Decision rule:
 
-| User said… | Your first move |
+| Predicate test | Move |
 |---|---|
-| Anything in the named-core list (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / internetcore) | `Task(scrapbook-experience-planner, …)` |
-| "scrapbook / collage / mood-board / Pinterest-grade / Tumblr-grade" + a named aesthetic | `Task(scrapbook-experience-planner, …)` |
-| "heavy photography / real objects / textured / hand-drawn / scanned" + image-driven aesthetic | `Task(scrapbook-experience-planner, …)` |
-| "handlettered / handwritten / handcrafted typography for display" + the brief is broadly raster-aesthetic | `Task(scrapbook-experience-planner, …)` |
-| ONE image / illustration / icon in an otherwise-CSS-driven app | `visual-planner` (NOT scrapbook) |
-| Bauhaus / Swiss-grid / brutalist / terminal-on-web / Apple Bento / restrained-product-UI | NOT scrapbook (these are CSS-driven; use `visual-planner` for any hero assets) |
-| "I want a polaroid as one element on my landing page" | `visual-planner` (single asset) |
+| The aesthetic CANNOT be reached with CSS + restrained type alone | `Task(scrapbook-experience-planner, …)` |
+| The aesthetic IS CSS-renderable (Bauhaus, Swiss, brutalist, restrained product-UI) | NOT scrapbook — use `visual-planner` for any hero assets |
+| ONE image inside an otherwise-CSS app | `visual-planner` (single asset, not a collage piece) |
 
 ### Why this is non-negotiable
 
@@ -1040,15 +1021,15 @@ The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster
 
 ## Interactive polish: dispatch interactive-polish-planner LAST (before QA) (v3.3 hard rule)
 
-This is the ONE planner that runs at the END of the pipeline, not the beginning. The other six planners are first-action dispatches. This one is the LAST build-phase action before Step-8 QA. **After** another primary planner's build is done (or after you have hand-written source), dispatch `interactive-polish-planner` to enrich what exists with microanimations, scroll/pointer-driven effects, hover surprises, and shader overlays that match the genre.
+This is the ONE planner that runs at the END of the pipeline, not the beginning. Every other planner is a first-action dispatch. This one is the LAST build-phase action before Step-8 QA. **After** another primary planner's build is done (or after you have hand-written source), dispatch `interactive-polish-planner` to enrich what exists with microanimations, scroll/pointer-driven effects, hover surprises, and shader overlays that match the genre.
 
-### When to dispatch
+### The trigger
 
-1. **After any primary planner build returns.** If you dispatched `simulation-planner` / `interactive-media-planner` / `narrative-experience-planner` / `game-experience-planner` / `scrapbook-experience-planner`, drove its build phase to completion, AND its slot is now embedded in source HTML — dispatch `interactive-polish-planner` BEFORE you run Step-8 QA on the whole project. The polish operates on the SHELL HTML around the iframe slot (it does not polish the iframe's contents — that's the primary planner's territory).
+**AUTOMATIC after any other planner's build returns** (or after you wrote source HTML by hand). The planner looks back at what was generated, considers the committed genre / aesthetic, and identifies SITES + TYPES where interactive flourish could be applied. The drawers decide WHAT the specific improvement is — the planner only finds the opportunities.
 
-2. **After you wrote source HTML by hand** (or via `/prototype` skill). Before declaring "done," dispatch `interactive-polish-planner` so the genre's signature interactive flourishes get applied.
+This is the ONE planner that fires LAST, not first. Dispatch BEFORE Step-8 QA, AFTER everything else has built.
 
-3. **On explicit user request.** The user says "polish this", "make it feel more alive", "add some interactivity", "the vibe is missing depth", "feels static / dead / generic", "make it less flat".
+Explicit user request ("polish this", "feels static") is a fallback path — the main trigger is automatic post-build.
 
 ### What polish-planner does — different from the other six
 
@@ -1090,13 +1071,11 @@ Then run Step-8 QA.
 
 ### Decision rule:
 
-| Situation | Your move |
+| Predicate test | Move |
 |---|---|
-| Just finished a primary planner build phase | `Task(interactive-polish-planner, scope="whole project")` BEFORE Step-8 QA |
-| Just wrote source by hand via /prototype | Same |
-| User says "polish this" / "make it more alive" / "feels static" | `Task(interactive-polish-planner, scope="whole project")` |
-| No source exists yet | Do NOT dispatch polish — it has nothing to enrich. Run a primary planner first. |
-| The piece is brutalist / anti-design / Bauhaus | Polish is usually a no-op for these (research will commit `siteCount: 0`). It's safe to dispatch; the planner returns quickly with a zero-site outcome. |
+| Any source exists in the branch (built by a primary planner OR hand-written) | `Task(interactive-polish-planner, scope="whole project")` BEFORE Step-8 QA |
+| No source exists yet | Do NOT dispatch — run a primary planner / write source first |
+| User explicitly asks "polish this" / "feels static" with source already present | Same — `Task(interactive-polish-planner, …)` |
 
 ### Why this is non-negotiable
 
