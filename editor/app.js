@@ -26730,7 +26730,7 @@ function classifyVarKind(rawVal) {
      • value    — current raw value
      • cssVars  — { "--name": "<resolved>" } map from readIframeCssVars
      • onChange(nextValue) — fires on commit (Enter / blur / pick) */
-function PickedColorField({ label, value, cssVars, onChange }) {
+function PickedColorField({ label, value, inherited, cssVars, onChange }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value || "");
   useEffect(() => { setDraft(value || ""); }, [value]);
@@ -26744,27 +26744,33 @@ function PickedColorField({ label, value, cssVars, onChange }) {
     const next = draft.trim();
     if (next !== (value || "")) onChange(next);
   };
-  // The swatch's `background` reads `value` directly so it shows whatever
-  // CSS the user typed (color, gradient, var() reference, anything).
+  // v3.4.x — Swatch reflects the EFFECTIVE color: inline value if set
+  // (that's what the user explicitly chose), else the computed/inherited
+  // value (so the user sees what the element actually looks like via CSS
+  // class inheritance). Placeholder mirrors the same fallback: when no
+  // inline value is set the input shows the inherited value greyed out,
+  // signalling "this is what would render if you don't override".
+  const effective = (value || inherited || "").trim();
+  const hasInline = !!(value || "").trim();
   return html`
     <div className="zoom-inspector-color-row">
       <button
         type="button"
-        className="zoom-inspector-color-swatch"
-        title=${"Pick from design system tokens · current: " + (value || "(unset)")}
-        style=${{ background: value || "transparent" }}
+        className=${"zoom-inspector-color-swatch" + (hasInline ? "" : " is-inherited")}
+        title=${"Pick from design system tokens · current: " + (value || inherited || "(unset)")}
+        style=${{ background: effective || "transparent" }}
         onClick=${() => setOpen(o => !o)}
         aria-label=${"Color picker for " + label}
-      >${!value && "—"}</button>
+      >${!effective && "—"}</button>
       <input
         className="zoom-inspector-color-input"
         type="text"
         value=${draft}
-        placeholder=${"e.g. var(--accent) or #fff or linear-gradient(...)"}
+        placeholder=${inherited || "e.g. var(--accent) or #fff or linear-gradient(...)"}
         onChange=${(e) => setDraft(e.target.value)}
         onBlur=${commitDraft}
         onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
-        title=${value || ""}
+        title=${value || inherited || ""}
       />
       ${open && html`
         <div className="zoom-inspector-color-pop" onClick=${(e) => e.stopPropagation()}>
@@ -26799,19 +26805,24 @@ function PickedColorField({ label, value, cssVars, onChange }) {
 /* v3.4.x — Free-text field for shadows/filters (or any longer CSS
    property). Commits on blur or Cmd+Enter so the inspector doesn't
    thrash onStyle for every keystroke. */
-function PickedTextField({ label, value, placeholder, rows, onChange }) {
+function PickedTextField({ label, value, inherited, placeholder, rows, onChange }) {
   const [draft, setDraft] = useState(value || "");
   useEffect(() => { setDraft(value || ""); }, [value]);
   const commit = () => {
     const next = draft.trim();
     if (next !== (value || "")) onChange(next);
   };
+  // v3.4.x — Prefer the inherited (computed) value as the placeholder
+  // so the user sees the element's CURRENT effective value even when
+  // nothing's set inline. Falls back to the generic example placeholder
+  // when both inline and inherited are empty.
+  const ph = (inherited && inherited.trim()) || placeholder || "";
   return rows && rows > 1
     ? html`
         <textarea
           className="zoom-inspector-textfield"
           value=${draft}
-          placeholder=${placeholder || ""}
+          placeholder=${ph}
           rows=${rows}
           onChange=${(e) => setDraft(e.target.value)}
           onBlur=${commit}
@@ -26822,14 +26833,14 @@ function PickedTextField({ label, value, placeholder, rows, onChange }) {
           className="zoom-inspector-input"
           type="text"
           value=${draft}
-          placeholder=${placeholder || ""}
+          placeholder=${ph}
           onChange=${(e) => setDraft(e.target.value)}
           onBlur=${commit}
           onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
         />`;
 }
 
-function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssVars, tree }) {
+function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, onNavigate, cssVars, tree }) {
   if (!picked) return null;
   const lay = picked.parent && picked.parent.layout;
   const isFlex = lay && (lay.display === "flex" || lay.display === "inline-flex");
@@ -26870,6 +26881,11 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
   // the Seg buttons render with no active highlight when the element
   // hasn't had this property set.
   const styleVal = (k) => (styles[k] || "");
+  // v3.4.x — Computed/inherited value lookup. The fields use this as a
+  // placeholder + the color swatches use it as a fallback so the user
+  // sees the element's CURRENT effective value even when nothing's set
+  // inline. Returns "" when not provided.
+  const inheritedVal = (k) => (computedStyles && computedStyles[k]) || "";
 
   return html`<${React.Fragment}>
     <div className="zoom-inspector-section">
@@ -26979,6 +26995,7 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
       <${PickedColorField}
         label="Background"
         value=${styleVal("background")}
+        inherited=${inheritedVal("background")}
         cssVars=${cssVars}
         onChange=${(v) => set1("background", v)}/>
     </div>
@@ -26988,18 +27005,19 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
       <${PickedColorField}
         label="Border color"
         value=${styleVal("borderColor")}
+        inherited=${inheritedVal("borderColor")}
         cssVars=${cssVars}
         onChange=${(v) => set1("borderColor", v)}/>
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">W</span>
         <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
                value=${styleVal("borderWidth")}
-               placeholder="e.g. 1px"
+               placeholder=${inheritedVal("borderWidth") || "e.g. 1px"}
                onBlur=${(e) => set1("borderWidth", e.target.value.trim())}
                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
       </div>
       <div className="zoom-inspector-row">
-        <${Seg} value=${styleVal("borderStyle")} onChange=${v => set1("borderStyle", v)} options=${[
+        <${Seg} value=${styleVal("borderStyle") || inheritedVal("borderStyle")} onChange=${v => set1("borderStyle", v)} options=${[
           { v: "",       l: "—",  title: "Unset" },
           { v: "solid",  l: "Solid"  },
           { v: "dashed", l: "Dashed" },
@@ -27013,7 +27031,7 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
       <div className="zoom-inspector-row">
         <input className="zoom-inspector-input" type="text"
                value=${styleVal("borderRadius")}
-               placeholder="e.g. 8px or 8px 12px"
+               placeholder=${inheritedVal("borderRadius") || "e.g. 8px or 8px 12px"}
                onBlur=${(e) => set1("borderRadius", e.target.value.trim())}
                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
       </div>
@@ -27024,13 +27042,14 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
       <${PickedColorField}
         label="Color"
         value=${styleVal("color")}
+        inherited=${inheritedVal("color")}
         cssVars=${cssVars}
         onChange=${(v) => set1("color", v)}/>
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">F</span>
         <input className="zoom-inspector-input" type="text"
                value=${styleVal("fontFamily")}
-               placeholder="e.g. Inter, system-ui, sans-serif"
+               placeholder=${inheritedVal("fontFamily") || "e.g. Inter, system-ui, sans-serif"}
                onBlur=${(e) => set1("fontFamily", e.target.value.trim())}
                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
       </div>
@@ -27038,12 +27057,12 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
         <span className="zoom-inspector-axis">S</span>
         <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
                value=${styleVal("fontSize")}
-               placeholder="e.g. 14px"
+               placeholder=${inheritedVal("fontSize") || "e.g. 14px"}
                onBlur=${(e) => set1("fontSize", e.target.value.trim())}
                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
         <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
                value=${styleVal("fontWeight")}
-               placeholder="e.g. 500 / bold"
+               placeholder=${inheritedVal("fontWeight") || "e.g. 500 / bold"}
                onBlur=${(e) => set1("fontWeight", e.target.value.trim())}
                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
       </div>
@@ -27054,6 +27073,7 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
       <${PickedTextField}
         label="Box shadow"
         value=${styleVal("boxShadow")}
+        inherited=${inheritedVal("boxShadow")}
         placeholder="e.g. 0 2px 8px rgba(0,0,0,0.12)"
         rows=${2}
         onChange=${(v) => set1("boxShadow", v)}/>
@@ -27064,6 +27084,7 @@ function PickedInspectorBody({ picked, styles, onStyle, onMove, onNavigate, cssV
       <${PickedTextField}
         label="Filter"
         value=${styleVal("filter")}
+        inherited=${inheritedVal("filter")}
         placeholder="e.g. blur(4px) brightness(1.05)"
         rows=${1}
         onChange=${(v) => set1("filter", v)}/>
@@ -28835,6 +28856,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         return tag + cls;
       };
       let tree = null;
+      let computedStyles = {};
       if (pickedEl) {
         const parent = pickedEl.parentElement;
         const treeParent = (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML")
@@ -28843,6 +28865,33 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
           ? Array.from(pickedEl.children).slice(0, 24).map(c => ({ label: labelFor(c), ref: c }))
           : [];
         tree = { parent: treeParent, children: treeChildren };
+        // v3.4.x — Computed-style snapshot for placeholders + swatch
+        // fallback. Same shape the workflow dock provides. backgroundColor
+        // (not background shorthand) keeps the placeholder readable.
+        try {
+          const cs = ownDoc.defaultView.getComputedStyle(pickedEl);
+          // Strip the pick-mode highlight from the computed shadow (see
+          // workflow dock for matching note).
+          const PICK_SHADOW = /rgba\(\s*239\s*,\s*68\s*,\s*68\s*,\s*0?\.18\s*\)\s+0px\s+0px\s+0px\s+4px/i;
+          const cleanShadow = cs.boxShadow === "none"
+            ? ""
+            : PICK_SHADOW.test(cs.boxShadow || "")
+              ? ""
+              : (cs.boxShadow || "");
+          computedStyles = {
+            background:   cs.backgroundColor || "",
+            borderColor:  cs.borderColor     || "",
+            borderWidth:  cs.borderWidth     || "",
+            borderStyle:  cs.borderStyle     || "",
+            borderRadius: cs.borderRadius    || "",
+            color:        cs.color           || "",
+            fontFamily:   cs.fontFamily      || "",
+            fontSize:     cs.fontSize        || "",
+            fontWeight:   cs.fontWeight      || "",
+            boxShadow:    cleanShadow,
+            filter:       cs.filter    === "none" ? "" : (cs.filter    || ""),
+          };
+        } catch {}
       }
       const navigateTo = (targetEl) => {
         if (!targetEl) return;
@@ -28857,6 +28906,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
           key="inspector"
           picked=${picked}
           styles=${pickedStyles[selectedId] || {}}
+          computedStyles=${computedStyles}
           cssVars=${cssVars}
           tree=${tree}
           onStyle=${applyInspectorStyle}
@@ -30110,7 +30160,7 @@ function WorkflowPickedInspectorDock({
   // Re-derive picked shape + styles + tree + cssVars on every refreshTick
   // and every pickedElement change. Reads computed style from the live
   // element + parent for the inspector body's display logic.
-  const { picked, styles, tree, cssVars } = useMemo(() => {
+  const { picked, styles, computedStyles, tree, cssVars } = useMemo(() => {
     const ifr = pickerIframeRef.current;
     const doc = ifr && ifr.contentDocument;
     const win = ifr && ifr.contentWindow;
@@ -30119,7 +30169,7 @@ function WorkflowPickedInspectorDock({
     if ((!el || !doc || !doc.contains(el)) && doc && pickedElement && pickedElement.path) {
       try { el = doc.querySelector(pickedElement.path); } catch { el = null; }
     }
-    if (!el || !win) return { picked: null, styles: {}, tree: null, cssVars: null };
+    if (!el || !win) return { picked: null, styles: {}, computedStyles: {}, tree: null, cssVars: null };
     const parent = el.parentElement;
     let parentInfo = null;
     if (parent && parent.tagName !== "BODY" && parent.tagName !== "HTML") {
@@ -30217,6 +30267,44 @@ function WorkflowPickedInspectorDock({
         boxShadow:    readInline("boxShadow")    || "",
         filter:       readInline("filter")       || "",
       },
+      // v3.4.x — Computed-style snapshot. Used by the inspector body as
+      // placeholders + as the swatch fallback so the user sees the
+      // element's CURRENT effective values (the painted result of any
+      // CSS-class inheritance) even when nothing is set inline. Without
+      // this every input would render empty for elements styled purely
+      // via external stylesheets, which the user reported as
+      // "it is empty. though when i try to select the dropdown has the
+      // design system token". `background` reads off the computed
+      // `background-color` because the computed `background` shorthand
+      // returns a long composite string that's noisy as a placeholder.
+      computedStyles: (() => {
+        // v3.4.x — Strip the pick-mode highlight shadow + outline from
+        // the computed values so they don't leak into the inspector's
+        // placeholders. Both come from installPickOverlay's injected
+        // <style data-th-pick-style> block (app.js:15194-15196) — the
+        // selected element's computed box-shadow is the red highlight
+        // ring, and its outline is blue/red 2px. Filter both out for
+        // display purposes; the actual write path is unaffected.
+        const PICK_SHADOW = /rgba\(\s*239\s*,\s*68\s*,\s*68\s*,\s*0?\.18\s*\)\s+0px\s+0px\s+0px\s+4px/i;
+        const cleanShadow = cs.boxShadow === "none"
+          ? ""
+          : PICK_SHADOW.test(cs.boxShadow || "")
+            ? ""
+            : (cs.boxShadow || "");
+        return {
+          background:   cs.backgroundColor || "",
+          borderColor:  cs.borderColor     || "",
+          borderWidth:  cs.borderWidth     || "",
+          borderStyle:  cs.borderStyle     || "",
+          borderRadius: cs.borderRadius    || "",
+          color:        cs.color           || "",
+          fontFamily:   cs.fontFamily      || "",
+          fontSize:     cs.fontSize        || "",
+          fontWeight:   cs.fontWeight      || "",
+          boxShadow:    cleanShadow,
+          filter:       cs.filter === "none" ? "" : (cs.filter || ""),
+        };
+      })(),
       tree: { parent: treeParent, children: treeChildren },
       cssVars: readIframeCssVars(doc),
     };
@@ -30368,6 +30456,7 @@ function WorkflowPickedInspectorDock({
           ? html`<${PickedInspectorBody}
               picked=${picked}
               styles=${styles}
+              computedStyles=${computedStyles}
               cssVars=${cssVars}
               tree=${tree}
               onStyle=${applyStyle}

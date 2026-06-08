@@ -14922,6 +14922,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   background-size: 6px 6px;
   background-position: 0 0, 0 3px, 3px -3px, -3px 0;
 }
+.zoom-inspector-color-swatch.is-inherited {
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--border) 60%, var(--text-faint));
+}
 .zoom-inspector-color-input {
   flex: 1;
   min-width: 0;
