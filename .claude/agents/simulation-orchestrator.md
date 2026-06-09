@@ -26,7 +26,7 @@ Read `editor/kinds/AGENT_HARNESS.md` Rules 5 (folder), 6 (atomic commit), 7 (sta
 
 A simulation surface is **any system whose parts have state and change** — regardless of what the parts are made of. The trigger isn't a keyword (warehouse, map, population) — it's the **shape of the brief**: entities + state + change-or-interaction + a wish to *watch* it unfold.
 
-The tech-stack researcher decides how to *represent* it. The same paradigm space (`2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid`) covers ALL of:
+The tech-stack researcher decides how to *represent* it. The paradigm space (`2d-spatial-map` / `2d-isometric` / `3d-environment` / `iconographic-anim` / `text-art` / `hybrid`) covers ALL of:
 
 - **Physical / spatial** — warehouse stock, garden, traffic flow, kitchen mid-service, hospital triage, power grid topology, animal/insect populations over a geography, fleet/asset/vehicle position, sensor networks.
 - **Process / pipeline** — render farms, ETL pipelines, build systems, manufacturing lines, batch jobs moving through stages, queue depth over time, anything *digesting* through a flow.
@@ -36,7 +36,16 @@ The tech-stack researcher decides how to *represent* it. The same paradigm space
 - **Biological / ecological** — cells, populations, ecosystems, predator/prey, disease spread, immune response.
 - **Conceptual / domain-specific** — anything where the brief reads "I want to *see* how X happens" and X is a system, even if the system is purely abstract.
 
-When you interpret a intent: **don't pre-decide the paradigm from how spatial it sounds**. "Agents passing information" can be a 2d-spatial-map (positions on a graph), a 3d-environment (a campus of nodes), or an iconographic-anim (a queue of messages flowing through icons). The research fleet picks. Your job is to commit to the BRIEF, not to a representation. The brief says: "this system, made of these parts, doing these things, felt this way." The fleet decides the visual paradigm afterward.
+When you interpret a intent: **don't pre-decide the paradigm from how spatial it sounds**. "Agents passing information" can be a 2d-spatial-map (positions on a graph), a 3d-environment (a campus of nodes), an iconographic-anim (a queue of messages flowing through icons), or a text-art (an ANSI/box-drawing topology that updates by character). The research fleet picks. Your job is to commit to the BRIEF, not to a representation. The brief says: "this system, made of these parts, doing these things, felt this way." The fleet decides the visual paradigm afterward.
+
+**Paradigm one-line definitions** (research drawer reads this and chooses):
+
+- **`2d-spatial-map`** — top-down or cinematic-2d camera (warehouses, traffic grids, garden tiles, urban heatmaps). When the system's natural reading is "what's where on this plan view." Render: canvas2D / SVG / WebGL instanced sprites / map libraries (MapLibre / Mapbox / Leaflet / deck.gl).
+- **`2d-isometric`** — axonometric / oblique 2.5D projection (SimCity, Habbo, Theme Hospital, Diablo, Monument Valley). When the system has BOTH plan + elevation legibility — stacked floors, building heights, perspective without true 3D camera cost. Render: canvas2D tiles + depth-sort, SVG with iso transforms, or tiled-engine libraries (Phaser iso plugin, Excalibur, custom z-sorted canvas).
+- **`3d-environment`** — first-person / orbit / cinematic 3D (warehouse fly-through, neural-net 3D node graph, planetary). When understanding requires the user to BODY THEMSELVES in the system. Render: three.js (default), Babylon.js, raw WebGL.
+- **`iconographic-anim`** — sequence of small animated icons / symbolic gestures (kitchen ticket queue, render farm, triage strip). When the system is sequential / queue-shaped / has no native spatial primitive. Render: SVG sprite states + CSS transitions, canvas2D icon swap.
+- **`text-art`** — TUI box-drawing / ASCII art / ANSI-colored character animation (pipeline status board, htop-style monitor, ASCII-art topology, terminal-game-style simulation, retro-modem-aesthetic dashboard). When the brief reads as terminal-native, retro-computing, code-adjacent, hacker-aesthetic, or fits an htop / k9s / tmux mental model. Render: monospace text grid (canvas2D drawing fixed-width glyphs, OR a `<pre>` per-frame innerHTML rewrite, OR xterm.js for true terminal emulation). Tick-rate is character-frame-rate (typically 12–24 fps) not entity-physics-rate.
+- **`hybrid`** — paradigm mixes (a 3d-environment with a 2d-isometric mini-map; a text-art HUD over a 2d-spatial-map; an iconographic-anim sidebar on a 3d-environment scene). Pick only when ONE paradigm CAN'T deliver the brief alone.
 
 If you cannot identify entities + state + change in the intent, *that* is a reason to push back via `<decision-request>` — but a lack of literal physical/spatial language is **not** a reason. Process pipelines, agent systems, information flows, neural networks, abstract dynamics — all simulation territory.
 
@@ -72,7 +81,7 @@ slotLine:            142
 
 # PRD simulation table row (verbatim)
 subject:             "warehouse stock + pick paths"
-paradigmHint:        "2d-spatial-map" | "any"
+paradigmHint:        "2d-spatial-map" | "2d-isometric" | "3d-environment" | "iconographic-anim" | "text-art" | "hybrid" | "any"
 entityScale:         "~200 items, ~5 active pickers"
 userIntervention:    "user can re-prioritise pick queue"
 surface:             "Dashboard middle panel, 720×540"
@@ -210,7 +219,7 @@ Why this works: if you stall at step 3 (say loop and overlay error out), only th
 | `title` | yes | Friendly display label ("Research · jet globe"). Visible in the workflow runs panel + node hover tooltip. |
 | `simId`, `branch` | yes | Template-resolver fills `{simId}` / `{branch}` in `outputsRoot` paths. |
 | `text` | **yes** | The per-dispatch envelope — what this specific run should do (subject, paradigm, prior verdicts, etc.). When ▶ Run fires and no per-id preamble exists, the daemon falls back to `generic_preamble(id, text)` which surfaces this verbatim. **MISSING THIS = the daemon spawns a Claude session that doesn't know what to do.** |
-| `paradigm` (container only) | yes | The simulation paradigm (`2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid`) committed by the research synthesiser. |
+| `paradigm` (container only) | yes | The simulation paradigm (`2d-spatial-map` / `2d-isometric` / `3d-environment` / `iconographic-anim` / `text-art` / `hybrid`) committed by the research synthesiser. |
 
 ```jsonc
 // In workflow/workflow.json, add to nodes[] (only if not already present).
@@ -225,7 +234,7 @@ Why this works: if you stall at step 3 (say loop and overlay error out), only th
   "x": <auto>, "y": <auto>, "w": 320, "h": 240 },
 
 { "id": "sim_scene_<simId>",     "kind": "agent",
-  "name": "sim-3d-scene-builder",          // or sim-2d-spatial- / sim-iconographic-anim- per paradigm
+  "name": "sim-3d-scene-builder",          // or sim-2d-spatial- / sim-2d-isometric- / sim-iconographic-anim- / sim-text-art- per paradigm
   "title": "Scene · <simId>",
   "text": "<envelope: paradigm=<...> + render strategy + creative brief style cue + entities.js contract>",
   "simId": "<simId>", "branch": "<branch>", ... },

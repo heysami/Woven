@@ -18,7 +18,7 @@ The orchestrator hands you:
 
 - `simId`, `branch`, `projectRoot`
 - `intent` — one-line description of the system to simulate
-- `paradigmHint` (optional) — `2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid` / `any`
+- `paradigmHint` (optional) — `2d-spatial-map` / `2d-isometric` / `3d-environment` / `iconographic-anim` / `text-art` / `hybrid` / `any`
 - `entityScale` — rough count (e.g. "~200 items", "~8000 mosquitoes", "~30 jets")
 - `successFeel` — what the simulation feels like when it works
 - `creativeBrief` (optional) — styleCue, sensoryTargets, antiPatterns
@@ -33,7 +33,7 @@ You answer ONE question with a small set of structured sub-answers:
 
 Sub-answers:
 
-1. **Paradigm** — `2d-spatial-map` / `3d-environment` / `iconographic-anim` / `hybrid`
+1. **Paradigm** — `2d-spatial-map` / `2d-isometric` / `3d-environment` / `iconographic-anim` / `text-art` / `hybrid`
 2. **Render strategy** — the actual library / API the scene drawer uses
 3. **Tick rate** — fixed-step Hz
 4. **Interaction primitive** — how user input reaches the loop
@@ -59,6 +59,33 @@ If you pick a map library, the render-primitive table in §2.1 still applies —
 
 If the brief names NO real-world target (warehouse floor, render queue, abstract neural net, garden), skip §2.0 and go straight to §2.1.
 
+### 2.0a — PARADIGM PICKER (do this before §2.1)
+
+Commit ONE paradigm. The mental model: how does the user MOST NATURALLY read this system?
+
+| Brief shape | Paradigm | Why |
+|---|---|---|
+| Plan-view of physical layout (warehouse, traffic grid, garden) | `2d-spatial-map` | The system IS a 2D plan; flatness is honest. |
+| Real-world geography (Singapore mosquito density, flight corridor) | `2d-spatial-map` (with map library per §2.0) | Map-anchored data. |
+| Buildings with height / stacked floors / tile-based city / oblique strategy game | `2d-isometric` | Iso shows plan + elevation at once; cheaper than 3d, more legible than top-down for stacked systems. SimCity / Habbo / Theme Hospital / Diablo / Monument Valley canon. |
+| Spatial presence needed — user reads the system by inhabiting it | `3d-environment` | Real depth + camera control. Three.js / Babylon.js / WebGL. |
+| Queue / pipeline / sequence with no native spatial primitive (render farm, ER triage, ticket strip, mailing list) | `iconographic-anim` | Small animated icons; the temporal sequence IS the visualisation. |
+| Terminal-native / retro-computing / hacker-aesthetic / htop-style monitor / k9s-style / pipeline status board / ASCII topology / code-adjacent | `text-art` | Monospace character grid (canvas2D drawing fixed-width glyphs, `<pre>` innerHTML rewrite, or xterm.js). The aesthetic IS the medium. |
+| Multi-modal — one paradigm can't carry the brief alone | `hybrid` | Pick only when forced; defaults to one paradigm. |
+
+**`2d-isometric` vs `2d-spatial-map` vs `3d-environment` — when iso wins:** the brief mentions building HEIGHTS, floors, stacked levels, "the building grows as the user X", strategic-game vibes, axonometric architecture diagrams. Iso shows plan + elevation without true 3D camera cost. Defaults to iso when entity scale ≤500 stacked objects.
+
+**`text-art` triggers** (commit when the brief reads with ANY of):
+- Terminal / TUI / CLI / shell / monospace explicitly named
+- htop / k9s / lazygit / tmux / btm / glances / vim-style references
+- "Like watching a build log" / "feels like watching tail -f" / "I want to see it like a server room dashboard"
+- ASCII art / ANSI / box-drawing / blockchar / Unicode-block
+- Retro-computing aesthetic (BBS, modem-era, NCSA Mosaic, hacker movies, 1990s sysadmin)
+- The system is process-y / log-y / event-stream-y / typing-out-as-you-watch
+- Code-adjacent — agents writing files, compilers, test runners, network packets
+
+**`text-art` is NOT a fallback** for "I couldn't think of a visual" — the brief must EARN the terminal aesthetic by belonging to that semantic space. If the brief is "a garden" and the user just hasn't been imaginative, push them toward `2d-spatial-map` / `2d-isometric` / `3d-environment` via the §3 user-steerage interrupt. Don't gateway-default to text-art.
+
 ### 2.1 Render technique (entity-count × paradigm)
 
 At the declared entity count, which rendering primitive holds 60 fps?
@@ -80,8 +107,11 @@ For 3D: `three.js` is the default; below 1000 entities single meshes work; above
 | `2d-spatial-map` | ≤50 | 30 |
 | `2d-spatial-map` | 50–300 | 4–10 |
 | `2d-spatial-map` | >300 | 4 |
+| `2d-isometric` | ≤200 | 24–30 |
+| `2d-isometric` | 200–2000 | 8–12 (depth-sort budget) |
 | `3d-environment` | any | 60 (motion needs fluidity) |
 | `iconographic-anim` | any | 12–24 |
+| `text-art` | any | 12–24 (character frame rate; 60 is jarring on glyphs) |
 | `hybrid` | match dominant | — |
 
 Cite Glenn Fiedler's "Fix Your Timestep!" (gafferongames.com) as the deterministic-stepping anchor.
@@ -118,7 +148,7 @@ _Tech-stack pick for the simulation. All downstream drawers (entities, scene, lo
 {intent verbatim}
 
 ## Committed paradigm
-**{2d-spatial-map | 3d-environment | iconographic-anim | hybrid}**
+**{2d-spatial-map | 2d-isometric | 3d-environment | iconographic-anim | text-art | hybrid}**
 Why: {1-2 sentences, anchored in the intent's spatial/temporal/relational shape and the entity scale}
 
 ## Committed render strategy
@@ -138,7 +168,8 @@ For user intervention: {one line on what the user can do}.
 For each §8.7 multi-draft crux (scene, loop), declare YES (genuine creative ambiguity on the diverging axis → 3 cold drafts + user pick) or NO (single draft).
 
 ### Scene crux — camera-axis multi-draft?
-**{Yes — diverge on camera | No — single draft, camera = <top-down|isometric|cinematic>}**
+**{Yes — diverge on camera | No — single draft, camera = <top-down|cinematic|free|first-person|character-frame>}**
+(For `2d-isometric` the camera axis is locked iso; remix axis becomes tile-density or zoom-level. For `text-art` the remix axis is glyph-density or color-palette.)
 Why: {1 line, anchored in the brief's successFeel}
 
 ### Loop crux — pacing-axis multi-draft?
