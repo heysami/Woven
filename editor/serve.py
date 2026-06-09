@@ -2537,16 +2537,26 @@ AGENT_DEFS = {
         "bin": "codex",
         # v3.5 — Empirical flag surface for Codex CLI v0.138+:
         #   • exec: non-interactive run
-        #   • --sandbox workspace-write: allow writes to cwd. Without this
-        #     codex defaults to sandbox:read-only and tells the user
-        #     "I'll tell you what I can change in this read-only session"
-        #     instead of doing anything.
+        #   • --sandbox danger-full-access: required for two reasons.
+        #       (1) Writes to project cwd. (`workspace-write` also enables
+        #           this and is preferable for file safety.)
+        #       (2) Outbound network to localhost so the agent can dispatch
+        #           planners via curl POST to /__dispatch_planner.
+        #           `workspace-write` BLOCKS outbound network, which broke
+        #           the planner dispatch architecture from codex chats —
+        #           the curl just got refused at the sandbox layer, never
+        #           reached the daemon.
+        #     If codex grows a finer-grained option (e.g. a sandbox config
+        #     that allows network in workspace-write mode, or a separate
+        #     --allow-network flag) we should switch back to the
+        #     write-restricted variant. For now `danger-full-access` is
+        #     the only mode I've confirmed lets codex talk to localhost.
         # Codex eats the prompt as the trailing positional argv, NOT as a
         # stream-json frame on stdin (prompt_via_stdin=False below).
         # Codex's output goes to STDERR with a structured but plain-text
         # protocol (banner / user / codex / exec / succeeded markers) —
         # _drain_stderr_codex parses it into proper agent events.
-        "args": ["exec", "--sandbox", "workspace-write"],
+        "args": ["exec", "--sandbox", "danger-full-access"],
         "permission_flag": None,
         "permission_default": None,
         "prompt_via_stdin": False,
@@ -9009,7 +9019,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 + "\n===== YOUR BRIEF =====\n"
                 + brief
             )
-            spawn_args = ["exec", "--sandbox", "workspace-write"]
+            # danger-full-access matches AGENT_DEFS["codex"]["args"] —
+            # required so the planner can curl back to /__dispatch_planner
+            # for nested subagent dispatch (workspace-write blocks network).
+            spawn_args = ["exec", "--sandbox", "danger-full-access"]
             stdin_pipe = None
             prompt_stdin = None
             prompt_argv = full_prompt
