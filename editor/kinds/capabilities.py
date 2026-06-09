@@ -200,7 +200,13 @@ def _node_kinds() -> list:
 
 def get_capabilities() -> dict:
     """Aggregate every source into one snapshot. Cheap enough to call per
-    request — file I/O against a handful of small files. No caching."""
+    request — file I/O against a handful of small files. No caching.
+
+    v3.5 — Also includes live availability (which providers have keys,
+    which local tools are installed) so agents curling /__capabilities
+    mid-session get the truth, not just the integrable list. Without
+    this, agents could see "OpenAI is integrated" and assume it'd work
+    when the key isn't actually configured."""
     return {
         "version":         "1",
         "summary":         "Canonical catalog of what this app supports. If the user asks about something not listed here, it genuinely isn't integrated.",
@@ -210,6 +216,9 @@ def get_capabilities() -> dict:
         "subagents":       _scan_subagents(),
         "endpoints":       _daemon_endpoints(),
         "kinds":           _node_kinds(),
+        # v3.5 — live state. Re-probed on every call (no caching).
+        "providerAvailability": _live_provider_availability(),
+        "localTools":           _local_tool_availability(),
     }
 
 
@@ -295,10 +304,16 @@ def _local_tool_availability() -> dict:
     """Probe non-LLM tools the catalog references — rembg (background removal),
     ImageMagick (compositing). Agents check these to know whether the
     raster-foreground pipeline actually completes locally.
+
+    v3.5 — Calls importlib.invalidate_caches() before find_spec so a tool
+    installed mid-session (e.g. `pip install rembg` after the daemon
+    started) is detected without a daemon restart. shutil.which scans
+    PATH each call so it's already fresh.
     """
     out = {}
     try:
-        import importlib.util
+        import importlib, importlib.util
+        importlib.invalidate_caches()
         out["rembg"] = importlib.util.find_spec("rembg") is not None
     except Exception:
         out["rembg"] = False
