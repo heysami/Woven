@@ -245,6 +245,73 @@ def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
     return text
 
 
+def _live_provider_availability() -> list:
+    """For each integrated provider, return {id, label, status} where status is
+    one of "key" (API key configured in media-config.json or env), "cli"
+    (Anthropic-only — falls back to Claude CLI), or "none" (no key + no fallback).
+
+    v3.5 — Agents kept saying "no provider is wired up" because the preamble
+    only listed which providers EXIST, not which were CONFIGURED. Codex chats
+    don't have a stream-json way to check media-config inline before deciding,
+    so we embed the live truth directly in the preamble at spawn time.
+    """
+    rows = []
+    try:
+        # Late import to avoid circulars and keep capabilities.py importable
+        # without the daemon module on hand (tests, tooling).
+        import sys, os
+        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _editor_dir not in sys.path:
+            sys.path.insert(0, _editor_dir)
+        from serve import (
+            _media_config_load, _PROVIDER_ENV_KEYS,
+            detect_agent_bin,
+        )
+        cfg = _media_config_load()
+        claude_cli_installed = detect_agent_bin("claude") is not None
+        codex_cli_installed  = detect_agent_bin("codex") is not None
+        for p in get_capabilities()["providers"]:
+            pid = p.get("id")
+            if not pid:
+                continue
+            settings = cfg.get(pid, {}) if isinstance(cfg.get(pid), dict) else {}
+            env_key  = _PROVIDER_ENV_KEYS.get(pid) or ""
+            has_key  = bool(settings.get("api_key")) or bool(os.environ.get(env_key) or "")
+            if has_key:
+                status = "key"
+            elif pid == "anthropic" and claude_cli_installed:
+                status = "cli (Claude CLI)"
+            elif pid == "openai" and codex_cli_installed:
+                status = "cli (Codex CLI)"
+            else:
+                status = "none"
+            rows.append({"id": pid, "label": p.get("label") or pid, "status": status})
+    except Exception:
+        return []
+    return rows
+
+
+def _local_tool_availability() -> dict:
+    """Probe non-LLM tools the catalog references — rembg (background removal),
+    ImageMagick (compositing). Agents check these to know whether the
+    raster-foreground pipeline actually completes locally.
+    """
+    out = {}
+    try:
+        import importlib.util
+        out["rembg"] = importlib.util.find_spec("rembg") is not None
+    except Exception:
+        out["rembg"] = False
+    try:
+        import shutil
+        out["imagemagick"] = shutil.which("magick") is not None or shutil.which("convert") is not None
+        out["ffmpeg"]      = shutil.which("ffmpeg") is not None
+    except Exception:
+        out["imagemagick"] = False
+        out["ffmpeg"]      = False
+    return out
+
+
 def capabilities_preamble(project_root: Optional[str] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes — not the full catalog — so the agent
@@ -254,9 +321,33 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     v3.3 — `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
     orchestrators are stripped out before return so spawned agents in that project
-    do not see "dispatch <X>-orchestrator FIRST" cues for off orchestrators."""
+    do not see "dispatch <X>-orchestrator FIRST" cues for off orchestrators.
+
+    v3.5 — Embeds LIVE availability (which providers have keys configured, which
+    local tools are installed) so the agent doesn't have to guess and doesn't
+    bail out with "no provider is wired up" when keys are actually present."""
     caps = get_capabilities()
     provider_line = ", ".join(p["label"] for p in caps["providers"][:20])
+    # v3.5 — Live availability block. ✓ key / CLI fallback / ⚠ none — explicit so
+    # the agent doesn't try to introspect env vars (where keys aren't) and
+    # then conclude nothing works.
+    avail_rows = _live_provider_availability()
+    if avail_rows:
+        def _mark(status):
+            if status == "key":       return "✓ KEY"
+            if status.startswith("cli"): return f"✓ {status.upper()}"
+            return "⚠ NOT CONFIGURED"
+        availability_lines = "\n".join(
+            f"  • {r['label']:24s}  {_mark(r['status'])}" for r in avail_rows
+        )
+    else:
+        availability_lines = "  (availability probe failed — assume providers configurable; check via GET /__media_config)"
+    tools = _local_tool_availability()
+    tool_status = (
+        f"  • rembg          {'✓ INSTALLED' if tools.get('rembg') else '⚠ NOT INSTALLED — pip install rembg'}\n"
+        f"  • ImageMagick    {'✓ INSTALLED' if tools.get('imagemagick') else '⚠ NOT INSTALLED'}\n"
+        f"  • ffmpeg         {'✓ INSTALLED' if tools.get('ffmpeg') else '⚠ NOT INSTALLED'}"
+    )
     # v3.3 — cap bumped from 30 to 60 to fit the simulation + interactive-media
     # orchestrator families (14 sim + 11 im + 3 lenses + the pre-existing visual
     # family + housekeeping = ~42 today, leaving headroom).
@@ -287,6 +378,16 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
 If the user asks for a feature, model, provider, subagent, or endpoint and you don't recognize the name, **check this catalog (or `GET $TH_DAEMON_URL/__capabilities`) before answering**. The app catalog is authoritative; your training-data knowledge is not.
 
 **Image-gen providers integrated** ({len(caps['providers'])}): {provider_line}.
+
+**Live provider availability THIS RUN** — KEYS ARE STORED IN `~/.test-harness/media-config.json`, **NOT in environment variables**. Do not check `$OPENAI_API_KEY` / `$ANTHROPIC_API_KEY` / etc. to decide if a provider works — they will almost always be empty. The list below is the daemon's actual answer:
+{availability_lines}
+
+If a provider above shows `✓ KEY` or `✓ CLI`, image / video / svg generation for that provider works. **Do not refuse the user with "no provider is wired up" unless every row says `⚠ NOT CONFIGURED`.** When in doubt, dispatch the relevant orchestrator anyway — it will surface the real error if a specific skill genuinely can't run.
+
+**Local tool availability THIS RUN**:
+{tool_status}
+
+If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → background-removal) works locally with no API key needed.
 
 **Subagent drawers available** ({len(caps['subagents'])}, dispatch via the Task tool):
 {subagent_lines}
