@@ -4622,6 +4622,77 @@ def _ensure_harness_settings() -> "str | None":
     return settings_path
 
 
+def _ensure_sanitised_codex_home():
+    """Build a Woven-managed CODEX_HOME that gives codex its auth + config
+    but hides user-level skills.
+
+    Why: codex CLI has no `--disable-skills` equivalent of Claude's
+    `--disable-slash-commands`. User skills live in ~/.codex/skills/ and
+    are auto-loaded whenever codex's matcher fires. Inside the Woven
+    harness we want only the harness-supplied skill context — letting
+    user skills like prototype-drawing leak in mixes vocabularies and
+    breaks the source-agnostic pipeline guarantee.
+
+    Strategy: create `<INSTALL_ROOT>/.codex-home/` once at boot. Symlink
+    every entry from the user's real ~/.codex/ into it EXCEPT `skills/`.
+    Codex reads auth.json / config.toml / sessions/ etc. through the
+    symlinks (login persists, sessions accumulate). It looks for skills
+    inside CODEX_HOME/skills/ — which doesn't exist in our dir — and
+    finds none.
+
+    Re-runs are idempotent: existing symlinks are validated; if the user
+    added new top-level entries to ~/.codex/ since boot they're picked
+    up the next time this is called. If the user has no ~/.codex/ yet
+    (codex never run), we return None and the caller falls back to the
+    default CODEX_HOME (which also has no skills, so harmless).
+
+    Returns the absolute path to the sanitised home, or None on failure.
+    """
+    real_home = os.path.expanduser("~/.codex")
+    if not os.path.isdir(real_home):
+        # User hasn't run codex yet; nothing to gate. Codex will pick its
+        # own default ($HOME/.codex), which won't have skills either.
+        return None
+    sanitised = os.path.join(INSTALL_ROOT, ".codex-home")
+    try:
+        os.makedirs(sanitised, exist_ok=True)
+    except Exception:
+        return None
+    # Re-link any entries that have appeared in the user's real ~/.codex/
+    # since last run, and replace any broken/stale links.
+    try:
+        for name in os.listdir(real_home):
+            if name == "skills":
+                # The whole point — never link skills/.
+                continue
+            src = os.path.join(real_home, name)
+            dst = os.path.join(sanitised, name)
+            # If dst exists and is a symlink, validate it points to src.
+            if os.path.islink(dst):
+                try:
+                    if os.readlink(dst) == src:
+                        continue
+                except OSError:
+                    pass
+                try: os.unlink(dst)
+                except OSError: pass
+            elif os.path.exists(dst):
+                # Non-symlink (file or dir) already there — leave it
+                # untouched; the user may have customised this slot.
+                continue
+            try:
+                os.symlink(src, dst)
+            except OSError:
+                # Cross-filesystem or permission issue; skip this entry.
+                continue
+    except Exception:
+        # If we can't introspect ~/.codex/, fall back to leaving
+        # CODEX_HOME unset; codex will use its default and we accept the
+        # user-skill leak rather than crashing the spawn.
+        return None
+    return sanitised
+
+
 def _build_child_env(agent_id: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
     env = dict(os.environ)
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
@@ -4663,6 +4734,18 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # That flag hides the user's ~/.claude/commands/ slash commands
     # WITHOUT touching CLAUDE_CONFIG_DIR, so Keychain auth keeps working.
     # No env override needed here.
+    # v3.5 — Codex equivalent. Codex CLI has no `--disable-skills` flag,
+    # so we sanitise CODEX_HOME instead: point it at a Woven-managed dir
+    # that symlinks everything from the user's real ~/.codex/ EXCEPT the
+    # `skills/` subtree. Codex still finds its auth, config, and sessions
+    # via the symlinks (login persists), but its skill matcher finds no
+    # user-level skills like prototype-drawing / grill-me / emil-design-eng.
+    # Only the harness preamble (TH_PROTOCOL_ROOT + the prompt we ship)
+    # drives the agent.
+    if agent_id == "codex":
+        sanitised = _ensure_sanitised_codex_home()
+        if sanitised:
+            env["CODEX_HOME"] = sanitised
     if project_id:
         env["TH_PROJECT_ID"] = project_id
     # If the user configured an Anthropic API key in the editor's Settings

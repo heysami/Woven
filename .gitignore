@@ -11,3 +11,7 @@ __pycache__/
 
 # Local machine-specific Claude settings
 .claude/settings.local.json
+
+# Daemon-managed sanitised CODEX_HOME — built on first codex spawn from
+# the user's ~/.codex/ minus skills/. Contents are symlinks; never commit.
+.codex-home/
