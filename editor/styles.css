@@ -13580,6 +13580,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid transparent;
 }
 .chip-done       { background: var(--success-soft); color: var(--success); border-color: color-mix(in oklch, var(--success) 30%, transparent); }
+.chip-fail       { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklch, var(--danger)  30%, transparent); }
 .chip-error      { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklch, var(--danger)  30%, transparent); }
 .chip-streaming  { background: var(--accent-soft);  color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
 .chip-connecting { background: var(--surface-2);    color: var(--text-muted); border-color: var(--border); }
