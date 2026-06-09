@@ -242,7 +242,7 @@
     {
       id: "generate-image",
       label: "Generate image",
-      hint: "prompt → image",
+      hint: "prompt → image · playbook: docs/research/imagegen-playbook.md",
       glyph: "◇",
       pathway: "A",
       inputs: ["prompt"],
@@ -251,6 +251,7 @@
       modelsFilter: (m) => m.caps && m.caps.includes("t2i") && m.integrated,
       defaultModel: "gpt-image-2",  // v3.4.7 — gpt-image-1 deprecates Oct 23, 2026
       hasAspect: true,
+      playbookPath: "docs/research/imagegen-playbook.md",
     },
     {
       id: "rembg",
