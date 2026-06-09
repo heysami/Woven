@@ -12770,6 +12770,107 @@ class H(http.server.SimpleHTTPRequestHandler):
     # replaces state.proc in-place so the chat drawer keeps streaming on
     # the same runId — the user perceives one continuous conversation, as
     # they would with any normal chat UI.
+    def _run_resume_codex(self, state, run_id, text):
+        """Fake resume for codex: reconstruct prior conversation as a
+        text transcript, prepend it to the new user message, spawn a
+        fresh `codex exec` with the combined prompt. Same run_id, same
+        event log appended.
+
+        Why fake: codex's exec mode is single-shot per spawn. There's no
+        `codex exec --resume <id>` equivalent. The transcript approach
+        loses things like tool-call provenance from the model's
+        perspective but gives the model enough context to answer follow-
+        up questions like "what happened?" after a crash.
+        """
+        defs = AGENT_DEFS["codex"]
+        bin_path = state.bin_path or detect_agent_bin("codex")
+        if not bin_path:
+            return self._reply(500, {"error": "codex binary not on PATH"})
+        # Reconstruct the conversation. Each event-log entry of type "agent"
+        # carries a normalised event dict; we walk those and rebuild a
+        # transcript that reads naturally.
+        lines = []
+        with state.lock:
+            events = list(state.events)
+        for ev in events:
+            t = ev.get("type")
+            d = ev.get("data") or {}
+            if t == "user_message":
+                u = (d.get("text") or "").strip()
+                if u:
+                    lines.append(f"USER: {u}")
+            elif t == "agent":
+                dt = d.get("type")
+                if dt == "text_delta":
+                    delta = (d.get("delta") or "").rstrip()
+                    if delta:
+                        # Coalesce consecutive deltas into one ASSISTANT block.
+                        if lines and lines[-1].startswith("ASSISTANT: "):
+                            lines[-1] = lines[-1] + "\n" + delta
+                        else:
+                            lines.append(f"ASSISTANT: {delta}")
+                elif dt == "tool_use":
+                    name = d.get("name") or "tool"
+                    inp = d.get("input") or {}
+                    cmd = inp.get("text") or inp.get("command") or json.dumps(inp)
+                    lines.append(f"[TOOL CALL: {name}]\n{cmd}")
+                elif dt == "tool_result":
+                    parts = d.get("content") or []
+                    body_txt = ""
+                    for p in parts:
+                        if isinstance(p, dict) and p.get("type") == "text":
+                            body_txt += (p.get("text") or "")
+                    err = " (error)" if d.get("is_error") else ""
+                    # Truncate large tool results so the prompt doesn't blow up.
+                    if len(body_txt) > 4000:
+                        body_txt = body_txt[:4000] + "\n…(truncated)"
+                    lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
+                # status / thinking_delta / usage — skip; transcript noise.
+        transcript = "\n\n".join(lines).strip()
+        # Compose the resume prompt. Frame it explicitly so codex knows the
+        # prior conversation is context, not instructions to repeat.
+        if transcript:
+            new_prompt = (
+                "You are continuing a previous conversation. Below is the "
+                "transcript so far; the previous agent process exited before "
+                "the user could reply, so resume from where it left off.\n\n"
+                "===== PRIOR CONVERSATION =====\n"
+                f"{transcript}\n"
+                "===== END PRIOR CONVERSATION =====\n\n"
+                f"USER (new message): {text}"
+            )
+        else:
+            new_prompt = text
+        # Spawn fresh codex with the combined prompt.
+        spawn_args = list(defs["args"]) + [new_prompt]
+        env = _build_child_env(state.agent_id, run_id,
+                               project_root=state.project_root, project_id=state.project_id)
+        try:
+            proc = subprocess.Popen(
+                [bin_path, *spawn_args],
+                cwd=state.project_root,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                bufsize=1,
+            )
+        except Exception as e:
+            return self._reply(500, {"error": f"codex resume spawn failed: {type(e).__name__}: {e}"})
+        # Reset run lifecycle for the new process.
+        state.proc = proc
+        state.done = False
+        state.exit_code = None
+        state.turn_done = False
+        state.append("status", {"label": "resumed", "agentId": "codex"})
+        state.append("user_message", {"text": text})
+        threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
+                         name=f"run-{run_id}-stdout-resumed").start()
+        threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
+                         name=f"run-{run_id}-stderr-resumed").start()
+        return self._reply(200, {"ok": True, "agentId": "codex"})
+
+
     def _run_resume(self, run_id):
         body = self._read_json_body(max_bytes=4 * 1024 * 1024)
         text = (body.get("text") or "").strip()
@@ -12795,8 +12896,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(409, {
                 "error": "run is still active; use /user-message instead",
             })
+        # v3.5 — Codex resume. Codex doesn't have Claude's stream-json
+        # --resume <session-id> protocol; each `codex exec` is a fresh
+        # session. We fake resume by reconstructing the prior conversation
+        # as a transcript and prepending it to the new prompt, then spawning
+        # a fresh codex with that combined prompt. Same run_id, same event
+        # log — new process underneath.
+        if state.agent_id == "codex":
+            return self._run_resume_codex(state, run_id, text)
         if state.agent_id != "claude":
-            return self._reply(400, {"error": "resume only supported for claude agent"})
+            return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})
         if not state.session_id:
             return self._reply(409, {
                 "error": "no session id captured for this run; cannot resume",
