@@ -184,10 +184,21 @@
   // Sonnet 4.5 + Haiku 4.5 (2025-09 / 2025-10 dated) still respond via the
   // dated alias but show up as legacy.
   const TEXT_MODELS = [
-    { id: "gpt-4o-mini",     provider: "openai",    label: "gpt-4o-mini",       hint: "OpenAI · fast + cheap",       caps: ["text", "vision"], integrated: true, default: true },
+    // v3.5 — CLI default sentinels. When picked, the daemon doesn't pass
+    // --model and the CLI uses whatever it's configured for (matches the
+    // user's `codex login` / `claude login` settings). Both rows show up
+    // at the top of their provider's filter so they're easy to find.
+    { id: "codex-default",   provider: "openai",    label: "Codex CLI default", hint: "OpenAI · uses Codex CLI's own default model", caps: ["text"],           integrated: true, cliOnly: true },
+    { id: "gpt-5",           provider: "openai",    label: "gpt-5",             hint: "OpenAI · current flagship",   caps: ["text", "vision"], integrated: true, default: true },
+    { id: "gpt-5-mini",      provider: "openai",    label: "gpt-5-mini",        hint: "OpenAI · fast + cheap",       caps: ["text", "vision"], integrated: true },
+    { id: "gpt-5-nano",      provider: "openai",    label: "gpt-5-nano",        hint: "OpenAI · ultra-light",        caps: ["text"],           integrated: true },
+    { id: "o3",              provider: "openai",    label: "o3",                hint: "OpenAI · reasoning flagship", caps: ["text"],           integrated: true },
+    { id: "o4-mini",         provider: "openai",    label: "o4-mini",           hint: "OpenAI · reasoning · fast",   caps: ["text"],           integrated: true },
+    { id: "gpt-4.1",         provider: "openai",    label: "gpt-4.1",           hint: "OpenAI · prior flagship",     caps: ["text"],           integrated: true },
+    { id: "gpt-4.1-mini",    provider: "openai",    label: "gpt-4.1-mini",      hint: "OpenAI · prior generation",   caps: ["text"],           integrated: true },
     { id: "gpt-4o",          provider: "openai",    label: "gpt-4o",            hint: "OpenAI · vision-capable",     caps: ["text", "vision"], integrated: true },
-    { id: "gpt-4.1-mini",    provider: "openai",    label: "gpt-4.1-mini",      hint: "OpenAI · current generation", caps: ["text"],           integrated: true },
-    { id: "gpt-4.1",         provider: "openai",    label: "gpt-4.1",           hint: "OpenAI · flagship text",      caps: ["text"],           integrated: true },
+    { id: "gpt-4o-mini",     provider: "openai",    label: "gpt-4o-mini",       hint: "OpenAI · legacy fast + cheap",caps: ["text", "vision"], integrated: true },
+    { id: "claude-default",        provider: "anthropic", label: "Claude CLI default", hint: "Anthropic · uses Claude CLI's own default model", caps: ["text"], integrated: true, cliOnly: true },
     { id: "claude-opus-4-8",       provider: "anthropic", label: "claude-opus-4.8",    hint: "Anthropic · top reasoning",   caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-7",       provider: "anthropic", label: "claude-opus-4.7",    hint: "Anthropic · prior opus",      caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-6",       provider: "anthropic", label: "claude-opus-4.6",    hint: "Anthropic · 1M context",      caps: ["text", "vision"], integrated: true },

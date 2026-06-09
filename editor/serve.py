@@ -953,6 +953,56 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
+def _codex_cli_complete(messages, model=None, timeout=600):
+    """One-shot completion via the Codex CLI's `exec` subcommand. Mirror of
+    _claude_cli_complete for users who installed Codex (OpenAI's CLI) and
+    signed in via `codex login` — no OPENAI_API_KEY needed.
+
+    Codex's non-interactive surface is `codex exec [--model <m>] "<prompt>"`,
+    which prints the assistant text to stdout. Older versions of codex accept
+    the prompt on stdin as well; we use the positional argv form for
+    compatibility.
+
+    Returns the assistant's text (rstrip newlines)."""
+    bin_path = detect_agent_bin("codex")
+    if not bin_path:
+        raise FileNotFoundError("codex")
+    system_parts = []
+    convo_parts = []
+    for m in (messages or []):
+        role = m.get("role")
+        content = (m.get("content") or "").strip()
+        if not content: continue
+        if role == "system":
+            system_parts.append(content)
+        elif role in ("user", "assistant"):
+            tag = "USER" if role == "user" else "ASSISTANT"
+            convo_parts.append(f"[{tag}]\n{content}")
+    # Codex exec doesn't expose an explicit --append-system-prompt flag the
+    # way Claude does, so fold system text into the prompt prefix.
+    prompt_parts = []
+    if system_parts:
+        prompt_parts.append("[SYSTEM]\n" + "\n\n".join(system_parts))
+    if convo_parts:
+        prompt_parts.append("\n\n".join(convo_parts))
+    flat = "\n\n".join(prompt_parts).strip() or "Hello"
+    args = [bin_path, "exec"]
+    if model:
+        args.extend(["--model", model])
+    args.append(flat)
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        stdin=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        msg = (result.stderr or f"exit {result.returncode}").strip()[:600]
+        raise RuntimeError(msg)
+    return (result.stdout or "").rstrip("\n")
+
+
 def _anthropic_chat(api_key, messages, model="claude-sonnet-4-6", options=None, vision=False):
     """Anthropic Messages API. Accepts the same OpenAI-style `messages` array
     we use everywhere — system messages are folded into a top-level `system`
@@ -7902,10 +7952,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         # v3.4.7 — Surface CLI availability so the editor's "Auto" resolver
         # can decide between API and CLI fallback without making the user
         # guess. detect_agent_bin returns None when not on PATH.
-        cli_available = detect_agent_bin("claude") is not None
+        # v3.5 — Codex CLI is the OpenAI counterpart: when present, openai
+        # provider falls back to Codex (not Claude) so the picked provider
+        # actually answers.
+        claude_avail = detect_agent_bin("claude") is not None
+        codex_avail  = detect_agent_bin("codex")  is not None
         return self._reply(200, {
             "providers": masked,
-            "claude_cli_available": cli_available,
+            "claude_cli_available": claude_avail,
+            "codex_cli_available":  codex_avail,
         })
 
     def _media_config_set(self):
@@ -8335,23 +8390,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         #     provider the user picked. The user's mental model is "I have
         #     Claude Code installed; it should just work" — making them
         #     paste an API key for a model they're not even using is
-        #     friction. The CLI uses their existing Claude subscription
-        #     (no per-token cost), so it's also the cheaper default.
-        #   • For provider=anthropic: trivial — the CLI IS the anthropic
+        #     friction. The CLI uses their existing subscription (no per-
+        #     token cost), so it's also the cheaper default.
+        #   • For provider=anthropic: trivial — Claude CLI IS the anthropic
         #     model, just routed through Claude Code's auth instead of the
         #     API directly.
-        #   • For provider=openai (or any other text provider with no key
-        #     configured): substitute Claude via the CLI. The user gets a
-        #     working response instead of an error; we annotate the
-        #     response with provider="claude-cli" so the UI can surface
-        #     "answered by Claude CLI instead of the picked model" if it
-        #     wants to.
-        # This block also covers skill="describe" for anthropic providers
-        # since the CLI's vision support handles images via @file paths.
-        # Restrict to skill="llm" for now — "describe" always carries an
-        # image payload that the one-shot CLI helper doesn't accept yet.
-        # Image fallback can come later via the CLI's `@path` syntax.
-        cli_available = detect_agent_bin("claude") is not None
+        # v3.5 — For provider=openai with no API key:
+        #   • Prefer Codex (OpenAI's CLI) when installed — same provider,
+        #     just routed through `codex login`. The picked model passes
+        #     through to `codex exec --model`.
+        #   • Fall through to Claude CLI as a last-resort substitute when
+        #     Codex is not on PATH. The response annotates provider=
+        #     "claude-cli" so the UI can surface the substitution.
+        # This block restricts to skill="llm" — "describe" always carries
+        # an image payload that the one-shot CLI helpers don't accept yet.
+        claude_avail = detect_agent_bin("claude") is not None
+        codex_avail  = detect_agent_bin("codex")  is not None
+        cli_available = claude_avail or codex_avail
         if cli_available and not api_key and provider in ("anthropic", "openai") and skill == "llm":
             try:
                 msgs_in = body.get("messages")
@@ -8371,26 +8426,48 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if not p:
                         return self._reply(400, {"error": "prompt or messages required for llm skill"})
                     cli_msgs = [{"role": "user", "content": p}]
-                # When the user picked OpenAI but we're falling back to the
-                # Claude CLI, the actual model is whatever Claude resolves
-                # (likely sonnet) — pass the picked model through to the
-                # CLI's `--model` flag which is forgiving about aliases but
-                # ignores non-claude IDs. The response reports the
-                # substitution honestly via provider="claude-cli" so the
-                # UI can surface it if it wants.
-                effective_model = model if "claude" in (model or "").lower() else "sonnet"
-                text = _claude_cli_complete(cli_msgs, model=effective_model, timeout=600)
-                response_provider = "claude-cli" if provider == "openai" else "anthropic-cli"
+                # Pick which CLI runs the call:
+                #   • openai → codex CLI when present, else claude as substitute
+                #   • anthropic → claude CLI when present, else codex as substitute
+                use_codex = (
+                    (provider == "openai" and codex_avail)
+                    or (provider == "anthropic" and not claude_avail and codex_avail)
+                )
+                if use_codex:
+                    # Sentinel "" / "cli-default" / "codex-default" → let codex
+                    # use its built-in default model (don't pass --model).
+                    m_lower = (model or "").lower().strip()
+                    cli_default_sentinels = ("", "cli-default", "codex-default", "default")
+                    effective_model = None if m_lower in cli_default_sentinels else model
+                    text = _codex_cli_complete(cli_msgs, model=effective_model, timeout=600)
+                    response_provider = "codex-cli"
+                    fallback_reason = (
+                        None if provider == "openai" else
+                        "anthropic CLI not installed — answered by Codex CLI as fallback"
+                    )
+                else:
+                    m_lower = (model or "").lower().strip()
+                    cli_default_sentinels = ("", "cli-default", "claude-default", "default")
+                    if m_lower in cli_default_sentinels:
+                        effective_model = None    # let Claude CLI pick its default
+                    elif "claude" in m_lower:
+                        effective_model = model
+                    else:
+                        effective_model = "sonnet"
+                    text = _claude_cli_complete(cli_msgs, model=effective_model, timeout=600)
+                    response_provider = "claude-cli" if provider == "openai" else "anthropic-cli"
+                    fallback_reason = (
+                        "openai API key not configured AND codex CLI not installed — answered by Claude CLI as fallback"
+                        if provider == "openai" else None
+                    )
                 return self._reply(200, {
                     "ok": True, "text": text, "skill": skill,
-                    "provider": response_provider, "model": effective_model,
-                    "fallback_reason": (
-                        "openai API key not configured — answered by Claude CLI as fallback"
-                        if provider == "openai" else None
-                    ),
+                    "provider": response_provider, "model": effective_model or "default",
+                    "fallback_reason": fallback_reason,
                 })
             except FileNotFoundError as e:
-                return self._reply(502, {"error": f"no {provider} API key AND claude CLI not on PATH ({e}). Open Settings (⚙ in the workflow toolbar) to paste an API key, or install the Claude CLI."})
+                want_cli = "codex" if provider == "openai" else "claude"
+                return self._reply(502, {"error": f"no {provider} API key AND {want_cli} CLI not on PATH ({e}). Open Settings (⚙ in the workflow toolbar) to paste an API key, or install the {want_cli} CLI."})
             except subprocess.TimeoutExpired:
                 return self._reply(504, {
                     "error":
@@ -8407,6 +8484,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(502, {
                 "error": f"no {provider} API key configured — open Settings (⚙ in the workflow toolbar) and paste your key",
             })
+
+        # v3.5 — Sentinel models pick the provider's API default when there's
+        # an API key. Without this, picking "Codex CLI default" + having an
+        # OpenAI key would forward "codex-default" to the API and fail.
+        _CLI_DEFAULT_MODELS = {
+            ("openai", "codex-default"):  "gpt-5",
+            ("openai", "cli-default"):    "gpt-5",
+            ("openai", "default"):        "gpt-5",
+            ("anthropic", "claude-default"): "claude-opus-4-8",
+            ("anthropic", "cli-default"):    "claude-opus-4-8",
+            ("anthropic", "default"):        "claude-opus-4-8",
+        }
+        _remap = _CLI_DEFAULT_MODELS.get((provider, (model or "").lower().strip()))
+        if _remap:
+            model = _remap
 
         # Phase 4d — agent mode is enabled when any of these are set. When on,
         # the LLM gets tool-use access to read_root and writes are applied.
