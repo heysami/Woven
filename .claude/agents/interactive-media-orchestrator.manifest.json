@@ -2,11 +2,11 @@
   "id": "interactive-media-orchestrator",
   "label": "Interactive media",
   "tagline": "TouchDesigner-flavoured pieces the user drives with body or device",
-  "version": "v3.3",
+  "version": "v3.4",
   "defaultEnabled": true,
   "subagentName": "interactive-media-orchestrator",
   "playbookPath": ".claude/agents/interactive-media-orchestrator.md",
-  "description": "Orchestrates a generative interactive piece where the user's body/device (mic, camera, mouse, gyro, MIDI, gamepad) becomes a creative material and the output is real-time generative response (shader, particles, 3D, audio). Runs 5-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar; multi-draft at mapping + runtime + output cruxes; \u00a78.5 cross-drawer coherence review before final commit. Permission UX gates camera/mic via two-gate pattern (canvas-side + iframe-side Start).",
+  "description": "Orchestrates a generative interactive piece where the user's body/device (mic, camera, mouse, gyro, MIDI, gamepad) becomes a creative material and the output is real-time generative response (shader, particles, 3D, audio). Runs 5-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar; multi-draft at mapping + runtime + output cruxes; \u00a78.5 cross-drawer coherence review before final commit. Permission UX gates camera/mic via two-gate pattern (canvas-side + iframe-side Start). Two cross-boundary contracts the orchestrator enforces beyond the per-drawer lens trios: §1.2 iframe ↔ host pointer + scroll contract (touch-action policy honest about declared inputs, Start-gate release after gating, allow= attribute coverage, scroll-past affordance for hero-slot pointer-input pieces) and §5.6 Phase F layered-interaction QA + fix pass the chat caller runs after Step-8 QA — catches Start-gate splash forgetting to release pointer-events, getUserMedia double-prompts, allow= attribute mismatches.",
   "triggers": [
     {
       "mode": "chat",

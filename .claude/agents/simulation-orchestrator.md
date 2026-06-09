@@ -92,6 +92,33 @@ If `successFeel` is empty / generic ("user enjoys it") → emit `<decision-reque
 
 If `paradigmHint` is `any` (PRD left it open), the research fleet decides. If it's a specific value, the fleet validates the hint and may push back if research finds a better fit; user can override via the §3 steerage interrupt.
 
+## 1.2 Iframe ↔ host pointer + scroll contract (load-bearing)
+
+The sim iframe usually carries a pannable / zoomable / clickable canvas — a top-down spatial map, an isometric warehouse floor, an iconographic queue. The runtime inside the iframe typically sets `touch-action: none; overscroll-behavior: none` on the canvas so pan-drag + pinch-zoom own the gesture. **This creates a recurring conflict** with the host page when the sim sits in a dashboard / hero / inline editorial slot:
+
+1. **Scroll-past is dead.** The sim is the first 100vh of a dashboard; `touch-action: none` swallows vertical drag; the user on mobile can't reach the next panel.
+2. **Overlay legend eats pan-drag.** An absolutely-positioned legend / status-label / mini-map container has `pointer-events: auto`, blocking pan-drag wherever the legend covers.
+3. **Hover-card affordances go dead.** The legend's pointer-events policy is fixed `none`, the tooltip pin can't be clicked.
+
+The runtime drawer's text envelope (which you scaffold in §4) MUST instruct the runtime composer to honour all six rules below. The orchestrator's hand-off envelope (§5.2) ALSO surfaces the host-page guidance the chat caller is expected to apply. Step-8 QA (§5.5) verifies each.
+
+**Rule A — bound the iframe's vertical extent.** The iframe is `height: 100vh` (hero) or a fixed dashboard-cell height (e.g. `540px`) — never `height: 100%` of an unbounded parent. The user scrolls past or out of the cell normally.
+
+**Rule B — host-level guaranteed scroll-past affordance** (hero-slot pieces only; inline dashboard cells are bounded so the user always has document scroll around them). The hand-off envelope tells the chat caller to ensure the host HTML around a hero-slot sim includes a visible scroll-down anchor (`<a href="#next">`) with `pointer-events: auto` and `z-index` above the iframe. Without it, `touch-action: none` traps the user on mobile.
+
+**Rule C — overlay pointer-events budget (legend text passes through, real controls restore).** Every absolute-positioned legend / status / mini-map container over the iframe defaults to `pointer-events: none`, with `pointer-events: auto` restored only on real interactive children (filter chips, time-scrub slider, tooltip pin). Lens-gating relies on this: craft-lens rejects an overlay container with blanket `pointer-events: auto` over the iframe.
+
+**Rule D — touch-action policy honest about what the iframe owns.**
+- **Owns pan-drag only** (top-down map you can drag horizontally + vertically) → if the sim's own pan IS the vertical-axis behaviour, use `touch-action: none` AND surface Rule B's scroll-past affordance. If the sim only pans horizontally (a time strip), use `touch-action: pan-y` so vertical scroll passes through. **Default for hero-slot sims:** `pan-y`. **Default for inline dashboard cells:** `none` (the cell is bounded so document-scroll happens around it, not through it).
+- **Owns all gestures** (pinch-zoom + pan + click-to-select) → `touch-action: none`; Rule B's scroll-past affordance is mandatory in hero slots.
+- **Owns no gestures** (ambient sim, just reads hover) → no `touch-action` override.
+
+**Rule E — wheel-event policy mirrors touch-action.** A sim that calls `preventDefault()` on wheel to drive its own zoom blocks host scroll-past via wheel. If wheel is owned, Rule B's affordance must be prominent.
+
+**Rule F — pointer-capture release on every gesture terminator.** Release pointer-capture on `pointerup` / `pointercancel` / `pointerleave`. A held capture survives aborted gestures and kills subsequent legend clicks + iframe interaction + next-section scrolling.
+
+The runtime drawer's scaffolded `text` field (set in §4) MUST include these six rules verbatim. The hand-off envelope (§5.2) includes a `hostPageGuidance` block the chat caller applies to the host HTML.
+
 ## 2. Phase A — Research (ONE researcher: tech stack)
 
 The research pass is **a single dispatch**. There is no fleet, no synthesiser. The tech-stack researcher (`sim-research-technique`) picks the paradigm + render strategy + tick rate + interaction primitive in one pass and writes `research.md` directly. Earlier versions ran 4 cold-isolated angle researchers (precedent, technique, mental-model, constraint) + a synthesiser; the user cut all of that down to "just the tech stack" because the other angles were essay-shaped padding that didn't change the pick.
@@ -371,7 +398,15 @@ Return as your final text:
     "multiDraftCruxes":  [/* see §5.3 — empty by default, opt-in only */]
   },
   "researchPath": "source/{branch}/simulations/{simId}/research.md",
-  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, and commits scaffold.containerNode when every lens-gated drawer's lensVerdict == pass."
+  "hostPageGuidance": {                                  // chat caller applies these to the host HTML around the iframe (§1.2)
+    "iframeHeight": "100vh OR fixed dashboard-cell pixel height — never height:100% of an unbounded parent",
+    "scrollPastAffordance": "for hero-slot sims, a host-level <a href='#next-section'> or button with pointer-events:auto + z-index above the iframe — the guaranteed scroll-down escape on touch devices when iframe owns gestures (inline dashboard cells are bounded so this is skipped)",
+    "overlayPointerEventsBudget": "container pointer-events:none on legend/status/mini-map wrappers; restore pointer-events:auto only on real interactive children (filter chips, tooltip pins)",
+    "touchActionOnIframe": "pan-y for hero slots by default; 'none' for inline dashboard cells (bounded) or hero slots that own pan+pinch (with scroll-past affordance mandatory)",
+    "exampleHTML": "<section class='sim-cell'><iframe class='sim-mount' data-sim='<simId>'></iframe><div class='sim-host-overlay'><div class='legend'>Legend ...</div><button class='sim-cta'>Reset</button></div></section>",
+    "exampleCSS": ".sim-cell{position:relative;height:540px;overflow:hidden}.sim-cell>iframe{width:100%;height:100%;border:0;display:block}.sim-host-overlay{position:absolute;inset:0;pointer-events:none;z-index:2}.sim-host-overlay>.sim-cta{pointer-events:auto}"
+  },
+  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, APPLIES hostPageGuidance to the host HTML around the iframe (Rule B's scroll-past affordance is the most-skipped step for hero-slot sims), commits scaffold.containerNode when every lens-gated drawer's lensVerdict == pass, AND THEN runs the §5.6 Phase F layered-interaction QA + fix pass (mandatory for hero-slot sims; waivable for inline dashboard cells). Phase F is what catches the cross-boundary failures no drawer subagent owns — pointer-events:none on tappable cues, blanket overlay pointer-events:auto, smooth-scroll smearing wheel-forwarded scrolls."
 }
 ```
 
@@ -388,17 +423,102 @@ For each enumerated slot:
 3. **Screenshot the host page.** `preview_screenshot`. Inspect: is the sim visually present in its slot? Is the slot the right size? Does the surrounding chrome cover or crop it?
 4. **Check the iframe's console.** `preview_console_logs` with `level: 'error'`. Any uncaught exceptions = the sim is broken. Note the error text.
 5. **Check the iframe's network.** `preview_network` for 404s. A missing CDN script or sibling file (entities.js, scene.html) breaks the runtime silently.
-6. **Per-slot QA verdict.** Score each on:
+6. **§1.2 layered-interaction contract — verify all six rules.** Drag inside the iframe to pan (`preview_click` + drag), THEN scroll the host page (`preview_eval('window.scrollTo({top: window.innerHeight + 100})')`); the host must advance past the iframe. Inspect the legend/status overlay's computed `pointer-events` — container should be `none` with explicit `auto` only on real controls. For hero-slot sims, verify a visible scroll-past affordance over the iframe. Verify pointer-capture release on aborted gestures.
+7. **Per-slot QA verdict.** Score each on:
    - **loads** — runtime fetched without 404, parsed without errors. PASS / FAIL.
    - **renders** — canvas / map / DOM is visibly populated, not a blank rectangle. PASS / FAIL.
    - **fits the slot** — the iframe respects the slot's aspect ratio + size; not overflowing chrome, not buried under it. PASS / FAIL / NEEDS_LAYOUT_FIX.
    - **matches the brief** — what the runtime shows reads as the user's intent. PASS / FAIL / SUBJECTIVE.
-7. **Fix where you can.** Two repair levers:
-   - **Edit the agent's HTML** for layout-only fixes (slot too small → bump the iframe height; surrounding chrome covering the sim → add z-index or scrim; iframe missing `allow=` for interactive workloads → add it). Layout-fix only; do NOT rewrite the agent's chrome / nav / copy.
+   - **scroll-past works** — after panning inside the iframe, host scroll still advances past it (hero slots) or the iframe doesn't trap mouse-wheel inside dashboard cells (inline). PASS / FAIL.
+   - **overlay budget honest** — legend/status text passes through; only real controls capture. PASS / FAIL.
+8. **Fix where you can.** Two repair levers:
+   - **Edit the agent's HTML** for layout-only fixes (slot too small → bump the iframe height; surrounding chrome covering the sim → add z-index or scrim; iframe missing `allow=` for interactive workloads → add it; missing §1.2 scroll-past affordance → add the `<a href="#next-section">` with pointer-events:auto). Layout-fix only; do NOT rewrite the agent's chrome / nav / copy.
    - **Re-dispatch a drawer** when the issue is the runtime's content (sim is blank because scene drawer broke; loop ticks too slow because tickHz wrong). PATCH the drawer's `text` field with the failure quote + `priorVerdicts: [{lens: 'qa-step-8', verdict: 'fail', reason: '<quote>'}]`, then POST `/run` again.
-8. **Write the QA log.** Append to `workflow/simulation-plan.json` under a `qa: { checked: [{slot, verdict, fixes, blockers}], blocked: [], ranAt: '<iso>' }` block. The chat caller will read this; if `qa.blocked[]` is non-empty, they relay it to the user.
+9. **Write the QA log.** Append to `workflow/simulation-plan.json` under a `qa: { checked: [{slot, verdict, fixes, blockers}], blocked: [], ranAt: '<iso>' }` block. The chat caller will read this; if `qa.blocked[]` is non-empty, they relay it to the user.
 
 **This step is NOT optional.** Without it the lens trio's per-component score is the only signal — and three drawers individually passing aesthetic-lens can still combine into a broken iframe in the host page (timing-of-loads, slot-size mismatches, cross-origin gotchas). Step-8 QA is where assembled-in-context quality gets verified.
+
+## 5.6 Phase F — Layered-interaction QA + FIX pass (chat caller, NOT a subagent)
+
+**After Step-8 QA passes, the chat caller runs one more focused pass on the iframe ↔ host pointer/scroll contract committed in §1.2.** This is **not a subagent dispatch** — drawer subagents own their per-iframe runtime files but none owns the HOST page where the sim slot lives. Contract violations live at that boundary and slip through every per-component lens. Only the chat caller can edit the host files. **This phase is the fix-loop, not just a verdict pass.**
+
+Canonical worked failure case: the museuuum project's "glitchy at entrance and i cant scroll" thread (a narrative-experience case — read `narrative-experience-orchestrator.md §5.6` for the full taxonomy). The pattern transfers to sim cleanly: hero-slot pannable maps + isometric warehouse floors + iconographic strips all share the same iframe ↔ host boundary; only the gesture vocabulary changes. **Do not treat the museum thread as the only thing that can go wrong** — the taxonomy below is the root-cause map, not a symptom catalogue.
+
+### 5.6.0 Why models fail this (root traps to read against your build)
+
+1. **Drawer-scope blindness.** The controls drawer says "pan-drag needs `touch-action: none` on the canvas — done." The overlay drawer says "legend needs `pointer-events: auto` — done." Both pass per-component lens. Composed in a dashboard cell + scrolling page, the iframe traps mouse-wheel and the legend covers the canvas. Nobody dispatched owns the cross-boundary contract.
+2. **`touch-action: none` as a safe default.** Wrong for hero-slot sims where the user must scroll past; right for dashboard cells where document-scroll happens around the cell. Default for hero-slot sims is `touch-action: pan-y`.
+3. **Inline-style overrides the CSS.** `el.style.touchAction = 'none'` in the controls JS beats `touch-action: pan-y` in styles.css. Audit live computed style.
+4. **Decorative cues styled like CTAs but `pointer-events: none`.** A "next panel ↓" hint that looks tappable but isn't. Convert to `<a href="#anchor">` with `pointer-events: auto`.
+5. **Blanket overlay `pointer-events: auto`.** Wrapping legend + status + mini-map in one `pointer-events: auto` container kills pan-drag everywhere they overlap.
+6. **Smooth-scroll smears wheel-forwarded scrolls** ("scrolls very very very very little distance" — verbatim museum quote). Use `behavior: 'instant'`.
+7. **Pointer-capture leaks past gesture end.** Missing `pointercancel` / `pointerleave` cleanup. Buttons stop working after an aborted gesture.
+8. **Z-index inversion against host chrome.** Fixed dashboard nav `z-index: 50` covers iframe-region tooltip pins `z-index: 3`.
+9. **Wheel-event handling asymmetric to touch-action.** Fix mobile, forget desktop — or vice versa.
+
+### 5.6.1 The seven failure modes (sim-tuned)
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | Mobile: can't scroll past hero-slot sim; iframe traps swipe | `touch-action: none` on canvas swallows vertical | `touch-action: pan-y` in CSS AND any inline `el.style.touchAction`. Dashboard cells (bounded height) may keep `none` since document-scroll happens around them. |
+| 2 | "Next panel" cue visible but unclickable | Decorative cue with `pointer-events: none` | Convert to `<a href="#anchor">` with `pointer-events: auto` + z-index above iframe. |
+| 3 | "Pan-drag dies where the legend covers" | Overlay container with blanket `pointer-events: auto` | Container `pointer-events: none`; restore on real children only (filter chips, tooltip pins, time-scrub slider). |
+| 4 | Tooltip pins in corners unclickable | Host fixed nav z-index above iframe overlay | Audit `position: fixed` chrome; raise iframe-region controls or move chrome out of the corner. |
+| 5 | Desktop: wheel inside iframe does nothing | Wheel trapped; no postMessage forwarding | Inside iframe runtime: `postMessage({type:'sim-wheel', dy:e.deltaY}, '*')` on unconsumed wheels. In host: `addEventListener('message', e => { if (e.data?.type === 'sim-wheel') window.scrollBy({top: e.data.dy, behavior: 'instant'}); })`. |
+| 6 | "Tries to scroll but scrolls very very very very little distance" | `window.scrollBy(0, dy)` uses smooth-scroll default | `window.scrollBy({top: dy, behavior: 'instant'})`. |
+| 7 | After pan, legend buttons stop responding | Pointer-capture leak | Release on `pointercancel` / `pointerleave`: clear `dragging`, `activePointer`, `releasePointerCapture`. |
+
+### 5.6.2 The QA + fix recipe (chat caller runs against the host page)
+
+```bash
+HOST=$(grep -lE 'data-sim="<simId>"' source/<branch>/*.html source/<branch>/**/*.html | head -1)
+preview_start url:"<HOST>?project=<projectId>"
+sleep 4
+preview_screenshot path:"_qa/F0-sim-baseline.png"
+```
+
+```javascript
+// preview_eval — audit the contract live
+const iframe = document.querySelector('iframe.sim-mount');
+const inner  = iframe.contentDocument;
+const canvas = inner?.querySelector('canvas, .sim-canvas');
+const audit = {
+  canvasTouchAction:        canvas && getComputedStyle(canvas).touchAction,
+  canvasInlineTouchAction:  canvas && canvas.style.touchAction,
+  scrollPastExit:           (() => {
+    const el = document.querySelector('.sim-host-exit, a[href^="#"]:has(.chev), [data-sim-exit]');
+    return el ? { present: true, pointerEvents: getComputedStyle(el).pointerEvents, href: el.getAttribute('href') } : { present: false };
+  })(),
+  overlayContainer:         (() => {
+    const el = document.querySelector('.sim-host-overlay, .legend-overlay, #overlay-host');
+    return el ? { present: true, pointerEvents: getComputedStyle(el).pointerEvents } : { present: false };
+  })(),
+  fixedHostChrome:          Array.from(document.querySelectorAll('*'))
+                              .filter(e => getComputedStyle(e).position === 'fixed')
+                              .map(e => ({ sel: e.className || e.id, z: getComputedStyle(e).zIndex })),
+};
+console.log(JSON.stringify(audit, null, 2));
+
+window.scrollTo(0,0);
+const startY = window.scrollY;
+window.scrollBy({top: window.innerHeight + 200, behavior: 'instant'});
+console.log('scrollDelta:', window.scrollY - startY);  // > 100 expected
+```
+
+### 5.6.3 Fix levers (chat caller has all four; drawer subagents only the first)
+
+1. Edit the per-iframe runtime files (`source/<branch>/simulations/<simId>/{runtime.html,scene.html,controls.js,overlay.js}`) — fix `touch-action` in code, fix pointer-capture cleanup, add wheel-postMessage forwarding inside iframe.
+2. Edit the host page's HTML (`source/<branch>/<page>.html`) — convert decorative cue to real `<a>`, fix overlay structure, fix z-index, install wheel-receive listener.
+3. Edit the host page's CSS (`source/<branch>/styles.css`) — fix `pointer-events` budget, fix `z-index`, override `scroll-behavior: smooth` to `auto` if rapid wheel-forwarding is in play.
+4. Re-dispatch the runtime drawer only as a last resort.
+
+### 5.6.4 The fix log
+
+Append to `workflow/simulation-plan.json` under `qaPhaseF: { ranAt, checked: [{simId, hostPage, symptoms, rootCausesFound: [#numbers], fixesApplied: [{lever, file, diffSummary}], remaining }] }`. Hard cap: 3 fix iterations; beyond that, emit `<decision-request>` to the user.
+
+### 5.6.5 Skip rules
+
+Inline dashboard cells (bounded height, document-scroll happens around them) may waive Phase F — record `qaPhaseF: { waived: true, reason: 'inline-dashboard-cell; bounded height; document-scroll around the cell' }`. Hero-slot sims (full-bleed first-viewport iframe) MUST NOT skip Phase F.
 
 ## 6. Failure protocol (your scope only)
 

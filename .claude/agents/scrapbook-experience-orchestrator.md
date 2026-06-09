@@ -16,6 +16,16 @@ You inherit `simulation-orchestrator`'s discipline (research-then-drawers shape,
 
 The signature distinction: when the brief names a **specific image-y aesthetic** — vaporwave, cottagecore, dreamcore, weirdcore, liminalcore, Y2K, internetcore, lo-fi, scrapbook, mixtape-cover, zine, mood-board, Tumblr-grade, Pinterest-grade, polaroid, found-image, cutout, sticker, washi-tape, handwritten, hand-lettered, photographic, gritty, textured, scanned, glittered, grainy, VHS, CRT, scanlines — the aesthetic CANNOT be approximated with CSS alone. It needs lots of generated raster: photography, illustrated subjects with transparency, scanned textures, hand-drawn elements, handcrafted (raster) typography. This orchestrator is purpose-built to compose all of that into one interactive piece.
 
+### What "raster lives here" looks like — three load-bearing categories every brief commits to
+
+CSS-restrained pieces fail this orchestrator because they reach for *one* of these and never the others. A real scrapbook brief commits to all three by default. The research drawer enforces these minimums (§4.7) — the orchestrator surfaces them in the envelope so the brief is honest about cost up-front.
+
+1. **Still raster plates** (always present — the bulk of the inventory). Hero photo, sticker cutouts, paper-tape attachments, scanned-linen textures, polaroid frames, handlettering pieces. This is what most people picture when they hear "scrapbook." Bulk of the visual-orchestrator dispatches go here.
+2. **At least ONE PNG-sequence "key visual" — the GIF-substitute** (mandatory baseline unless the brief explicitly forbids motion). One element on the page that loops like a transparent animated GIF — built as N still frames stitched into a CSS sprite-sheet or JS frame-swap loop. The hero chrome bust rotating, the glitter divider sparkling left-to-right, the blinking-cursor under the title, the cottagecore lantern flickering, the dreamcore TV-static patch breathing, a "this site is alive" twitch on one corner of the composition. Without this the page reads as a static collage instead of a living scrapbook moment. Research drawer commits the specific sequence intent + frame count + frame rate to `pngSequenceList[]`.
+3. **At least ONE raster UI element with transparent background** (mandatory whenever the piece has any interactive control). Buttons, navigation tabs, hand-drawn arrows, marker-rendered checkboxes, scribbled scroll indicators, sticker-shaped CTAs, washi-tape-anchored toggles. **Why mandatory:** a CSS `<button>` styled with rounded corners and a gradient inside a vaporwave/cottagecore/zine composition reads as broken-genre — the rest of the page is hand-made imagery and one strict-CSS rectangle screams "I gave up here." The button (or nav tab, or input frame, or scroll arrow) lives in `imageInventory[]` with `role: "ui-element"` and `transparency: "rembg"` so it composites onto the textured substrate without a hard rectangle.
+
+If a brief explicitly rejects motion (e.g. "a strictly-still scanned lookbook page") the PNG-sequence minimum drops to 0 — but the research drawer must record the rejection in `research.md` so it's visible to lens scoring. Same with no-interaction briefs and the ui-element minimum.
+
 ## 0. Before doing anything — re-read this file + the registry
 
 ```bash
@@ -84,6 +94,8 @@ coreAesthetic:       "vaporwave" | "internetcore" | "cottagecore" | "dreamcore" 
 density:             "sparse" | "medium" | "dense"
 motion:              "still-with-twitches" | "drifting-ambient" | "aggressive-vaporwave" | "any"
 imageBudget:         "soft cap ~25 raster assets" | unspecified
+minPngSequences:     1   # GIF-substitute key visual baseline (drop to 0 ONLY when the brief explicitly forbids motion)
+minUiRasters:        1   # Raster UI element baseline (drop to 0 ONLY when the piece is non-interactive)
 interactionPrimitive: "scroll-reveal" | "hover-tilt" | "drag-to-rearrange" | "click-to-flip" | "tap-to-reveal" | any
 surface:             "Hero, full-bleed 1280×720"
 successFeel:         "<verbatim — the piece SHOULD make me feel as if I've found someone's secret Tumblr blog from 2008 and want to scroll forever>"

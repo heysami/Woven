@@ -2,11 +2,11 @@
   "id": "simulation-orchestrator",
   "label": "Simulation",
   "tagline": "Intuitive visualisation of real-world physical or temporal systems",
-  "version": "v3.3",
+  "version": "v3.4",
   "defaultEnabled": true,
   "subagentName": "simulation-orchestrator",
   "playbookPath": ".claude/agents/simulation-orchestrator.md",
-  "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 3d-environment / iconographic-anim / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix.",
+  "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 3d-environment / iconographic-anim / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix. Two cross-boundary contracts the orchestrator enforces beyond the per-drawer lens trios: §1.2 iframe ↔ host pointer + scroll contract (touch-action policy, overlay pointer-events budget, scroll-past affordance for hero-slot sims, wheel forwarding, pointer-capture cleanup) and §5.6 Phase F layered-interaction QA + fix pass the chat caller runs after Step-8 QA — catches violations no per-component lens can see because they live at the iframe ↔ host boundary no drawer owns.",
   "triggers": [
     {
       "mode": "chat",

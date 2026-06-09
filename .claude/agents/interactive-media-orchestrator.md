@@ -59,6 +59,35 @@ dsRef:             { id, version }
 
 If `successFeel` is vague / generic, emit `<decision-request>` asking for concrete prose. Do NOT proceed.
 
+## 1.2 Iframe ↔ host pointer + scroll contract (load-bearing)
+
+The IM iframe is the most varied — input modalities span voice / camera / mic / gyro / midi / gamepad / mouse / multi-touch, and pointer-velocity-driven shader pieces own ALL pointer events. Inside the iframe the runtime sets `touch-action: none; overscroll-behavior: none; user-select: none` on the canvas when pointer is a declared input. **This creates a recurring conflict** with the host page:
+
+1. **Scroll-past is dead** when pointer is a declared input and the piece is hero-slot.
+2. **Two-gate permission splash eats hero scroll.** The Start-gate fills the iframe — if it has `pointer-events: auto` over the iframe AND the iframe is height-100%-of-host, the user can never scroll past.
+3. **Overlay caption / mood text containers eat pointer-velocity** that the mapping module reads.
+
+The runtime drawer's text envelope (which you scaffold in §4) MUST instruct the runtime composer to honour all six rules below. The orchestrator's hand-off envelope (§5.2) surfaces host-page guidance. Step-8 QA (§5.5) verifies each.
+
+**Rule A — bound the iframe's vertical extent.** The iframe is `height: 100vh` or a fixed pixel height — never `height: 100%` of an unbounded parent.
+
+**Rule B — host-level guaranteed scroll-past affordance** (hero-slot pieces). The hand-off envelope tells the chat caller to ensure the host HTML around the iframe includes a visible scroll-down anchor with `pointer-events: auto` and `z-index` above the iframe.
+
+**Rule C — overlay pointer-events budget.** Every absolute-positioned chrome layer over the iframe defaults to `pointer-events: none`, with `pointer-events: auto` restored only on real interactive children (Start-gate button, permission-request CTA, end-card link). Important: the Start-gate splash itself must transition to `pointer-events: none; opacity: 0` after the user gates so it doesn't keep blocking the iframe.
+
+**Rule D — touch-action policy honest about declared inputs.**
+- **Pointer / mouse-touch is a declared input** (the piece reads pointer-velocity → mapping → shader) → `touch-action: none` is required; Rule B's host-level scroll-past affordance is mandatory in hero slots.
+- **Pointer is NOT a declared input** (mic + camera + audio-out only) → no `touch-action` override needed; the iframe receives no pointer interaction, and natural document scroll works.
+- **Gyro / accelerometer is a declared input** → ensure the host iframe carries `allow="gyroscope; accelerometer"`; orientation events fire independently of pointer.
+
+**Rule E — wheel-event policy mirrors touch-action.** A piece that reads wheel as an input must surface Rule B's affordance.
+
+**Rule F — pointer-capture release on every gesture terminator.** Release pointer-capture on `pointerup` / `pointercancel` / `pointerleave`. A held capture survives aborted strokes and kills subsequent permission CTA clicks + iframe interaction + next-section scrolling.
+
+**IM-specific rule G — permission flow gates BEFORE pointer-action.** The two-gate pattern (`im-runtime-composer.md §3.1`) means the Start-gate splash is the FIRST thing the user sees. The splash MUST: (a) be `pointer-events: auto` (the Start button is real); (b) cover the canvas at z-index above the canvas so the canvas can't accidentally consume the user's first tap; (c) transition to `pointer-events: none; opacity: 0` after the user gates, BEFORE the canvas starts receiving pointer events. Order errors here = ghost-clicks on the canvas right after gating.
+
+The runtime drawer's scaffolded `text` field (set in §4) includes these seven rules verbatim. The hand-off envelope (§5.2) surfaces a `hostPageGuidance` block.
+
 ## 2. Phase A — Research (ONE researcher: tech stack)
 
 The research pass is a single dispatch — `im-research-technique` picks the inputs, outputs, mapping style, permission flow, and glue libraries in one pass and writes `research.md` directly. Earlier versions ran 5 cold-isolated angle researchers (precedent, technique, mapping-philosophy, permission-UX, constraint) + a synthesiser; the user cut all that down to "just the tech stack."
@@ -164,7 +193,16 @@ Return as your final text:
   },
   "researchPath": "source/{branch}/interactives/{imId}/research.md",
   "crossDrawerCoherenceReview": true,                    // signals §8.5 to caller
-  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, runs §8.5 cross-drawer coherence after all per-drawer lens trios pass, and commits scaffold.containerNode when coherence passes + every lens-gated drawer's lensVerdict == pass."
+  "hostPageGuidance": {                                  // chat caller applies these to the host HTML around the iframe (§1.2)
+    "iframeHeight": "100vh OR fixed pixel height — never height:100% of an unbounded parent",
+    "scrollPastAffordance": "for hero-slot pieces with pointer as a declared input, a host-level <a href='#next-section'> or button with pointer-events:auto + z-index above the iframe — mandatory when touch-action:none is set inside the iframe",
+    "overlayPointerEventsBudget": "host-side overlay containers pointer-events:none; restore pointer-events:auto only on real interactive children. Start-gate splash inside the iframe transitions to pointer-events:none + opacity:0 after gating.",
+    "touchActionOnIframe": "none when pointer/mouse-touch is a declared input; unset otherwise",
+    "allowAttribute": "iframe MUST carry allow='microphone; camera; gyroscope; accelerometer; midi; autoplay' covering every declared input modality",
+    "exampleHTML": "<section class='im-hero'><iframe class='im-mount' data-im='<imId>' allow='microphone; camera; gyroscope; accelerometer; midi; autoplay'></iframe><a class='im-host-exit' href='#next-section'>Skip ↓</a></section>",
+    "exampleCSS": ".im-hero{position:relative;height:100vh;overflow:hidden}.im-hero>iframe{width:100%;height:100%;border:0;display:block}.im-host-exit{position:absolute;right:1.5rem;top:1.5rem;pointer-events:auto;z-index:3}"
+  },
+  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, runs §8.5 cross-drawer coherence after all per-drawer lens trios pass, APPLIES hostPageGuidance to the host HTML (Rule B's scroll-past affordance is critical for any hero-slot piece with pointer as a declared input; the iframe's allow= attribute is critical for mic/camera/gyro), commits scaffold.containerNode when coherence passes + every lens-gated drawer's lensVerdict == pass, AND THEN runs the §5.6 Phase F layered-interaction QA + fix pass (mandatory for hero-slot pieces with pointer as a declared input; partial-waive available for mic/camera-only pieces). Phase F is what catches the cross-boundary failures no drawer subagent owns — Start-gate splash forgetting to release pointer-events after gating, getUserMedia double-prompts, allow= attribute mismatches, smooth-scroll smearing wheel-forwarded scrolls."
 }
 ```
 
@@ -182,18 +220,113 @@ Per enumerated `imId`:
 4. **`preview_click` the Start button.** Wait 2 seconds. Take another screenshot. The piece should now be running OR showing a permission prompt (depending on test env).
 5. **Inject fake input.** `preview_eval` `window.__im.injectFakeInput({type:'mic', features: new Float32Array([0.7, 0.3, 0.5])})` (or whatever the piece declares). Wait 1 second. Screenshot. The output should visibly change.
 6. **Console + network check.** `preview_console_logs` level error. `preview_network` 404. Any permission errors, audio context errors, WebGL errors are blockers.
+6a. **§1.2 layered-interaction contract — verify all seven rules.** If pointer is a declared input: drag inside the iframe, then attempt to scroll past (`preview_eval('window.scrollTo({top: window.innerHeight + 100})')`); the host must scroll. Verify the host page has a scroll-past affordance (Rule B). Inspect the Start-gate's computed `pointer-events` AFTER gating — must transition to `none` so the canvas can receive pointer events. Verify the iframe carries the correct `allow=` attribute for every declared modality.
 7. **Per-slot QA verdict.** Score each on:
    - **start gate visible** — splash renders before any permission request. PASS / FAIL.
    - **permission flow clean** — single batched `getUserMedia` call on Start click, no double-prompt. PASS / FAIL.
    - **fake input drives output** — `injectFakeInput` changes the visible output. PASS / FAIL.
    - **fits the slot** — iframe + the surrounding app shell don't fight each other. PASS / FAIL / NEEDS_LAYOUT_FIX.
    - **`allow=` attribute is correct** — verify the host iframe has `allow="microphone; camera; gyroscope; accelerometer; midi"` for any input the runtime requests. PASS / FAIL.
+   - **start-gate releases pointer-events** — after gating, the splash transitions to pointer-events:none so the canvas receives pointer events. PASS / FAIL.
+   - **scroll-past works (pointer-input pieces)** — after dragging inside the iframe, host scroll advances past it. PASS / FAIL / N/A (when pointer isn't a declared input).
+   - **scroll-past affordance present** — visible exit cue over the iframe with pointer-events:auto (mandatory when pointer is a declared input in a hero slot). PASS / FAIL / N/A.
 8. **Fix where you can.**
    - **Edit the agent's HTML** for `allow=` corrections, slot size, surrounding chrome z-index.
    - **Re-dispatch a drawer** when the piece's behaviour is wrong (mapping idiom doesn't deliver the brief's surprise; output renders blank).
 9. **Write the QA log.** Append to `workflow/interactive-plan.json` under `qa: { checked: [...], blocked: [...], ranAt: '...' }`.
 
 **This step is NOT optional.** Per-drawer lens scores can pass while the assembled piece fails permission flow or `getUserMedia` linkage in the host shell.
+
+## 5.6 Phase F — Layered-interaction QA + FIX pass (chat caller, NOT a subagent)
+
+**After Step-8 QA passes, the chat caller runs one more focused pass on the iframe ↔ host pointer/scroll contract committed in §1.2.** This is **not a subagent dispatch** — drawer subagents own per-iframe runtime files but none owns the HOST page where the im-mount slot lives. Contract violations live at that boundary and slip through every per-component lens. Only the chat caller can edit the host files. **This phase is the fix-loop, not just a verdict pass.**
+
+Canonical worked failure case: the museuuum project's "glitchy at entrance and i cant scroll" thread (a narrative-experience case — read `narrative-experience-orchestrator.md §5.6` for the full taxonomy). IM-specific complication: the two-gate permission splash (`im-runtime-composer.md §3.1`) adds **another** layer above the canvas, with its own pointer-events lifecycle. **Do not treat the museum thread as the only thing that can go wrong** — the taxonomy below is the root-cause map.
+
+### 5.6.0 Why models fail this (root traps to read against your build)
+
+1. **Drawer-scope blindness.** Input drawer says "pointer-velocity needs `touch-action: none` — done." Runtime drawer says "Start-gate splash needs `pointer-events: auto` so the button works — done." Both pass per-component lens. Composed in hero slot: mobile can't leave; Start-gate keeps blocking the canvas AFTER gating because nobody flipped it to `none`.
+2. **`touch-action: none` as a safe default.** Right for pointer-input pieces; wrong for mic+camera-only pieces where pointer isn't a declared input (then no `touch-action` override is needed at all).
+3. **Inline-style overrides the CSS.** Audit live computed style.
+4. **Decorative cues styled like CTAs but `pointer-events: none`.** Convert to `<a>` with `pointer-events: auto`.
+5. **Blanket overlay `pointer-events: auto`.** Container `pointer-events: none`; restore only on real controls.
+6. **Smooth-scroll smears wheel-forwarded scrolls.** `behavior: 'instant'`.
+7. **Pointer-capture leaks past gesture end.** Cleanup on `pointercancel` / `pointerleave`.
+8. **Z-index inversion against host chrome.** Audit `position: fixed` host nav vs iframe overlay z-index.
+9. **Wheel-event handling asymmetric to touch-action.** Fix both modalities.
+10. **Start-gate forgets to release pointer-events after gating (IM-specific).** Splash has `pointer-events: auto` (correct — Start button is real). After user clicks Start, splash transitions to `opacity: 0` but the model forgets to also set `pointer-events: none`. Splash now invisible BUT STILL CATCHES all pointer events; canvas can't see the user's first interaction. Pattern: `splash.style.cssText = 'opacity:0; pointer-events:none; transition: opacity .4s'`.
+11. **`allow=` attribute missing or incomplete (IM-specific).** Mic input prompts but `getUserMedia` fails silently if `allow="microphone"` isn't on the iframe. Camera + gyro the same. Step-8 QA already checks `allow=` — Phase F double-checks because every modality the runtime declared must be on the host iframe.
+
+### 5.6.1 The seven (+two) failure modes (IM-tuned)
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | Mobile: can't scroll past hero-slot piece (when pointer is a declared input) | `touch-action: none` on canvas swallows vertical | `touch-action: pan-y` when scroll-past matters; or keep `none` + add host-level scroll-past affordance. |
+| 2 | Decorative cue unclickable | `pointer-events: none` on a CTA-shaped element | Convert to `<a>` with `pointer-events: auto`. |
+| 3 | Canvas doesn't receive pointer events after Start-gate dismissed | Start-gate splash kept `pointer-events: auto` after fade-out | On gate dismissal, set `pointer-events: none` AND `opacity: 0` AND `inert` (HTML5 inert attribute). |
+| 4 | Permission-CTA / end-card buttons covered by host chrome | Z-index inversion | Audit `position: fixed` chrome. |
+| 5 | Desktop: wheel inside iframe does nothing | Wheel trapped | Inside iframe: `postMessage({type:'im-wheel', dy:e.deltaY}, '*')` on unconsumed wheels. In host: receive + `scrollBy({behavior:'instant'})`. |
+| 6 | "Scrolls very very very very little distance" | Smooth-scroll default | `behavior: 'instant'`. |
+| 7 | After a pointer stroke, Start-gate retry-button or permission-CTA stops responding | Pointer-capture leak | Cleanup on `pointercancel` / `pointerleave`. |
+| 8 IM | Mic / camera / gyro requested but `getUserMedia` fails silently | `allow=` attribute missing on iframe | Ensure `allow="microphone; camera; gyroscope; accelerometer; midi; autoplay"` covers every declared modality. |
+| 9 IM | Two permission prompts fire instead of one | `getUserMedia` called twice (once on module load, once on Start) | Gate ALL `getUserMedia` calls behind the Start click; batch all declared modalities into one `getUserMedia({audio:true, video:true})` call. |
+
+### 5.6.2 The QA + fix recipe (chat caller runs against the host page)
+
+```bash
+HOST=$(grep -lE 'data-im="<imId>"' source/<branch>/*.html source/<branch>/**/*.html | head -1)
+preview_start url:"<HOST>?project=<projectId>"
+sleep 4
+preview_screenshot path:"_qa/F0-im-before-gate.png"
+
+# Click Start gate
+preview_click selector:".start-gate .start-btn, button[data-im-start]"
+sleep 2
+preview_screenshot path:"_qa/F1-im-after-gate.png"
+```
+
+```javascript
+// preview_eval — audit AFTER gate dismissed
+const iframe = document.querySelector('iframe.im-mount');
+const inner  = iframe.contentDocument;
+const canvas = inner?.querySelector('canvas');
+const splash = inner?.querySelector('#start-gate, .start-gate');
+const audit = {
+  canvasTouchAction:     canvas && getComputedStyle(canvas).touchAction,
+  splashAfterGate:       splash && {
+    opacity:       getComputedStyle(splash).opacity,
+    pointerEvents: getComputedStyle(splash).pointerEvents,    // MUST be 'none' after gating
+    display:       getComputedStyle(splash).display,
+    inert:         splash.inert,
+  },
+  iframeAllow:           iframe.getAttribute('allow') || '(missing)',
+  scrollPastExit:        (() => {
+    const el = document.querySelector('.im-host-exit, a[href^="#"][class*="skip"]');
+    return el ? { present: true, pointerEvents: getComputedStyle(el).pointerEvents } : { present: false };
+  })(),
+};
+console.log(JSON.stringify(audit, null, 2));
+
+window.scrollTo(0,0);
+const startY = window.scrollY;
+window.scrollBy({top: window.innerHeight + 200, behavior: 'instant'});
+console.log('scrollDelta:', window.scrollY - startY);
+```
+
+### 5.6.3 Fix levers
+
+1. Edit per-iframe runtime files (`source/<branch>/interactives/<imId>/{runtime.html,input-*.js,output-*.html,mapping.js}`) — fix `touch-action`, fix Start-gate dismissal (`pointer-events: none + opacity: 0 + inert`), batch `getUserMedia`, add wheel-postMessage forwarding.
+2. Edit host HTML (`source/<branch>/<page>.html`) — ensure `allow=` attribute covers every modality, install wheel-receive listener, add scroll-past affordance where needed.
+3. Edit host CSS — fix `pointer-events` budget, fix `z-index`, override smooth-scroll where rapid wheel-forwarding is in play.
+4. Re-dispatch the runtime drawer as last resort.
+
+### 5.6.4 The fix log
+
+Append to `workflow/interactive-plan.json` under `qaPhaseF: { ranAt, checked: [{imId, hostPage, symptoms, rootCausesFound: [#numbers], fixesApplied: [{lever, file, diffSummary}], remaining }] }`. Hard cap: 3 fix iterations; beyond that emit `<decision-request>` to the user.
+
+### 5.6.5 Skip rules
+
+Pieces where pointer is NOT a declared input (mic + camera only, gyro only) may waive Rule 1 / Rule 7 / Rule 8 of the §1.2 contract since no pointer gestures conflict. They still verify Start-gate release (failure mode 3) + `allow=` attribute (#8) + permission batching (#9). Record waivers under `qaPhaseF: { partialWaive: { rules: [1,7,8], reason: 'pointer not declared' } }`. Hero-slot pieces with pointer as a declared input MUST NOT skip Phase F.
 
 ## 6. Failure protocol (your scope only)
 

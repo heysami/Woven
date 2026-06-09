@@ -25,6 +25,8 @@ The orchestrator hands you:
 - `density` — `sparse` / `medium` / `dense`
 - `motion` — `still-with-twitches` / `drifting-ambient` / `aggressive-vaporwave` / `any`
 - `imageBudget` — soft cap (e.g. "~25 raster assets") or unspecified
+- `minPngSequences` — baseline count of GIF-substitute PNG sequences the piece must commit (default `1`; drops to `0` only when the brief explicitly forbids motion)
+- `minUiRasters` — baseline count of raster UI elements (button / nav tab / scroll arrow / form control) the piece must commit (default `1`; drops to `0` only when the piece is non-interactive)
 - `interactionPrimitive` — `scroll-reveal` / `hover-tilt` / `drag-to-rearrange` / `click-to-flip` / `tap-to-reveal` / `any`
 - `successFeel` — verbatim
 - `creativeBrief` — styleCue, sensoryTargets, antiPatterns
@@ -189,7 +191,19 @@ Walk through the composition idiom you committed and enumerate **every raster as
       "compositionRole": "title",
       "approximateLayer": "foreground"
     },
-    // ... 19 more entries for a "dense" composition
+    {
+      "assetId": "ui-enter-button",
+      "role": "ui-element",                              // MANDATORY baseline — at least one per interactive piece
+      "medium": "raster-foreground",
+      "transparency": "rembg",
+      "aspect": "3:1",
+      "intent": "chrome-bevelled rectangular button reading 'enter', vaporwave palette, holographic outer glow, slight Y2K plastic bevel, transparent background",
+      "outputPath": "source/<branch>/scrapbooks/<sbId>/assets/ui-enter-button.png",
+      "compositionRole": "primary-cta",                  // the user will tap/click this — the composition drawer wraps it in a real <button>
+      "approximateLayer": "foreground",
+      "domBinding": "button.cta-enter"                   // composition drawer reads this and wires a native <button> around the raster
+    },
+    // ... 18 more entries for a "dense" composition (mix of hero / sticker / photo / texture / handlettering / ui-element)
   ],
   "pngSequenceList": [
     // PNG sequences substitute for transparent GIFs (we generate stills, then loop)
@@ -236,6 +250,36 @@ Walk through the composition idiom you committed and enumerate **every raster as
 | `handlettering` | Raster typography (display word, headline, signature) | `raster-foreground` (rembg) |
 | `sequence-frame` | One frame of a PNG-sequence loop | `raster-foreground` (rembg) — frames go in `sequences/<id>/` |
 | `bullet` | Tiny decorative mark (sparkle, dot, glitter pixel) | `vector-mark` (smaller; could also be raster) |
+| `ui-element` | Raster representation of an interactive control on a transparent background — button, nav tab, scroll arrow, form input frame, marker checkbox, scribbled toggle, sticker-shaped CTA. Composites onto the textured substrate without a hard CSS rectangle. | `raster-foreground` (rembg) |
+
+**The `ui-element` role — what makes scrapbook UI feel made, not configured:**
+
+A CSS `<button>` styled with rounded corners and a gradient sitting inside a vaporwave / cottagecore / zine composition reads as broken-genre — the rest of the page is hand-made imagery and one strict-CSS rectangle screams "I gave up here." Every interactive piece commits at least one raster UI element via this role unless the piece is genuinely non-interactive.
+
+The pattern: commission a transparent PNG of the control (a marker-drawn arrow, a polaroid-corner-pinned button, a washi-tape-anchored toggle, a chrome-bevelled vaporwave tab) and use it as either:
+
+- An `<img>` inside a real `<button>` (preserves native a11y + keyboard focus; raster supplies the visual)
+- A `background-image` on a `<button>` styled with `appearance: none; background-color: transparent; border: 0` (same outcome, more CSS scaffold)
+- A `<label>`-wrapped `<input>` where the visible artefact is the raster (form controls)
+
+Examples of `ui-element` inventory entries per aesthetic:
+
+| Core aesthetic | ui-element examples (concrete intents to commit verbatim) |
+|---|---|
+| `vaporwave` | "chrome-bevelled rectangular button, 'enter' label baked in, holographic outer glow, vaporwave palette" · "8-bit-arrow scroll cue, magenta on transparent" |
+| `internetcore` | "GeoCities under-construction-style animated button, hand-drawn 'click here' rendered as raster, glitter outline" · "blinking marquee divider" |
+| `cottagecore` | "watercolour leaf-shaped button with handwritten 'read more' on translucent paper" · "pressed-flower bullet point as scroll affordance" |
+| `dreamcore` | "Polaroid-corner-pinned 'continue' button, slight blur, 90s-flash-photography vibe" · "hand-drawn arrow on grid paper, slightly off-register" |
+| `Y2K` | "frosted-plastic frutiger-aero pill button with 'go' label, lens-flare highlight" · "chrome ring loading indicator (PNG sequence — see below)" |
+| `lo-fi` | "VHS-distorted 'play' triangle button, scanline overlay, JPEG-artifact edges" |
+| `mixtape` | "marker-on-cardboard 'next side' button, handwritten label, tape-aged edges" |
+| `zine` | "Xerox-grained cut-out 'subscribe' button, riot-grrrl marker outline, paste-up shadow" |
+| `mood-board` | "board-pin-shadowed rectangular tab, handwritten label, light beige paper" |
+| `lookbook` | "ticket-stub-shaped 'view' button, perforated edge, hand-stamped serif" |
+
+**The `sequence-frame` role + the GIF-substitute mandate:**
+
+By default every piece commits at least one `pngSequenceList[]` entry — the "key visual that works like a GIF." Without it the page reads as a static collage instead of a living scrapbook moment. The hero chrome bust rotating, the glitter divider sparkling left-to-right, the blinking cursor under the title, the cottagecore lantern flickering, the dreamcore TV-static patch breathing, a "this site is alive" twitch on one corner. Drop to zero PNG sequences ONLY when the brief explicitly rejects motion (e.g. "a strictly-still scanned lookbook page"); when you drop, write the rejection verbatim in `research.md` so the lens scoring sees the deliberate choice.
 
 **PNG sequences — the GIF substitute:**
 
@@ -331,6 +375,29 @@ Frame counts respect the cost. 24 frames at 8 fps is a 3-second loop — fine. 6
 ### 4.6 antiPatterns excluded (block)
 
 For each string in `creativeBrief.antiPatterns[]`, walk your inventory entries — if any intent contradicts an antiPattern, remove or rewrite the entry. Example: antiPattern "neon overload" + core `vaporwave` is a tension; commit a tempered vaporwave palette in the styleCue propagation.
+
+### 4.7 Anchor raster requirements — GIF-substitute + UI element (block)
+
+Two minimums the inventory MUST hit unless the envelope explicitly waives them:
+
+1. **`pngSequenceList[]` contains at least `minPngSequences` entries** (default `1`). The "key visual that works like a GIF" — one looping PNG sequence on the page that gives the piece its "this is alive" twitch. Without it the page reads as a static collage. Drop to zero ONLY when the envelope's `minPngSequences: 0` flag is set (and the brief gave a reason worth writing into `research.md` verbatim, e.g. "strictly-still scanned lookbook page").
+2. **`imageInventory[]` contains at least `minUiRasters` entries with `role: "ui-element"`** (default `1`). The raster representation of an interactive control — button, nav tab, scroll arrow, marker checkbox, sticker CTA — on a transparent background. Without it, CSS-styled rectangles break the genre next to your hand-made imagery. Drop to zero ONLY when the envelope's `minUiRasters: 0` flag is set AND the piece is genuinely non-interactive (a static lookbook page, a printable zine spread).
+
+When you commit `inventory.json`, also write a one-line `// Anchor minimums met:` comment at the top of the file documenting how the two minimums were satisfied OR which waiver applies. The composition drawer reads this comment before fanning out visual-orchestrator dispatches and refuses to scaffold a missing-anchor inventory.
+
+Verify before committing:
+
+```bash
+python3 -c "
+import json
+d=json.load(open('source/<branch>/scrapbooks/<sbId>/inventory.json'))
+uiCount  = sum(1 for e in d['entries'] if e.get('role')=='ui-element')
+seqCount = len(d.get('pngSequenceList',[]))
+print(f'ui-element: {uiCount}, sequences: {seqCount}')
+assert uiCount  >= $MIN_UI_RASTERS  or '$MIN_UI_RASTERS'=='0', 'ui-element minimum missed'
+assert seqCount >= $MIN_PNG_SEQUENCES or '$MIN_PNG_SEQUENCES'=='0', 'pngSequence minimum missed'
+"
+```
 
 ## 5. What you do NOT do
 

@@ -86,6 +86,33 @@ dsRef:              { id, version }
 === END ENVELOPE ===
 ```
 
+## 1.2 Iframe ↔ host pointer + scroll contract (load-bearing)
+
+The museum project's `museuuum` build is the canonical case: an `nx-mount` iframe carries a walkable 3D Roman studio in the hero slot; the host page is a long-form catalogue scrolling below. Inside the iframe, the runtime sets `touch-action: none; overscroll-behavior: none; user-select: none` on the canvas — drag-to-look owns the gesture. **This creates a recurring conflict** with the host page that wants behaviour of its own. Three failure modes, all observed in the wild:
+
+1. **Scroll-past is dead.** The iframe is the first 100vh; `touch-action: none` swallows vertical drag; the user on mobile literally cannot reach the rest of the page.
+2. **Overlay text eats the look-around gesture.** An absolutely-positioned `<h1>` + lede + CTA layer covers the iframe; its container has `pointer-events: auto` because *one* button inside wants clicks; suddenly the user can't drag-to-look anywhere the overlay covers.
+3. **CTA buttons go dead.** The overlay's pointer-events policy is fixed (everything `none`), the curator-voice button is now non-clickable, the user can't actually interact with the affordance.
+
+The runtime drawer's text envelope (which you scaffold in §4) MUST instruct the runtime composer to honour all six rules below. The orchestrator's hand-off envelope (§5.2) ALSO surfaces the host-page guidance the chat caller is expected to apply to the surrounding HTML. The Step-8 QA pass (§5.5) verifies each rule against the actual host page.
+
+**Rule A — bound the iframe's vertical extent so scroll-past works by default.** The iframe is `height: 100vh` or a fixed pixel height — never `height: 100%` of an unbounded parent. The user scrolls vertically; the page advances past the iframe to the next section.
+
+**Rule B — host-level guaranteed scroll-down affordance.** The hand-off envelope tells the chat caller to ensure the host HTML wraps the iframe in a section that includes an absolutely-positioned `<a href="#next-section">` (or a button) with `pointer-events: auto` and `z-index` above the iframe — the user's "I want out" escape hatch on touch devices. The museuuum project's `.scene__enter` "Go deeper ↓" link is the canonical pattern. Without it, `touch-action: none` traps the user on mobile.
+
+**Rule C — overlay pointer-events budget (text passes through, controls restore).** Every absolute-positioned chrome layer over the iframe defaults to `pointer-events: none` on its container, with `pointer-events: auto` restored only on real interactive children (buttons, links). The museuuum project's `.scene__overlay { pointer-events: none; } .scene__overlay .scene__voice { pointer-events: auto; }` pattern is canonical. Lens-gating relies on this: a craft-lens dispatch rejects an overlay container with blanket `pointer-events: auto` that covers the iframe.
+
+**Rule D — touch-action policy honest about what the iframe owns.**
+- **Owns horizontal-drag only** (orbit camera, pan view, scripted-flythrough click-to-advance) → `touch-action: pan-y` on the gesture surface — vertical scroll passes through naturally. **This is the default for hero-slot narrative scenes.**
+- **Owns all gestures** (fully-walkable WASD + look, multi-touch) → `touch-action: none`; vertical scroll inside the iframe is blocked. **Required complement:** Rule B's host-level scroll-down affordance + Rule A's bounded iframe height + a visible "↓ continue" hint in the overlay.
+- **Owns no gestures** (purely ambient cinematic scene, reads pointer position only) → no `touch-action` override; pointer events pass through naturally.
+
+**Rule E — wheel-event policy mirrors touch-action.** On desktop, an iframe that calls `preventDefault()` on wheel events to drive its own scrub/zoom blocks host scroll-past via wheel. If the runtime owns wheel (`touch-action: none` equivalent on desktop), Rule B's affordance must be prominent. Otherwise let wheel propagate to the host.
+
+**Rule F — pointer-capture release on every gesture terminator.** The runtime releases pointer-capture on `pointerup` / `pointercancel` / `pointerleave`. A held pointer-capture survives aborted gestures and kills subsequent interaction with overlay controls, the iframe itself, and the next page. The craft-lens dispatch checks this explicitly.
+
+The runtime drawer's scaffolded `text` field (set in §4) MUST include these six rules verbatim so the drawer reads them as its contract. The hand-off envelope (§5.2) includes a `hostPageGuidance` block the chat caller applies to the host HTML.
+
 ## 2. Phase A — Research fleet (5 cold researchers + 1 synthesiser)
 
 > **DISPATCH MECHANISM — load-bearing. Read `simulation-orchestrator.md` §2 first.**
@@ -230,7 +257,15 @@ Return as your final text:
     "scene-baseline (per sim-2d-spatial-scene-builder §3.6): window.__scene.onFrame(state, 0) renders correctly on first call",
     "runtime-baseline (per sim-runtime-composer §3.8): runtime calls __scene.onFrame(state, 0) once synchronously before spine scheduler"
   ],
-  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, runs §8.5 cross-drawer coherence (4 channels: visual + audio + textual + body-pace), and commits scaffold.containerNode when coherence passes + every lens-gated drawer's lensVerdict == pass."
+  "hostPageGuidance": {                                    // chat caller applies these to the host HTML around the iframe (§1.2)
+    "iframeHeight": "100vh OR fixed pixel height — never height:100% of an unbounded parent",
+    "scrollPastAffordance": "a host-level <a href='#next-section'> or button with pointer-events:auto + z-index above the iframe — the guaranteed scroll-down escape on touch devices when iframe owns gestures",
+    "overlayPointerEventsBudget": "container pointer-events:none; restore pointer-events:auto only on real interactive children (CTA buttons, links)",
+    "touchActionOnIframe": "pan-y by default; only set 'none' when the scene owns all gestures (walkable WASD + multi-touch) AND the scroll-past affordance is visibly present",
+    "exampleHTML": "<section class='hero-iframe'><iframe class='nx-mount' data-nx='<nxId>'></iframe><div class='nx-host-overlay'><h1>Title</h1><button class='nx-cta'>Listen</button></div><a class='nx-host-exit' href='#main'>Go deeper ↓</a></section>",
+    "exampleCSS": ".hero-iframe{position:relative;height:100vh;overflow:hidden}.hero-iframe>iframe{width:100%;height:100%;border:0;display:block}.nx-host-overlay{position:absolute;inset:0;pointer-events:none;z-index:2}.nx-host-overlay>.nx-cta{pointer-events:auto}.nx-host-exit{position:absolute;left:50%;bottom:1.5rem;transform:translateX(-50%);pointer-events:auto;z-index:3}"
+  },
+  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, runs §8.5 cross-drawer coherence (4 channels: visual + audio + textual + body-pace), APPLIES hostPageGuidance to the host HTML around the iframe (Rule B's scroll-past affordance is the most-skipped step — verify it on every page that mounts an nx-mount iframe), commits scaffold.containerNode when coherence passes + every lens-gated drawer's lensVerdict == pass, AND THEN runs the §5.6 Phase F layered-interaction QA + fix pass (mandatory for hero-slot pieces). Phase F is what catches the museuuum-thread class of failures (pointer-events: none on tappable cues, blanket overlay pointer-events:auto, smooth-scroll smearing wheel-forwarded scrolls, Start-gate splash forgetting to release pointer-events). Drawer subagents cannot fix these — they live at the iframe ↔ host boundary that no drawer owns."
 }
 ```
 
@@ -248,18 +283,135 @@ Per enumerated `nxId`:
 4. **Console + network check.** Errors = the piece is broken. Note them.
 5. **For walkable 3D scenes — `preview_eval` a synthetic camera pan.** Verify the scene actually has spatial depth (not a flat backdrop).
 6. **For ambient — verify AudioContext started.** `preview_eval` checks for an active audio context.
+6a. **§1.2 layered-interaction contract — verify all six rules.** Drag inside the iframe (`preview_click` + drag), THEN attempt to scroll past it (`preview_eval('window.scrollTo({top: window.innerHeight + 100})')`); the page MUST scroll past. Inspect the host page's overlay container — its computed `pointer-events` should be `none` with explicit `auto` only on real controls. Verify the host page has a visible scroll-past affordance (a chevron, "↓ Go deeper", or similar with `pointer-events: auto`) over the iframe. Verify that after an aborted drag (`pointerdown` then `pointercancel`) the page is still interactive (clicking a host-level link still navigates) — pointer-capture leaks would block this.
 7. **Per-slot QA verdict.** Score on:
    - **opens correctly** — first screenshot shows a composed tableau, not a blank rectangle. PASS / FAIL.
    - **unfolds** — second screenshot meaningfully differs from the first, per the pacing register. PASS / FAIL.
    - **felt-state landed** — the screenshots match the brief's prose successFeel. SUBJECTIVE — write the brief's successFeel verbatim, then write 1-2 sentences on whether the screenshots deliver it.
    - **scene + ambient + overlay coherent** — the four channels (visual + audio + text + pace) aren't fighting each other. PASS / FAIL.
    - **fits the slot** — full-bleed or intentionally framed, not buried under chrome. PASS / FAIL / NEEDS_LAYOUT_FIX.
+   - **scroll-past works** — after dragging inside the iframe, the user can still reach the next section. PASS / FAIL.
+   - **overlay budget honest** — text-overlay pointer-events pass through; only real controls capture. PASS / FAIL.
+   - **scroll-down affordance present** — a visible exit cue over the iframe with pointer-events:auto, scroll-anchored to the next section. PASS / FAIL.
 8. **Fix where you can.**
    - **Edit the agent's HTML** for slot framing fixes, viewport sizing.
    - **Re-dispatch a drawer** when felt-state isn't landing (scene's lighting wrong; ambient's room-tone wrong; spine pacing too fast).
 9. **Write the QA log.** Append to `workflow/narrative-plan.json` under `qa: { checked: [...], blocked: [...], ranAt: '...' }`.
 
 **This step is NOT optional.** Per-drawer lens scores can pass while the assembled piece fails to land its felt-state — the four sensory channels combining can hit different from any one of them alone.
+
+## 5.6 Phase F — Layered-interaction QA + FIX pass (chat caller, NOT a subagent)
+
+**After Step-8 QA passes, the chat caller runs one more focused pass on the iframe ↔ host pointer/scroll contract committed in §1.2.** This is **not a subagent dispatch** — the drawer subagents own their per-iframe runtime files (`runtime.html`, `reveal.js`, `scene.js`, `ambient.js`, `overlay.js`) but **none of them owns the HOST page** (`source/<branch>/index.html`, `source/<branch>/styles.css`, the `<iframe>`-wrapping section in the parent HTML). Contract violations LIVE AT THAT BOUNDARY — across every drawer's per-component lens. Only the chat caller can edit those host files. **This phase is the fix-loop, not just a verdict pass.**
+
+The canonical worked failure case is the museuuum project's "glitchy at entrance and i cant scroll" thread (Caravaggio · The Single Light, branch=main, runId aae5df39e3404a1d). The user reported: (a) "the entrance can't scroll", (b) "the items are overlapping", (c) "on the actual piece, i cant drag around", (d) "i cant click the buttons on top right", (e) — after a first fix attempt — "still have issue with scroll. it try to scroll but scroll very very very very little distance". Five distinct symptoms, traceable to seven root causes (one symptom often has two). **Do not treat the museum thread as the only thing that can go wrong** — what follows is the root-cause taxonomy, not the museum-symptom catalogue.
+
+### 5.6.0 Why models fail this — root traps to read against your build
+
+Before you check anything, scan your build against these structural traps. Each one is how the model REPRODUCIBLY walks into a §1.2 violation despite the contract being written down:
+
+1. **Drawer-scope blindness.** Each drawer subagent owns one runtime file and lens-scores it in isolation. The reveal drawer says "drag-to-look needs `touch-action: none` on the canvas — done." The overlay drawer says "captions need to be readable — pointer-events: auto on the container, done." Both pass per-component aesthetic lens. Composed in the host page, the canvas swallows mobile vertical scroll AND the overlay covers the canvas with `pointer-events: auto`. **Nobody dispatched owns the cross-boundary contract.**
+2. **`touch-action: none` as a safe default.** The model reaches for `touch-action: none` because the documentation example says "drag-to-look must own the gesture." It is RIGHT for fully-walkable scenes; it is WRONG for hero-slot scenes where the user must scroll past on mobile. The safe default is `touch-action: pan-y` — vertical scroll passes through to the host, horizontal drag is owned. Only escalate to `none` when the brief truly requires it.
+3. **Inline-style overrides the CSS.** The model sets `touch-action: pan-y` in `styles.css`, then writes `target.style.touchAction = 'none'` in `reveal.js` for "defensive" reasons. The inline style wins. Lens dispatches read the stylesheet, not the live computed style, and miss the override. **Always check live computed style in Phase F.**
+4. **Decorative cues styled like CTAs but `pointer-events: none`.** A "Go deeper ↓" hint at the bottom of the hero is rendered as `<div class="scene__enter" aria-hidden="true">` with `pointer-events: none`. The visual reads as an invitation; the tap does nothing. Convert the cue to a real `<a href="#anchor">` with `pointer-events: auto` and remove `aria-hidden`.
+5. **Blanket overlay `pointer-events: auto`.** The model wraps the title + lede + CTA in one container, gives it `pointer-events: auto` so the CTA works, doesn't realize this kills drag everywhere the title overlaps the canvas. The fix is the canonical museum pattern: container `pointer-events: none`, control children `pointer-events: auto`.
+6. **Smooth-scroll behaviour smears wheel-forwarded scrolls.** When the iframe forwards wheel intent via `postMessage`, the host runs `window.scrollBy(0, dy)`. The default `behavior` is the user's CSS `scroll-behavior` (often `smooth`); rapid wheel ticks queue N micro-animations that interpolate and visually cancel — the screen "tries to scroll but scrolls very very very very little distance" (verbatim museum quote). Always use `window.scrollBy({top: dy, behavior: 'instant'})`.
+7. **Pointer-capture leaks past gesture end.** Model adds `setPointerCapture` on `pointerdown` but forgets to release on `pointercancel` / `pointerleave`. The held capture survives the gesture and silently kills subsequent button clicks + iframe interaction + next-section scrolling. Failure is invisible until the user reports "buttons stopped working." Pattern: `function onPointerCancel(){ dragging=false; armed=false; activePointer=null; el.releasePointerCapture?.(id); }`.
+8. **Z-index inversion against host chrome.** The runtime overlay has `z-index: 3`; the host page's fixed nav / workbar / header has `z-index: 50`. Whichever piece of overlay landed on a corner where the host nav exists is unclickable. The museum case: a `.workbar { z-index: 50 }` covered the iframe's top-right buttons.
+9. **Wheel-event handling is desktop-only — mobile lives in `touch-action`.** Model fixes one and forgets the other. Mobile `touch-action: pan-y` solves swipe-scroll-past but leaves desktop `wheel` trapped if the runtime calls `preventDefault()` on wheel. **Always audit both modalities.**
+
+### 5.6.1 The seven failure modes — symptoms → root causes → fixes
+
+| # | Observable symptom | Root cause | Fix recipe |
+|---|---|---|---|
+| 1 | Mobile: can't scroll past the hero / iframe traps swipe | `touch-action: none` on canvas (CSS or inline) swallows vertical gesture | Switch to `touch-action: pan-y` (vertical pan passes through) in BOTH `styles.css` AND any `el.style.touchAction = ...` in the runtime's reveal/input JS. If the scene genuinely owns all gestures (walkable WASD), keep `none` AND add fix #2's affordance. |
+| 2 | "Go deeper" / chevron cue is visible but tap does nothing | Decorative cue with `pointer-events: none` and `aria-hidden="true"` | Convert `<div class="scene__enter" aria-hidden>` → `<a class="scene__enter" href="#collection">`; set `pointer-events: auto`; raise `z-index` above the iframe (e.g. `z-index: 3` while overlay is `z-index: 2`). |
+| 3 | "I can't drag inside the scene where the title text is" | Overlay container has blanket `pointer-events: auto` | Container `pointer-events: none`; restore `pointer-events: auto` only on real interactive children. Canonical museum: `.scene__overlay { pointer-events: none } .scene__overlay .scene__voice { pointer-events: auto }`. |
+| 4 | Top-right / corner buttons unclickable | Host fixed nav (workbar, masthead) z-index above the iframe overlay where they overlap | Audit every `position: fixed` element on the host page; either raise the iframe-region controls above host chrome, or move host chrome out of their corner. Inspect with `preview_inspect` on the visually-overlapping pixel. |
+| 5 | Desktop: wheel inside iframe does nothing (host doesn't scroll) | Wheel events trapped — runtime calls `preventDefault()` or no forwarding to host | Inside the iframe runtime, listen for wheel events the runtime doesn't consume; `postMessage({type:'nx-wheel', dy:e.deltaY}, '*')` to parent. In the host HTML, `window.addEventListener('message', e => { if (e.data?.type === 'nx-wheel') window.scrollBy({top: e.data.dy, behavior: 'instant'}); })`. |
+| 6 | "Tries to scroll but scrolls very very very very little distance" | Wheel-forwarding works but `scrollBy` uses smooth-scroll default, rapid ticks smear | Use `window.scrollBy({top: dy, behavior: 'instant'})`. Smooth-scroll with rapid wheel ticks queues N micro-animations that visually cancel. |
+| 7 | After a drag, buttons stop working / next-section scroll dies | Pointer-capture held past gesture end (missing `pointercancel`/`pointerleave` cleanup) | Add cleanup to every gesture-terminator path: `function onPointerCancel(){ dragging=false; armed=false; activePointer=null; canvas.releasePointerCapture?.(pointerId); }`. Mirror in `onPointerLeave`. |
+
+### 5.6.2 The QA + fix recipe — what the chat caller runs
+
+For each enumerated `nxId` (and for each host page that mounts an `nx-mount` iframe):
+
+```bash
+# 1. Find the host page
+HOST=$(grep -lE 'data-nx="<nxId>"' source/<branch>/*.html source/<branch>/**/*.html | head -1)
+
+# 2. Open in preview
+preview_start url:"<HOST>?project=<projectId>"
+sleep 5
+preview_screenshot path:"_qa/F0-baseline.png"
+```
+
+```javascript
+// 3. Audit the contract — preview_eval inside the host page
+const iframe = document.querySelector('iframe.nx-mount');
+const inner  = iframe.contentDocument;
+const canvas = inner?.querySelector('#nx-canvas, canvas');
+
+const audit = {
+  // Trap #2 + #3: touch-action live (CSS + inline)
+  canvasTouchAction:      canvas && getComputedStyle(canvas).touchAction,
+  canvasInlineTouchAction: canvas && canvas.style.touchAction,
+
+  // Trap #4: scroll-down affordance present + interactive
+  scrollPastExit:         (() => {
+    const el = document.querySelector('.scene__enter, [data-nx-exit], a[href^="#collection"], a[href^="#main"]');
+    if (!el) return { present: false };
+    const cs = getComputedStyle(el);
+    return { present: true, pointerEvents: cs.pointerEvents, href: el.getAttribute('href'), tag: el.tagName };
+  })(),
+
+  // Trap #5: overlay container pointer-events budget
+  overlayContainer:       (() => {
+    const el = document.querySelector('.scene__overlay, .nx-host-overlay');
+    if (!el) return { present: false };
+    return { present: true, pointerEvents: getComputedStyle(el).pointerEvents };
+  })(),
+
+  // Trap #8: z-index race
+  fixedHostChrome:        Array.from(document.querySelectorAll('*'))
+                            .filter(e => getComputedStyle(e).position === 'fixed')
+                            .map(e => ({ sel: e.className || e.id, z: getComputedStyle(e).zIndex })),
+};
+console.log(JSON.stringify(audit, null, 2));
+
+// 4. Drive a scroll-past test (mobile equivalent — synthetic pointer drag inside iframe + window.scrollBy after)
+window.scrollTo(0, 0);
+const startY = window.scrollY;
+window.scrollBy({top: window.innerHeight + 200, behavior: 'instant'});
+console.log('scrollDelta:', window.scrollY - startY);  // must be > 100, not 0
+```
+
+```bash
+# 5. Screenshot after scroll-past
+preview_screenshot path:"_qa/F1-after-scroll.png"
+
+# 6. Drive wheel-forwarding test (desktop)
+# preview_eval — simulate a wheel event inside the iframe runtime
+# (a real wheel event firing inside a cross-origin iframe is hard to fake;
+#  read the iframe runtime source to confirm postMessage forwarding exists)
+```
+
+### 5.6.3 Fix levers (the chat caller has all four; drawer subagents have only the first)
+
+1. **Edit the per-iframe runtime files** (`source/<branch>/narratives/<nxId>/{runtime.html,reveal.js,scene.js,ambient.js,overlay.js}`) — fix `touch-action` in code, fix pointer-capture cleanup, add wheel-postMessage forwarding inside iframe.
+2. **Edit the host page's HTML directly** (`source/<branch>/index.html`, `source/<branch>/<page>.html`) — convert decorative cue to real `<a>`, fix overlay structure, fix z-index, install wheel-receive listener.
+3. **Edit the host page's CSS directly** (`source/<branch>/styles.css`) — fix `pointer-events` budget, fix `z-index`, fix `scroll-behavior` (the global CSS `scroll-behavior: smooth` makes #6 worse — override to `auto` if rapid wheel-forwarding is in play).
+4. **Re-dispatch the runtime drawer** only as a last resort, with the failure quote PATCHed into its `text`. Surgical edits via #1–3 are almost always faster and safer.
+
+### 5.6.4 The fix log
+
+Append to `workflow/narrative-plan.json` under `qaPhaseF: { ranAt: '<iso>', checked: [{nxId, hostPage, symptoms: [...], rootCausesFound: [#numbers...], fixesApplied: [{lever: 1|2|3|4, file, diffSummary}], remaining: [...] }] }`. If `remaining[]` is non-empty after one fix iteration, run Phase F again. Hard cap: 3 fix iterations; beyond that, emit `<decision-request>` to the user with the residual symptoms.
+
+### 5.6.5 When you may skip Phase F
+
+Inline (non-hero) narrative pieces in editorial body where the iframe is height-bounded by the surrounding column and the user scrolls AROUND the iframe (never through it) may waive Phase F. Record the waiver: `qaPhaseF: { waived: true, reason: 'inline-editorial-placement; iframe height 540px; document scroll happens above and below, never through' }`.
+
+**Hero-slot pieces (full-bleed first-viewport iframes) MUST NOT skip Phase F.** The museuuum thread is the proof case — every drawer's lens passed; the assembled hero shipped broken; only Phase F catches this.
 
 ## 6. Failure protocol (your scope only)
 

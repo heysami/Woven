@@ -95,6 +95,32 @@ If `objective` is empty → push back; a game-experience without an objective is
 
 If `paradigmHint` is `any`, the research fleet decides. If specific, the fleet validates and may push back; the user steers via the §3 interrupt.
 
+## 1.2 Iframe ↔ host pointer + scroll contract (load-bearing)
+
+The game iframe carries the most input-greedy runtime of the four immersive families — drag-to-throw / pinch / multi-touch / pointer-velocity / gestures all owned at ≤50ms latency. Inside the iframe the runtime sets `touch-action: none; overscroll-behavior: none; user-select: none` on the gesture surface. **This creates a recurring conflict** with the host page:
+
+1. **Scroll-past is dead.** The game is the first 100vh hero; `touch-action: none` swallows vertical drag; the user on mobile literally cannot leave.
+2. **Overlay HUD eats throw gestures.** A score/progress/control-hint overlay container has `pointer-events: auto`, blocking drag-to-throw where the HUD covers.
+3. **End-card / pause buttons go dead.** The HUD's pointer-events policy is fixed `none`, the end-game card's "play again" button is unclickable.
+
+The runtime drawer's text envelope (which you scaffold in §4) MUST instruct the runtime composer to honour all six rules below. The orchestrator's hand-off envelope (§5.2) surfaces host-page guidance. Step-8 QA (§5.5) verifies each.
+
+**Rule A — bound the iframe's vertical extent.** The iframe is `height: 100vh` or a fixed pixel height — never `height: 100%` of an unbounded parent.
+
+**Rule B — host-level guaranteed scroll-past affordance** (game-experience pieces are almost always hero-slot). The hand-off envelope tells the chat caller to ensure the host HTML around the iframe includes a visible scroll-down anchor with `pointer-events: auto` and `z-index` above the iframe. Without it `touch-action: none` traps the user on mobile.
+
+**Rule C — overlay pointer-events budget (HUD text passes through, real controls restore).** Every absolute-positioned HUD container over the iframe defaults to `pointer-events: none`, with `pointer-events: auto` restored only on real interactive children (end-card button, pause toggle, start-gate splash). This is documented in `game-runtime-composer.md` §3.3 — the canonical `.game-overlay { pointer-events: none; } .game-overlay .ovl-end-card { pointer-events: auto; }` pattern.
+
+**Rule D — touch-action policy honest about what the game owns.** Games almost always own ALL gestures (drag-to-throw + pinch + multi-touch + tap-to-aim). Default `touch-action: none` on the gesture surface. Rule B's host-level scroll-past affordance is therefore **mandatory** for every hero-slot game; the brief that ignores this ships a game where mobile users are trapped on the first screen.
+
+**Rule E — wheel-event policy.** If the game owns wheel (zoom, scrub), it `preventDefault`s wheel; host scroll via wheel is blocked. Rule B's affordance must be visually prominent.
+
+**Rule F — pointer-capture release on every gesture terminator.** Release pointer-capture on `pointerup` / `pointercancel` / `pointerleave`. A held capture survives aborted gestures and kills end-card clicks + next-section scrolling. The craft-lens dispatch checks this explicitly.
+
+**Game-specific rule G — gesture intent disambiguation.** The most game-specific failure: a swipe-down inside the game (intended as a quick-flick downward attack) reads as a scroll-down gesture and pulls the user out of the game mid-action. The runtime resolves by either (a) requiring a small drag-start threshold (5–10px) before claiming the gesture, OR (b) consuming `pointerdown` on the gesture surface immediately and routing only the `pointermove` deltas. The feedback drawer's `text` envelope MUST address this.
+
+The runtime drawer's scaffolded `text` field (set in §4) includes these seven rules verbatim. The hand-off envelope (§5.2) surfaces a `hostPageGuidance` block for the chat caller.
+
 ## 2. Phase A — Research (ONE researcher: tech stack)
 
 The research pass is **a single dispatch**. There is no fleet, no synthesiser. The tech-stack researcher (`game-research-technique`) picks the paradigm + render strategy + physics engine + tick rate + input modalities + objective shape + juice register in one pass and writes `research.md` directly.
@@ -349,7 +375,16 @@ Return as your final text:
     "multiDraftCruxes":  [/* see §5.3 — opt-in only */]
   },
   "researchPath": "source/{branch}/games/{gameId}/research.md",
-  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, and commits scaffold.containerNode when every lens-gated drawer's lensVerdict == pass."
+  "hostPageGuidance": {                                  // chat caller applies these to the host HTML around the iframe (§1.2)
+    "iframeHeight": "100vh OR fixed pixel height — never height:100% of an unbounded parent",
+    "scrollPastAffordance": "MANDATORY for every hero-slot game: a host-level <a href='#next-section'> or button with pointer-events:auto + z-index above the iframe. touch-action:none traps the user on mobile without this.",
+    "overlayPointerEventsBudget": "HUD container pointer-events:none; restore pointer-events:auto only on real interactive children (end-card button, pause toggle, start-gate splash). Documented in game-runtime-composer.md §3.3.",
+    "touchActionOnIframe": "none — games own all gestures; rule B's scroll-past affordance is mandatory",
+    "allowAttribute": "iframe must carry allow='gyroscope; accelerometer' for tilt-input games; allow='autoplay' for audio-feedback games",
+    "exampleHTML": "<section class='game-hero'><iframe class='game-mount' data-game='<gameId>' allow='gyroscope; accelerometer; autoplay'></iframe><a class='game-host-exit' href='#next-section'>Skip ↓</a></section>",
+    "exampleCSS": ".game-hero{position:relative;height:100vh;overflow:hidden}.game-hero>iframe{width:100%;height:100%;border:0;display:block}.game-host-exit{position:absolute;right:1.5rem;top:1.5rem;pointer-events:auto;z-index:3;padding:.5rem 1rem;background:rgba(0,0,0,0.4);color:#fff;text-decoration:none;border-radius:999px}"
+  },
+  "nextStep": "Caller dispatches scaffold.drawerNodes[] in order, runs the §8.3 lens trio per lens-gated component, APPLIES hostPageGuidance to the host HTML around the iframe (Rule B's scroll-past affordance is non-negotiable for every hero-slot game), commits scaffold.containerNode when every lens-gated drawer's lensVerdict == pass, AND THEN runs the §5.6 Phase F layered-interaction QA + fix pass (MANDATORY for every hero-slot game — touch-action:none + all-gestures-owned means every Phase F failure mode is in play). Phase F is what catches the cross-boundary failures no drawer subagent owns — gesture-intent misclassification, HUD blanket pointer-events:auto, smooth-scroll smearing wheel-forwarded scrolls, end-card pointer-capture leaks."
 }
 ```
 
@@ -381,6 +416,7 @@ For each enumerated slot:
 4. **Drive a synthetic input.** `preview_eval('window.__game?.injectFakeInput?.("pointer", {x:0.5, y:0.5, drag:true})')`, then screenshot again — the world must respond (physics body moves, particles spawn).
 5. **Check the iframe's console.** `preview_console_logs level: 'error'` — any uncaught exceptions = the game is broken.
 6. **Check the iframe's network.** `preview_network` for 404s.
+6a. **§1.2 layered-interaction contract — verify all seven rules.** Drive a synthetic drag inside the iframe (`preview_eval('window.__game?.injectFakeInput?.("pointer", {x:0.3, y:0.6, drag:true, dx: 50, dy: 0})')`), THEN attempt to scroll past the iframe (`preview_eval('window.scrollTo({top: window.innerHeight + 100})')`); the page MUST scroll past. Verify the host page has a visible scroll-past affordance (Rule B). Inspect HUD overlay computed `pointer-events` — container `none`, real controls `auto`. Verify the iframe carries `allow="gyroscope; accelerometer; autoplay"` if the game uses those modalities. Verify pointer-capture release on aborted gestures (`pointerdown` + `pointercancel` then click a host-level link — it must navigate).
 7. **Per-slot QA verdict.** Score each on:
    - **loads** — runtime fetched without 404, parsed without errors. PASS / FAIL.
    - **renders** — world is visibly populated, full-bleed, no flat background. PASS / FAIL.
@@ -389,12 +425,100 @@ For each enumerated slot:
    - **fits the slot** — iframe respects the slot's aspect ratio; world is edge-to-edge. PASS / FAIL / NEEDS_LAYOUT_FIX.
    - **objective is visible** — score / progress / goal peeks somewhere on screen. PASS / FAIL.
    - **matches the brief** — the runtime delivers the successFeel. PASS / FAIL / SUBJECTIVE.
+   - **scroll-past works** — after a drag inside the game, host scroll still advances past the iframe. PASS / FAIL.
+   - **scroll-past affordance present** — visible "skip ↓" / "exit" / "↓ continue" cue over the iframe with pointer-events:auto (mandatory for hero-slot games). PASS / FAIL.
+   - **HUD budget honest** — overlay text passes through; only real controls capture. PASS / FAIL.
 8. **Fix where you can.** Two levers:
    - **Edit the agent's HTML** for layout fixes (slot too small → bump iframe height; missing `allow="gyroscope; accelerometer"` for tilt games → add). Layout-fix only.
    - **Re-dispatch a drawer** when the issue is content (world flat = re-dispatch game_world; no juice on hit = re-dispatch game_feedback; objective unclear = re-dispatch game_overlay). Patch the drawer's `text` field with the failure quote.
 9. **Write the QA log** to `workflow/game-plan.json` under `qa: { ranAt, checked: [{gameId, loads, renders, lives, responds, fits, objectiveVisible, matches, fixes, blockers}], blocked: [] }`. If `qa.blocked[]` is non-empty, the chat caller relays to the user.
 
 **This step is NOT optional.** Without it the per-drawer lens score is the only signal — and three drawers individually passing aesthetic-lens can still combine into a broken iframe in the host page (timing-of-loads, slot-size mismatches, missing `allow` attribute on tilt input).
+
+## 5.6 Phase F — Layered-interaction QA + FIX pass (chat caller, NOT a subagent)
+
+**After Step-8 QA passes, the chat caller runs one more focused pass on the iframe ↔ host pointer/scroll contract committed in §1.2.** This is **not a subagent dispatch** — drawer subagents own per-iframe runtime files but none owns the HOST page where the game-mount slot lives. Contract violations live at that boundary and slip through every per-component lens. Only the chat caller can edit the host files. **This phase is the fix-loop, not just a verdict pass.**
+
+The canonical worked failure case is the museuuum project's "glitchy at entrance and i cant scroll" thread (a narrative-experience case — read `narrative-experience-orchestrator.md §5.6` for the full taxonomy). The pattern transfers to game-experience MORE acutely than to any other family: games own ALL gestures (`touch-action: none` is the default), so every Phase F failure mode is in play simultaneously. **Do not treat the museum thread as the only thing that can go wrong** — the taxonomy below is the root-cause map.
+
+### 5.6.0 Why models fail this (root traps to read against your build)
+
+1. **Drawer-scope blindness.** Input drawer says "drag-to-throw needs `touch-action: none` — done." Overlay drawer says "HUD needs `pointer-events: auto` so end-card works — done." Both pass per-component lens. Composed in hero slot: mobile users can't leave the game; HUD covers gesture areas.
+2. **`touch-action: none` as the only choice — but Rule B's affordance forgotten.** Games own all gestures so `touch-action: none` is correct; the model forgets the host-level scroll-past affordance is **mandatory complement** for hero slots.
+3. **Inline-style overrides the CSS.** `gestureSurface.style.touchAction = 'none'` in input-pointer.js beats CSS. Audit live computed style.
+4. **Decorative cues styled like CTAs but `pointer-events: none`.** "Skip ↓" hint at top-right looks tappable but isn't. Convert to `<a>` with `pointer-events: auto`.
+5. **Blanket HUD `pointer-events: auto`.** Wrapping score + progress + control-hint + end-card in one `pointer-events: auto` container kills drag-to-throw everywhere they overlap. Canonical game pattern: `.game-overlay { pointer-events: none; } .game-overlay .ovl-end-card { pointer-events: auto; }`.
+6. **Smooth-scroll smears wheel-forwarded scrolls.** Use `behavior: 'instant'`.
+7. **Pointer-capture leaks past gesture end.** After a fling-then-cancel, end-card buttons stop responding. Missing `pointercancel` / `pointerleave` cleanup.
+8. **Z-index inversion against host chrome.** Fixed host nav covers end-card or pause toggle.
+9. **Wheel-event handling asymmetric to touch-action.** Games are mobile-primary but desktop play is real — fix both.
+10. **Gesture-intent misclassification (game-specific).** A swipe-down inside the game (intended as a quick downward attack) reads as a scroll-down gesture and pulls the user out of the game mid-action. Resolve by gesture-start threshold (5–10px drag before claiming the gesture) OR consume `pointerdown` immediately and route only `pointermove` deltas.
+
+### 5.6.1 The seven failure modes (game-tuned)
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | Mobile: can't leave hero-slot game; iframe traps swipe | `touch-action: none` swallows vertical AND no host-level scroll-past affordance | Keep `touch-action: none` (games own all gestures) AND add `<a class="game-host-exit" href="#next-section">Skip ↓</a>` at z-index above iframe with `pointer-events: auto`. |
+| 2 | "Skip ↓" cue visible but unclickable | Decorative cue with `pointer-events: none` | Convert to `<a>` with `pointer-events: auto`. |
+| 3 | "Can't drag-to-throw where the score / HUD is" | HUD container with blanket `pointer-events: auto` | Container `pointer-events: none`; restore only on real children (end-card button, pause toggle, start-gate splash). |
+| 4 | End-card or pause button unclickable | Host fixed nav z-index above HUD | Audit `position: fixed` chrome; raise HUD controls or move chrome. |
+| 5 | Desktop: wheel inside iframe does nothing | Wheel trapped | Inside iframe: `postMessage({type:'game-wheel', dy:e.deltaY}, '*')` on unconsumed wheels. In host: `addEventListener('message', e => { if (e.data?.type === 'game-wheel') window.scrollBy({top: e.data.dy, behavior: 'instant'}); })`. |
+| 6 | "Tries to scroll but scrolls very very very very little distance" | Smooth-scroll default | `behavior: 'instant'`. |
+| 7 | After a fling, end-card buttons stop responding | Pointer-capture leak | Cleanup on `pointercancel` / `pointerleave`: release capture, clear `dragging` / `armed` / `activePointer`. |
+| Game-extra | Quick downward swipe pulls user out of game mid-action | Browser claims swipe-down as scroll before the game claims it as attack | Gesture-start threshold (5–10px drag before claiming) OR consume `pointerdown` immediately and route only deltas. |
+
+### 5.6.2 The QA + fix recipe (chat caller runs against the host page)
+
+```bash
+HOST=$(grep -lE 'data-game="<gameId>"' source/<branch>/*.html source/<branch>/**/*.html | head -1)
+preview_start url:"<HOST>?project=<projectId>"
+sleep 5
+preview_screenshot path:"_qa/F0-game-baseline.png"
+```
+
+```javascript
+// preview_eval — audit the contract live
+const iframe = document.querySelector('iframe.game-mount');
+const inner  = iframe.contentDocument;
+const gesture = inner?.querySelector('#gesture-surface, canvas');
+const audit = {
+  gestureTouchAction:       gesture && getComputedStyle(gesture).touchAction,
+  gestureInlineTouchAction: gesture && gesture.style.touchAction,
+  scrollPastExit:           (() => {
+    const el = document.querySelector('.game-host-exit, a[href^="#"][class*="skip"]');
+    return el ? { present: true, pointerEvents: getComputedStyle(el).pointerEvents, href: el.getAttribute('href') } : { present: false };
+  })(),
+  hudContainer:             (() => {
+    const el = inner?.querySelector('.game-overlay');
+    return el ? { present: true, pointerEvents: getComputedStyle(el).pointerEvents } : { present: false };
+  })(),
+  iframeAllow:              iframe.getAttribute('allow') || '(missing)',
+  fixedHostChrome:          Array.from(document.querySelectorAll('*'))
+                              .filter(e => getComputedStyle(e).position === 'fixed')
+                              .map(e => ({ sel: e.className || e.id, z: getComputedStyle(e).zIndex })),
+};
+console.log(JSON.stringify(audit, null, 2));
+
+window.scrollTo(0,0);
+const startY = window.scrollY;
+window.scrollBy({top: window.innerHeight + 200, behavior: 'instant'});
+console.log('scrollDelta:', window.scrollY - startY);
+```
+
+### 5.6.3 Fix levers
+
+1. Edit per-iframe runtime files (`source/<branch>/games/<gameId>/{runtime.html,input-pointer.js,feedback.js,overlay.js}`) — fix `touch-action`, fix pointer-capture cleanup, add wheel-postMessage forwarding, add gesture-start threshold.
+2. Edit host HTML (`source/<branch>/<page>.html`) — convert decorative cue to real `<a>`, fix HUD-host structure, fix z-index, install wheel-receive listener, ensure `allow="gyroscope; accelerometer; autoplay"` on the iframe.
+3. Edit host CSS — fix `pointer-events`, fix `z-index`, override smooth-scroll where needed.
+4. Re-dispatch the runtime drawer as last resort.
+
+### 5.6.4 The fix log
+
+Append to `workflow/game-plan.json` under `qaPhaseF: { ranAt, checked: [{gameId, hostPage, symptoms, rootCausesFound: [#numbers], fixesApplied: [{lever, file, diffSummary}], remaining }] }`. Hard cap: 3 fix iterations; beyond that emit `<decision-request>` to the user.
+
+### 5.6.5 Skip rules
+
+Game-experience is rarely placed inline — almost always hero-slot. **Phase F is mandatory for every game-mount iframe in a hero context.** Inline placements (a small puzzle-game widget in an editorial sidebar) may waive with reason recorded.
 
 ## 6. Failure protocol (your scope only)
 
