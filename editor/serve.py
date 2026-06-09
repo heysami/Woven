@@ -47,6 +47,7 @@ if _EDITOR_DIR not in sys.path:
     sys.path.insert(0, _EDITOR_DIR)
 
 from prompts import node_agent_preambles as _node_preambles  # v2.1 — per-node agent preambles
+import exports as _exports  # per-asset export bundles (README + serve.* + files)
 
 
 def _pick_port() -> int:
@@ -1361,6 +1362,102 @@ def _list_projects() -> list:
 def _first_project_id():
     projs = _list_projects()
     return projs[0]["id"] if projs else None
+
+
+# ── Per-project export folder ────────────────────────────────────────────
+# Stored on each project entry in workspace.json as `exportFolder`. Used by
+# the Settings → Exports section (UI) and the /__export_asset endpoint
+# (daemon). In single-project mode the value lives on the virtual default
+# project, also persisted to workspace.json for consistency.
+
+def _workspace_json_path():
+    base = WORKSPACE_DIR or INSTALL_ROOT
+    return os.path.join(base, "workspace.json")
+
+
+def _workspace_json_load():
+    p = _workspace_json_path()
+    if not os.path.isfile(p):
+        return {"projects": []}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+    except Exception:
+        return {"projects": []}
+    if not isinstance(data, dict):
+        return {"projects": []}
+    data.setdefault("projects", [])
+    if not isinstance(data["projects"], list):
+        data["projects"] = []
+    return data
+
+
+def _workspace_json_save(data):
+    p = _workspace_json_path()
+    try:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+    except OSError:
+        pass
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, p)
+
+
+def _export_folder_get(pid: str) -> "str | None":
+    data = _workspace_json_load()
+    for entry in data.get("projects", []):
+        if isinstance(entry, dict) and entry.get("id") == pid:
+            v = entry.get("exportFolder")
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return None
+
+
+def _export_folder_set(pid: str, folder: "str | None") -> str:
+    """Persist `folder` (absolute path) on the named project entry. Pass
+    None or "" to clear. Returns the normalised stored value (or empty
+    string when cleared). Creates the project entry if it doesn't exist
+    yet — workspace.json's projects[] is the authoritative list."""
+    data = _workspace_json_load()
+    projects = data.get("projects", [])
+    found = None
+    for entry in projects:
+        if isinstance(entry, dict) and entry.get("id") == pid:
+            found = entry
+            break
+    if found is None:
+        found = {"id": pid, "label": pid}
+        projects.append(found)
+        data["projects"] = projects
+    if folder is None or not str(folder).strip():
+        found.pop("exportFolder", None)
+        _workspace_json_save(data)
+        return ""
+    norm = os.path.expanduser(str(folder).strip())
+    if not os.path.isabs(norm):
+        raise ValueError(f"export folder must be an absolute path; got {folder!r}")
+    found["exportFolder"] = norm
+    _workspace_json_save(data)
+    return norm
+
+
+def _export_folder_status(folder: "str | None") -> dict:
+    """Resolve usability flags for an export folder so the Settings UI can
+    show actionable state (exists / writable / will be created)."""
+    if not folder:
+        return {"exists": False, "writable": False, "isAbsolute": False}
+    norm = os.path.expanduser(folder)
+    exists  = os.path.isdir(norm)
+    parent  = os.path.dirname(norm) or "/"
+    parent_writable = os.path.isdir(parent) and os.access(parent, os.W_OK)
+    writable = (exists and os.access(norm, os.W_OK)) or (not exists and parent_writable)
+    return {
+        "exists":     exists,
+        "writable":   writable,
+        "isAbsolute": os.path.isabs(norm),
+        "resolved":   norm,
+    }
 
 
 def _v31_migrate_data_js(project_root: str) -> bool:
@@ -4442,6 +4539,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._rewrite_element_for_kind(qs)
             if parsed.path == "/__native_folder_picker":
                 return self._native_folder_picker()
+            if parsed.path == "/__export_config":
+                return self._export_config_set(qs)
+            if parsed.path == "/__export_asset":
+                return self._export_asset(qs)
             if parsed.path == "/__mkdir":
                 return self._mkdir(qs)
             if parsed.path == "/__rmdir":
@@ -4629,6 +4730,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._resolve_font_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__media_config":
             return self._media_config_get()
+        if url_path == "/__export_config":
+            return self._export_config_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ls_dirs":
             return self._ls_dirs(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__list_files":
@@ -9306,6 +9409,132 @@ class H(http.server.SimpleHTTPRequestHandler):
             rel = None
         return self._reply(200, {"ok": True, "path": path, "rel": rel})
 
+    # GET /__export_config[?project=<id>]
+    # POST /__export_config?project=<id>  body {path:string|null}
+    #
+    # Per-project export folder. Stored on each project entry in
+    # workspace.json as `exportFolder`. No body → returns map of every
+    # known project's current value (Settings dialog reads this). A
+    # `project=<id>` query narrows to a single entry. POST updates the
+    # named project's entry (creating it if absent).
+    def _export_config_get(self, qs):
+        pid = (qs.get("project") or [""])[0].strip() if isinstance(qs, dict) else ""
+        if pid:
+            folder = _export_folder_get(pid) or ""
+            return self._reply(200, {
+                "project":      pid,
+                "exportFolder": folder,
+                "status":       _export_folder_status(folder) if folder else None,
+            })
+        # No project query → enumerate every workspace.json project entry.
+        data = _workspace_json_load()
+        out = []
+        for entry in data.get("projects", []):
+            if not isinstance(entry, dict): continue
+            eid = entry.get("id")
+            if not eid: continue
+            folder = entry.get("exportFolder") or ""
+            out.append({
+                "id":           eid,
+                "label":        entry.get("label") or eid,
+                "exportFolder": folder,
+                "status":       _export_folder_status(folder) if folder else None,
+            })
+        # Also include any discoverable on-disk projects that aren't in
+        # workspace.json yet — so the Settings UI lists every project the
+        # user can actually open, not just the ones with a saved entry.
+        seen = {p["id"] for p in out}
+        for p in _list_projects():
+            if p["id"] not in seen:
+                out.append({
+                    "id":           p["id"],
+                    "label":        p.get("label") or p["id"],
+                    "exportFolder": "",
+                    "status":       None,
+                })
+        return self._reply(200, {"projects": out})
+
+    def _export_config_set(self, qs):
+        pid = (qs.get("project") or [""])[0].strip() if isinstance(qs, dict) else ""
+        if not pid:
+            return self._reply(400, {"error": "missing ?project=<id>"})
+        if not PROJECT_ID_OK.match(pid):
+            return self._reply(400, {"error": "invalid project id"})
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        raw = body.get("path")
+        if raw is None:
+            stored = _export_folder_set(pid, None)
+        else:
+            if not isinstance(raw, str):
+                return self._reply(400, {"error": "path must be a string or null"})
+            try:
+                stored = _export_folder_set(pid, raw)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+        return self._reply(200, {
+            "ok":           True,
+            "project":      pid,
+            "exportFolder": stored,
+            "status":       _export_folder_status(stored) if stored else None,
+        })
+
+    # POST /__export_asset?project=<id>  body {nodeId:string}
+    # Bundles the named asset/prototype/container node into the project's
+    # configured export folder. Returns the absolute bucket path so the UI
+    # can reveal it in Finder. See editor/exports.py for the per-kind
+    # dispatch + README templates + serve.command helper.
+    def _export_asset(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = (qs.get("project") or [""])[0].strip() if isinstance(qs, dict) else ""
+        if not pid:
+            # Single-project mode resolves project_root without an id; in
+            # that case use the virtual "default" project for storage.
+            pid = "default"
+        try:
+            body = self._read_json_body(max_bytes=64 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        node_id = (body.get("nodeId") or "").strip()
+        if not node_id:
+            return self._reply(400, {"error": "missing nodeId in body"})
+        export_root = _export_folder_get(pid)
+        if not export_root:
+            return self._reply(400, {
+                "error":     "no export folder set for this project",
+                "hint":      "open Settings → Exports and pick a destination folder",
+                "project":   pid,
+            })
+        # Find the node in workflow.json.
+        wf_path = os.path.join(project_root, "workflow", "workflow.json")
+        if not os.path.isfile(wf_path):
+            return self._reply(404, {"error": "workflow.json not found"})
+        try:
+            with open(wf_path, "r", encoding="utf-8") as f:
+                wf = json.load(f)
+        except Exception as e:
+            return self._reply(500, {"error": f"workflow.json unreadable: {e}"})
+        node = next((n for n in (wf.get("nodes") or [])
+                     if isinstance(n, dict) and n.get("id") == node_id), None)
+        if not node:
+            return self._reply(404, {"error": f"node not found: {node_id!r}"})
+        try:
+            manifest = _exports.export_node(node, project_root, export_root)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(500, {"error": f"export failed: {e}"})
+        return self._reply(200, manifest)
+
     # GET /__source_prototypes?project=<id>
     # Walks `source/` to find every folder containing an `index.html`. Returns
     # them as a flat list so the workflow library can surface agent-generated
@@ -11749,21 +11978,33 @@ class H(http.server.SimpleHTTPRequestHandler):
         # made "i try to run and nothing happens" — the spawn would
         # succeed structurally but the subprocess hit a permission wall
         # on its first tool call and emitted empty text.
-        if permission_mode == "bypassPermissions":
-            spawn_args += [
-                "--allow-dangerously-skip-permissions",
-                "--dangerously-skip-permissions",
-            ]
-        elif defs.get("permission_flag") and permission_mode:
-            spawn_args += [defs["permission_flag"], permission_mode]
-        # v3.1 — Hide user-level slash commands so /prototype etc. don't
-        # auto-load and override the visual-planner pipeline. Subagents
-        # dispatched via the Task tool are unaffected.
-        spawn_args += ["--disable-slash-commands"]
-        # v3.1 — Hook gate: block *.html writes until visual-planner dispatched.
-        _harness_settings = _ensure_harness_settings()
-        if _harness_settings:
-            spawn_args += ["--settings", _harness_settings]
+        # v3.5 — Claude-only flag block. Codex's CLI surface differs:
+        #   • permission bypass: codex uses --full-auto, not the Claude pair
+        #   • --disable-slash-commands / --settings / --append-system-prompt
+        #     are Claude Code-specific and would crash codex with "unknown flag"
+        # Gate them behind agent_id == "claude" so a Codex spawn stays clean.
+        if agent_id == "claude":
+            if permission_mode == "bypassPermissions":
+                spawn_args += [
+                    "--allow-dangerously-skip-permissions",
+                    "--dangerously-skip-permissions",
+                ]
+            elif defs.get("permission_flag") and permission_mode:
+                spawn_args += [defs["permission_flag"], permission_mode]
+            # v3.1 — Hide user-level slash commands so /prototype etc. don't
+            # auto-load and override the visual-planner pipeline. Subagents
+            # dispatched via the Task tool are unaffected.
+            spawn_args += ["--disable-slash-commands"]
+            # v3.1 — Hook gate: block *.html writes until visual-planner dispatched.
+            _harness_settings = _ensure_harness_settings()
+            if _harness_settings:
+                spawn_args += ["--settings", _harness_settings]
+        elif agent_id == "codex":
+            # Codex's full-auto mode skips all permission prompts. Default
+            # to it when bypassPermissions is requested; otherwise let the
+            # CLI fall through to its built-in default approval-mode.
+            if permission_mode == "bypassPermissions":
+                spawn_args += ["--full-auto"]
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability — see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
@@ -11827,7 +12068,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # "Claude requested permissions" prompts. cwd is project_root for
         # this spawn (see subprocess.Popen below), so this is purely
         # confirming "yes, you can write inside your own working directory."
-        spawn_args += ["--add-dir", project_root]
+        # v3.5 — Claude-only; Codex uses cwd directly without an --add-dir flag.
+        if agent_id == "claude":
+            spawn_args += ["--add-dir", project_root]
 
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,

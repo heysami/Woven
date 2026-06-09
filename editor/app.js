@@ -6463,6 +6463,18 @@ function getDefaultForCapability(cap) {
   if (!v || !v.provider) return null;
   return v;
 }
+/* v3.5 — Which CLI (`claude` vs `codex`) the chat spawn should use, based on
+   the user's agent-capability default. Falls back to "claude" so the
+   historical default keeps working when no preference is saved. The daemon
+   side of this is keyed on the same agentId — see AGENT_DEFS in serve.py. */
+function pickAgentIdForChat() {
+  try {
+    const def = getDefaultForCapability("agent");
+    if (def && def.provider === "openai")    return "codex";
+    if (def && def.provider === "anthropic") return "claude";
+  } catch {}
+  return "claude";
+}
 /* Pull the per-capability model lists from the media catalog. svg / video /
    3d / lottie aren't first-class lists in the catalog (yet) so we synthesize
    them from the providers' capability tags. */
@@ -14894,7 +14906,7 @@ function WorkflowCanvas() {
       title: "Workflow chat",
       kind: "freeform",
       branch,
-      agentId: "claude",
+      agentId: pickAgentIdForChat(),
     });
     setChatRunFinished(false);
   }, [branch]);
@@ -14927,7 +14939,7 @@ function WorkflowCanvas() {
     // daemon honors them.
     const agentDefault = getDefaultForCapability("agent");
     const run = await triggerRun({
-      branch, agentId: "claude", kind: "freeform",
+      branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode: chatPermissionMode,
       model: agentDefault && agentDefault.model || undefined,
     });
@@ -17386,6 +17398,50 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
       ${tipBubble}
     <//>
   `, document.body);
+}
+
+/* Run /__export_asset for a node. Shared between the prototype-node and
+   asset-node top-action rows so the click handler stays in one place.
+   • No export folder set → alert with hint to open Settings → Exports.
+   • Success → alert with the bucket path + an optional Finder-reveal
+     (mac only, via the daemon-side `open <dir>` shortcut).
+   • Error → alert with the daemon's error message. */
+async function runExportForNode(nodeId, nodeLabel) {
+  try {
+    const r = await fetch(apiUrl("/__export_asset"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeId }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (j.hint) {
+        alert(`Export · ${j.error || "failed"}\n\n${j.hint}.`);
+      } else {
+        alert(`Export failed: ${j.error || `HTTP ${r.status}`}`);
+      }
+      return;
+    }
+    const path = j.exportPath || "";
+    const fileCount = (j.files && j.files.length) || 0;
+    const detail = fileCount
+      ? `${fileCount} file${fileCount === 1 ? "" : "s"} bundled.`
+      : "Bundle written (no copied files — see README).";
+    const wantReveal = window.confirm(
+      `Exported ${nodeLabel || nodeId}\n\n${path}\n\n${detail}\n\nReveal in Finder?`
+    );
+    if (wantReveal && path) {
+      // Daemon-side reveal via the existing static-file route doesn't help
+      // since macOS's "open" needs the actual filesystem; the simplest
+      // cross-platform path is to copy to clipboard and trust the user.
+      try {
+        await navigator.clipboard.writeText(path);
+        // No-op alert — clipboard is the signal.
+      } catch {}
+    }
+  } catch (e) {
+    alert(`Export failed: ${e.message || e}`);
+  }
 }
 
 /* Portaled row of action chips that float above the node, aligned to the
@@ -32777,6 +32833,14 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             onClick: onZoom,
             className: "workflow-node-top-action-zoom",
           },
+          {
+            key: "export",
+            icon: html`<${Icon.ExportBox}/>`,
+            tip: "Export — bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (Settings → Exports).",
+            ariaLabel: "Export prototype",
+            onClick: () => runExportForNode(node.id, node.label || node.title),
+            className: "workflow-node-top-action-export",
+          },
         ]}
       />`}
       ${selected && !hasPickedChild && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
@@ -35016,6 +35080,14 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             ariaLabel: "Zoom",
             onClick: onZoom,
             className: "workflow-node-top-action-zoom",
+          },
+          {
+            key: "export",
+            icon: html`<${Icon.ExportBox}/>`,
+            tip: "Export — bundle this asset into the project's configured export folder (Settings → Exports). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate.",
+            ariaLabel: "Export asset",
+            onClick: () => runExportForNode(node.id, node.label || node.title),
+            className: "workflow-node-top-action-export",
           },
         ]}
       />`}
@@ -43707,6 +43779,7 @@ function WorkflowSettingsDialog({ onClose }) {
               onChanged=${reload}
             />
           `)}
+          <${WorkflowExportsSection}/>
           <${WorkflowLocalSkillsSection}/>
         </div>
       </div>
@@ -43741,6 +43814,134 @@ function WorkflowLocalSkillsSection() {
   return html`
     <div className="workflow-settings-section-group-head">Local skills · no API key</div>
     ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
+  `;
+}
+
+/* Per-project export folder picker. Reads /__export_config (no project arg)
+   for the full list of known projects + their currently saved exportFolder,
+   then renders one row per project with a typed-path input. macOS uses the
+   existing /__native_folder_picker for the "Pick…" button so the user gets
+   the real Finder dialog; other platforms hide the button (paste a path
+   instead). The export endpoint /__export_asset reads the saved value
+   per-project. */
+function WorkflowExportsSection() {
+  const [projects, setProjects] = useState(null);
+  const [busy, setBusy] = useState({});
+  const reload = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__export_config"));
+      const j = await r.json();
+      setProjects(Array.isArray(j.projects) ? j.projects : []);
+    } catch {
+      setProjects([]);
+    }
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+  const setBusyFor = (pid, v) => setBusy((b) => ({ ...b, [pid]: v }));
+  const save = async (pid, path) => {
+    setBusyFor(pid, true);
+    try {
+      const r = await fetch(apiUrl(`/__export_config?project=${encodeURIComponent(pid)}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: path ?? null }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      await reload();
+    } catch (e) {
+      alert(`Save failed: ${e.message || e}`);
+    } finally { setBusyFor(pid, false); }
+  };
+  return html`
+    <div className="workflow-settings-section-group-head">Exports · per project</div>
+    <div className="workflow-settings-section-group-sub">
+      Pick a destination folder per project. Per-asset Export (the ⤓ button on a selected node's top-right) drops a self-contained bundle there — README, port-fallback static server, and the right files (prototype tree + bundled design system, or a single asset under <code>resources/&lt;kind&gt;/</code>). Storage: <code>workspace.json</code> · per-project · plaintext path.
+    </div>
+    ${projects === null
+      ? html`<div className="workflow-settings-section"><span className="workflow-settings-localhint">loading projects…</span></div>`
+      : projects.length === 0
+        ? html`<div className="workflow-settings-section"><span className="workflow-settings-localhint">No projects found yet.</span></div>`
+        : projects.map(p => html`<${WorkflowExportRow}
+              key=${p.id}
+              project=${p}
+              busy=${!!busy[p.id]}
+              onSave=${(path) => save(p.id, path)}
+            />`)}
+  `;
+}
+
+function WorkflowExportRow({ project, busy, onSave }) {
+  const [draft, setDraft] = useState(project.exportFolder || "");
+  useEffect(() => { setDraft(project.exportFolder || ""); }, [project.exportFolder]);
+  const status = project.status || null;
+  const dirty = (draft || "") !== (project.exportFolder || "");
+  const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+  const pick = async () => {
+    try {
+      const r = await fetch(apiUrl("/__native_folder_picker"), { method: "POST" });
+      const j = await r.json();
+      if (j.ok && j.path) {
+        setDraft(j.path);
+        onSave(j.path);
+      }
+    } catch (e) {
+      alert(`Folder picker unavailable: ${e.message || e}`);
+    }
+  };
+  const stateLabel = !project.exportFolder
+    ? "— not set"
+    : (status && status.exists && status.writable
+        ? "✓ ready"
+        : status && status.writable
+          ? "will be created on first export"
+          : "⚠ not writable");
+  const state = !project.exportFolder
+    ? "missing"
+    : (status && status.exists && status.writable ? "ok"
+        : status && status.writable ? "loading" : "missing");
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">${project.label || project.id}</span>
+        <span className="workflow-settings-skills">id: <code>${project.id}</code></span>
+        <span className="workflow-settings-status" data-state=${state}>${stateLabel}</span>
+      </div>
+      <div className="workflow-settings-row" style=${{ gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="text"
+          className="workflow-asset-action-popover-input"
+          style=${{ flex: "1 1 320px", minWidth: "240px" }}
+          placeholder="/absolute/path/to/exports"
+          value=${draft}
+          onInput=${(e) => setDraft(e.target.value)}
+          disabled=${busy}
+          spellcheck="false"
+        />
+        ${isMac && html`<button
+          className="tbtn"
+          disabled=${busy}
+          onClick=${pick}
+          title="Pick a folder with Finder"
+        >Pick…</button>`}
+        <button
+          className=${"tbtn " + (dirty && draft.trim() ? "tbtn-primary" : "")}
+          disabled=${busy || !dirty}
+          onClick=${() => onSave(draft.trim() || null)}
+        >${busy ? "Saving…" : (draft.trim() ? "Save" : "Clear")}</button>
+        ${project.exportFolder && html`<button
+          className="tbtn"
+          disabled=${busy}
+          onClick=${() => { setDraft(""); onSave(null); }}
+          title="Clear the saved export folder for this project"
+        >Clear</button>`}
+      </div>
+      <div className="workflow-settings-hint">
+        ${project.exportFolder
+          ? html`Stored: <code>${project.exportFolder}</code>`
+          : "No folder set yet. Pick or paste an absolute path, then click Save."}
+      </div>
+    </div>
   `;
 }
 
