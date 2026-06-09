@@ -12500,13 +12500,25 @@ function ProjectHomeButton({ info }) {
    library. */
 function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [name, setName] = useState("");
+  const [exportFolder, setExportFolder] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
   const existingIds = useMemo(
     () => new Set((workspaceProjects || []).map(p => (p.id || "").toLowerCase())),
     [workspaceProjects]
   );
+
+  const pickExportFolder = async () => {
+    try {
+      const r = await fetch("/__native_folder_picker", { method: "POST" });
+      const j = await r.json();
+      if (j && j.ok && j.path) setExportFolder(j.path);
+    } catch {
+      // Picker unavailable on non-macOS — user types/pastes a path instead.
+    }
+  };
 
   // Slugify what the user typed into a project-id we'd send to the daemon.
   // Empty string when there's nothing yet (we suppress the hint line then).
@@ -12543,7 +12555,25 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
         setBusy(false);
         return;
       }
-      onCreated && onCreated({ id: j.id || slugId });
+      // Follow-up: if the user provided an export folder, save it on the
+      // newly created project's entry in workspace.json. Best-effort —
+      // a failure here doesn't roll back the project creation. The user
+      // would just see "no folder set" next time they hit Exports and
+      // can fix it then.
+      const newId = j.id || slugId;
+      const trimmedFolder = (exportFolder || "").trim();
+      if (trimmedFolder) {
+        try {
+          await fetch("/__export_config?project=" + encodeURIComponent(newId), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: trimmedFolder }),
+          });
+        } catch {
+          // Non-fatal — the project exists, the export folder just didn't save.
+        }
+      }
+      onCreated && onCreated({ id: newId });
     } catch (e2) {
       setErr(String((e2 && e2.message) || e2));
       setBusy(false);
@@ -12582,6 +12612,30 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
             />
           </label>
           ${hint && html`<div className="newproj-hintrow">${hint}</div>`}
+          <div className="newproj-field newproj-field-secondary" style=${{ flexDirection: "row", gap: "8px", alignItems: "stretch" }}>
+            <input
+              type="text"
+              style=${{ flex: "1 1 auto", minWidth: 0 }}
+              value=${exportFolder}
+              onInput=${(e) => setExportFolder(e.target.value)}
+              placeholder="Export folder (optional) — /absolute/path"
+              disabled=${busy}
+              spellCheck="false"
+            />
+            ${isMac && html`<button
+              type="button"
+              className="newproj-cancel"
+              onClick=${pickExportFolder}
+              disabled=${busy}
+              title="Pick a folder with Finder"
+              style=${{ flex: "0 0 auto" }}
+            >Pick…</button>`}
+          </div>
+          <div className="newproj-hintrow">
+            <span className="newproj-hint">
+              Where per-asset Export (⤓ on a selected node) drops bundles. You can change this later from the Exports button in the workflow toolbar.
+            </span>
+          </div>
           ${err && html`<div className="newproj-error">${err}</div>`}
         </div>
         <footer className="newproj-card-foot">
@@ -44004,7 +44058,7 @@ function WorkflowExportRow({ project, busy, onSave }) {
           value=${draft}
           onInput=${(e) => setDraft(e.target.value)}
           disabled=${busy}
-          spellcheck="false"
+          spellCheck="false"
         />
         ${isMac && html`<button
           className="tbtn"
