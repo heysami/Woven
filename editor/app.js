@@ -10874,11 +10874,21 @@ function parseQuestionForms(text) {
   // ```html/svg to HtmlPreview anyway). Without this guard, the inline
   // detector would steal the SVG content out of a `​`​`​svg block, leaving
   // a dangling open fence that swallows the next heading.
+  //
+  // v3.5 — Also skip inline preview detection when the text looks like a
+  // diff or patch (has `@@ -X,Y +A,B @@` hunk markers OR `diff --git` /
+  // `*** Begin Patch` headers). Codex's apply_patch narration tends to
+  // echo file content into the chat as text_delta; if the file content is
+  // HTML, the inline detector would render the *patch body* as a live
+  // HtmlPreview iframe instead of as code. The "HTML / source / open"
+  // header showing up in the middle of diff text was this bug.
   if (!text) return { segments: [{ kind: "text", text }] };
+  const looksLikeDiff = /(?:^|\n)(?:@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@|diff --git |\*\*\* (?:Begin Patch|Add File|Update File|End Patch))/.test(text)
+    || /(?:^|\n)\+\+\+ [a-z\/]/.test(text);
   const hasForm     = text.includes("<question-form");
   const hasDecision = text.includes("<decision-request");
-  const hasSvg      = /<svg\b/i.test(text);
-  const hasHtml     = /<(?:html\b|!doctype html\b)/i.test(text);
+  const hasSvg      = !looksLikeDiff && /<svg\b/i.test(text);
+  const hasHtml     = !looksLikeDiff && /<(?:html\b|!doctype html\b)/i.test(text);
   if (!hasForm && !hasDecision && !hasSvg && !hasHtml) {
     return { segments: [{ kind: "text", text }] };
   }
