@@ -7543,36 +7543,71 @@ function DaemonIndicator({ compact }) {
   `;
 }
 
-/* Status chip showing whether the Claude CLI is reachable. Drives the
-   "this run is using $0 because no Anthropic API key is set, so we fall
-   back to the CLI" expectation — green when CLI is present, amber when
-   missing. Polls `/__agents` once on mount; cheap GET. */
+/* Status chip showing whether the user's picked CLI is reachable. Drives the
+   "this run is using $0 because no API key is set, so we fall back to the
+   CLI" expectation — green when CLI is present, amber when missing.
+   v3.5 — Reflects the agent-capability default. If the user picked OpenAI
+   as their default agent provider, this shows Codex (not Claude). If no
+   default is picked, prefers the native CLI of whichever provider's key is
+   configured; falls back to "whichever CLI is on PATH" as a last resort. */
 function CliIndicator({ compact }) {
   const { agents, loaded } = useAgents();
+  // Re-render when the user changes their default-providers picks so the
+  // chip flips Claude ↔ Codex immediately.
+  const [defaultsTick, setDefaultsTick] = useState(0);
+  useEffect(() => {
+    const on = () => setDefaultsTick(t => t + 1);
+    window.addEventListener("th:default-providers-changed", on);
+    return () => window.removeEventListener("th:default-providers-changed", on);
+  }, []);
   if (!loaded) {
-    return html`<span className="cli-indicator cli-indicator-loading" title="Checking Claude CLI…" data-tip-host="true">
+    return html`<span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true">
       <span className="cli-dot"/>
       ${!compact && html`<span className="cli-label">CLI…</span>`}
-      <span className="tab-tip">Checking Claude CLI…</span>
+      <span className="tab-tip">Checking CLI…</span>
     </span>`;
   }
   const claude = (agents || []).find(a => a.id === "claude");
-  const ok = !!(claude && claude.available);
-  const version = claude && claude.version ? String(claude.version).split(/\s+/)[0] : null;
+  const codex  = (agents || []).find(a => a.id === "codex");
+  // Decide which CLI to surface. Order:
+  //   1. The user's explicit agent-capability default (set in Settings →
+  //      Default models per capability)
+  //   2. The provider that has an API key configured (still surface its
+  //      native CLI so the user sees what's running when keys roll off)
+  //   3. Whichever CLI is actually installed
+  //   4. Default to Claude (historical behaviour)
+  const agentDef = (() => {
+    try { return getDefaultForCapability("agent"); } catch { return null; }
+  })();
+  let preferred = "claude";
+  if (agentDef && agentDef.provider === "openai")    preferred = "codex";
+  else if (agentDef && agentDef.provider === "anthropic") preferred = "claude";
+  else if (codex && codex.available && !(claude && claude.available)) preferred = "codex";
+  // The chip shows the preferred CLI's state. (Both CLIs missing is handled
+  // by ModelStatusIndicator's "No model" pill.)
+  const target = preferred === "codex" ? codex : claude;
+  const label  = preferred === "codex" ? "Codex CLI" : "Claude CLI";
+  const installHint = preferred === "codex"
+    ? "Install it (npm i -g @openai/codex, then run `codex login`) so the agent can dispatch."
+    : "Install it (npm i -g @anthropic-ai/claude-code or install the desktop app) so the agent can dispatch.";
+  const keyName = preferred === "codex" ? "OpenAI" : "Anthropic";
+  const ok = !!(target && target.available);
+  const version = target && target.version ? String(target.version).split(/\s+/)[0] : null;
   const tooltip = ok
-    ? `Claude CLI ${version || "available"} at ${claude.bin}. Used as the fallback when no Anthropic API key is set.`
-    : "Claude CLI not on PATH. Install it (npm i -g @anthropic-ai/claude-code or install the desktop app) so the agent can dispatch.";
+    ? `${label} ${version || "available"} at ${target.bin}. Used as the fallback when no ${keyName} API key is set.`
+    : `${label} not on PATH. ${installHint}`;
   const tipShort = ok
-    ? `Claude CLI ${version || ""} ready`
-    : "Claude CLI not installed";
+    ? `${label} ${version || ""} ready`
+    : `${label} not installed`;
   return html`<span
     className=${"cli-indicator " + (ok ? "cli-indicator-ok" : "cli-indicator-missing")}
     title=${tooltip}
     data-tip-host="true"
     data-state=${ok ? "ok" : "missing"}
+    data-cli=${preferred}
   >
     <span className="cli-dot"/>
-    ${!compact && html`<span className="cli-label">${ok ? ("CLI " + (version || "")) : "CLI missing"}</span>`}
+    ${!compact && html`<span className="cli-label">${ok ? ((preferred === "codex" ? "Codex " : "CLI ") + (version || "")) : (label + " missing")}</span>`}
     <span className="tab-tip">${tipShort}</span>
   </span>`;
 }
@@ -7594,7 +7629,7 @@ function useMediaConfig() {
       const j = await r.json();
       setConfig(j);
     } catch {
-      setConfig({ providers: {}, claude_cli_available: false });
+      setConfig({ providers: {}, claude_cli_available: false, codex_cli_available: false });
     } finally {
       setLoaded(true);
     }
@@ -7610,7 +7645,9 @@ function useMediaConfig() {
   }, [reload]);
   const providers = (config && config.providers) || {};
   const hasAnyKey = Object.values(providers).some(p => p && (p.has_key || p.saved || p.from_env));
-  const hasCli    = !!(config && config.claude_cli_available);
+  // v3.5 — `hasCli` is true when EITHER native CLI is available so the
+  // "no model configured" pill clears as soon as Codex login alone is set up.
+  const hasCli = !!(config && (config.claude_cli_available || config.codex_cli_available));
   return { config, loaded, hasAnyKey, hasCli, configured: hasAnyKey || hasCli, reload };
 }
 
@@ -7629,7 +7666,7 @@ function ModelStatusIndicator({ onOpenSettings, compact }) {
   // but CLI missing" warning here — that's not an error, it's just a CLI
   // chip update; the cli-indicator already handles it.)
   const label = compact ? "No model" : "No model configured";
-  const tip   = "No Anthropic API key saved AND no Claude CLI on PATH. The agent can't run until you set one up — click to open Settings.";
+  const tip   = "No provider API key saved AND no CLI (Claude Code or Codex) on PATH. The agent can't run until you set one up — click to open Settings.";
   return html`<button
     type="button"
     className="model-status-indicator"
@@ -8831,6 +8868,20 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [uploads,     setUploads]     = useState([]);   // [{ name, path, mime, bytes }]
   const [attachBusy, setAttachBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  // Claude-Code-style send queue. While `disabled` (agent mid-turn), Send
+  // enqueues instead of posting; the drain effect dispatches the head when
+  // the turn ends. Each envelope snapshots text + attachments + uploads at
+  // enqueue time so the user can stage fresh attachments without mutating
+  // queued messages. Policy B: drain on ANY non-busy status transition
+  // (done / fail / error) and let the existing user-message ↔ resume
+  // fallback recover from a dead process.
+  const [queue, setQueue] = useState([]);   // [{ id, text, attachments, uploads }]
+  // Monotonic envelope IDs — Date-free so it doesn't run afoul of replay
+  // tooling that intercepts Date.now / new Date.
+  const queueIdRef = useRef(0);
+  // Previous `disabled` value so the drain effect fires only on the
+  // true → false transition (turn-end), not on every render.
+  const prevDisabledRef = useRef(false);
   const fileInputRef = useRef(null);
   const uploadInputRef = useRef(null);
   const taRef = useRef(null);
@@ -8921,19 +8972,23 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
   }, [uploadAttachment, uploadProjectFiles]);
 
-  const composeWithAttachments = (body) => {
-    if (!attachments.length && !uploads.length) return body;
+  // Builds the preamble + body the daemon sees. Takes attachments/uploads
+  // as args (rather than reading state) so a queued envelope can re-use
+  // exactly the files the user staged at enqueue time, even if the live
+  // composer state has since changed.
+  const composeWithAttachments = (body, atts = attachments, ups = uploads) => {
+    if (!atts.length && !ups.length) return body;
     const lines = [];
-    if (attachments.length) {
-      lines.push("User attached " + attachments.length + " image" + (attachments.length === 1 ? "" : "s") + " for vision:");
-      for (const a of attachments) lines.push("  • " + a.path);
+    if (atts.length) {
+      lines.push("User attached " + atts.length + " image" + (atts.length === 1 ? "" : "s") + " for vision:");
+      for (const a of atts) lines.push("  • " + a.path);
       lines.push("Use the Read tool on the path(s) above to inspect them before responding.");
     }
-    if (uploads.length) {
-      if (attachments.length) lines.push("");
-      lines.push("User uploaded " + uploads.length + " project file" + (uploads.length === 1 ? "" : "s") + " (long-lived assets under source/uploads/):");
-      for (const u of uploads) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
-      lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + uploads[0].path + "` for img2img) or Read them if you need their contents.");
+    if (ups.length) {
+      if (atts.length) lines.push("");
+      lines.push("User uploaded " + ups.length + " project file" + (ups.length === 1 ? "" : "s") + " (long-lived assets under source/uploads/):");
+      for (const u of ups) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
+      lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + ups[0].path + "` for img2img) or Read them if you need their contents.");
     }
     lines.push("");
     return lines.join("\n") + body;
@@ -8971,20 +9026,28 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const isResuming = (locked && !isNew)
                    || (!isNew && (runStatus === "error" || runStatus === "fail"));
 
-  const canSend = (!!text.trim() || attachments.length > 0) && !busy && !disabled
+  // `canSend` no longer ANDs `!disabled` — while the agent is mid-turn, Send
+  // is still active and the click ENQUEUES the message into the local
+  // `queue` (Claude-Code-style). `wouldQueue` is the disambiguator used by
+  // the button label / tooltip.
+  const canSend = (!!text.trim() || attachments.length > 0) && !busy
                   && (isNew ? !!onStartNewChat : !!runId);
+  // isNew always has disabled=false (parent gates `disabled` on
+  // `!isNew && (streaming || connecting)`), so queueing only ever applies
+  // to the reply path. Keeping the explicit `!isNew` guard makes the intent
+  // obvious if that gate ever changes.
+  const wouldQueue = canSend && disabled && !isNew;
 
-  const send = async () => {
-    if (!canSend) return;
-    const body = composeWithAttachments(text.trim());
+  // dispatch — fire ONE envelope at the daemon. Carries the full
+  // user-message ↔ resume fallback so a drained envelope sent after a fail
+  // or stale-state error still lands on whichever endpoint the daemon
+  // currently accepts. Returns true on success, false on failure (caller
+  // decides whether to requeue).
+  const dispatch = async (envelope) => {
+    if (!runId) return false;
+    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads);
     setBusy(true); setError(null);
     try {
-      if (isNew) {
-        await onStartNewChat(body);
-        setText(""); setAttachments([]);
-        if (onSent) onSent(body);
-        return;
-      }
       // Two endpoints, each with its own "wrong endpoint" failure mode. We try
       // the one our local state thinks is right, then fall back when the daemon
       // disagrees — without ever throwing back to the user:
@@ -9038,7 +9101,6 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           throw new Error(j2.error || `HTTP ${r.status}`);
         }
       }
-      setText(""); setAttachments([]);
       // v3.5.1 — ALWAYS bump SSE after any send while the chat wasn't already
       // actively streaming. The bug this catches:
       //   1. The daemon's run finished a turn → emits `end` → its `_run_stream`
@@ -9060,12 +9122,107 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       const needBump = usedResume || didFallback || sseProbablyStale;
       if (needBump && onResumed) onResumed();
       if (onSent) onSent(body);
+      return true;
     } catch (e) {
       setError(e.message || String(e));
+      return false;
     } finally {
       setBusy(false);
     }
   };
+  // Stable handle for the drain effect — keeps the effect's dep list to
+  // `disabled / queue / busy` so the prevDisabled flip-detect stays sharp
+  // regardless of how often dispatch's identity churns.
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
+  // Guards against re-entering the drain loop while one envelope is
+  // already in flight. Belt-and-braces with the busy/queue checks below.
+  const drainingRef = useRef(false);
+
+  const send = async () => {
+    if (!canSend) return;
+    // Agent is mid-turn → ENQUEUE rather than POST. Snapshot text +
+    // attachments + uploads onto the envelope so subsequent edits to
+    // the live composer don't mutate already-queued messages.
+    if (wouldQueue) {
+      const env = {
+        id: ++queueIdRef.current,
+        text: text.trim(),
+        attachments: attachments.slice(),
+        uploads: uploads.slice(),
+      };
+      setQueue(prev => [...prev, env]);
+      setText(""); setAttachments([]); setUploads([]);
+      return;
+    }
+    // isNew shell — spawn a brand-new run via the parent. Never queued
+    // (no agent to be busy yet).
+    if (isNew) {
+      const body = composeWithAttachments(text.trim());
+      setBusy(true); setError(null);
+      try {
+        await onStartNewChat(body);
+        setText(""); setAttachments([]); setUploads([]);
+        if (onSent) onSent(body);
+      } catch (e) {
+        setError(e.message || String(e));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // Live reply — agent is idle. Dispatch immediately.
+    const env = {
+      id: ++queueIdRef.current,
+      text: text.trim(),
+      attachments: attachments.slice(),
+      uploads: uploads.slice(),
+    };
+    const ok = await dispatch(env);
+    if (ok) { setText(""); setAttachments([]); setUploads([]); }
+  };
+
+  // Drain effect — fire-once-per-turn-end. When `disabled` falls from
+  // true → false (any of done / fail / error, per policy B), shift the head
+  // off the queue and dispatch it. The dispatch path's own fallback handles
+  // a dead process; on hard failure we put the envelope back at the front
+  // so the user can see it (and the next user nudge re-attempts).
+  useEffect(() => {
+    const fellOpen = prevDisabledRef.current && !disabled;
+    prevDisabledRef.current = disabled;
+    if (!fellOpen) return;
+    if (drainingRef.current) return;
+    if (!queue.length || busy) return;
+    if (!runId) return;
+    const head = queue[0];
+    setQueue(rest => rest.slice(1));
+    drainingRef.current = true;
+    (async () => {
+      try {
+        const ok = await dispatchRef.current(head);
+        if (!ok) setQueue(prev => [head, ...prev]);
+      } finally {
+        drainingRef.current = false;
+      }
+    })();
+  }, [disabled, queue, busy, runId]);
+
+  // Pull a queued envelope BACK into the live composer for editing. Removes
+  // the envelope from the queue and folds its text + attachments + uploads
+  // into composer state. The user can then re-send (which re-enqueues if
+  // the agent is still busy) or just edit and resend later.
+  const pullQueuedIntoComposer = (id) => {
+    const env = queue.find(q => q.id === id);
+    if (!env) return;
+    setQueue(prev => prev.filter(q => q.id !== id));
+    setText(prev => prev ? (prev + (prev.endsWith("\n") ? "" : "\n") + env.text) : env.text);
+    setAttachments(prev => [...prev, ...env.attachments]);
+    setUploads(prev => [...prev, ...env.uploads]);
+    if (taRef.current) {
+      try { taRef.current.focus(); } catch { /* fine */ }
+    }
+  };
+  const removeQueued = (id) => setQueue(prev => prev.filter(q => q.id !== id));
 
   // Filter the loaded skill list against the current slash query (chars after
   // `/`). Match against slug + name + description so users can find skills
@@ -9159,11 +9316,42 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     : isNew
       ? "Ask the agent anything  ·  ⌘/Ctrl+Enter to send"
     : disabled
-      ? "Type now — Send unlocks the moment the agent's turn ends."
+      ? "Type a follow-up — Send queues it. The next turn picks it up automatically."
       : "Reply to the agent  ·  ⌘/Ctrl+Enter to send";
 
   return html`
-    <div className="chat-composer" data-busy=${disabled} onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}>
+    <div className="chat-composer" data-busy=${disabled} data-queued=${queue.length > 0 ? "true" : "false"} onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}>
+      ${queue.length > 0 && html`
+        <div className="chat-composer-queue" role="list" aria-label=${`${queue.length} queued message${queue.length === 1 ? "" : "s"}`}>
+          ${queue.map((q, i) => {
+            const preview = (q.text || "").trim().replace(/\s+/g, " ").slice(0, 80) || (q.attachments.length || q.uploads.length ? "(attachments only)" : "(empty)");
+            const meta = (q.attachments.length ? ` · ${q.attachments.length}📎` : "") + (q.uploads.length ? ` · ${q.uploads.length}📁` : "");
+            const titleParts = [
+              `Queued message #${i + 1} — click to edit, × to drop`,
+              q.text || "(no text)",
+            ];
+            if (q.attachments.length) titleParts.push("Attachments:\n" + q.attachments.map(a => "  " + a.path).join("\n"));
+            if (q.uploads.length)     titleParts.push("Uploads:\n"     + q.uploads.map(u => "  " + u.path).join("\n"));
+            return html`
+              <span key=${"q" + q.id} className="chat-composer-queue-item" role="listitem">
+                <span className="chat-composer-queue-index">${i + 1}</span>
+                <button
+                  type="button"
+                  className="chat-composer-queue-body"
+                  title=${titleParts.join("\n\n")}
+                  onClick=${() => pullQueuedIntoComposer(q.id)}
+                >${preview}${meta}</button>
+                <button
+                  type="button"
+                  className="chat-composer-queue-rm"
+                  onClick=${() => removeQueued(q.id)}
+                  title="Drop this queued message"
+                >×</button>
+              </span>
+            `;
+          })}
+        </div>
+      `}
       ${(attachments.length > 0 || uploads.length > 0) && html`
         <div className="chat-composer-attachments">
           ${attachments.map((a, i) => html`
@@ -9284,13 +9472,17 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         >Stop</button>
       `}
       <button
-        className="chat-composer-send"
+        className=${"chat-composer-send" + (wouldQueue ? " chat-composer-send-queue" : "")}
         onClick=${send}
         disabled=${!canSend}
         title=${(() => {
           const baseTitle = canSend
-            ? (isNew ? "Start new chat  ⌘/Ctrl+Enter" : (isResuming ? "Resume conversation  ⌘/Ctrl+Enter" : "Send  ⌘/Ctrl+Enter"))
-            : (disabled ? "Agent is working — Send will unlock when the turn ends" : "Type something first or attach an image");
+            ? (wouldQueue
+                ? "Agent is working — Send will queue this and fire it the moment the turn ends  ⌘/Ctrl+Enter"
+                : (isNew
+                    ? "Start new chat  ⌘/Ctrl+Enter"
+                    : (isResuming ? "Resume conversation  ⌘/Ctrl+Enter" : "Send  ⌘/Ctrl+Enter")))
+            : "Type something first or attach an image";
           // v2.9b — selection context only attaches on a new chat's first
           // turn (spawnWorkflowChat path). Subsequent turns reuse the
           // existing run, so the badge would be misleading.
@@ -9300,8 +9492,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           return baseTitle;
         })()}
       >
-        ${busy ? "…" : "Send"}
+        ${busy ? "…" : (wouldQueue ? "Queue" : "Send")}
         ${isNew && selectionCount > 0 && html`<span className="chat-composer-send-badge" aria-label=${`${selectionCount} selected nodes as context`}>· ${selectionCount}</span>`}
+        ${queue.length > 0 && html`<span className="chat-composer-send-badge" aria-label=${`${queue.length} queued`}>· ${queue.length} in queue</span>`}
       </button>
       ${error && html`<div className="chat-composer-error">${error}</div>`}
     </div>
