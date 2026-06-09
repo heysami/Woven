@@ -3279,6 +3279,15 @@ These are not from the URL sources but are essential to a serious library.
 
 ## 3. Category × prototype decision tree
 
+> **Normalised schema (read this before parsing the tables below).** Every entry conforms to:
+>
+> - **Column 1 — `Prototype slug`** — kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
+> - **Column 2 — `Default`** — the PRIMARY illustration `styleId` (kebab-case, matches an entry in §2 above). Orchestrator uses this by default unless overridden by `explicitStylePicks[slotId]` or by an antiPattern conflict.
+> - **Column 3 — `Alternatives`** — comma-separated additional `styleId`s for variety / antiPattern avoidance.
+> - **Column 4 — `Decoration / Notes`** — for illustration specifically, this column carries the recommended decoration-role styleId (abstract shape / arrow / blob) that pairs with the slug. May also carry advisory prose.
+>
+> The three subsections below split by slug-type (style / aesthetic / recipe) only for readability — orchestrator reads all three. The same schema is mirrored in `photography-library.md §3` and `material-library.md §7`.
+
 For each major prototype.md style/aesthetic slug, the recommended illustration entries. Use first-listed entry as default; later entries are alternatives for variety. Roles in parentheses where the choice is not the obvious one.
 
 ### 3.1 Style slugs

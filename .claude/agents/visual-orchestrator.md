@@ -125,6 +125,33 @@ A drawer that produced an asset but didn't return a prompt is broken — re-disp
 - `visualPlanPath` (default: `workflow/visual-plan.json` — you own this)
 - `genre` (read from `editor/branches/<branchSlug>.js` line-1 `// GENRE:` comment, or the active DS `meta.json.genre`)
 
+## Step 0a (v3.5) — Look for upstream art-direction enrichments (photography + illustration orchestrators)
+
+**Before scaffolding any prompt nodes, walk `workflow/workflow.json` for `pe_photo_*` and `pe_illust_*` nodes** committed by photography-orchestrator / illustration-orchestrator. These are the FIRST-style art-direction passes that ran before you. Each enrichment node binds to a specific `slotId` and supplies a paste-ready prompt + negative-prompt + style hints sourced from `docs/research/photography-library.md` or `docs/research/illustration-library.md`.
+
+```bash
+curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
+  | python3 -c "
+import json, sys
+g = json.load(sys.stdin)
+enrichments = {n['slotId']: n for n in g.get('nodes',[])
+               if n.get('id','').startswith(('pe_photo_','pe_illust_'))}
+print(json.dumps(enrichments))
+"
+```
+
+For each slot you're about to scaffold:
+
+1. **Compute the slot's `slotId`** the same way photography/illustration orchestrators did (file path + position).
+2. **Look up `pe_photo_<slotId>` or `pe_illust_<slotId>`** in the enrichment map.
+3. **If an enrichment exists for this slot**, use its `outputs.promptForRasterPhoto` / `outputs.promptForRasterForeground` as the prompt node's text VERBATIM. Don't re-prompt — the library decision-tree already picked the right style. Also pull `outputs.negativePrompt` into a sibling `negativePrompt` field on the skill node so the image generator honours both.
+4. **If no enrichment exists for this slot**, scaffold the prompt node as you always did (Step 0 + Step 4 below). Default un-enriched prompts ship cleanly.
+5. **Record the enrichment-source** in the prompt node's metadata: `{"enrichmentSource": "pe_photo_<slotId>", "styleId": "<library styleId>"}` so the QA pass in Step 8 can reference what was picked.
+
+Slots WITHOUT enrichments still get the Step 0 style cue. Slots WITH enrichments inherit the style cue PLUS the library entry's specific keywords + film stock + lens + lighting hints — the enrichment is additive, never replacement.
+
+**This step is INFORMATIONAL.** If neither orchestrator ran (because no image-gen model wired, or because the project's aesthetic didn't trigger them), the enrichment map is empty and you proceed as you always have. Photography + illustration are degrade-gracefully — visual-orchestrator never depends on them being present.
+
 ## Step 0 (v3.2) — Commit the project style cue and propagate it to EVERY drawer
 
 Before enumeration, derive the **project-wide style cue** from (in priority order):
@@ -180,7 +207,10 @@ The key rule: **the vibe is a constraint on every visual choice**, not just on t
     - The slot's `data-slot="<id>"` value or surrounding comment / `aria-label`
     - The line of source surrounding the slot, trimmed to ~80 chars
     Do NOT compose a creative brief beyond this one-line intent — the drawer expands it. You just classify and label.
-4. **Scaffold workflow.json** with the node trio per `keep` asset. CRITICAL: write `intent` into `p_<assetId>.text` AT THIS STEP. The prompt node MUST NOT be empty — every visible prompt node on the canvas needs at minimum the one-line intent so the user can ▶ Run it later and so the dispatched drawer can read it. Edge cases that drop content (orchestrator can't dispatch drawers, drawer returns nothing, etc.) all leave the user with empty prompt nodes — DON'T LET THAT HAPPEN.
+4. **Scaffold workflow.json** with the node trio per `keep` asset. CRITICAL: write the prompt into `p_<assetId>.text` AT THIS STEP. The prompt node MUST NOT be empty. **Priority order for the prompt text:**
+   1. **(v3.5)** If a `pe_photo_<slotId>` or `pe_illust_<slotId>` enrichment exists for this slot (per Step 0a), use `outputs.promptForRasterPhoto` / `outputs.promptForRasterForeground` verbatim. This carries the library-picked style, lens, lighting, mood, film-stock — everything the slot needs to read as its committed photography or illustration style.
+   2. **Otherwise**, use the asset's `intent` (the one-line description you wrote in step 3 above) prefixed with the Step 0 style cue. The default Pathway-A drawer will expand it.
+   Edge cases that drop content (orchestrator can't dispatch drawers, drawer returns nothing, etc.) all leave the user with empty prompt nodes — DON'T LET THAT HAPPEN.
 5. **Annotate slot markup** with `data-slot="<assetId>"` so the drawer can locate it without re-grepping. One attribute per slot. No other edits.
 6. **Write visual-plan.json** — every kept asset's id, medium, pipeline, slot, nodeIds, intent. This file is the dispatch manifest the parent agent uses to fan out drawers (see "DISPATCH" below).
 7. **Return** a short summary to the parent: how many slots, how many kept, dispatch manifest at `workflow/visual-plan.json`.

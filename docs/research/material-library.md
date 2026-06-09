@@ -3305,6 +3305,15 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
 
 ## 7. Prototype-style decision tree
 
+> **Normalised schema (read this before parsing the table below).** Every entry conforms to:
+>
+> - **Column 1 — `Prototype slug`** — kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). May be wrapped in backticks for visual distinction. Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
+> - **Column 2 — `Primary material(s)`** — comma-separated `materialId`s (kebab-case, match §2-§5 entries). Default pick is the FIRST entry; orchestrator may apply multiple primaries to different element roles on the page (e.g. card surface + decorative shape + image bg).
+> - **Column 3 — `Secondary material(s)`** — additional materials for layered application (e.g. paper PRIMARY + foxing-stain SECONDARY overlay). Used to compose effects.
+> - Some rows include explicit "no material — flat is the brief" or "anti-pattern" callouts. Orchestrator MUST honour these — refuse to dispatch material fidelity for those slugs.
+>
+> The same schema is mirrored in `photography-library.md §3` and `illustration-library.md §3`.
+
 Mapping from prototype.md slugs to applicable materials. The orchestrator consults this table when walking a HTML tree and reading the `GENRE` comment.
 
 | Prototype slug | Primary material(s) | Secondary material(s) |

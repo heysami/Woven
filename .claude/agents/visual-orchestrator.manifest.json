@@ -2,11 +2,11 @@
   "id": "visual-orchestrator",
   "label": "Visual",
   "tagline": "Images, icons, illustrations, decorative ambient motion",
-  "version": "v3.2",
+  "version": "v3.5",
   "defaultEnabled": true,
   "subagentName": "visual-orchestrator",
   "playbookPath": ".claude/agents/visual-orchestrator.md",
-  "description": "Classifies every visual slot (img, background-image, canvas, declared shader/lottie/3d paths) by medium and dispatches one per-medium drawer per slot. Modes: HTML-enumeration (post source-write) and (chat-triggered ad-hoc image requests). Step 8 QA checks style coherence + composition + cutout + text contrast after assets land.",
+  "description": "Classifies every visual slot (img, background-image, canvas, declared shader/lottie/3d paths) by medium and dispatches one per-medium drawer per slot. Modes: HTML-enumeration (post source-write) and (chat-triggered ad-hoc image requests). Step 8 QA checks style coherence + composition + cutout + text contrast after assets land. v3.5: reads pe_photo_<slotId> and pe_illust_<slotId> enrichment nodes from photography-orchestrator / illustration-orchestrator (if they ran upstream) and uses their outputs.promptForRasterPhoto / outputs.promptForRasterForeground verbatim as the prompt for the corresponding raster-photo / raster-foreground slot. Slots without enrichments fall back to the default un-enriched prompt — photography + illustration are degrade-gracefully, visual never depends on them.",
   "triggers": [
     {
       "mode": "chat",

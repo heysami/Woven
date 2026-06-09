@@ -1404,6 +1404,15 @@ Each entry below is one distinct photographic style. The orchestrator should pic
 
 ## 3. Style-pick decision tree
 
+> **Normalised schema (read this before parsing the table below).** Every entry conforms to:
+>
+> - **Column 1 — `Prototype slug`** — kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
+> - **Column 2 — `Default`** — the PRIMARY photography `styleId` (kebab-case, matches an entry in §2 above). Orchestrator uses this by default unless overridden by `explicitStylePicks[slotId]` or by an antiPattern conflict.
+> - **Column 3 — `Alternatives`** — comma-separated additional `styleId`s. Orchestrator picks from these when (a) the default conflicts with an antiPattern, OR (b) the project has multiple photographic slots and the orchestrator wants variety across them.
+> - **Column 4 — `Notes`** — advisory prose; orchestrator may use this to weigh the default vs alternatives but does NOT need to parse it programmatically.
+>
+> The same schema is mirrored in `illustration-library.md §3` and `material-library.md §7` so an orchestrator that reads one knows how to read all three.
+
 When the source HTML has committed to a prototype.md aesthetic, the orchestrator maps that aesthetic to compatible photography styles. The first column is the prototype slug, the second column lists photography `styleId`s, the third explains the bias.
 
 | Prototype aesthetic / style | Photography styles that fit | Notes |
