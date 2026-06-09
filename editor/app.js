@@ -8131,9 +8131,21 @@ function AskUserQuestionCard({ ev, runId, answered, onAnswered }) {
   `;
 }
 
+// True when the subprocess exited with a non-zero code that wasn't an
+// intentional teardown (orchestrator finishing, user clicking Stop). Mirrors
+// the dropdown's `succeeded` check in RunsMenu so the chat header and the
+// run-history row agree on whether a run failed. Used as the floor for the
+// drawer's status seed AND as the discriminator on the live `end` event.
+function runIsFailed(run) {
+  if (!run || !run.done) return false;
+  if (run.exitCode == null || run.exitCode === 0) return false;
+  if (run.stopReason === "user-stop" || run.stopReason === "completed-orchestrator") return false;
+  return true;
+}
+
 function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart }) {
   const [events, setEvents] = useState([]);
-  const [status, setStatus] = useState("connecting");   // connecting | streaming | done | error
+  const [status, setStatus] = useState("connecting");   // connecting | streaming | done | fail | error
   const [error, setError] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   // Fullscreen mode — drawer takes over the whole viewport. Useful when the
@@ -8248,7 +8260,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         // If the cached run ended terminally, seed the status from the cache
         // so the drawer doesn't briefly show "connecting" before the run flags
         // get re-applied. A live SSE tail can still flip back to streaming.
-        setStatus(run.done || run.turnDone ? "done" : "streaming");
+        // v3.5.2 — distinguish failure (exitCode != 0, no intentional stop)
+        // from clean done so the chip and downstream send-routing reflect the
+        // actual subprocess outcome. Without this the user saw a green "DONE"
+        // pill on a run the dropdown rendered as "FAIL".
+        setStatus(runIsFailed(run) ? "fail" : (run.done || run.turnDone ? "done" : "streaming"));
         lastIdRef.current = typeof cached.lastSeq === "number" ? cached.lastSeq : -1;
         _seenSeqRef.current = new Set(
           cached.events
@@ -8424,8 +8440,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       // just set — because the `run` prop carries the stale done=true flag
       // until the next /__runs poll. Tracking via a ref keeps the first-mount
       // safety net while letting recovery flows succeed.
+      // v3.5.2 — pick "fail" instead of "done" when the run carries a non-zero
+      // exit code so the chip matches the dropdown's verdict on initial open.
       if ((run.done || run.turnDone) && !sseHadFirstOpenRef.current) {
-        setStatus(prev => (prev === "error" ? prev : "done"));
+        const seed = runIsFailed(run) ? "fail" : "done";
+        setStatus(prev => (prev === "error" ? prev : seed));
       }
       sseHadFirstOpenRef.current = true;
       try {
@@ -8469,7 +8488,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             //   • Errors: 'error' SSE or status.label=error. Terminal-ish
             //     but a user reply could still resume.
             setStatus(prev => {
-              if (ev.event === "end")   return "done";
+              if (ev.event === "end") {
+                // v3.5.2 — the daemon's end event carries exitCode + stopReason
+                // (see RunState.finish + _run_resume teardown). Map non-zero
+                // exit (excluding user-stop / orchestrator stop) to "fail" so
+                // the chip matches the dropdown's verdict instead of showing
+                // a misleading green DONE.
+                const d = ev.data || {};
+                const intentional = d.stopReason === "user-stop" || d.stopReason === "completed-orchestrator";
+                const failed = d.exitCode != null && d.exitCode !== 0 && !intentional;
+                return failed ? "fail" : "done";
+              }
               if (ev.event === "error") return "error";
               if (ev.event === "agent" && ev.data?.type === "status") {
                 if (ev.data.label === "done")  return "done";
@@ -8483,7 +8512,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               if (ev.event === "agent" && ev.data?.type === "text_delta") return "streaming";
               if (ev.event === "agent" && ev.data?.type === "tool_use")   return "streaming";
               if (ev.event === "user_message" || ev.event === "tool_answer") {
-                // User just spoke — agent will respond.
+                // User just spoke — agent will respond. Keep error sticky;
+                // flip "done" or "fail" back to streaming so the user sees
+                // the next turn start.
                 return prev === "error" ? prev : "streaming";
               }
               return prev || "streaming";
@@ -8494,7 +8525,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         if (cancelled) return;
         if (e?.name === "AbortError") return;
         setError(e?.message || String(e));
-        setStatus(prev => (prev === "done" ? prev : "error"));
+        setStatus(prev => (prev === "done" || prev === "fail" ? prev : "error"));
       }
     })();
     return () => { cancelled = true; ctl.abort(); };
@@ -8509,9 +8540,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // Fire onRunComplete the first time we cross into a terminal status. Fires
   // again on a future per-turn done if the user has replied and the agent
   // wrapped another turn — completedRef holds the last-known terminal state so
-  // we don't re-fire on every render.
+  // we don't re-fire on every render. v3.5.2 — "fail" counts as terminal too.
   useEffect(() => {
-    if (status === "done" || status === "error") {
+    if (status === "done" || status === "error" || status === "fail") {
       if (completedRef.current !== status) {
         completedRef.current = status;
         if (onRunComplete) onRunComplete({ runId: run?.runId, status, error, didModifyFiles, modifiedPaths });
@@ -8932,7 +8963,13 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // and surfaced the error, and onSent never fired — so the SSE-reconnect /
   // status-clear path in the parent never ran. /resume always respawns and
   // gets us back to a known-good state.
-  const isResuming = (locked && !isNew) || (!isNew && runStatus === "error");
+  // v3.5.2 — same treatment for "fail" status: the run exited non-zero and
+  // a reply must respawn the CLI via /resume. (In practice processEnded is
+  // already true here so locked covers it, but routing on status too closes
+  // the brief render window where events have rendered "fail" but the
+  // processEnded memo hasn't recomputed yet.)
+  const isResuming = (locked && !isNew)
+                   || (!isNew && (runStatus === "error" || runStatus === "fail"));
 
   const canSend = (!!text.trim() || attachments.length > 0) && !busy && !disabled
                   && (isNew ? !!onStartNewChat : !!runId);
@@ -9273,6 +9310,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
 
 function ChatStatusChip({ status, error }) {
   if (status === "done")  return html`<span className="chat-chip chip-done">done</span>`;
+  if (status === "fail")  return html`<span className="chat-chip chip-fail" title=${error || "Agent process exited with a non-zero status. Reply to retry — sends through /resume."}>fail</span>`;
   if (status === "error") return html`<span className="chat-chip chip-error" title=${error || ""}>error</span>`;
   if (status === "streaming") return html`<span className="chat-chip chip-streaming"><span className="chip-pulse"/>streaming</span>`;
   return html`<span className="chat-chip chip-connecting"><span className="chip-pulse"/>connecting</span>`;
@@ -14705,7 +14743,7 @@ function WorkflowCanvas() {
     return run;
   }, [branch, chatPermissionMode]);
   const handleWorkflowChatComplete = useCallback(({ status }) => {
-    setChatRunFinished(status === "done" || status === "error");
+    setChatRunFinished(status === "done" || status === "error" || status === "fail");
     if (status === "done") {
       // The agent may have edited workflow.json — refetch + merge.
       try { window.dispatchEvent(new CustomEvent("th:workflow-reload")); } catch {}
@@ -15317,7 +15355,7 @@ function WorkflowCanvas() {
       onClose=${() => setChatRun(null)}
       onStop=${() => {}}
       onRunComplete=${handleWorkflowChatComplete}
-      onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error")}
+      onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error" || status === "fail")}
       permissionMode=${chatPermissionMode}
       onPermissionModeChange=${onChatPermissionModeChange}
       onStartNewChat=${spawnWorkflowChat}
@@ -43270,7 +43308,7 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
     <div className="workflow-default-providers">
       <div className="workflow-settings-section-group-head">Default models per capability</div>
       <div className="workflow-settings-section-group-sub">
-        Each row defaults to the best available option for that capability — a model whose API key is configured below, OR the Claude CLI when no key is set but the CLI is installed. Pick a different provider/model to override. ✓ = key configured, CLI = falls back to Claude CLI, ⚠ = no key + no CLI (won't run until you paste a key).
+        Each row defaults to the best available option for that capability — a model whose API key is configured below, OR the matching CLI (Claude Code CLI for anthropic, Codex CLI for openai) when no key is set but the CLI is installed. Pick a different provider/model to override. ✓ = key configured, CLI = falls back to its native CLI, ⚠ = no key + no CLI (won't run until you paste a key).
       </div>
       ${CAPABILITY_KEYS.map(cap => html`
         <${WorkflowDefaultProviderRow}
@@ -43287,7 +43325,7 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
 /* v3.4.7 — A provider has a "key configured" when the media-config row for
    its id is true / has saved set to true. The daemon's status payload uses
    `{ saved: true, ... }` per provider. CLI fallback applies to anthropic
-   (Claude CLI) only — the other providers fail without a key. */
+   (Claude CLI) and openai (Codex CLI). */
 function _providerHasKey(mediaConfig, providerId) {
   if (!mediaConfig || !mediaConfig.providers) return false;
   const row = mediaConfig.providers[providerId];
@@ -43296,13 +43334,17 @@ function _providerHasKey(mediaConfig, providerId) {
 }
 function _providerAvailability(mediaConfig, providerId) {
   if (_providerHasKey(mediaConfig, providerId)) return { ok: true, source: "key" };
-  // Claude CLI fallback covers anthropic (and openai via substitution post-3.4.6).
-  if (providerId === "anthropic" || providerId === "openai") {
-    // We can't synchronously detect the CLI from the browser, but the
-    // daemon's media-config response now includes `claude_cli_available`.
-    if (mediaConfig && mediaConfig.claude_cli_available) {
-      return { ok: true, source: "cli" };
-    }
+  // v3.5 — Each provider has its native CLI counterpart:
+  //   anthropic ↔ Claude Code CLI (`claude`)
+  //   openai    ↔ Codex CLI       (`codex`)
+  // Prefer the native CLI; substitute the sibling CLI only as a last resort.
+  if (providerId === "anthropic") {
+    if (mediaConfig && mediaConfig.claude_cli_available) return { ok: true, source: "cli" };
+    if (mediaConfig && mediaConfig.codex_cli_available)  return { ok: true, source: "cli-substitute" };
+  }
+  if (providerId === "openai") {
+    if (mediaConfig && mediaConfig.codex_cli_available)  return { ok: true, source: "cli" };
+    if (mediaConfig && mediaConfig.claude_cli_available) return { ok: true, source: "cli-substitute" };
   }
   return { ok: false, source: "none" };
 }
@@ -43310,19 +43352,32 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
   // Return the {provider, model, source} pair the system would actually use
   // when no explicit override is set. Resolution mirrors the daemon's path:
   //   1. A model whose provider has a key
-  //   2. anthropic via Claude CLI (if available)
-  //   3. openai substituted via Claude CLI (if available)
+  //   2. The picked provider's native CLI (if installed)
+  //   3. The other provider's CLI as a substitute
   //   4. nothing — runs will error
   for (const m of models) {
     if (_providerHasKey(mediaConfig, m.provider)) {
       return { provider: m.provider, model: m.id, source: "key" };
     }
   }
-  if (mediaConfig && mediaConfig.claude_cli_available) {
-    const anthropic = models.find(m => m.provider === "anthropic");
-    if (anthropic) return { provider: anthropic.provider, model: anthropic.id, source: "cli" };
-    const openai = models.find(m => m.provider === "openai");
-    if (openai) return { provider: openai.provider, model: openai.id, source: "cli-substitute" };
+  if (mediaConfig) {
+    if (mediaConfig.claude_cli_available) {
+      const anthropic = models.find(m => m.provider === "anthropic");
+      if (anthropic) return { provider: anthropic.provider, model: anthropic.id, source: "cli" };
+    }
+    if (mediaConfig.codex_cli_available) {
+      const openai = models.find(m => m.provider === "openai");
+      if (openai) return { provider: openai.provider, model: openai.id, source: "cli" };
+    }
+    // Cross-CLI substitution (CLI present but not for the picked provider).
+    if (mediaConfig.claude_cli_available) {
+      const openai = models.find(m => m.provider === "openai");
+      if (openai) return { provider: openai.provider, model: openai.id, source: "cli-substitute" };
+    }
+    if (mediaConfig.codex_cli_available) {
+      const anthropic = models.find(m => m.provider === "anthropic");
+      if (anthropic) return { provider: anthropic.provider, model: anthropic.id, source: "cli-substitute" };
+    }
   }
   return null;
 }
@@ -43345,8 +43400,16 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
     if (!auto) return "Auto (no provider available — paste a key below)";
     const pc = providerCatalog[auto.provider] || {};
     const m  = models.find(mm => mm.id === auto.model);
-    const tag = auto.source === "cli"            ? "Claude CLI"
-              : auto.source === "cli-substitute" ? "Claude CLI (substitute)"
+    // The native CLI per provider — used for the (CLI) tag and the
+    // (substitute) annotation.
+    const nativeCli = auto.provider === "openai" ? "Codex CLI"
+                    : auto.provider === "anthropic" ? "Claude CLI"
+                    : "CLI";
+    const substituteCli = auto.provider === "openai" ? "Claude CLI"
+                        : auto.provider === "anthropic" ? "Codex CLI"
+                        : "CLI";
+    const tag = auto.source === "cli"            ? nativeCli
+              : auto.source === "cli-substitute" ? `${substituteCli} (substitute)`
                                                   : "API";
     return `Auto · ${pc.label || auto.provider} · ${(m && m.label) || auto.model} (${tag})`;
   })();
@@ -46920,7 +46983,7 @@ function App() {
           // sends a follow-up the status flips back to streaming and Submit
           // disables again. Process-level "done" is separate; we don't need
           // to expose it to App for Phase 1.
-          setRunFinished(status === "done" || status === "error");
+          setRunFinished(status === "done" || status === "error" || status === "fail");
         }}
         permissionMode=${permissionMode}
         onPermissionModeChange=${onPermissionModeChange}
