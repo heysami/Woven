@@ -1,6 +1,6 @@
 ---
 name: polish-hover-author
-description: Decide WHAT each hover-surprise site becomes — card peek-reveal, scale + shadow lift, card flip, content swap, magnetic-edge-pull, sticker rotate. Writes hover.css + hover.js. Reads polish-plan.json's `hover-surprise` sites (the planner identified WHERE + HINT; you decide WHAT). Lens-gated on craft (≤50ms hover response, no allocations, prefers-reduced-motion, keyboard equivalents) + aesthetic + concept skips per rules.
+description: Decide WHAT each hover-surprise site becomes — card peek-reveal, scale + shadow lift, card flip, content swap, magnetic-edge-pull, sticker rotate. Writes hover.css + hover.js. Reads polish-plan.json's `hover-surprise` sites (the orchestrator identified WHERE + HINT; you decide WHAT). Lens-gated on craft (≤50ms hover response, no allocations, prefers-reduced-motion, keyboard equivalents) + aesthetic + concept skips per rules.
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_screenshot
 ---
 

@@ -8,7 +8,7 @@ The difference from `vector-mark`: icons are *functional* (they label an action)
 
 ## Input (envelope only)
 
-See [`1V-visual-planner.md`](1V-visual-planner.md) §Step 5. Same envelope as `vector-mark`.
+See [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5. Same envelope as `vector-mark`.
 
 ```
 pipeline=["prompt","svg-gen"]

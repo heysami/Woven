@@ -1,6 +1,6 @@
 ---
 name: game-research-technique
-description: The ONE researcher for a game-experience — what tech stack delivers the piece. Picks the paradigm (2d-side / 2d-topdown / 3d-environment / iconographic-physics / hybrid) + render strategy + physics engine + tick rate + input modalities + objective shape + juice register + multi-draft cruxes. Writes the canonical research.md the downstream drawers (objective / world / physics / input / feedback / loop / overlay / runtime) read. Dispatched by game-experience-planner as the single research step. Cold-isolated per gameId.
+description: The ONE researcher for a game-experience — what tech stack delivers the piece. Picks the paradigm (2d-side / 2d-topdown / 3d-environment / iconographic-physics / hybrid) + render strategy + physics engine + tick rate + input modalities + objective shape + juice register + multi-draft cruxes. Writes the canonical research.md the downstream drawers (objective / world / physics / input / feedback / loop / overlay / runtime) read. Dispatched by game-experience-orchestrator as the single research step. Cold-isolated per gameId.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 ---
 
@@ -14,7 +14,7 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/game-research-technique.md" || cat "$TH_PR
 
 ## 1. Input envelope
 
-The planner hands you:
+The orchestrator hands you:
 
 - `gameId`, `branch`, `projectRoot`
 - `subject` — one-line description of the game (e.g. "throw a paper plane through a pastel office")
@@ -124,7 +124,7 @@ Feedback crux multi-draft? **No** — juicy is the only register that fits "ever
 Runtime crux multi-draft? **No** — pacing is fixed (action-time, no meditative / frantic divergence in the brief).
 ```
 
-The planner reads this and only flags drawers as multi-draft when you said yes. Default: no multi-draft. Opt-in only.
+The orchestrator reads this and only flags drawers as multi-draft when you said yes. Default: no multi-draft. Opt-in only.
 
 ## 3. Recipe
 
@@ -205,7 +205,7 @@ State which.
 
 - **You do not pick aesthetic details.** `creativeBrief.styleCue` is the constraint. The world drawer expands it.
 - **You do not write any code.** You write `research.md` only.
-- **You do not skip the multi-draft recommendation block.** The planner depends on it.
+- **You do not skip the multi-draft recommendation block.** The orchestrator depends on it.
 - **You do not pick a paradigm without justifying it against the objective.** A score-climbing infinite runner is poorly served by `iconographic-physics`; a soft-body toy is poorly served by `3d-environment`.
 - **You do not silently accept a vague juice register.** If `juiceRegister: any` AND `successFeel` doesn't imply a register, push back via `runError`.
 

@@ -143,7 +143,7 @@ KINDS = {
         "notes": (
             "Spawns a Claude Code subprocess with a per-id system preamble. "
             "Per-id overrides supply preamble text and outputsRoot, and may "
-            "set extendsGraph=True for visual-planner-shaped subagents that "
+            "set extendsGraph=True for visual-orchestrator-shaped subagents that "
             "scaffold downstream nodes."
         ),
         "perIdOverrides": {
@@ -151,8 +151,8 @@ KINDS = {
             # v3.5 — Onboarding cut. The guided-new-project pipeline (research,
             # PRD, DS, source-scaffold, brainstorm, coherence-pass, vision-verify)
             # was removed wholesale. The visual / simulation / interactive /
-            # narrative planners stay; their drawer overrides + per-id wildcards
-            # are below. Chat dispatches planners directly via Path A/B in
+            # narrative orchestrators stay; their drawer overrides + per-id wildcards
+            # are below. Chat dispatches orchestrators directly via Path A/B in
             # capabilities.py — no bp_*_build harness intermediary anymore.
             # Wildcard keys end in "_" per kind_contract's longest-prefix-match.
             # Node-id convention: <family>_<component>_<assetId>
@@ -346,8 +346,8 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — NARRATIVE-EXPERIENCE planner (the poetic cousin of sim).
-            # See docs/features/simulation-and-interactive-planners.md
+            # v3.3 — NARRATIVE-EXPERIENCE orchestrator (the poetic cousin of sim).
+            # See docs/features/simulation-and-interactive-orchestrators.md
             # (narrative addendum). Mirrors sim's contract shape with three
             # substitutions: spine (scripted timeline) instead of loop,
             # camera (path-driven progression) instead of controls, ambient
@@ -479,9 +479,9 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — GAME-EXPERIENCE planner (the fifth sibling).
-            # See docs/features/game-experience-planner.md.
-            # Inherits simulation-planner's contract shape with three
+            # v3.3 — GAME-EXPERIENCE orchestrator (the fifth sibling).
+            # See docs/features/game-experience-orchestrator.md.
+            # Inherits simulation-orchestrator's contract shape with three
             # substitutions: objective (goal/score/win-condition) is first-
             # class; physics is its own engine module; feedback (juice —
             # particles/screen-shake/audio) is the §8.7 crux drawer alongside
@@ -647,14 +647,14 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — SCRAPBOOK-EXPERIENCE planner (the sixth sibling).
-            # See docs/features/scrapbook-experience-planner.md.
-            # Inherits simulation-planner's contract shape with two
+            # v3.3 — SCRAPBOOK-EXPERIENCE orchestrator (the sixth sibling).
+            # See docs/features/scrapbook-experience-orchestrator.md.
+            # Inherits simulation-orchestrator's contract shape with two
             # distinctives: (1) the composition drawer co-dispatches
-            # visual-planner per IMAGE INVENTORY entry —
-            # this is the most visual-planner-heavy drawer in the system;
+            # visual-orchestrator per IMAGE INVENTORY entry —
+            # this is the most visual-orchestrator-heavy drawer in the system;
             # (2) PNG sequences substitute for transparent GIFs (each frame
-            # is a separate visual-planner sub-dispatch). Node-id
+            # is a separate visual-orchestrator sub-dispatch). Node-id
             # convention: sb_<component>_<sbId>
             #   sb_composition_vaporwave_portfolio_hero
             # ──────────────────────────────────────────────────────────────────
@@ -671,7 +671,7 @@ KINDS = {
                     "aesthetic + composition idiom + density + motion register "
                     "+ interaction primitive + the IMAGE INVENTORY. The "
                     "inventory.json drives the composition drawer's "
-                    "co-dispatch of visual-planner per asset."
+                    "co-dispatch of visual-orchestrator per asset."
                 ),
             },
             "sb_composition_": {
@@ -683,7 +683,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Layered HTML/CSS scrapbook composition. Co-dispatches "
-                    "visual-planner per inventory entry "
+                    "visual-orchestrator per inventory entry "
                     "(this drawer is the cost-heavy one). §8.7 crux — "
                     "3-draft remix on density axis (sparse / medium / dense). "
                     "All 3 lenses gate."
@@ -697,7 +697,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Web font picks (Google Fonts) + handcrafted raster "
-                    "typography (commissioned via visual-planner). "
+                    "typography (commissioned via visual-orchestrator). "
                     "Lens-gated on aesthetic (type tone matches coreAesthetic) "
                     "+ craft (web fonts load without FOIT, raster headlines "
                     "have correct alt text)."
@@ -785,10 +785,10 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — INTERACTIVE-POLISH planner (the seventh sibling — POST-PASS).
-            # See docs/features/interactive-polish-planner.md.
-            # Unlike the other six planners, this runs LAST in the pipeline:
-            # after another primary planner's build phase (or after chat-Claude
+            # v3.3 — INTERACTIVE-POLISH orchestrator (the seventh sibling — POST-PASS).
+            # See docs/features/interactive-polish-orchestrator.md.
+            # Unlike the other six orchestrators, this runs LAST in the pipeline:
+            # after another primary orchestrator's build phase (or after chat-Claude
             # has hand-written source), BEFORE Step-8 QA. The research drawer
             # identifies SITES + TYPES of opportunity (microanimation / pointer /
             # scroll / hover-surprise / shader-overlay); the per-type drawers
@@ -811,7 +811,7 @@ KINDS = {
                     "hover-surprise / shader-overlay), commits polish register "
                     "(subtle / playful / theatrical) per genre. The site map "
                     "drives which drawers fire + which selectors they target. "
-                    "Per planner-vs-drawer split: identifies WHERE + TYPE only — "
+                    "Per orchestrator-vs-drawer split: identifies WHERE + TYPE only — "
                     "drawers decide WHAT the specific improvement looks like."
                 ),
             },
@@ -869,7 +869,7 @@ KINDS = {
                     "Decides WHAT shader overlay effect (halftone-print, "
                     "paper-grain, dither, CRT-scanline, chromatic-aberration, "
                     "glitch, noise-wash, vignette-fade, moire). CO-DISPATCHES "
-                    "visual-planner with the shader skill to commission the "
+                    "visual-orchestrator with the shader skill to commission the "
                     "actual GLSL. §8.7 crux drawer — multi-draft on shader-"
                     "effect axis when research recommends. All 3 lenses gate."
                 ),
@@ -980,7 +980,7 @@ KINDS = {
             "auto-promotes any new variant folder under _ds_brainstorm/ to a "
             "ds-brainstorm card silently (no Heal click required).\n\n"
             "After writing the variant folder, the subagent dispatches the "
-            "visual-planner via the Task tool, SCOPED TO THIS VARIANT'S "
+            "visual-orchestrator via the Task tool, SCOPED TO THIS VARIANT'S "
             "outputsRoot only. Image-pipeline trios are committed with a "
             "parentVariant reference so they render visually grouped under "
             "this variant's card."
@@ -1428,7 +1428,7 @@ KINDS = {
     },
 
     # ── simulation (v3.3 — live iframe for runnable simulation) ──────────
-    # See docs/features/simulation-and-interactive-planners.md §6.4.
+    # See docs/features/simulation-and-interactive-orchestrators.md §6.4.
     # Mirrors `prototype` shape; the component drawers that produce the
     # files this container points at are agent-kind per-id overrides
     # (sim_research_*, sim_scene_*, sim_loop_*, etc.).
@@ -1460,15 +1460,15 @@ KINDS = {
         "pauseAfter":   False,
         "notes": (
             "Live iframe of a runnable simulation. User-driven. Run re-builds "
-            "via re-dispatching simulation-planner. "
+            "via re-dispatching simulation-orchestrator. "
             "Component children own their own files and lens verdicts; this "
-            "container is marked done only when the planner's commit carries "
+            "container is marked done only when the orchestrator's commit carries "
             "outputs.lensVerdict='pass'."
         ),
     },
 
     # ── interactive-media (v3.3 — live iframe for TouchDesigner-grade pieces)
-    # See docs/features/simulation-and-interactive-planners.md §7.4.
+    # See docs/features/simulation-and-interactive-orchestrators.md §7.4.
     "interactive-media": {
         "title":        "Interactive media (live iframe)",
         "category":     "container",
@@ -1511,7 +1511,7 @@ KINDS = {
     # place piece. Mirrors `simulation` shape with three substitutions:
     # spine (scripted timeline) instead of loop, camera-as-narrator instead
     # of free controls, ambient (soundscape) as a new first-class channel.
-    # See `narrative-experience-planner.md`.
+    # See `narrative-experience-orchestrator.md`.
     "narrative-experience": {
         "title":        "Narrative experience (live iframe)",
         "category":     "container",
@@ -1573,7 +1573,7 @@ KINDS = {
     # Same shape as `simulation` with three substitutions: objective (goal /
     # score / win-condition) is first-class; physics is its own engine module;
     # feedback (juice — particles / screen-shake / audio) is the §8.7 crux
-    # drawer alongside world and runtime. See `game-experience-planner.md`.
+    # drawer alongside world and runtime. See `game-experience-orchestrator.md`.
     "game-experience": {
         "title":        "Game experience (live iframe)",
         "category":     "container",
@@ -1635,10 +1635,10 @@ KINDS = {
     # The user-facing artefact container for one raster-heavy collage piece.
     # Aesthetic categories: vaporwave / internetcore / cottagecore / dreamcore /
     # weirdcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / hybrid.
-    # The composition drawer co-dispatches visual-planner per
-    # IMAGE INVENTORY entry — this is the most visual-planner-heavy container
+    # The composition drawer co-dispatches visual-orchestrator per
+    # IMAGE INVENTORY entry — this is the most visual-orchestrator-heavy container
     # in the system. PNG sequences substitute for transparent GIFs (each frame
-    # = one visual-planner sub-dispatch). See `scrapbook-experience-planner.md`.
+    # = one visual-orchestrator sub-dispatch). See `scrapbook-experience-orchestrator.md`.
     "scrapbook-experience": {
         "title":        "Scrapbook experience (live iframe)",
         "category":     "container",
@@ -1688,7 +1688,7 @@ KINDS = {
         "fanOut":       None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": True,
-        "graphExtensionScope": "component children (research/composition/typography/motion/interactions/runtime) + N visual-planner-co-dispatched asset trios",
+        "graphExtensionScope": "component children (research/composition/typography/motion/interactions/runtime) + N visual-orchestrator-co-dispatched asset trios",
         "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": [
             "outputs.lensVerdict in {pass}",
@@ -1698,28 +1698,28 @@ KINDS = {
         "notes": (
             "Live iframe of a raster-heavy collage piece. Aesthetics are "
             "named cores (vaporwave / cottagecore / dreamcore / Y2K / "
-            "lo-fi / etc.) — the planner DOES NOT serve CSS-driven aesthetics "
+            "lo-fi / etc.) — the orchestrator DOES NOT serve CSS-driven aesthetics "
             "(Bauhaus / Swiss-grid / terminal-on-web etc.); those redirect to "
-            "visual-planner for hero assets in a CSS-restrained app. Composition "
-            "drawer co-dispatches visual-planner per IMAGE "
+            "visual-orchestrator for hero assets in a CSS-restrained app. Composition "
+            "drawer co-dispatches visual-orchestrator per IMAGE "
             "INVENTORY entry — N entries = N sub-dispatches. PNG sequences "
             "substitute for transparent GIFs (each frame = one sub-dispatch). "
             "Typography splits between web fonts (body / microtype via "
             "Google Fonts) + raster handlettering (display words / "
-            "signatures / marker annotations via visual-planner)."
+            "signatures / marker annotations via visual-orchestrator)."
         ),
     },
 
-    # ── interactive-polish (v3.3 — seventh sibling; POST-PASS planner) ────
+    # ── interactive-polish (v3.3 — seventh sibling; POST-PASS orchestrator) ────
     # Different shape from the other six: runs LAST in the pipeline, after
-    # another primary planner's build phase (or after chat-Claude has
+    # another primary orchestrator's build phase (or after chat-Claude has
     # hand-written source), BEFORE Step-8 QA. Reads existing source,
     # identifies SITES of opportunity for interactive enrichment, dispatches
     # per-type drawers that decide the SPECIFIC improvement. Writes
     # supplemental files to source/<branch>/_polish/<polishId>/ — existing
     # source stays intact; the caller applies minimal <link>/<script> edits
     # per host page from the runtime drawer's integration-instructions.md.
-    # See `interactive-polish-planner.md`.
+    # See `interactive-polish-orchestrator.md`.
     "interactive-polish": {
         "title":        "Interactive polish (post-pass)",
         "category":     "container",
@@ -1734,7 +1734,7 @@ KINDS = {
             "siteCountByType":    {"type": "object", "userEditable": False,
                                     "doc": "Per-type breakdown: microanimation / pointer-tinted / scroll-driven / hover-surprise / shader-overlay."},
             "drawersDispatched":  {"type": "array",  "userEditable": False,
-                                    "doc": "Subset of {polish_microanimation_, polish_pointer_, polish_hover_, polish_shader_, polish_runtime_} that ran. Drawers may be SKIPPED if their type has 0 sites — unlike the other six planners where every drawer fires."},
+                                    "doc": "Subset of {polish_microanimation_, polish_pointer_, polish_hover_, polish_shader_, polish_runtime_} that ran. Drawers may be SKIPPED if their type has 0 sites — unlike the other six orchestrators where every drawer fires."},
             "pagesIntegrated":    {"type": "array",  "userEditable": False,
                                     "doc": "Host pages that received the <link>/<script>/shader-mount edits applied by the caller."},
             "exposedAssets":      {"type": "array",  "userEditable": False},
@@ -1747,7 +1747,7 @@ KINDS = {
         "fanOut":       None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": True,
-        "graphExtensionScope": "component children (research/microanimation/pointer/hover/shader/runtime) + optional visual-planner-co-dispatched shader trio",
+        "graphExtensionScope": "component children (research/microanimation/pointer/hover/shader/runtime) + optional visual-orchestrator-co-dispatched shader trio",
         "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": [
             "outputs.lensVerdict in {pass}",
@@ -1756,7 +1756,7 @@ KINDS = {
         "pauseAfter":   False,
         "notes": (
             "Post-pass enrichment container — runs after another primary "
-            "planner's build phase, before Step-8 QA. Existing source is "
+            "orchestrator's build phase, before Step-8 QA. Existing source is "
             "preserved; polish files live in source/<branch>/_polish/<polishId>/. "
             "Each host page in pagesIntegrated received TWO new tags (a "
             "single <link> + a single <script>) — and ONE more <div> if the "
@@ -1765,7 +1765,7 @@ KINDS = {
             "the runtime drawer writes an empty composite.css + composite.js "
             "+ integration-instructions.md saying 'no edits needed'. The "
             "interactive-polish container is the ONE post-pass artefact in "
-            "the planner system; the other six containers (prototype, "
+            "the orchestrator system; the other six containers (prototype, "
             "simulation, interactive-media, narrative-experience, game-"
             "experience, scrapbook-experience) are primary build artefacts."
         ),

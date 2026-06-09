@@ -8,7 +8,7 @@ Pathway A for the generation step (Volcengine / OpenAI / Recraft), Pathway B is 
 
 ## Input (envelope only)
 
-See [`1V-visual-planner.md`](1V-visual-planner.md) §Step 5. Verbatim fields plus:
+See [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5. Verbatim fields plus:
 
 ```
 pipeline=["prompt","image-gen","rembg"]

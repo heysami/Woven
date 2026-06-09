@@ -8,7 +8,7 @@ You own the **data-shapes lens**. Enumerate what *you* see as an entity from `wi
 
 - `slug`, `sourceRoot`, `intent`
 
-No planner-provided entity list. You enumerate.
+No orchestrator-provided entity list. You enumerate.
 
 ## Output
 
@@ -73,7 +73,7 @@ Per [`../data-schema.md`](../data-schema.md): `entities[]` with **`x`, `y`, `w` 
 4. **Variant check.** One array is a strict superset of another → superset is `tag: "variant"`, `extends: "<Base>"`.
 5. **`fk` fields.** Field of type `string` or `string[]` whose values look like another entity's `id` (regex match or co-occurrence) → set `fk: "<EntityId>"`.
 6. **PK.** First `id`-named field → `pk: true`.
-7. **Similar-name pair check.** After enumeration, look for pairs where one ID contains the other (`Programme` / `InhouseProgramme`) or shares ≥6 consecutive characters. For each pair, check whether they share field structure or have value-level references. If they look related but **don't** trip the merge / variant / fk checks above (parallel catalogs with no edge), include both in `entities[]` AND emit them in `nameAmbiguities[]`. The planner's reconciliation surfaces this to the user — don't auto-merge.
+7. **Similar-name pair check.** After enumeration, look for pairs where one ID contains the other (`Programme` / `InhouseProgramme`) or shares ≥6 consecutive characters. For each pair, check whether they share field structure or have value-level references. If they look related but **don't** trip the merge / variant / fk checks above (parallel catalogs with no edge), include both in `entities[]` AND emit them in `nameAmbiguities[]`. The orchestrator's reconciliation surfaces this to the user — don't auto-merge.
 
 ## Position recipe — `x` / `y` / `w`
 

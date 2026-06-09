@@ -13,14 +13,14 @@ Pick one per asset. Mixing is out of scope. **Pathway B** either way.
 
 ## Input (envelope only)
 
-See [`1V-visual-planner.md`](1V-visual-planner.md) §Step 5.
+See [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5.
 
 ```
 pipeline=["prompt","shader-skill"] OR ["prompt","three-skill"]
 nodeIds: { prompt, skill, asset }
 ```
 
-The planner chooses the pipeline (`shader-skill` for the fragment-shader path, `three-skill` for the InstancedMesh path) based on the slot's `data-motion` modifier — `field` → shader, `discrete` → three.
+The orchestrator chooses the pipeline (`shader-skill` for the fragment-shader path, `three-skill` for the InstancedMesh path) based on the slot's `data-motion` modifier — `field` → shader, `discrete` → three.
 
 ## Output
 

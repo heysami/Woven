@@ -26,7 +26,7 @@ The second most common failure is *under-rendering the gallery*. The primitive-p
 
 Workflow 0 spawns this lens in five modes. Each invocation gets a `role` envelope field telling you which mode you're in. Each role has a narrow scope and writes a narrow set of files. Do not exceed your role's allowed writes.
 
-### Role: `planner`
+### Role: `orchestrator`
 - **Read:** spec, references (if URLs/screenshots), `parentRef` DS (if inheriting), `PROTOTYPE.md`.
 - **Decide:** the primitive list with per-primitive states, the token strategy (palette + type + spacing intent + modes), the shell list (which page-level shells this DS supports).
 - **Write:** `design-systems/<id>/_build/plan.json` ONLY. See Workflow 0 §3a for the schema.
@@ -67,7 +67,7 @@ A comprehensive DS — say buttons / pills / chips / inputs / textareas / select
 - A truncation mid-output (token limit hit) silently drops variants — the gallery looks done but is missing state-variants downstream consumers expected.
 
 Splitting:
-- **Planner** does the genre commit + matrix decision in one focused pass.
+- **Orchestrator** does the genre commit + matrix decision in one focused pass.
 - **Tokens** sees only tokens.
 - **Each primitive subagent** sees only its primitive's spec + the tokens.css the previous step wrote. ~3K tokens of input, plenty of headroom for the output.
 - **Merger** just concatenates — no creative work.

@@ -1,6 +1,6 @@
 ---
 name: sim-controls-author
-description: Write the input-handling module (controls.js) for ONE simulation — DOM events → state mutations. The user's only path to mutate sim state. Light-touch lens-gating (craft lens checks input handling smoothness; aesthetic + concept lenses typically skip per their skip rules). Dispatched by simulation-planner after scene is committed.
+description: Write the input-handling module (controls.js) for ONE simulation — DOM events → state mutations. The user's only path to mutate sim state. Light-touch lens-gating (craft lens checks input handling smoothness; aesthetic + concept lenses typically skip per their skip rules). Dispatched by simulation-orchestrator after scene is committed.
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs
 ---
 
@@ -24,7 +24,7 @@ Per-id `sim_controls_<simId>` (wildcard `sim_controls_`):
 - `outputsRoot: source/{branch}/simulations/{simId}/controls.js`
 - `completion.requires: ["files: controls.js exists, non-empty"]` (no `lensVerdict` requirement — see §0 above)
 
-Wait — actually per the v3.3 registry `sim_controls_` requires only the file. The planner still runs lens trio for full audit, but the FILE-EXISTENCE check is the floor. Honest commit goes `runStatus: running` then planner flips after lens trio.
+Wait — actually per the v3.3 registry `sim_controls_` requires only the file. The orchestrator still runs lens trio for full audit, but the FILE-EXISTENCE check is the floor. Honest commit goes `runStatus: running` then orchestrator flips after lens trio.
 
 ## 2. Input envelope
 
@@ -140,8 +140,8 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_controls_<simId>/commit?pr
 
 - **You do not mutate state directly from event handlers.** Queue intents. Loop consumes.
 - **You do not render visual feedback.** Scene's lane. (Highlight rectangle drawn during drag → emit `{kind: 'previewSelection', bounds}` intent; scene reads from state on next tick.)
-- **You do not request device permissions.** That's interactive-media-planner territory.
-- **You do not set `outputs.lensVerdict`.** Planner gates (even if aesthetic/concept skip, craft still runs).
+- **You do not request device permissions.** That's interactive-media-orchestrator territory.
+- **You do not set `outputs.lensVerdict`.** Orchestrator gates (even if aesthetic/concept skip, craft still runs).
 
 ## 8. Failure protocol
 

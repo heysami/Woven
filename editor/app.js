@@ -215,7 +215,7 @@ function snapToCell(x, y, meta) {
 const resolveEntry = (entry) => {
   // Fall back to the project's sourceEntry when no per-frame entry is set.
   // Pass the resolved target through the SAME normalisation as a frame-level
-  // entry: a bare `sourceEntry: "index.html"` (planner output drift) must
+  // entry: a bare `sourceEntry: "index.html"` (orchestrator output drift) must
   // still get prefixed with sourceRoot — otherwise the browser resolves it
   // against editor/index.html and loads the editor inside itself (infinite
   // recursion). Was a real bug on single-HTML projects with trigger frames.
@@ -9542,14 +9542,14 @@ function ChatStatusChip({ status, error }) {
    The event stream from /__stream is fine-grained (per content-part for the
    assistant, per stdin frame for the user). Rendering each event 1:1 produces
    chopped-up text ("**bo" + "ld**" never resolves) and 9-deep stacks of tool
-   chips when the planner fires its parallel-Agent dispatch. The block builder
+   chips when the orchestrator fires its parallel-Agent dispatch. The block builder
    walks the event list once and produces a higher-level stream:
 
    - consecutive text_delta / thinking_delta events collapse into one "text" /
      "thinking" block (so markdown sees the whole paragraph)
    - tool_use events are paired with their matching tool_result by toolUseId
    - consecutive `Agent` tool_use events from a single assistant turn group
-     into one "agent_grid" block — the planner's parallel-dispatch UI
+     into one "agent_grid" block — the orchestrator's parallel-dispatch UI
 
    Pairing is by `tool_use.id === tool_result.toolUseId`. Built up front so
    later events can attach their result without re-walking. */
@@ -13137,33 +13137,33 @@ function ModelInstallDialog({ onClose, onRefresh }) {
    delete actions, big "+ New project" tile at the end. */
 // ─── SystemLanding ────────────────────────────────────────────────────────
 // v3.3 — System reference surface. Sidebar nav with 4 sections:
-//   1. Planners      — the new toggleable orchestrator registry
+//   1. Orchestrators      — the new toggleable orchestrator registry
 //   2. Skills        — the 14 generator skills (Pathway A vendor API or B Claude-writes)
 //   3. Subagents     — every .claude/agents/*.md, grouped by family
 //   4. Node kinds    — registry.py KINDS, grouped by category
 //
 // Each subview renders differently. Skills + Subagents + Node kinds are
-// read-only reference; Planners has its toggle. State lives here; sidebar
+// read-only reference; Orchestrators has its toggle. State lives here; sidebar
 // items show counts so the user knows the size of each surface before clicking.
 function SystemLanding() {
-  const [activeSection, setActiveSection] = useState("planners");
+  const [activeSection, setActiveSection] = useState("orchestrators");
 
   // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
   const [caps, setCaps]         = useState(null);
-  const [plannersData, setPlannersData] = useState(null);
+  const [orchestratorsData, setOrchestratorsData] = useState(null);
   useEffect(() => {
     fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
-    fetch(apiUrl("/__planners")).then(r => r.ok ? r.json() : null).then(setPlannersData).catch(() => {});
+    fetch(apiUrl("/__orchestrators")).then(r => r.ok ? r.json() : null).then(setOrchestratorsData).catch(() => {});
   }, []);
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
-    { id: "planners",   label: "Planners",   count: plannersData ? plannersData.count : 3,
+    { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "skills",     label: "Skills",     count: skills.length,
       hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
     { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 63,
-      hint: "Every .claude/agents/*.md — drawers, lenses, planners, cross-cutting" },
+      hint: "Every .claude/agents/*.md — drawers, lenses, orchestrators, cross-cutting" },
     { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
       hint: "Canvas node types — what each does + how to use it" },
   ];
@@ -13188,7 +13188,7 @@ function SystemLanding() {
         `)}
       </nav>
       <div className="system-content">
-        ${activeSection === "planners"   && html`<${PlannersLanding} scopeLabel="workspace"/>`}
+        ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace"/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
@@ -13513,7 +13513,7 @@ function CcSkillCard({ skill: sk, reload }) {
 // ─── SubagentsLanding ─────────────────────────────────────────────────────
 // v3.3 — Subagents inventory. Read from /__capabilities (which scans
 // .claude/agents/*.md frontmatter). Grouped by family for navigation —
-// planners / lenses / visual drawers / simulation / interactive / other —
+// orchestrators / lenses / visual drawers / simulation / interactive / other —
 // since the flat 48-item list is hard to scan.
 function SubagentsLanding({ caps }) {
   const agents = (caps && caps.subagents) || [];
@@ -13521,7 +13521,7 @@ function SubagentsLanding({ caps }) {
   const [familyFilter, setFamilyFilter] = useState("all");
 
   const families = {
-    planners:   { label: "Planners",            glyph: "⊕", agents: [] },
+    orchestrators:   { label: "Orchestrators",            glyph: "⊕", agents: [] },
     lenses:     { label: "Quality lenses",      glyph: "◎", agents: [] },
     visual:     { label: "Visual drawers",      glyph: "◇", agents: [] },
     simulation: { label: "Simulation family",   glyph: "▦", agents: [] },
@@ -13533,19 +13533,19 @@ function SubagentsLanding({ caps }) {
     other:      { label: "Cross-cutting",       glyph: "·", agents: [] },
   };
   const VISUAL_NAMES = new Set(["raster-foreground","raster-photo","vector-icon","vector-mark","shader","particle-2d","particle-gl","lottie","3d","video","motion"]);
-  const PLANNER_NAMES = new Set([
-    "visual-planner",
-    "simulation-planner",
-    "interactive-media-planner",
-    "narrative-experience-planner",
-    "game-experience-planner",
-    "scrapbook-experience-planner",
-    "interactive-polish-planner",
+  const ORCHESTRATOR_NAMES = new Set([
+    "visual-orchestrator",
+    "simulation-orchestrator",
+    "interactive-media-orchestrator",
+    "narrative-experience-orchestrator",
+    "game-experience-orchestrator",
+    "scrapbook-experience-orchestrator",
+    "interactive-polish-orchestrator",
   ]);
   for (const a of agents) {
     const n = a.name || "";
     let key = "other";
-    if (PLANNER_NAMES.has(n)) key = "planners";
+    if (ORCHESTRATOR_NAMES.has(n)) key = "orchestrators";
     else if (n.endsWith("-lens") || n.includes("lens")) key = "lenses";
     else if (n.startsWith("sim-"))       key = "simulation";
     else if (n.startsWith("im-"))        key = "interactive";
@@ -13770,15 +13770,15 @@ function NodeKindsLanding() {
 }
 
 
-// ─── PlannersLanding ──────────────────────────────────────────────────────
-// v3.3 — Planner registry surface. Fetches `/__planners` (which aggregates
+// ─── OrchestratorsLanding ──────────────────────────────────────────────────────
+// v3.3 — Orchestrator registry surface. Fetches `/__orchestrators` (which aggregates
 // `.claude/agents/*.manifest.json` + the project's disable state), renders one
-// card per planner with description / triggers / dispatches / skills /
-// node-kinds, and a toggle that POSTs `/__planners/disable` to persist.
+// card per orchestrator with description / triggers / dispatches / skills /
+// node-kinds, and a toggle that POSTs `/__orchestrators/disable` to persist.
 //
-// Adding a new planner is a single-file operation: drop a manifest next to
+// Adding a new orchestrator is a single-file operation: drop a manifest next to
 // the playbook and this view picks it up — no UI code change needed.
-function PlannersLanding({ scopeLabel }) {
+function OrchestratorsLanding({ scopeLabel }) {
   const [data, setData] = useState(null);
   const [err, setErr]   = useState(null);
   const [busy, setBusy] = useState(null);
@@ -13786,7 +13786,7 @@ function PlannersLanding({ scopeLabel }) {
   const load = async () => {
     setErr(null);
     try {
-      const r = await fetch(apiUrl("/__planners"));
+      const r = await fetch(apiUrl("/__orchestrators"));
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       setData(j);
@@ -13796,13 +13796,13 @@ function PlannersLanding({ scopeLabel }) {
   };
   useEffect(() => { load(); }, []);
 
-  const toggle = async (plannerId, enabled) => {
-    setBusy(plannerId);
+  const toggle = async (orchestratorId, enabled) => {
+    setBusy(orchestratorId);
     try {
-      const r = await fetch(apiUrl("/__planners/disable"), {
+      const r = await fetch(apiUrl("/__orchestrators/disable"), {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ plannerId, enabled }),
+        body:    JSON.stringify({ orchestratorId, enabled }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -13814,51 +13814,51 @@ function PlannersLanding({ scopeLabel }) {
     }
   };
 
-  if (err)  return html`<div className="planners-error">Failed to load planners: ${err}</div>`;
-  if (!data) return html`<div className="planners-loading">Loading planners…</div>`;
+  if (err)  return html`<div className="orchestrators-error">Failed to load orchestrators: ${err}</div>`;
+  if (!data) return html`<div className="orchestrators-loading">Loading orchestrators…</div>`;
 
   return html`
-    <div className="planners-root">
-      <div className="planners-header">
-        <div className="planners-header-title">${data.count} planner${data.count === 1 ? "" : "s"} available</div>
-        <div className="planners-header-meta">
-          <span className="planners-scope">scope: ${scopeLabel || "workspace"}</span>
+    <div className="orchestrators-root">
+      <div className="orchestrators-header">
+        <div className="orchestrators-header-title">${data.count} orchestrator${data.count === 1 ? "" : "s"} available</div>
+        <div className="orchestrators-header-meta">
+          <span className="orchestrators-scope">scope: ${scopeLabel || "workspace"}</span>
           ${data.disabledIds && data.disabledIds.length > 0 && html`
-            <span className="planners-disabled-summary">
+            <span className="orchestrators-disabled-summary">
               ${data.disabledIds.length} disabled
             </span>
           `}
         </div>
       </div>
-      <div className="planners-info">
-        Planners are the high-level orchestrators that dispatch families of subagents to produce
+      <div className="orchestrators-info">
+        Orchestrators are the high-level orchestrators that dispatch families of subagents to produce
         complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from
-        its <code>.claude/agents/&lt;name&gt;.manifest.json</code>. Disabling a planner removes its
+        its <code>.claude/agents/&lt;name&gt;.manifest.json</code>. Disabling a orchestrator removes its
         hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} —
         the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.
       </div>
-      <div className="planners-grid">
-        ${data.planners.map(p => html`
-          <${PlannerCard}
+      <div className="orchestrators-grid">
+        ${data.orchestrators.map(p => html`
+          <${OrchestratorCard}
             key=${p.id}
-            planner=${p}
+            orchestrator=${p}
             busy=${busy === p.id}
             onToggle=${() => toggle(p.id, !p.enabled)}
           />
         `)}
       </div>
-      ${data.planners.length === 0 && html`
-        <div className="planners-empty">
-          No planner manifests found under <code>.claude/agents/*.manifest.json</code>.
-          Drop a manifest there next to a planner's playbook to register it.
+      ${data.orchestrators.length === 0 && html`
+        <div className="orchestrators-empty">
+          No orchestrator manifests found under <code>.claude/agents/*.manifest.json</code>.
+          Drop a manifest there next to a orchestrator's playbook to register it.
         </div>
       `}
     </div>
   `;
 }
 
-function PlannerCard({ planner, busy, onToggle }) {
-  const p = planner;
+function OrchestratorCard({ orchestrator, busy, onToggle }) {
+  const p = orchestrator;
   const [expanded, setExpanded] = useState(false);
   const d = p.dispatches || {};
   // Flatten dispatched subagent groups for a single count + glance grouping.
@@ -13880,52 +13880,52 @@ function PlannerCard({ planner, busy, onToggle }) {
 
   return html`
     <div
-      className=${"planner-card" + (p.enabled ? "" : " is-disabled") + (expanded ? " is-expanded" : " is-collapsed")}
-      data-planner-id=${p.id}
+      className=${"orchestrator-card" + (p.enabled ? "" : " is-disabled") + (expanded ? " is-expanded" : " is-collapsed")}
+      data-orchestrator-id=${p.id}
       data-enabled=${p.enabled ? "true" : "false"}
     >
       <div
-        className="planner-card-head"
-        onClick=${(e) => { if (!e.target.closest(".planner-toggle")) setExpanded(x => !x); }}
+        className="orchestrator-card-head"
+        onClick=${(e) => { if (!e.target.closest(".orchestrator-toggle")) setExpanded(x => !x); }}
         title=${expanded ? "Click to collapse" : "Click to expand"}
         style=${{ cursor: "pointer" }}
       >
-        <span className="planner-card-disclosure" aria-hidden="true">${expanded ? "▼" : "▶"}</span>
-        <div className="planner-card-head-text">
-          <div className="planner-card-name">
-            <span className="planner-card-label">${p.label}</span>
-            <code className="planner-card-id">${p.id}</code>
-            <span className="planner-card-version">${p.version || ""}</span>
+        <span className="orchestrator-card-disclosure" aria-hidden="true">${expanded ? "▼" : "▶"}</span>
+        <div className="orchestrator-card-head-text">
+          <div className="orchestrator-card-name">
+            <span className="orchestrator-card-label">${p.label}</span>
+            <code className="orchestrator-card-id">${p.id}</code>
+            <span className="orchestrator-card-version">${p.version || ""}</span>
           </div>
-          <div className="planner-card-tagline">${p.tagline}</div>
+          <div className="orchestrator-card-tagline">${p.tagline}</div>
         </div>
         <button
-          className=${"planner-toggle" + (busy ? " is-busy" : "")}
+          className=${"orchestrator-toggle" + (busy ? " is-busy" : "")}
           data-enabled=${p.enabled ? "true" : "false"}
           disabled=${busy}
           onClick=${(e) => { e.stopPropagation(); onToggle(); }}
           title=${p.enabled
-            ? "Disable this planner — its dispatch hard-rule will be removed from the spawn preamble"
-            : "Enable this planner — restore its dispatch hard-rule in the spawn preamble"}
+            ? "Disable this orchestrator — its dispatch hard-rule will be removed from the spawn preamble"
+            : "Enable this orchestrator — restore its dispatch hard-rule in the spawn preamble"}
         >
-          <span className="planner-toggle-track"><span className="planner-toggle-knob"/></span>
-          <span className="planner-toggle-label">${p.enabled ? "ON" : "OFF"}</span>
+          <span className="orchestrator-toggle-track"><span className="orchestrator-toggle-knob"/></span>
+          <span className="orchestrator-toggle-label">${p.enabled ? "ON" : "OFF"}</span>
         </button>
       </div>
 
       ${expanded && html`
-      <div className="planner-card-description">${p.description}</div>
+      <div className="orchestrator-card-description">${p.description}</div>
 
       ${Array.isArray(p.triggers) && p.triggers.length > 0 && html`
-        <div className="planner-section">
-          <div className="planner-section-title">Triggers (${p.triggers.length})</div>
-          <ul className="planner-trigger-list">
+        <div className="orchestrator-section">
+          <div className="orchestrator-section-title">Triggers (${p.triggers.length})</div>
+          <ul className="orchestrator-trigger-list">
             ${p.triggers.map((t, i) => html`
-              <li key=${i} className="planner-trigger">
-                <span className=${"planner-trigger-mode planner-trigger-mode-" + (t.mode || "other")}>${t.mode || "other"}</span>
-                <span className="planner-trigger-title">${t.title}</span>
-                <div className="planner-trigger-rule">${t.rule}</div>
-                ${t.ruleSource && html`<div className="planner-trigger-source">↳ ${t.ruleSource}</div>`}
+              <li key=${i} className="orchestrator-trigger">
+                <span className=${"orchestrator-trigger-mode orchestrator-trigger-mode-" + (t.mode || "other")}>${t.mode || "other"}</span>
+                <span className="orchestrator-trigger-title">${t.title}</span>
+                <div className="orchestrator-trigger-rule">${t.rule}</div>
+                ${t.ruleSource && html`<div className="orchestrator-trigger-source">↳ ${t.ruleSource}</div>`}
               </li>
             `)}
           </ul>
@@ -13933,13 +13933,13 @@ function PlannerCard({ planner, busy, onToggle }) {
       `}
 
       ${dispatchGroups.length > 0 && html`
-        <div className="planner-section">
-          <div className="planner-section-title">Subagents (${totalDispatched})</div>
+        <div className="orchestrator-section">
+          <div className="orchestrator-section-title">Subagents (${totalDispatched})</div>
           ${dispatchGroups.map(g => html`
-            <div key=${g.key} className="planner-dispatch-group">
-              <div className="planner-dispatch-group-title">${g.label} <span className="planner-dispatch-count">${g.items.length}</span></div>
-              <div className="planner-chip-row">
-                ${g.items.map(name => html`<code key=${name} className="planner-chip planner-chip-agent">${name}</code>`)}
+            <div key=${g.key} className="orchestrator-dispatch-group">
+              <div className="orchestrator-dispatch-group-title">${g.label} <span className="orchestrator-dispatch-count">${g.items.length}</span></div>
+              <div className="orchestrator-chip-row">
+                ${g.items.map(name => html`<code key=${name} className="orchestrator-chip orchestrator-chip-agent">${name}</code>`)}
               </div>
             </div>
           `)}
@@ -13947,38 +13947,38 @@ function PlannerCard({ planner, busy, onToggle }) {
       `}
 
       ${Array.isArray(p.skills) && p.skills.length > 0 && html`
-        <div className="planner-section">
-          <div className="planner-section-title">Skills (${p.skills.length})</div>
-          <div className="planner-chip-row">
-            ${p.skills.map(s => html`<code key=${s} className="planner-chip planner-chip-skill">${s}</code>`)}
+        <div className="orchestrator-section">
+          <div className="orchestrator-section-title">Skills (${p.skills.length})</div>
+          <div className="orchestrator-chip-row">
+            ${p.skills.map(s => html`<code key=${s} className="orchestrator-chip orchestrator-chip-skill">${s}</code>`)}
           </div>
         </div>
       `}
 
       ${(containerKinds.length > 0 || agentOverrides.length > 0 || trios.length > 0) && html`
-        <div className="planner-section">
-          <div className="planner-section-title">Node kinds summoned</div>
+        <div className="orchestrator-section">
+          <div className="orchestrator-section-title">Node kinds summoned</div>
           ${containerKinds.length > 0 && html`
-            <div className="planner-dispatch-group">
-              <div className="planner-dispatch-group-title">Container kinds <span className="planner-dispatch-count">${containerKinds.length}</span></div>
-              <div className="planner-chip-row">
-                ${containerKinds.map(k => html`<code key=${k} className="planner-chip planner-chip-kind">${k}</code>`)}
+            <div className="orchestrator-dispatch-group">
+              <div className="orchestrator-dispatch-group-title">Container kinds <span className="orchestrator-dispatch-count">${containerKinds.length}</span></div>
+              <div className="orchestrator-chip-row">
+                ${containerKinds.map(k => html`<code key=${k} className="orchestrator-chip orchestrator-chip-kind">${k}</code>`)}
               </div>
             </div>
           `}
           ${agentOverrides.length > 0 && html`
-            <div className="planner-dispatch-group">
-              <div className="planner-dispatch-group-title">Agent per-id overrides <span className="planner-dispatch-count">${agentOverrides.length}</span></div>
-              <div className="planner-chip-row">
-                ${agentOverrides.map(k => html`<code key=${k} className="planner-chip planner-chip-override">${k}</code>`)}
+            <div className="orchestrator-dispatch-group">
+              <div className="orchestrator-dispatch-group-title">Agent per-id overrides <span className="orchestrator-dispatch-count">${agentOverrides.length}</span></div>
+              <div className="orchestrator-chip-row">
+                ${agentOverrides.map(k => html`<code key=${k} className="orchestrator-chip orchestrator-chip-override">${k}</code>`)}
               </div>
             </div>
           `}
           ${trios.length > 0 && html`
-            <div className="planner-dispatch-group">
-              <div className="planner-dispatch-group-title">Trios scaffolded <span className="planner-dispatch-count">${trios.length}</span></div>
-              <div className="planner-chip-row">
-                ${trios.map(k => html`<code key=${k} className="planner-chip planner-chip-trio">${k}</code>`)}
+            <div className="orchestrator-dispatch-group">
+              <div className="orchestrator-dispatch-group-title">Trios scaffolded <span className="orchestrator-dispatch-count">${trios.length}</span></div>
+              <div className="orchestrator-chip-row">
+                ${trios.map(k => html`<code key=${k} className="orchestrator-chip orchestrator-chip-trio">${k}</code>`)}
               </div>
             </div>
           `}
@@ -13986,13 +13986,13 @@ function PlannerCard({ planner, busy, onToggle }) {
       `}
 
       ${p.documents && (p.documents.designDoc || p.documents.calibration || p.documents.policy) && html`
-        <div className="planner-section planner-section-docs">
-          <div className="planner-section-title">Reference</div>
-          <div className="planner-doc-list">
-            ${p.documents.designDoc   && html`<code className="planner-doc">${p.documents.designDoc}</code>`}
-            ${p.documents.calibration && html`<code className="planner-doc">${p.documents.calibration}</code>`}
-            ${p.documents.policy      && html`<code className="planner-doc">${p.documents.policy}</code>`}
-            ${p.playbookPath           && html`<code className="planner-doc">${p.playbookPath}</code>`}
+        <div className="orchestrator-section orchestrator-section-docs">
+          <div className="orchestrator-section-title">Reference</div>
+          <div className="orchestrator-doc-list">
+            ${p.documents.designDoc   && html`<code className="orchestrator-doc">${p.documents.designDoc}</code>`}
+            ${p.documents.calibration && html`<code className="orchestrator-doc">${p.documents.calibration}</code>`}
+            ${p.documents.policy      && html`<code className="orchestrator-doc">${p.documents.policy}</code>`}
+            ${p.playbookPath           && html`<code className="orchestrator-doc">${p.playbookPath}</code>`}
           </div>
         </div>
       `}
@@ -14125,8 +14125,8 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // v3.3 — Top-level landing tabs. "projects" is the legacy default; "planners"
-  // surfaces the planner registry (per .claude/agents/*.manifest.json).
+  // v3.3 — Top-level landing tabs. "projects" is the legacy default; "orchestrators"
+  // surfaces the orchestrator registry (per .claude/agents/*.manifest.json).
   const [activeTab, setActiveTab] = useState("projects");
   const mediaCfg = useMediaConfig();
   // v3.4.41 — Required local skills (rembg). The setup card stays open
@@ -14451,7 +14451,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                 className=${"landing-tab" + (activeTab === "system" ? " is-active" : "")}
                 onClick=${() => setActiveTab("system")}
                 aria-pressed=${activeTab === "system"}
-                title="System reference — planners, skills, subagents, and node kinds the app ships."
+                title="System reference — orchestrators, skills, subagents, and node kinds the app ships."
               >
                 <span className="landing-tab-label">System</span>
               </button>
@@ -15379,7 +15379,7 @@ function WorkflowCanvas() {
     return () => clearTimeout(t);
   }, [data]);
 
-  // After an agent run finishes, the visual-planner subagent may have
+  // After an agent run finishes, the visual-orchestrator subagent may have
   // appended new nodes + edges to workflow.json (prompt + skill + asset
   // trios — one per visual slot the prototype contains). The editor's
   // in-memory state doesn't include those writes — the next debounced
@@ -19240,7 +19240,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         text:       "This is a text/markdown/JSON file. Edit it directly.",
         image: [
           "This is a RASTER image (" + ext + "). Producing pixel content has SEVERAL viable paths — try them in this rough order before giving up:",
-          "  1. visual-planner with the raster-foreground or raster-photo subagent (needs an image-gen API key — OpenAI Images, Google Nano-Banana, Stable Diffusion, Replicate, etc.).",
+          "  1. visual-orchestrator with the raster-foreground or raster-photo subagent (needs an image-gen API key — OpenAI Images, Google Nano-Banana, Stable Diffusion, Replicate, etc.).",
           "  2. Stock-image MCPs if connected (Unsplash, Pexels, etc.) — search by description, download, save to the same path.",
           "  3. Any third-party image-gen MCP servers the environment exposes.",
           "  4. Local image-gen tools / models if installed.",
@@ -19250,7 +19250,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         vector: [
           "This is an SVG. Viable paths to produce it (try in order, escalate as needed):",
           "  1. Edit the existing SVG markup directly (paths, fills, viewBox, transforms) — usually sufficient for small refinements, NO API needed.",
-          "  2. visual-planner with the vector-icon (simple symbolic) or vector-mark (illustrative) subagent for complex generation.",
+          "  2. visual-orchestrator with the vector-icon (simple symbolic) or vector-mark (illustrative) subagent for complex generation.",
           "  3. Advanced SVG generation MCPs / tools if available — e.g. Quiver-class generators that produce sophisticated illustrations from prompts.",
           "  4. Generic LLM SVG synthesis (you can write SVG markup directly without any image API).",
           "ONLY stop if the refinement strictly requires an unavailable advanced tool AND markup edits + LLM-written SVG both fall short. Most SVG refinements need no external API at all.",
@@ -19258,7 +19258,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         lottie: [
           "This is a Lottie animation JSON. Viable paths:",
           "  1. Edit the JSON directly for simple changes (color overrides, timing, scale).",
-          "  2. visual-planner with the lottie subagent for new animations.",
+          "  2. visual-orchestrator with the lottie subagent for new animations.",
           "  3. LottieFiles or other Lottie marketplace MCPs if connected — search + download.",
           "  4. Composite an SVG sequence into Lottie JSON manually for very simple cases.",
           "Only stop if all paths fail; report what you tried.",
@@ -19269,13 +19269,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         "3d": [
           "This is a 3D scene module (typically Three.js). Viable paths:",
           "  1. Edit the JS source directly — adjust geometry, materials, lighting, camera, animation.",
-          "  2. visual-planner with the 3d subagent for scene-level regeneration.",
+          "  2. visual-orchestrator with the 3d subagent for scene-level regeneration.",
           "  3. glTF/asset MCPs if connected for sourcing models.",
           "Only stop if all paths fail.",
         ].join("\n"),
         video: [
           "This is a video file (" + ext + "). Video generation typically needs a specific API key — try these paths in order:",
-          "  1. visual-planner with the video subagent (Replicate, Runway, Pika, Luma, etc. — needs the relevant API key).",
+          "  1. visual-orchestrator with the video subagent (Replicate, Runway, Pika, Luma, etc. — needs the relevant API key).",
           "  2. Stock-video MCPs if connected (Pexels Video, etc.) — search by description, download, save to the same path.",
           "  3. Other video-gen MCP servers exposed in this environment.",
           "  4. If the refinement is non-structural (cropping, trimming, simple compositing), use ffmpeg via Bash on the existing file.",
@@ -31726,7 +31726,7 @@ function WorkflowPickedInspectorDock({
 //     component children, not user-curated like prototype's.
 //   • Code panel — none of the container's own fields are user-editable;
 //     the user edits per-component nodes (sim_loop_*, im_mapping_*, …).
-//   • Lock / orphan banners — the container's lifecycle is planner-driven;
+//   • Lock / orphan banners — the container's lifecycle is orchestrator-driven;
 //     it doesn't have a "user navigated away" failure mode.
 function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
@@ -31751,7 +31751,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
                     : family === "narrative"   ? "nx"
                     : family;
 
-  // Build iframe src targeting the runtime.html the planner committed.
+  // Build iframe src targeting the runtime.html the orchestrator committed.
   // Same path resolution as the per-id agent override's outputsRoot;
   // see editor/kinds/registry.py — sim_runtime_* / im_runtime_*.
   const runtimePath = `/source/${encodeURIComponent(branch)}/${folder}/${encodeURIComponent(assetId || "")}/runtime.html`;
@@ -31805,10 +31805,10 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   // Title-bar lens-verdict badge: pass / fail / running / queued.
   const lensVerdict = node.outputs?.lensVerdict;
   const verdictBadge = (() => {
-    if (node.runStatus === "running") return { label: "verifying", className: "is-running", title: "Planner is running lens trio" };
+    if (node.runStatus === "running") return { label: "verifying", className: "is-running", title: "Orchestrator is running lens trio" };
     if (lensVerdict === "pass")       return { label: "pass",      className: "is-pass",    title: "≥2/3 lenses passed; container committed" };
     if (lensVerdict === "fail")       return { label: "fail",      className: "is-fail",    title: "Lens trio rejected; awaiting user decision" };
-    if (node.runStatus === "error")   return { label: "error",     className: "is-error",   title: node.runError || "Planner errored" };
+    if (node.runStatus === "error")   return { label: "error",     className: "is-error",   title: node.runError || "Orchestrator errored" };
     return { label: "queued", className: "is-queued", title: "Not yet built" };
   })();
 
@@ -41099,7 +41099,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         "  1. docs/agents/workflows/0-design-system.md  ← the orchestration",
         "  2. docs/agents/subagents/0-ds-builder.md     ← the builder lens (genre commit, gallery matrix, etc.)",
         "  3. docs/agents/workflows/3-design-md.md      ← derives DESIGN.md from the trio (step 5 of Workflow 0)",
-        "  4. docs/agents/planner.md                    ← orchestration recipe",
+        "  4. docs/agents/orchestrator.md                    ← orchestration recipe",
         "  5. PROTOTYPE.md                              ← genre / shell / shape / type / color guidance",
         "(All under TH_PROTOCOL_ROOT in workspace mode, or repo root in single-project mode.)",
         "",
@@ -43694,7 +43694,7 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
   //     CAN'T spawn an agent (no HTTP agent path exists), so a CLI on
   //     PATH wins over any key. Tie-break for "both CLIs installed" is
   //     Claude (historical default; also the only CLI the daemon's
-  //     `resume` path + planner subagents support today). When NO CLI is
+  //     `resume` path + orchestrator subagents support today). When NO CLI is
   //     installed, fall through to the API-key path so the row labels
   //     SOMETHING instead of "(none)"; the actual chat spawn errors
   //     helpfully ("install claude or codex") when launched.
@@ -44904,7 +44904,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         const phase = j.done ? "done" : (j.turnDone ? "paused" : "active");
         await settleTargets(phase, j.branch);
         // ACTIVE ticks also drive workflow.json refresh — the visual-
-        // planner subagent (or any tool the agent uses) may have written
+        // orchestrator subagent (or any tool the agent uses) may have written
         // nodes mid-run that we need to merge into memory before the
         // next debounced save clobbers them.
         if (phase === "active") {
@@ -45634,8 +45634,8 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     // Hard rule for non-trivial visuals — the freeform-run failure mode
     // is the agent either (a) emitting ONE flat PNG for everything, or
     // (b) hand-rolling a complex inline SVG illustration that comes out
-    // as a stick-figure-quality flat drawing. The visual-planner subagent
-    // (docs/agents/subagents/1V-visual-planner.md) handles BOTH cases —
+    // as a stick-figure-quality flat drawing. The visual-orchestrator subagent
+    // (docs/agents/subagents/1V-visual-orchestrator.md) handles BOTH cases —
     // it reads the HTML you write, classifies each slot's medium, and
     // dispatches per-slot imaging subagents (Subagent 1.V.* — raster-photo,
     // raster-foreground, vector-icon, vector-mark, shader, particle-gl,
@@ -45650,11 +45650,11 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push("  - ANY non-raster non-SVG medium: shaders (GLSL canvas), 2D particle systems, GPU/WebGL particles, Lottie animations, 3D scenes (Three.js / WebGL), video assets. All of these have dedicated subagents.");
     parts.push("");
     parts.push("=== Two-phase delegation flow ===");
-    parts.push("PHASE 1 — call the planner (one Task call):");
-    parts.push("Invoke `Task(subagent_type: \"visual-planner\")` with the prototype envelope (branchSlug, sourceRoot, projectRoot, intent, genre). The planner enumerates every visual slot, classifies it, scaffolds the node trios in `workflow/workflow.json` (writing the one-line intent INTO each `p_<id>.text`), and writes a dispatch manifest to `workflow/visual-plan.json`.");
+    parts.push("PHASE 1 — call the orchestrator (one Task call):");
+    parts.push("Invoke `Task(subagent_type: \"visual-orchestrator\")` with the prototype envelope (branchSlug, sourceRoot, projectRoot, intent, genre). The orchestrator enumerates every visual slot, classifies it, scaffolds the node trios in `workflow/workflow.json` (writing the one-line intent INTO each `p_<id>.text`), and writes a dispatch manifest to `workflow/visual-plan.json`.");
     parts.push("");
-    parts.push("PHASE 2 — YOU fan out the per-medium drawers (this is on YOU, not the planner):");
-    parts.push("Claude Code disallows Task-from-subagent in many configurations, so the planner CANNOT dispatch the drawers itself. After the planner returns, you read `workflow/visual-plan.json` and issue one Task call per asset to the matching subagent. ALL CALLS IN PARALLEL (single message, multiple Task tool_use blocks) so total time = max-drawer-time, not sum.");
+    parts.push("PHASE 2 — YOU fan out the per-medium drawers (this is on YOU, not the orchestrator):");
+    parts.push("Claude Code disallows Task-from-subagent in many configurations, so the orchestrator CANNOT dispatch the drawers itself. After the orchestrator returns, you read `workflow/visual-plan.json` and issue one Task call per asset to the matching subagent. ALL CALLS IN PARALLEL (single message, multiple Task tool_use blocks) so total time = max-drawer-time, not sum.");
     parts.push("");
     parts.push("Drawer subagents (registered, invocable via Task):");
     parts.push("  - `raster-foreground`  — character art / illustrated foreground on transparent");
@@ -45676,7 +45676,7 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push("");
     parts.push("WHAT THE USER SEES: prompt → skill → asset trios appear on their workflow canvas with populated prompt text and generated assets. They can ▶ Run any node to regenerate. If the daemon's API key isn't set, /__asset_generate returns an error and the asset file doesn't appear — tell the user to add their API key in Settings.");
     parts.push("");
-    parts.push("WHEN TO SKIP DELEGATION: simple SVG icons (≤20 primitives, symbolic, UI affordance) can be inline-authored without the planner. CSS gradients/patterns same. The planner is for non-trivial visuals — multi-figure illustrations, raster imagery, shaders, etc.");
+    parts.push("WHEN TO SKIP DELEGATION: simple SVG icons (≤20 primitives, symbolic, UI affordance) can be inline-authored without the orchestrator. CSS gradients/patterns same. The orchestrator is for non-trivial visuals — multi-figure illustrations, raster imagery, shaders, etc.");
     parts.push("");
     parts.push("Litmus test: \"can a competent designer redraw this slot in 30 seconds with a vector tool?\" YES → inline OK. NO → delegate.");
     parts.push("");
@@ -46367,7 +46367,7 @@ function DocViewerModal({ title, name, text, path, onReload, onClose }) {
    the DS is loaded (window.EDITOR_DS_<id> populated by /__ds_bootstrap),
    "Missing" when meta.dsRef points at an unbuilt DS, or "No DS" when
    meta.dsRef itself is unset. The badge is a hint, not a gate — Workflow 1
-   enforcement lives in the planner playbook (docs/agents/workflows/1-regenerate.md). */
+   enforcement lives in the orchestrator playbook (docs/agents/workflows/1-regenerate.md). */
 function DesignSystemBadge({ dsRef, onOpenDsView }) {
   // Re-render when the th:ds-refresh event fires (e.g. after a DS write).
   // The bootstrap script populates window.EDITOR_DS_<id> at boot, but POST
@@ -47104,7 +47104,7 @@ function App() {
       `Source root: source/`,
       `Target data file: editor/data.js (window.EDITOR_DATA)`,
       ``,
-      `Read docs/agents/workflows/1-regenerate.md (under TH_PROTOCOL_ROOT in workspace mode, or repo root in single-project mode) for the full playbook, then run it. Coordinate via docs/agents/planner.md — spawn the regenerate subagents per the dispatch table, each with a strict slice of the data file.`,
+      `Read docs/agents/workflows/1-regenerate.md (under TH_PROTOCOL_ROOT in workspace mode, or repo root in single-project mode) for the full playbook, then run it. Coordinate via docs/agents/orchestrator.md — spawn the regenerate subagents per the dispatch table, each with a strict slice of the data file.`,
       ``,
       `The user clicked the "Update from source" button on the editor view's toolbar, so they want a fresh pass over the current source/ tree. Re-derive frames, primitives, entities, arrows, and (where appropriate) the state machines / timelines / grids sidecars from the source HTML/JSX. Honor source/prototype.json and source/entities.json if they exist — those are declarative sources of truth that should shape the regen rather than being overwritten.`,
       ``,

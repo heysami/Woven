@@ -217,7 +217,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_input_<imId>_mic/commit?pro
 - **You do not allocate in the emit loop.** Block at scale.
 - **You do not change `FEATURE_VECTOR_LENGTH` without coordinating with `im-mapping`.** Mapping depends on the shape. Cross-component contract.
 - **You do not run your own rAF.** Runtime drives `emit()`.
-- **You do not set `outputs.lensVerdict`.** Planner gates.
+- **You do not set `outputs.lensVerdict`.** Orchestrator gates.
 
 ## 8. Failure protocol
 

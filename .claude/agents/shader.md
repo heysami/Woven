@@ -8,7 +8,7 @@ You are Subagent 1.V.shader.
 
 **Protocol**: read `docs/agents/subagents/1V-shader.md` from the protocol mount and execute it exactly.
 
-**Input** (passed by the visual-planner):
+**Input** (passed by the visual-orchestrator):
 - The slot spec: selector (a canvas element), intent (e.g. "ambient gradient background", "noise pattern with brand accent"), bbox, classification reason
 - Shared envelope: `branchSlug`, `sourceRoot`, `projectRoot`, `intent`, `genre`
 

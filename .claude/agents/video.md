@@ -8,7 +8,7 @@ You are Subagent 1.V.video.
 
 **Protocol**: read `docs/agents/subagents/1V-video.md` from the protocol mount and execute it exactly.
 
-**Input** (passed by the visual-planner):
+**Input** (passed by the visual-orchestrator):
 - The slot spec: selector, intent (e.g. "hero loop, 5s, no audio"), bbox, classification reason, loop/autoplay/mute behavior
 - Shared envelope: `branchSlug`, `sourceRoot`, `projectRoot`, `intent`, `genre`
 

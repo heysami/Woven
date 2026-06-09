@@ -226,7 +226,7 @@ The runtime composer inlines the SVG into runtime.html as a sibling of the world
 - **You do not include menus, settings, or pause buttons in the overlay.** Those belong in the host app shell outside the slot.
 - **You do not own the world's chrome (parallax sky, depth tinting).** That's the world drawer.
 - **You do not own the win/lose AUDIO.** That's `game-feedback-author`.
-- **You do not own the leaderboard UI.** If the brief has one, it's a separate visual-planner asset OR lives in the host app outside the iframe.
+- **You do not own the leaderboard UI.** If the brief has one, it's a separate visual-orchestrator asset OR lives in the host app outside the iframe.
 - **You do not retain DOM nodes across `gameState` transitions destructively.** Reset must restore the playing-state appearance.
 
 End with: `"game_overlay_<gameId>: peek=<coverage%>, layout-thrash=none, currentColor=verified — commit pending lens."`

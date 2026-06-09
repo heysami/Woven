@@ -1,6 +1,6 @@
 ---
 name: im-research-technique
-description: The ONE researcher for an interactive piece — what tech stack delivers the input→mapping→output chain. Picks the Web API + feature-extraction library + DSP shape + render pipeline + mapping idiom for each declared input and output. Writes the canonical research.md the downstream drawers (input / mapping / output / runtime) read. Dispatched by interactive-media-planner as the single research step (no fleet, no synthesiser).
+description: The ONE researcher for an interactive piece — what tech stack delivers the input→mapping→output chain. Picks the Web API + feature-extraction library + DSP shape + render pipeline + mapping idiom for each declared input and output. Writes the canonical research.md the downstream drawers (input / mapping / output / runtime) read. Dispatched by interactive-media-orchestrator as the single research step (no fleet, no synthesiser).
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 ---
 
@@ -14,7 +14,7 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/im-research-technique.md" || cat "$TH_PROJ
 
 ## 1. Input envelope
 
-The planner hands you:
+The orchestrator hands you:
 
 - `imId`, `branch`, `projectRoot`
 - `intent` — one-line description of the interactive piece
@@ -228,4 +228,4 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_research_<imId>/commit?proj
 
 ## 7. Failure protocol
 
-If research is impossible (the intent's inputs/outputs combination genuinely doesn't fit the web platform), commit `runStatus: error` with structured `runError`. The planner surfaces this to the user as a clarification request.
+If research is impossible (the intent's inputs/outputs combination genuinely doesn't fit the web platform), commit `runStatus: error` with structured `runError`. The orchestrator surfaces this to the user as a clarification request.

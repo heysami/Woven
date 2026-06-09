@@ -139,18 +139,18 @@ Don't roll through stage D into stage E (chunking + page dispatch) without check
 When a chat run on an existing node produces files or modules beyond the scaffold:
 
 1. **Place new files in an existing producer's outputsRoot** when possible — the consumer routes them automatically per its `consumeFrom` rules.
-2. **Use `/commit` with `addNodes`** (only for `extendsGraph: true` kinds — visual-planner, prototype, ds-brainstorm with image-pipeline scaffolding) to add a new node representing the extension.
+2. **Use `/commit` with `addNodes`** (only for `extendsGraph: true` kinds — visual-orchestrator, prototype, ds-brainstorm with image-pipeline scaffolding) to add a new node representing the extension.
 3. **The user can make N variants** — `_ds_brainstorm/d/`, `/e/`, `/f/` — without the scaffold needing to be edited. The reconciler auto-promotes any new variant folder to a card silently.
 
 Files created outside both paths are surfaced by the reconciler as orphan artifacts. The producing node's runStatus does not flip to done until the orphan is resolved (either incorporated into a node or moved/deleted).
 
 ---
 
-## Rule 10 — Visual-planner runs per variant (Principle 9 + super case)
+## Rule 10 — Visual-orchestrator runs per variant (Principle 9 + super case)
 
-When a `ds-brainstorm` subagent finishes writing its variant folder, it dispatches the visual-planner via the Task tool, **SCOPED TO THIS VARIANT'S `outputsRoot` ONLY**. The planner returns image-pipeline trios (prompt + skill + rembg + asset nodes); commit them via `/commit` with `parentVariant: <this-id>` so the canvas renders them visually grouped under this variant's card.
+When a `ds-brainstorm` subagent finishes writing its variant folder, it dispatches the visual-orchestrator via the Task tool, **SCOPED TO THIS VARIANT'S `outputsRoot` ONLY**. The orchestrator returns image-pipeline trios (prompt + skill + rembg + asset nodes); commit them via `/commit` with `parentVariant: <this-id>` so the canvas renders them visually grouped under this variant's card.
 
-**Forbidden:** running the visual-planner across all variants' folders at once. That's what produced super's "17 mystery nodes appear in one blob" surprise (planner scanned abandoned variants a/b/c plus picked variant d together). Each variant gets its own legible plan; user compares side by side; picks one direction with full visibility.
+**Forbidden:** running the visual-orchestrator across all variants' folders at once. That's what produced super's "17 mystery nodes appear in one blob" surprise (orchestrator scanned abandoned variants a/b/c plus picked variant d together). Each variant gets its own legible plan; user compares side by side; picks one direction with full visibility.
 
 ---
 

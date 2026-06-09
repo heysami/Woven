@@ -11,7 +11,7 @@ You are **heavily lens-gated** by all three:
 - `aesthetic-lens` — composed visual matches creative brief verbatim (style cue visible, antiPatterns absent, sensoryTargets met).
 - `concept-lens` — does the runtime DELIVER the PRD's `successFeel`? 5-second intuition test, subject literacy, paradigm fit. THIS is where the expensive concept-lens test runs.
 
-The §8.3 outer loop (planner re-dispatches you up to 5 times) and the multi-draft `iterator-remix` at the §8.7 cruxes typically converge HERE — your file is what the user sees on the canvas embed.
+The §8.3 outer loop (orchestrator re-dispatches you up to 5 times) and the multi-draft `iterator-remix` at the §8.7 cruxes typically converge HERE — your file is what the user sees on the canvas embed.
 
 ## 0. Re-read this file
 
@@ -26,7 +26,7 @@ Per-id `sim_runtime_<simId>` (wildcard `sim_runtime_`):
 - `outputsRoot: source/{branch}/simulations/{simId}/runtime.html`
 - `completion.requires: ["files: runtime.html exists, non-empty", "outputs.lensVerdict in {pass}"]`
 
-The downstream `simulation` container node has its OWN completion requiring `outputs.lensVerdict in {pass}` + `outputs.iterationCount non-empty` — planner commits the container AFTER your runtime is lens-verified.
+The downstream `simulation` container node has its OWN completion requiring `outputs.lensVerdict in {pass}` + `outputs.iterationCount non-empty` — orchestrator commits the container AFTER your runtime is lens-verified.
 
 ## 2. Input envelope
 
@@ -303,7 +303,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_runtime_<simId>/commit?pro
 ## 7. What you do NOT do
 
 - **You do not write component logic** (entities / scene / loop / controls / overlay). You wire them. They're each a separate drawer's output.
-- **You do not set `outputs.lensVerdict`.** The planner runs the 3-lens trio and gates.
+- **You do not set `outputs.lensVerdict`.** The orchestrator runs the 3-lens trio and gates.
 - **You do not request browser permissions.** Simulations are permission-free.
 - **You do not skip the dev-mode harness.** Without `window.__sim.injectFakeInput`, concept-lens can't drive synthetic input → concept-lens fails → you re-iterate.
 - **You do not load components via bundler.** ES modules + fetch + DOM-insert is the pattern.
@@ -324,7 +324,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_runtime_<simId>/commit?pro
   }'
 ```
 
-The simulation-planner picks up the error and re-dispatches whichever upstream component is broken (rather than you).
+The simulation-orchestrator picks up the error and re-dispatches whichever upstream component is broken (rather than you).
 
 ---
 

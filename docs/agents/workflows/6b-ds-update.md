@@ -108,7 +108,7 @@ For every `editor/data.js` with `meta.dsRef.id === <dsId>`:
 - Re-stamp `meta.dsRef.version` to the new hash.
 - Re-mirror `tokens` / `primitives` / `library` from the new DS library node.
 
-This is a planner-level field write — same as Step 5 DS mirror in Workflow 1. No view subagent runs.
+This is a orchestrator-level field write — same as Step 5 DS mirror in Workflow 1. No view subagent runs.
 
 Branches that pinned an old `dsRef.version` explicitly (via `meta.dsRef.pinned: true` — TBD config) are skipped and flagged in the run report: "branch X is pinned at version Y; not updated."
 

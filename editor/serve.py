@@ -3104,7 +3104,7 @@ def _install_shutdown_hooks():
     atexit.register(_cleanup_subprocesses, reason="atexit")
 
 # ── Phase 5b — Step 4f render-check screenshot queue ────────────────────────
-# The planner agent needs to capture a screenshot of every editor view after
+# The orchestrator agent needs to capture a screenshot of every editor view after
 # Workflow 1 finishes, as the integration-test step that proves the data file
 # actually renders. Headless Chrome would mean a heavy dependency; instead the
 # editor's already-loaded `html2canvas-pro` runs inside the user's open editor
@@ -4064,7 +4064,7 @@ TRIGGER_PROMPTS = {
     "regenerate": (
         "Run Workflow 1 (regenerate). "
         "Read docs/agents/workflows/1-regenerate.md for the architecture. "
-        "Read docs/agents/planner.md as your orchestrator playbook. "
+        "Read docs/agents/orchestrator.md as your orchestrator playbook. "
         "Read docs/agents/conventions.md before dispatching any subagent. "
         "Whenever you write into editor/data.js, follow "
         "docs/agents/data-schema.md.\n\n"
@@ -4073,15 +4073,15 @@ TRIGGER_PROMPTS = {
     ),
     "statemachine-request": (
         "Run Workflow 1 with `overrides.stateMachine: true`. "
-        "Read docs/agents/planner.md and docs/agents/subagents/8-state-machine.md."
+        "Read docs/agents/orchestrator.md and docs/agents/subagents/8-state-machine.md."
     ),
     "timeline-request": (
         "Run Workflow 1 with `overrides.timeline: true`. "
-        "Read docs/agents/planner.md and docs/agents/subagents/9-timeline.md."
+        "Read docs/agents/orchestrator.md and docs/agents/subagents/9-timeline.md."
     ),
     "grid-request": (
         "Run Workflow 1 with `overrides.grids: true`. "
-        "Read docs/agents/planner.md and docs/agents/subagents/10-grids.md."
+        "Read docs/agents/orchestrator.md and docs/agents/subagents/10-grids.md."
     ),
     "freeform": "{prompt}",
 }
@@ -4169,7 +4169,7 @@ canvas animation.
 When in doubt: render in chat. Only write to `source/` when the user said the \
 word "prototype" or "branch" or asked for something multi-page.
 
-**Exception — visual ASSETS go through visual-planner.** The chat-rendering \
+**Exception — visual ASSETS go through visual-orchestrator.** The chat-rendering \
 rules above are for visualizations the user wants to *see in conversation* \
 ("show me a chart of X", "draw what a Bauhaus poster looks like", \
 "preview an oklch palette"). When the user asks you to *create / produce / \
@@ -4177,8 +4177,8 @@ generate / add* an image, illustration, mascot, character, icon, mark, \
 shader, particle field, 3D scene, lottie animation, or video that should \
 land on the workflow canvas as an asset — even if it's "just one" — you do \
 NOT render it inline as a fenced block. You dispatch \
-`Task(subagent_type: "visual-planner", …)` as your first action. See the \
-"Image creation: dispatch visual-planner FIRST" rule in the capabilities \
+`Task(subagent_type: "visual-orchestrator", …)` as your first action. See the \
+"Image creation: dispatch visual-orchestrator FIRST" rule in the capabilities \
 section below for the exact decision table.
 
 ## Prototype folder convention (v3.2 — multi-prototype)
@@ -4289,7 +4289,7 @@ Read it from there; do NOT copy these files into the project:
 
 - `AGENTS.md` — entry point + workflow index
 - `PROTOTYPE.md` — design skill
-- `docs/agents/**` — workflows, subagents, planner, conventions, data-schema
+- `docs/agents/**` — workflows, subagents, orchestrator, conventions, data-schema
 
 Useful env vars set on every spawn: `TH_PROJECT_ROOT` (your cwd as an \
 absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
@@ -4330,7 +4330,7 @@ _HOST_LEAK_ENV_VARS = (
 # `.claude/settings-harness.json` exists with the correct PreToolUse hook
 # registration BEFORE we hand --settings to the spawned `claude`. Idempotent:
 # generates the file if missing, leaves it alone if present and well-formed.
-# This is what makes the visual-planner enforcement self-installing — no
+# This is what makes the visual-orchestrator enforcement self-installing — no
 # user step required beyond running the daemon.
 def _ensure_harness_settings() -> "str | None":
     """Generate INSTALL_ROOT/.claude/settings-harness.json on demand and
@@ -4338,19 +4338,19 @@ def _ensure_harness_settings() -> "str | None":
     missing (in which case spawn sites silently skip --settings — the
     enforcement is unavailable but the daemon keeps working).
 
-    The hook is the per-family planner gate (require-planner.sh) — it
-    routes by file path: simulations/ → simulation-planner, interactives/
-    → interactive-media-planner, narratives/ → narrative-experience-planner,
-    and the visual binary slots elsewhere → visual-planner. Renamed from
-    the legacy require-visual-planner.sh in v3.6 when sim/im/nx planners
+    The hook is the per-family orchestrator gate (require-orchestrator.sh) — it
+    routes by file path: simulations/ → simulation-orchestrator, interactives/
+    → interactive-media-orchestrator, narratives/ → narrative-experience-orchestrator,
+    and the visual binary slots elsewhere → visual-orchestrator. Renamed from
+    the legacy require-visual-orchestrator.sh in v3.6 when sim/im/nx orchestrators
     landed."""
     hook_path     = os.path.join(INSTALL_ROOT, ".claude", "hooks",
-                                  "require-planner.sh")
+                                  "require-orchestrator.sh")
     settings_path = os.path.join(INSTALL_ROOT, ".claude",
                                   "settings-harness.json")
     if not os.path.isfile(hook_path):
         # Hook script absent — nothing to register. Spawn sites get None
-        # and skip --settings; visual-planner gating is unavailable but
+        # and skip --settings; visual-orchestrator gating is unavailable but
         # the daemon stays functional.
         return None
     # Build the canonical config every time so we self-heal if a stale or
@@ -4378,7 +4378,7 @@ def _ensure_harness_settings() -> "str | None":
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
     except OSError as e:
-        # Surface but don't crash — visual-planner gating becomes
+        # Surface but don't crash — visual-orchestrator gating becomes
         # advisory-only, which is the same fail-mode as a missing hook.
         print(f"  [harness] failed to write {settings_path}: {e}", flush=True)
         return None
@@ -4610,8 +4610,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._ds_proposals_save(qs)
             if parsed.path == "/__upload_font":
                 return self._upload_font_post(qs)
-            if parsed.path == "/__planners/disable":
-                return self._planners_disable(qs)
+            if parsed.path == "/__orchestrators/disable":
+                return self._orchestrators_disable(qs)
             if parsed.path == "/__cc_skills/upload":
                 return self._cc_skills_upload()
             if parsed.path == "/__cc_skills/delete":
@@ -4807,8 +4807,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
             return self._capabilities()
-        if url_path == "/__planners":
-            return self._planners_registry(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__orchestrators":
+            return self._orchestrators_registry(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__cc_skills":
             return self._cc_skills_list()
         if url_path == "/__workspace":
@@ -5413,7 +5413,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not isinstance(f, str) or not isinstance(t, str): continue
             clean_edges.append({"from": f, "to": t})
         # Merge protection — preserve nodes added by background writers
-        # (the visual-planner subagent + its per-medium drawers scaffold
+        # (the visual-orchestrator subagent + its per-medium drawers scaffold
         # node trios using a `p_`/`s_`/`r_`/`a_` id namespace) that the
         # editor hasn't seen yet. Without this, the editor's debounced
         # save races the subagent's write and silently clobbers any
@@ -5472,13 +5472,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                         if not isinstance(nid, str): continue
                         if nid in posted_ids: continue
                         if nid in deleted_ids: continue  # user tombstone — don't restore
-                        # Visual-planner / drawer namespace AND onboarding-orchestrator
+                        # Visual-orchestrator / drawer namespace AND onboarding-orchestrator
                         # namespace (bp_/bs_/br_/cp_ — see onboarding plan §Phase 2).
                         # v3.3 — simulation / interactive-media / narrative-experience
                         # families (sim_/im_/nx_) are also background-writer namespaces:
-                        # the *-planner subagents + their component drawers scaffold node
+                        # the *-orchestrator subagents + their component drawers scaffold node
                         # trios the editor hasn't refetched yet. Without this guard a
-                        # debounced editor canvas-save races the planner's research-fleet
+                        # debounced editor canvas-save races the orchestrator's research-fleet
                         # write and silently clobbers the whole sim_<id> trio (observed:
                         # a mid-research "Update workflow canvas" save wiped all four
                         # sim_research_* nodes for an in-flight simulation).
@@ -5751,7 +5751,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Skipping the enable flag is what caused museuuum's chat to hit
         # "Claude requested permissions to write ... but you haven't granted
         # it yet" after running 4 hours: every Write/Edit/Bash that the
-        # planner subagents triggered queued behind a permission prompt the
+        # orchestrator subagents triggered queued behind a permission prompt the
         # user couldn't approve.
         if permission_mode == "bypassPermissions":
             spawn_args += [
@@ -5761,15 +5761,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         elif defs.get("permission_flag"):
             spawn_args += [defs["permission_flag"], permission_mode]
         # v3.1 — Hide user-level slash commands (~/.claude/commands/). The
-        # daemon's capabilities preamble + Woven subagents (visual-planner,
+        # daemon's capabilities preamble + Woven subagents (visual-orchestrator,
         # raster-foreground, etc.) are the only image-pipeline path; the
-        # user's personal /prototype skill used to override visual-planner
+        # user's personal /prototype skill used to override visual-orchestrator
         # by telling the agent to use placeholder rectangles instead.
         spawn_args += ["--disable-slash-commands"]
         # v3.1 — Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
         # *.html write until the agent has called Task with
-        # subagent_type='visual-planner'. Soft preamble rules ("you MUST
-        # dispatch visual-planner") were ignored; this is hard enforcement
+        # subagent_type='visual-orchestrator'. Soft preamble rules ("you MUST
+        # dispatch visual-orchestrator") were ignored; this is hard enforcement
         # at the tool-call boundary.
         _harness_settings = _ensure_harness_settings()
         if _harness_settings:
@@ -8302,10 +8302,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         aspect   = (body.get("aspect") or "1:1").strip()
         options  = body.get("options") or {}
         # v3.1 — soft gate: every image-gen call SHOULD carry a `medium`
-        # classified by the visual-planner subagent (raster-foreground,
+        # classified by the visual-orchestrator subagent (raster-foreground,
         # raster-photo, vector-icon, vector-mark, shader, particle-2d,
         # particle-gl, lottie, 3d, video). Without one, we log a warning
-        # so we can audit which call sites bypassed the planner. Don't
+        # so we can audit which call sites bypassed the orchestrator. Don't
         # reject — that would break inline agent-driven scaffolds. Tracked
         # downstream by routing to the project's .asset-gen-audit.jsonl.
         medium = (body.get("medium") or "").strip() or "unspecified"
@@ -8317,8 +8317,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if medium not in _ALLOWED_MEDIA:
             medium = "unspecified"
         if medium == "unspecified":
-            print(f"[asset-gen audit] {output!r}: medium NOT classified by visual-planner. "
-                  f"Caller should dispatch visual-planner () first.",
+            print(f"[asset-gen audit] {output!r}: medium NOT classified by visual-orchestrator. "
+                  f"Caller should dispatch visual-orchestrator () first.",
                   flush=True)
         # Append an audit entry so we can grep call sites later.
         # v3.1 — bounded rotation: when the file exceeds 1 MB, rename it to
@@ -10871,23 +10871,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"capabilities load failed: {e}"})
 
-    # ── Planner registry routes (v3.3) ──────────────────────────────────
+    # ── Orchestrator registry routes (v3.3) ──────────────────────────────────
     #
-    # GET  /__planners?project=<id>             — list every planner manifest
-    #                                              + per-planner enabled state
+    # GET  /__orchestrators?project=<id>             — list every orchestrator manifest
+    #                                              + per-orchestrator enabled state
     #                                              for this project.
-    # POST /__planners/disable?project=<id>     — body {plannerId, enabled}
-    #                                              flips one planner's toggle.
+    # POST /__orchestrators/disable?project=<id>     — body {orchestratorId, enabled}
+    #                                              flips one orchestrator's toggle.
     #
-    # Planners are auto-discovered from `.claude/agents/<name>.manifest.json`.
-    # Per-project disable state persists at `<projectRoot>/.planners-disabled.json`.
+    # Orchestrators are auto-discovered from `.claude/agents/<name>.manifest.json`.
+    # Per-project disable state persists at `<projectRoot>/.orchestrators-disabled.json`.
     # The capabilities preamble (capabilities.capabilities_preamble) reads the
-    # enabled set and omits hard-rule blocks for disabled planners, so agents
-    # spawned in that project never see "dispatch <X>-planner FIRST" cues for
-    # off planners.
+    # enabled set and omits hard-rule blocks for disabled orchestrators, so agents
+    # spawned in that project never see "dispatch <X>-orchestrator FIRST" cues for
+    # off orchestrators.
 
-    def _planners_disable_target(self, qs):
-        """Resolve where to read/write the planner disable state.
+    def _orchestrators_disable_target(self, qs):
+        """Resolve where to read/write the orchestrator disable state.
 
         Priority:
           1. `?project=<id>` present → that project's root.
@@ -10903,33 +10903,33 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return WORKSPACE_DIR
             return os.getcwd()
 
-    def _planners_registry(self, qs):
-        """GET /__planners?project=<id> — return aggregated manifests + state.
+    def _orchestrators_registry(self, qs):
+        """GET /__orchestrators?project=<id> — return aggregated manifests + state.
 
         When called without a ?project= param, falls back to the workspace
         disable state (landing-page case). Toggles made there affect every
         project in the workspace until per-project overrides land."""
-        target = self._planners_disable_target(qs)
+        target = self._orchestrators_disable_target(qs)
         try:
-            import planners as _pl
+            import orchestrators as _pl
             reg = _pl.get_registry(target)
             reg["scope"]      = "project" if "?project=" in qs.__class__.__name__ else (
                                   "workspace" if target == WORKSPACE_DIR else "project")
             reg["targetRoot"] = target
             return self._reply(200, reg)
         except Exception as e:
-            return self._reply(500, {"error": f"planners load failed: {e}"})
+            return self._reply(500, {"error": f"orchestrators load failed: {e}"})
 
-    def _planners_disable(self, qs):
-        """POST /__planners/disable?project=<id>
-        Body: {"plannerId": "<id>", "enabled": <bool>}
+    def _orchestrators_disable(self, qs):
+        """POST /__orchestrators/disable?project=<id>
+        Body: {"orchestratorId": "<id>", "enabled": <bool>}
         Returns the updated disable list.
 
         Without ?project=, writes to the workspace disable file (landing-page
         scope) so the toggle affects every project until per-project overrides
-        land. See `_planners_disable_target`."""
+        land. See `_orchestrators_disable_target`."""
         try:
-            project_root = self._planners_disable_target(qs)
+            project_root = self._orchestrators_disable_target(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         try:
@@ -10938,23 +10938,23 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": f"invalid JSON body: {e}"})
         if not isinstance(body, dict):
             return self._reply(400, {"error": "body must be an object"})
-        planner_id = body.get("plannerId")
+        orchestrator_id = body.get("orchestratorId")
         enabled    = body.get("enabled")
-        if not isinstance(planner_id, str) or not planner_id:
-            return self._reply(400, {"error": "plannerId required (string)"})
+        if not isinstance(orchestrator_id, str) or not orchestrator_id:
+            return self._reply(400, {"error": "orchestratorId required (string)"})
         if not isinstance(enabled, bool):
             return self._reply(400, {"error": "enabled required (boolean)"})
         try:
-            import planners as _pl
-            new_disabled = _pl.set_planner_enabled(project_root, planner_id, enabled)
+            import orchestrators as _pl
+            new_disabled = _pl.set_orchestrator_enabled(project_root, orchestrator_id, enabled)
             return self._reply(200, {
                 "ok":          True,
-                "plannerId":   planner_id,
+                "orchestratorId":   orchestrator_id,
                 "enabled":     enabled,
                 "disabledIds": new_disabled,
             })
         except Exception as e:
-            return self._reply(500, {"error": f"planner toggle failed: {e}"})
+            return self._reply(500, {"error": f"orchestrator toggle failed: {e}"})
 
     # ── Harness-local skills routes ──────────────────────────────────────
     #
@@ -12126,10 +12126,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             elif defs.get("permission_flag") and permission_mode:
                 spawn_args += [defs["permission_flag"], permission_mode]
             # v3.1 — Hide user-level slash commands so /prototype etc. don't
-            # auto-load and override the visual-planner pipeline. Subagents
+            # auto-load and override the visual-orchestrator pipeline. Subagents
             # dispatched via the Task tool are unaffected.
             spawn_args += ["--disable-slash-commands"]
-            # v3.1 — Hook gate: block *.html writes until visual-planner dispatched.
+            # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
@@ -12146,7 +12146,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # shared protocol mount lives (cwd ≠ protocol root).
         # v3.5 — onboarding cut: no discovery flow, no orchestration mount.
         # Every spawn drops into the workflow canvas with the capabilities
-        # preamble; the user steers from chat (Path A / Path B planner
+        # preamble; the user steers from chat (Path A / Path B orchestrator
         # dispatch, `/prototype` skill, or library nodes).
         wants_discovery     = False
         wants_orchestration = False
@@ -12583,7 +12583,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             spawn_args += [defs["permission_flag"], state.permission_mode]
         # v3.1 — match the freeform / node-agent paths: hide user slash commands.
         spawn_args += ["--disable-slash-commands"]
-        # v3.1 — Hook gate: block *.html writes until visual-planner dispatched.
+        # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
         _harness_settings = _ensure_harness_settings()
         if _harness_settings:
             spawn_args += ["--settings", _harness_settings]
@@ -12871,7 +12871,7 @@ if __name__ == "__main__":
     )
     # v3.1 — Skill isolation. Spawned `claude` gets `--disable-slash-commands`
     # so user-level commands (~/.claude/commands/) can't auto-load and
-    # override the visual-planner pipeline. Auth via macOS Keychain stays
+    # override the visual-orchestrator pipeline. Auth via macOS Keychain stays
     # intact (no CLAUDE_CONFIG_DIR override).
     print("  agent isolation: spawned `claude` runs with --disable-slash-commands "
           "(user-level slash commands at ~/.claude/commands/ hidden)", flush=True)
@@ -12885,12 +12885,12 @@ if __name__ == "__main__":
     _settings_path = _ensure_harness_settings()
     if _settings_path:
         print(f"  hook gate: PreToolUse Write/Edit/MultiEdit routes by path "
-              f"to the right family planner (simulation / interactive / "
+              f"to the right family orchestrator (simulation / interactive / "
               f"narrative / visual)", flush=True)
         print(f"    settings: {_settings_path}", flush=True)
     else:
         _hook_path = os.path.join(INSTALL_ROOT, ".claude", "hooks",
-                                  "require-planner.sh")
+                                  "require-orchestrator.sh")
         print(f"  hook gate: hook script missing at {_hook_path}; writes are NOT gated",
               flush=True)
     # If a stale symlink was left over from the earlier CLAUDE_CONFIG_DIR

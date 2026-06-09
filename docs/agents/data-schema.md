@@ -1,8 +1,8 @@
 # Canonical data schema
 
-**This is the single source of truth for where every field lives in `editor/data.js` and `source/prototype.json`.** Every subagent that writes a field must reference this doc to know where its output slots in. The planner uses this as the assembly spec in Step 11.
+**This is the single source of truth for where every field lives in `editor/data.js` and `source/prototype.json`.** Every subagent that writes a field must reference this doc to know where its output slots in. The orchestrator uses this as the assembly spec in Step 11.
 
-If a subagent and this doc disagree, **this doc wins.** Surface the conflict to the planner.
+If a subagent and this doc disagree, **this doc wins.** Surface the conflict to the orchestrator.
 
 ---
 
@@ -23,7 +23,7 @@ window.EDITOR_DATA = {
   },
 
   // tokens / primitives / library are READ-ONLY mirrors of the DS library node
-  // identified by meta.dsRef. The planner writes them by reading the DS file at
+  // identified by meta.dsRef. The orchestrator writes them by reading the DS file at
   // build time; subagents NEVER write these fields directly. Their canonical
   // home is design-systems/<dsRef.id>/. See "Design system library nodes" below.
   tokens: {
@@ -257,9 +257,9 @@ The DS library node is written exclusively by Workflows 0 and 6b. No view subage
 | `design-systems/<id>/styles.css` | Workflow 0 / 6b | Subagent 1 (via link), Workflow 3, editor |
 | `design-systems/<id>/gallery.html` | Workflow 0 / 6b | Subagent 6 (audit), Workflow 3, editor |
 | `design-systems/<id>/DESIGN.md` | Workflow 3 (from styles.css + gallery.html) | Editor (DESIGN.md toggle) |
-| `design-systems/<id>/meta.json` | Workflow 0 / 6b | Planner (for `meta.dsRef.version`), editor |
+| `design-systems/<id>/meta.json` | Workflow 0 / 6b | Orchestrator (for `meta.dsRef.version`), editor |
 | `editor/design-systems/<id>.js` | Workflow 0 / 6b (runtime mirror) | Editor |
-| `editor/data.js → meta.dsRef` | Planner (Workflow 1) | Editor, Subagent 1, Subagent 6 |
+| `editor/data.js → meta.dsRef` | Orchestrator (Workflow 1) | Editor, Subagent 1, Subagent 6 |
 | `DS_PROPOSAL.md` (at project root) | Subagent 6 (audit) | Workflow 6 (review) |
 
 ---
@@ -288,7 +288,7 @@ Same shape as above, minus `tokens` / `primitives` / `library` (those live in so
 
 ## Subagent → field ownership
 
-Use this table to know which subagent's output writes which field. The planner merges into the schema above; subagents return only their owned slices.
+Use this table to know which subagent's output writes which field. The orchestrator merges into the schema above; subagents return only their owned slices.
 
 | Subagent | Writes |
 |---|---|
@@ -298,15 +298,15 @@ Use this table to know which subagent's output writes which field. The planner m
 | 3 Prototype | `frames[i].entry`, `frames[i].hash`, `frames[i].setupScript`, **`frames[i].w`**, **`frames[i].h`** |
 | 4 User flow | `frames[i].kind`, `frames[i].lane`, `arrows[]` |
 | 5 IA | `frames[i].entities` (echoes `frames[i].parent` from its own enumeration) |
-| 6 DS-audit | `DS_PROPOSAL.md` at project root. Does NOT write `tokens` / `primitives` / `library` — those mirror the DS library node, populated by the planner. |
+| 6 DS-audit | `DS_PROPOSAL.md` at project root. Does NOT write `tokens` / `primitives` / `library` — those mirror the DS library node, populated by the orchestrator. |
 | 7 Entities | `entities[]` (incl. `entities[i].x`, `entities[i].y`, `entities[i].w`), `demoPatches` |
 | 8 State machine | `stateMachines[]` |
 | 9 Timeline | `timelines[]` |
 | 10 Grids | `grids[]` |
-| **Planner (Step 4 merge)** | `frames[i].id`, `frames[i].label` (merged from subagents); `meta.lanes` (from Subagent 4); resolves convention-mismatched IDs |
-| **Planner (Step 5 meta)** | `meta.project`, `meta.notes`, `meta.defaultFrame`, `meta.canvasGap`, `meta.dsRef` |
-| **Planner (Step 5 DS mirror)** | `tokens`, `primitives`, `library` — copied verbatim from the DS library node identified by `meta.dsRef`. Read, don't enumerate. |
-| **Planner (Step 4c reconciliation)** | additional cross-actor handoff arrows → `arrows[]` |
+| **Orchestrator (Step 4 merge)** | `frames[i].id`, `frames[i].label` (merged from subagents); `meta.lanes` (from Subagent 4); resolves convention-mismatched IDs |
+| **Orchestrator (Step 5 meta)** | `meta.project`, `meta.notes`, `meta.defaultFrame`, `meta.canvasGap`, `meta.dsRef` |
+| **Orchestrator (Step 5 DS mirror)** | `tokens`, `primitives`, `library` — copied verbatim from the DS library node identified by `meta.dsRef`. Read, don't enumerate. |
+| **Orchestrator (Step 4c reconciliation)** | additional cross-actor handoff arrows → `arrows[]` |
 
 ---
 

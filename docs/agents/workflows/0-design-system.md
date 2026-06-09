@@ -41,11 +41,11 @@ The spec lives on the workflow canvas; the agent reads it as JSON via the daemon
 
 2. **Determine target `<id>`.** Default to the active prototype slug (`main`, `dense-rows-experiment`, …). If the spec includes a `parentRef`, the new DS inherits from that parent — clone its trio as the starting state and apply overrides.
 
-3. **Spawn Subagent 0 in PLANNER + parallel-section + MERGER mode** (v2.43).
+3. **Spawn Subagent 0 in ORCHESTRATOR + parallel-section + MERGER mode** (v2.43).
 
    The DS build is not one subagent any more — it's a fan-out. One Claude session reading + writing the whole trio in a single pass blows context on a comprehensive DS (gallery alone can be 30–50KB for a full primitive matrix; styles.css with semantic tokens + canonical class rules adds another 10–20KB; the spec, references, parent DS, and playbook the agent has to read sit on top of that). Each sub-task gets its own subagent, each with a fresh context budget and a narrow scope.
 
-   **3a. Planner subagent.** Reads the spec + references + parent DS (if inheriting). Outputs a plan JSON to `design-systems/<id>/_build/plan.json`:
+   **3a. Orchestrator subagent.** Reads the spec + references + parent DS (if inheriting). Outputs a plan JSON to `design-systems/<id>/_build/plan.json`:
    ```jsonc
    {
      "tokens":     { "palette": "<intent>", "type": "<intent>", "spacing": "<intent>",
@@ -63,7 +63,7 @@ The spec lives on the workflow canvas; the agent reads it as JSON via the daemon
      "rationale":  "one-paragraph genre commit — what tonal axis this DS is committing to"
    }
    ```
-   The planner does NOT write css/html. It only writes the plan.
+   The orchestrator does NOT write css/html. It only writes the plan.
 
    **3b. Tokens subagent** (one). Reads plan.json + spec. Writes `design-systems/<id>/_build/tokens.css` — just the `:root` block with every token (color, type, spacing, radius, shadow) named semantically. Includes mode variants if `tokens.modes` is set.
 
@@ -96,7 +96,7 @@ The spec lives on the workflow canvas; the agent reads it as JSON via the daemon
    - Inline `trio.tokensCss / galleryHtml / designMd` from the files.
    - Emit `window.EDITOR_DS_<id> = { … }`.
 
-7. **Update branches that reference this DS.** For every `editor/data.js` with `meta.dsRef.id === <id>`, planner re-stamps `meta.dsRef.version` to the new hash and re-mirrors `tokens` / `primitives` / `library` from the DS. This is the same mirror step the planner does in Workflow 1 — extracted as a function.
+7. **Update branches that reference this DS.** For every `editor/data.js` with `meta.dsRef.id === <id>`, orchestrator re-stamps `meta.dsRef.version` to the new hash and re-mirrors `tokens` / `primitives` / `library` from the DS. This is the same mirror step the orchestrator does in Workflow 1 — extracted as a function.
 
 8. **Render-verify.** Load `design-systems/<id>/gallery.html` in the browser via the dev server. Every section renders; no console errors; every primitive variant visible in idle state. Screenshot the page.
 

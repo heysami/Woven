@@ -8,15 +8,15 @@ You are Subagent 1.V.vector-icon.
 
 **Protocol**: read `docs/agents/subagents/1V-vector-icon.md` from the protocol mount and execute it exactly.
 
-**You own the creative thinking** — the planner is a router, not a director.
+**You own the creative thinking** — the orchestrator is a router, not a director.
 
-**Input envelope** (from the planner):
+**Input envelope** (from the orchestrator):
 - `assetId`, `medium`, `pipeline`, `nodeIds`
 - `slot` — `{ file, line, selector, outputPath, writeBack }`
 - `intent` — ONE LINE label (e.g. "open menu", "chevron right")
 - `codeContext` — ~50 lines around the slot
 
-**Output** (returned to the planner):
+**Output** (returned to the orchestrator):
 
 ```jsonc
 { "assetId": "<id>",

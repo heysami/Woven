@@ -1,22 +1,22 @@
-"""editor/planners.py — planner-registry aggregator + enable/disable state.
+"""editor/orchestrators.py — orchestrator-registry aggregator + enable/disable state.
 
-Single source of truth for "what planners does this app ship, what does each
+Single source of truth for "what orchestrators does this app ship, what does each
 do, and which are turned on for this project."
 
-Adding a new planner is a single-file operation: drop a
+Adding a new orchestrator is a single-file operation: drop a
 `.claude/agents/<name>.manifest.json` next to its `.md` playbook. This module
-walks the directory and auto-discovers it; the daemon's /__planners endpoint
-+ the landing-page Planners view pick it up without code changes.
+walks the directory and auto-discovers it; the daemon's /__orchestrators endpoint
++ the landing-page Orchestrators view pick it up without code changes.
 
 State model:
-  • Per-planner default: `defaultEnabled` field in the manifest (almost always true).
-  • Per-project override: `<projectRoot>/.planners-disabled.json` lists IDs
+  • Per-orchestrator default: `defaultEnabled` field in the manifest (almost always true).
+  • Per-project override: `<projectRoot>/.orchestrators-disabled.json` lists IDs
     the user has switched off. Empty / missing = all defaults respected.
 
 The capabilities preamble (capabilities.capabilities_preamble) consults the
 project's disable list when composing the per-spawn system prompt — disabled
-planners' hard-rule blocks are omitted, so agents spawned in that project
-do NOT see "dispatch this planner FIRST" cues for off planners.
+orchestrators' hard-rule blocks are omitted, so agents spawned in that project
+do NOT see "dispatch this orchestrator FIRST" cues for off orchestrators.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from typing import Optional
 _HERE          = os.path.dirname(os.path.abspath(__file__))
 _PROTOCOL_ROOT = os.path.dirname(_HERE)
 _AGENTS_DIR    = os.path.join(_PROTOCOL_ROOT, ".claude", "agents")
-_DISABLED_FILE = ".planners-disabled.json"   # per project, at project root
+_DISABLED_FILE = ".orchestrators-disabled.json"   # per project, at project root
 
 
 # ── Manifest discovery ───────────────────────────────────────────────────
@@ -40,7 +40,7 @@ def _scan_manifests() -> list[dict]:
 
     Manifests are pure data — parse failures are silently skipped so a single
     broken file can't take down the whole registry. The caller can detect
-    "missing planner" by absence in the returned list.
+    "missing orchestrator" by absence in the returned list.
     """
     out: list[dict] = []
     if not os.path.isdir(_AGENTS_DIR):
@@ -70,7 +70,7 @@ def _disabled_path(project_root: Optional[str]) -> Optional[str]:
 
 
 def load_disabled(project_root: Optional[str]) -> list[str]:
-    """Return the list of planner IDs the user has switched off for this
+    """Return the list of orchestrator IDs the user has switched off for this
     project. Missing file = empty list."""
     p = _disabled_path(project_root)
     if not p or not os.path.isfile(p):
@@ -87,7 +87,7 @@ def load_disabled(project_root: Optional[str]) -> list[str]:
 
 
 def save_disabled(project_root: str, disabled_ids: list[str]) -> None:
-    """Atomically persist the disable list to <project_root>/.planners-disabled.json.
+    """Atomically persist the disable list to <project_root>/.orchestrators-disabled.json.
 
     Empty list still writes the file so the toggle state is auditable; callers
     that want to delete the file should remove it explicitly."""
@@ -112,18 +112,18 @@ def save_disabled(project_root: str, disabled_ids: list[str]) -> None:
     os.replace(tmp, p)
 
 
-def set_planner_enabled(project_root: str, planner_id: str, enabled: bool) -> list[str]:
-    """Flip one planner's enabled state in the project's disable list.
+def set_orchestrator_enabled(project_root: str, orchestrator_id: str, enabled: bool) -> list[str]:
+    """Flip one orchestrator's enabled state in the project's disable list.
 
     Returns the new disable list (sorted alphabetically for caller convenience)."""
-    if not planner_id:
-        raise ValueError("planner_id required")
+    if not orchestrator_id:
+        raise ValueError("orchestrator_id required")
     cur = load_disabled(project_root)
     s = set(cur)
     if enabled:
-        s.discard(planner_id)
+        s.discard(orchestrator_id)
     else:
-        s.add(planner_id)
+        s.add(orchestrator_id)
     new_list = sorted(s)
     save_disabled(project_root, new_list)
     return new_list
@@ -133,23 +133,23 @@ def set_planner_enabled(project_root: str, planner_id: str, enabled: bool) -> li
 
 
 def get_registry(project_root: Optional[str] = None) -> dict:
-    """Aggregate every manifest + resolve per-planner enabled state for the
-    given project. Returns a structure the /__planners HTTP handler returns
+    """Aggregate every manifest + resolve per-orchestrator enabled state for the
+    given project. Returns a structure the /__orchestrators HTTP handler returns
     verbatim.
 
-    Each planner in `planners[]` carries an `enabled` field merging the
+    Each orchestrator in `orchestrators[]` carries an `enabled` field merging the
     manifest's `defaultEnabled` with the project's disable list — `enabled`
-    is False iff the planner is in the disable list (or absent and the
+    is False iff the orchestrator is in the disable list (or absent and the
     manifest set defaultEnabled to False)."""
     manifests = _scan_manifests()
     disabled  = set(load_disabled(project_root))
 
-    planners: list[dict] = []
+    orchestrators: list[dict] = []
     for m in manifests:
         default_enabled = bool(m.get("defaultEnabled", True))
         is_disabled     = m.get("id") in disabled
         enabled         = default_enabled and not is_disabled
-        planners.append({
+        orchestrators.append({
             **m,
             "enabled":        enabled,
             "defaultEnabled": default_enabled,
@@ -157,15 +157,15 @@ def get_registry(project_root: Optional[str] = None) -> dict:
         })
 
     return {
-        "version":     "1",
-        "count":       len(planners),
-        "disabledIds": sorted(disabled),
-        "planners":    planners,
+        "version":       "1",
+        "count":         len(orchestrators),
+        "disabledIds":   sorted(disabled),
+        "orchestrators": orchestrators,
     }
 
 
-def enabled_planner_ids(project_root: Optional[str] = None) -> set:
-    """Cheap helper for capabilities_preamble: which planners' hard-rule
+def enabled_orchestrator_ids(project_root: Optional[str] = None) -> set:
+    """Cheap helper for capabilities_preamble: which orchestrators' hard-rule
     blocks should be included in the per-spawn system prompt?"""
     reg = get_registry(project_root)
-    return {p["id"] for p in reg["planners"] if p.get("enabled")}
+    return {p["id"] for p in reg["orchestrators"] if p.get("enabled")}

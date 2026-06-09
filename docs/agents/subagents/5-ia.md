@@ -8,7 +8,7 @@ You own the **sitemap lens**. Enumerate what *you* see as a sitemap node, and de
 
 - `slug`, `sourceRoot`, `intent`
 
-No planner-provided inventory or entity list. You enumerate. You'll cross-check entity assignments with Subagent 7's output during reconciliation — for now, identify entity IDs via the naming convention (singular PascalCase of `DEMO.<key>`).
+No orchestrator-provided inventory or entity list. You enumerate. You'll cross-check entity assignments with Subagent 7's output during reconciliation — for now, identify entity IDs via the naming convention (singular PascalCase of `DEMO.<key>`).
 
 ## Output
 
@@ -83,7 +83,7 @@ Order entities by first appearance in the frame. Zero entities is fine (settings
 
 ## Render-verify your slice
 
-After producing your output (and after the planner has written `editor/data.js`), load the editor's **IA** view and verify:
+After producing your output (and after the orchestrator has written `editor/data.js`), load the editor's **IA** view and verify:
 
 1. The sitemap renders as a tree, not a flat list — frames with `parent` actually nest under their parent.
 2. No frame is orphaned to a phantom parent (a `parent` value that doesn't exist in the inventory).

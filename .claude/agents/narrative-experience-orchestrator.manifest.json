@@ -1,18 +1,18 @@
 {
-  "id": "narrative-experience-planner",
+  "id": "narrative-experience-orchestrator",
   "label": "Narrative experience",
   "tagline": "Immersive walk-into-this-place pieces \u2014 dramaturgy, presence, felt-state",
   "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName": "narrative-experience-planner",
-  "playbookPath": ".claude/agents/narrative-experience-planner.md",
-  "description": "Crafts pieces where the user walks into a place and leaves changed: a museum microsite that lives, an exhibition extension that breathes, a memorial that holds, a character portrait at depth, an editorial scrollytelling piece that earns its long-form. Inherits simulation-planner's discipline (4 paradigms \u2014 2d-illustrative / 3d-environment / iconographic-anim / hybrid \u2014 pipeline shape, scene-builder fanout, lens trio, multi-draft at the moments of creative divergence, cross-drawer coherence review). What changes is purpose: where simulation gives the user UNDERSTANDING of a system, narrative-experience gives the user PRESENCE inside a place. Three structural substitutions, each in service of felt-experience: spine (the dramaturgy \u2014 authored moments, some anchored to time/scroll, some waiting in space to be found) replaces loop; reveals (the act of attention \u2014 gentle progressive discovery, plus body-carrying navigation when the scene is walkable) replaces controls; ambient (the soundscape \u2014 the room listening back) is a new first-class channel. Walkable 3D lives inside the 3d-environment paradigm; freedom of movement is the breathing room WITHIN the script, not absence of authorship. Collaborates with visual-planner for raster imagery \u2014 painterly plates, character portraits, artifact close-ups, texture maps \u2014 so every asset inherits the brief's styleCue and the piece reads as one. Concept-lens scores against felt-state successFeel ('the room holds them', 'they leave quieter'), never informational outcomes.",
+  "subagentName": "narrative-experience-orchestrator",
+  "playbookPath": ".claude/agents/narrative-experience-orchestrator.md",
+  "description": "Crafts pieces where the user walks into a place and leaves changed: a museum microsite that lives, an exhibition extension that breathes, a memorial that holds, a character portrait at depth, an editorial scrollytelling piece that earns its long-form. Inherits simulation-orchestrator's discipline (4 paradigms \u2014 2d-illustrative / 3d-environment / iconographic-anim / hybrid \u2014 pipeline shape, scene-builder fanout, lens trio, multi-draft at the moments of creative divergence, cross-drawer coherence review). What changes is purpose: where simulation gives the user UNDERSTANDING of a system, narrative-experience gives the user PRESENCE inside a place. Three structural substitutions, each in service of felt-experience: spine (the dramaturgy \u2014 authored moments, some anchored to time/scroll, some waiting in space to be found) replaces loop; reveals (the act of attention \u2014 gentle progressive discovery, plus body-carrying navigation when the scene is walkable) replaces controls; ambient (the soundscape \u2014 the room listening back) is a new first-class channel. Walkable 3D lives inside the 3d-environment paradigm; freedom of movement is the breathing room WITHIN the script, not absence of authorship. Collaborates with visual-orchestrator for raster imagery \u2014 painterly plates, character portraits, artifact close-ups, texture maps \u2014 so every asset inherits the brief's styleCue and the piece reads as one. Concept-lens scores against felt-state successFeel ('the room holds them', 'they leave quieter'), never informational outcomes.",
   "triggers": [
     {
       "mode": "chat",
       "title": "build a site with this piece",
-      "rule": "User wants the experience embedded in a larger app/site (rare for narrative \u2014 most are whole-page). Top-level Claude scaffolds the shell (with nx-placeholder slot), then dispatches narrative-experience-planner per slot, drives the build, embeds per the playbook.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-planner'"
+      "rule": "User wants the experience embedded in a larger app/site (rare for narrative \u2014 most are whole-page). Top-level Claude scaffolds the shell (with nx-placeholder slot), then dispatches narrative-experience-orchestrator per slot, drives the build, embeds per the playbook.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Narrative experiences: scaffold-then-orchestrator'"
     }
   ],
   "dispatches": {
@@ -35,7 +35,7 @@
       "nx-runtime-composer"
     ],
     "collaborators": [
-      "visual-planner"
+      "visual-orchestrator"
     ],
     "lenses": [
       "craft-lens",
@@ -63,7 +63,7 @@
     ]
   },
   "documents": {
-    "designDoc": "docs/features/simulation-and-interactive-planners.md",
+    "designDoc": "docs/features/simulation-and-interactive-orchestrators.md",
     "calibration": ".claude/lens-calibration/fixtures/nx-*"
   }
 }

@@ -10,7 +10,7 @@ You own the **canvas-cards lens**. Read source, enumerate what *you* see as a ca
 - `defaultFrame: { w, h }` (default 1440×900)
 - `canvasGap` (default 120)
 
-No planner-provided inventory. You enumerate.
+No orchestrator-provided inventory. You enumerate.
 
 ## Output
 
@@ -57,7 +57,7 @@ If you find yourself enumerating a frame whose source page is the storyboard, st
 
 ## Render-verify your slice
 
-After producing your output (and after the planner has written `editor/data.js`), load the editor's **Canvas** view and verify:
+After producing your output (and after the orchestrator has written `editor/data.js`), load the editor's **Canvas** view and verify:
 
 1. Every frame you enumerated is visible as a card on the canvas — no card stacked under another.
 2. Cards aren't cut off / off-screen at default zoom — pan to confirm.

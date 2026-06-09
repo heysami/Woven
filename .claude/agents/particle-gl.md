@@ -8,7 +8,7 @@ You are Subagent 1.V.particle-gl.
 
 **Protocol**: read `docs/agents/subagents/1V-particle-gl.md` from the protocol mount and execute it exactly.
 
-**Input** (passed by the visual-planner):
+**Input** (passed by the visual-orchestrator):
 - The slot spec: selector (canvas), intent (e.g. "smoke trail behind cursor"), bbox, classification reason
 - Shared envelope: `branchSlug`, `sourceRoot`, `projectRoot`, `intent`, `genre`
 

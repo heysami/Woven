@@ -2,7 +2,7 @@
 
 You audit the **active prototype's feature pages against the design system** identified by `meta.dsRef`. Your output is a drift report — a list of feature-page class and token usages that are NOT covered by the DS — written to `DS_PROPOSAL.md` at project root for the user to review.
 
-**You do NOT extract primitives. You do NOT write `tokens` / `primitives` / `library` in the branch data file.** Those fields mirror the DS library node and are populated by the planner. You read the DS, you read feature pages, and you diff.
+**You do NOT extract primitives. You do NOT write `tokens` / `primitives` / `library` in the branch data file.** Those fields mirror the DS library node and are populated by the orchestrator. You read the DS, you read feature pages, and you diff.
 
 **Read [`../conventions.md`](../conventions.md) before starting** — including the **Enumerate-Decide-Log** pattern. The audit is its purest application: two finite sets, a strict diff, no creative enumeration.
 
@@ -48,7 +48,7 @@ Audited files: <count> HTML, <count> JS
 ## Proposal 2: <Next…>
 ```
 
-### Secondary output (returned to planner, NOT written to disk)
+### Secondary output (returned to orchestrator, NOT written to disk)
 
 ```json
 {
@@ -157,7 +157,7 @@ Format per the template above. One section per proposal, numbered. If zero propo
 - [ ] Every feature-page class composition got one of the six decisions. No silent omissions.
 - [ ] Multiple usages of the same drift signature were grouped into one proposal entry, with all usage locations listed.
 - [ ] Each proposal has a "Closest existing in DS" field with a real DS variant + a delta description.
-- [ ] No `tokens` / `primitives` / `library` writes to the branch data file. (Those mirror the DS library node — the planner does that.)
+- [ ] No `tokens` / `primitives` / `library` writes to the branch data file. (Those mirror the DS library node — the orchestrator does that.)
 - [ ] If `proposalCount === 0`, `DS_PROPOSAL.md` was NOT created.
 - [ ] If `proposalCount > 0`, `DS_PROPOSAL.md` exists at project root with the full template.
 
@@ -173,7 +173,7 @@ Format per the template above. One section per proposal, numbered. If zero propo
 
 ## Don't
 
-- Don't write `tokens` / `primitives` / `library` to the branch data file. Those are planner-mirrored from the DS.
+- Don't write `tokens` / `primitives` / `library` to the branch data file. Those are orchestrator-mirrored from the DS.
 - Don't write `DS_PROPOSAL.md` if zero proposals — no empty artifact.
 - Don't read other prototypes' source folders.
 - Don't be permissive. Every drift gets a logged proposal.

@@ -6,7 +6,7 @@ You own **ONE asset** of medium `raster-photo`. You write a generation prompt (P
 
 ## Input (envelope only)
 
-The planner hands you a single envelope (see [`1V-visual-planner.md`](1V-visual-planner.md) §Step 5). Verbatim fields:
+The orchestrator hands you a single envelope (see [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5). Verbatim fields:
 
 ```
 assetId, medium="raster-photo", pipeline=["prompt","image-gen"],
@@ -43,7 +43,7 @@ If you can't write a prompt with confidence (the brief is ambiguous, the slot ha
 { "assetId": "<id>", "error": "<one-sentence reason>" }
 ```
 
-The planner logs this to `NOTES.md` and surfaces to the user.
+The orchestrator logs this to `NOTES.md` and surfaces to the user.
 
 ## Recipe
 
@@ -101,7 +101,7 @@ If the slot already has `<img src="…">` and you'd change `data-aspect`, emit:
 }
 ```
 
-The planner applies the diff. Don't emit a diff for an unchanged slot.
+The orchestrator applies the diff. Don't emit a diff for an unchanged slot.
 
 ## Self-audit
 

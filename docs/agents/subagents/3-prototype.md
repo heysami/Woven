@@ -8,7 +8,7 @@ You own the **iframe-loadability lens**. For each frame source can render in an 
 
 - `slug`, `sourceRoot`, `intent`
 
-No planner-provided inventory. You enumerate iframe-loadable frames yourself.
+No orchestrator-provided inventory. You enumerate iframe-loadable frames yourself.
 
 ## Output
 
@@ -54,7 +54,7 @@ A frame is iframe-loadable if source has a way to render it. Through your lens:
 
 1. **Entry.** For multi-HTML sources, each enumerated frame's source HTML is its `entry` (bare filename). For single-HTML, `entry: null` (use `meta.sourceEntry`).
 2. **Hash.** If the frame requires a specific `location.hash` value to render the right state (`#cmdk`, `#page=settings&tab=team`), capture it. Else empty string.
-3. **`w` / `h`.** Read `meta.defaultFrame` from the planner's envelope (or default 1440×900). Emit those values on every frame **unless** the source page sets a different viewport explicitly (mobile prototype with `<meta name="viewport" content="width=393">` → emit `w: 393, h: 852`).
+3. **`w` / `h`.** Read `meta.defaultFrame` from the orchestrator's envelope (or default 1440×900). Emit those values on every frame **unless** the source page sets a different viewport explicitly (mobile prototype with `<meta name="viewport" content="width=393">` → emit `w: 393, h: 852`).
 4. **setupScript.** For frames whose render requires a useState flag flipped:
    - Identify the component function name where the `useState` lives. `__pokeBy` takes **any** component name and walks the React fiber tree to find it via `findFiber(name)` (see `editor/serve.py` POKE_HELPER lines 237–250). It's NOT limited to `App`.
    - Identify the state-variable name from `useState(...)` declarations.

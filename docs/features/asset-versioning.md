@@ -421,7 +421,7 @@ This is additive — existing subagents keep working until updated; the fallback
 | **3** | Adaptive sizing | Card layout refactor; resize handle; auto-size button. |
 | **4** | Version picker | Drawer UI, thumbnail capture, pin/revert/branch flows wired. |
 | **5** | Lineage chip | Per-upstream chip on downstream asset cards; click-to-focus upstream. |
-| **6** | Documentation | AGENTS.md, planner.md, subagent playbooks, registry README. |
+| **6** | Documentation | AGENTS.md, orchestrator.md, subagent playbooks, registry README. |
 | **7** | (Follow-up) Deprecate project branches | Separate plan. |
 
 ## 14. Open questions for future thought

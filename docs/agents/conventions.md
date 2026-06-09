@@ -2,13 +2,13 @@
 
 Universal rules that apply to every subagent. Replaces the old "shared plan rules R1–R9" — kept short and stable so subagents can internalize them across runs.
 
-There is NO canonical inventory or lane list handed down by the planner. **You enumerate through your lens.** These conventions ensure your enumeration converges with what other subagents see independently.
+There is NO canonical inventory or lane list handed down by the orchestrator. **You enumerate through your lens.** These conventions ensure your enumeration converges with what other subagents see independently.
 
 ---
 
 ## U1. Read source, don't infer
 
-The envelope your planner hands you is a file pointer (`sourceRoot`, `slug`), not source content. Use Read / Bash / Grep on the files your playbook authorises. A subagent that returns output without exercising the file-read tools is broken.
+The envelope your orchestrator hands you is a file pointer (`sourceRoot`, `slug`), not source content. Use Read / Bash / Grep on the files your playbook authorises. A subagent that returns output without exercising the file-read tools is broken.
 
 ## U2. Read `editor/serve.py` once if your work touches runtime behaviour
 
@@ -104,7 +104,7 @@ The other side of the same rule: **if you find yourself thinking "I'll just read
 
 ## Frame ID naming convention
 
-All subagents derive frame IDs from source using the same convention. This is how independent subagent enumerations converge on the same IDs without a planner-handed inventory.
+All subagents derive frame IDs from source using the same convention. This is how independent subagent enumerations converge on the same IDs without a orchestrator-handed inventory.
 
 ### Base rule
 
@@ -178,7 +178,7 @@ Same exclusion rationale as the storyboard: lens-level decision each subagent ma
 
 ## Storyboard exclusion (a lens decision, not a global rule)
 
-The storyboard `index.html` (titled "Overview" / "Storyboard" / "Workflows", or any file that documents the system at workflow level rather than page level) is **metadata**, not editor data. **But this is a lens decision your subagent makes — there is no shared-plan flag from the planner.**
+The storyboard `index.html` (titled "Overview" / "Storyboard" / "Workflows", or any file that documents the system at workflow level rather than page level) is **metadata**, not editor data. **But this is a lens decision your subagent makes — there is no shared-plan flag from the orchestrator.**
 
 Through each lens (applies to BOTH the storyboard `index.html` AND `design-system.html`):
 

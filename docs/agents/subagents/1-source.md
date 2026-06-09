@@ -24,7 +24,7 @@ The genre committed in the DS (via `meta.json.genre` and the `// GENRE:` line at
 
 - `slug`, `sourceRoot`, `intent`
 - `prompt` — design brief / change request
-- `dsRef` — `{ id, version }` identifying the active DS library node (mandatory; the planner gates Workflow 1 on this being set)
+- `dsRef` — `{ id, version }` identifying the active DS library node (mandatory; the orchestrator gates Workflow 1 on this being set)
 
 You run *before* the other view subagents — they read whatever source you produce. Frame ID conventions in `conventions.md` are the contract; make sure your source files map cleanly to them (`lxp-apply.html` → `lxp-apply`).
 
@@ -120,11 +120,11 @@ Before reporting done, load **every** HTML file you wrote in a browser (via the 
 
 If any HTML file errors, breaks navigation, or shows undefined data, **fix it before reporting done**. Screenshot the console-clean state per file.
 
-## Spawn Subagent 1.V — Visual planner (after render-verify, before reporting done)
+## Spawn Subagent 1.V — Visual orchestrator (after render-verify, before reporting done)
 
-Once source compiles and renders, you have a set of **visual slots** that need a medium decision (raster photo? vector? shader? particle loop? 3D scene? lottie? video?). You do **not** make that decision yourself — the planner pattern matches what Workflow 1's top-level planner does for views: dispatch to a focused subagent.
+Once source compiles and renders, you have a set of **visual slots** that need a medium decision (raster photo? vector? shader? particle loop? 3D scene? lottie? video?). You do **not** make that decision yourself — the orchestrator pattern matches what Workflow 1's top-level orchestrator does for views: dispatch to a focused subagent.
 
-After §"Render-verify your slice" passes, spawn [`1V-visual-planner.md`](1V-visual-planner.md) in a single Agent call. Envelope:
+After §"Render-verify your slice" passes, spawn [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) in a single Agent call. Envelope:
 
 ```
 === ENVELOPE ===
@@ -137,16 +137,16 @@ genre:             "<the one-line genre commit from app.js line 1>"
 intent:            "fresh-scaffold" | "refresh-stale"
 === END ENVELOPE ===
 
-Read docs/agents/subagents/1V-visual-planner.md.
+Read docs/agents/subagents/1V-visual-orchestrator.md.
 You enumerate every visual slot through your lens, classify each by medium,
 scaffold the matching node graph into workflow.json, and dispatch one
 1V-* drawer per asset. Do NOT draw anything yourself.
-Return a summary of kept / dropped slots; the planner takes it from there.
+Return a summary of kept / dropped slots; the orchestrator takes it from there.
 ```
 
-Wait for completion. If the planner reports drops with `drop:uncertain` or `drop:genre-forbidden`, mention them in your final report — they may indicate Subagent 1 (you) should iterate on a static equivalent (e.g. swap a `<canvas>` slot for a styled `<div>` if the genre forbids motion).
+Wait for completion. If the orchestrator reports drops with `drop:uncertain` or `drop:genre-forbidden`, mention them in your final report — they may indicate Subagent 1 (you) should iterate on a static equivalent (e.g. swap a `<canvas>` slot for a styled `<div>` if the genre forbids motion).
 
-**Subagent 1.V is mandatory.** Visual generation cannot be skipped to "save time" — the alternative is the previous failure mode (vector rendered as raster, no intelligence about medium). If `source/` has zero visual slots, the planner returns `assets: []` and you continue; that's the only valid skip.
+**Subagent 1.V is mandatory.** Visual generation cannot be skipped to "save time" — the alternative is the previous failure mode (vector rendered as raster, no intelligence about medium). If `source/` has zero visual slots, the orchestrator returns `assets: []` and you continue; that's the only valid skip.
 
 ## Self-audit
 
@@ -164,7 +164,7 @@ Wait for completion. If the planner reports drops with `drop:uncertain` or `drop
 - [ ] **I opened every HTML file in the browser, confirmed zero console errors, and clicked through at least one useState branch per page.** (Screenshot per file.)
 - [ ] **No `[object Object]` or `undefined` visible in any rendered surface.**
 - [ ] **No inline prototype-only switchers** — every view / persona / stage / time switcher is in a demo dock (§11), and the dock self-hides when iframed or `?demo=off`.
-- [ ] **Visual slots are annotated for Subagent 1.V.** Every `<img>`, `background-image:`, `<canvas>`, `<video>`, `data-three`, `data-shader`, `data-anim`, `img-placeholder`, and `motion-placeholder` carries either a real asset reference OR an explicit `data-slot="<id>"` / `data-asset-intent="<intent>"` annotation. The visual planner reads these to decide medium per slot — unannotated slots get classified as `drop:placeholder-no-intent`.
+- [ ] **Visual slots are annotated for Subagent 1.V.** Every `<img>`, `background-image:`, `<canvas>`, `<video>`, `data-three`, `data-shader`, `data-anim`, `img-placeholder`, and `motion-placeholder` carries either a real asset reference OR an explicit `data-slot="<id>"` / `data-asset-intent="<intent>"` annotation. The visual orchestrator reads these to decide medium per slot — unannotated slots get classified as `drop:placeholder-no-intent`.
 - [ ] **I spawned Subagent 1.V after render-verify.** It returned a summary of kept / dropped slots; I forwarded any `drop:uncertain` / `drop:genre-forbidden` items in my own report.
 
 ## Common blindspots
@@ -174,7 +174,7 @@ Specific failure modes to check before reporting done:
 - **Missing persona pages.** Storyboard references 3 personas but you only wrote pages for 2. Re-read the storyboard `personas: [...]` and confirm every persona has at least one page (or is explicitly out-of-prototype).
 - **Inline styles instead of tokens.** `style="color: #1a1a1a"` in JSX defeats the design system. Reference `var(--text)` (or whichever DS token applies) instead. If no token fits, emit a proposal entry — don't bake a literal.
 - **Silently inventing a class in `source/styles.css`.** Treats the prototype overlay as a DS extension. Wrong: anything primitive-shaped goes through `DS_PROPOSAL.md`. The overlay is for layout helpers like `.feature-grid` or `.toolbar-row`, not new `.card-variant`.
-- **Missing `dsRef` in the envelope.** If the planner spawned you without a `dsRef`, abort and surface — Workflow 1 was supposed to gate on this. The user needs Workflow 0 to run first.
+- **Missing `dsRef` in the envelope.** If the orchestrator spawned you without a `dsRef`, abort and surface — Workflow 1 was supposed to gate on this. The user needs Workflow 0 to run first.
 - **Hard-coded JSX data.** `<h3>Sami's Project</h3>` instead of `<h3>${row.title}</h3>` over `window.DEMO`. Other subagents grep `DEMO.` to find entities — hard-coded data is invisible to them.
 - **Real `fetch()` / API calls.** Anything that isn't `window.DEMO` is a no-go.
 - **Missing persona switcher state.** If the storyboard implies a multi-persona surface, the persona-select buttons need to *actually* toggle content, not just visual styling.

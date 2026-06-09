@@ -17,7 +17,7 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/game-objective-author.md" \
 
 ## 1. Input envelope
 
-The planner dispatches you with:
+The orchestrator dispatches you with:
 
 ```
 === ENVELOPE ===
@@ -25,7 +25,7 @@ gameId:          "paper-plane-throw"
 branch:          "main"
 projectRoot:     "/Users/.../projects/xyz"
 
-# From research.md §2.5 + the planner's envelope:
+# From research.md §2.5 + the orchestrator's envelope:
 objective:       "fly as far as possible; collect mugs for +score; hit walls = end"
 objectiveShape:  "score-climbing" | "progress-bar" | "streak" | "time-attack" | "collect-N" | "survive" | "win-condition" | hybrid
 scoringContract: "<verbatim from research.md>"

@@ -151,7 +151,7 @@ Optional packages (for `particle-gl`, `3d`, etc.) can wait. Install them from th
 
 ## 7. Create your first project
 
-Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header now carries two tabs — **Projects** (your gallery) and **System** (a bundled reference for the planners, skills, subagents, and node kinds the editor ships with) — reachable from anywhere on the landing.
+Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header now carries two tabs — **Projects** (your gallery) and **System** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with) — reachable from anywhere on the landing.
 
 ![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 

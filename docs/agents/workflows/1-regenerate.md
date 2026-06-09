@@ -4,11 +4,11 @@
 
 ## Architecture: thin router + lens subagents + active merge
 
-The planner is a **file router and a merger** — not an enumerator. Each subagent owns its lens fully, including deciding what's in scope from its perspective. Reconciliation is where binding decisions happen, because that's where context is maximal.
+The orchestrator is a **file router and a merger** — not an enumerator. Each subagent owns its lens fully, including deciding what's in scope from its perspective. Reconciliation is where binding decisions happen, because that's where context is maximal.
 
-The smartest reasoning happens **inside subagents** (fresh session, focused on one lens, full token budget). The planner does the cheap work (route files, merge fragments). Reconciliation does the active comparison between lens outputs.
+The smartest reasoning happens **inside subagents** (fresh session, focused on one lens, full token budget). The orchestrator does the cheap work (route files, merge fragments). Reconciliation does the active comparison between lens outputs.
 
-**Read [`../planner.md`](../planner.md)** — that's the orchestrator's playbook.
+**Read [`../orchestrator.md`](../orchestrator.md)** — that's the orchestrator's playbook.
 
 ## Subagent index
 
@@ -31,7 +31,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
 1 Source                                                  (optional, runs alone first)
        │
        ▼
-[ Planner — just hands files, no enumeration ]
+[ Orchestrator — just hands files, no enumeration ]
        │
        ▼  envelope: { slug, sourceRoot, intent, overrides }
        ▼
@@ -45,7 +45,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
 ═══════════════════════════════════════════════════════════════
        │ (all 9 return JSON fragments)
        ▼
-[ Planner — ACTIVE MERGE ]
+[ Orchestrator — ACTIVE MERGE ]
        │  • 4a: merge frame inventory by ID
        │       — same ID across subagents → unify fields
        │       — convention-mismatched IDs → renormalise
@@ -57,7 +57,7 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
        │  • 4f: render check (post-write)
        │  • 4g: anomaly flags (storyboard leak, all-null setupScripts, wild count mismatches)
        ▼
-[ Planner — write editor/data.js + prototype.json ]
+[ Orchestrator — write editor/data.js + prototype.json ]
        │     per docs/agents/data-schema.md
        ▼
 [ Render check + report ]
@@ -65,13 +65,13 @@ The smartest reasoning happens **inside subagents** (fresh session, focused on o
 
 ## Why this shape
 
-**The planner doesn't scope.** It hands every subagent the same envelope: `slug`, `sourceRoot`, `intent`, optional overrides. There is no canonical inventory, no extracted lanes, no "shared plan" of pre-decisions. The smart thinking lives in the subagent that has the lens-specific context to do it.
+**The orchestrator doesn't scope.** It hands every subagent the same envelope: `slug`, `sourceRoot`, `intent`, optional overrides. There is no canonical inventory, no extracted lanes, no "shared plan" of pre-decisions. The smart thinking lives in the subagent that has the lens-specific context to do it.
 
 **Each subagent owns enumeration through its lens.** Flow decides what's a flow node *through the flow lens*. Canvas decides what's a canvas card *through the canvas lens*. They may legitimately disagree — Flow includes triggers/notifications/externals; Canvas excludes them. That's the architecture working correctly.
 
-**Reconciliation is active merging, not anomaly cleanup.** When subagents disagree about what frames exist, the planner has every output in front of it and decides what to do. When IA's grep finds entities Subagent 5 missed, reconciliation respawns 5 with the conflict. When two subagents converge on different IDs for the same conceptual frame, reconciliation picks the convention-compliant one and propagates.
+**Reconciliation is active merging, not anomaly cleanup.** When subagents disagree about what frames exist, the orchestrator has every output in front of it and decides what to do. When IA's grep finds entities Subagent 5 missed, reconciliation respawns 5 with the conflict. When two subagents converge on different IDs for the same conceptual frame, reconciliation picks the convention-compliant one and propagates.
 
-**Conventions, not pre-decisions.** Subagent enumerations converge because they follow the same naming convention (`docs/agents/conventions.md`) — not because a planner pre-decided IDs. This is what lets enumeration stay in subagents while output stays merge-able.
+**Conventions, not pre-decisions.** Subagent enumerations converge because they follow the same naming convention (`docs/agents/conventions.md`) — not because a orchestrator pre-decided IDs. This is what lets enumeration stay in subagents while output stays merge-able.
 
 ## Universal rules — in `conventions.md`
 
@@ -87,4 +87,4 @@ Every subagent reads `../conventions.md` before starting. It carries:
 
 Plus naming conventions: frame IDs (kebab-case, filename-prefix, no dots), lane IDs (persona slugs), entity IDs (singular PascalCase of `DEMO.<key>`).
 
-Plus the **storyboard exclusion lens reasoning** — explained as a lens-level decision each subagent makes through their own interpretation, NOT as a planner-handed flag.
+Plus the **storyboard exclusion lens reasoning** — explained as a lens-level decision each subagent makes through their own interpretation, NOT as a orchestrator-handed flag.

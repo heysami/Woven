@@ -2,7 +2,7 @@
 
 The problem this solves: when a user asks an agent "do you have <X>?", today
 the agent answers from whatever happens to be in its context window. If the
-capability is real (e.g. Quiver AI image-gen, the visual-planner subagent,
+capability is real (e.g. Quiver AI image-gen, the visual-orchestrator subagent,
 the /commit endpoint) but wasn't in the agent's preamble, the agent says "no"
 incorrectly. This is the same shape as the kinds-registry problem: the app
 HAS the capability, the agent just doesn't know.
@@ -213,10 +213,10 @@ def get_capabilities() -> dict:
     }
 
 
-def _strip_disabled_planner_blocks(text: str, enabled_ids: set) -> str:
-    """v3.3 — Remove the hard-rule block for any planner not in `enabled_ids`.
+def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
+    """v3.3 — Remove the hard-rule block for any orchestrator not in `enabled_ids`.
 
-    Each planner's hard-rule block is a markdown section starting with one of
+    Each orchestrator's hard-rule block is a markdown section starting with one of
     the SECTIONS headers below; it runs until the next `\n## ` heading (or EOF).
     We remove `[start_of_section .. start_of_next_section)` for disabled IDs.
 
@@ -224,16 +224,16 @@ def _strip_disabled_planner_blocks(text: str, enabled_ids: set) -> str:
     preamble is the source of truth and any inconsistency between this
     filter's known headers and the actual prose surfaces as a no-op."""
     SECTIONS = [
-        ("## Image creation: dispatch visual-planner FIRST",                      "visual-planner"),
-        ("## Live view, 3D, real-world map, or living system: dispatch simulation-planner FIRST", "simulation-planner"),
-        ("## Interactive piece: dispatch interactive-media-planner FIRST",        "interactive-media-planner"),
-        ("## Immersive narrative: dispatch narrative-experience-planner FIRST",   "narrative-experience-planner"),
-        ("## Game-like immersive piece: dispatch game-experience-planner FIRST",  "game-experience-planner"),
-        ("## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST", "scrapbook-experience-planner"),
-        ("## Interactive polish: dispatch interactive-polish-planner LAST (before QA)", "interactive-polish-planner"),
+        ("## Image creation: dispatch visual-orchestrator FIRST",                      "visual-orchestrator"),
+        ("## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST", "simulation-orchestrator"),
+        ("## Interactive piece: dispatch interactive-media-orchestrator FIRST",        "interactive-media-orchestrator"),
+        ("## Immersive narrative: dispatch narrative-experience-orchestrator FIRST",   "narrative-experience-orchestrator"),
+        ("## Game-like immersive piece: dispatch game-experience-orchestrator FIRST",  "game-experience-orchestrator"),
+        ("## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST", "scrapbook-experience-orchestrator"),
+        ("## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA)", "interactive-polish-orchestrator"),
     ]
-    for header_marker, planner_id in SECTIONS:
-        if planner_id in enabled_ids:
+    for header_marker, orchestrator_id in SECTIONS:
+        if orchestrator_id in enabled_ids:
             continue
         start = text.find(header_marker)
         if start == -1:
@@ -251,14 +251,14 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     knows what EXISTS without burning 3KB of tokens. For details the agent
     can `curl /__capabilities`.
 
-    v3.3 — `project_root` lets the preamble respect the project's planner
-    disable list (`.planners-disabled.json`). Hard-rule blocks for disabled
-    planners are stripped out before return so spawned agents in that project
-    do not see "dispatch <X>-planner FIRST" cues for off planners."""
+    v3.3 — `project_root` lets the preamble respect the project's orchestrator
+    disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
+    orchestrators are stripped out before return so spawned agents in that project
+    do not see "dispatch <X>-orchestrator FIRST" cues for off orchestrators."""
     caps = get_capabilities()
     provider_line = ", ".join(p["label"] for p in caps["providers"][:20])
     # v3.3 — cap bumped from 30 to 60 to fit the simulation + interactive-media
-    # planner families (14 sim + 11 im + 3 lenses + the pre-existing visual
+    # orchestrator families (14 sim + 11 im + 3 lenses + the pre-existing visual
     # family + housekeeping = ~42 today, leaving headroom).
     subagent_lines = "\n".join(
         f"  • {sa['name']} — {sa['description'][:140]}" for sa in caps["subagents"][:60]
@@ -266,19 +266,19 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     endpoint_lines = "\n".join(
         f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
     )
-    # v3.3 — Resolve which planners are enabled for this project. On import
+    # v3.3 — Resolve which orchestrators are enabled for this project. On import
     # failure or no project context, default to "all enabled" (the safest
-    # fallback — the agent sees every planner rule, never silently misses one).
-    enabled_planners = None
+    # fallback — the agent sees every orchestrator rule, never silently misses one).
+    enabled_orchestrators = None
     try:
-        # Late import — capabilities.py is sometimes imported before planners
+        # Late import — capabilities.py is sometimes imported before orchestrators
         # in tests/tooling, so avoid a top-level circular risk.
         import sys, os
         _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if _editor_dir not in sys.path:
             sys.path.insert(0, _editor_dir)
-        import planners as _pl
-        enabled_planners = _pl.enabled_planner_ids(project_root)
+        import orchestrators as _pl
+        enabled_orchestrators = _pl.enabled_orchestrator_ids(project_root)
     except Exception:
         pass
 
@@ -316,8 +316,8 @@ If the user committed a genre / vibe / aesthetic to the project — "Studio Ghib
 
 - **The project's style cue is a constraint on every visual choice**, however small. Mascots, illustrations, icons, decorations, dividers, bullet markers, list glyphs, status indicators, navigation chrome — every one of them obeys the cue or you've broken the design.
 - **Emoji, vector icons, raster illustrations, SVG ornament — any medium is fine, as long as it matches the vibe.** A Ghibli watercolor project can use emoji if the emoji's color/affect/era fits (a soft 🍃 might work; a glossy iOS-rendered 🧙 won't because the rendering style fights the watercolor mood). A Memphis project can use bright geometric emoji because they sit inside the aesthetic. A Bauhaus project probably can't use any emoji because the OS-rendered glyphs don't read as Bauhaus. **You decide based on whether the result reads as the committed style.**
-- **When unsure → dispatch visual-planner for that element**, not just for the hero. The planner will pick the right medium (vector-mark, vector-icon, raster, shader) for the slot AND propagate the style cue so every drawer it dispatches inherits the same brief.
-- **Anti-pattern**: dispatch visual-planner once for the hero, then hand-roll the rest with whatever fits structurally (a default Tabler icon, a hamburger SVG you've used in other projects, an iOS emoji because it was quick). Every one of those is a style-coherence break. If the hero went through the planner so it could be in-vibe, the menu icon goes through the planner for the same reason.
+- **When unsure → dispatch visual-orchestrator for that element**, not just for the hero. The orchestrator will pick the right medium (vector-mark, vector-icon, raster, shader) for the slot AND propagate the style cue so every drawer it dispatches inherits the same brief.
+- **Anti-pattern**: dispatch visual-orchestrator once for the hero, then hand-roll the rest with whatever fits structurally (a default Tabler icon, a hamburger SVG you've used in other projects, an iOS emoji because it was quick). Every one of those is a style-coherence break. If the hero went through the orchestrator so it could be in-vibe, the menu icon goes through the orchestrator for the same reason.
 
 ### What this looks like in practice (for a "Studio Ghibli watercolor" project):
 
@@ -330,7 +330,7 @@ If the user committed a genre / vibe / aesthetic to the project — "Studio Ghib
 <footer><svg viewBox="..."><!-- Tabler-style chevron --></svg></footer>
 ```
 
-✅ Right (every visual element either passed through visual-planner OR was hand-chosen to match the committed watercolor Ghibli vibe):
+✅ Right (every visual element either passed through visual-orchestrator OR was hand-chosen to match the committed watercolor Ghibli vibe):
 ```html
 <header>
   <span data-slot="icon-menu" data-intent="hand-drawn watercolor menu lines"></span>
@@ -346,29 +346,29 @@ If the user committed a genre / vibe / aesthetic to the project — "Studio Ghib
 </footer>
 ```
 
-…where every `data-slot` was scaffolded by a visual-planner dispatch that received the project's style cue as part of the brief, so every drawer produced an asset that reads as "watercolor Ghibli" — not as a Tabler default, not as a glossy emoji.
+…where every `data-slot` was scaffolded by a visual-orchestrator dispatch that received the project's style cue as part of the brief, so every drawer produced an asset that reads as "watercolor Ghibli" — not as a Tabler default, not as a glossy emoji.
 
 ### Practical rule of thumb:
 
-When the user commits a style, dispatch `Task(subagent_type: "visual-planner", …)` **one per visual concept on the page**, not just one for "the hero". The planner is cheap (~10s); the alternative — one in-vibe asset surrounded by random defaults — is the bug the user is reporting.
+When the user commits a style, dispatch `Task(subagent_type: "visual-orchestrator", …)` **one per visual concept on the page**, not just one for "the hero". The orchestrator is cheap (~10s); the alternative — one in-vibe asset surrounded by random defaults — is the bug the user is reporting.
 
-## THE MENTAL MODEL FOR THE PLANNER FAMILY — read this before any of the family rules below
+## THE MENTAL MODEL FOR THE ORCHESTRATOR FAMILY — read this before any of the family rules below
 
-This is exactly visual-planner's pattern, ported to every sibling family. Read it carefully — earlier preamble revisions had this wrong.
+This is exactly visual-orchestrator's pattern, ported to every sibling family. Read it carefully — earlier preamble revisions had this wrong.
 
-**You plan the slots. You dispatch each planner family ONCE. The planner enumerates all of its slots in your HTML and fans out per-slot drawer work.**
+**You plan the slots. You dispatch each orchestrator family ONCE. The orchestrator enumerates all of its slots in your HTML and fans out per-slot drawer work.**
 
-The planner family (the per-family hard-rule sections below describe each in detail):
+The orchestrator family (the per-family hard-rule sections below describe each in detail):
 
-- **visual-planner** — images / icons / illustrations / ambient motion (any project with visual content)
-- **simulation-planner** — a system visualised intuitively (functional, readable)
-- **interactive-media-planner** — user drives with body / device for generative response (NO objective)
-- **narrative-experience-planner** — walk-into-this-place piece (poetic, emotional, scripted depth)
-- **game-experience-planner** — interactive scene with CHASED OBJECTIVE + visible feedback loop (score / progress / streak / care-game grow / win-condition)
-- **scrapbook-experience-planner** — aesthetic that CSS CANNOT REACH (lives in the imagery itself: vaporwave / cottagecore / Y2K / zine / etc.)
-- **interactive-polish-planner** — POST-PASS, fires LAST after any other primary planner returns (microanimations / pointer / hover / shader overlay matching the genre)
+- **visual-orchestrator** — images / icons / illustrations / ambient motion (any project with visual content)
+- **simulation-orchestrator** — a system visualised intuitively (functional, readable)
+- **interactive-media-orchestrator** — user drives with body / device for generative response (NO objective)
+- **narrative-experience-orchestrator** — walk-into-this-place piece (poetic, emotional, scripted depth)
+- **game-experience-orchestrator** — interactive scene with CHASED OBJECTIVE + visible feedback loop (score / progress / streak / care-game grow / win-condition)
+- **scrapbook-experience-orchestrator** — aesthetic that CSS CANNOT REACH (lives in the imagery itself: vaporwave / cottagecore / Y2K / zine / etc.)
+- **interactive-polish-orchestrator** — POST-PASS, fires LAST after any other primary orchestrator returns (microanimations / pointer / hover / shader overlay matching the genre)
 
-If this list ever feels short, scroll down — every `## … dispatch <X>-planner FIRST` heading below is another planner. Test EVERY hard-rule predicate against the brief, not just the ones in this intro list.
+If this list ever feels short, scroll down — every `## … dispatch <X>-orchestrator FIRST` heading below is another orchestrator. Test EVERY hard-rule predicate against the brief, not just the ones in this intro list.
 
 The rule:
 
@@ -377,25 +377,25 @@ The rule:
 | 1 | Agent (chat) | Read the brief. Sketch the app's pages + sections. |
 | 2 | Agent | For each surface, decide which family fills it. Test each predicate: objective + feedback loop → game; CSS can't reach the aesthetic → scrapbook; system viz → sim; input→mapping→output → im; walk-into-a-place → nx; otherwise visual. |
 | 3 | Agent | Write `source/<prototype>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim / im / nx / game / scrapbook (with the canonical `src` path). |
-| 4 | Agent | Dispatch each primary planner family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL that match (e.g. an illustrated game = `visual-planner` + `game-experience-planner`). |
-| 5 | Planner | Walks every `source/<prototype>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
+| 4 | Agent | Dispatch each primary orchestrator family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL that match (e.g. an illustrated game = `visual-orchestrator` + `game-experience-orchestrator`). |
+| 5 | Orchestrator | Walks every `source/<prototype>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
 | 6 | Drawer(s) | Produce the content at the canonical path. |
-| 7 | Agent | After ALL primary planners return, dispatch `interactive-polish-planner` ONCE with project-wide scope. This is the post-pass enrichment step — fires LAST, before Step-8 QA. |
+| 7 | Agent | After ALL primary orchestrators return, dispatch `interactive-polish-orchestrator` ONCE with project-wide scope. This is the post-pass enrichment step — fires LAST, before Step-8 QA. |
 
-**One dispatch per family, not one per slot. The planner does the per-slot fan-out, not the agent.**
+**One dispatch per family, not one per slot. The orchestrator does the per-slot fan-out, not the agent.**
 
 **The routing decision is structural, not vocabulary.** Run each predicate test BEFORE picking a family:
 
 | Predicate | If TRUE → dispatch |
 |---|---|
-| The brief has an objective the user chases + visible feedback loop (points / progress / grow / collect / care-payoff) | `game-experience-planner` |
-| The aesthetic CANNOT be reached with CSS + restrained type (it lives in raster imagery) | `scrapbook-experience-planner` |
-| A real-world system needs to be made intuitive (functional, readable) | `simulation-planner` |
-| The user's body/device DRIVES generative output (input → mapping → output, no objective) | `interactive-media-planner` |
-| The user walks into a place and leaves changed (poetic, scripted, felt) | `narrative-experience-planner` |
-| One or more images / icons / illustrations / ambient motion in an otherwise-CSS app | `visual-planner` |
+| The brief has an objective the user chases + visible feedback loop (points / progress / grow / collect / care-payoff) | `game-experience-orchestrator` |
+| The aesthetic CANNOT be reached with CSS + restrained type (it lives in raster imagery) | `scrapbook-experience-orchestrator` |
+| A real-world system needs to be made intuitive (functional, readable) | `simulation-orchestrator` |
+| The user's body/device DRIVES generative output (input → mapping → output, no objective) | `interactive-media-orchestrator` |
+| The user walks into a place and leaves changed (poetic, scripted, felt) | `narrative-experience-orchestrator` |
+| One or more images / icons / illustrations / ambient motion in an otherwise-CSS app | `visual-orchestrator` |
 
-A brief can pass MULTIPLE predicates — dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-planner AND visual-planner. The game-planner builds the playable surface inside a `game-mount` iframe; visual-planner fills the surrounding `<img>` slots.
+A brief can pass MULTIPLE predicates — dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-orchestrator AND visual-orchestrator. The game-orchestrator builds the playable surface inside a `game-mount` iframe; visual-orchestrator fills the surrounding `<img>` slots.
 
 Per-slot drawer cardinality varies by family:
 
@@ -404,108 +404,108 @@ Per-slot drawer cardinality varies by family:
 - **interactive-media** — five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
 - **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
 - **game-experience** — eight-to-nine drawers per slot (`game_research_<gameId>`, `game_objective_<gameId>`, `game_world_<gameId>`, `game_physics_<gameId>`, one or more `game_input_<gameId>_<modality>`, `game_feedback_<gameId>`, `game_loop_<gameId>`, `game_overlay_<gameId>`, `game_runtime_<gameId>`).
-- **scrapbook-experience** — six drawers per slot (`sb_research_<sbId>`, `sb_composition_<sbId>`, `sb_typography_<sbId>`, `sb_motion_<sbId>`, `sb_interactions_<sbId>`, `sb_runtime_<sbId>`) PLUS N visual-planner sub-dispatches per inventory entry (typically 15–45 per slot) — the most visual-planner-heavy planner in the system.
-- **interactive-polish** — POST-PASS planner (different shape). Up to six drawers per project (`polish_research_<polishId>`, `polish_microanimation_<polishId>`, `polish_pointer_<polishId>`, `polish_hover_<polishId>`, `polish_shader_<polishId>`, `polish_runtime_<polishId>`). Drawers may be SKIPPED if their opportunity type has zero sites. No slot tag — operates on the whole project. Optionally co-dispatches visual-planner's shader skill for one procedural overlay.
+- **scrapbook-experience** — six drawers per slot (`sb_research_<sbId>`, `sb_composition_<sbId>`, `sb_typography_<sbId>`, `sb_motion_<sbId>`, `sb_interactions_<sbId>`, `sb_runtime_<sbId>`) PLUS N visual-orchestrator sub-dispatches per inventory entry (typically 15–45 per slot) — the most visual-orchestrator-heavy orchestrator in the system.
+- **interactive-polish** — POST-PASS orchestrator (different shape). Up to six drawers per project (`polish_research_<polishId>`, `polish_microanimation_<polishId>`, `polish_pointer_<polishId>`, `polish_hover_<polishId>`, `polish_shader_<polishId>`, `polish_runtime_<polishId>`). Drawers may be SKIPPED if their opportunity type has zero sites. No slot tag — operates on the whole project. Optionally co-dispatches visual-orchestrator's shader skill for one procedural overlay.
 
-### Two contracts the planner subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
+### Two contracts the orchestrator subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
 
-When the planner subagent stalls mid-loop (subagent permission compounding, daemon timeout, large transcript), earlier versions left **trees of stranded "running" or "none" nodes** on the canvas — the user saw 7 nodes and got 2 nodes' worth of value. Two playbook rules fix this:
+When the orchestrator subagent stalls mid-loop (subagent permission compounding, daemon timeout, large transcript), earlier versions left **trees of stranded "running" or "none" nodes** on the canvas — the user saw 7 nodes and got 2 nodes' worth of value. Two playbook rules fix this:
 
-1. **Incremental scaffold + dispatch.** Planners no longer batch-scaffold all drawer nodes upfront. They scaffold ONE drawer, dispatch it, wait for `done`, then scaffold the next. The container is scaffolded LAST, only after every drawer commits. If the planner stalls at step 3, only the completed nodes exist; the rest of the canvas stays clean.
-2. **Step-8 QA pass.** After all drawers `done` + container committed, the planner opens the agent's host HTML in preview, screenshots + console + network checks the assembled iframe in context, scores per-slot (loads / renders / fits / matches brief), and either Edits the agent's HTML for layout fixes (slot size, `allow=` attributes, surrounding chrome z-index) OR re-dispatches a drawer with the failure quote in `priorVerdicts`. Writes `workflow/<family>-plan.json` with a `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}` block. This is the simulation-side / interactive-side / narrative-side mirror of `visual-planner.md` Step 8. Per-drawer lens scores can pass while the assembled iframe fails in the host shell — Step-8 catches that.
+1. **Incremental scaffold + dispatch.** Orchestrators no longer batch-scaffold all drawer nodes upfront. They scaffold ONE drawer, dispatch it, wait for `done`, then scaffold the next. The container is scaffolded LAST, only after every drawer commits. If the orchestrator stalls at step 3, only the completed nodes exist; the rest of the canvas stays clean.
+2. **Step-8 QA pass.** After all drawers `done` + container committed, the orchestrator opens the agent's host HTML in preview, screenshots + console + network checks the assembled iframe in context, scores per-slot (loads / renders / fits / matches brief), and either Edits the agent's HTML for layout fixes (slot size, `allow=` attributes, surrounding chrome z-index) OR re-dispatches a drawer with the failure quote in `priorVerdicts`. Writes `workflow/<family>-plan.json` with a `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}` block. This is the simulation-side / interactive-side / narrative-side mirror of `visual-orchestrator.md` Step 8. Per-drawer lens scores can pass while the assembled iframe fails in the host shell — Step-8 catches that.
 
-When the planner returns its hand-off envelope, chat should read the `qa` block — if `qa.blocked[]` is non-empty, relay it to the user; don't silently override.
+When the orchestrator returns its hand-off envelope, chat should read the `qa` block — if `qa.blocked[]` is non-empty, relay it to the user; don't silently override.
 
 Worked examples:
 
 The museum project — 8 paintings, 4 voice marks, 2 hero photos, 1 front-door scene — dispatches:
 ```
-Task(visual-planner, …)             # 1 dispatch → 4 voice marks + 2 photos → 6 drawers
-Task(narrative-experience-planner, …) # 1 dispatch → 8 painting-as-place slots → 56 drawers
-Task(interactive-polish-planner, …)   # 1 dispatch → post-pass over the host pages
+Task(visual-orchestrator, …)             # 1 dispatch → 4 voice marks + 2 photos → 6 drawers
+Task(narrative-experience-orchestrator, …) # 1 dispatch → 8 painting-as-place slots → 56 drawers
+Task(interactive-polish-orchestrator, …)   # 1 dispatch → post-pass over the host pages
 ```
-= **three planner dispatches**, ~62 drawer dispatches + polish.
+= **three orchestrator dispatches**, ~62 drawer dispatches + polish.
 
 A Totoro feed-the-forest project — 1 playable feed surface, 12 illustration assets (Totoro, foods, friends, icons, backgrounds) — dispatches:
 ```
-Task(visual-planner, …)             # 1 dispatch → 12 illustration assets → 12 drawers
-Task(game-experience-planner, …)    # 1 dispatch → 1 feed-game slot → 8-9 drawers
-Task(interactive-polish-planner, …) # 1 dispatch → host-page polish
+Task(visual-orchestrator, …)             # 1 dispatch → 12 illustration assets → 12 drawers
+Task(game-experience-orchestrator, …)    # 1 dispatch → 1 feed-game slot → 8-9 drawers
+Task(interactive-polish-orchestrator, …) # 1 dispatch → host-page polish
 ```
-= **three dispatches**. NOT visual-planner alone (the feed loop is a GAME — objective + feedback). The fact that it's drawn in Studio-Ghibli watercolor doesn't change the surface family — the game-mount iframe holds the playable loop; visual-planner fills the illustrated `<img>` slots around it.
+= **three dispatches**. NOT visual-orchestrator alone (the feed loop is a GAME — objective + feedback). The fact that it's drawn in Studio-Ghibli watercolor doesn't change the surface family — the game-mount iframe holds the playable loop; visual-orchestrator fills the illustrated `<img>` slots around it.
 
 A vaporwave portfolio — 1 scrapbook hero, 3 work-tile illustrations — dispatches:
 ```
-Task(visual-planner, …)               # 3 work-tile drawers
-Task(scrapbook-experience-planner, …) # 1 scrapbook hero → 6 drawers + N visual-planner sub-dispatches
-Task(interactive-polish-planner, …)   # host-page polish
+Task(visual-orchestrator, …)               # 3 work-tile drawers
+Task(scrapbook-experience-orchestrator, …) # 1 scrapbook hero → 6 drawers + N visual-orchestrator sub-dispatches
+Task(interactive-polish-orchestrator, …)   # host-page polish
 ```
 = **three dispatches**.
 
 ### What the agent writes in its HTML to enable enumeration
 
-Each slot the agent writes in its HTML is the planner's enumeration anchor:
+Each slot the agent writes in its HTML is the orchestrator's enumeration anchor:
 
-- **visual slot** → `<img src="images/<assetId>.png" alt="..." data-slot="<assetId>">` (visual-planner reads `src` and walks the HTML for tag types it knows).
-- **sim slot** → `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" ...></iframe>` (sim-planner finds every `<iframe>` whose class contains `sim-mount` or whose `data-sim` attribute is set).
+- **visual slot** → `<img src="images/<assetId>.png" alt="..." data-slot="<assetId>">` (visual-orchestrator reads `src` and walks the HTML for tag types it knows).
+- **sim slot** → `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" ...></iframe>` (sim-orchestrator finds every `<iframe>` whose class contains `sim-mount` or whose `data-sim` attribute is set).
 - **im slot** → `<iframe class="im-mount" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" src="interactives/<imId>/runtime.html" allow="microphone; camera; gyroscope; accelerometer; midi" ...></iframe>`.
 - **nx slot** → `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" src="narratives/<nxId>/runtime.html" ...></iframe>`.
 - **game slot** → `<iframe class="game-mount" data-game="<gameId>" data-paradigm-hint="<hint>" data-objective="<one-line>" data-inputs="<csv>" data-juice="<register>" src="games/<gameId>/runtime.html" allow="gyroscope; accelerometer" ...></iframe>`.
 - **scrapbook slot** → `<iframe class="scrapbook-mount" data-scrapbook="<sbId>" data-core="<vaporwave|cottagecore|dreamcore|Y2K|lo-fi|mixtape|zine|mood-board|lookbook|hybrid>" data-density="<sparse|medium|dense>" data-motion="<still-with-twitches|drifting-ambient|aggressive-vaporwave>" src="scrapbooks/<sbId>/runtime.html" ...></iframe>`.
 
-The agent writes these tags into the HTML in step 3 (before any planner dispatch). The planner reads them in step 5.
+The agent writes these tags into the HTML in step 3 (before any orchestrator dispatch). The orchestrator reads them in step 5.
 
 ### Cost calibration
 
-A visual-planner dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx planner dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations — significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards."
+A visual-orchestrator dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx orchestrator dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations — significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards."
 
-## Image creation: dispatch visual-planner FIRST, narrate after (v3.2 hard rule)
+## Image creation: dispatch visual-orchestrator FIRST, narrate after (v3.2 hard rule)
 
-When the user's message mentions ANY visual content — an image, illustration, mascot, character, photo, icon, vector mark, logo, shader, particle effect, 3D scene, lottie animation, or video — your **FIRST action is a Task call to `visual-planner`**. Not your second action. Not after asking. Not after offering options. Not after planning. The Task call IS the start of your response.
+When the user's message mentions ANY visual content — an image, illustration, mascot, character, photo, icon, vector mark, logo, shader, particle effect, 3D scene, lottie animation, or video — your **FIRST action is a Task call to `visual-orchestrator`**. Not your second action. Not after asking. Not after offering options. Not after planning. The Task call IS the start of your response.
 
 ```
-Task(subagent_type: "visual-planner",
+Task(subagent_type: "visual-orchestrator",
      description: "Classify intent + scaffold image pipeline",
      prompt: "The user wants: <one-line description, e.g. 'wizard character in Studio Ghibli style'>. There is no HTML context — pick a medium from the classifier table, propose an asset id, and write the node trio (or quartet for raster-foreground with rembg) into workflow/workflow.json + a stub MANIFEST. Return {{assetId, medium, nodeIds}}.")
 ```
 
 ### Do NOT do any of these (every one is the bug a user just hit):
 
-- ❌ "I can do this as a raster image or a vector illustration — which would you prefer?" → **No.** visual-planner picks the medium from the classifier table. Dispatch it.
+- ❌ "I can do this as a raster image or a vector illustration — which would you prefer?" → **No.** visual-orchestrator picks the medium from the classifier table. Dispatch it.
 - ❌ "Should I generate this for you?" → **No.** Yes, generate it. That is what the user asked. Dispatch.
 - ❌ "Let me confirm what you want first…" → **No.** The user already told you. Dispatch.
-- ❌ "I'll scaffold a prompt + skill + asset trio…" → **No.** YOU don't scaffold. visual-planner scaffolds. Dispatch it; let it scaffold.
+- ❌ "I'll scaffold a prompt + skill + asset trio…" → **No.** YOU don't scaffold. visual-orchestrator scaffolds. Dispatch it; let it scaffold.
 - ❌ "Here's an SVG illustration in chat:" + a fenced ```svg block → **No.** The chat-render rule (above) is for ad-hoc visualizations the user asks to *see* ("show me a chart of X"). When the user asks to *create* an asset for the project, scaffolding wins — dispatch.
-- ❌ Calling generate-image, rembg, or any other skill directly → **No.** visual-planner picks the right skill chain.
+- ❌ Calling generate-image, rembg, or any other skill directly → **No.** visual-orchestrator picks the right skill chain.
 - ❌ Writing a `.png` / `.jpg` / `.svg` / `.html` directly → **No.** The PreToolUse hook will block it; you've also been told not to.
 
 ### Decision rule (no judgement involved):
 
 | User said… | Your first move |
 |---|---|
-| "make me an image of X" | `Task(visual-planner, …)` |
-| "I want a [character / mascot / hero / logo]" | `Task(visual-planner, …)` |
-| "generate a [icon / illustration / photo / video / animation]" | `Task(visual-planner, …)` |
-| "add visuals" | `Task(visual-planner, …)` once per visual concept |
-| "build a [whole prototype / app / page]" | First dispatch `/prototype` skill or scaffold HTML; then `Task(visual-planner, …)` for each visual slot |
+| "make me an image of X" | `Task(visual-orchestrator, …)` |
+| "I want a [character / mascot / hero / logo]" | `Task(visual-orchestrator, …)` |
+| "generate a [icon / illustration / photo / video / animation]" | `Task(visual-orchestrator, …)` |
+| "add visuals" | `Task(visual-orchestrator, …)` once per visual concept |
+| "build a [whole prototype / app / page]" | First dispatch `/prototype` skill or scaffold HTML; then `Task(visual-orchestrator, …)` for each visual slot |
 | "show me what X looks like" (ad-hoc, no asset) | Render inline in chat (fenced block) — this is the ONE exception |
 
 ### Why this is non-negotiable:
 
-visual-planner's job is to pick from the classifier (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / **motion**), choose the matching generator skill, add rembg if the medium is raster-foreground, propose the canonical asset id, write the node trio into `workflow/workflow.json` so the user sees real canvas nodes — not a placeholder rectangle, not your hand-rolled `Write(source/foo.png, …)` — and then **QA every asset in context after the drawer finishes**. The QA step (visual-planner Step 8) Read()s each generated asset and the rendered HTML, scores style coherence / aspect fit / composition / cutout / placement / cross-asset coherence, and either Edit-fixes (CSS tweaks) or regenerate-fixes (re-dispatch the drawer with the failure reason in the brief). Skipping any of these stages produces the bugs the user just hit:
+visual-orchestrator's job is to pick from the classifier (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / **motion**), choose the matching generator skill, add rembg if the medium is raster-foreground, propose the canonical asset id, write the node trio into `workflow/workflow.json` so the user sees real canvas nodes — not a placeholder rectangle, not your hand-rolled `Write(source/foo.png, …)` — and then **QA every asset in context after the drawer finishes**. The QA step (visual-orchestrator Step 8) Read()s each generated asset and the rendered HTML, scores style coherence / aspect fit / composition / cutout / placement / cross-asset coherence, and either Edit-fixes (CSS tweaks) or regenerate-fixes (re-dispatch the drawer with the failure reason in the brief). Skipping any of these stages produces the bugs the user just hit:
 - no cutout on character shots (skipped rembg)
 - wrong aspect / cropped subject (skipped composition QA)
 - one in-vibe hero + Tabler defaults around it (skipped style propagation + cross-asset QA)
 - broken image paths in the HTML (skipped slot-placement QA)
-- **text becomes invisible after an asset lands** — e.g. light-yellow page + green text + a hero with green leaves drops in; the green text now sits over green leaves and disappears. This is the "you forgot the contrast check after placement" bug. visual-planner Step 8b includes an explicit text/image contrast check for exactly this case — read the asset's dominant colours vs the foreground colours of any text overlaid on or adjacent to it, fix by adding a scrim / shifting the text / regenerating with a darker-zone composition. Never ship an asset that buries the page's typography.
+- **text becomes invisible after an asset lands** — e.g. light-yellow page + green text + a hero with green leaves drops in; the green text now sits over green leaves and disappears. This is the "you forgot the contrast check after placement" bug. visual-orchestrator Step 8b includes an explicit text/image contrast check for exactly this case — read the asset's dominant colours vs the foreground colours of any text overlaid on or adjacent to it, fix by adding a scrim / shifting the text / regenerating with a darker-zone composition. Never ship an asset that buries the page's typography.
 
-Also: when the planner returns, verify `workflow/visual-plan.json.qa` exists with non-empty `checked[]`. If it's missing or empty, the planner skipped Step 8 — dispatch it again with `RUN QA STEP 8 ONLY — the prior run skipped it` in the brief, or do the QA pass yourself using the same checklist.
+Also: when the orchestrator returns, verify `workflow/visual-plan.json.qa` exists with non-empty `checked[]`. If it's missing or empty, the orchestrator skipped Step 8 — dispatch it again with `RUN QA STEP 8 ONLY — the prior run skipped it` in the brief, or do the QA pass yourself using the same checklist.
 
-**Emulating visual-planner from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
+**Emulating visual-orchestrator from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
 
-## Live view, 3D, real-world map, or living system: dispatch simulation-planner FIRST (v3.8 hard rule)
+## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST (v3.8 hard rule)
 
-When the user's brief matches **ANY of the four families below**, your **FIRST action is a Task call to `simulation-planner`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
+When the user's brief matches **ANY of the four families below**, your **FIRST action is a Task call to `simulation-orchestrator`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
 
 ### The four families (any one of these → dispatch)
 
@@ -516,13 +516,13 @@ When the user's brief matches **ANY of the four families below**, your **FIRST a
 
 If the brief touches even one of these, dispatch. Don't try to inline-render any of them. Don't hand-roll a map. Don't hand-roll a 3D scene. Dispatch.
 
-**One simulation-planner dispatch per project, not per slot.** Same as visual-planner. If the brief implies multiple live views, multiple regions, multiple maps — that's one simulation-planner dispatch that enumerates them all and fans out per-slot drawer sets. Each slot gets its own `simId`, its own paradigm pick, its own runtime — but they're produced by ONE planner call walking your HTML, not by N agent-dispatched planner calls.
+**One simulation-orchestrator dispatch per project, not per slot.** Same as visual-orchestrator. If the brief implies multiple live views, multiple regions, multiple maps — that's one simulation-orchestrator dispatch that enumerates them all and fans out per-slot drawer sets. Each slot gets its own `simId`, its own paradigm pick, its own runtime — but they're produced by ONE orchestrator call walking your HTML, not by N agent-dispatched orchestrator calls.
 
 ### HARD CHECK A — does the brief need a MAP?
 
 Ask: *if I built this piece, would there be a map somewhere in it?*
 
-If **yes** → it is a simulation. Dispatch sim-planner. **And the map must be a real map** (see HARD CHECK C). Examples:
+If **yes** → it is a simulation. Dispatch sim-orchestrator. **And the map must be a real map** (see HARD CHECK C). Examples:
   - "birdwatch across Singapore" → yes, a map of Singapore is in there → sim
   - "track our fleet across Europe" → yes, map of Europe → sim
   - "monitor dengue mosquitoes" → yes, map of Singapore → sim
@@ -575,7 +575,7 @@ This is non-negotiable. If the brief involves a real place, you do **NOT**:
 
 The reason: the user said "Singapore" / "London" / "the Atlantic" because they expect to **recognise** it. A hand-rolled silhouette doesn't look like the place; it looks like Claude's best guess at the place. That's the bzzzzz failure mode — user asked for Singapore, got an outline that didn't look like Singapore.
 
-What sim-planner does instead: the tech-stack researcher's §2.0 REAL-WORLD CHECK mandates real map library candidates (MapLibre / Mapbox / Leaflet / deck.gl for region-scale, globe.gl / three-globe / Cesium for planet-scale) and the chosen library renders the actual tile data, GeoJSON boundaries, satellite imagery, or terrain mesh — not Claude's hallucinated approximation.
+What sim-orchestrator does instead: the tech-stack researcher's §2.0 REAL-WORLD CHECK mandates real map library candidates (MapLibre / Mapbox / Leaflet / deck.gl for region-scale, globe.gl / three-globe / Cesium for planet-scale) and the chosen library renders the actual tile data, GeoJSON boundaries, satellite imagery, or terrain mesh — not Claude's hallucinated approximation.
 
 **Always real map. Never your own.**
 
@@ -605,11 +605,11 @@ Anti-patterns that earn block-severity findings from the lens trio:
 - ❌ Walkable scene where collision/boundary constraints are so tight the user can't actually move
 - ❌ Cinematic-fly that's a single 2-second loop with no pause/restart
 
-The scene drawer's craft-lens preview check runs these as automated probes (synthetic pointer-drag, synthetic WASD, light-position screenshot diffs). The full rule + self-tests live in `sim-3d-scene-builder.md §1.0`; narrative's 3d-environment paradigm inherits the same contract via the scene drawer dispatched by narrative-experience-planner.
+The scene drawer's craft-lens preview check runs these as automated probes (synthetic pointer-drag, synthetic WASD, light-position screenshot diffs). The full rule + self-tests live in `sim-3d-scene-builder.md §1.0`; narrative's 3d-environment paradigm inherits the same contract via the scene drawer dispatched by narrative-experience-orchestrator.
 
 ### The other vocabulary the user might use (same answer — dispatch)
 
-If the brief is about LOOKING AT or MOVING THROUGH something stateful, positioned, or alive, this is the right planner — no matter what vocabulary the user used. Some shapes:
+If the brief is about LOOKING AT or MOVING THROUGH something stateful, positioned, or alive, this is the right orchestrator — no matter what vocabulary the user used. Some shapes:
 
 - "birdwatch across Singapore", "watch the migration", "see where the herds are"
 - "monitor X" / "tracker for Y" / "dashboard for Z"
@@ -619,24 +619,24 @@ If the brief is about LOOKING AT or MOVING THROUGH something stateful, positione
 - "the world feels alive" / "things responding to each other in real time"
 - "real Singapore map with X" / "real-time fleet on a map" / "live feed of points on a region"
 
-### THE STRUCTURE — exactly visual-planner's shape
+### THE STRUCTURE — exactly visual-orchestrator's shape
 
-**You write the HTML. The planner writes the slot's content. Don't mix them.**
+**You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
 
-Visual-planner doesn't write HTML. When the agent in chat wants an image on a page, the agent writes `<img src="images/hero.png">` into the HTML. Then the agent dispatches visual-planner. visual-planner writes the *bytes* at `source/<prototype>/images/hero.png`. The `<img>` tag the agent already wrote now resolves. The planner never touches the HTML.
+Visual-orchestrator doesn't write HTML. When the agent in chat wants an image on a page, the agent writes `<img src="images/hero.png">` into the HTML. Then the agent dispatches visual-orchestrator. visual-orchestrator writes the *bytes* at `source/<prototype>/images/hero.png`. The `<img>` tag the agent already wrote now resolves. The orchestrator never touches the HTML.
 
-Same here. When you want a sim on a page, **you write the HTML and the iframe slot yourself** — including the `<iframe src="simulations/<simId>/runtime.html">` pointing at the path the planner will produce. Then you dispatch simulation-planner. The planner writes `source/<prototype>/simulations/<simId>/runtime.html` and its sibling files. The `<iframe>` tag you already wrote now resolves. **The planner does not touch your HTML.**
+Same here. When you want a sim on a page, **you write the HTML and the iframe slot yourself** — including the `<iframe src="simulations/<simId>/runtime.html">` pointing at the path the orchestrator will produce. Then you dispatch simulation-orchestrator. The orchestrator writes `source/<prototype>/simulations/<simId>/runtime.html` and its sibling files. The `<iframe>` tag you already wrote now resolves. **The orchestrator does not touch your HTML.**
 
 Two distinct jobs:
 
-| Your job (agent in chat) | Planner's job |
+| Your job (agent in chat) | Orchestrator's job |
 |---|---|
-| Write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a sim should live, write one `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="..." title="<simId>" loading="lazy"></iframe>`. Use distinct `simId`s for each (e.g. `fleet-map`, `queue-depth`, `agent-gossip`). Then dispatch simulation-planner ONCE. | Walk every `*.html` under `source/<prototype>/`, find every iframe whose class includes `sim-mount` (or whose `data-sim` is set). For each, read the `simId` + paradigm hint + entity scale. Per slot: pick paradigm + render strategy, write `source/<prototype>/simulations/<simId>/research.md`, scaffold the per-slot drawer set (entities / scene / loop / controls / overlay / runtime / container), dispatch the drawers. Do NOT touch any HTML. |
+| Write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a sim should live, write one `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="..." title="<simId>" loading="lazy"></iframe>`. Use distinct `simId`s for each (e.g. `fleet-map`, `queue-depth`, `agent-gossip`). Then dispatch simulation-orchestrator ONCE. | Walk every `*.html` under `source/<prototype>/`, find every iframe whose class includes `sim-mount` (or whose `data-sim` is set). For each, read the `simId` + paradigm hint + entity scale. Per slot: pick paradigm + render strategy, write `source/<prototype>/simulations/<simId>/research.md`, scaffold the per-slot drawer set (entities / scene / loop / controls / overlay / runtime / container), dispatch the drawers. Do NOT touch any HTML. |
 
-Dispatch template — ONE call, planner enumerates all sim slots:
+Dispatch template — ONE call, orchestrator enumerates all sim slots:
 
 ```
-Task(subagent_type: "simulation-planner",
+Task(subagent_type: "simulation-orchestrator",
      description: "Enumerate + build every sim slot in this project",
      prompt: "prototype=<prototype>, projectRoot=<absolute path to project root>. Walk every *.html under source/<prototype>/ and find every <iframe class~='sim-mount'> (or every iframe whose data-sim attribute is set). For EACH slot found: read simId from data-sim, paradigm hint from data-paradigm-hint (optional), entity scale from data-entities (optional). Per slot: pick paradigm + render strategy + tick rate + interaction primitive (honour the hard checks in capabilities.py — real-world map naming → real-map library, verticality → 3D, etc.). Write source/<prototype>/simulations/<simId>/research.md. Scaffold + build the per-slot drawer set + container. User's overall intent (verbatim, applies to all slots): <intent>. successFeel per slot: if the data-sim id makes it obvious, infer; otherwise ask the user via decision-request. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
@@ -644,40 +644,40 @@ Task(subagent_type: "simulation-planner",
 ### Do NOT do any of these:
 
 - ❌ **Skipping the app shell because "it's just a sim."** That's the fly bug. The user typed *"generate a globe monitoring system for billionaire private jets"*, the simulation got built at `source/main/simulations/billionaire-jets-globe/runtime.html`, but no `source/main/index.html` was scaffolded. The editor's default view (`source/<prototype>/index.html`) showed 404 — the sim existed but the user couldn't reach it because there was no app to host it. Always scaffold the index.html shell, even when the brief sounds like "just the sim."
-- ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts" → the dashboard chrome scaffolds fine but the map IS a sim-placeholder. Dispatch sim-planner for that slot; don't hand-render the map. (mememem bug.)
-- ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → the sim surface is a slot. Dispatch sim-planner.
-- ❌ "Should I build a sim or just a dashboard?" → dispatch sim-planner; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim) per the hard checks above.
+- ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts" → the dashboard chrome scaffolds fine but the map IS a sim-placeholder. Dispatch sim-orchestrator for that slot; don't hand-render the map. (mememem bug.)
+- ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → the sim surface is a slot. Dispatch sim-orchestrator.
+- ❌ "Should I build a sim or just a dashboard?" → dispatch sim-orchestrator; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim) per the hard checks above.
 - ❌ "What paradigm — 2D map or 3D?" → research picks. User steers at the §12.5 interrupt.
-- ❌ Writing entity / loop / scene / overlay / runtime files directly → sim-planner orchestrates the drawers.
+- ❌ Writing entity / loop / scene / overlay / runtime files directly → sim-orchestrator orchestrates the drawers.
 
 ### Decision rule (no judgement involved):
 
 | User said… | Your first move |
 |---|---|
-| Anything in any of the four families above (live view / 3D / real-world place / living system) | Scaffold app shell (with sim-placeholder slot) → `Task(simulation-planner, …)` for the slot |
-| "show me a chart of static data" (no state change, no real place, no 3D, no living) | NOT a sim. Render inline or via visual-planner. |
+| Anything in any of the four families above (live view / 3D / real-world place / living system) | Scaffold app shell (with sim-placeholder slot) → `Task(simulation-orchestrator, …)` for the slot |
+| "show me a chart of static data" (no state change, no real place, no 3D, no living) | NOT a sim. Render inline or via visual-orchestrator. |
 
 ### Why this is non-negotiable
 
-The visual-planner pattern is: **app exists, planner fills a slot.** Same here. The sim is content for a slot, not an artefact on its own. Reasons:
+The visual-orchestrator pattern is: **app exists, orchestrator fills a slot.** Same here. The sim is content for a slot, not an artefact on its own. Reasons:
 
 - The editor's source view defaults to `source/<prototype>/index.html`. No index.html = user can't open it (the fly bug).
 - The app shell is the user's natural entry point. Even a one-line "I want the globe" expectation is "I want to open something that shows me the globe" — which is a page, not a folder of runtime files.
 - Adding chrome later (a title, a legend, controls in a side panel) is trivial when the shell exists. Retrofitting a shell around a standalone runtime that imports its own modules + has its own viewport sizing is invasive.
-- Cross-asset coherence (visual-planner styling the sidebar icons, narrative-planner adding a callout next to the sim) requires the shell to exist as a single HTML page they share.
+- Cross-asset coherence (visual-orchestrator styling the sidebar icons, narrative-orchestrator adding a callout next to the sim) requires the shell to exist as a single HTML page they share.
 
-**Emulating simulation-planner from your own knowledge — or shipping a sim without the surrounding app — is the bug.** Dispatch the real thing into a real slot.
+**Emulating simulation-orchestrator from your own knowledge — or shipping a sim without the surrounding app — is the bug.** Dispatch the real thing into a real slot.
 
-## Interactive piece: dispatch interactive-media-planner FIRST (v3.6 hard rule)
+## Interactive piece: dispatch interactive-media-orchestrator FIRST (v3.6 hard rule)
 
-When the user's message implies **a piece they DRIVE with their body or device** — voice-reactive, camera-driven, music-visualising, gestural, TouchDesigner-style, generative shader they poke, anything where input from mic / camera / mouse / gyro / MIDI / gamepad maps to real-time generative output — your **FIRST action is a Task call to `interactive-media-planner`**. Not your second action. Not after asking. Not after planning.
+When the user's message implies **a piece they DRIVE with their body or device** — voice-reactive, camera-driven, music-visualising, gestural, TouchDesigner-style, generative shader they poke, anything where input from mic / camera / mouse / gyro / MIDI / gamepad maps to real-time generative output — your **FIRST action is a Task call to `interactive-media-orchestrator`**. Not your second action. Not after asking. Not after planning.
 
 ```
-### THE STRUCTURE — exactly visual-planner's shape
+### THE STRUCTURE — exactly visual-orchestrator's shape
 
-Same separation as the simulation block above. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+Same separation as the simulation block above. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
 
-**One interactive-media-planner dispatch per project, not per slot.** Same as visual-planner / simulation-planner. A portfolio of three TouchDesigner-style pieces is ONE im-planner dispatch that enumerates the three im-mount iframes and fans out the per-slot drawer set for each.
+**One interactive-media-orchestrator dispatch per project, not per slot.** Same as visual-orchestrator / simulation-orchestrator. A portfolio of three TouchDesigner-style pieces is ONE im-orchestrator dispatch that enumerates the three im-mount iframes and fans out the per-slot drawer set for each.
 
 You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where an interactive piece should live, you write one `<iframe>` slot — including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs. Use distinct `imId`s.
 
@@ -692,10 +692,10 @@ You write `source/<prototype>/index.html` (and any styles / app.js / sibling pag
         loading="lazy"></iframe>
 ```
 
-Then dispatch the planner ONCE. It walks the HTML, enumerates every im-mount slot, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
+Then dispatch the orchestrator ONCE. It walks the HTML, enumerates every im-mount slot, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
 
 ```
-Task(subagent_type: "interactive-media-planner",
+Task(subagent_type: "interactive-media-orchestrator",
      description: "Enumerate + build every interactive slot in this project",
      prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='im-mount'> (or every iframe whose data-im is set). For EACH: read imId from data-im, inputs from data-inputs, outputs from data-outputs, mapping style from data-mapping. Per slot: pick inputs + outputs + mapping style + permission flow + glue libraries. Write source/<prototype>/interactives/<imId>/research.md. Scaffold + build the per-slot drawer set (research, input(s), mapping, output(s), runtime) + container. Permission gates surfaced to canvas BEFORE Run, per slot. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
@@ -704,46 +704,46 @@ Task(subagent_type: "interactive-media-planner",
 
 - ❌ **Skipping the app shell.** Same trap as the fly bug. Without `source/<prototype>/index.html`, the user has no way to open the piece. Always scaffold the shell first.
 - ❌ "What inputs do you want — mic, camera, mouse?" → Dispatch; research picks the default; user steers at the §12.5 interrupt.
-- ❌ Calling `getUserMedia()` directly from chat-rendered HTML → Permission UX goes through the planner's two-gate pattern inside the piece's runtime.
-- ❌ Writing a shader inline in chat when the user asked for a piece they interact with → that's the shader skill for ad-hoc viz; interactive-media-planner is for PERSISTENT INTERACTIVE PIECES.
-- ❌ Treating this as a visual-planner job → visual-planner is for IMAGES + DECORATIVE motion. Interactive is body/device-driven generative response.
+- ❌ Calling `getUserMedia()` directly from chat-rendered HTML → Permission UX goes through the orchestrator's two-gate pattern inside the piece's runtime.
+- ❌ Writing a shader inline in chat when the user asked for a piece they interact with → that's the shader skill for ad-hoc viz; interactive-media-orchestrator is for PERSISTENT INTERACTIVE PIECES.
+- ❌ Treating this as a visual-orchestrator job → visual-orchestrator is for IMAGES + DECORATIVE motion. Interactive is body/device-driven generative response.
 
 ### Decision rule:
 
 | User said… | Your first move |
 |---|---|
-| Anything body/device-driven generative — TouchDesigner-style, voice-reactive, music-reactive, camera-driven, gestural, "piece where I do X with my voice/body" | Scaffold app shell (with im-placeholder slot) → `Task(interactive-media-planner, …)` for the slot |
-| "show me a chart of X" (ad-hoc, no interaction) | NOT a planner. Render inline or via visual-planner. |
+| Anything body/device-driven generative — TouchDesigner-style, voice-reactive, music-reactive, camera-driven, gestural, "piece where I do X with my voice/body" | Scaffold app shell (with im-placeholder slot) → `Task(interactive-media-orchestrator, …)` for the slot |
+| "show me a chart of X" (ad-hoc, no interaction) | NOT a orchestrator. Render inline or via visual-orchestrator. |
 
-### Distinguishing the planner family (v3.3):
+### Distinguishing the orchestrator family (v3.3):
 
 | User wants | Dispatch |
 |---|---|
-| An IMAGE / icon / illustration / decorative ambient motion | `visual-planner` |
-| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
-| A piece the user DRIVES with body/device for generative response | `interactive-media-planner` |
-| An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-planner` |
-| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-planner` |
-| An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-planner` |
+| An IMAGE / icon / illustration / decorative ambient motion | `visual-orchestrator` |
+| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-orchestrator` |
+| A piece the user DRIVES with body/device for generative response | `interactive-media-orchestrator` |
+| An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-orchestrator` |
+| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-orchestrator` |
+| An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-orchestrator` |
 
-A "warehouse dashboard" with a static stock chart → visual-planner (chart is an image).
-A "warehouse dashboard" where bins fill/empty over time → **simulation-planner**.
-A "voice-painter on the warehouse data" → **interactive-media-planner**.
-A "memorial that the user walks into and feels held" → **narrative-experience-planner**.
-A "throw paper planes for points" / "feed Pip, watch it grow" → **game-experience-planner** (objective + feedback loop).
-A "1995 GeoCities portfolio" / "chrome-lettered vaporwave hero" → **scrapbook-experience-planner** (CSS cannot reach this aesthetic).
+A "warehouse dashboard" with a static stock chart → visual-orchestrator (chart is an image).
+A "warehouse dashboard" where bins fill/empty over time → **simulation-orchestrator**.
+A "voice-painter on the warehouse data" → **interactive-media-orchestrator**.
+A "memorial that the user walks into and feels held" → **narrative-experience-orchestrator**.
+A "throw paper planes for points" / "feed Pip, watch it grow" → **game-experience-orchestrator** (objective + feedback loop).
+A "1995 GeoCities portfolio" / "chrome-lettered vaporwave hero" → **scrapbook-experience-orchestrator** (CSS cannot reach this aesthetic).
 
 The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic — museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
 
-## Immersive narrative: dispatch narrative-experience-planner FIRST (v3.6 hard rule)
+## Immersive narrative: dispatch narrative-experience-orchestrator FIRST (v3.6 hard rule)
 
-When the user's message implies **a piece someone walks into and leaves changed** — a museum microsite, an exhibition extension, a memorial, a character portrait at depth, an editorial scrollytelling piece, a walkable 3D reconstruction of a room or garden or studio, anything where the user's role is *witness* and the felt-state is the point — your **FIRST action is a Task call to `narrative-experience-planner`**.
+When the user's message implies **a piece someone walks into and leaves changed** — a museum microsite, an exhibition extension, a memorial, a character portrait at depth, an editorial scrollytelling piece, a walkable 3D reconstruction of a room or garden or studio, anything where the user's role is *witness* and the felt-state is the point — your **FIRST action is a Task call to `narrative-experience-orchestrator`**.
 
-### THE STRUCTURE — exactly visual-planner's shape
+### THE STRUCTURE — exactly visual-orchestrator's shape
 
-Same separation. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+Same separation. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
 
-**One narrative-experience-planner dispatch per project, not per slot.** Same as visual-planner. The museum project's PRD is the canonical example — *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting — but they're all enumerated and built by ONE narrative-experience-planner dispatch walking the HTML. Not one dispatch per painting (eight planner calls would be wrong). One planner call that fans out to eight per-slot drawer sets.
+**One narrative-experience-orchestrator dispatch per project, not per slot.** Same as visual-orchestrator. The museum project's PRD is the canonical example — *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting — but they're all enumerated and built by ONE narrative-experience-orchestrator dispatch walking the HTML. Not one dispatch per painting (eight orchestrator calls would be wrong). One orchestrator call that fans out to eight per-slot drawer sets.
 
 You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place the user walks into, write one nx-mount iframe with a distinct `nxId`:
 
@@ -756,10 +756,10 @@ You write `source/<prototype>/index.html` (and any styles / app.js / sibling pag
         loading="lazy"></iframe>
 ```
 
-Then dispatch the planner ONCE. It walks every `*.html`, enumerates the nx slots, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
+Then dispatch the orchestrator ONCE. It walks every `*.html`, enumerates the nx slots, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
 
 ```
-Task(subagent_type: "narrative-experience-planner",
+Task(subagent_type: "narrative-experience-orchestrator",
      description: "Enumerate + build every narrative slot in this project",
      prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<prototype>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request — NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
@@ -767,8 +767,8 @@ Task(subagent_type: "narrative-experience-planner",
 ### Do NOT do any of these:
 
 - ❌ **Skipping the app shell.** Same trap as the fly bug.
-- ❌ "Let me first generate the hero image…" → The narrative planner needs visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative planner first; its drawers call visual-planner for raster assets in-flight with the brief's styleCue propagated.
-- ❌ Treating this as simulation-planner because it has a 3D scene → Simulation gives understanding of a system. Narrative gives presence in a place. Functional vs. dramaturgical.
+- ❌ "Let me first generate the hero image…" → The narrative orchestrator needs visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative orchestrator first; its drawers call visual-orchestrator for raster assets in-flight with the brief's styleCue propagated.
+- ❌ Treating this as simulation-orchestrator because it has a 3D scene → Simulation gives understanding of a system. Narrative gives presence in a place. Functional vs. dramaturgical.
 - ❌ Treating this as interactive-media because there's interactivity → Interactive is body-as-creative-material. Narrative's interactivity is the act of attention.
 - ❌ Accepting "the user understands Vermeer better" as a successFeel → Concept-lens needs felt-state. Push back via decision-request.
 - ❌ Building a static HTML page mockup → that's a snapshot, not a runnable composed piece.
@@ -777,87 +777,87 @@ Task(subagent_type: "narrative-experience-planner",
 
 | User said… | Your first move |
 |---|---|
-| "let me walk INTO <thing>" / "sit inside <place>" / "feel the world of X" | `Task(narrative-experience-planner, …)` |
-| "museum microsite" / "memorial" / "portrait at depth" / "exhibition extension" | `Task(narrative-experience-planner, …)` |
-| "scrollytelling" / "immersive narrative" / "snow-fall-style article" | `Task(narrative-experience-planner, …)` |
-| "walkable 3D <place>" / "explore <space> freely" / "first-person walkthrough of <place>" | `Task(narrative-experience-planner, …)` |
-| "architectural reconstruction the user moves through" / "free-roam exhibition" | `Task(narrative-experience-planner, …)` |
-| "build a site that has this immersive piece inside it" | First `/prototype` (nx-placeholder slot) → then `Task(narrative-experience-planner, …)` |
+| "let me walk INTO <thing>" / "sit inside <place>" / "feel the world of X" | `Task(narrative-experience-orchestrator, …)` |
+| "museum microsite" / "memorial" / "portrait at depth" / "exhibition extension" | `Task(narrative-experience-orchestrator, …)` |
+| "scrollytelling" / "immersive narrative" / "snow-fall-style article" | `Task(narrative-experience-orchestrator, …)` |
+| "walkable 3D <place>" / "explore <space> freely" / "first-person walkthrough of <place>" | `Task(narrative-experience-orchestrator, …)` |
+| "architectural reconstruction the user moves through" / "free-roam exhibition" | `Task(narrative-experience-orchestrator, …)` |
+| "build a site that has this immersive piece inside it" | First `/prototype` (nx-placeholder slot) → then `Task(narrative-experience-orchestrator, …)` |
 
-The planner picks one of four paradigms (mirrors simulation's structure): `2d-illustrative` (scrollytelling), `3d-environment` (anywhere from a scripted flythrough to a fully walkable room — same paradigm covers all; the degree of inhabitation is decided downstream by the scene drawer's multi-draft + the user's pick), `iconographic-anim` (a held sequence of tableaux), or `hybrid`. The user asking for "walk through Vermeer's studio" and the user asking for "scroll through Vermeer's studio" both land here — the research fleet decides which vessel the felt-experience inhabits.
+The orchestrator picks one of four paradigms (mirrors simulation's structure): `2d-illustrative` (scrollytelling), `3d-environment` (anywhere from a scripted flythrough to a fully walkable room — same paradigm covers all; the degree of inhabitation is decided downstream by the scene drawer's multi-draft + the user's pick), `iconographic-anim` (a held sequence of tableaux), or `hybrid`. The user asking for "walk through Vermeer's studio" and the user asking for "scroll through Vermeer's studio" both land here — the research fleet decides which vessel the felt-experience inhabits.
 
 **The script is the heart, even in walkable pieces.** A fully free-roam room still has authored light, authored sound-anchors, authored artifacts placed where the curator chose them. Freedom of movement is breathing room WITHIN the dramaturgy, not the absence of authorship. If the user describes "let them just explore" without any sense of the felt-state they should land in, push back via decision-request asking what the user should FEEL after 60 seconds inside — that prose is what concept-lens scores against.
 
-**Collaborates with `visual-planner`** for every raster image the piece relies on — painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-planner for each asset; the brief's styleCue propagates so every plate reads as the same piece.
+**Collaborates with `visual-orchestrator`** for every raster image the piece relies on — painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-orchestrator for each asset; the brief's styleCue propagates so every plate reads as the same piece.
 
 ```
-Task(subagent_type: "narrative-experience-planner",
+Task(subagent_type: "narrative-experience-orchestrator",
      description: "Plan + build immersive narrative experience",
      prompt: "The user wants: <one-line description, e.g. 'walk into Vermeer's studio at depth, the light shifts as the user lingers'>. Run your intake — ask for a concrete felt-state successFeel via <decision-request> (NOT 'the user understands X' — needs to be a feeling: 'the room remembers them', 'they leave changed', etc.), synthesise an nxId, run the 5-researcher fleet + synthesiser, scaffold the multi-trio in workflow/workflow.json, dispatch the 7 component drawers (spine/scene/camera/ambient/reveal/overlay/runtime) + 3-lens trio per iteration, multi-draft at scene + camera + ambient + runtime cruxes via iterator-remix, run §8.5 cross-drawer coherence before final container commit.")
 ```
 
 ### Do NOT do any of these:
 
-- ❌ "Let me first generate the hero image…" → **No.** The narrative planner DOES need visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative planner first — its scene + overlay drawers will call visual-planner for raster assets in-flight, with the brief's styleCue propagated so every plate reads as the same piece.
-- ❌ Treating this as simulation-planner because it has a 3D scene → **No.** Simulation gives the user UNDERSTANDING of a system (warehouse, garden, traffic — functional, readable, deterministic). Narrative gives the user PRESENCE in a place (Vermeer's studio, a memorial garden, a room of memory — dramaturgical, emotional, authored).
-- ❌ Treating this as interactive-media-planner because it has interactivity → **No.** Interactive is TouchDesigner-style generative response — the body IS the creative material. Narrative's interactivity is the act of attention — it earns discovery, never becomes the piece. Reveals reward stillness, not speed. The CAMERA is the narrator; the user is the witness who chooses how long to stay.
+- ❌ "Let me first generate the hero image…" → **No.** The narrative orchestrator DOES need visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative orchestrator first — its scene + overlay drawers will call visual-orchestrator for raster assets in-flight, with the brief's styleCue propagated so every plate reads as the same piece.
+- ❌ Treating this as simulation-orchestrator because it has a 3D scene → **No.** Simulation gives the user UNDERSTANDING of a system (warehouse, garden, traffic — functional, readable, deterministic). Narrative gives the user PRESENCE in a place (Vermeer's studio, a memorial garden, a room of memory — dramaturgical, emotional, authored).
+- ❌ Treating this as interactive-media-orchestrator because it has interactivity → **No.** Interactive is TouchDesigner-style generative response — the body IS the creative material. Narrative's interactivity is the act of attention — it earns discovery, never becomes the piece. Reveals reward stillness, not speed. The CAMERA is the narrator; the user is the witness who chooses how long to stay.
 - ❌ Accepting "the user understands Vermeer better" as a successFeel → **No.** Concept-lens needs felt-state ("they leave quieter", "the room holds them for 90 seconds", "the painting kept looking back"). Informational outcomes are not the target. Push back via decision-request.
-- ❌ Building a static page mockup with `html-page` skill → **No.** That's a snapshot. The narrative planner produces a runnable composed piece with authored progression — scripted in its bones, even where the user moves freely.
-- ❌ Letting the scene drawer generate raster imagery itself → **No.** It dispatches visual-planner per asset. Same for the overlay drawer with vector marks. Cross-asset coherence depends on this single style channel.
+- ❌ Building a static page mockup with `html-page` skill → **No.** That's a snapshot. The narrative orchestrator produces a runnable composed piece with authored progression — scripted in its bones, even where the user moves freely.
+- ❌ Letting the scene drawer generate raster imagery itself → **No.** It dispatches visual-orchestrator per asset. Same for the overlay drawer with vector marks. Cross-asset coherence depends on this single style channel.
 
 ### Decision rule:
 
 | User said… | Your first move |
 |---|---|
-| "let me walk INTO <thing>" | `Task(narrative-experience-planner, …)` |
-| "sit inside <place>" / "feel the world of <X>" | `Task(narrative-experience-planner, …)` |
-| "museum microsite that doesn't feel like a brochure" | `Task(narrative-experience-planner, …)` |
-| "memorial / portrait / character at depth" | `Task(narrative-experience-planner, …)` |
-| "exhibition extension that lives" | `Task(narrative-experience-planner, …)` |
-| "scrollytelling / immersive narrative" | `Task(narrative-experience-planner, …)` |
-| "snow fall / NYT-magazine-style article" | `Task(narrative-experience-planner, …)` |
-| "walkable 3D <place>" / "explore <space> freely" | `Task(narrative-experience-planner, …)` |
-| "first-person walkthrough of <place>" | `Task(narrative-experience-planner, …)` |
-| "architectural reconstruction the user moves through" | `Task(narrative-experience-planner, …)` |
-| "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-planner, …)` |
-| "WebGL space the user can wander" | `Task(narrative-experience-planner, …)` |
+| "let me walk INTO <thing>" | `Task(narrative-experience-orchestrator, …)` |
+| "sit inside <place>" / "feel the world of <X>" | `Task(narrative-experience-orchestrator, …)` |
+| "museum microsite that doesn't feel like a brochure" | `Task(narrative-experience-orchestrator, …)` |
+| "memorial / portrait / character at depth" | `Task(narrative-experience-orchestrator, …)` |
+| "exhibition extension that lives" | `Task(narrative-experience-orchestrator, …)` |
+| "scrollytelling / immersive narrative" | `Task(narrative-experience-orchestrator, …)` |
+| "snow fall / NYT-magazine-style article" | `Task(narrative-experience-orchestrator, …)` |
+| "walkable 3D <place>" / "explore <space> freely" | `Task(narrative-experience-orchestrator, …)` |
+| "first-person walkthrough of <place>" | `Task(narrative-experience-orchestrator, …)` |
+| "architectural reconstruction the user moves through" | `Task(narrative-experience-orchestrator, …)` |
+| "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-orchestrator, …)` |
+| "WebGL space the user can wander" | `Task(narrative-experience-orchestrator, …)` |
 
 ### Distinguishing from siblings (v3.3):
 
 | User wants | Dispatch |
 |---|---|
-| An IMAGE / icon / illustration / decorative ambient motion | `visual-planner` |
-| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-planner` |
-| A piece the user DRIVES with body/device for generative response (input → mapping → output) | `interactive-media-planner` |
-| An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-planner` |
-| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-planner` |
-| An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-planner` |
+| An IMAGE / icon / illustration / decorative ambient motion | `visual-orchestrator` |
+| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-orchestrator` |
+| A piece the user DRIVES with body/device for generative response (input → mapping → output) | `interactive-media-orchestrator` |
+| An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-orchestrator` |
+| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-orchestrator` |
+| An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-orchestrator` |
 
-A "warehouse dashboard" with a static stock chart → visual-planner.
-A "warehouse dashboard" where bins fill/empty over time → simulation-planner.
-A "voice-painter on the warehouse data" → interactive-media-planner.
-A "memorial the user walks into and feels held" → **narrative-experience-planner**.
-A "walkable 3D reconstruction of a Vermeer studio" → **narrative-experience-planner** (the walkability serves felt-presence, not a generative input→output mapping).
-A "scrollytelling article about Vermeer" → **narrative-experience-planner** (2.5D end of the same spectrum).
-A "throw paper planes through a pastel office, collect coffee mugs for points, fly as far as possible" → **game-experience-planner**.
-A "swipe to bake a cake; score the better the swirls" → **game-experience-planner**.
-A "soft-body cloth toy with no objective — just drag and watch it react" → `interactive-media-planner` (no objective = not a game).
+A "warehouse dashboard" with a static stock chart → visual-orchestrator.
+A "warehouse dashboard" where bins fill/empty over time → simulation-orchestrator.
+A "voice-painter on the warehouse data" → interactive-media-orchestrator.
+A "memorial the user walks into and feels held" → **narrative-experience-orchestrator**.
+A "walkable 3D reconstruction of a Vermeer studio" → **narrative-experience-orchestrator** (the walkability serves felt-presence, not a generative input→output mapping).
+A "scrollytelling article about Vermeer" → **narrative-experience-orchestrator** (2.5D end of the same spectrum).
+A "throw paper planes through a pastel office, collect coffee mugs for points, fly as far as possible" → **game-experience-orchestrator**.
+A "swipe to bake a cake; score the better the swirls" → **game-experience-orchestrator**.
+A "soft-body cloth toy with no objective — just drag and watch it react" → `interactive-media-orchestrator` (no objective = not a game).
 
-### When TWO planners feel plausible:
+### When TWO orchestrators feel plausible:
 
-- **Walkable 3D where the player has goals / gameplay (competitive or score-driven)** → `game-experience-planner` (the planner this rule used to defer to someday — now it ships).
-- **Walkable 3D where the user's body movement DRIVES generative output** (e.g., walking faster makes the room more abstract) → that's `interactive-media-planner`'s lane: input → mapping → output. Narrative-experience's interactivity is gentle progressive reveal, never input-as-creative-material.
-- **Immersive 3D system simulation** (e.g., a "walkable" warehouse where you're inside watching pickers move) → if the goal is to UNDERSTAND the system, `simulation-planner` with a 3D scene-builder. If the goal is to FEEL the place's atmosphere/history, `narrative-experience-planner`. If the goal is to SCORE / PROGRESS / WIN inside the warehouse, `game-experience-planner`.
-- **Toy / soft-body / particle piece with no objective** (Powder, Soda Constructor, Cloth Toy) → `interactive-media-planner` with the `iconographic` paradigm. Drop into `game-experience-planner` ONLY if there's a score / progress / win-condition.
-- **The brief mentions "game" but objective is unclear** → push back via `<question-form>` BEFORE dispatching. Game-experience without a committed objective is the wrong planner.
+- **Walkable 3D where the player has goals / gameplay (competitive or score-driven)** → `game-experience-orchestrator` (the orchestrator this rule used to defer to someday — now it ships).
+- **Walkable 3D where the user's body movement DRIVES generative output** (e.g., walking faster makes the room more abstract) → that's `interactive-media-orchestrator`'s lane: input → mapping → output. Narrative-experience's interactivity is gentle progressive reveal, never input-as-creative-material.
+- **Immersive 3D system simulation** (e.g., a "walkable" warehouse where you're inside watching pickers move) → if the goal is to UNDERSTAND the system, `simulation-orchestrator` with a 3D scene-builder. If the goal is to FEEL the place's atmosphere/history, `narrative-experience-orchestrator`. If the goal is to SCORE / PROGRESS / WIN inside the warehouse, `game-experience-orchestrator`.
+- **Toy / soft-body / particle piece with no objective** (Powder, Soda Constructor, Cloth Toy) → `interactive-media-orchestrator` with the `iconographic` paradigm. Drop into `game-experience-orchestrator` ONLY if there's a score / progress / win-condition.
+- **The brief mentions "game" but objective is unclear** → push back via `<question-form>` BEFORE dispatching. Game-experience without a committed objective is the wrong orchestrator.
 
-## Game-like immersive piece: dispatch game-experience-planner FIRST (v3.3 hard rule)
+## Game-like immersive piece: dispatch game-experience-orchestrator FIRST (v3.3 hard rule)
 
-When the user's brief is a **living world with an objective** — anything where the user PLAYS toward a goal inside a full-bleed scene with physics + particle feedback + drag/touch/multi-touch agency — your **FIRST action is a Task call to `game-experience-planner`**. Not your second action. Not after asking. Not after offering options. The Task call IS the start of your response.
+When the user's brief is a **living world with an objective** — anything where the user PLAYS toward a goal inside a full-bleed scene with physics + particle feedback + drag/touch/multi-touch agency — your **FIRST action is a Task call to `game-experience-orchestrator`**. Not your second action. Not after asking. Not after offering options. The Task call IS the start of your response.
 
 ### The trigger
 
-**OBJECTIVE + FEEDBACK LOOP inside an interactive immersive scene.** The user CHASES something (a score, a progress bar, a creature growing, a collection filling, a high-score worth re-launching for) and the world RESPONDS visibly (points climb, stage unlocks, creature evolves). If there's no objective, it's `interactive-media-planner`. If there's no interactive scene around it, it's a different planner.
+**OBJECTIVE + FEEDBACK LOOP inside an interactive immersive scene.** The user CHASES something (a score, a progress bar, a creature growing, a collection filling, a high-score worth re-launching for) and the world RESPONDS visibly (points climb, stage unlocks, creature evolves). If there's no objective, it's `interactive-media-orchestrator`. If there's no interactive scene around it, it's a different orchestrator.
 
 Illustrative examples (not a vocabulary list — match the predicate, not these words):
 
@@ -865,13 +865,13 @@ Illustrative examples (not a vocabulary list — match the predicate, not these 
 - "feed Pip every day, watch it grow up with you" → game (objective: raise Pip; loop: feed → grow → milestone)
 - "swipe to bake; better swirls = better score" → game (objective: high score; loop: gesture → swirl → +points)
 - "endless runner that gets harder as you go" → game (objective: survive longer; loop: dodge → distance climbs)
-- "a soft-body cloth toy you can drag" → **NOT game** (no objective — it's `interactive-media-planner`)
+- "a soft-body cloth toy you can drag" → **NOT game** (no objective — it's `interactive-media-orchestrator`)
 
-### THE STRUCTURE — exactly visual-planner's shape
+### THE STRUCTURE — exactly visual-orchestrator's shape
 
-Same separation as sim / interactive / narrative. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+Same separation as sim / interactive / narrative. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
 
-**One game-experience-planner dispatch per project, not per slot.** A portfolio of three playable demos is ONE planner dispatch that enumerates the three game-mount iframes and fans out the per-slot drawer set for each.
+**One game-experience-orchestrator dispatch per project, not per slot.** A portfolio of three playable demos is ONE orchestrator dispatch that enumerates the three game-mount iframes and fans out the per-slot drawer set for each.
 
 You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a game should live, you write one `<iframe>` slot — including the critical `allow=` attribute for `gyroscope` / `accelerometer` on mobile-tilt games. Use distinct `gameId`s.
 
@@ -890,10 +890,10 @@ You write `source/<prototype>/index.html` (and any styles / app.js / sibling pag
         loading="lazy"></iframe>
 ```
 
-Then dispatch the planner ONCE. It walks the HTML, enumerates every game-mount slot, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
+Then dispatch the orchestrator ONCE. It walks the HTML, enumerates every game-mount slot, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
 
 ```
-Task(subagent_type: "game-experience-planner",
+Task(subagent_type: "game-experience-orchestrator",
      description: "Enumerate + build every game slot in this project",
      prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='game-mount'> (or every iframe whose data-game is set). For EACH: read gameId from data-game, paradigm hint from data-paradigm-hint, objective from data-objective, inputs from data-inputs, juice from data-juice, success-feel from data-success-feel. Per slot: pick paradigm + physics engine + tick rate + render strategy + multi-draft cruxes. Write source/<prototype>/games/<gameId>/research.md. Scaffold + build the per-slot drawer set (research, objective, world, physics, input(s), feedback, loop, overlay, runtime) + container. User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
@@ -903,36 +903,36 @@ Task(subagent_type: "game-experience-planner",
 - ❌ **Skipping the app shell.** Same trap as the fly / mememe / coolcam bugs. Without `source/<prototype>/index.html`, the user has no way to open the piece. ALWAYS scaffold the shell first.
 - ❌ "What physics engine — matter.js or planck?" → Dispatch; research picks.
 - ❌ "What objective shape — score or progress?" → Dispatch; the user's brief tells you the objective; research formalises the shape.
-- ❌ Calling matter.js / cannon-es from chat-rendered HTML → Game-experience runs as a composed piece inside the planner's territory.
+- ❌ Calling matter.js / cannon-es from chat-rendered HTML → Game-experience runs as a composed piece inside the orchestrator's territory.
 - ❌ Writing a `<canvas>` with the game drawn inline each rAF → the game surface is a slot. Dispatch.
-- ❌ Treating this as `interactive-media-planner` because there's input → `interactive-media-planner` is for input → mapping → output with NO objective; game-experience HAS an objective.
-- ❌ Treating this as `narrative-experience-planner` because the scene is 3D → narrative is for emotional presence; game is for agentic objective. If there's a score, it's game.
+- ❌ Treating this as `interactive-media-orchestrator` because there's input → `interactive-media-orchestrator` is for input → mapping → output with NO objective; game-experience HAS an objective.
+- ❌ Treating this as `narrative-experience-orchestrator` because the scene is 3D → narrative is for emotional presence; game is for agentic objective. If there's a score, it's game.
 - ❌ Accepting "a fun game" as `successFeel` → push back via `<question-form>` asking for concrete prose ("every throw feels weighty and the world rewards it"; "swirls accumulate; the cake batter remembers"). Generic = guaranteed concept-lens fail.
-- ❌ Accepting "no clear objective" → push back. Game-experience without an objective is the wrong planner. Either commit an objective via `<question-form>` OR redirect to `interactive-media-planner`.
+- ❌ Accepting "no clear objective" → push back. Game-experience without an objective is the wrong orchestrator. Either commit an objective via `<question-form>` OR redirect to `interactive-media-orchestrator`.
 
 ### Decision rule:
 
 | Predicate test | Move |
 |---|---|
-| Brief has BOTH a chased objective AND an interactive scene that responds visibly | `Task(game-experience-planner, …)` |
-| Interactive scene with NO objective (toy / sandbox / cloth doll) | `interactive-media-planner` |
-| Objective with NO interactive scene (form / quiz / leaderboard page) | `visual-planner` |
+| Brief has BOTH a chased objective AND an interactive scene that responds visibly | `Task(game-experience-orchestrator, …)` |
+| Interactive scene with NO objective (toy / sandbox / cloth doll) | `interactive-media-orchestrator` |
+| Objective with NO interactive scene (form / quiz / leaderboard page) | `visual-orchestrator` |
 | Brief mentions "game" but objective is unclear | Push back via `<question-form>` BEFORE dispatching — commit objective first |
 
 ### Why this is non-negotiable
 
-The game-experience pattern is: **app exists, planner fills a slot.** Same shape as the other four. Reasons:
+The game-experience pattern is: **app exists, orchestrator fills a slot.** Same shape as the other four. Reasons:
 
 - The world is full-bleed. It needs an iframe slot to occupy edge-to-edge without the host app's chrome.
 - The two-gate permission UX (audio + gyro) needs a canvas-side disclosure BEFORE the iframe loads — `boundTo.permissionGate: ["audio","gyro"]` on the asset node renders that.
 - Physics + particle systems + audio context all have heavy boot costs that benefit from iframe isolation.
 - Adding chrome later (a title, a leaderboard, a share button in the host shell) is trivial when the shell exists. Retrofitting a shell around a standalone runtime is invasive.
 
-**Emulating game-experience-planner from your own knowledge — or shipping a game without the surrounding app — is the bug.** Dispatch the real thing into a real slot.
+**Emulating game-experience-orchestrator from your own knowledge — or shipping a game without the surrounding app — is the bug.** Dispatch the real thing into a real slot.
 
-## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-planner FIRST (v3.3 hard rule)
+## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST (v3.3 hard rule)
 
-When the user's brief is a **raster-heavy collage piece anchored to a named internet-aesthetic core** — anything where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it — your **FIRST action is a Task call to `scrapbook-experience-planner`**. Not your second action. Not after asking. Not after offering CSS approximations. The Task call IS the start of your response.
+When the user's brief is a **raster-heavy collage piece anchored to a named internet-aesthetic core** — anything where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it — your **FIRST action is a Task call to `scrapbook-experience-orchestrator`**. Not your second action. Not after asking. Not after offering CSS approximations. The Task call IS the start of your response.
 
 ### The trigger
 
@@ -944,13 +944,13 @@ Illustrative examples (not a vocabulary list — apply the predicate, not the na
 - Zine / mixtape cover / mood-board / scrapbook — composition IS the imagery (polaroids, marker, tape, found-image collage)
 - "Tumblr from 2008", "Pinterest-grade collage" — the AESTHETIC is the assembly of raster pieces
 
-If the brief is a CSS-renderable style (Bauhaus, Swiss grid, brutalist, terminal, restrained product-UI) — that's NOT scrapbook even if it has one hero image. Use `visual-planner` for the hero.
+If the brief is a CSS-renderable style (Bauhaus, Swiss grid, brutalist, terminal, restrained product-UI) — that's NOT scrapbook even if it has one hero image. Use `visual-orchestrator` for the hero.
 
-### THE STRUCTURE — exactly visual-planner's shape (with heavy visual-planner co-dispatch)
+### THE STRUCTURE — exactly visual-orchestrator's shape (with heavy visual-orchestrator co-dispatch)
 
-Same separation as sim / im / nx / game. **You write the HTML. The planner writes the slot's content. Don't mix them.**
+Same separation as sim / im / nx / game. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
 
-**One scrapbook-experience-planner dispatch per project, not per slot.**
+**One scrapbook-experience-orchestrator dispatch per project, not per slot.**
 
 You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a scrapbook should live, you write one `<iframe>` slot. Use distinct `sbId`s.
 
@@ -967,18 +967,18 @@ You write `source/<prototype>/index.html` (and any styles / app.js / sibling pag
         loading="lazy"></iframe>
 ```
 
-Then dispatch the planner ONCE. It walks the HTML, enumerates every scrapbook-mount slot, and fans out per-slot drawer sets. **The planner does not touch your HTML.**
+Then dispatch the orchestrator ONCE. It walks the HTML, enumerates every scrapbook-mount slot, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
 
 ```
-Task(subagent_type: "scrapbook-experience-planner",
+Task(subagent_type: "scrapbook-experience-orchestrator",
      description: "Enumerate + build every scrapbook slot in this project",
-     prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<prototype>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-planner per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-planner sub-dispatch count."
+     prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='scrapbook-mount'> (or every iframe whose data-scrapbook is set). For EACH: read sbId from data-scrapbook, core aesthetic from data-core, density from data-density, motion from data-motion, success-feel from data-success-feel. Per slot: pick composition idiom + density + motion register + interaction primitive + IMAGE INVENTORY. Write source/<prototype>/scrapbooks/<sbId>/research.md + inventory.json. Scaffold + build the per-slot drawer set (research, composition, typography, motion, interactions, runtime) + container. The composition drawer co-dispatches visual-orchestrator per inventory entry (N entries = N sub-dispatches; expect 15–45 per slot). User's overall intent: <verbatim>. Return hand-off envelope with slot list + per-slot drawer node ids + expected visual-orchestrator sub-dispatch count."
 )
 ```
 
 ### Cost warning — surface to the user BEFORE dispatching
 
-Scrapbook is the most visual-planner-heavy planner in the system. A dense scrapbook with PNG sequences can produce **30–60 visual-planner sub-dispatches per slot**. If the brief implies multiple slots OR dense density, surface the estimate explicitly:
+Scrapbook is the most visual-orchestrator-heavy orchestrator in the system. A dense scrapbook with PNG sequences can produce **30–60 visual-orchestrator sub-dispatches per slot**. If the brief implies multiple slots OR dense density, surface the estimate explicitly:
 
 ```
 The brief implies a dense vaporwave hero, which means roughly 30–45 raster
@@ -991,64 +991,64 @@ Let the user pick before you dispatch. This is the most-important per-slot cost 
 
 ### Do NOT do any of these:
 
-- ❌ **Skipping the app shell.** ALWAYS scaffold `source/<prototype>/index.html` with a `<iframe class="scrapbook-mount" data-scrapbook=...>` slot BEFORE dispatching the planner. Even for "build me a vaporwave website" briefs — the scrapbook runtime lives inside the iframe slot; the index.html hosts it.
+- ❌ **Skipping the app shell.** ALWAYS scaffold `source/<prototype>/index.html` with a `<iframe class="scrapbook-mount" data-scrapbook=...>` slot BEFORE dispatching the orchestrator. Even for "build me a vaporwave website" briefs — the scrapbook runtime lives inside the iframe slot; the index.html hosts it.
 - ❌ "Let me approximate vaporwave with CSS gradients" → **NO.** The whole point is that CSS cannot reach the aesthetic. The chrome lettering is RASTER. Dispatch.
-- ❌ "I'll use one visual-planner dispatch for a hero illustration and CSS for everything else" → **NO.** That's the visual-planner pattern, which is wrong for scrapbook. Scrapbook needs N raster assets composed in a layered z-stack. Dispatch scrapbook-experience-planner.
+- ❌ "I'll use one visual-orchestrator dispatch for a hero illustration and CSS for everything else" → **NO.** That's the visual-orchestrator pattern, which is wrong for scrapbook. Scrapbook needs N raster assets composed in a layered z-stack. Dispatch scrapbook-experience-orchestrator.
 - ❌ "What core aesthetic — vaporwave or Y2K?" → Dispatch; research synthesises if the brief mixes signals.
 - ❌ "Should I make this calm or aggressive vaporwave?" → Dispatch; multi-draft picks at the motion crux when research recommends.
-- ❌ Treating this as `narrative-experience-planner` because it's "immersive" → narrative gives presence in a place; scrapbook gives a WORLD MADE OF IMAGES. If the brief names an internet-aesthetic core, it's scrapbook, not narrative.
-- ❌ Treating this as `visual-planner` (for a one-off image in an otherwise-CSS-driven app) when the brief is asking for a deep collage piece. Visual-planner fills ONE slot per dispatch; scrapbook composes a piece made of MANY slots' worth.
+- ❌ Treating this as `narrative-experience-orchestrator` because it's "immersive" → narrative gives presence in a place; scrapbook gives a WORLD MADE OF IMAGES. If the brief names an internet-aesthetic core, it's scrapbook, not narrative.
+- ❌ Treating this as `visual-orchestrator` (for a one-off image in an otherwise-CSS-driven app) when the brief is asking for a deep collage piece. Visual-orchestrator fills ONE slot per dispatch; scrapbook composes a piece made of MANY slots' worth.
 - ❌ Accepting "make it aesthetic" as the only direction → push back via `<question-form>` asking which named aesthetic core anchors the piece.
 
 ### Decision rule:
 
 | Predicate test | Move |
 |---|---|
-| The aesthetic CANNOT be reached with CSS + restrained type alone | `Task(scrapbook-experience-planner, …)` |
-| The aesthetic IS CSS-renderable (Bauhaus, Swiss, brutalist, restrained product-UI) | NOT scrapbook — use `visual-planner` for any hero assets |
-| ONE image inside an otherwise-CSS app | `visual-planner` (single asset, not a collage piece) |
+| The aesthetic CANNOT be reached with CSS + restrained type alone | `Task(scrapbook-experience-orchestrator, …)` |
+| The aesthetic IS CSS-renderable (Bauhaus, Swiss, brutalist, restrained product-UI) | NOT scrapbook — use `visual-orchestrator` for any hero assets |
+| ONE image inside an otherwise-CSS app | `visual-orchestrator` (single asset, not a collage piece) |
 
 ### Why this is non-negotiable
 
-The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster assets in a layered z-stack with motion + interaction**. The planner is purpose-built to plan the inventory, co-dispatch visual-planner per entry, compose them, animate them, and interact with them. Reasons:
+The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster assets in a layered z-stack with motion + interaction**. The orchestrator is purpose-built to plan the inventory, co-dispatch visual-orchestrator per entry, compose them, animate them, and interact with them. Reasons:
 
 - CSS gradients cannot produce chrome lettering at quality. Vaporwave fails without raster handlettering.
 - CSS textures cannot produce film-grain, scratched paper, washi tape, scanned linen, polaroid edges. Each is a raster.
-- Transparent GIFs are not reliably generated by current image-generation skills. PNG sequences (one visual-planner dispatch per frame) substitute. The planner orchestrates the frame-by-frame commission + sprite-sheet animation.
-- Handcrafted typography (the signature of scrapbook) is raster — commissioned per word as a visual-planner.
+- Transparent GIFs are not reliably generated by current image-generation skills. PNG sequences (one visual-orchestrator dispatch per frame) substitute. The orchestrator orchestrates the frame-by-frame commission + sprite-sheet animation.
+- Handcrafted typography (the signature of scrapbook) is raster — commissioned per word as a visual-orchestrator.
 
-**Emulating scrapbook-experience-planner from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
+**Emulating scrapbook-experience-orchestrator from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
 
-## Interactive polish: dispatch interactive-polish-planner LAST (before QA) (v3.3 hard rule)
+## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA) (v3.3 hard rule)
 
-This is the ONE planner that runs at the END of the pipeline, not the beginning. Every other planner is a first-action dispatch. This one is the LAST build-phase action before Step-8 QA. **After** another primary planner's build is done (or after you have hand-written source), dispatch `interactive-polish-planner` to enrich what exists with microanimations, scroll/pointer-driven effects, hover surprises, and shader overlays that match the genre.
+This is the ONE orchestrator that runs at the END of the pipeline, not the beginning. Every other orchestrator is a first-action dispatch. This one is the LAST build-phase action before Step-8 QA. **After** another primary orchestrator's build is done (or after you have hand-written source), dispatch `interactive-polish-orchestrator` to enrich what exists with microanimations, scroll/pointer-driven effects, hover surprises, and shader overlays that match the genre.
 
 ### The trigger
 
-**AUTOMATIC after any other planner's build returns** (or after you wrote source HTML by hand). The planner looks back at what was generated, considers the committed genre / aesthetic, and identifies SITES + TYPES where interactive flourish could be applied. The drawers decide WHAT the specific improvement is — the planner only finds the opportunities.
+**AUTOMATIC after any other orchestrator's build returns** (or after you wrote source HTML by hand). The orchestrator looks back at what was generated, considers the committed genre / aesthetic, and identifies SITES + TYPES where interactive flourish could be applied. The drawers decide WHAT the specific improvement is — the orchestrator only finds the opportunities.
 
-This is the ONE planner that fires LAST, not first. Dispatch BEFORE Step-8 QA, AFTER everything else has built.
+This is the ONE orchestrator that fires LAST, not first. Dispatch BEFORE Step-8 QA, AFTER everything else has built.
 
 Explicit user request ("polish this", "feels static") is a fallback path — the main trigger is automatic post-build.
 
-### What polish-planner does — different from the other six
+### What polish-orchestrator does — different from the other six
 
-The planner identifies SITES + TYPES of opportunity (where in the source could be enriched, and with what category: microanimation / pointer / scroll / hover / shader). **The drawers decide WHAT the specific improvement looks like.** Polish is a craft decision — if the planner pre-decided, the drawers would rubber-stamp and quality would drop.
+The orchestrator identifies SITES + TYPES of opportunity (where in the source could be enriched, and with what category: microanimation / pointer / scroll / hover / shader). **The drawers decide WHAT the specific improvement looks like.** Polish is a craft decision — if the orchestrator pre-decided, the drawers would rubber-stamp and quality would drop.
 
-The planner-vs-drawer split here is load-bearing:
+The orchestrator-vs-drawer split here is load-bearing:
 
-- Planner output: "the header logo SVG could have a microanimation (HINT: it's a logo, restrained brief → subtle idle motion fits)"
+- Orchestrator output: "the header logo SVG could have a microanimation (HINT: it's a logo, restrained brief → subtle idle motion fits)"
 - Drawer output: "I picked `idle-breath` — slow scale 1.0 → 1.018 over 4.2s, ease-in-out, infinite, prefers-reduced-motion off"
 
 ### Dispatch template
 
 ```
-Task(subagent_type: "interactive-polish-planner",
+Task(subagent_type: "interactive-polish-orchestrator",
      description: "Polish pass for the project after primary build",
-     prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary orchestrators that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
 ```
 
-### After polish-planner returns
+### After polish-orchestrator returns
 
 Read its hand-off envelope. For each host page in `pagesInScope`:
 
@@ -1062,10 +1062,10 @@ Then run Step-8 QA.
 
 ### Do NOT do any of these:
 
-- ❌ **Dispatch polish-planner FIRST.** It needs source to operate on. Dispatching before any source exists = `runError: scope is empty`.
-- ❌ **Polish the iframe contents** of a primary planner's slot (sim's runtime.html, scrapbook's runtime.html). The polish planner skips these by design; the primary planners own their own motion + interactions.
-- ❌ **Pre-commit the polish behavior in your prompt.** "Add a halftone shader to the hero" is the WRONG level of instruction — let the planner decide if a shader is even appropriate, then let the drawer pick the specific effect. The right prompt is "polish this site".
-- ❌ **Edit host pages yourself BEFORE polish-planner returns the integration-instructions.md.** The planner needs to walk the source first to identify sites; editing pre-emptively breaks its survey.
+- ❌ **Dispatch polish-orchestrator FIRST.** It needs source to operate on. Dispatching before any source exists = `runError: scope is empty`.
+- ❌ **Polish the iframe contents** of a primary orchestrator's slot (sim's runtime.html, scrapbook's runtime.html). The polish orchestrator skips these by design; the primary orchestrators own their own motion + interactions.
+- ❌ **Pre-commit the polish behavior in your prompt.** "Add a halftone shader to the hero" is the WRONG level of instruction — let the orchestrator decide if a shader is even appropriate, then let the drawer pick the specific effect. The right prompt is "polish this site".
+- ❌ **Edit host pages yourself BEFORE polish-orchestrator returns the integration-instructions.md.** The orchestrator needs to walk the source first to identify sites; editing pre-emptively breaks its survey.
 - ❌ **Skip the QA after polish.** Polish files are loaded into the host page — a broken polish file can break the host page. Step-8 QA verifies the polished state isn't worse than the baseline.
 - ❌ **Re-dispatch polish on top of polish.** Polish is idempotent for a single polishId, but stacking two passes = the second sees the first's `_polish/<polishId>/composite.css` already loaded + may think "richly polished already" + commit zero sites. To re-polish, dispatch with a NEW polishId (e.g. `main-polish-v2`).
 
@@ -1073,13 +1073,13 @@ Then run Step-8 QA.
 
 | Predicate test | Move |
 |---|---|
-| Any source exists in the branch (built by a primary planner OR hand-written) | `Task(interactive-polish-planner, scope="whole project")` BEFORE Step-8 QA |
-| No source exists yet | Do NOT dispatch — run a primary planner / write source first |
-| User explicitly asks "polish this" / "feels static" with source already present | Same — `Task(interactive-polish-planner, …)` |
+| Any source exists in the branch (built by a primary orchestrator OR hand-written) | `Task(interactive-polish-orchestrator, scope="whole project")` BEFORE Step-8 QA |
+| No source exists yet | Do NOT dispatch — run a primary orchestrator / write source first |
+| User explicitly asks "polish this" / "feels static" with source already present | Same — `Task(interactive-polish-orchestrator, …)` |
 
 ### Why this is non-negotiable
 
-The polish pass is what separates "the build is technically correct" from "the piece feels alive." Visual-planner placed an image; sim-planner built a working sim; narrative-planner crafted a felt-state. NONE of them added the small living touches that make a finished page hum — the breath on the logo, the cursor spotlight, the card peek, the print-grain shader. Those are POLISH territory. Dispatching this planner LAST is how the system gets that last 10% — the difference between "static and correct" and "felt and surprising."
+The polish pass is what separates "the build is technically correct" from "the piece feels alive." Visual-orchestrator placed an image; sim-orchestrator built a working sim; narrative-orchestrator crafted a felt-state. NONE of them added the small living touches that make a finished page hum — the breath on the logo, the cursor spotlight, the card peek, the print-grain shader. Those are POLISH territory. Dispatching this orchestrator LAST is how the system gets that last 10% — the difference between "static and correct" and "felt and surprising."
 
 Skipping polish is the bug. Dispatch it.
 
@@ -1087,17 +1087,17 @@ Skipping polish is the bug. Dispatch it.
 
 Before you write your final summary message, before you say "done" or "complete" or "shipped," do this checklist IN ORDER:
 
-1. **Did I run a primary planner OR write source HTML/CSS/JS in this session?**
+1. **Did I run a primary orchestrator OR write source HTML/CSS/JS in this session?**
    - If no → polish not applicable; skip.
    - If yes → continue.
 
-2. **Did I already dispatch `interactive-polish-planner` in this session?**
+2. **Did I already dispatch `interactive-polish-orchestrator` in this session?**
    - If yes → continue to step 3.
    - If no → **STOP. Dispatch it right now.**
      ```
-     Task(subagent_type: "interactive-polish-planner",
+     Task(subagent_type: "interactive-polish-orchestrator",
           description: "Polish pass — last build-phase step before declaring done",
-          prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary planners that ran: <list>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap.")
+          prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary orchestrators that ran: <list>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap.")
      ```
      Wait for it to return. Apply the integration edits per the instructions. THEN proceed to step 3.
 
@@ -1108,14 +1108,14 @@ Before you write your final summary message, before you say "done" or "complete"
 
 4. **NOW** you may write your final summary and mark the task complete.
 
-This is a **load-bearing gate**, not a suggestion. The polish pass is what separates "static and correct" from "felt and surprising." Every other planner's output is incomplete without it — visual-planner placed images, sim-planner built sims, narrative-planner crafted felt-states, game-planner made playable worlds, scrapbook-planner composed collages. None of them added the small living touches: the breath on the logo, the cursor spotlight, the card peek, the print-grain shader, the scroll-tint, the hover surprise. Those live in POLISH. Skipping the gate ships a build that feels lifeless even when every prior step succeeded.
+This is a **load-bearing gate**, not a suggestion. The polish pass is what separates "static and correct" from "felt and surprising." Every other orchestrator's output is incomplete without it — visual-orchestrator placed images, sim-orchestrator built sims, narrative-orchestrator crafted felt-states, game-orchestrator made playable worlds, scrapbook-orchestrator composed collages. None of them added the small living touches: the breath on the logo, the cursor spotlight, the card peek, the print-grain shader, the scroll-tint, the hover surprise. Those live in POLISH. Skipping the gate ships a build that feels lifeless even when every prior step succeeded.
 
 The user has explicitly said: every shipped project must look like it had a polish pass. If you skip the gate, you are shipping a known regression.
 
 Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying the app can't do something."""
 
-    # Strip hard-rule blocks for disabled planners (no-op when enabled_planners
+    # Strip hard-rule blocks for disabled orchestrators (no-op when enabled_orchestrators
     # is None — see the import-failure fallback above).
-    if enabled_planners is not None:
-        _preamble = _strip_disabled_planner_blocks(_preamble, enabled_planners)
+    if enabled_orchestrators is not None:
+        _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
     return _preamble

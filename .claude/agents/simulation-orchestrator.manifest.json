@@ -1,18 +1,18 @@
 {
-  "id": "simulation-planner",
+  "id": "simulation-orchestrator",
   "label": "Simulation",
   "tagline": "Intuitive visualisation of real-world physical or temporal systems",
   "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName": "simulation-planner",
-  "playbookPath": ".claude/agents/simulation-planner.md",
+  "subagentName": "simulation-orchestrator",
+  "playbookPath": ".claude/agents/simulation-orchestrator.md",
   "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 3d-environment / iconographic-anim / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix.",
   "triggers": [
     {
       "mode": "chat",
       "title": "build an app",
-      "rule": "User says \"build a web app / dashboard / page that monitors X system\" with app-framing words. Top-level Claude scaffolds the app shell first (with sim-placeholder slot), then dispatches simulation-planner per slot . After the planner returns the hand-off envelope, top-level Claude drives the build phase per simulation-planner.md \u00a75.1.0 and embeds the runtime per \u00a75.1.1.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-planner'"
+      "rule": "User says \"build a web app / dashboard / page that monitors X system\" with app-framing words. Top-level Claude scaffolds the app shell first (with sim-placeholder slot), then dispatches simulation-orchestrator per slot . After the orchestrator returns the hand-off envelope, top-level Claude drives the build phase per simulation-orchestrator.md \u00a75.1.0 and embeds the runtime per \u00a75.1.1.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Simulation surfaces: scaffold-then-orchestrator'"
     }
   ],
   "dispatches": {
@@ -54,7 +54,7 @@
     ]
   },
   "documents": {
-    "designDoc": "docs/features/simulation-and-interactive-planners.md",
+    "designDoc": "docs/features/simulation-and-interactive-orchestrators.md",
     "calibration": ".claude/lens-calibration/fixtures/sim-*"
   }
 }

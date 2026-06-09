@@ -1,18 +1,18 @@
 {
-  "id": "interactive-polish-planner",
+  "id": "interactive-polish-orchestrator",
   "label": "Interactive polish",
-  "tagline": "Post-pass enrichment — microanimations, scroll/pointer effects, hover surprises, shader overlays — the planner identifies WHERE; the drawers decide WHAT",
+  "tagline": "Post-pass enrichment — microanimations, scroll/pointer effects, hover surprises, shader overlays — the orchestrator identifies WHERE; the drawers decide WHAT",
   "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName": "interactive-polish-planner",
-  "playbookPath": ".claude/agents/interactive-polish-planner.md",
-  "description": "The SEVENTH planner sibling, with a DIFFERENT pipeline position. The other six run as the user's FIRST action (chat-Claude dispatches them up-front); this one runs LAST — after another primary planner's build phase has completed (or after chat-Claude has hand-written source), AFTER any content/structure is in place, BEFORE Step-8 QA. Reads existing source HTML/CSS/JS + the committed genre/aesthetic, identifies SITES of opportunity for interactive enrichment, commits a polish register (subtle / playful / theatrical based on genre), and dispatches drawers per opportunity type. THE LOAD-BEARING DISCIPLINE: the planner identifies WHERE + WHAT-TYPE of opportunity (microanimation / scroll-or-pointer-driven / hover-surprise / shader-overlay); the DRAWERS decide WHAT the specific improvement looks like (which microanimation, which shader effect, which hover reveal). Polish is a craft decision; if the planner pre-decides, drawers become rubber-stampers and quality drops. Operates on the whole project — no slot tag, no per-slot fanout. Writes supplemental files to source/<branch>/_polish/<polishId>/ so existing source stays intact; the runtime drawer writes integration-instructions.md describing the minimal <link>/<script> edits the caller applies to each host page. Heavily co-dispatches visual-planner with the shader skill for procedural overlays (halftone print, CRT scanlines, paper grain, glitch, dither). Drawers MAY be skipped — only the opportunity types research flagged dispatch. Pieces that are already richly interactive may commit siteCount=0 (a legitimate outcome).",
+  "subagentName": "interactive-polish-orchestrator",
+  "playbookPath": ".claude/agents/interactive-polish-orchestrator.md",
+  "description": "The SEVENTH orchestrator sibling, with a DIFFERENT pipeline position. The other six run as the user's FIRST action (chat-Claude dispatches them up-front); this one runs LAST — after another primary orchestrator's build phase has completed (or after chat-Claude has hand-written source), AFTER any content/structure is in place, BEFORE Step-8 QA. Reads existing source HTML/CSS/JS + the committed genre/aesthetic, identifies SITES of opportunity for interactive enrichment, commits a polish register (subtle / playful / theatrical based on genre), and dispatches drawers per opportunity type. THE LOAD-BEARING DISCIPLINE: the orchestrator identifies WHERE + WHAT-TYPE of opportunity (microanimation / scroll-or-pointer-driven / hover-surprise / shader-overlay); the DRAWERS decide WHAT the specific improvement looks like (which microanimation, which shader effect, which hover reveal). Polish is a craft decision; if the orchestrator pre-decides, drawers become rubber-stampers and quality drops. Operates on the whole project — no slot tag, no per-slot fanout. Writes supplemental files to source/<branch>/_polish/<polishId>/ so existing source stays intact; the runtime drawer writes integration-instructions.md describing the minimal <link>/<script> edits the caller applies to each host page. Heavily co-dispatches visual-orchestrator with the shader skill for procedural overlays (halftone print, CRT scanlines, paper grain, glitch, dither). Drawers MAY be skipped — only the opportunity types research flagged dispatch. Pieces that are already richly interactive may commit siteCount=0 (a legitimate outcome).",
   "triggers": [
     {
       "mode": "chat",
       "title": "Post-pass enrichment (LAST action before QA)",
-      "rule": "After ANY primary planner build phase completes (or after chat-Claude wrote source by hand via /prototype), BEFORE Step-8 QA, chat-Claude dispatches interactive-polish-planner with project-wide scope. The planner walks the resulting source, identifies enrichment sites per the genre, commits a polish pass. Also fires on explicit user request ('polish this' / 'make it feel more alive' / 'feels static'). One consistent flow — no mode branching.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-planner LAST (before QA)'"
+      "rule": "After ANY primary orchestrator build phase completes (or after chat-Claude wrote source by hand via /prototype), BEFORE Step-8 QA, chat-Claude dispatches interactive-polish-orchestrator with project-wide scope. The orchestrator walks the resulting source, identifies enrichment sites per the genre, commits a polish pass. Also fires on explicit user request ('polish this' / 'make it feel more alive' / 'feels static'). One consistent flow — no mode branching.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA)'"
     }
   ],
   "dispatches": {
@@ -27,7 +27,7 @@
       "polish-runtime-composer"
     ],
     "collaborators": [
-      "visual-planner"
+      "visual-orchestrator"
     ],
     "lenses": [
       "craft-lens",
@@ -54,7 +54,7 @@
     ]
   },
   "documents": {
-    "designDoc": "docs/features/interactive-polish-planner.md",
+    "designDoc": "docs/features/interactive-polish-orchestrator.md",
     "calibration": ".claude/lens-calibration/fixtures/polish-*"
   }
 }

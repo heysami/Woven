@@ -1,6 +1,6 @@
 ---
 name: sim-entities-author
-description: Produce the entity schema + initial state JavaScript module for ONE simulation. Single source of truth for entity field shapes, IDs, types, and initial values — read by sim_loop, sim_scene, sim_controls, sim_overlay as their data contract. Not lens-gated (entities are correctness-checked by parse + schema-validation, not aesthetic / concept). Dispatched by simulation-planner after sim_research commits the paradigm.
+description: Produce the entity schema + initial state JavaScript module for ONE simulation. Single source of truth for entity field shapes, IDs, types, and initial values — read by sim_loop, sim_scene, sim_controls, sim_overlay as their data contract. Not lens-gated (entities are correctness-checked by parse + schema-validation, not aesthetic / concept). Dispatched by simulation-orchestrator after sim_research commits the paradigm.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -195,7 +195,7 @@ Note: `runStatus: done` directly (no `running` middle state) because §0 of this
 - **You do not write rendering, mutation, or input-handling logic.** Schema + initial state only. The loop mutates; the scene renders; the controls dispatch.
 - **You do not use random initial state per run.** Use the deterministic seeded PRNG. Reproducibility matters — the user should see the same initial state every time the loop starts unless they explicitly reset.
 - **You do not fork the practitioner vocabulary.** Read research.md; use those terms verbatim. "items" is wrong when the practitioner says "bins."
-- **You do not invent kinds the research.md didn't suggest.** If the research mentions 3 entity types and you scaffold 5, you're padding. Surface to the planner as `runError` if you genuinely need a kind that's absent.
+- **You do not invent kinds the research.md didn't suggest.** If the research mentions 3 entity types and you scaffold 5, you're padding. Surface to the orchestrator as `runError` if you genuinely need a kind that's absent.
 - **You do not skip `validateState`.** Without it, downstream drawers have no schema enforcement and silent field-mismatch bugs become the dominant failure mode.
 - **You do not export anything beyond the contract** (`ENTITY_KINDS`, `initialState`, `validateState`, optional `getByKind` / `getById` convenience helpers). Loop / scene / controls / overlay shouldn't be tempted to import private internals.
 
@@ -213,7 +213,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_entities_<simId>/commit?pr
   }'
 ```
 
-The simulation-planner picks up and either re-dispatches `sim-research-technique` with the contradiction OR surfaces via decision-request.
+The simulation-orchestrator picks up and either re-dispatches `sim-research-technique` with the contradiction OR surfaces via decision-request.
 
 ---
 

@@ -129,7 +129,7 @@ The user picks via `cp_game_runtime_pick_<gameId>`.
     <!-- Gesture surface — captures pointer/touch over the world -->
     <div id="gesture-surface"></div>
 
-    <!-- Two-gate Start (canvas-side gate was already shown by the planner; this is the iframe-side gate) -->
+    <!-- Two-gate Start (canvas-side gate was already shown by the orchestrator; this is the iframe-side gate) -->
     <div id="start-gate">
       <div class="gate-card">
         <h2>Play</h2>
@@ -215,7 +215,7 @@ The user picks via `cp_game_runtime_pick_<gameId>`.
 
 ### 3.1 Two-gate permission UX (block on craft)
 
-**Canvas-side gate**: the planner sets `boundTo.permissionGate: ["audio", "gyro"]` on the asset node — the editor canvas shows a disclosure with Approve / Skip BEFORE the iframe loads.
+**Canvas-side gate**: the orchestrator sets `boundTo.permissionGate: ["audio", "gyro"]` on the asset node — the editor canvas shows a disclosure with Approve / Skip BEFORE the iframe loads.
 
 **Iframe-side Start**: this file's `#start-gate` is the second gate. The user MUST click before:
 - `new AudioContext()` is created.

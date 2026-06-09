@@ -8,7 +8,7 @@ Why Canvas 2D and not WebGL? Lower setup cost, broader compatibility, easier to 
 
 ## Input (envelope only)
 
-See [`1V-visual-planner.md`](1V-visual-planner.md) §Step 5.
+See [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5.
 
 ```
 pipeline=["prompt","canvas-skill"]

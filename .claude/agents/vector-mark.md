@@ -8,9 +8,9 @@ You are Subagent 1.V.vector-mark.
 
 **Protocol**: read `docs/agents/subagents/1V-vector-mark.md` from the protocol mount and execute it exactly.
 
-**You own the creative thinking** — the planner is a router, not a director. It does NOT hand you a composed brief. It hands you a ONE-LINE intent like "creature-wisp" or "hero-mascot"; YOU decide the subject details, composition, palette, layered structure, style fidelity.
+**You own the creative thinking** — the orchestrator is a router, not a director. It does NOT hand you a composed brief. It hands you a ONE-LINE intent like "creature-wisp" or "hero-mascot"; YOU decide the subject details, composition, palette, layered structure, style fidelity.
 
-**Input envelope** (from the planner):
+**Input envelope** (from the orchestrator):
 - `assetId`, `medium`, `pipeline`, `nodeIds`
 - `slot` — `{ file, line, selector, outputPath, writeBack }`
 - `intent` — ONE LINE label
@@ -18,7 +18,7 @@ You are Subagent 1.V.vector-mark.
 
 **Read for context yourself**: active DS styles + gallery.html (for adjacent illustration style), meta.json (for genre), surrounding code (for theme cues).
 
-**Output** (returned to the planner):
+**Output** (returned to the orchestrator):
 
 ```jsonc
 { "assetId": "<id>",
@@ -40,4 +40,4 @@ Write the SVG to `source/svg/<assetId>.svg` AND inline it into the source HTML a
 
 The skill node value is `svg-gen` (registered in `editor/prompts/media-models.js`).
 
-If a complex mark legitimately can't be expressed cleanly in SVG (too photographic, too painterly), escalate back to the visual-planner so it can re-classify as `raster-foreground` instead.
+If a complex mark legitimately can't be expressed cleanly in SVG (too photographic, too painterly), escalate back to the visual-orchestrator so it can re-classify as `raster-foreground` instead.

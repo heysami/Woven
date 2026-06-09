@@ -103,7 +103,7 @@ def _resolve_path_template(template, node, project_root):
         "dsId":     node.get("dsId")     or "main",
         "id":       node.get("id")       or "",
         # v3.3 — simulation + interactive-media + narrative-experience families.
-        # The planner sets these on each component node when it scaffolds.
+        # The orchestrator sets these on each component node when it scaffolds.
         "simId":    node.get("simId")    or "",
         "imId":     node.get("imId")     or "",
         "nxId":     node.get("nxId")     or "",
@@ -166,7 +166,7 @@ def _check_files_exist(node, contract, project_root):
         # outputs.X set / non-empty / in {a, b, c}
         # v3.3 — value-membership assertions are the truthfulness floor for
         # lens-gated completion (see docs/features/simulation-and-interactive-
-        # planners.md §12.4). A lens drawer commits outputs.verdict = "pass"
+        # orchestrators.md §12.4). A lens drawer commits outputs.verdict = "pass"
         # or "fail"; the component contract requires outputs.lensVerdict
         # in {pass} so a "fail" verdict cannot satisfy status:done.
         elif rs.startswith("outputs."):

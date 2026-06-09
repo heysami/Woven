@@ -10,7 +10,7 @@ scoped to that node's task. The subprocess gets:
 Per-node preambles let specific node ids ship with bespoke instructions.
 After the v3.5 onboarding cut, no node ids are pre-registered here — every
 agent-kind node falls through to `generic_preamble`, which hands the
-dispatch over to the node's own `text` field. Planners populate that text
+dispatch over to the node's own `text` field. Orchestrators populate that text
 when they scaffold their drawers; the user can edit it on the canvas.
 
 If you want to re-introduce a baked preamble for a specific id, add it to

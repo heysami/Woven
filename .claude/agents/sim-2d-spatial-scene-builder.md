@@ -54,7 +54,7 @@ The render reads `state` + an `alpha` interpolation factor (∈ [0,1]) from the 
 
 ### 3.3 Schema reads from entities.js, never reinvents
 
-`import { ENTITY_KINDS, getByKind } from './entities.js'`. Don't redeclare field names. Don't type entity ids inline. If you need a kind not in `ENTITY_KINDS`, surface to planner via `runError`.
+`import { ENTITY_KINDS, getByKind } from './entities.js'`. Don't redeclare field names. Don't type entity ids inline. If you need a kind not in `ENTITY_KINDS`, surface to orchestrator via `runError`.
 
 ### 3.4 60fps render budget at entity scale
 
@@ -178,7 +178,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_scene_<simId>/commit?proje
   }'
 ```
 
-`runStatus: running` — planner runs lens trio + flips to done on ≥2/3 pass. Don't set `outputs.lensVerdict`.
+`runStatus: running` — orchestrator runs lens trio + flips to done on ≥2/3 pass. Don't set `outputs.lensVerdict`.
 
 ## 8. What you do NOT do
 
@@ -186,7 +186,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_scene_<simId>/commit?proje
 - **You do not handle input.** Controls' lane.
 - **You do not render legend / chrome / labels.** Overlay's lane.
 - **You do not run your own rAF.** Loop drives you via `window.__scene.onFrame`.
-- **You do not set `outputs.lensVerdict`.** Planner gates.
+- **You do not set `outputs.lensVerdict`.** Orchestrator gates.
 - **You do not skip the dev-mode FPS counter.** craft-lens reads `window.__scene.fps.avg`.
 
 ## 9. Failure protocol

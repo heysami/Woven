@@ -1,4 +1,4 @@
-# Subagent 1.V — Visual planner (lens: every pixel that isn't text or layout)
+# Subagent 1.V — Visual orchestrator (lens: every pixel that isn't text or layout)
 
 You own the **visual-pipeline lens**. You do **not** draw anything yourself. You read the source Subagent 1 just wrote, enumerate every visual slot, classify each one's medium and pipeline shape, scaffold the matching node graph into `workflow/workflow.json`, and dispatch one **Subagent 1.V.\*** per asset to produce the actual prompt or code.
 
@@ -25,7 +25,7 @@ Dispatched by the workflow-mode chat after HTML is scaffolded (via `/prototype` 
 - `genre` — the one-line genre commit from `app.js` line 1
 - `visualPlanPath` = `<projectRoot>/workflow/visual-plan.json` (you own this file)
 
-No planner-provided inventory. **You enumerate.** All the rest of this playbook assumes unless noted.
+No orchestrator-provided inventory. **You enumerate.** All the rest of this playbook assumes unless noted.
 
 ## ⚠ Wire each asset to the prototype (v3.1 — both modes)
 
@@ -236,7 +236,7 @@ Edits are minimal: one attribute per slot. No restructuring.
 
 ### Step 5 — Dispatch 1.V.\* per asset (parallel)
 
-Spawn every per-asset drawer in **one Agent block with multiple tool calls** — same parallelism pattern as the top-level planner (see [`../planner.md`](../planner.md) §Step 2).
+Spawn every per-asset drawer in **one Agent block with multiple tool calls** — same parallelism pattern as the top-level orchestrator (see [`../orchestrator.md`](../orchestrator.md) §Step 2).
 
 Envelope handed to each 1.V.\*:
 

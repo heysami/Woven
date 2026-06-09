@@ -241,7 +241,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_mapping_<imId>/commit?proje
 
 ## 9. Failure protocol
 
-Same as sim-loop-author §8. If the brief's successFeel is unservable by any idiom (rare but possible), surface in runError and let planner escalate.
+Same as sim-loop-author §8. If the brief's successFeel is unservable by any idiom (rare but possible), surface in runError and let orchestrator escalate.
 
 ---
 

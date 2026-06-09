@@ -1,6 +1,6 @@
 ---
 name: sim-research-technique
-description: The ONE researcher for a simulation — what tech stack delivers the sim. Picks the paradigm + render strategy + library choices + tick rate + interaction primitive. Writes the canonical research.md the downstream drawers (entities / scene / loop / controls / overlay / runtime) read. Dispatched by simulation-planner as the single research step (no fleet, no synthesiser — just this one). Cold-isolated per simId.
+description: The ONE researcher for a simulation — what tech stack delivers the sim. Picks the paradigm + render strategy + library choices + tick rate + interaction primitive. Writes the canonical research.md the downstream drawers (entities / scene / loop / controls / overlay / runtime) read. Dispatched by simulation-orchestrator as the single research step (no fleet, no synthesiser — just this one). Cold-isolated per simId.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 ---
 
@@ -14,7 +14,7 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/sim-research-technique.md" || cat "$TH_PRO
 
 ## 1. Input envelope
 
-The planner hands you:
+The orchestrator hands you:
 
 - `simId`, `branch`, `projectRoot`
 - `intent` — one-line description of the system to simulate
@@ -187,4 +187,4 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_research_<simId>/commit?pr
 
 ## 7. Failure protocol
 
-If research is impossible (the intent is so abstract you can't even commit a paradigm), commit `runStatus: error` with a structured `runError` describing what's missing. The planner surfaces this to the user as a clarification request.
+If research is impossible (the intent is so abstract you can't even commit a paradigm), commit `runStatus: error` with a structured `runError` describing what's missing. The orchestrator surfaces this to the user as a clarification request.

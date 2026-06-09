@@ -1,18 +1,18 @@
 {
-  "id": "interactive-media-planner",
+  "id": "interactive-media-orchestrator",
   "label": "Interactive media",
   "tagline": "TouchDesigner-flavoured pieces the user drives with body or device",
   "version": "v3.3",
   "defaultEnabled": true,
-  "subagentName": "interactive-media-planner",
-  "playbookPath": ".claude/agents/interactive-media-planner.md",
+  "subagentName": "interactive-media-orchestrator",
+  "playbookPath": ".claude/agents/interactive-media-orchestrator.md",
   "description": "Orchestrates a generative interactive piece where the user's body/device (mic, camera, mouse, gyro, MIDI, gamepad) becomes a creative material and the output is real-time generative response (shader, particles, 3D, audio). Runs 5-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; \u00a78.3 loop-until-bar; multi-draft at mapping + runtime + output cruxes; \u00a78.5 cross-drawer coherence review before final commit. Permission UX gates camera/mic via two-gate pattern (canvas-side + iframe-side Start).",
   "triggers": [
     {
       "mode": "chat",
       "title": "build an app with this piece",
-      "rule": "User wants the interactive piece embedded in an app. Top-level Claude scaffolds the app shell (with im-placeholder slot + allow= attribute), then dispatches interactive-media-planner per slot (). After hand-off, Claude drives the build per simulation-planner.md \u00a75.1.0 (same shape + \u00a78.5 coherence) and embeds the runtime.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-planner'"
+      "rule": "User wants the interactive piece embedded in an app. Top-level Claude scaffolds the app shell (with im-placeholder slot + allow= attribute), then dispatches interactive-media-orchestrator per slot (). After hand-off, Claude drives the build per simulation-orchestrator.md \u00a75.1.0 (same shape + \u00a78.5 coherence) and embeds the runtime.",
+      "ruleSource": "editor/kinds/capabilities.py \u2014 'Interactive pieces: scaffold-then-orchestrator'"
     }
   ],
   "dispatches": {
@@ -55,7 +55,7 @@
     ]
   },
   "documents": {
-    "designDoc": "docs/features/simulation-and-interactive-planners.md",
+    "designDoc": "docs/features/simulation-and-interactive-orchestrators.md",
     "calibration": ".claude/lens-calibration/fixtures/im-*"
   }
 }

@@ -35,7 +35,7 @@ Same as `im-output-audio` §2 with `medium: "3d"`.
 
 The piece's 3D output MUST satisfy the standing contract from `capabilities.py` HARD CHECK D (full version in `sim-3d-scene-builder.md §1.0`). For an interactive 3D output, the mapping is the engine of motion — the user's input drives camera, lighting, or instance transforms — so the contract reads slightly differently:
 
-- **The scene must visibly change in response to mapping output within 50ms.** Camera moving with mapping[0], material colour shifting with mapping[1], instance scale with mapping[2] — pick whichever your mapping declares, but SOMETHING in the 3D state must update each rAF. A static scene wired to no mapping params is a craft block (the piece looks 3D but does not respond — visual-planner's `3d` skill is the right tool for that, not im-output-3d).
+- **The scene must visibly change in response to mapping output within 50ms.** Camera moving with mapping[0], material colour shifting with mapping[1], instance scale with mapping[2] — pick whichever your mapping declares, but SOMETHING in the 3D state must update each rAF. A static scene wired to no mapping params is a craft block (the piece looks 3D but does not respond — visual-orchestrator's `3d` skill is the right tool for that, not im-output-3d).
 - **Lighting must be 3D-aware.** `DirectionalLight` + `AmbientLight` minimum (or HDR env map). Flat-lit `MeshBasicMaterial` scenes earn an aesthetic-lens block — they look like vector art, not 3D.
 - **If the user can also orbit / drag the camera** (in addition to mapping driving it), the camera responds to BOTH inputs cleanly — mapping-driven camera tweens shouldn't fight pointer-driven rotation. Pick one as primary, the other as override.
 

@@ -6,7 +6,7 @@ You own **ONE asset** of medium `vector-mark` — a brand logo, partner mark, mo
 
 ## Input (envelope only)
 
-See [`1V-visual-planner.md`](1V-visual-planner.md) §Step 5. Pathway-B mediums don't use the prompt node — you write code straight into the skill node.
+See [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5. Pathway-B mediums don't use the prompt node — you write code straight into the skill node.
 
 ```
 pipeline=["prompt","svg-gen"]

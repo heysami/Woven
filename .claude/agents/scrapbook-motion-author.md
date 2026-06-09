@@ -339,7 +339,7 @@ For `aggressive-vaporwave` with 4+ PNG sequences + 12 CSS-animated elements + 4 
 ## 5. What you do NOT do
 
 - **You do not own the static composition.** That's the composition drawer. You add motion ON TOP.
-- **You do not author new PNG sequences.** The sequence frames were committed by the composition drawer's visual-planner sub-dispatches. You play them back.
+- **You do not author new PNG sequences.** The sequence frames were committed by the composition drawer's visual-orchestrator sub-dispatches. You play them back.
 - **You do not own scroll-driven section transitions.** That's the interactions drawer (scroll-reveal of new sections).
 - **You do not skip prefers-reduced-motion.** It's the most-broken rule in scrapbook pieces.
 

@@ -175,7 +175,7 @@ if (new URLSearchParams(location.search).get('devtools') === '1') {
   };
   // wrap tick to count
   const _origTick = tick;
-  // (planner's QA harness reads window.__game.fps for the craft check)
+  // (orchestrator's QA harness reads window.__game.fps for the craft check)
 }
 
 window.__loop = { start, reset, pause, resume, pushInputEvent };

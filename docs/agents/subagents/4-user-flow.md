@@ -124,7 +124,7 @@ When the system handoffs a task from one actor to another, source typically emit
 
 **Lane placement.** A notification mediator sits in the **receiver's lane** (the actor who *gets* notified), since the notification is the receiver's entry point into the next step. Frame ID: `<receiver>-notif-<event>` (e.g. `pxp-notif-app-submitted`). Label is the human-readable notification title.
 
-**Reconciliation owns the arrows.** Your job is to emit the notification node + flag it; the planner's Step 4c wires `sender-frame → notification → receiver-frame` as a 2-hop replacement for the direct cross-actor edge. Do NOT draw those arrows yourself.
+**Reconciliation owns the arrows.** Your job is to emit the notification node + flag it; the orchestrator's Step 4c wires `sender-frame → notification → receiver-frame` as a 2-hop replacement for the direct cross-actor edge. Do NOT draw those arrows yourself.
 
 **Disambiguation — notification settings page vs notification flow event.** A *settings page* where the user toggles which notifications they receive is a regular `kind: "page"` frame (it's a UI surface the user dwells on). A *flow event* representing the moment a notification fires is a `kind: "notification"` frame (Flow-only, not iframeable). They have different IDs (`pxp-notifications` settings page vs `pxp-notif-app-submitted` flow event). Don't conflate.
 
@@ -141,7 +141,7 @@ Setting `kind: "start"` tells the Flow view to render them with the start glyph 
 
 ## Render-verify your slice
 
-After producing your output (and after the planner has written `editor/data.js`), load the editor's **Flow** view and verify:
+After producing your output (and after the orchestrator has written `editor/data.js`), load the editor's **Flow** view and verify:
 
 1. Every lane in your `lanes[]` appears as a swimlane gutter with at least one frame in it. An empty lane is a fabrication.
 2. Every frame appears in its declared lane — no frame is in "Unknown" or a default lane it doesn't belong to.
@@ -190,7 +190,7 @@ Each item requires **evidence** — a Read / Bash / Grep / screenshot call. Don'
 
 ## Don't
 
-- Don't expect a planner-provided inventory or lanes list — there isn't one.
+- Don't expect a orchestrator-provided inventory or lanes list — there isn't one.
 - Don't include the storyboard as a frame.
 - Don't write `parent`, `col`, `row`, `entry`, `hash`, `setupScript`, `entities` — those are other lenses.
 - Don't draw cross-actor handoff arrows — reconciliation owns those.

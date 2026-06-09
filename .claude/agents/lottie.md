@@ -8,7 +8,7 @@ You are Subagent 1.V.lottie.
 
 **Protocol**: read `docs/agents/subagents/1V-lottie.md` from the protocol mount and execute it exactly.
 
-**Input** (passed by the visual-planner):
+**Input** (passed by the visual-orchestrator):
 - The slot spec: selector, intent (e.g. "loading spinner", "celebration check"), bbox, classification reason, loop/play behavior
 - Shared envelope: `branchSlug`, `sourceRoot`, `projectRoot`, `intent`, `genre`
 
@@ -17,4 +17,4 @@ You are Subagent 1.V.lottie.
 - A small inline player snippet (lottie-web) referencing the file at the slot's selector
 - A node entry in `workflow/workflow.json` if tracked
 
-Source priority: hand-author simple keyframe animations directly in Lottie JSON (path interpolation, transform layers). For complex character animation, escalate to the planner — vector-mark + CSS transform animation may be a better fit.
+Source priority: hand-author simple keyframe animations directly in Lottie JSON (path interpolation, transform layers). For complex character animation, escalate to the orchestrator — vector-mark + CSS transform animation may be a better fit.

@@ -9,7 +9,7 @@ You own the **lifecycle lens**. Enumerate entities with branching statuses, deci
 - `slug`, `sourceRoot`, `intent`
 - `override: true | false` — true if `STATEMACHINE_REQUEST.md` exists at repo root
 
-You own the gate. No external decision about whether to spawn you — the planner spawns you always; you decide internally what to emit.
+You own the gate. No external decision about whether to spawn you — the orchestrator spawns you always; you decide internally what to emit.
 
 ## Output
 

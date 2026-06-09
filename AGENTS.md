@@ -116,22 +116,22 @@ Match the trigger; read only the matching playbook.
 | Trigger | Playbook |
 |---|---|
 | "build design system" / "update DS" / DS spec nodes change / no DS exists | [`docs/agents/workflows/0-design-system.md`](docs/agents/workflows/0-design-system.md) → [`docs/agents/subagents/0-ds-builder.md`](docs/agents/subagents/0-ds-builder.md) |
-| "process the prototype" / "regenerate frames" / new source dropped in | [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) → [`docs/agents/planner.md`](docs/agents/planner.md) — **requires `meta.dsRef`; runs Workflow 0 first if absent** |
+| "process the prototype" / "regenerate frames" / new source dropped in | [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) → [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) — **requires `meta.dsRef`; runs Workflow 0 first if absent** |
 | `edits.json` at repo root | [`docs/agents/workflows/2-edits.md`](docs/agents/workflows/2-edits.md) |
 | DS trio changed; "Export DESIGN.md" against a DS library node | [`docs/agents/workflows/3-design-md.md`](docs/agents/workflows/3-design-md.md) |
 | `DS_PROPOSAL.md` at repo root | [`docs/agents/workflows/6-ds-propose.md`](docs/agents/workflows/6-ds-propose.md) — partitions by verdict; dispatches to 6b on accept |
 | `DS_ACCEPTED.json` at repo root | [`docs/agents/workflows/6b-ds-update.md`](docs/agents/workflows/6b-ds-update.md) — atomic DS trio update + version bump |
-| `STATEMACHINE_REQUEST.md` / `TIMELINE_REQUEST.md` / `GRID_REQUEST.md` | [`docs/agents/planner.md`](docs/agents/planner.md) → spawn subagent 8 / 9 / 10 (gate override) |
+| `STATEMACHINE_REQUEST.md` / `TIMELINE_REQUEST.md` / `GRID_REQUEST.md` | [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) → spawn subagent 8 / 9 / 10 (gate override) |
 
-### Workflow 1 is a planner + subagents
+### Workflow 1 is a orchestrator + subagents
 
-Regeneration is split into 10 isolated subagent jobs to keep each one's context focused. The planner (top-level Claude) coordinates; each subagent owns a strict slice of the data file. See [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) for the dispatch table and [`docs/agents/planner.md`](docs/agents/planner.md) for the orchestration recipe.
+Regeneration is split into 10 isolated subagent jobs to keep each one's context focused. The orchestrator (top-level Claude) coordinates; each subagent owns a strict slice of the data file. See [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) for the dispatch table and [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) for the orchestration recipe.
 
-Subagent playbooks live under [`docs/agents/subagents/`](docs/agents/subagents/). The planner reads only the playbook of the subagent it's spawning, and feeds that playbook into the `Agent` tool's prompt so the subagent has it as context. **No subagent reads any other subagent's playbook** — context isolation is the whole point.
+Subagent playbooks live under [`docs/agents/subagents/`](docs/agents/subagents/). The orchestrator reads only the playbook of the subagent it's spawning, and feeds that playbook into the `Agent` tool's prompt so the subagent has it as context. **No subagent reads any other subagent's playbook** — context isolation is the whole point.
 
 #### Subagent 1 has its own nested pipeline (visual generation)
 
-Subagent 1 (source build) doesn't decide visual *medium* itself — it writes annotated slots (`img-placeholder` / `motion-placeholder` per [`PROTOTYPE.md`](PROTOTYPE.md) §9) and then spawns [`Subagent 1.V`](docs/agents/subagents/1V-visual-planner.md) after render-verify. 1.V enumerates every slot, classifies the medium against a genre filter (raster-photo, raster-foreground, vector-mark, vector-icon, shader, 3d, particle-2d, particle-gl, lottie, video), scaffolds the matching node graph into `workflow/workflow.json` (uses the Open Design canvas surface — prompt + skill + asset nodes connected by edges), then dispatches one **per-asset drawer** (`1V-<medium>.md`) per slot in parallel. Each drawer owns one asset, writes either a prompt (Pathway A — vendor API) or code (Pathway B — LLM-writes-SVG/GLSL/three/canvas/Lottie). Generation itself fires when the user clicks Run on the canvas; this layer is **scaffolding + briefing**, not execution.
+Subagent 1 (source build) doesn't decide visual *medium* itself — it writes annotated slots (`img-placeholder` / `motion-placeholder` per [`PROTOTYPE.md`](PROTOTYPE.md) §9) and then spawns [`Subagent 1.V`](docs/agents/subagents/1V-visual-orchestrator.md) after render-verify. 1.V enumerates every slot, classifies the medium against a genre filter (raster-photo, raster-foreground, vector-mark, vector-icon, shader, 3d, particle-2d, particle-gl, lottie, video), scaffolds the matching node graph into `workflow/workflow.json` (uses the Open Design canvas surface — prompt + skill + asset nodes connected by edges), then dispatches one **per-asset drawer** (`1V-<medium>.md`) per slot in parallel. Each drawer owns one asset, writes either a prompt (Pathway A — vendor API) or code (Pathway B — LLM-writes-SVG/GLSL/three/canvas/Lottie). Generation itself fires when the user clicks Run on the canvas; this layer is **scaffolding + briefing**, not execution.
 
 The same context-isolation rule applies one level deeper: 1.V reads its own playbook + the classifier table; each 1.V.* drawer reads only its own `1V-<medium>.md`. **No drawer reads another drawer's playbook.**
 

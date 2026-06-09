@@ -53,7 +53,7 @@ If `multiDraft.variant` is set, you write to `_world_remix/<variant>/world.html`
 - `vb` — second option (e.g. 3d-environment)
 - `vc` — third option (e.g. iconographic-physics)
 
-The user picks via `cp_game_world_pick_<gameId>`; the planner copies the picked variant to the canonical `world.html`.
+The user picks via `cp_game_world_pick_<gameId>`; the orchestrator copies the picked variant to the canonical `world.html`.
 
 ## 2. The contract — world.html shape
 
@@ -76,7 +76,7 @@ The user picks via `cp_game_world_pick_<gameId>`; the planner copies the picked 
      *   - <library docs URL>
      *   - <precedent game URL>
      */
-    import { PALETTE } from '../<gameId>/_palette.js'; // optional — committed by visual-planner
+    import { PALETTE } from '../<gameId>/_palette.js'; // optional — committed by visual-orchestrator
     // <render library setup — PixiJS / three.js / canvas2D>
 
     const canvas = document.getElementById('world-canvas');
@@ -173,12 +173,12 @@ Boot the world with the peak entity count from research's performance budget. `p
 
 `onResize` must be safe to call repeatedly. No texture leaks, no doubled event listeners. Use the canvas's existing context; don't create a new one.
 
-## 4. Collaboration with visual-planner
+## 4. Collaboration with visual-orchestrator
 
-If the world needs hero plates / sprite sheets / texture atlases (always for `2d-side` and `2d-topdown`; often for `3d-environment`), dispatch `visual-planner` per asset:
+If the world needs hero plates / sprite sheets / texture atlases (always for `2d-side` and `2d-topdown`; often for `3d-environment`), dispatch `visual-orchestrator` per asset:
 
 ```
-Task(subagent_type: "visual-planner",
+Task(subagent_type: "visual-orchestrator",
      description: "Sprite sheet for game:<gameId>",
      prompt: "<one-line intent inheriting styleCue verbatim>. Output: source/<branch>/games/<gameId>/plates/<assetId>.png")
 ```
