@@ -12417,6 +12417,45 @@ class ReusableThreadingTCP(socketserver.ThreadingTCPServer):
 
 
 if __name__ == "__main__":
+    # ── Highlighted startup URL banner ──
+    # ANSI escapes when stdout is a TTY and NO_COLOR isn't set; plain ASCII
+    # box otherwise (CI logs, piped output). Pads to a fixed inner width so
+    # the right border lines up. The URL is the load-bearing piece — users
+    # were missing it in the noise of endpoint listings.
+    _use_color = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    def _ansi(code: str) -> str:
+        return code if _use_color else ""
+    _C_BOLD = _ansi("\033[1m")
+    _C_CYAN = _ansi("\033[36m")
+    _C_GREEN = _ansi("\033[32m")
+    _C_DIM = _ansi("\033[2m")
+    _C_RESET = _ansi("\033[0m")
+
+    def _print_url_banner(url: str, hint=None) -> None:
+        # Visible width of the contents, used for box padding. Strip any ANSI
+        # so colorisation doesn't break alignment.
+        import re as _re
+        def _vwidth(s: str) -> int:
+            return len(_re.sub(r"\033\[[0-9;]*m", "", s))
+        title = f"  ▶  Open in browser:  {_C_BOLD}{_C_CYAN}{url}{_C_RESET}"
+        sub   = f"     {_C_DIM}{hint}{_C_RESET}" if hint else None
+        # Box width = max content width + 2 padding on each side, but keep
+        # within a sensible terminal envelope.
+        inner = max(_vwidth(title), _vwidth(sub or ""))
+        inner = min(max(inner + 2, 56), 100)
+        top    = f"  {_C_GREEN}┌{'─' * inner}┐{_C_RESET}"
+        bottom = f"  {_C_GREEN}└{'─' * inner}┘{_C_RESET}"
+        def _row(content: str) -> str:
+            pad = inner - _vwidth(content)
+            return f"  {_C_GREEN}│{_C_RESET}{content}{' ' * pad}{_C_GREEN}│{_C_RESET}"
+        print("", flush=True)
+        print(top, flush=True)
+        print(_row(title), flush=True)
+        if sub:
+            print(_row(sub), flush=True)
+        print(bottom, flush=True)
+        print("", flush=True)
+
     if WORKSPACE_DIR:
         projects = _list_projects()
         print(f"serving install {INSTALL_ROOT}", flush=True)
@@ -12439,10 +12478,14 @@ if __name__ == "__main__":
         else:
             print("  no projects found — scaffold one with POST /__projects/new "
                   "or create a subdir with source/ inside", flush=True)
-        print(f"  http://localhost:{PORT}/   (add ?project=<id> to scope)", flush=True)
+        _print_url_banner(
+            f"http://localhost:{PORT}/",
+            "add ?project=<id> to scope a specific project",
+        )
     else:
-        print(f"serving {INSTALL_ROOT} on http://localhost:{PORT}/   (single-project mode)", flush=True)
+        print(f"serving {INSTALL_ROOT}  (single-project mode)", flush=True)
         print("  to enable multi-project: set TH_WORKSPACE_DIR=<path> before launching", flush=True)
+        _print_url_banner(f"http://localhost:{PORT}/")
     print(
         "  endpoints: /__save  /__layout  /__workflow\n"
         "             /__agents  /__run  /__runs  /__stream\n"
