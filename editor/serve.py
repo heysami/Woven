@@ -2535,22 +2535,18 @@ AGENT_DEFS = {
     },
     "codex": {
         "bin": "codex",
-        # v3.5 — Empirical fix. The Codex CLI on a user's install (June 2026)
-        # errors with "unexpected argument '--output-format'" — Codex no
-        # longer supports the stream-json output flag Claude exposes. Codex
-        # exec also takes its prompt as a positional argv (not a stream-json
-        # frame on stdin), so we set prompt_via_stdin=False and the spawn
-        # paths append the prompt as the trailing argv element.
-        #
-        # Known unknowns:
-        #   • Whether --full-auto exists on this Codex version (we don't
-        #     pass it; if Codex blocks on a permission prompt in exec mode,
-        #     we'll add the right flag here based on the empirical error).
-        #   • Codex's default output format isn't stream-json, so the
-        #     daemon's _normalize_frame won't parse codex's chat output
-        #     incrementally. The chat will appear all at once at the end
-        #     instead of streaming. Tracked as a follow-up.
-        "args": ["exec"],
+        # v3.5 — Empirical flag surface for Codex CLI v0.138+:
+        #   • exec: non-interactive run
+        #   • --sandbox workspace-write: allow writes to cwd. Without this
+        #     codex defaults to sandbox:read-only and tells the user
+        #     "I'll tell you what I can change in this read-only session"
+        #     instead of doing anything.
+        # Codex eats the prompt as the trailing positional argv, NOT as a
+        # stream-json frame on stdin (prompt_via_stdin=False below).
+        # Codex's output goes to STDERR with a structured but plain-text
+        # protocol (banner / user / codex / exec / succeeded markers) —
+        # _drain_stderr_codex parses it into proper agent events.
+        "args": ["exec", "--sandbox", "workspace-write"],
         "permission_flag": None,
         "permission_default": None,
         "prompt_via_stdin": False,
@@ -4029,6 +4025,27 @@ def _drain_stdout(state: "RunState") -> None:
 
 
 def _drain_stderr(state: "RunState") -> None:
+    # v3.5 — Codex emits its entire chat content on STDERR with a structured
+    # plain-text protocol (banner / role markers / tool exec / tool result).
+    # Route codex through a parser that converts those into agent events so
+    # the chat UI renders text + tool calls properly instead of dumping
+    # every line as a "STDERR" prefixed bubble. Claude (and unknown agents)
+    # keep the legacy raw-stderr passthrough.
+    if state.agent_id == "codex":
+        parser = _CodexStderrParser()
+        try:
+            for raw in state.proc.stderr:
+                line = raw.decode("utf-8", errors="replace").rstrip("\n")
+                events, raw_passthrough = parser.feed(line)
+                for ev in events:
+                    state.append("agent", ev)
+                for line_text in raw_passthrough:
+                    # Filter-bypassed lines (e.g. genuine error output) still
+                    # surface — but as agent text not stderr noise.
+                    state.append("agent", {"type": "text_delta", "delta": line_text + "\n"})
+        except Exception:
+            pass
+        return
     try:
         for raw in state.proc.stderr:
             line = raw.decode("utf-8", errors="replace").rstrip("\n")
@@ -4037,6 +4054,129 @@ def _drain_stderr(state: "RunState") -> None:
             state.append("stderr", {"text": line})
     except Exception:
         pass
+
+
+class _CodexStderrParser:
+    """Parse `codex exec` stderr output into normalised agent events.
+
+    Codex's stderr is structured plain text. A typical run looks like:
+
+        2026-06-09T07:39:36Z ERROR rmcp::transport::worker: …   ← noise
+        OpenAI Codex v0.138.0                                    ← banner head
+        --------
+        workdir: /Users/.../projects/hyperpop                    ← banner body
+        model: gpt-5.5
+        sandbox: workspace-write
+        --------
+        user
+        <user prompt body>                                       ← echoed prompt
+        codex
+        <assistant text body, possibly multi-line>
+        exec
+        /bin/zsh -lc "<command>" in <cwd>
+        succeeded in 0ms
+
+    We feed line-by-line; each feed() returns (events, raw_passthrough)
+    where events are normalised agent dicts and raw_passthrough is a list
+    of lines that didn't match any known marker (genuine errors etc.) —
+    callers emit these as plain text_delta events.
+    """
+    _NOISE_PATTERNS = (
+        # Codex's MCP transport spam when the local MCP socket can't bind.
+        re.compile(r"rmcp::transport"),
+        # Timestamp-prefixed log lines (Codex's tracing layer).
+        re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*\bERROR\b"),
+        re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*\bWARN\b"),
+    )
+
+    def __init__(self):
+        self.state = "pre_banner"
+        self.dashes_seen = 0
+        self.tool_counter = 0
+        self.current_tool_id = None
+
+    def _is_noise(self, line: str) -> bool:
+        for rx in self._NOISE_PATTERNS:
+            if rx.search(line):
+                return True
+        return False
+
+    def feed(self, line: str):
+        events: list = []
+        raw: list = []
+        if not line.strip():
+            return events, raw
+        if self._is_noise(line):
+            return events, raw
+        # Banner traversal — strip every line between the two `--------`
+        # separators (inclusive of header + dashes), then switch to content.
+        if self.state == "pre_banner":
+            if line.startswith("OpenAI Codex"):
+                return events, raw
+            if line.startswith("---"):
+                self.dashes_seen = 1
+                self.state = "in_banner"
+                return events, raw
+            # Some Codex versions don't print the header; fall through.
+            self.state = "post_banner"
+        if self.state == "in_banner":
+            if line.startswith("---"):
+                self.dashes_seen += 1
+                if self.dashes_seen >= 2:
+                    self.state = "post_banner"
+            return events, raw
+        # Role markers — a bare token on its own line.
+        stripped = line.strip()
+        if stripped == "user":
+            self.state = "user"
+            return events, raw
+        if stripped == "codex":
+            # New assistant turn — close any open tool call.
+            self.current_tool_id = None
+            self.state = "codex"
+            return events, raw
+        if stripped == "exec":
+            self.state = "exec_pending_cmd"
+            return events, raw
+        # Tool result line: "succeeded in 0ms" / "failed: …".
+        m_succ = re.match(r"^(succeeded|failed)\b(.*)$", stripped)
+        if m_succ and self.current_tool_id is not None:
+            ok = (m_succ.group(1) == "succeeded")
+            events.append({
+                "type": "tool_result",
+                "id": self.current_tool_id,
+                "content": [{"type": "text", "text": stripped}],
+                "is_error": not ok,
+            })
+            self.current_tool_id = None
+            self.state = "post_banner"
+            return events, raw
+        # Per-state content handling.
+        if self.state == "user":
+            # We already know what we sent; don't replay it.
+            return events, raw
+        if self.state == "codex":
+            events.append({"type": "text_delta", "delta": line + "\n"})
+            return events, raw
+        if self.state == "exec_pending_cmd":
+            # First line after `exec` is the command (with cwd suffix).
+            self.tool_counter += 1
+            self.current_tool_id = f"codex-exec-{self.tool_counter}"
+            events.append({
+                "type": "tool_use",
+                "id": self.current_tool_id,
+                "name": "exec",
+                "input": {"command": line},
+            })
+            self.state = "exec"
+            return events, raw
+        if self.state == "exec":
+            # Continuation lines for an exec (rare — multi-line commands).
+            events.append({"type": "text_delta", "delta": line + "\n"})
+            return events, raw
+        # Anything else (post_banner with no role marker) — surface as text.
+        raw.append(line)
+        return events, raw
 
 
 # ── Prompt composer ──────────────────────────────────────────────────────────
