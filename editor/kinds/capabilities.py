@@ -405,7 +405,22 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 **Live provider availability THIS RUN** — KEYS ARE STORED IN `~/.test-harness/media-config.json`, **NOT in environment variables**. Do not check `$OPENAI_API_KEY` / `$ANTHROPIC_API_KEY` / etc. to decide if a provider works — they will almost always be empty. The list below is the daemon's actual answer:
 {availability_lines}
 
-If a provider above shows `✓ KEY` or `✓ CLI`, image / video / svg generation for that provider works. **Do not refuse the user with "no provider is wired up" unless every row says `⚠ NOT CONFIGURED`.** When in doubt, dispatch the relevant orchestrator anyway — it will surface the real error if a specific skill genuinely can't run.
+**What each status actually enables — read carefully, do not infer:**
+
+- `✓ KEY` (any provider) → full integration. The daemon's `/__asset_generate` and `/__llm_run` paths call the provider's HTTP API directly. Image, video, svg, text — whatever that provider's skill catalog supports — all works.
+
+- `✓ CLI (Codex CLI)` (openai only) → BOTH text AND image generation work. Codex CLI has a built-in image-gen tool that calls `gpt-image-2` via the user's `codex login` OAuth. The daemon's `_codex_cli_generate_image` routes raster requests to it. No `OPENAI_API_KEY` needed. **This counts as a raster provider being available.**
+
+- `✓ CLI (Claude CLI)` (anthropic only) → TEXT ONLY. Claude CLI has no image-generation tool. Use this for `llm` / `describe` skills; do NOT count it as a raster provider.
+
+- `⚠ NOT CONFIGURED` → that specific provider can't run on this machine. Skip it.
+
+**Concrete decision rule for image generation:** raster works if ANY of these is true:
+  • Any `✓ KEY` row above (fal, openai, recraft, bfl, leonardo, etc.)
+  • `OpenAI ✓ CLI (Codex CLI)` (image-gen via Codex's built-in tool)
+  • rembg shown as `✓ INSTALLED` below (background-removal pipeline, local)
+
+**Do not refuse the user with "no raster provider available" if ANY of those conditions hold.** Dispatch the relevant orchestrator and let it route through the available path — `/__asset_generate` already knows how to pick API vs CLI vs local fallback per skill.
 
 **Local tool availability THIS RUN**:
 {tool_status}

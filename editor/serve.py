@@ -987,7 +987,13 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     if convo_parts:
         prompt_parts.append("\n\n".join(convo_parts))
     flat = "\n\n".join(prompt_parts).strip() or "Hello"
-    args = [bin_path, "exec"]
+    # v3.5 — --sandbox danger-full-access: codex's API calls need outbound
+    # network (OAuth → OpenAI chat completions) which workspace-write
+    # blocks. Text completion is read-only on the filesystem but still
+    # needs network; danger-full-access covers both. Same flag the chat
+    # spawn + planner spawn + image-gen helper use, so behaviour is
+    # consistent across every codex subprocess the daemon launches.
+    args = [bin_path, "exec", "--sandbox", "danger-full-access"]
     if model:
         args.extend(["--model", model])
     args.append(flat)
@@ -1064,13 +1070,14 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
             "generate an image for any reason (tool unavailable, sandbox, "
             "policy), print 'UNABLE: <one-line reason>' and exit."
         )
-        # v3.5 — Use only `codex exec` + the prompt. Earlier code added
-        # --full-auto, but we don't actually know it exists on every
-        # version (`codex exec --help` is the source of truth on a given
-        # install). `codex exec` is non-interactive by default; if a
-        # specific version blocks on approval, we'll see that in the
-        # error and add the right flag here.
-        args = [bin_path, "exec", codex_prompt]
+        # v3.5 — Pass --sandbox danger-full-access. Without it, codex
+        # defaults to read-only sandbox and the built-in image_gen tool
+        # can't write the PNG to disk (or call the OpenAI image API).
+        # That was the actual permission issue making "codex image-gen
+        # silently no-ops" — not anything about LLM capability awareness.
+        # workspace-write would allow disk writes but blocks outbound
+        # network — image_gen needs both, so full-access it is.
+        args = [bin_path, "exec", "--sandbox", "danger-full-access", codex_prompt]
         result = subprocess.run(
             args,
             capture_output=True,
@@ -8975,8 +8982,35 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Pick runtime + build spawn shape.
         claude_bin = detect_agent_bin("claude")
         codex_bin  = detect_agent_bin("codex")
+        # v3.5 — Build the capabilities preamble once and inject it into BOTH
+        # runtimes' planner spawn. Originally the planner subprocess got ONLY
+        # the planner.md body as its system prompt, which meant the planner
+        # was blind to live availability (which providers have keys, which
+        # local tools are installed). That made orchestrators like
+        # scrapbook-orchestrator bail with "no raster provider available"
+        # even when openai had a Codex CLI fallback AND rembg was installed.
+        # When Claude's native Task tool spawns a subagent, the subagent
+        # inherits the parent's context including this preamble — we need to
+        # do the same explicitly for `/__dispatch_planner`'s subprocess
+        # spawn since it has no parent context to inherit.
+        try:
+            from kinds.capabilities import capabilities_preamble
+            caps_text = capabilities_preamble(project_root=project_root)
+        except Exception:
+            caps_text = ""
         if claude_bin:
             agent_id, bin_path = "claude", claude_bin
+            # Build the full system prompt: planner body PLUS capabilities
+            # preamble PLUS question-form protocol. Order matters — the
+            # planner spec is the primary instruction; capabilities is
+            # supporting context the planner reads when deciding how to act.
+            sys_prompt_parts = [planner_body]
+            if caps_text:
+                sys_prompt_parts.append("# Live harness context for this planner run\n\n" + caps_text)
+            sys_prompt_parts.append(QUESTION_FORM_SYSTEM_PROMPT)
+            if WORKSPACE_DIR and project_root != INSTALL_ROOT:
+                sys_prompt_parts.append(WORKSPACE_LAYOUT_PROMPT)
+            sys_prompt = "\n\n".join(p.strip() for p in sys_prompt_parts if p and p.strip())
             spawn_args = [
                 "--print",
                 "--output-format", "stream-json",
@@ -8988,7 +9022,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "--allow-dangerously-skip-permissions",
                 "--dangerously-skip-permissions",
                 "--add-dir", project_root,
-                "--append-system-prompt", planner_body,
+                "--append-system-prompt", sys_prompt,
             ]
             stdin_pipe = subprocess.PIPE
             prompt_stdin = _claude_user_frame(brief)
@@ -9011,11 +9045,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "way the spec would have treated a Task tool return value.\n"
                 "===== END RUNTIME NOTE =====\n"
             )
+            caps_block = ""
+            if caps_text:
+                caps_block = (
+                    "\n===== LIVE HARNESS CONTEXT =====\n"
+                    + caps_text
+                    + "\n===== END LIVE HARNESS CONTEXT =====\n"
+                )
             full_prompt = (
                 "===== PLANNER SPEC =====\n"
                 + planner_body
                 + "\n===== END PLANNER SPEC =====\n\n"
                 + translation_note
+                + caps_block
                 + "\n===== YOUR BRIEF =====\n"
                 + brief
             )
