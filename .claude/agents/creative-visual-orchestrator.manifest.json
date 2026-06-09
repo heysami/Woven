@@ -1,0 +1,51 @@
+{
+  "id": "creative-visual-orchestrator",
+  "label": "Creative visual",
+  "tagline": "Promotes flat <img> slots into editorial compositions — text-as-mask, clip-paths, asset-bleed",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "subagentName": "creative-visual-orchestrator",
+  "playbookPath": ".claude/agents/creative-visual-orchestrator.md",
+  "description": "POST-PASS visual-promotion orchestrator. Runs AFTER visual-orchestrator's standard per-medium dispatch completes, BEFORE material-orchestrator + interactive-polish-orchestrator. Walks the resulting source, identifies <img> slots eligible for promotion into editorial-loud compositions, rewrites the host HTML/CSS with SVG masks + clip-paths + pseudo-element layers, and may co-dispatch visual-orchestrator narrowly for supplemental masking geometry OR photography-orchestrator / illustration-orchestrator for replacement assets that fit the new composition. Reads docs/research/photography-library.md + docs/research/illustration-library.md so when promoting a slot to 'asset cut into letters' it can pick or re-pick an underlying style that matches the surrounding typography. Promotion types: text-as-mask (headline becomes the mask through which the image shows), asset-bleed-into-paragraph (transparent subject bleeds into running text), irregular-clip-path (replaces rectangle with SVG clip-path — Memphis blob, Weingart angular, Bauhaus circle), asset-as-drop-cap (illustrated initial replacing first letter), asset-as-bullet (raster bullets per list item), asset-cut-into-letters (headline constructed from clipped image fragments per letter), magnetic-typography-attachment (caption physically attached to asset edge with rotation + tape). OPTIONAL — fires when committed prototype aesthetic is editorial-loud (recipe-editorial-magazine, aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-web-brutalism, aesthetic-wacky-pomo, style-oversized-neo-grotesque, aesthetic-corporate-grunge, aesthetic-anti-design, aesthetic-constructivism, aesthetic-de-stijl, aesthetic-bauhaus-with-display-type), or explicit user request. Cold-isolated per project.",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Creative-visual promotion pass (POST visual-orchestrator)",
+      "rule": "After visual-orchestrator's standard per-medium dispatch completes AND the committed prototype aesthetic is editorial-loud / typography-driven (recipe-editorial-magazine, recipe-swiss-grid with twist, aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-web-brutalism, aesthetic-wacky-pomo, style-oversized-neo-grotesque, aesthetic-corporate-grunge, aesthetic-anti-design, aesthetic-constructivism, aesthetic-de-stijl, recipe-y2k-memphis-loud, aesthetic-bauhaus-with-display-type), BEFORE material-orchestrator and BEFORE interactive-polish-orchestrator, chat-Claude dispatches creative-visual-orchestrator. The orchestrator walks the source, identifies promotion-eligible flat slots, plans the SVG mask / clip-path / pseudo-element rewrite + any supplemental asset re-generations needed, surfaces a decision-request to the user, then commits the structural rewrites. Also fires on explicit user request ('make the photos bleed into the type' / 'cut the asset into letters' / 'creative composition' / 'editorial spread feel' / 'type-driven layout' / 'Wolfgang Weingart style' / 'Ed Fella style' / 'make it feel more like a fashion magazine' / 'the images should mask through text'). One consistent flow.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Creative-visual promotion: dispatch creative-visual-orchestrator POST visual-orchestrator when editorial-loud aesthetic OR user request'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [
+      "creative-visual-promoter"
+    ],
+    "collaborators": [
+      "visual-orchestrator",
+      "photography-orchestrator",
+      "illustration-orchestrator"
+    ],
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
+    ]
+  },
+  "skills": [
+    "generate-image",
+    "svg-gen"
+  ],
+  "nodeKinds": {
+    "container": [
+      "creative-visual-promotion"
+    ],
+    "agent_overrides": [
+      "cv_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/research/photography-library.md",
+    "calibration": null,
+    "policy": "docs/research/illustration-library.md"
+  }
+}

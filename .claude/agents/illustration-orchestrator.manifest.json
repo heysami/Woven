@@ -1,0 +1,45 @@
+{
+  "id": "illustration-orchestrator",
+  "label": "Illustration",
+  "tagline": "Curated illustration-style art-direction for raster-foreground slots",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "subagentName": "illustration-orchestrator",
+  "playbookPath": ".claude/agents/illustration-orchestrator.md",
+  "description": "Picks illustration styles for raster-foreground slots (and depictive vector-mark slots) BEFORE visual-orchestrator's per-medium dispatch fires. Sibling of photography-orchestrator — same shape, illustration library instead. Reads docs/research/illustration-library.md (108 curated styles across 9 categories: 3D — clay / fluffy / plastic / wireframe / origami / voxel / isometric-tech / Pixar-render; flat-vector — corporate-memphis / thick-border / hairline / geometric / Jean-Jullien; hand-drawn — scribble / ink-line / pencil / watercolor / gouache; anime — Ghibli / Shinkai / shoujo-line / kawaii-mascot; illustrative typography — y2k-chrome / Weingart / Vectorheart / hand-lettered-editorial; abstract-decoration — gradient-blob / doodle-arrow / halftone-shape; mid-century — Saul-Bass / Mary-Blair / Charley-Harper; surreal-esoteric — Hilma-af-Klint / MC-Escher / Cyriak / Beeple). For each illustrative slot, picks one primary + optional secondary style by consulting the library's decision tree against the committed prototype.md aesthetic, writes a prompt-enrichment node (pe_illust_<slotId>) whose outputs include the full prompt, negative-prompt, material hint, line hint, color hint, role hint. Visual-orchestrator reads these enrichments when dispatching raster-foreground. OPTIONAL — fires only when (a) at least one slot will resolve to illustrative raster (raster-foreground with depictive role, or depictive vector-mark) AND (b) an image-generation skill is wired. Distinguishes itself from photography-orchestrator by aesthetic boundary: claymorphism → 3D clay illustrations; corporate-memphis → flat noodle-people; doodle-ui → hand-drawn icons; positivity-kawaii → kawaii mascots — never photographic. Logo / brand-mark vector-marks and Tabler-shaped vector-icons DO NOT route through this orchestrator; they go straight to their per-medium drawers with brand-specific prompts. Cold-isolated per project.",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Illustration art-direction pass (BEFORE visual-orchestrator)",
+      "rule": "After source HTML is scaffolded (by /prototype skill or top-level Claude), BEFORE visual-orchestrator's per-medium dispatch fires, chat-Claude dispatches illustration-orchestrator IF (a) at least one slot in the source will resolve to raster-foreground with depictive role (mascot / character / spot illustration / hero illustration), OR to depictive vector-mark (multi-figure scene, character mark), AND the surrounding aesthetic demands illustration NOT photography (claymorphism, neumorphism, corporate-memphis, positivity-kawaii, doodle-ui, pixel-*, cottagecore-illustration, dreamcore-illustration, scrapbook-handlettering, aesthetic-curly-girly, aesthetic-vector-neovectorheart, aesthetic-vector-vectorbloom, etc.) AND (b) an image-generation model is wired into the project. Also fires on explicit user request naming an illustration style (\"3D clay models\" / \"fluffy 3D\" / \"watercolor anime\" / \"Pixar render\" / \"Risograph\" / \"Saul Bass\" / \"Lisa Frank\" / \"Hilma af Klint\" / \"Naoshi Komi\" / \"Studio Ghibli backgrounds\"). One consistent flow. If conditions fail, returns runStatus:error and visual-orchestrator proceeds with default prompts.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator when illustrative slots present AND image-gen wired'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [
+      "illustration-style-enricher"
+    ],
+    "collaborators": [
+      "visual-orchestrator"
+    ],
+    "lenses": []
+  },
+  "skills": [
+    "generate-image",
+    "raster-foreground"
+  ],
+  "nodeKinds": {
+    "container": [
+      "illustration-enrichment"
+    ],
+    "agent_overrides": [
+      "pe_illust_*",
+      "illust_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/research/illustration-library.md",
+    "calibration": null
+  }
+}

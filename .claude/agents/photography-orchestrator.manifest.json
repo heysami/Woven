@@ -1,0 +1,45 @@
+{
+  "id": "photography-orchestrator",
+  "label": "Photography",
+  "tagline": "Curated photography-style art-direction for raster-photo slots",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "subagentName": "photography-orchestrator",
+  "playbookPath": ".claude/agents/photography-orchestrator.md",
+  "description": "Picks photography styles for raster-photo slots BEFORE visual-orchestrator's per-medium dispatch fires. Reads docs/research/photography-library.md (42 curated styles: editorial-fashion / street / documentary / product / food / lifestyle / fine-art / conceptual + Y2K-halftone / golden-hour / night-flash / chrome-hearts-editorial / Helmut-Newton-flash / Tillmans-candid / Sorrenti-grain / GenZ-flash-disposable / Apple-clean-studio / Aesop-apothecary / Bon-Appetit-food and others). For each photographic slot, picks one primary + optional secondary style by consulting the library's decision tree against the committed prototype.md aesthetic, writes a prompt-enrichment node (pe_photo_<slotId>) whose outputs include the full prompt, negative-prompt, film-stock hint, lens hint, lighting hint, mood hint. Visual-orchestrator reads these enrichments when dispatching the raster-photo per-medium drawer. OPTIONAL — fires only when (a) at least one slot will resolve to raster-photo AND (b) an image-generation skill is wired to the project. If either condition fails, returns runStatus:error and visual-orchestrator falls back to default un-enriched prompts. Cold-isolated per project. Same trigger shape as visual-orchestrator (FIRST-style, runs against source the moment HTML is scaffolded), but scoped to photographic slots only.",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Photo art-direction pass (BEFORE visual-orchestrator)",
+      "rule": "After source HTML is scaffolded (by /prototype skill or top-level Claude), BEFORE visual-orchestrator's per-medium dispatch fires, chat-Claude dispatches photography-orchestrator IF (a) at least one slot in the source will resolve to raster-photo medium (explicit data-medium attribute OR surrounding aesthetic demands photography per the library decision tree — recipe-editorial-magazine, recipe-lookbook, recipe-warm-restraint, recipe-bento-marketing, aesthetic-coastal-grandmother, aesthetic-dark-academia, aesthetic-cottagecore with photo, aesthetic-y2k-futurism, style-cream-humanist, style-serif-warm-paper, etc.) AND (b) an image-generation model is wired into the project (a working image-gen skill registered via /__capabilities). Also fires on explicit user request naming a photographer / magazine / photo style (\"Helmut Newton flash\" / \"Chrome Hearts editorial\" / \"GenZ flash\" / \"Wolfgang Tillmans candid\" / \"golden hour cinematic\" / \"Y2K halftone\"). One consistent flow. If conditions fail, returns runStatus:error and visual-orchestrator proceeds with default prompts.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator when raster-photo slots present AND image-gen wired'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [
+      "photography-style-enricher"
+    ],
+    "collaborators": [
+      "visual-orchestrator"
+    ],
+    "lenses": []
+  },
+  "skills": [
+    "generate-image",
+    "raster-photo"
+  ],
+  "nodeKinds": {
+    "container": [
+      "photography-enrichment"
+    ],
+    "agent_overrides": [
+      "pe_photo_*",
+      "photo_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/research/photography-library.md",
+    "calibration": null
+  }
+}
