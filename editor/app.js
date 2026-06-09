@@ -7751,12 +7751,13 @@ function SettingsGearButton({ onClick, className }) {
   ><${Icon.Gear}/><span className="tab-tip">Settings</span></button>`;
 }
 
-/* Top-bar Exports button — sibling of SettingsGearButton. Opens
-   WorkflowExportsDialog scoped to the active project (or, on the
-   landing page where no project is active, the full per-project
-   list). The icon matches the per-asset Export ⤓ glyph so the
-   connection reads visually: "this is where the destination for
-   that button comes from." */
+/* Top-bar Exports button — sibling of SettingsGearButton. Mounted
+   only on surfaces where there's an active project (editor toolbar +
+   workflow surface — never on the landing page, since there's nothing
+   to export-from without a project context). Opens WorkflowExportsDialog
+   scoped to the active project. The icon matches the per-asset Export
+   ⤓ glyph so the connection reads visually: "this is where the
+   destination for that button comes from." */
 function WorkflowExportsButton({ onClick, className }) {
   return html`<button
     className=${"workflow-toolbar-gear " + (className || "")}
@@ -14070,7 +14071,6 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [exportsOpen, setExportsOpen]   = useState(false);
   // v3.3 — Top-level landing tabs. "projects" is the legacy default; "planners"
   // surfaces the planner registry (per .claude/agents/*.manifest.json).
   const [activeTab, setActiveTab] = useState("projects");
@@ -14380,7 +14380,6 @@ function ProjectsLanding({ info, projects, onReload }) {
               <${DaemonIndicator}/>
               <${CliIndicator}/>
               <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
-              <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="landing-gear"/>
               <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
             </div>
           </div>
@@ -14434,7 +14433,6 @@ function ProjectsLanding({ info, projects, onReload }) {
         </div>
       </header>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
-      ${exportsOpen  && html`<${WorkflowExportsDialog}  onClose=${() => setExportsOpen(false)}/>`}
       <main className="landing-main">
         <div className="landing-main-inner">
 
@@ -43673,11 +43671,21 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
     }
     // No native CLI → fall through to API-key loop below.
   }
+  // First pass: any provider with a key wins.
   for (const m of models) {
     if (m.cliOnly) continue;
     if (_providerHasKey(mediaConfig, m.provider)) {
       return { provider: m.provider, model: m.id, source: "key" };
     }
+  }
+  // v3.5 — Image generation can also run via Codex CLI's built-in image
+  // tool (uses the user's `codex login` OAuth — no OpenAI API key needed).
+  // Only fires when no key is configured for any provider in the catalog
+  // for this cap, so paid keys still win. The daemon's _asset_generate
+  // path gates this fallback on detect_agent_bin("codex").
+  if (cap === "image" && mediaConfig && mediaConfig.codex_cli_available) {
+    const m = pickForProvider("openai");
+    if (m) return { provider: m.provider, model: m.id, source: "cli" };
   }
   return null;
 }
@@ -43874,53 +43882,47 @@ function WorkflowExportsDialog({ onClose }) {
             <div className="workflow-modal-sub">
               ${active
                 ? html`scope: <code>${active}</code> · stored in <code>workspace.json</code>`
-                : html`all projects · stored in <code>workspace.json</code>`}
+                : html`no active project · open a project first`}
             </div>
           </div>
           <button className="workflow-modal-close" onClick=${onClose}>×</button>
         </div>
         <div className="workflow-settings-body">
-          <${WorkflowExportsSection} scopeToActive=${!!active} activeProjectId=${active}/>
+          ${active
+            ? html`<${WorkflowExportsSection} activeProjectId=${active}/>`
+            : html`<div className="workflow-settings-section">
+                <span className="workflow-settings-localhint">
+                  This dialog configures the export folder for one project.
+                  Open a project from the landing page first.
+                </span>
+              </div>`}
         </div>
       </div>
     </div>
   `, document.body);
 }
 
-/* Per-project export folder picker. With `scopeToActive=true` it loads
-   ONLY the active project's row (single-project shape from the daemon).
-   With `scopeToActive=false` it enumerates every project in
-   workspace.json (full list for the landing entry-point). Same row
-   component either way. */
-function WorkflowExportsSection({ scopeToActive, activeProjectId: activePid }) {
+/* Per-project export folder picker — single row for the active project.
+   Reads/writes /__export_config?project=<id>. The per-asset Export
+   button on a node POSTs to /__export_asset using this stored folder. */
+function WorkflowExportsSection({ activeProjectId: activePid }) {
   const [projects, setProjects] = useState(null);
   const [busy, setBusy] = useState({});
   const reload = useCallback(async () => {
+    if (!activePid) { setProjects([]); return; }
     try {
-      if (scopeToActive && activePid) {
-        // Editor entry-point: single project, no list. The daemon returns
-        // `{project, exportFolder, status}` for the ?project=<id> branch;
-        // wrap into the row shape WorkflowExportRow expects.
-        const r = await fetch("/__export_config?project=" + encodeURIComponent(activePid));
-        const j = await r.json();
-        setProjects([{
-          id:           activePid,
-          label:        activePid,
-          exportFolder: j.exportFolder || "",
-          status:       j.status || null,
-        }]);
-      } else {
-        // Landing entry-point: full list, raw fetch (must NOT route through
-        // apiUrl() which appends ?project= and makes the daemon return the
-        // single-project shape).
-        const r = await fetch("/__export_config");
-        const j = await r.json();
-        setProjects(Array.isArray(j.projects) ? j.projects : []);
-      }
+      const r = await fetch("/__export_config?project=" + encodeURIComponent(activePid));
+      const j = await r.json();
+      setProjects([{
+        id:           activePid,
+        label:        activePid,
+        exportFolder: j.exportFolder || "",
+        status:       j.status || null,
+      }]);
     } catch {
       setProjects([]);
     }
-  }, [scopeToActive, activePid]);
+  }, [activePid]);
   useEffect(() => { reload(); }, [reload]);
   const setBusyFor = (pid, v) => setBusy((b) => ({ ...b, [pid]: v }));
   const save = async (pid, path) => {

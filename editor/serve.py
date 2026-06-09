@@ -1004,6 +1004,113 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
+def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
+    """Generate an image via the Codex CLI's built-in image-gen tool.
+
+    Codex's agent loop ships with a `generate_image` tool that calls
+    OpenAI's image API internally, authenticating via the user's
+    `codex login` OAuth token — so no OPENAI_API_KEY is required. This
+    helper instructs Codex to invoke that tool and write the PNG into a
+    tempdir we control, then reads the bytes back.
+
+    Why a tempdir inside project_root: Codex's default sandbox includes
+    the project's working directory + writable subdirs. /tmp is sometimes
+    outside its allowed-write set, depending on Codex's settings. Keeping
+    the staging dir under project_root sidesteps that uncertainty.
+
+    Args:
+        prompt: user-supplied image brief
+        model:  gpt-image-2 / gpt-image-1 / etc. — passed verbatim. The
+                "codex-default" sentinel means "let Codex pick its own
+                default" and we omit the model line from the prompt.
+        aspect: "1:1" / "3:2" / etc. — passed into the prompt as a hint
+        project_root: absolute path of the active project; tempdir lives
+                here so Codex's sandbox can write into it
+        timeout: subprocess timeout in seconds (image gen via the agent
+                 loop is slow — 5+ minutes is realistic)
+
+    Returns the PNG bytes. Raises:
+      • FileNotFoundError("codex") if codex isn't on PATH
+      • RuntimeError("codex stderr…") if codex exits non-zero
+      • RuntimeError("no PNG produced") if codex ran but no image was saved
+      • subprocess.TimeoutExpired if the timeout hits
+    """
+    bin_path = detect_agent_bin("codex")
+    if not bin_path:
+        raise FileNotFoundError("codex")
+    # Stage the output in a tempdir under project_root so Codex's sandbox
+    # is happy. We clean it up regardless of outcome.
+    import tempfile as _tempfile, glob as _glob
+    staging_root = os.path.join(project_root, ".codex-imagegen-staging")
+    os.makedirs(staging_root, exist_ok=True)
+    tmpdir = _tempfile.mkdtemp(prefix="codex-img-", dir=staging_root)
+    out_path = os.path.join(tmpdir, "out.png")
+    try:
+        # Prompt: explicit, no-ambiguity instructions. The agent loop
+        # tends to chat ("Here's the image…") otherwise; we want a deterministic
+        # write to a known path. The "If you can't, say UNABLE" exit hatch lets
+        # us catch sandbox/tool-availability failures without parsing stderr.
+        model_clause = ""
+        m_lower = (model or "").lower().strip()
+        if m_lower and m_lower not in ("codex-default", "cli-default", "default", ""):
+            model_clause = f"Use the {model} image model.\n"
+        aspect_clause = f"Aspect ratio: {aspect}.\n" if aspect else ""
+        codex_prompt = (
+            "Generate one image and save it to disk. No commentary.\n\n"
+            f"Image brief: {prompt}\n\n"
+            f"{model_clause}{aspect_clause}"
+            f"Write the PNG bytes to exactly this absolute path: {out_path}\n\n"
+            "When done, print ONLY the path on its own line. If you cannot "
+            "generate an image for any reason (tool unavailable, sandbox, "
+            "policy), print 'UNABLE: <one-line reason>' and exit."
+        )
+        args = [bin_path, "exec", "--full-auto"]
+        # codex exec has been known to accept the prompt as the trailing
+        # positional argument across versions; keep that shape.
+        args.append(codex_prompt)
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=project_root,
+            stdin=subprocess.DEVNULL,
+        )
+        # Codex may exit 0 even when the agent gave up. Check the file
+        # first, regardless of exit code.
+        if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
+            with open(out_path, "rb") as f:
+                data = f.read()
+            return data
+        # No file at the expected path — look for any PNG the agent might
+        # have written elsewhere in the staging dir (sometimes it picks
+        # a different filename despite the instructions).
+        candidates = _glob.glob(os.path.join(tmpdir, "*.png"))
+        for c in candidates:
+            if os.path.getsize(c) > 0:
+                with open(c, "rb") as f:
+                    return f.read()
+        # No image. Surface stderr/stdout snippets so the UI can show why.
+        stderr_tail = (result.stderr or "").strip()[-500:]
+        stdout_tail = (result.stdout or "").strip()[-500:]
+        # If the agent printed "UNABLE: ..." that's the cleanest message.
+        for line in (result.stdout or "").splitlines():
+            if line.startswith("UNABLE:"):
+                raise RuntimeError(f"codex image-gen unavailable: {line}")
+        raise RuntimeError(
+            f"codex ran but no PNG was produced. stderr: {stderr_tail!r} "
+            f"stdout: {stdout_tail!r}"
+        )
+    finally:
+        # Best-effort cleanup. Leave the staging root in place across runs;
+        # this turn's tmpdir alone is removed.
+        try:
+            import shutil as _shutil
+            _shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def _anthropic_chat(api_key, messages, model="claude-sonnet-4-6", options=None, vision=False):
     """Anthropic Messages API. Accepts the same OpenAI-style `messages` array
     we use everywhere — system messages are folded into a top-level `system`
@@ -8253,12 +8360,24 @@ class H(http.server.SimpleHTTPRequestHandler):
         # provider="local" runs in-process via a Python library (e.g., rembg).
         # No credentials required — skip the key lookup entirely.
         api_key = None
+        # v3.5 — Codex CLI fallback for openai image generation. Codex's
+        # agent loop has a built-in image-gen tool that calls OpenAI's
+        # image endpoints using the user's `codex login` OAuth — no API
+        # key required. Only applies to image generation (not video / svg /
+        # transforms), because that's the only path where Codex has a
+        # native tool we can call.
+        use_codex_image_fallback = False
         if provider != "local":
             api_key = _resolve_provider_key(provider)
             if not api_key:
-                return self._reply(502, {
-                    "error": f"no {provider} API key configured — open Settings (⚙ in the workflow toolbar) and paste your key",
-                })
+                if (provider == "openai"
+                    and skill == "generate-image"
+                    and detect_agent_bin("codex") is not None):
+                    use_codex_image_fallback = True
+                else:
+                    return self._reply(502, {
+                        "error": f"no {provider} API key configured — open Settings (⚙ in the workflow toolbar) and paste your key",
+                    })
 
         # Validate inputs per family.
         input_abs = None
@@ -8321,6 +8440,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # influences the output. (Validated above.)
                 has_image_input = bool(input_abs or input_data_uri)
                 if has_image_input and provider == "openai":
+                    if use_codex_image_fallback:
+                        return self._reply(400, {
+                            "error":
+                                "Image-to-image (input image attached) requires the OpenAI HTTP /v1/images/edits endpoint. "
+                                "Codex CLI doesn't expose an image-edit tool — please paste an OpenAI API key in Settings, "
+                                "or use a text-to-image variant (drop the input image)."
+                        })
                     if input_abs:
                         with open(input_abs, "rb") as f:
                             img_bytes = f.read()
@@ -8334,7 +8460,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                         img_bytes = base64.b64decode(m.group(2))
                     bytes_ = _openai_edit_image(api_key, prompt, model, img_bytes, img_mime, aspect, options)
                 elif provider == "openai":
-                    bytes_ = _openai_generate_image(api_key, prompt, model, aspect, options)
+                    if use_codex_image_fallback:
+                        # v3.5 — no API key + codex on PATH: run the agent.
+                        # Timeout is generous (5 min) — codex's agent loop
+                        # can take a while for image gen.
+                        bytes_ = _codex_cli_generate_image(
+                            prompt, model, aspect, project_root, timeout=300,
+                        )
+                    else:
+                        bytes_ = _openai_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "fal" and skill == "video-gen":
                     # v3.4.1 — Real video. Dispatches to fal's text-to-video
                     # endpoint and downloads the mp4 bytes. Unlike image
