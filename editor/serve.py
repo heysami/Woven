@@ -1064,10 +1064,13 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
             "generate an image for any reason (tool unavailable, sandbox, "
             "policy), print 'UNABLE: <one-line reason>' and exit."
         )
-        args = [bin_path, "exec", "--full-auto"]
-        # codex exec has been known to accept the prompt as the trailing
-        # positional argument across versions; keep that shape.
-        args.append(codex_prompt)
+        # v3.5 — Use only `codex exec` + the prompt. Earlier code added
+        # --full-auto, but we don't actually know it exists on every
+        # version (`codex exec --help` is the source of truth on a given
+        # install). `codex exec` is non-interactive by default; if a
+        # specific version blocks on approval, we'll see that in the
+        # error and add the right flag here.
+        args = [bin_path, "exec", codex_prompt]
         result = subprocess.run(
             args,
             capture_output=True,
@@ -2532,15 +2535,26 @@ AGENT_DEFS = {
     },
     "codex": {
         "bin": "codex",
-        # Codex's permission flag differs (`--full-auto` shorthand or
-        # `--approval-mode full-auto`). Leave it un-pinned until we exercise
-        # Codex live; the user can pass --approval-mode through the args list
-        # if needed.
-        "args": ["exec", "--output-format", "stream-json"],
+        # v3.5 — Empirical fix. The Codex CLI on a user's install (June 2026)
+        # errors with "unexpected argument '--output-format'" — Codex no
+        # longer supports the stream-json output flag Claude exposes. Codex
+        # exec also takes its prompt as a positional argv (not a stream-json
+        # frame on stdin), so we set prompt_via_stdin=False and the spawn
+        # paths append the prompt as the trailing argv element.
+        #
+        # Known unknowns:
+        #   • Whether --full-auto exists on this Codex version (we don't
+        #     pass it; if Codex blocks on a permission prompt in exec mode,
+        #     we'll add the right flag here based on the empirical error).
+        #   • Codex's default output format isn't stream-json, so the
+        #     daemon's _normalize_frame won't parse codex's chat output
+        #     incrementally. The chat will appear all at once at the end
+        #     instead of streaming. Tracked as a follow-up.
+        "args": ["exec"],
         "permission_flag": None,
         "permission_default": None,
-        "prompt_via_stdin": True,
-        "stdin_format": "stream-json",
+        "prompt_via_stdin": False,
+        "stdin_format": "argv",
     },
 }
 
@@ -12134,11 +12148,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
         elif agent_id == "codex":
-            # Codex's full-auto mode skips all permission prompts. Default
-            # to it when bypassPermissions is requested; otherwise let the
-            # CLI fall through to its built-in default approval-mode.
-            if permission_mode == "bypassPermissions":
-                spawn_args += ["--full-auto"]
+            # v3.5 — Codex's permission flags are version-specific
+            # (--full-auto / --approval-mode full-auto / a config key).
+            # We don't know which the user's install accepts so we pass
+            # nothing here. `codex exec` is non-interactive by definition,
+            # so most versions just run without prompts; if a future error
+            # shows codex blocking, add the right flag here based on the
+            # empirical message.
+            pass
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability — see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
@@ -12205,6 +12222,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # v3.5 — Claude-only; Codex uses cwd directly without an --add-dir flag.
         if agent_id == "claude":
             spawn_args += ["--add-dir", project_root]
+
+        # v3.5 — When the agent doesn't accept a stream-json prompt on stdin
+        # (codex), pass the prompt as the trailing positional argv. Codex
+        # exec's signature is `codex exec [OPTIONS] [PROMPT]`.
+        if not defs["prompt_via_stdin"]:
+            spawn_args.append(prompt_text)
 
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,
