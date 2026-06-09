@@ -1,3 +1,16 @@
+---
+# Optional sample-image references. Each entry pairs an image (relative to
+# the prototype/ folder, or absolute under the project root) with the
+# *reason* it belongs to this genre. The landing System tab's design
+# library surfaces these so a project picking this shell can adopt the
+# images as visual references. Picks aren't deterministic — multiple refs
+# are encouraged.
+images:
+  - src: shell-bento-grid-1.png
+    reason: Placeholder — replace with an Apple privacy-page-style asymmetric 12-col bento (one bold visual per cell)
+  - src: shell-bento-grid-2.png
+    reason: Placeholder — replace with a low-density bento showing 24px gaps + 16-24px cell radii + generous 32-48px padding
+---
 # Bento grid shell
 
 **Tag:** `[marketing · 12-col asymmetric · low-density]`

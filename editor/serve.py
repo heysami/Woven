@@ -4983,6 +4983,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Protocol docs (shared).
         if parts[:1] == ["docs"] or parts in (["AGENTS.md"], ["PROTOTYPE.md"]):
             return os.path.join(INSTALL_ROOT, *parts)
+        # Prototype detail library (shared, read-only). Per-genre detail .md
+        # files + per-genre sample image references for the landing System
+        # tab's catalog. The folder is committed at INSTALL_ROOT/prototype/
+        # next to PROTOTYPE.md; routing it here means `<img src="/prototype/
+        # foo.png">` from the landing works the same in workspace and
+        # single-project modes — without it the path would resolve under
+        # whichever project happens to load first.
+        if parts[:1] == ["prototype"]:
+            return os.path.join(INSTALL_ROOT, *parts)
         # Per-project sources + per-project docs (DESIGN.md, NOTES.md,
         # prototype.json, MERGES.md, FORK_REQUEST.md, edits.json, ...).
         return os.path.join(project_root, *parts)
@@ -5232,6 +5241,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._orchestrators_registry(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__cc_skills":
             return self._cc_skills_list()
+        if url_path == "/__prototype_catalog":
+            return self._prototype_catalog()
         if url_path == "/__workspace":
             return self._workspace_info()
         if url_path == "/__projects":
@@ -11646,6 +11657,255 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
         except Exception as e:
             return self._reply(500, {"error": f"orchestrator toggle failed: {e}"})
+
+    # ── Prototype detail catalog ─────────────────────────────────────────
+    #
+    # GET /__prototype_catalog — list every detail .md file under
+    # INSTALL_ROOT/prototype/, grouped by category prefix (shell- / style- /
+    # aesthetic- / recipe- / scene- / step-). Each entry carries:
+    #   {file, category, title, summary, images:[{src, reason}], path}
+    #
+    # The landing System tab renders this so the user can browse the design
+    # library (shells, styles, aesthetics, recipes, scenes, steps) without
+    # opening PROTOTYPE.md. Sample images attached to a genre serve as visual
+    # references once a project commits a direction — multiple images per
+    # genre supported because picks are not deterministic and a finished
+    # design often blends references.
+    #
+    # The endpoint is tolerant: existing detail files have no frontmatter,
+    # so when none is present, title is read from the first H1 line and
+    # summary from the first paragraph (or the **Tag:** line). When a file
+    # opts in to YAML frontmatter, the parser reads an `images:` list
+    # whose entries are `{src, reason}` pairs.
+    #
+    # Frontmatter shape (entirely optional, additive):
+    #   ---
+    #   images:
+    #     - src: shell-bento-grid-1.png
+    #       reason: Apple privacy page hero — canonical asymmetric 12-col
+    #     - src: shell-bento-grid-2.png
+    #       reason: cell radii + low-density discipline
+    #   ---
+    #   # Bento grid shell
+    #   ...
+    #
+    # `src` may be a bare filename (resolved under /prototype/) or a path
+    # relative to /prototype/. Images that don't exist on disk are still
+    # surfaced — the UI shows a placeholder until the user drops in the
+    # real file. This is intentional: the user adds sample images
+    # incrementally and the catalog has to keep working in the meantime.
+
+    # Only the four visual axes are catalog-worthy: shell + style + aesthetic
+    # + recipe. These are WHAT to draw — each carries a vocabulary the user
+    # can adopt and sample images can reference.
+    #
+    # The `step-*.md` files (workflow phases — stack, tokens, layout,
+    # optical, components, content, graphics, motion) describe HOW to draw,
+    # not what; they're playbook chapters and attaching reference images
+    # to them is meaningless. The scene addendum is a single carve-out doc
+    # for the 3D/maps/shaders branch. Both are still readable through
+    # PROTOTYPE.md but are deliberately hidden from the catalog so the
+    # Design library reads as a clean visual menu.
+    _PROTOTYPE_CATEGORIES = (
+        ("shell",     "Shells",       "Page-level layout chassis — where things sit before any styling is applied."),
+        ("style",     "Styles",       "Surface treatment — color, type, hairlines, shadows, radii."),
+        ("aesthetic", "Aesthetics",   "Cultural/visual movement applied on top of a style — vaporwave, cottagecore, bauhaus, etc."),
+        ("recipe",    "Recipes",      "Known-good (shell + style + aesthetic + voice) bundles for common briefs."),
+        ("photo",     "Photography",  "Curated photography styles for raster-photo slots — editorial-fashion, street, documentary, product, food, lifestyle, fine-art, conceptual, era-specific (y2k-halftone, frutiger-aero, vaporwave) — read by photography-orchestrator. Full library: docs/research/photography-library.md."),
+        ("illust",    "Illustration", "Curated illustration styles for raster-foreground slots — 3D (clay / fluffy / Pixar / origami / voxel), flat-vector (corporate-memphis / thick-border / jean-jullien), hand-drawn (scribble / watercolor / gouache / pencil), anime (Ghibli / Shinkai / shoujo / kawaii), illustrative-typography, abstract-decoration, mid-century, surreal-esoteric — read by illustration-orchestrator. Full library: docs/research/illustration-library.md."),
+        ("material",  "Materials",    "Material taxonomy for the material-orchestrator's fidelity pass — digital UI surfaces (glass / clay / chrome / holographic / aurora / Frutiger), digital media textures (pixel / CRT / dither / ANSI / datamosh / RGB-split / JPEG-corruption / chromatic-aberration / displacement / plotter / wireframe / schematic / hand-architect), analog materials (paper / fabric / leather / film grain / VHS / risograph / halftone / letterpress / ink-wash / pencil), hybrid cross-overs. Full library: docs/research/material-library.md."),
+    )
+    _PROTOTYPE_HIDDEN_PREFIXES = ("step-", "scene-")
+
+    def _parse_prototype_md(self, path):
+        """Read one prototype detail file. Returns
+            {title, summary, images: [{src, reason}]}
+        Tolerant of every file shape the repo currently uses — missing
+        frontmatter, missing summary, weird first-line markup."""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = f.read()
+        except OSError:
+            return {"title": "", "summary": "", "images": []}
+
+        title = ""
+        summary = ""
+        images = []
+        body = raw
+
+        # Optional YAML-ish frontmatter block at the very top.
+        if raw.startswith("---"):
+            end = raw.find("\n---", 3)
+            if end > 0:
+                fm = raw[3:end]
+                body = raw[end + 4:].lstrip("\n")
+                # Walk the frontmatter line by line looking for `images:`
+                # followed by `- src: ...` / `reason: ...` pairs. Keeps the
+                # parser dependency-free (no PyYAML) and lets the file be
+                # hand-edited without ceremony.
+                in_images = False
+                cur = None
+                for line in fm.splitlines():
+                    stripped = line.rstrip()
+                    if not stripped:
+                        continue
+                    bare = stripped.lstrip()
+                    indent = len(stripped) - len(bare)
+                    if indent == 0:
+                        in_images = bare.startswith("images:")
+                        cur = None
+                        continue
+                    if not in_images:
+                        continue
+                    if bare.startswith("- "):
+                        # New list entry. Body may be inline (`- src: foo.png, reason: bar`)
+                        # or just `- ` followed by indented child lines.
+                        cur = {"src": "", "reason": ""}
+                        images.append(cur)
+                        rest = bare[2:].strip()
+                        # If the entry is a bare scalar `- foo.png`, treat as src-only.
+                        if rest and ":" not in rest:
+                            cur["src"] = rest.strip().strip('"').strip("'")
+                            continue
+                        if rest:
+                            k, _, v = rest.partition(":")
+                            k = k.strip().lower()
+                            v = v.strip().strip('"').strip("'")
+                            if k in ("src", "reason"):
+                                cur[k] = v
+                        continue
+                    if cur is None:
+                        continue
+                    if ":" in bare:
+                        k, _, v = bare.partition(":")
+                        k = k.strip().lower()
+                        v = v.strip().strip('"').strip("'")
+                        if k in ("src", "reason"):
+                            cur[k] = v
+
+        # Title: first `# heading` line in the body.
+        for line in body.splitlines():
+            line = line.strip()
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+
+        # Summary: first paragraph after the H1 that isn't a `**Tag:**`,
+        # `**Canonical references:**`, code fence, blockquote, or list. We
+        # collect contiguous prose lines and stop at a blank line.
+        seen_h1 = False
+        para = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not seen_h1:
+                if stripped.startswith("# "):
+                    seen_h1 = True
+                continue
+            if not stripped:
+                if para:
+                    break
+                continue
+            if stripped.startswith("```") or stripped.startswith("#"):
+                if para:
+                    break
+                continue
+            if stripped.startswith(">") or stripped.startswith("- ") or stripped.startswith("* "):
+                if para:
+                    break
+                continue
+            # Skip the **Tag:** / **Canonical references:** convention lines —
+            # those are catalog metadata, not the genre's prose summary.
+            if stripped.startswith("**Tag:**") or stripped.startswith("**Canonical references:**"):
+                continue
+            para.append(stripped)
+        summary = " ".join(para).strip()
+        # Hard cap so the landing card stays readable. Cut on a word boundary.
+        if len(summary) > 320:
+            cut = summary.rfind(" ", 0, 320)
+            summary = summary[: cut if cut > 200 else 320].rstrip() + "…"
+
+        return {"title": title, "summary": summary, "images": images}
+
+    def _prototype_catalog(self):
+        """GET /__prototype_catalog — emit the design library shipped with
+        this repo (INSTALL_ROOT/prototype/). Returned shape:
+            {
+              groups: [
+                {key, label, description, items: [{file, slug, title, summary, images:[{src, reason, exists}]}]}
+              ],
+              total: <int>,
+              categories: [{key, label}],
+              note: "<one-liner about the non-deterministic blend>"
+            }
+        The UI surfaces this in the System tab so the user can browse
+        what shells / aesthetics / recipes / styles / scenes / steps are
+        available, and add sample images per detail file over time."""
+        proto_dir = os.path.join(INSTALL_ROOT, "prototype")
+        groups_by_key = {}
+        for key, label, desc in self._PROTOTYPE_CATEGORIES:
+            groups_by_key[key] = {"key": key, "label": label, "description": desc, "items": []}
+        unknown = {"key": "other", "label": "Other", "description": "Detail files that don't match a known category prefix.", "items": []}
+
+        if os.path.isdir(proto_dir):
+            for name in sorted(os.listdir(proto_dir)):
+                if not name.endswith(".md"):
+                    continue
+                full = os.path.join(proto_dir, name)
+                if not os.path.isfile(full):
+                    continue
+                slug = name[:-3]
+                # Skip workflow-phase and scene-addendum docs — they aren't
+                # visual picks and don't belong in the catalog.
+                if any(slug.startswith(p) for p in self._PROTOTYPE_HIDDEN_PREFIXES):
+                    continue
+                # Category from the filename prefix. Falls back to "other"
+                # for stray files (e.g. a README dropped in the folder).
+                cat = "other"
+                for k, _, _ in self._PROTOTYPE_CATEGORIES:
+                    if slug == k or slug.startswith(k + "-"):
+                        cat = k
+                        break
+                parsed = self._parse_prototype_md(full)
+                images = []
+                for img in parsed["images"]:
+                    src = (img.get("src") or "").strip()
+                    if not src:
+                        continue
+                    # Resolve relative `foo.png` to /prototype/foo.png; leave
+                    # explicit absolute / project-relative paths alone.
+                    if "/" not in src:
+                        rel = "prototype/" + src
+                    else:
+                        rel = src.lstrip("/")
+                    on_disk = os.path.isfile(os.path.join(INSTALL_ROOT, rel))
+                    images.append({
+                        "src":    "/" + rel,
+                        "reason": (img.get("reason") or "").strip(),
+                        "exists": on_disk,
+                    })
+                item = {
+                    "file":    name,
+                    "slug":    slug,
+                    "title":   parsed["title"] or slug,
+                    "summary": parsed["summary"],
+                    "images":  images,
+                    "path":    "prototype/" + name,
+                }
+                bucket = groups_by_key.get(cat, unknown)
+                bucket["items"].append(item)
+
+        groups = [g for g in groups_by_key.values() if g["items"]]
+        if unknown["items"]:
+            groups.append(unknown)
+        total = sum(len(g["items"]) for g in groups)
+        return self._reply(200, {
+            "groups":     groups,
+            "total":      total,
+            "categories": [{"key": k, "label": l} for k, l, _ in self._PROTOTYPE_CATEGORIES],
+            "note":       ("Picks are not deterministic — a finished prototype can blend two recipes or "
+                           "borrow one aesthetic's palette while wearing another shell. Treat sample "
+                           "images as references, not destinations."),
+        })
 
     # ── Harness-local skills routes ──────────────────────────────────────
     #

@@ -1105,6 +1105,245 @@ button {
 .ref-filter-chip.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
 .ref-filter-count { font-size: 10px; padding: 0 5px; border-radius: 7px; background: var(--surface-2); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .ref-filter-chip.is-active .ref-filter-count { background: rgba(255,255,255,0.6); color: var(--accent-text); }
+.ref-empty { padding: 28px; text-align: center; color: var(--text-muted); font-size: 13px; border: 1px dashed var(--border); border-radius: 8px; }
+
+/* ─── v3.6 — Prototype catalog ──────────────────────────────────────────
+   Lives in the System tab as the "Design library" surface. Each card
+   surfaces one prototype/<slug>.md detail file with an image strip of
+   sample references. The grid is wider than .ref-grid so the image strip
+   has room; cards inherit the .ref-* token vocabulary so adding new
+   entries doesn't require ad-hoc styling. */
+.proto-catalog-note {
+  margin-top: 4px;
+  padding: 10px 14px;
+  background: oklch(97% 0.02 80);
+  border-left: 3px solid oklch(75% 0.15 80);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 800px;
+}
+.proto-catalog-search {
+  margin-left: auto;
+  min-width: 220px;
+  flex: 0 0 240px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+}
+.proto-catalog-search:focus { outline: none; border-color: var(--accent); }
+.proto-catalog-filter-result { font-size: 12px; color: var(--text-muted); margin-top: -8px; }
+
+.proto-catalog-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+}
+
+.proto-catalog-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(40, 34, 26, 0.04);
+}
+.proto-catalog-card[data-cat="shell"]    { border-top: 3px solid oklch(78% 0.12 250); }
+.proto-catalog-card[data-cat="style"]    { border-top: 3px solid oklch(80% 0.13 160); }
+.proto-catalog-card[data-cat="aesthetic"]{ border-top: 3px solid oklch(82% 0.15 330); }
+.proto-catalog-card[data-cat="recipe"]   { border-top: 3px solid oklch(82% 0.14 60);  }
+.proto-catalog-card[data-cat="scene"]    { border-top: 3px solid oklch(76% 0.12 200); }
+.proto-catalog-card[data-cat="step"]     { border-top: 3px solid oklch(86% 0.04 80);  }
+
+.proto-catalog-card-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.proto-catalog-card-disclosure {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-faint);
+  width: 10px;
+}
+.proto-catalog-card-titles { min-width: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.proto-catalog-card-title  { font-size: 14px; font-weight: 600; color: var(--text); }
+.proto-catalog-card-slug   {
+  font-size: 11px; padding: 1px 6px; border-radius: 4px;
+  background: var(--surface-2); color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+}
+.proto-catalog-card-imgcount {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.proto-catalog-card.is-open .proto-catalog-card-imgcount { background: var(--accent-soft); color: var(--accent-text); }
+
+.proto-catalog-card-summary {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.proto-catalog-card-imgstrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+.proto-catalog-card-imgstrip[data-empty="true"] {
+  padding-top: 0;
+}
+
+.proto-catalog-thumb {
+  margin: 0;
+  display: flex; flex-direction: column;
+  gap: 6px;
+  width: 180px;
+}
+.proto-catalog-thumb-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 0;
+  cursor: zoom-in;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 120ms, transform 120ms;
+}
+.proto-catalog-thumb-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.proto-catalog-thumb-btn:disabled { cursor: not-allowed; }
+.proto-catalog-thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.proto-catalog-thumb-placeholder {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: ui-monospace, monospace;
+}
+.proto-catalog-thumb.is-missing .proto-catalog-thumb-btn {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      var(--surface-2) 0 6px,
+      var(--surface-3) 6px 12px
+    );
+  border-style: dashed;
+}
+.proto-catalog-thumb-caption {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.proto-catalog-thumb-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  width: 100%;
+}
+.proto-catalog-thumb-empty code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+}
+.proto-catalog-thumb-empty-glyph {
+  font-size: 14px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.proto-catalog-card-meta {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.proto-catalog-card-meta-row {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 11.5px;
+}
+.proto-catalog-card-meta-label {
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+}
+.proto-catalog-card-meta-value { color: var(--text-muted); line-height: 1.5; }
+.proto-catalog-card-meta-value code { background: var(--surface-2); padding: 0 4px; border-radius: 3px; font-size: 10.5px; }
+.proto-catalog-card-meta-link { color: var(--accent); font-size: 11.5px; text-decoration: none; }
+.proto-catalog-card-meta-link:hover { text-decoration: underline; }
+
+/* Click-to-zoom overlay. Plain backdrop, click outside or the close
+   button to dismiss. The figcaption shows the reason so users can read
+   what about the image earned its slot in the genre's references. */
+.proto-catalog-zoom {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(20, 18, 14, 0.78);
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px;
+  cursor: zoom-out;
+}
+.proto-catalog-zoom-close {
+  position: absolute; top: 18px; right: 22px;
+  background: rgba(255,255,255,0.9);
+  border: 0;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 22px; line-height: 1;
+  cursor: pointer;
+}
+.proto-catalog-zoom-figure {
+  margin: 0;
+  max-width: min(1200px, 90vw);
+  max-height: 86vh;
+  display: flex; flex-direction: column;
+  gap: 10px;
+  cursor: default;
+}
+.proto-catalog-zoom-img {
+  max-width: 100%;
+  max-height: 76vh;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.proto-catalog-zoom-caption {
+  font-size: 13px;
+  color: white;
+  text-align: center;
+  line-height: 1.5;
+  max-width: 800px;
+  align-self: center;
+}
 
 /* ─── v3.3 — Skill card — LIGHT ─────────────────────────────────────── */
 .skill-card {

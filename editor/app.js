@@ -13161,9 +13161,14 @@ function SystemLanding() {
   // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
   const [caps, setCaps]         = useState(null);
   const [orchestratorsData, setOrchestratorsData] = useState(null);
+  // v3.6 — prototype catalog. Cheap GET; the daemon walks INSTALL_ROOT/prototype/
+  // each call so newly-dropped sample images and edited frontmatter show up
+  // without restarting the server.
+  const [protoCatalog, setProtoCatalog] = useState(null);
   useEffect(() => {
     fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
     fetch(apiUrl("/__orchestrators")).then(r => r.ok ? r.json() : null).then(setOrchestratorsData).catch(() => {});
+    fetch(apiUrl("/__prototype_catalog")).then(r => r.ok ? r.json() : null).then(setProtoCatalog).catch(() => {});
   }, []);
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
@@ -13172,6 +13177,8 @@ function SystemLanding() {
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "skills",     label: "Skills",     count: skills.length,
       hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
+    { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 119,
+      hint: "Shells / styles / aesthetics / recipes — the prototype.md visual catalog" },
     { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 63,
       hint: "Every .claude/agents/*.md — drawers, lenses, orchestrators, cross-cutting" },
     { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
@@ -13200,6 +13207,7 @@ function SystemLanding() {
       <div className="system-content">
         ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace"/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
+        ${activeSection === "prototype"  && html`<${PrototypeCatalogLanding} data=${protoCatalog}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
       </div>
@@ -13516,6 +13524,224 @@ function CcSkillCard({ skill: sk, reload }) {
         </div>
       `}
     </div>
+  `;
+}
+
+
+// ─── PrototypeCatalogLanding ─────────────────────────────────────────────
+// v3.6 — The prototype.md design library, rendered as a browsable catalog.
+//
+// What this surface is. Woven prototypes commit a "genre" — a shell + style +
+// aesthetic + voice tuple — before any drawing happens (see PROTOTYPE.md
+// §Step zero). The detail vocabulary for every choice lives one file per
+// option under INSTALL_ROOT/prototype/. Until now those files were only
+// readable when an agent loaded them mid-build; the user couldn't browse
+// the menu. This component fixes that: the user opens the System tab,
+// switches to "Design library", and scans every shell / style / aesthetic /
+// recipe / scene / step the workspace ships with.
+//
+// Sample images. Each genre can attach 0..N sample images via optional
+// YAML frontmatter (`images: [{src, reason}, ...]`). The reason is the
+// load-bearing field — it explains *what about the image* the genre is
+// referencing (a hero composition, a palette, a type pairing, a motion
+// register). When the user commits a direction the catalog images become
+// the design references the project builds toward, since most Woven
+// projects have no separate design system to point at.
+//
+// Non-determinism callout. The component renders an explicit reminder
+// that picks aren't deterministic — a finished design often gradients
+// between recipes or borrows one aesthetic's palette while wearing
+// another shell. The note comes back from the daemon so chat-side
+// agents and this UI agree on the wording.
+function PrototypeCatalogLanding({ data }) {
+  // The active filter — "all" lists every group sequentially; selecting
+  // one category shows only that group. Same chip pattern as
+  // SubagentsLanding so the System tab stays consistent.
+  const [filterKey, setFilterKey] = useState("all");
+  const [query, setQuery] = useState("");
+  // Per-card image overlay (lightbox). Holds {src, reason, title} when open.
+  const [zoom, setZoom] = useState(null);
+
+  if (!data) {
+    return html`<div className="ref-loading">Loading design library…</div>`;
+  }
+  const groups = Array.isArray(data.groups) ? data.groups : [];
+  const total  = data.total || 0;
+
+  // Apply the text filter to every group's items (case-insensitive match
+  // against title / slug / summary). Empty filter passes everything.
+  const q = query.trim().toLowerCase();
+  const filterItem = (it) => {
+    if (!q) return true;
+    return (it.title || "").toLowerCase().includes(q)
+        || (it.slug  || "").toLowerCase().includes(q)
+        || (it.summary || "").toLowerCase().includes(q);
+  };
+  const visibleGroups = (filterKey === "all" ? groups : groups.filter(g => g.key === filterKey))
+    .map(g => ({ ...g, items: g.items.filter(filterItem) }))
+    .filter(g => g.items.length > 0);
+  const filteredTotal = visibleGroups.reduce((sum, g) => sum + g.items.length, 0);
+
+  return html`
+    <div className="ref-root">
+      <div className="ref-header">
+        <div className="ref-header-title">${total} detail file${total === 1 ? "" : "s"} in the design library</div>
+        <div className="ref-header-meta">
+          Every shell, style, aesthetic, and recipe a prototype can commit to — the four visual axes.
+          Browse before you pick a direction. Each entry can carry sample images that become reference
+          frames once a project commits — drop a <code>${"<slug>-1.png"}</code> into <code>prototype/</code>
+          and add it to the file's frontmatter under <code>images:</code> with a reason. (Workflow phases
+          and the scene-based addendum live in PROTOTYPE.md directly — they describe <em>how</em> to
+          draw, not what.)
+        </div>
+        ${data.note && html`<div className="proto-catalog-note">${data.note}</div>`}
+      </div>
+
+      <div className="ref-filter-row">
+        <button
+          className=${"ref-filter-chip" + (filterKey === "all" ? " is-active" : "")}
+          onClick=${() => setFilterKey("all")}
+        >All <span className="ref-filter-count">${total}</span></button>
+        ${groups.map(g => html`
+          <button
+            key=${g.key}
+            className=${"ref-filter-chip" + (filterKey === g.key ? " is-active" : "")}
+            onClick=${() => setFilterKey(g.key)}
+            title=${g.description}
+          >${g.label} <span className="ref-filter-count">${g.items.length}</span></button>
+        `)}
+        <input
+          className="proto-catalog-search"
+          placeholder="Filter by name or text…"
+          value=${query}
+          onInput=${e => setQuery(e.target.value)}
+        />
+      </div>
+
+      ${q && html`<div className="proto-catalog-filter-result">Showing ${filteredTotal} of ${total} matching “${query}”.</div>`}
+
+      ${visibleGroups.length === 0 && html`
+        <div className="ref-empty">No detail files match the current filter.</div>
+      `}
+
+      ${visibleGroups.map(g => html`
+        <div key=${g.key} className="ref-group proto-catalog-group" data-cat=${g.key}>
+          <div className="ref-group-head">
+            <div className="ref-group-title">${g.label} <span className="ref-group-count">${g.items.length}</span></div>
+            <div className="ref-group-desc">${g.description}</div>
+          </div>
+          <div className="proto-catalog-grid">
+            ${g.items.map(it => html`<${PrototypeGenreCard}
+              key=${it.slug}
+              item=${it}
+              category=${g.key}
+              onZoom=${(img) => setZoom({ ...img, title: it.title })}
+            />`)}
+          </div>
+        </div>
+      `)}
+
+      ${zoom && html`
+        <div className="proto-catalog-zoom" onClick=${() => setZoom(null)} role="dialog" aria-label="Image preview">
+          <button
+            className="proto-catalog-zoom-close"
+            onClick=${(e) => { e.stopPropagation(); setZoom(null); }}
+            aria-label="Close preview"
+          >×</button>
+          <figure className="proto-catalog-zoom-figure" onClick=${(e) => e.stopPropagation()}>
+            <img className="proto-catalog-zoom-img" src=${apiUrl(zoom.src)} alt=${zoom.reason || zoom.title}/>
+            <figcaption className="proto-catalog-zoom-caption">
+              <strong>${zoom.title}</strong>
+              ${zoom.reason && html`<span> — ${zoom.reason}</span>`}
+            </figcaption>
+          </figure>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// One card per detail .md. Title + slug + short summary + image strip.
+// Images are clickable to enlarge; reasons display under each image so
+// the user understands *why* that reference belongs to this genre.
+function PrototypeGenreCard({ item, category, onZoom }) {
+  const [open, setOpen] = useState(false);
+  const hasImages = item.images && item.images.length > 0;
+  return html`
+    <article className=${"proto-catalog-card" + (open ? " is-open" : "")} data-cat=${category}>
+      <header
+        className="proto-catalog-card-head"
+        onClick=${() => setOpen(x => !x)}
+        title=${open ? "Click to collapse" : "Click to expand"}
+      >
+        <span className="proto-catalog-card-disclosure" aria-hidden="true">${open ? "▼" : "▶"}</span>
+        <div className="proto-catalog-card-titles">
+          <div className="proto-catalog-card-title">${item.title}</div>
+          <code className="proto-catalog-card-slug">${item.slug}</code>
+        </div>
+        <span className="proto-catalog-card-imgcount" title=${hasImages
+          ? `${item.images.length} reference image${item.images.length === 1 ? "" : "s"} attached`
+          : "No reference images yet — add via the file's frontmatter"}>
+          ${hasImages ? `${item.images.length} ref${item.images.length === 1 ? "" : "s"}` : "no refs yet"}
+        </span>
+      </header>
+
+      ${item.summary && html`
+        <div className="proto-catalog-card-summary">${item.summary}</div>
+      `}
+
+      <div className="proto-catalog-card-imgstrip" data-empty=${!hasImages}>
+        ${hasImages
+          ? item.images.map((img, i) => html`
+              <figure key=${i} className=${"proto-catalog-thumb" + (img.exists ? "" : " is-missing")}>
+                <button
+                  type="button"
+                  className="proto-catalog-thumb-btn"
+                  onClick=${() => img.exists && onZoom && onZoom(img)}
+                  title=${img.exists
+                    ? (img.reason || "Open full size")
+                    : "Image file not on disk yet — add it to prototype/ to populate this reference"}
+                  disabled=${!img.exists}
+                >
+                  ${img.exists
+                    ? html`<img src=${apiUrl(img.src)} alt=${img.reason || item.title} loading="lazy"/>`
+                    : html`<span className="proto-catalog-thumb-placeholder">placeholder</span>`}
+                </button>
+                ${img.reason && html`<figcaption className="proto-catalog-thumb-caption">${img.reason}</figcaption>`}
+              </figure>
+            `)
+          : html`
+              <div className="proto-catalog-thumb-empty">
+                <span className="proto-catalog-thumb-empty-glyph" aria-hidden="true">▦</span>
+                <span>No sample images yet. Drop a <code>${item.slug}-1.png</code> into
+                <code>prototype/</code> and reference it in this file's frontmatter to use it as a
+                project design reference.</span>
+              </div>
+            `}
+      </div>
+
+      ${open && html`
+        <div className="proto-catalog-card-meta">
+          <div className="proto-catalog-card-meta-row">
+            <span className="proto-catalog-card-meta-label">File</span>
+            <code className="ref-chip ref-chip-path">${item.path}</code>
+          </div>
+          <div className="proto-catalog-card-meta-row">
+            <span className="proto-catalog-card-meta-label">Used by</span>
+            <span className="proto-catalog-card-meta-value">
+              The prototype skill — the agent reads <code>${item.path}</code> when this slug is the
+              committed pick for the ${category} axis.
+            </span>
+          </div>
+          <div className="proto-catalog-card-meta-row">
+            <span className="proto-catalog-card-meta-label">Open file</span>
+            <a className="proto-catalog-card-meta-link" href=${apiUrl("/" + item.path)} target="_blank" rel="noopener">
+              View raw markdown ↗
+            </a>
+          </div>
+        </div>
+      `}
+    </article>
   `;
 }
 
