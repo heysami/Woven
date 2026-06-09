@@ -5811,6 +5811,74 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   gap: 6px;
   padding: 0 0 6px 0;
 }
+/* Send queue — Claude-Code-style. When the agent is mid-turn, Send is no
+   longer disabled; it ENQUEUES into this row. The drain effect fires each
+   envelope the moment the current turn ends (any of done / fail / error
+   per policy B). Each chip = one queued message; click body to edit, ×
+   to drop. Sits ABOVE attachments because attachments belong to the next
+   not-yet-queued message in the live composer. */
+.chat-composer-queue {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 6px 0;
+}
+.chat-composer-queue-item {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  font-size: 11.5px;
+  background: color-mix(in oklch, var(--accent) 6%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  border-radius: 6px;
+  overflow: hidden;
+}
+.chat-composer-queue-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 0 6px;
+  background: color-mix(in oklch, var(--accent) 18%, var(--surface));
+  color: var(--text);
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  border-right: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
+}
+.chat-composer-queue-body {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-composer-queue-body:hover {
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-composer-queue-rm {
+  width: 24px;
+  border: 0;
+  border-left: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.chat-composer-queue-rm:hover { background: var(--surface); color: var(--text); }
 .chat-composer-attachment {
   display: inline-flex;
   align-items: center;
@@ -13491,6 +13559,19 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: pointer;
   border: 0;
   flex-shrink: 0;
+}
+/* Queue-mode Send — the agent is mid-turn; this click enqueues. Visually
+   demote the Send button from solid accent to outlined-accent so the user
+   reads it as "deferred" rather than "fire now." */
+.chat-composer-send.chat-composer-send-queue {
+  background: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+  outline: 1px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  outline-offset: -1px;
+}
+.chat-composer-send.chat-composer-send-queue:hover:not([disabled]) {
+  background: color-mix(in oklch, var(--accent) 22%, var(--surface));
+  filter: none;
 }
 /* v3.5.1 — Stop button moved from the chat header down next to Send so the
    user can interrupt the agent from the same spot they reply. Visually a
