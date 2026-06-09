@@ -279,7 +279,15 @@ def _live_provider_availability() -> list:
         cfg = _media_config_load()
         claude_cli_installed = detect_agent_bin("claude") is not None
         codex_cli_installed  = detect_agent_bin("codex") is not None
-        for p in get_capabilities()["providers"]:
+        # CRITICAL: read providers from _parse_media_models() directly, NOT
+        # via get_capabilities(). get_capabilities() now embeds the result
+        # of THIS function in its payload, so calling it from here creates
+        # infinite recursion → stack overflow → daemon crash. Bug shipped
+        # in 49f9de9 and caught when the editor first hit /__capabilities
+        # after a daemon restart. The underlying parse is what we actually
+        # need anyway.
+        providers_list = _parse_media_models().get("providers", [])
+        for p in providers_list:
             pid = p.get("id")
             if not pid:
                 continue
