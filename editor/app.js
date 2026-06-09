@@ -14380,6 +14380,7 @@ function ProjectsLanding({ info, projects, onReload }) {
               <${DaemonIndicator}/>
               <${CliIndicator}/>
               <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
+              <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="landing-gear"/>
               <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
             </div>
           </div>
@@ -14433,6 +14434,7 @@ function ProjectsLanding({ info, projects, onReload }) {
         </div>
       </header>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
+      ${exportsOpen  && html`<${WorkflowExportsDialog}  onClose=${() => setExportsOpen(false)}/>`}
       <main className="landing-main">
         <div className="landing-main-inner">
 
@@ -18893,6 +18895,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   // Phase 4a — settings dialog open state + per-skill run states.
   // runStates is keyed by skill node id; each entry holds { status, error, ranAt }.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportsOpen, setExportsOpen]   = useState(false);
   const [runStates, setRunStates] = useState({});
 
   // v3.2 — In-session clipboard for canvas node copy/paste. Lives in a ref
@@ -25416,6 +25419,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           aria-label="Enter fullscreen"
           onClick=${() => setFullscreen(true)}
         >⛶</button>
+        <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)}/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
         <button
           type="button"
@@ -25437,6 +25441,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         >⛶ Exit fullscreen</button>
       `}
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
+      ${exportsOpen  && html`<${WorkflowExportsDialog}  onClose=${() => setExportsOpen(false)}/>`}
       ${replacePickerForAssetId && html`<${WorkflowReplaceAssetChooser}
         targetNode=${(data.nodes || []).find(n => n.id === replacePickerForAssetId)}
         onCancel=${() => setReplacePickerForAssetId(null)}
@@ -43631,48 +43636,47 @@ function _providerAvailability(mediaConfig, providerId) {
   return { ok: false, source: "none" };
 }
 function _pickAutoForCapability(cap, models, mediaConfig) {
-  // Return the {provider, model, source} pair the system would actually use
-  // when no explicit override is set. Resolution mirrors the daemon's path:
-  //   1. A model whose provider has a key. cliOnly sentinels (Codex CLI
-  //      default / Claude CLI default) are skipped on this path — they're
-  //      CLI-mode-only by definition. Without this skip, having an OpenAI
-  //      key + no Codex CLI made Auto pick "Codex CLI default (API)" which
-  //      is misleading (and the label hinted at a CLI the user hadn't
-  //      installed).
-  //   2. The picked provider's native CLI (if installed). Prefers the
-  //      cliOnly sentinel so the CLI uses its built-in default model.
-  //   3. The other provider's CLI as a substitute.
-  //   4. nothing — runs will error.
+  // What "Auto" picks depends on the capability's transport.
+  //
+  //   • cap="agent" — chat spawn shells out to a CLI binary. An API key
+  //     CAN'T spawn an agent (no HTTP agent path exists), so a CLI on
+  //     PATH wins over any key. Tie-break for "both CLIs installed" is
+  //     Claude (historical default; also the only CLI the daemon's
+  //     `resume` path + planner subagents support today). When NO CLI is
+  //     installed, fall through to the API-key path so the row labels
+  //     SOMETHING instead of "(none)"; the actual chat spawn errors
+  //     helpfully ("install claude or codex") when launched.
+  //
+  //   • everything else (image / video / svg / 3d / lottie / skill calls)
+  //     — HTTP-only transport. The API key is what makes it work. CLI
+  //     fallback for these is either degraded (llm/describe via
+  //     _claude_cli_complete) or doesn't exist at all (image-gen has no
+  //     CLI path). For Auto we ignore CLI here entirely.
+  //
+  // cliOnly sentinels ("Codex CLI default", "Claude CLI default") are
+  // skipped on the API-key path — they're CLI-mode-only by definition;
+  // letting them win on the key path produced "Auto · OpenAI · Codex CLI
+  // default (API)" which was misleading when no Codex CLI was installed.
+  const pickForProvider = (providerId) => {
+    const sentinel = models.find(m => m.provider === providerId && m.cliOnly);
+    if (sentinel) return sentinel;
+    return models.find(m => m.provider === providerId && !m.cliOnly);
+  };
+  if (cap === "agent" && mediaConfig) {
+    if (mediaConfig.claude_cli_available) {
+      const m = pickForProvider("anthropic");
+      if (m) return { provider: m.provider, model: m.id, source: "cli" };
+    }
+    if (mediaConfig.codex_cli_available) {
+      const m = pickForProvider("openai");
+      if (m) return { provider: m.provider, model: m.id, source: "cli" };
+    }
+    // No native CLI → fall through to API-key loop below.
+  }
   for (const m of models) {
     if (m.cliOnly) continue;
     if (_providerHasKey(mediaConfig, m.provider)) {
       return { provider: m.provider, model: m.id, source: "key" };
-    }
-  }
-  if (mediaConfig) {
-    // Helper: prefer a cliOnly sentinel for the provider (CLI uses its own
-    // default model), else fall back to the first non-cliOnly model.
-    const pickForProvider = (providerId) => {
-      const sentinel = models.find(m => m.provider === providerId && m.cliOnly);
-      if (sentinel) return sentinel;
-      return models.find(m => m.provider === providerId && !m.cliOnly);
-    };
-    if (mediaConfig.claude_cli_available) {
-      const m = pickForProvider("anthropic");
-      if (m) return { provider: m.provider, model: m.id, source: "cli" };
-    }
-    if (mediaConfig.codex_cli_available) {
-      const m = pickForProvider("openai");
-      if (m) return { provider: m.provider, model: m.id, source: "cli" };
-    }
-    // Cross-CLI substitution (CLI present but not for the picked provider).
-    if (mediaConfig.claude_cli_available) {
-      const m = pickForProvider("openai");
-      if (m) return { provider: m.provider, model: m.id, source: "cli-substitute" };
-    }
-    if (mediaConfig.codex_cli_available) {
-      const m = pickForProvider("anthropic");
-      if (m) return { provider: m.provider, model: m.id, source: "cli-substitute" };
     }
   }
   return null;
@@ -46664,9 +46668,11 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
 function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFrame, canvasGap, onSetFrameSize, agents, agentId, onAgentChange, runActive, lastRun, onReopenRun, onStartNewChat, workspaceInfo, projects, onReloadWorkspace, onUpdateFromSource, history, historyOpen, onOpenHistory, onCloseHistory }) {
   const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportsOpen, setExportsOpen]   = useState(false);
   const [sizeDialogOpen, setSizeDialogOpen] = useState(false);
   return html`
     ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
+    ${exportsOpen  && html`<${WorkflowExportsDialog}  onClose=${() => setExportsOpen(false)}/>`}
     ${sizeDialogOpen && html`
       <${FrameSizeDialog}
         defaultFrame=${defaultFrame}
@@ -46715,6 +46721,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
         <${DaemonIndicator} compact=${true}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
+        <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="toolbar-gear"/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
         <${RunsMenu} onOpenRun=${onReopenRun} onStartNewChat=${onStartNewChat} compact=${true}/>
         <${AgentPicker}
