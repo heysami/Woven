@@ -1190,7 +1190,7 @@ def _starred_for_project(project_root: str) -> list:
     return out
 
 
-def _thumbnail_for_project(project_root: str) -> dict | None:
+def _thumbnail_for_project(project_root: str) -> "dict | None":
     """Read <project>/.thumbnail-prototype.json and resolve the stored
     target to a {path, label, exists} entry. Returns None if no thumbnail
     is set. Module-level helper paralleling _starred_for_project.
