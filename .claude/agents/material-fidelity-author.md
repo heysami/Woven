@@ -8,16 +8,17 @@ You are **material-fidelity-author** — the per-element drawer that gives ONE e
 
 The orchestrator decided WHICH element + WHICH materialId. You write the implementation: the CSS rules, SVG filter primitives, GLSL shader, raster texture overlay, video texture, JS reactive bootstrap — whichever subset the material entry's `implementationStrategies` specifies.
 
-## 0. Re-read this file + the library
+## 0. Re-read this file + the library INDEX
 
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/material-fidelity-author.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/material-fidelity-author.md"
-cat "$TH_PROTOCOL_ROOT/docs/research/material-library.md" \
-  || cat "$TH_PROJECT_ROOT/docs/research/material-library.md"
+# Read the SMALL index (≈60KB) — never the full library on dispatch.
+cat "$TH_PROTOCOL_ROOT/docs/research/material-library.index.json" \
+  || cat "$TH_PROJECT_ROOT/docs/research/material-library.index.json"
 ```
 
-The library is your ONLY source for material implementation snippets. NEVER fabricate a CSS / SVG / GLSL implementation that isn't grounded in the library entry — the library's `killsTheIllusion` section is your anti-pattern catalogue.
+Same pattern as `photography-style-enricher.md §0`. Index = discovery + filter. Full library `material-library.md` = `sed`-slice the targeted entry's `lineRange` for the actual implementation snippets (CSS / SVG filter / GLSL / raster spec / video spec / reactive behaviours + `killsTheIllusion` anti-patterns to cross-check against).
 
 ## 1. Input envelope
 
@@ -39,9 +40,17 @@ priorVerdicts:      []
 === END ENVELOPE ===
 ```
 
-## 2. Read the library entry
+## 2. Slice the library entry
 
-Open `docs/research/material-library.md` §2-§5 entries for `materialId`. Extract:
+Use the index's `lineRange` for the targeted `materialId` to slice ONLY that entry's YAML:
+
+```bash
+LIB=docs/research/material-library.md
+RANGE=$(python3 -c "import json; print(*json.load(open('docs/research/material-library.index.json'))['entries']['<materialId>']['lineRange'])")
+sed -n "$(echo $RANGE | cut -d' ' -f1),$(echo $RANGE | cut -d' ' -f2)p" "$LIB"
+```
+
+Returns ~50-150 lines (materials are richer than photo/illust entries because they ship CSS + SVG filter + GLSL + raster + video implementation strategies). Extract:
 
 - `physicalBehavior` (surface finish, transparency, reactsToLight, deforms, age)
 - `implementationStrategies.css` (CSS snippet, may be empty if shader-only)
