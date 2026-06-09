@@ -17473,7 +17473,7 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
 
 /* Run /__export_asset for a node. Shared between the prototype-node and
    asset-node top-action rows so the click handler stays in one place.
-   • No export folder set → alert with hint to open Settings → Exports.
+   • No export folder set → alert with hint to open the ⤓ Exports button.
    • Success → alert with the bucket path + an optional Finder-reveal
      (mac only, via the daemon-side `open <dir>` shortcut).
    • Error → alert with the daemon's error message. */
@@ -32910,7 +32910,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           {
             key: "export",
             icon: html`<${Icon.ExportBox}/>`,
-            tip: "Export — bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (Settings → Exports).",
+            tip: "Export — bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar).",
             ariaLabel: "Export prototype",
             onClick: () => runExportForNode(node.id, node.label || node.title),
             className: "workflow-node-top-action-export",
@@ -35158,7 +35158,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           {
             key: "export",
             icon: html`<${Icon.ExportBox}/>`,
-            tip: "Export — bundle this asset into the project's configured export folder (Settings → Exports). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate.",
+            tip: "Export — bundle this asset into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate.",
             ariaLabel: "Export asset",
             onClick: () => runExportForNode(node.id, node.label || node.title),
             className: "workflow-node-top-action-export",

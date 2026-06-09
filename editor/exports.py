@@ -682,7 +682,7 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
     if not isinstance(project_root, str) or not os.path.isdir(project_root):
         raise ValueError("project_root must be an existing directory")
     if not isinstance(export_root, str) or not export_root.strip():
-        raise ValueError("export folder is empty — set it in Settings → Exports")
+        raise ValueError("export folder is empty — set it via the ⤓ Exports button in the workflow toolbar")
     export_root = os.path.expanduser(export_root)
     if not os.path.isabs(export_root):
         raise ValueError(f"export folder must be an absolute path; got {export_root!r}")

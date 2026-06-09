@@ -1473,9 +1473,9 @@ def _first_project_id():
 
 # ── Per-project export folder ────────────────────────────────────────────
 # Stored on each project entry in workspace.json as `exportFolder`. Used by
-# the Settings → Exports section (UI) and the /__export_asset endpoint
-# (daemon). In single-project mode the value lives on the virtual default
-# project, also persisted to workspace.json for consistency.
+# the ⤓ Exports dialog (UI, mounted in the workflow toolbar) and the
+# /__export_asset endpoint (daemon). In single-project mode the value lives
+# on the virtual default project, also persisted to workspace.json.
 
 def _workspace_json_path():
     base = WORKSPACE_DIR or INSTALL_ROOT
@@ -9645,7 +9645,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not export_root:
             return self._reply(400, {
                 "error":     "no export folder set for this project",
-                "hint":      "open Settings → Exports and pick a destination folder",
+                "hint":      "open the ⤓ Exports button in the workflow toolbar and pick a destination folder",
                 "project":   pid,
             })
         # Find the node in workflow.json.
