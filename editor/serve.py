@@ -4040,9 +4040,15 @@ def _drain_stderr(state: "RunState") -> None:
                 for ev in events:
                     state.append("agent", ev)
                 for line_text in raw_passthrough:
-                    # Filter-bypassed lines (e.g. genuine error output) still
-                    # surface — but as agent text not stderr noise.
                     state.append("agent", {"type": "text_delta", "delta": line_text + "\n"})
+        except Exception:
+            pass
+        # End-of-stream flush — if the last tool didn't get a clean role
+        # marker before stderr closed, surface its accumulated output now.
+        try:
+            tail = parser.finish()
+            if tail:
+                state.append("agent", tail)
         except Exception:
             pass
         return
@@ -4103,22 +4109,65 @@ class _CodexStderrParser:
 
     # A bare lowercase token (with optional underscores) on its own line —
     # codex's marker pattern: "user", "codex", "exec", "apply_patch",
-    # "read_file", "thinking", etc. Excludes "succeeded"/"failed" because
-    # those are handled separately as tool-result markers.
+    # "read_file", "thinking", etc.
     _MARKER_RX = re.compile(r"^[a-z][a-z0-9_]*$")
     _ROLE_MARKERS = {"user", "codex", "thinking"}
-    _RESERVED = {"user", "codex", "thinking", "succeeded", "failed"}
+    # Reserved bare-tokens that AREN'T tool names (handled separately).
+    _RESERVED_NON_TOOL = {"user", "codex", "thinking"}
+    # Status line: "succeeded in 0ms" / "failed in 200ms" / "exited 1 in 0ms"
+    # — with optional trailing ":" when more output follows.
+    _STATUS_RX = re.compile(r"^\s*(succeeded|failed|exited(?:\s+\d+)?)\s+in\s+\d+ms(:?)\s*$")
+
+    def __init__(self):
+        self.state = "pre_banner"
+        self.dashes_seen = 0
+        self.tool_counter = 0
+        self.current_tool_id = None
+        self._pending_tool_name = None
+        # Accumulator for the current tool call's output (lines between
+        # the command line and the next role/tool marker).
+        self._tool_output_lines: list = []
+        # The last status line we saw for the current tool (succeeded /
+        # failed / exited). Folded into the tool_result content on flush.
+        self._tool_status: str = ""
+
+    def _flush_tool(self) -> dict:
+        """Emit a tool_result event for the currently-open tool call, if any.
+        Returns the event dict or None. Resets accumulator state."""
+        if self.current_tool_id is None:
+            return None
+        body = "\n".join(self._tool_output_lines).rstrip()
+        if self._tool_status and body:
+            text = self._tool_status + "\n" + body
+        elif self._tool_status:
+            text = self._tool_status
+        else:
+            text = body or "(no output)"
+        is_error = bool(self._tool_status) and (
+            "failed" in self._tool_status or "exited" in self._tool_status
+        )
+        ev = {
+            "type": "tool_result",
+            "id": self.current_tool_id,
+            "content": [{"type": "text", "text": text}],
+            "is_error": is_error,
+        }
+        self.current_tool_id = None
+        self._pending_tool_name = None
+        self._tool_output_lines = []
+        self._tool_status = ""
+        return ev
 
     def feed(self, line: str):
         events: list = []
         raw: list = []
-        if not line.strip():
-            return events, raw
         if self._is_noise(line):
             return events, raw
         # Banner traversal — strip every line between the two `--------`
         # separators (inclusive of header + dashes), then switch to content.
         if self.state == "pre_banner":
+            if not line.strip():
+                return events, raw
             if line.startswith("OpenAI Codex"):
                 return events, raw
             if line.startswith("---"):
@@ -4134,39 +4183,36 @@ class _CodexStderrParser:
                     self.state = "post_banner"
             return events, raw
         stripped = line.strip()
-        # Tool result line: "succeeded in 0ms" / "failed: …". Attach to the
-        # most recent open tool_use.
-        m_succ = re.match(r"^(succeeded|failed)\b(.*)$", stripped)
-        if m_succ and self.current_tool_id is not None:
-            ok = (m_succ.group(1) == "succeeded")
-            events.append({
-                "type": "tool_result",
-                "id": self.current_tool_id,
-                "content": [{"type": "text", "text": stripped}],
-                "is_error": not ok,
-            })
-            self.current_tool_id = None
-            self.state = "post_banner"
-            return events, raw
-        # Role + tool markers — bare lowercase tokens.
-        if self._MARKER_RX.match(stripped):
-            # Role: user / codex / thinking — switch state, no event emitted
-            # at the marker line itself (content comes on following lines).
-            if stripped == "user":
-                self.state = "user"
+        # Status line for the open tool call — capture the marker, don't
+        # close the tool yet (more output may follow when it ends with ":").
+        if self.current_tool_id is not None:
+            m_st = self._STATUS_RX.match(line)
+            if m_st:
+                self._tool_status = stripped.rstrip(":").strip()
+                # If the status line ended with ":", subsequent non-marker
+                # lines are tool output (continued). If not, the tool is
+                # done; we wait for the next role marker to flush.
                 return events, raw
-            if stripped == "codex":
-                self.current_tool_id = None
-                self.state = "codex"
+        # Role / tool markers — bare lowercase tokens on their own line.
+        # A marker flushes any open tool first (so its output ends up in
+        # the right tool_result and doesn't bleed into the next event).
+        if stripped and self._MARKER_RX.match(stripped):
+            if stripped in self._ROLE_MARKERS:
+                ev = self._flush_tool()
+                if ev:
+                    events.append(ev)
+                if stripped == "user":
+                    self.state = "user"
+                elif stripped == "codex":
+                    self.state = "codex"
+                else:  # thinking
+                    self.state = "thinking"
                 return events, raw
-            if stripped == "thinking":
-                # Codex's reasoning-summary section, if enabled. Maps to
-                # Claude's thinking_delta so the UI's "THINKING" pill fires.
-                self.state = "thinking"
-                return events, raw
-            if stripped not in self._RESERVED:
-                # Any other bare token after the banner is a tool name —
-                # apply_patch, read_file, write_file, web_search, etc.
+            if stripped not in self._RESERVED_NON_TOOL:
+                # New tool starting — flush previous, open new.
+                ev = self._flush_tool()
+                if ev:
+                    events.append(ev)
                 self.tool_counter += 1
                 self.current_tool_id = f"codex-{stripped}-{self.tool_counter}"
                 self._pending_tool_name = stripped
@@ -4174,15 +4220,23 @@ class _CodexStderrParser:
                 return events, raw
         # Per-state content handling.
         if self.state == "user":
+            # We already know what we sent; skip the echo.
             return events, raw
         if self.state == "codex":
+            if not line.strip():
+                return events, raw
             events.append({"type": "text_delta", "delta": line + "\n"})
             return events, raw
         if self.state == "thinking":
+            if not line.strip():
+                return events, raw
             events.append({"type": "thinking_delta", "delta": line + "\n"})
             return events, raw
         if self.state == "tool_pending_input":
-            tool_name = getattr(self, "_pending_tool_name", "tool")
+            # First line after the tool name is the input (command for
+            # exec, patch header for apply_patch, etc.). Emit tool_use and
+            # then accumulate following lines as the tool's output.
+            tool_name = self._pending_tool_name or "tool"
             events.append({
                 "type": "tool_use",
                 "id": self.current_tool_id,
@@ -4192,12 +4246,20 @@ class _CodexStderrParser:
             self.state = "tool_body"
             return events, raw
         if self.state == "tool_body":
-            # Continuation lines for a tool call (multi-line patch body etc.).
+            # Tool's stdout/stderr — accumulate, do NOT emit as text.
+            # Flushed into tool_result when the next marker arrives.
+            self._tool_output_lines.append(line)
+            return events, raw
+        # Fallback for post_banner with no active context — likely an
+        # assistant continuation Codex didn't mark explicitly. Treat as text.
+        if line.strip():
             events.append({"type": "text_delta", "delta": line + "\n"})
             return events, raw
-        # Anything else — surface as text so it's not silently dropped.
-        raw.append(line)
         return events, raw
+
+    def finish(self):
+        """Called when the run ends — flush any still-open tool call."""
+        return self._flush_tool()
 
 
 # ── Prompt composer ──────────────────────────────────────────────────────────
