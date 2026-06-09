@@ -12933,6 +12933,31 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "will use the same curl pattern, and the daemon picks the "
                 "best runtime for each level."
             )
+            # v3.5 — Suppress patch echo. Codex tends to narrate the FULL
+            # contents of every apply_patch call into chat as plain text
+            # before/around the tool call itself. When the patch body is
+            # HTML, the chat renderer used to detect <html> inside the diff
+            # and pop up a live HtmlPreview iframe between hunk markers
+            # (since fixed at the renderer layer in 86e3bad — that fix
+            # prevents the broken render even if the echo still happens).
+            # This preamble note stops the echo at the source: the tool
+            # call is the work; the chat narration should be one short
+            # human-readable line, not the diff body.
+            codex_sys_bits.append(
+                "\n## Chat output discipline\n\n"
+                "When you call `apply_patch` (or any file-write tool), do NOT "
+                "echo the patch body or file contents into the chat. The tool "
+                "call itself records the change; printing the diff into chat "
+                "creates noise that's hard to read and may misrender. "
+                "Instead: emit ONE short sentence describing what you "
+                "changed (e.g. \"Added the maximalist hero shell + sticker "
+                "collage to source/hyperpop-artist/index.html\"), then call "
+                "the tool. After the tool returns, summarise the result in a "
+                "sentence or two — not a recap of the file contents.\n\n"
+                "Apply the same discipline to Read / Bash output: don't paste "
+                "the entire file or command output back into chat unless the "
+                "user explicitly asks. Summarise."
+            )
             # Codex's preamble is prepended to the user prompt rather than
             # passed via a flag — codex `exec` has no --append-system-prompt
             # equivalent. The shape mirrors `_dispatch_planner_via_codex`.
