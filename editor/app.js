@@ -7751,6 +7751,22 @@ function SettingsGearButton({ onClick, className }) {
   ><${Icon.Gear}/><span className="tab-tip">Settings</span></button>`;
 }
 
+/* Top-bar Exports button — sibling of SettingsGearButton. Opens
+   WorkflowExportsDialog scoped to the active project (or, on the
+   landing page where no project is active, the full per-project
+   list). The icon matches the per-asset Export ⤓ glyph so the
+   connection reads visually: "this is where the destination for
+   that button comes from." */
+function WorkflowExportsButton({ onClick, className }) {
+  return html`<button
+    className=${"workflow-toolbar-gear " + (className || "")}
+    title="Exports · per-project folder"
+    data-tip-host="true"
+    aria-label="Exports"
+    onClick=${onClick}
+  ><${Icon.ExportBox}/><span className="tab-tip">Exports</span></button>`;
+}
+
 
 const PERMISSION_MODE_OPTIONS = [
   { value: "bypassPermissions", label: "Auto — bypass",       short: "Auto",   hint: "Agent runs every tool with no prompts. Matches the migration plan default." },
@@ -14054,6 +14070,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportsOpen, setExportsOpen]   = useState(false);
   // v3.3 — Top-level landing tabs. "projects" is the legacy default; "planners"
   // surfaces the planner registry (per .claude/agents/*.manifest.json).
   const [activeTab, setActiveTab] = useState("projects");
@@ -43616,32 +43633,46 @@ function _providerAvailability(mediaConfig, providerId) {
 function _pickAutoForCapability(cap, models, mediaConfig) {
   // Return the {provider, model, source} pair the system would actually use
   // when no explicit override is set. Resolution mirrors the daemon's path:
-  //   1. A model whose provider has a key
-  //   2. The picked provider's native CLI (if installed)
-  //   3. The other provider's CLI as a substitute
-  //   4. nothing — runs will error
+  //   1. A model whose provider has a key. cliOnly sentinels (Codex CLI
+  //      default / Claude CLI default) are skipped on this path — they're
+  //      CLI-mode-only by definition. Without this skip, having an OpenAI
+  //      key + no Codex CLI made Auto pick "Codex CLI default (API)" which
+  //      is misleading (and the label hinted at a CLI the user hadn't
+  //      installed).
+  //   2. The picked provider's native CLI (if installed). Prefers the
+  //      cliOnly sentinel so the CLI uses its built-in default model.
+  //   3. The other provider's CLI as a substitute.
+  //   4. nothing — runs will error.
   for (const m of models) {
+    if (m.cliOnly) continue;
     if (_providerHasKey(mediaConfig, m.provider)) {
       return { provider: m.provider, model: m.id, source: "key" };
     }
   }
   if (mediaConfig) {
+    // Helper: prefer a cliOnly sentinel for the provider (CLI uses its own
+    // default model), else fall back to the first non-cliOnly model.
+    const pickForProvider = (providerId) => {
+      const sentinel = models.find(m => m.provider === providerId && m.cliOnly);
+      if (sentinel) return sentinel;
+      return models.find(m => m.provider === providerId && !m.cliOnly);
+    };
     if (mediaConfig.claude_cli_available) {
-      const anthropic = models.find(m => m.provider === "anthropic");
-      if (anthropic) return { provider: anthropic.provider, model: anthropic.id, source: "cli" };
+      const m = pickForProvider("anthropic");
+      if (m) return { provider: m.provider, model: m.id, source: "cli" };
     }
     if (mediaConfig.codex_cli_available) {
-      const openai = models.find(m => m.provider === "openai");
-      if (openai) return { provider: openai.provider, model: openai.id, source: "cli" };
+      const m = pickForProvider("openai");
+      if (m) return { provider: m.provider, model: m.id, source: "cli" };
     }
     // Cross-CLI substitution (CLI present but not for the picked provider).
     if (mediaConfig.claude_cli_available) {
-      const openai = models.find(m => m.provider === "openai");
-      if (openai) return { provider: openai.provider, model: openai.id, source: "cli-substitute" };
+      const m = pickForProvider("openai");
+      if (m) return { provider: m.provider, model: m.id, source: "cli-substitute" };
     }
     if (mediaConfig.codex_cli_available) {
-      const anthropic = models.find(m => m.provider === "anthropic");
-      if (anthropic) return { provider: anthropic.provider, model: anthropic.id, source: "cli-substitute" };
+      const m = pickForProvider("anthropic");
+      if (m) return { provider: m.provider, model: m.id, source: "cli-substitute" };
     }
   }
   return null;
@@ -43779,7 +43810,6 @@ function WorkflowSettingsDialog({ onClose }) {
               onChanged=${reload}
             />
           `)}
-          <${WorkflowExportsSection}/>
           <${WorkflowLocalSkillsSection}/>
         </div>
       </div>
@@ -43817,31 +43847,84 @@ function WorkflowLocalSkillsSection() {
   `;
 }
 
-/* Per-project export folder picker. Reads /__export_config (no project arg)
-   for the full list of known projects + their currently saved exportFolder,
-   then renders one row per project with a typed-path input. macOS uses the
-   existing /__native_folder_picker for the "Pick…" button so the user gets
-   the real Finder dialog; other platforms hide the button (paste a path
-   instead). The export endpoint /__export_asset reads the saved value
-   per-project. */
-function WorkflowExportsSection() {
+/* Standalone Exports dialog — used to live inside WorkflowSettingsDialog
+   as a section; promoted to its own modal so it can be context-aware
+   without cluttering the API-keys / providers / local-skills surface.
+   From the editor toolbar → only the active project's row shows (one
+   thing to configure, no scroll, no mis-click). From the landing
+   toolbar → no active project; the full list shows so cross-project
+   setup is possible. Storage: workspace.json · per-project. */
+function WorkflowExportsDialog({ onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const active = activeProjectId();
+  return createPortal(html`
+    <div className="workflow-modal-backdrop" onMouseDown=${onClose}>
+      <div className="workflow-modal workflow-settings-modal" onMouseDown=${(e) => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div>
+            <div className="workflow-modal-title">Exports · per project</div>
+            <div className="workflow-modal-sub">
+              ${active
+                ? html`scope: <code>${active}</code> · stored in <code>workspace.json</code>`
+                : html`all projects · stored in <code>workspace.json</code>`}
+            </div>
+          </div>
+          <button className="workflow-modal-close" onClick=${onClose}>×</button>
+        </div>
+        <div className="workflow-settings-body">
+          <${WorkflowExportsSection} scopeToActive=${!!active} activeProjectId=${active}/>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
+/* Per-project export folder picker. With `scopeToActive=true` it loads
+   ONLY the active project's row (single-project shape from the daemon).
+   With `scopeToActive=false` it enumerates every project in
+   workspace.json (full list for the landing entry-point). Same row
+   component either way. */
+function WorkflowExportsSection({ scopeToActive, activeProjectId: activePid }) {
   const [projects, setProjects] = useState(null);
   const [busy, setBusy] = useState({});
   const reload = useCallback(async () => {
     try {
-      const r = await fetch(apiUrl("/__export_config"));
-      const j = await r.json();
-      setProjects(Array.isArray(j.projects) ? j.projects : []);
+      if (scopeToActive && activePid) {
+        // Editor entry-point: single project, no list. The daemon returns
+        // `{project, exportFolder, status}` for the ?project=<id> branch;
+        // wrap into the row shape WorkflowExportRow expects.
+        const r = await fetch("/__export_config?project=" + encodeURIComponent(activePid));
+        const j = await r.json();
+        setProjects([{
+          id:           activePid,
+          label:        activePid,
+          exportFolder: j.exportFolder || "",
+          status:       j.status || null,
+        }]);
+      } else {
+        // Landing entry-point: full list, raw fetch (must NOT route through
+        // apiUrl() which appends ?project= and makes the daemon return the
+        // single-project shape).
+        const r = await fetch("/__export_config");
+        const j = await r.json();
+        setProjects(Array.isArray(j.projects) ? j.projects : []);
+      }
     } catch {
       setProjects([]);
     }
-  }, []);
+  }, [scopeToActive, activePid]);
   useEffect(() => { reload(); }, [reload]);
   const setBusyFor = (pid, v) => setBusy((b) => ({ ...b, [pid]: v }));
   const save = async (pid, path) => {
     setBusyFor(pid, true);
     try {
-      const r = await fetch(apiUrl(`/__export_config?project=${encodeURIComponent(pid)}`), {
+      // Raw URL with the explicit per-row project id — the active editor
+      // project (which apiUrl injects) is irrelevant here.
+      const r = await fetch(`/__export_config?project=${encodeURIComponent(pid)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: path ?? null }),
@@ -43854,9 +43937,8 @@ function WorkflowExportsSection() {
     } finally { setBusyFor(pid, false); }
   };
   return html`
-    <div className="workflow-settings-section-group-head">Exports · per project</div>
     <div className="workflow-settings-section-group-sub">
-      Pick a destination folder per project. Per-asset Export (the ⤓ button on a selected node's top-right) drops a self-contained bundle there — README, port-fallback static server, and the right files (prototype tree + bundled design system, or a single asset under <code>resources/&lt;kind&gt;/</code>). Storage: <code>workspace.json</code> · per-project · plaintext path.
+      Per-asset Export (the ⤓ button on a selected node's top-right) drops a self-contained bundle into this folder — README, port-fallback static server, and the right files (prototype tree + bundled design system, or a single asset under <code>${"resources/<kind>/"}</code>).
     </div>
     ${projects === null
       ? html`<div className="workflow-settings-section"><span className="workflow-settings-localhint">loading projects…</span></div>`
@@ -43924,11 +44006,11 @@ function WorkflowExportRow({ project, busy, onSave }) {
           onClick=${pick}
           title="Pick a folder with Finder"
         >Pick…</button>`}
-        <button
-          className=${"tbtn " + (dirty && draft.trim() ? "tbtn-primary" : "")}
+        ${draft.trim() && html`<button
+          className=${"tbtn " + (dirty ? "tbtn-primary" : "")}
           disabled=${busy || !dirty}
-          onClick=${() => onSave(draft.trim() || null)}
-        >${busy ? "Saving…" : (draft.trim() ? "Save" : "Clear")}</button>
+          onClick=${() => onSave(draft.trim())}
+        >${busy ? "Saving…" : "Save"}</button>`}
         ${project.exportFolder && html`<button
           className="tbtn"
           disabled=${busy}
