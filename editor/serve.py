@@ -435,6 +435,79 @@ def _fal_extract_video_url(payload):
     raise RuntimeError(f"fal: no video url in response (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
 
 
+def _fal_extract_3d_url(payload):
+    """fal 3D endpoints return one of:
+         { model_mesh: { url } }     ← most common (TripoSR, Hyper3D, Hunyuan3D)
+         { mesh:       { url } }
+         { glb:        { url } }
+         { url: "..." }              ← bare URL ending in .glb / .gltf
+       Walk all shapes; raise if nothing usable."""
+    if isinstance(payload, dict):
+        for key in ("model_mesh", "mesh", "glb", "model", "result"):
+            v = payload.get(key)
+            if isinstance(v, dict) and isinstance(v.get("url"), str):
+                return v["url"]
+            if isinstance(v, str) and any(v.lower().endswith(ext) for ext in (".glb", ".gltf", ".usdz", ".obj")):
+                return v
+        u = payload.get("url")
+        if isinstance(u, str) and any(u.lower().endswith(ext) for ext in (".glb", ".gltf", ".usdz", ".obj")):
+            return u
+    raise RuntimeError(f"fal: no 3D-model url in response (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
+
+
+def _fal_extract_lottie_url(payload):
+    """fal Lottie endpoints (if/when integrated) return one of:
+         { lottie:    { url } }
+         { animation: { url } }
+         { url: "..." }              ← bare URL ending in .json / .lottie
+       Walk all shapes; raise if nothing usable."""
+    if isinstance(payload, dict):
+        for key in ("lottie", "animation", "result"):
+            v = payload.get(key)
+            if isinstance(v, dict) and isinstance(v.get("url"), str):
+                return v["url"]
+            if isinstance(v, str) and any(v.lower().endswith(ext) for ext in (".json", ".lottie")):
+                return v
+        u = payload.get("url")
+        if isinstance(u, str) and any(u.lower().endswith(ext) for ext in (".json", ".lottie")):
+            return u
+    raise RuntimeError(f"fal: no lottie url in response (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
+
+
+def _fal_generate_3d(api_key, prompt, model, aspect, options):
+    """fal.ai text-to-3D / image-to-3D. Pattern matches _fal_generate_image
+    but extracts a .glb (or .gltf / .usdz) URL from the response. Works with
+    fal-ai/triposr, fal-ai/hyper3d-rodin, fal-ai/hunyuan3d-v2 family etc.
+    Aspect is mostly meaningless for 3D — passed through if the model
+    accepts it, otherwise ignored. Most 3D models accept an input image
+    via `image_url` in options. Bytes returned are the raw .glb file."""
+    body = {"prompt": prompt}
+    if isinstance(options, dict):
+        for k in ("image_url", "ai_model", "topology", "art_style",
+                  "negative_prompt", "seed", "texture", "guidance_scale"):
+            if k in options and options[k] is not None: body[k] = options[k]
+    payload = _fal_request(api_key, model, body, timeout=600)
+    mesh_url = _fal_extract_3d_url(payload)
+    return _download_bytes(mesh_url)
+
+
+def _fal_generate_lottie(api_key, prompt, model, aspect, options):
+    """fal.ai text-to-Lottie. Returns the raw .json bytes of the Lottie
+    animation. Note: fal's Lottie model coverage is sparse — most Lottie
+    work today goes through hand-coded Lottie via the lottie subagent.
+    This renderer is a thin pass-through for the day fal expands the
+    family; the dispatch entry exists so callers get a meaningful 502
+    if no Lottie model is wired into the catalog yet, rather than the
+    generic 'no renderer' 400."""
+    body = {"prompt": prompt}
+    if isinstance(options, dict):
+        for k in ("duration", "fps", "loop", "seed", "negative_prompt", "style"):
+            if k in options and options[k] is not None: body[k] = options[k]
+    payload = _fal_request(api_key, model, body, timeout=300)
+    lottie_url = _fal_extract_lottie_url(payload)
+    return _download_bytes(lottie_url)
+
+
 def _fal_generate_image(api_key, prompt, model, aspect, options):
     """fal.ai text-to-image. Works for fal-ai/flux/*, recraft-v3, ideogram, SD3.5."""
     body = {
@@ -694,6 +767,15 @@ _GENERATE_DISPATCH = {
     # fal.run, parses the response with _fal_extract_video_url, and
     # downloads the mp4 bytes to the spawned `.mp4` path.
     ("video-gen",      "fal"):    "fal_video",
+    # v3.5 — 3D model generation via fal (triposr, hyper3d-rodin,
+    # hunyuan3d-v2 family etc.). Bytes are a .glb / .gltf file. Without
+    # this entry the orchestrator's 3D drawer got `no renderer for
+    # skill='3d-gen'` 400s with no provider hint.
+    ("3d-gen",         "fal"):    "fal_3d",
+    # v3.5 — Lottie generation via fal. Sparse model coverage today, but
+    # the dispatch entry makes the skill discoverable and routes to a
+    # real renderer instead of returning the generic "no renderer" 400.
+    ("lottie-gen",     "fal"):    "fal_lottie",
 }
 _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
@@ -8814,6 +8896,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # generation, this can take 30s–5min depending on
                     # the model, so we extend timeout to 300s.
                     bytes_ = _fal_generate_video(api_key, prompt, model, aspect, options)
+                elif provider == "fal" and skill == "3d-gen":
+                    # v3.5 — 3D model generation. Bytes are .glb / .gltf.
+                    # Long timeout (up to 10min for some models).
+                    bytes_ = _fal_generate_3d(api_key, prompt, model, aspect, options)
+                elif provider == "fal" and skill == "lottie-gen":
+                    # v3.5 — Lottie generation. Bytes are raw .json.
+                    bytes_ = _fal_generate_lottie(api_key, prompt, model, aspect, options)
                 elif provider == "fal":
                     bytes_ = _fal_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "quiver" and skill == "svg-gen":

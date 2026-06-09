@@ -254,20 +254,41 @@ def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
     return text
 
 
-def _live_provider_availability() -> list:
-    """For each integrated provider, return {id, label, status} where status is
-    one of "key" (API key configured in media-config.json or env), "cli"
-    (Anthropic-only — falls back to Claude CLI), or "none" (no key + no fallback).
+def _wired_provider_ids() -> set:
+    """Return the set of provider ids that have at least one wired dispatch
+    entry in the daemon. Providers in the catalog but NOT in any dispatch
+    table are listed for future integration only — picking them at runtime
+    returns 400 "no renderer." This set is computed live from the dispatch
+    tables so adding new entries automatically widens it.
+    """
+    try:
+        import sys, os
+        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _editor_dir not in sys.path:
+            sys.path.insert(0, _editor_dir)
+        from serve import _GENERATE_DISPATCH, _TRANSFORM_DISPATCH, _LLM_DISPATCH
+        out = set()
+        for (_skill, provider) in list(_GENERATE_DISPATCH.keys()) + list(_TRANSFORM_DISPATCH.keys()) + list(_LLM_DISPATCH.keys()):
+            if provider:
+                out.add(provider)
+        return out
+    except Exception:
+        return set()
 
-    v3.5 — Agents kept saying "no provider is wired up" because the preamble
-    only listed which providers EXIST, not which were CONFIGURED. Codex chats
-    don't have a stream-json way to check media-config inline before deciding,
-    so we embed the live truth directly in the preamble at spawn time.
+
+def _live_provider_availability() -> list:
+    """For each WIRED provider (one with at least one dispatch-table entry),
+    return {id, label, status} where status is "key" / "cli (...)" / "none".
+
+    v3.5 — Filtered to wired providers only. The catalog used to list every
+    provider in PROVIDERS regardless of whether the daemon could actually
+    dispatch them; agents saw "Recraft / BFL / Leonardo / Meshy" etc. and
+    might pick one only to hit "no renderer" 400s. Now the preamble only
+    advertises providers with at least one renderer, derived live from the
+    daemon's dispatch tables.
     """
     rows = []
     try:
-        # Late import to avoid circulars and keep capabilities.py importable
-        # without the daemon module on hand (tests, tooling).
         import sys, os
         _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if _editor_dir not in sys.path:
@@ -286,7 +307,10 @@ def _live_provider_availability() -> list:
         # in 49f9de9 and caught when the editor first hit /__capabilities
         # after a daemon restart. The underlying parse is what we actually
         # need anyway.
+        wired = _wired_provider_ids()
         providers_list = _parse_media_models().get("providers", [])
+        # Filter to providers that ARE wired in the daemon's dispatch tables.
+        providers_list = [p for p in providers_list if p.get("id") in wired]
         for p in providers_list:
             pid = p.get("id")
             if not pid:
