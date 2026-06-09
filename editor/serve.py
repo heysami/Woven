@@ -4101,6 +4101,14 @@ class _CodexStderrParser:
                 return True
         return False
 
+    # A bare lowercase token (with optional underscores) on its own line —
+    # codex's marker pattern: "user", "codex", "exec", "apply_patch",
+    # "read_file", "thinking", etc. Excludes "succeeded"/"failed" because
+    # those are handled separately as tool-result markers.
+    _MARKER_RX = re.compile(r"^[a-z][a-z0-9_]*$")
+    _ROLE_MARKERS = {"user", "codex", "thinking"}
+    _RESERVED = {"user", "codex", "thinking", "succeeded", "failed"}
+
     def feed(self, line: str):
         events: list = []
         raw: list = []
@@ -4125,20 +4133,9 @@ class _CodexStderrParser:
                 if self.dashes_seen >= 2:
                     self.state = "post_banner"
             return events, raw
-        # Role markers — a bare token on its own line.
         stripped = line.strip()
-        if stripped == "user":
-            self.state = "user"
-            return events, raw
-        if stripped == "codex":
-            # New assistant turn — close any open tool call.
-            self.current_tool_id = None
-            self.state = "codex"
-            return events, raw
-        if stripped == "exec":
-            self.state = "exec_pending_cmd"
-            return events, raw
-        # Tool result line: "succeeded in 0ms" / "failed: …".
+        # Tool result line: "succeeded in 0ms" / "failed: …". Attach to the
+        # most recent open tool_use.
         m_succ = re.match(r"^(succeeded|failed)\b(.*)$", stripped)
         if m_succ and self.current_tool_id is not None:
             ok = (m_succ.group(1) == "succeeded")
@@ -4151,30 +4148,54 @@ class _CodexStderrParser:
             self.current_tool_id = None
             self.state = "post_banner"
             return events, raw
+        # Role + tool markers — bare lowercase tokens.
+        if self._MARKER_RX.match(stripped):
+            # Role: user / codex / thinking — switch state, no event emitted
+            # at the marker line itself (content comes on following lines).
+            if stripped == "user":
+                self.state = "user"
+                return events, raw
+            if stripped == "codex":
+                self.current_tool_id = None
+                self.state = "codex"
+                return events, raw
+            if stripped == "thinking":
+                # Codex's reasoning-summary section, if enabled. Maps to
+                # Claude's thinking_delta so the UI's "THINKING" pill fires.
+                self.state = "thinking"
+                return events, raw
+            if stripped not in self._RESERVED:
+                # Any other bare token after the banner is a tool name —
+                # apply_patch, read_file, write_file, web_search, etc.
+                self.tool_counter += 1
+                self.current_tool_id = f"codex-{stripped}-{self.tool_counter}"
+                self._pending_tool_name = stripped
+                self.state = "tool_pending_input"
+                return events, raw
         # Per-state content handling.
         if self.state == "user":
-            # We already know what we sent; don't replay it.
             return events, raw
         if self.state == "codex":
             events.append({"type": "text_delta", "delta": line + "\n"})
             return events, raw
-        if self.state == "exec_pending_cmd":
-            # First line after `exec` is the command (with cwd suffix).
-            self.tool_counter += 1
-            self.current_tool_id = f"codex-exec-{self.tool_counter}"
+        if self.state == "thinking":
+            events.append({"type": "thinking_delta", "delta": line + "\n"})
+            return events, raw
+        if self.state == "tool_pending_input":
+            tool_name = getattr(self, "_pending_tool_name", "tool")
             events.append({
                 "type": "tool_use",
                 "id": self.current_tool_id,
-                "name": "exec",
-                "input": {"command": line},
+                "name": tool_name,
+                "input": {"text": line},
             })
-            self.state = "exec"
+            self.state = "tool_body"
             return events, raw
-        if self.state == "exec":
-            # Continuation lines for an exec (rare — multi-line commands).
+        if self.state == "tool_body":
+            # Continuation lines for a tool call (multi-line patch body etc.).
             events.append({"type": "text_delta", "delta": line + "\n"})
             return events, raw
-        # Anything else (post_banner with no role marker) — surface as text.
+        # Anything else — surface as text so it's not silently dropped.
         raw.append(line)
         return events, raw
 
