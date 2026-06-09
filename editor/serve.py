@@ -1004,6 +1004,98 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
+def _dispatch_planner_via_claude(bin_path: str, planner_body: str, brief: str,
+                                  project_root: str, timeout: int = 1800) -> str:
+    """Run a planner on Claude. Same shape as _claude_cli_complete but with
+    the planner spec injected as the system prompt instead of the user
+    prompt. Returns the planner's final text output. Raises on non-zero
+    exit; caller catches and surfaces."""
+    args = [
+        bin_path, "--print",
+        "--output-format", "text",
+        "--no-session-persistence",
+        "--disable-slash-commands",
+        "--allow-dangerously-skip-permissions",
+        "--dangerously-skip-permissions",
+        "--add-dir", project_root,
+        "--append-system-prompt", planner_body,
+        brief,
+    ]
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=project_root,
+        stdin=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        msg = (result.stderr or f"exit {result.returncode}").strip()[:1000]
+        raise RuntimeError(msg)
+    return (result.stdout or "").rstrip("\n")
+
+
+def _dispatch_planner_via_codex(bin_path: str, planner_body: str, brief: str,
+                                 project_root: str, project_id: str,
+                                 daemon_port: int, timeout: int = 1800) -> str:
+    """Run a planner on Codex. Codex doesn't have Claude's --append-system-prompt
+    or Task tool, so we:
+      (a) prepend the planner spec to the user prompt
+      (b) include a translation note instructing the agent to substitute
+          curl POSTs to /__dispatch_planner wherever the planner spec
+          mentions the Task tool — that's how nested subagent dispatch
+          works for non-Claude runtimes.
+
+    Returns Codex's full stderr (where it puts all chat content) + stdout
+    concatenated. Raises on non-zero exit."""
+    translation_note = (
+        "===== RUNTIME NOTE =====\n"
+        "The planner spec above was written for Claude Code's `Task` tool, "
+        "which dispatches nested subagents in-process. You are running on "
+        "the Codex CLI runtime, which has no `Task` tool. Wherever the "
+        "spec instructs you to invoke `Task(subagent_type: \"<type>\", "
+        "prompt: \"<brief>\")` or similar, instead run this shell command:\n\n"
+        "  curl -s -X POST "
+        f"'http://127.0.0.1:{daemon_port}/__dispatch_planner?project={project_id}' "
+        "-H 'content-type: application/json' "
+        "-d '{\"type\": \"<type>\", \"brief\": \"<brief>\"}'\n\n"
+        "The daemon will route the dispatch to whichever LLM runtime is "
+        "available (Claude or Codex), execute the named planner with the "
+        "given brief, and return the planner's output as JSON in the form "
+        '{"ok": true, "output": "...", "runtime": "claude"|"codex"}. '
+        "Parse the `output` field and treat it the way the spec would have "
+        "treated a Task tool return value.\n"
+        "===== END RUNTIME NOTE =====\n"
+    )
+    full_prompt = (
+        "===== PLANNER SPEC =====\n"
+        + planner_body
+        + "\n===== END PLANNER SPEC =====\n\n"
+        + translation_note
+        + "\n===== YOUR BRIEF =====\n"
+        + brief
+    )
+    args = [bin_path, "exec", "--sandbox", "workspace-write", full_prompt]
+    # Codex emits chat content on stderr; combine streams for the caller.
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=project_root,
+        stdin=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        msg = (result.stderr or result.stdout or f"exit {result.returncode}").strip()[-1000:]
+        raise RuntimeError(msg)
+    # Prefer stdout (planner's intended output); fall back to stderr (where
+    # codex's free-form text lives) when stdout is empty.
+    out = (result.stdout or "").rstrip("\n")
+    if not out:
+        out = (result.stderr or "").rstrip("\n")
+    return out
+
+
 def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
     """Generate an image via the Codex CLI's built-in image-gen tool.
 
@@ -4944,6 +5036,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._asset_generate(qs)
             if parsed.path == "/__llm_run":
                 return self._llm_run(qs)
+            if parsed.path == "/__dispatch_planner":
+                return self._dispatch_planner(qs)
             if parsed.path == "/__attachment":
                 return self._attachment_upload(qs)
             if parsed.path == "/__write_text":
@@ -8907,6 +9001,106 @@ class H(http.server.SimpleHTTPRequestHandler):
             ),
         })
 
+    def _dispatch_planner(self, qs):
+        """POST /__dispatch_planner?project=<id>
+        Body: { type: "visual-orchestrator", brief: "...", branch?: "main" }
+
+        Synchronously runs the named planner using whichever LLM runtime is
+        available — Claude OR Codex, in that preference order. Neither
+        installed → 502 with install hint.
+
+        Why this exists: planners live as markdown specs in `.claude/agents/`
+        but the planner CONTENT is just prose + a dispatch protocol — any
+        sufficiently capable LLM can follow it. Hardcoding the runtime to
+        Claude made codex chats unable to use visual-orchestrator etc., which
+        was wrong: planners belong to the harness, not to one CLI.
+
+        For non-Claude runtimes, a translation note is prepended explaining
+        that any "Task tool" instructions in the planner body should be
+        substituted with a recursive POST back to this endpoint. The endpoint
+        is reentrant — a planner running on Codex can dispatch a child
+        planner that runs on Claude (or vice versa) via the daemon.
+
+        Response (synchronous):
+          { ok: true, type, runtime, output, error? }
+        """
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        project_id = os.path.basename(project_root.rstrip("/"))
+        body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+        planner_type = (body.get("type") or "").strip()
+        brief = (body.get("brief") or "").strip()
+        if not planner_type:
+            return self._reply(400, {"error": "type required"})
+        if not brief:
+            return self._reply(400, {"error": "brief required"})
+        # Locate planner content. Canonical location stays .claude/agents/
+        # because that's where Claude Code's Task tool also reads them; we
+        # don't fork the spec into two places.
+        planner_path = os.path.join(INSTALL_ROOT, ".claude", "agents", f"{planner_type}.md")
+        if not os.path.isfile(planner_path):
+            return self._reply(404, {
+                "error": f"unknown planner type: {planner_type!r}",
+                "hint": f"expected {planner_path}",
+            })
+        try:
+            with open(planner_path, "r", encoding="utf-8") as f:
+                planner_md = f.read()
+        except Exception as e:
+            return self._reply(500, {"error": f"could not read planner: {e}"})
+        # Strip frontmatter (Claude-specific tools: line + name/description).
+        planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
+        # Pick runtime — prefer Claude (has native Task; faster for nested
+        # dispatch) then Codex (works via the translation note).
+        claude_bin = detect_agent_bin("claude")
+        codex_bin  = detect_agent_bin("codex")
+        if claude_bin:
+            runtime = "claude"
+            try:
+                output = _dispatch_planner_via_claude(
+                    claude_bin, planner_body, brief, project_root,
+                )
+                return self._reply(200, {
+                    "ok": True, "type": planner_type, "runtime": runtime,
+                    "output": output,
+                })
+            except subprocess.TimeoutExpired:
+                return self._reply(504, {
+                    "ok": False, "type": planner_type, "runtime": runtime,
+                    "error": "planner timed out after 30 minutes",
+                })
+            except Exception as e:
+                return self._reply(500, {
+                    "ok": False, "type": planner_type, "runtime": runtime,
+                    "error": f"{type(e).__name__}: {e}",
+                })
+        if codex_bin:
+            runtime = "codex"
+            try:
+                output = _dispatch_planner_via_codex(
+                    codex_bin, planner_body, brief, project_root, project_id, PORT,
+                )
+                return self._reply(200, {
+                    "ok": True, "type": planner_type, "runtime": runtime,
+                    "output": output,
+                })
+            except subprocess.TimeoutExpired:
+                return self._reply(504, {
+                    "ok": False, "type": planner_type, "runtime": runtime,
+                    "error": "planner timed out after 30 minutes",
+                })
+            except Exception as e:
+                return self._reply(500, {
+                    "ok": False, "type": planner_type, "runtime": runtime,
+                    "error": f"{type(e).__name__}: {e}",
+                })
+        return self._reply(502, {
+            "error": "no LLM runtime available — install Claude Code or Codex CLI",
+            "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex",
+        })
+
     def _llm_run(self, qs):
         """Phase 4c — text-output skills. Body:
            {
@@ -12511,6 +12705,61 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
             spawn_args += ["--append-system-prompt", sys_prompt]
+        elif agent_id == "codex":
+            # v3.5 — Codex chats get the SAME capabilities preamble as Claude
+            # (so they know visual-orchestrator etc. exist), plus a translation
+            # note that maps Claude's `Task(subagent_type: ...)` dispatch
+            # pattern to a POST against /__dispatch_planner — codex doesn't
+            # have a native Task tool but has shell + curl. The endpoint is
+            # reentrant and picks whichever runtime is available, so the
+            # nested planner can run on Claude or another codex; codex doesn't
+            # have to care.
+            codex_sys_bits = [QUESTION_FORM_SYSTEM_PROMPT]
+            if WORKSPACE_DIR and project_root != INSTALL_ROOT:
+                codex_sys_bits.append(WORKSPACE_LAYOUT_PROMPT)
+            if branch and branch != "main":
+                codex_sys_bits.append(
+                    "\n## Active prototype scope\n\n"
+                    f"The user is currently editing the `source/{branch}/` "
+                    "prototype. Default every file read, edit, and write to "
+                    f"that subtree unless the user explicitly names a "
+                    f"different prototype."
+                )
+            try:
+                from kinds.capabilities import capabilities_preamble
+                codex_sys_bits.append(capabilities_preamble())
+            except Exception:
+                pass
+            codex_sys_bits.append(
+                "\n## Subagent dispatch on this runtime\n\n"
+                "You are running on the Codex CLI, which has no native `Task` "
+                "tool. Wherever the capabilities preamble or any subagent spec "
+                "instructs you to dispatch a planner subagent via the Task "
+                "tool, instead run this shell command:\n\n"
+                "```\n"
+                "curl -s -X POST "
+                f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+                "-H 'content-type: application/json' "
+                "-d '{\"type\":\"<orchestrator-id>\",\"brief\":\"<plain text brief>\"}'\n"
+                "```\n\n"
+                "The daemon will run the named planner on whichever LLM is "
+                "available (Claude OR Codex) and return its output as JSON: "
+                '`{\"ok\":true,\"output\":\"...\",\"runtime\":\"claude\"|\"codex\"}`. '
+                "Treat the `output` field the way the spec would treat a Task "
+                "tool return value. Block until the response comes back; the "
+                "endpoint is synchronous and can take several minutes."
+            )
+            # Codex's preamble is prepended to the user prompt rather than
+            # passed via a flag — codex `exec` has no --append-system-prompt
+            # equivalent. The shape mirrors `_dispatch_planner_via_codex`.
+            codex_preamble = "\n\n".join(p.strip() for p in codex_sys_bits if p and p.strip())
+            prompt_text = (
+                "===== HARNESS PREAMBLE =====\n"
+                + codex_preamble
+                + "\n===== END HARNESS PREAMBLE =====\n\n"
+                + "===== USER REQUEST =====\n"
+                + prompt_text
+            )
         # The agent's workspace is the PROJECT only. We do NOT add
         # INSTALL_ROOT to --add-dir — that would extend the writable
         # sandbox to the editor binary itself, which several past runs
