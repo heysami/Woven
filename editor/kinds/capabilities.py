@@ -529,7 +529,7 @@ The orchestrator family (the per-family hard-rule sections below describe each i
 - **narrative-experience-orchestrator** — walk-into-this-place piece (poetic, emotional, scripted depth)
 - **game-experience-orchestrator** — interactive scene with CHASED OBJECTIVE + visible feedback loop (score / progress / streak / care-game grow / win-condition)
 - **scrapbook-experience-orchestrator** — aesthetic that CSS CANNOT REACH (lives in the imagery itself: vaporwave / cottagecore / Y2K / zine / etc.)
-- **interactive-polish-orchestrator** — POST-PASS, fires LAST after any other primary orchestrator returns (microanimations / pointer / hover / shader overlay matching the genre)
+- **interactive-polish-orchestrator** — POST-PASS, fires LAST after any other primary orchestrator returns (microanimations / pointer / hover / shader overlay matching the genre) — **GATED**: skipped when `meta.dsRef` is set OR genre is in the restrained register (Linear / Swiss / Bloomberg / warm-restraint / Bauhaus / etc.). See § "Interactive polish: dispatch interactive-polish-orchestrator LAST" for the full trigger table.
 
 If this list ever feels short, scroll down — every `## … dispatch <X>-orchestrator FIRST` heading below is another orchestrator. Test EVERY hard-rule predicate against the brief, not just the ones in this intro list.
 
@@ -543,7 +543,7 @@ The rule:
 | 4 | Agent | Dispatch each primary orchestrator family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL that match (e.g. an illustrated game = `visual-orchestrator` + `game-experience-orchestrator`). |
 | 5 | Orchestrator | Walks every `source/<prototype>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
 | 6 | Drawer(s) | Produce the content at the canonical path. |
-| 7 | Agent | After ALL primary orchestrators return, dispatch `interactive-polish-orchestrator` ONCE with project-wide scope. This is the post-pass enrichment step — fires LAST, before Step-8 QA. |
+| 7 | Agent | After ALL primary orchestrators return, **run the polish gate** (DS check + restrained-register check + explicit-user-ask check — see § "Interactive polish: dispatch interactive-polish-orchestrator LAST"). If the gate allows, dispatch `interactive-polish-orchestrator` ONCE with project-wide scope before Step-8 QA. If the gate skips, surface the one-line "Skipped interactive polish — …" notice to the user verbatim. |
 
 **One dispatch per family, not one per slot. The orchestrator does the per-slot fan-out, not the agent.**
 
@@ -585,25 +585,25 @@ The museum project — 8 paintings, 4 voice marks, 2 hero photos, 1 front-door s
 ```
 Task(visual-orchestrator, …)             # 1 dispatch → 4 voice marks + 2 photos → 6 drawers
 Task(narrative-experience-orchestrator, …) # 1 dispatch → 8 painting-as-place slots → 56 drawers
-Task(interactive-polish-orchestrator, …)   # 1 dispatch → post-pass over the host pages
+Task(interactive-polish-orchestrator, …)   # 1 dispatch IFF the polish gate passes (museum is expressive + likely no DS → dispatches)
 ```
-= **three orchestrator dispatches**, ~62 drawer dispatches + polish.
+= **two-or-three orchestrator dispatches** depending on the gate, ~56 drawer dispatches + polish-if-allowed.
 
 A Totoro feed-the-forest project — 1 playable feed surface, 12 illustration assets (Totoro, foods, friends, icons, backgrounds) — dispatches:
 ```
 Task(visual-orchestrator, …)             # 1 dispatch → 12 illustration assets → 12 drawers
 Task(game-experience-orchestrator, …)    # 1 dispatch → 1 feed-game slot → 8-9 drawers
-Task(interactive-polish-orchestrator, …) # 1 dispatch → host-page polish
+Task(interactive-polish-orchestrator, …) # 1 dispatch IFF the polish gate passes (Studio-Ghibli watercolor is expressive → dispatches; if a Ghibli DS was committed, polish is skipped)
 ```
-= **three dispatches**. NOT visual-orchestrator alone (the feed loop is a GAME — objective + feedback). The fact that it's drawn in Studio-Ghibli watercolor doesn't change the surface family — the game-mount iframe holds the playable loop; visual-orchestrator fills the illustrated `<img>` slots around it.
+= **two-or-three dispatches** depending on the gate. NOT visual-orchestrator alone (the feed loop is a GAME — objective + feedback). The fact that it's drawn in Studio-Ghibli watercolor doesn't change the surface family — the game-mount iframe holds the playable loop; visual-orchestrator fills the illustrated `<img>` slots around it.
 
 A vaporwave portfolio — 1 scrapbook hero, 3 work-tile illustrations — dispatches:
 ```
 Task(visual-orchestrator, …)               # 3 work-tile drawers
 Task(scrapbook-experience-orchestrator, …) # 1 scrapbook hero → 6 drawers + N visual-orchestrator sub-dispatches
-Task(interactive-polish-orchestrator, …)   # host-page polish
+Task(interactive-polish-orchestrator, …)   # IFF the gate passes (vaporwave is expressive + the scrapbook orchestrator owns its own runtime motion already; polish only touches the host-page chrome around it)
 ```
-= **three dispatches**.
+= **two-or-three dispatches** depending on the gate.
 
 ### What the agent writes in its HTML to enable enumeration
 
@@ -1182,19 +1182,33 @@ The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster
 
 **Emulating scrapbook-experience-orchestrator from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
 
-## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA) (v3.3 hard rule)
+## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA) (v3.7 — now gated, was v3.3 hard rule)
 
-This is the ONE orchestrator that runs at the END of the pipeline, not the beginning. Every other orchestrator is a first-action dispatch. This one is the LAST build-phase action before Step-8 QA. **After** another primary orchestrator's build is done (or after you have hand-written source), dispatch `interactive-polish-orchestrator` to enrich what exists with microanimations, scroll/pointer-driven effects, hover surprises, and shader overlays that match the genre.
+This is the ONE orchestrator that runs at the END of the pipeline, not the beginning. Every other orchestrator is a first-action dispatch. This one is the LAST build-phase action before Step-8 QA. But polish is **not unconditional** — it auto-fires only when the project's genre asks for it AND no design system is committed. On DS-bound or restrained-register prototypes, polish would fight the deliberate design language; the right move is to skip it (and tell the user it was skipped).
 
-### The trigger
+### The trigger — gated, in order
 
-**AUTOMATIC after any other orchestrator's build returns** (or after you wrote source HTML by hand). The orchestrator looks back at what was generated, considers the committed genre / aesthetic, and identifies SITES + TYPES where interactive flourish could be applied. The drawers decide WHAT the specific improvement is — the orchestrator only finds the opportunities.
+Before dispatching `interactive-polish-orchestrator`, run the gate. The first row that matches wins:
 
-This is the ONE orchestrator that fires LAST, not first. Dispatch BEFORE Step-8 QA, AFTER everything else has built.
+| Predicate (test in order) | Move |
+|---|---|
+| **The user explicitly asked for polish** ("polish this" / "feels static" / "make it feel more alive" / "add micro-interactions" / "the vibe needs more depth" / "feels lifeless" / "feels generic" / "polish pass") | **Dispatch.** Explicit request overrides DS + genre gates. Carry the user's wording into the orchestrator prompt so the polish register threads through whatever DS / register is committed instead of fighting it. |
+| **The prototype's `meta.dsRef` is set** (a design system is committed — check `editor/<prototype>.data.js` → `meta.dsRef`, or `editor/data.js` → `meta.dsRef`, or `design-systems/<id>/` on disk) | **Skip.** The DS owns the design language; polish bolted on top fights the tokens + component vocabulary + motion patterns the DS committed to. Tell the user verbatim: `"Skipped interactive polish — this prototype is bound to design system <dsRef.id>. Polish on top of a DS tends to fight its motion + token vocabulary. Say 'polish this' if you want it anyway."` Then continue to Step-8 QA. |
+| **The committed genre / styleCue is in the RESTRAINED register** (see deny list below) | **Skip.** Restrained genres ARE the polish — the discipline is the felt-state. Microanimations, hover surprises, and shader overlays blunt that discipline. Tell the user verbatim: `"Skipped interactive polish — the committed genre <X> is in the restrained register where polish would work against the vibe. Say 'polish this' if you want it anyway."` Then continue to Step-8 QA. |
+| **Any source exists in the branch + no DS + genre NOT in deny list** (expressive register) | **Dispatch** with project-wide scope, BEFORE Step-8 QA. This is the existing post-build enrichment path. |
+| **No source exists yet** | **Skip.** Nothing to polish. Run a primary orchestrator / write source first. |
 
-Explicit user request ("polish this", "feels static") is a fallback path — the main trigger is automatic post-build.
+### Restrained-register deny list (skip auto-dispatch when the committed slug matches)
 
-### What polish-orchestrator does — different from the other six
+Polish does NOT auto-fire when the committed slug is one of these, OR when the committed styleCue clearly invokes the same register in plain English ("restrained product UI", "Linear-style", "Swiss grid", "Bauhaus", "warm restraint", "newspaper of record", "ios system app", "dense mono dashboard", "anti-design", "flat material 3"):
+
+- **Recipes**: `recipe-ai-foundry-dark`, `recipe-bento-marketing`, `recipe-bloomberg-dashboard`, `recipe-devtools-marketing`, `recipe-ios-system`, `recipe-linear-product-ui`, `recipe-material-3`, `recipe-neo-grotesque-portfolio`, `recipe-newspaper-of-record`, `recipe-readcv`, `recipe-restrained-ai-marketing`, `recipe-scientific-infra-marketing`, `recipe-swiss-grid`, `recipe-warm-restraint`
+- **Aesthetics**: `aesthetic-anti-design`, `aesthetic-bauhaus`, `aesthetic-constructivism`, `aesthetic-de-stijl`, `aesthetic-swiss-modernist`, `aesthetic-coastal-grandmother`, `aesthetic-dark-academia`
+- **Styles**: `style-restrained-hairline`, `style-flat-design`, `style-outline-wireframe`, `style-dense-mono-dark`, `style-sf-pro-ios`, `style-material-m1m2`, `style-material-m3`, `style-oversized-neo-grotesque`
+
+Any slug NOT in this list is treated as expressive — polish auto-fires (subject to the DS gate above). Common expressive examples that DO auto-polish: `recipe-aurora-marketing`, `recipe-brutalist-web`, `recipe-editorial-magazine`, `recipe-y2k-memphis-loud`, `recipe-terminal-on-web`, `aesthetic-vaporwave`, `aesthetic-y2k-*`, `aesthetic-cottagecore`, `aesthetic-dreamcore`, `aesthetic-cyberpunk`, `aesthetic-glitch-*`, `aesthetic-acid-*`, `aesthetic-frutiger-*`, `aesthetic-pixel-*`, `style-glassmorphism`, `style-liquid-glass`, `style-claymorphism`, `style-neumorphism`, `style-holographic`, `style-skeuomorphism`, `style-neubrutalism`, `style-doodle`, `style-aurorism`, `style-raster-cutout`.
+
+### What polish-orchestrator does — when it DOES fire
 
 The orchestrator identifies SITES + TYPES of opportunity (where in the source could be enriched, and with what category: microanimation / pointer / scroll / hover / shader). **The drawers decide WHAT the specific improvement looks like.** Polish is a craft decision — if the orchestrator pre-decided, the drawers would rubber-stamp and quality would drop.
 
@@ -1203,12 +1217,12 @@ The orchestrator-vs-drawer split here is load-bearing:
 - Orchestrator output: "the header logo SVG could have a microanimation (HINT: it's a logo, restrained brief → subtle idle motion fits)"
 - Drawer output: "I picked `idle-breath` — slow scale 1.0 → 1.018 over 4.2s, ease-in-out, infinite, prefers-reduced-motion off"
 
-### Dispatch template
+### Dispatch template (after the gate passes)
 
 ```
 Task(subagent_type: "interactive-polish-orchestrator",
      description: "Polish pass for the project after primary build",
-     prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary orchestrators that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
+     prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. The dsRef status is <none | id@version>. Primary orchestrators that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
 ```
 
 ### After polish-orchestrator returns
@@ -1225,55 +1239,53 @@ Then run Step-8 QA.
 
 ### Do NOT do any of these:
 
+- ❌ **Auto-dispatch polish when `meta.dsRef` is set.** The DS owns the design language. (Explicit user request still overrides — but then thread the user's intent into the orchestrator prompt so it polishes WITH the DS tokens, not around them.)
+- ❌ **Auto-dispatch polish on a restrained-register genre.** See deny list above. The restraint IS the polish. A polished Swiss-modernist data table is the regression, not the feature.
 - ❌ **Dispatch polish-orchestrator FIRST.** It needs source to operate on. Dispatching before any source exists = `runError: scope is empty`.
-- ❌ **Polish the iframe contents** of a primary orchestrator's slot (sim's runtime.html, scrapbook's runtime.html). The polish orchestrator skips these by design; the primary orchestrators own their own motion + interactions.
+- ❌ **Polish the iframe contents** of a primary orchestrator's slot (sim's runtime.html, scrapbook's runtime.html, game's runtime.html). The polish orchestrator skips these by design; the primary orchestrators own their own motion + interactions.
 - ❌ **Pre-commit the polish behavior in your prompt.** "Add a halftone shader to the hero" is the WRONG level of instruction — let the orchestrator decide if a shader is even appropriate, then let the drawer pick the specific effect. The right prompt is "polish this site".
 - ❌ **Edit host pages yourself BEFORE polish-orchestrator returns the integration-instructions.md.** The orchestrator needs to walk the source first to identify sites; editing pre-emptively breaks its survey.
 - ❌ **Skip the QA after polish.** Polish files are loaded into the host page — a broken polish file can break the host page. Step-8 QA verifies the polished state isn't worse than the baseline.
 - ❌ **Re-dispatch polish on top of polish.** Polish is idempotent for a single polishId, but stacking two passes = the second sees the first's `_polish/<polishId>/composite.css` already loaded + may think "richly polished already" + commit zero sites. To re-polish, dispatch with a NEW polishId (e.g. `main-polish-v2`).
+- ❌ **Silently skip without telling the user.** When the gate skips polish (DS or restrained register), surface the one-line notification verbatim per the trigger table. The user should know polish was a deliberate skip, not an oversight.
 
-### Decision rule:
+### Why the gate (the principle)
 
-| Predicate test | Move |
-|---|---|
-| Any source exists in the branch (built by a primary orchestrator OR hand-written) | `Task(interactive-polish-orchestrator, scope="whole project")` BEFORE Step-8 QA |
-| No source exists yet | Do NOT dispatch — run a primary orchestrator / write source first |
-| User explicitly asks "polish this" / "feels static" with source already present | Same — `Task(interactive-polish-orchestrator, …)` |
+The polish pass is what separates "the build is technically correct" from "the piece feels alive" — **when the genre asks for it**. Visual-orchestrator placed an image; sim-orchestrator built a working sim; narrative-orchestrator crafted a felt-state. On expressive registers (vaporwave, editorial spreads, claymorphism cards, brutalist web), polish adds the small living touches — the breath on the logo, the cursor spotlight, the card peek, the print-grain shader — that make a finished page hum.
 
-### Why this is non-negotiable
+But the same touches APPLIED to a restrained register undo it. A Swiss-modernist data table doesn't want subtle idle motion — restraint IS the felt-state. Linear's product UI doesn't want background tints following the cursor — its precision is the polish. A DS-bound prototype already commits its motion + hover + token vocabulary in `design-systems/<id>/styles.css`; polish bolted on top is a second voice talking over the first.
 
-The polish pass is what separates "the build is technically correct" from "the piece feels alive." Visual-orchestrator placed an image; sim-orchestrator built a working sim; narrative-orchestrator crafted a felt-state. NONE of them added the small living touches that make a finished page hum — the breath on the logo, the cursor spotlight, the card peek, the print-grain shader. Those are POLISH territory. Dispatching this orchestrator LAST is how the system gets that last 10% — the difference between "static and correct" and "felt and surprising."
-
-Skipping polish is the bug. Dispatch it.
+The gate keeps the principle honest: dispatch polish ONLY where polish is the right move. Skip silently (with one-line user notice) everywhere else. The user has explicitly said: a polished restrained-register UI is a known regression; an auto-polished DS-bound prototype is a known regression. Skipping is the feature.
 
 ## ✶ END-OF-WORK GATE — read this before marking ANY task done (load-bearing)
 
 Before you write your final summary message, before you say "done" or "complete" or "shipped," do this checklist IN ORDER:
 
 1. **Did I run a primary orchestrator OR write source HTML/CSS/JS in this session?**
-   - If no → polish not applicable; skip.
+   - If no → polish not applicable; skip to step 5.
    - If yes → continue.
 
-2. **Did I already dispatch `interactive-polish-orchestrator` in this session?**
-   - If yes → continue to step 3.
-   - If no → **STOP. Dispatch it right now.**
-     ```
-     Task(subagent_type: "interactive-polish-orchestrator",
-          description: "Polish pass — last build-phase step before declaring done",
-          prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. Primary orchestrators that ran: <list>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap.")
-     ```
-     Wait for it to return. Apply the integration edits per the instructions. THEN proceed to step 3.
+2. **Did I already dispatch `interactive-polish-orchestrator` (or explicitly skip it via the gate) in this session?**
+   - If yes → continue to step 4.
+   - If no → continue to step 3 (run the gate now).
 
-3. **Did polish return a zero-site outcome OR did integration edits land on every host page?**
-   - If zero-site → fine, polish was a no-op for this genre. Continue.
+3. **Run the polish gate (per §"Interactive polish: dispatch interactive-polish-orchestrator LAST" — the trigger table is the source of truth):**
+   - **Did the user explicitly ask for polish** in this session (verbatim cues: "polish this" / "feels static" / "make it feel more alive" / "feels lifeless" / "feels generic" / "add micro-interactions" / "the vibe needs more depth" / "polish pass")?
+     - If yes → **dispatch polish** with the user's wording threaded into the prompt (so the polish register honours whatever DS / register is committed instead of fighting it). Skip the next two sub-checks.
+   - **Is `meta.dsRef` set** on the prototype? Check `editor/<prototype>.data.js` → `meta.dsRef`, or `editor/data.js` → `meta.dsRef`, or look for `design-systems/<id>/` on disk.
+     - If yes → **skip polish** + surface to the user verbatim: `"Skipped interactive polish — this prototype is bound to design system <dsRef.id>. Polish on top of a DS tends to fight its motion + token vocabulary. Say 'polish this' if you want it anyway."` Continue to step 5.
+   - **Is the committed genre / styleCue in the RESTRAINED deny list?** (recipe-linear-product-ui / recipe-swiss-grid / recipe-bloomberg-dashboard / recipe-warm-restraint / recipe-newspaper-of-record / recipe-restrained-ai-marketing / recipe-bento-marketing / recipe-material-3 / recipe-ios-system / recipe-neo-grotesque-portfolio / recipe-readcv / recipe-scientific-infra-marketing / recipe-devtools-marketing / recipe-ai-foundry-dark / aesthetic-anti-design / aesthetic-bauhaus / aesthetic-swiss-modernist / aesthetic-constructivism / aesthetic-de-stijl / aesthetic-coastal-grandmother / aesthetic-dark-academia / style-restrained-hairline / style-flat-design / style-outline-wireframe / style-dense-mono-dark / style-sf-pro-ios / style-material-m1m2 / style-material-m3 / style-oversized-neo-grotesque — OR a styleCue in plain English that clearly invokes the same register.)
+     - If yes → **skip polish** + surface to the user verbatim: `"Skipped interactive polish — the committed genre <X> is in the restrained register where polish would work against the vibe. Say 'polish this' if you want it anyway."` Continue to step 5.
+   - **Otherwise** (no DS + expressive genre + no explicit ask) → **dispatch polish** with the template in the §"Dispatch template" section. Wait for it to return. Apply the integration edits per the orchestrator's `integration-instructions.md`. Continue to step 4.
+
+4. **If polish dispatched, did it return a zero-site outcome OR did integration edits land on every host page?**
+   - If zero-site → fine, polish was a no-op for this content. Continue.
    - If integration edits applied → fine. Continue.
    - If polish returned an error → fix it before marking done.
 
-4. **NOW** you may write your final summary and mark the task complete.
+5. **NOW** you may write your final summary and mark the task complete.
 
-This is a **load-bearing gate**, not a suggestion. The polish pass is what separates "static and correct" from "felt and surprising." Every other orchestrator's output is incomplete without it — visual-orchestrator placed images, sim-orchestrator built sims, narrative-orchestrator crafted felt-states, game-orchestrator made playable worlds, scrapbook-orchestrator composed collages. None of them added the small living touches: the breath on the logo, the cursor spotlight, the card peek, the print-grain shader, the scroll-tint, the hover surprise. Those live in POLISH. Skipping the gate ships a build that feels lifeless even when every prior step succeeded.
-
-The user has explicitly said: every shipped project must look like it had a polish pass. If you skip the gate, you are shipping a known regression.
+This is a **load-bearing gate**, not a suggestion — but it's a CONDITIONAL gate, not a blanket "always dispatch." The polish pass is what separates "static and correct" from "felt and surprising" **on expressive registers without a DS**. On DS-bound prototypes or restrained-register genres, polish fights the design language the project committed to — auto-dispatching it ships a known regression. The user has explicitly said: a polished Swiss-modernist UI is the regression; an auto-polished DS-bound prototype is the regression. Skipping is the feature in those cases — but the SKIP must be visible to the user (one-line notice, verbatim wording in step 3) so they know polish was a deliberate gate decision, not an oversight, and so they can override with "polish this" if they want it anyway.
 
 Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying the app can't do something."""
 

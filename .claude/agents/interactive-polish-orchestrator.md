@@ -40,23 +40,29 @@ Each site becomes a dispatch target for the matching drawer. The DRAWER decides 
 
 This split is the whole point. Polish is a craft decision; if you (the orchestrator) pre-decide, the drawers become rubber-stamping subagents and the quality ceiling drops. By only identifying sites + types, you leave the creative decision in the drawer where it belongs.
 
-## 1. When this orchestrator triggers (DIFFERENT from the other six)
+## 1. When this orchestrator triggers (DIFFERENT from the other six — and GATED, as of v3.7)
 
-The other six orchestrators trigger on the chat-Claude's FIRST action. You trigger on the LAST.
+The other six orchestrators trigger on the chat-Claude's FIRST action. You trigger on the LAST. But your trigger is **gated**: chat-Claude runs a DS check + restrained-register check before dispatching you. If either gate trips, you are skipped (with a one-line user notice) — see `editor/kinds/capabilities.py` §"Interactive polish: dispatch interactive-polish-orchestrator LAST" for the canonical trigger table.
 
-### Trigger conditions
+### Trigger conditions (in order — first match wins)
 
 The chat-Claude dispatches you in any of these cases:
 
-1. **After another orchestrator's hand-off envelope returns** AND the chat-Claude has driven the build phase to completion. Before invoking Step-8 QA, the chat-Claude dispatches you for a polish pass.
-2. **After the chat-Claude has hand-written source** (via the `/prototype` skill, by hand, or via a combination). Before declaring "done," chat-Claude dispatches you.
-3. **Explicitly by user request** — "polish this," "make it feel more alive," "add micro-interactions," "the vibe needs more depth," "feels static / dead / generic."
-4. **Re-invocation** — the user re-runs you to add more polish at a different register (subtle → playful, etc.) or to revisit specific sites.
+1. **Explicit user request** — "polish this," "make it feel more alive," "add micro-interactions," "the vibe needs more depth," "feels static / dead / generic," "polish pass." This OVERRIDES the DS + restrained-register gates below. When you receive a dispatch tagged as user-requested, thread the user's wording through your research drawer's polish-plan so the register honours whatever DS / restrained genre is committed instead of fighting it.
+2. **After another orchestrator's hand-off envelope returns** AND chat-Claude has driven the build phase to completion AND the polish gate allows — i.e. `meta.dsRef` is unset AND the committed genre is NOT in the restrained-register deny list (see capabilities.py for the slug list). Before invoking Step-8 QA, chat-Claude dispatches you for a polish pass.
+3. **After chat-Claude has hand-written source** (via the `/prototype` skill, by hand, or via a combination) AND the same gate above allows.
+4. **Re-invocation** — the user re-runs you to add more polish at a different register (subtle → playful, etc.) or to revisit specific sites. Re-invocation requires a NEW `polishId` (e.g. `main-polish-v2`); stacking on top of an existing polishId produces a near-empty pass.
 
 You do NOT trigger:
 
-- BEFORE any build phase. There must be source to polish.
-- On a orchestrator-family slot in isolation (sim, im, nx, game, scrapbook) — those orchestrators do their OWN motion + interaction internally. Polish operates on the SHELL HTML around their slots, not on their internal runtimes.
+- **BEFORE any build phase.** There must be source to polish.
+- **On a DS-bound prototype (`meta.dsRef` is set)** unless the user explicitly asked. The DS already commits motion + hover + token vocabulary; auto-polish bolted on top is a second voice talking over the first.
+- **On a restrained-register genre** (Linear product UI / Swiss grid / Bloomberg dashboard / warm restraint / newspaper of record / Bauhaus / anti-design / dense-mono / SF Pro / etc. — see capabilities.py for the canonical list) unless the user explicitly asked. The restraint IS the felt-state; polish blunts it.
+- **On an orchestrator-family slot in isolation** (sim, im, nx, game, scrapbook) — those orchestrators do their OWN motion + interaction internally. Polish operates on the SHELL HTML around their slots, not on their internal runtimes.
+
+### Defensive bail (when you ARE dispatched but the gate clearly should have caught it)
+
+If your dispatch envelope is NOT tagged `userRequested: true` AND you see `dsRef` set in the envelope OR a committed genre that obviously belongs in the deny list, you may still proceed — chat-Claude is responsible for the gate, not you. But return a short note in your hand-off envelope (`gateNote: "Dispatched on a <register> register without explicit user ask — chat-Claude may have missed the gate at capabilities.py §Interactive polish."`) so the operator can spot the miss.
 
 ## 2. Input mode
 
