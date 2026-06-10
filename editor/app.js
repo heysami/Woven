@@ -11607,24 +11607,40 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                     />`)}
                 </div>
               `}
-              ${opt.display?.text && html`
-                <div className="chat-direction-display" style=${dispStyle}>
-                  ${opt.display.text}
-                </div>
-              `}
-              ${opt.body?.text && html`
-                <div className="chat-direction-body" style=${bodyStyle}>
-                  ${opt.body.text}
+              ${(opt.display?.text || opt.body?.text) && html`
+                <div className="chat-direction-type">
+                  <div className="chat-direction-type-eyebrow">Typography</div>
+                  ${opt.display?.text && html`
+                    <div className="chat-direction-display" style=${dispStyle}>
+                      ${opt.display.text}
+                    </div>
+                    ${opt.display?.font && html`
+                      <div className="chat-direction-type-caption">Display · ${opt.display.font}</div>
+                    `}
+                  `}
+                  ${opt.body?.text && html`
+                    <div className="chat-direction-body" style=${bodyStyle}>
+                      ${opt.body.text}
+                    </div>
+                    ${opt.body?.font && html`
+                      <div className="chat-direction-type-caption">Body · ${opt.body.font}</div>
+                    `}
+                  `}
                 </div>
               `}
               ${opt.image?.src && html`
-                <img
-                  className="chat-direction-image"
-                  src=${apiUrl("/" + opt.image.src.replace(/^\/+/, ""))}
-                  alt=${opt.image.alt || opt.label}
-                  loading="lazy"
-                  onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(apiUrl("/" + opt.image.src.replace(/^\/+/, "")), opt.image.alt || opt.label); }}
-                />
+                <div className="chat-direction-image-wrap">
+                  <img
+                    className="chat-direction-image"
+                    src=${apiUrl("/" + opt.image.src.replace(/^\/+/, ""))}
+                    alt=${opt.image.alt || opt.label}
+                    loading="lazy"
+                    onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(apiUrl("/" + opt.image.src.replace(/^\/+/, "")), opt.image.alt || opt.label); }}
+                  />
+                  <div className="chat-direction-image-caption">
+                    Layout reference · type inside the image is from the library source, not the chosen face above
+                  </div>
+                </div>
               `}
               ${opt.badge && html`<div className="chat-direction-badge"><span className="chat-direction-badge-dot">◉</span> ${opt.badge}</div>`}
               <div className="chat-direction-meta">
