@@ -1,42 +1,54 @@
-# Lifesavers (illust)
+---
+styleId: blush-lifesavers
+name: Lifesavers
+category: Flat vector
+subCategory: flat-iconographic
+role: spot-illustration
+pairsPrototypes: [recipe-restrained-ai-marketing, recipe-bento-marketing]
+notForUseWhen: gore, brutalism, editorial
+---
 
-**Tag:** illust-blush-lifesavers  ·  **Category:** Flat vector  ·  **Role affinity:** spot-illustration
+# Lifesavers
 
 medical objects: organs, bones, pills, wheelchairs.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- medical objects: organs, bones, pills, wheelchairs
+- clean medical illustration look
+- clinical palette with friendly warmth
 
-```yaml
-- styleId: blush-lifesavers
-  name: Lifesavers
-  category: Flat vector
-  subCategory: flat-iconographic
-  role: spot-illustration
-  source: blush.design — Lifesavers by Deivid Saenz
-  visualSignatures:
-    - medical objects: organs, bones, pills, wheelchairs
-    - clean medical illustration look
-    - clinical palette with friendly warmth
-  promptKeywords:
-    primary: [medical, flat vector, organ, healthcare, friendly clinical]
-    material: ["flat fill"]
-    line: ["no line"]
-    color: ["clinical white + soft pink + sage"]
-    style: ["medical iconography"]
-    avoidKeywords: [photoreal anatomy, graphic medical]
-  namedReferences:
-    illustrators: [Deivid Saenz]
-  examplePromptTemplate: |
-    Friendly flat vector medical illustration of a heart organ, clean clinical
-    look with soft pink and sage palette on white, no outline, Deivid Saenz
-    Lifesavers healthcare aesthetic.
-  whenToUse: Health tech, telemedicine, pharma onboarding.
-  pairsWith:
-    prototypeStyles: [recipe-restrained-ai-marketing, recipe-bento-marketing]
-  notForUseWhen: gore, brutalism, editorial
-```
+## Prompt keywords
+
+**Primary**: medical, flat vector, organ, healthcare, friendly clinical
+
+**Material**: flat fill
+
+**Line**: no line
+
+**Color**: clinical white + soft pink + sage
+
+**Style**: medical iconography
+
+**Avoid (negative prompt)**: photoreal anatomy, graphic medical
+
+## Named references
+
+**Illustrators**: Deivid Saenz
+
+## Example prompt template
+
+> Friendly flat vector medical illustration of a heart organ, clean clinical
+>   look with soft pink and sage palette on white, no outline, Deivid Saenz
+>   Lifesavers healthcare aesthetic.
+> whenToUse: Health tech, telemedicine, pharma onboarding.
+> pairsWith:
+>   prototypeStyles: [recipe-restrained-ai-marketing, recipe-bento-marketing]
+> notForUseWhen: gore, brutalism, editorial
+
+## When to use
+
+Health tech, telemedicine, pharma onboarding.
 
 ## When NOT to use
 
@@ -49,7 +61,3 @@ gore, brutalism, editorial
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1074–1101 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

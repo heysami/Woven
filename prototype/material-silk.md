@@ -1,46 +1,53 @@
-# Silk (lustrous fabric) (material)
+---
+materialId: silk
+name: Silk (lustrous fabric)
+family: analog
+category: fabric
+surfaceFinish: semi-gloss
+transparency: opaque
+pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-vaporwave, aesthetic-coastal-grandmother, aesthetic-defi-cosmic]
+---
 
-**Tag:** material-silk  ·  **Family:** analog  ·  **Category:** fabric · semi-gloss
+# Silk (lustrous fabric)
 
-A semi-gloss analog surface.
+A semi-gloss surface that reacts to light: yes — anisotropic lustre and deforms: yes — flowing drape.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: semi-gloss
+
+**Transparency**: opaque
+
+**Reacts to light**: yes — anisotropic lustre
+
+**Deforms**: yes — flowing drape
+
+**Age / wear**: shows wear (fray, water spots)
+
+## Implementation strategies
 
 ```yaml
-- materialId: silk
-  name: Silk (lustrous fabric)
-  family: analog
-  category: fabric
-  physicalBehavior:
-    surfaceFinish: semi-gloss
-    transparency: opaque
-    reactsToLight: yes — anisotropic lustre
-    deforms: yes — flowing drape
-    age: shows wear (fray, water spots)
-  implementationStrategies:
-    css: |
-      background:
-        linear-gradient(135deg,
-          rgba(255,255,255,0.3) 0%,
-          transparent 30%,
-          rgba(255,255,255,0.2) 60%,
-          transparent 100%
-        ),
-        oklch(75% 0.12 350);
-    raster: silk photograph
-  reactiveBehaviors:
-    light: lustre band shifts with pointer angle
-    highlight: yes — narrow band perpendicular to fibre direction
-    depth: drape via scroll-driven skewY
-    parallax: yes — gentle
-  pairsWith:
-    prototypeStyles: [aesthetic-y2k-futurism, aesthetic-vaporwave, aesthetic-coastal-grandmother, aesthetic-defi-cosmic]
-  killsTheIllusion:
-    - flat fabric (silk is always shifting in light)
-    - no drape (silk hangs)
+css: |
+  background:
+    linear-gradient(135deg,
+      rgba(255,255,255,0.3) 0%,
+      transparent 30%,
+      rgba(255,255,255,0.2) 60%,
+      transparent 100%
+    ),
+    oklch(75% 0.12 350);
+raster: silk photograph
 ```
+
+## Reactive behaviors
+
+**Light**: lustre band shifts with pointer angle
+
+**Highlight**: yes — narrow band perpendicular to fibre direction
+
+**Depth**: drape via scroll-driven skewY
+
+**Parallax**: yes — gentle
 
 ## Common implementation mistakes (avoid these)
 
@@ -55,8 +62,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-defi-cosmic`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2379–2410 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

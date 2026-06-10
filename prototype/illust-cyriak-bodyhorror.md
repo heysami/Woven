@@ -1,44 +1,56 @@
-# Cyriak surreal multiplication (illust)
+---
+styleId: cyriak-bodyhorror
+name: Cyriak surreal multiplication
+category: Surreal / esoteric
+subCategory: cyriak-bodyhorror
+role: hero
+pairsPrototypes: [aesthetic-dreamcore, aesthetic-anti-design, aesthetic-acid-graphics]
+notForUseWhen: friendly, B2B, family
+---
 
-**Tag:** illust-cyriak-bodyhorror  ·  **Category:** Surreal / esoteric  ·  **Role affinity:** hero
+# Cyriak surreal multiplication
 
 photoreal source material multiplied into impossible forms.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- photoreal source material multiplied into impossible forms
+- eyes, limbs, mouths replicating across the form
+- Droste-effect recursion
+- body horror but darkly comic
 
-```yaml
-- styleId: cyriak-bodyhorror
-  name: Cyriak surreal multiplication
-  category: Surreal / esoteric
-  subCategory: cyriak-bodyhorror
-  role: hero
-  source: curator addition (research)
-  visualSignatures:
-    - photoreal source material multiplied into impossible forms
-    - eyes, limbs, mouths replicating across the form
-    - Droste-effect recursion
-    - body horror but darkly comic
-  promptKeywords:
-    primary: [Cyriak, surreal multiplication, body horror, Droste effect]
-    material: ["photo composite", "After Effects layering"]
-    line: ["mask-cut edge"]
-    color: ["photoreal source"]
-    style: ["impossible multiplication", "recursive"]
-    avoidKeywords: [cute, friendly, hand-drawn]
-  namedReferences:
-    illustrators: [Cyriak Harris]
-  examplePromptTemplate: |
-    Cyriak-style surreal photo composite of [SUBJECT] with limbs and eyes
-    multiplied across the form into Droste-effect recursion, masked photoreal
-    source material, darkly comic body horror, impossible multiplication
-    aesthetic.
-  whenToUse: Music videos, edgy editorial, surreal art-house brands. Use carefully.
-  pairsWith:
-    prototypeStyles: [aesthetic-dreamcore, aesthetic-anti-design, aesthetic-acid-graphics]
-  notForUseWhen: friendly, B2B, family
-```
+## Prompt keywords
+
+**Primary**: Cyriak, surreal multiplication, body horror, Droste effect
+
+**Material**: photo composite, After Effects layering
+
+**Line**: mask-cut edge
+
+**Color**: photoreal source
+
+**Style**: impossible multiplication, recursive
+
+**Avoid (negative prompt)**: cute, friendly, hand-drawn
+
+## Named references
+
+**Illustrators**: Cyriak Harris
+
+## Example prompt template
+
+> Cyriak-style surreal photo composite of [SUBJECT] with limbs and eyes
+>   multiplied across the form into Droste-effect recursion, masked photoreal
+>   source material, darkly comic body horror, impossible multiplication
+>   aesthetic.
+> whenToUse: Music videos, edgy editorial, surreal art-house brands. Use carefully.
+> pairsWith:
+>   prototypeStyles: [aesthetic-dreamcore, aesthetic-anti-design, aesthetic-acid-graphics]
+> notForUseWhen: friendly, B2B, family
+
+## When to use
+
+Music videos, edgy editorial, surreal art-house brands. Use carefully.
 
 ## When NOT to use
 
@@ -52,7 +64,3 @@ friendly, B2B, family
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2680–2709 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

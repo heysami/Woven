@@ -1,45 +1,59 @@
-# 1980s cocaine-glam editorial (photo)
+---
+styleId: eighties-cocaine-glam
+name: 1980s cocaine-glam editorial
+category: glamour
+era: 1980s
+pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vector-hands-up]
+notForUseWhen: Restrained luxury, minimal, anything wellness.
+---
 
-**Tag:** photo-eighties-cocaine-glam  ·  **Era:** 1980s  ·  **Category:** glamour  ·  **Role affinity:** hero, section
+# 1980s cocaine-glam editorial
 
 Hard rim light from behind, soft fill from front.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/photography-library.md`](../docs/research/photography-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- Hard rim light from behind, soft fill from front
+- Glossy fabric, sequins, leather, big hair
+- Saturated punchy color, slight blue-magenta cast
+- Studio backdrop with painted gradient
+- Glamour smile, eye contact, confident gaze
 
-```yaml
-- styleId: eighties-cocaine-glam
-  name: 1980s cocaine-glam editorial
-  era: 1980s
-  category: glamour
-  visualSignatures:
-    - Hard rim light from behind, soft fill from front
-    - Glossy fabric, sequins, leather, big hair
-    - Saturated punchy color, slight blue-magenta cast
-    - Studio backdrop with painted gradient
-    - Glamour smile, eye contact, confident gaze
-  promptKeywords:
-    primary: [sequined gown, big teased hair, gradient studio backdrop, confident eye contact, half-body glamour]
-    lighting: [hard rim light from behind, soft front fill from large softbox, shaped catch light]
-    cameraOrLens: [Mamiya RB67 medium format, 90mm]
-    filmStockOrPostProcessing: [Kodak Ektachrome saturated, slight blue-magenta cast, glossy specular]
-    mood: [confident, brassy, Studio 54]
-    avoidKeywords: [muted, natural light, candid, minimal]
-  namedReferences:
-    photographers: [Francesco Scavullo, Richard Avedon when commercial, Patrick Demarchelier 1980s]
-    magazines: [Vogue 1985-89, Cosmopolitan 1980s, Interview]
-    movements: [Studio 54 glamour, supermodel era origin]
-    brands: [Versace 1980s, Yves Saint Laurent Opium era, Estée Lauder 1980s]
-  examplePromptTemplate: |
-    Half-body editorial of a woman in a black sequined gown with shoulder pads and a single large gold earring, big teased hair, head tilted with a confident half-smile, eye contact through camera. Hard rim light from behind catching every sequin, large softbox front fill creating shaped catchlights in the eyes, painted gradient blue-to-mauve studio backdrop. Shot on a Mamiya RB67 with a 90mm, Kodak Ektachrome saturated color, slight blue-magenta cast. Confident, brassy, Studio 54 mood. 1980s cocaine-glam editorial.
-  whenToUse: Beauty for older or nostalgia demos, premium spirit and tobacco-adjacent marketing, hospitality nostalgia, retro music marketing.
-  pairsWith:
-    prototypeStyles: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vector-hands-up]
-  notForUseWhen: Restrained luxury, minimal, anything wellness.
+## Prompt keywords
 
----
-```
+**Primary**: sequined gown, big teased hair, gradient studio backdrop, confident eye contact, half-body glamour
+
+**Lighting**: hard rim light from behind, soft front fill from large softbox, shaped catch light
+
+**Camera / lens**: Mamiya RB67 medium format, 90mm
+
+**Film stock / post-processing**: Kodak Ektachrome saturated, slight blue-magenta cast, glossy specular
+
+**Mood**: confident, brassy, Studio 54
+
+**Avoid (negative prompt)**: muted, natural light, candid, minimal
+
+## Named references
+
+**Photographers**: Francesco Scavullo, Richard Avedon when commercial, Patrick Demarchelier 1980s
+
+**Magazines**: Vogue 1985-89, Cosmopolitan 1980s, Interview
+
+**Movements**: Studio 54 glamour, supermodel era origin
+
+**Brands**: Versace 1980s, Yves Saint Laurent Opium era, Estée Lauder 1980s
+
+## Example prompt template
+
+> Half-body editorial of a woman in a black sequined gown with shoulder pads and a single large gold earring, big teased hair, head tilted with a confident half-smile, eye contact through camera. Hard rim light from behind catching every sequin, large softbox front fill creating shaped catchlights in the eyes, painted gradient blue-to-mauve studio backdrop. Shot on a Mamiya RB67 with a 90mm, Kodak Ektachrome saturated color, slight blue-magenta cast. Confident, brassy, Studio 54 mood. 1980s cocaine-glam editorial.
+> whenToUse: Beauty for older or nostalgia demos, premium spirit and tobacco-adjacent marketing, hospitality nostalgia, retro music marketing.
+> pairsWith:
+>   prototypeStyles: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vector-hands-up]
+> notForUseWhen: Restrained luxury, minimal, anything wellness.
+
+## When to use
+
+Beauty for older or nostalgia demos, premium spirit and tobacco-adjacent marketing, hospitality nostalgia, retro music marketing.
 
 ## When NOT to use
 
@@ -54,7 +68,3 @@ Restrained luxury, minimal, anything wellness.
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 808–838 of `docs/research/photography-library.md`. Full index: `docs/research/photography-library.index.json`._

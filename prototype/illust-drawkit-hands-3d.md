@@ -1,47 +1,61 @@
-# DrawKit Hands Illustrations (illust)
+---
+styleId: drawkit-hands-3d
+name: DrawKit Hands Illustrations
+category: 3D
+subCategory: render-cinematic
+role: spot-illustration
+pairsPrototypes: [recipe-restrained-ai-marketing, style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
+notForUseWhen: cartoon contexts, brutalism, dense data UI
+---
 
-**Tag:** illust-drawkit-hands-3d  ·  **Category:** 3D  ·  **Role affinity:** spot-illustration
+# DrawKit Hands Illustrations
 
 anatomically simplified but realistically lit hand renders.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- anatomically simplified but realistically lit hand renders
+- holding objects in mid-air with explicit purpose
+- skin tones with subsurface scattering
+- neutral cream or grey studio bg
 
-```yaml
-- styleId: drawkit-hands-3d
-  name: DrawKit Hands Illustrations
-  category: 3D
-  subCategory: render-cinematic
-  role: spot-illustration
-  source: drawkit.com/illustration-types/3d (Hands Illustrations)
-  visualSignatures:
-    - anatomically simplified but realistically lit hand renders
-    - holding objects in mid-air with explicit purpose
-    - skin tones with subsurface scattering
-    - neutral cream or grey studio bg
-  promptKeywords:
-    primary: [3d, hand, render, holding, gesture, cinematic]
-    material: ["soft skin shader", "subsurface scattering", "matte fingernail"]
-    line: ["no line"]
-    color: ["neutral skin tone", "muted background"]
-    style: ["studio cinematic light", "shallow depth of field"]
-    avoidKeywords: [cartoon glove, mickey-mouse hand, mitten]
-  namedReferences:
-    illustrators: [DrawKit]
-    movements: [Apple keynote product showcase]
-    productsOrFilms: [Apple Vision Pro hand gestures marketing]
-  examplePromptTemplate: |
-    3D photoreal-stylized hand holding [SUBJECT], anatomically simplified but
-    cinematically lit with soft skin shader and subsurface scattering, neutral
-    cream studio background, shallow depth of field, Apple-keynote quality
-    rendering, soft contact shadow, single light source from upper left.
-  whenToUse: Premium tech marketing, AI demo heroes, when you want to show
-    "this product is for humans" but with restraint.
-  pairsWith:
-    prototypeStyles: [recipe-restrained-ai-marketing, style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
-  notForUseWhen: cartoon contexts, brutalism, dense data UI
-```
+## Prompt keywords
+
+**Primary**: 3d, hand, render, holding, gesture, cinematic
+
+**Material**: soft skin shader, subsurface scattering, matte fingernail
+
+**Line**: no line
+
+**Color**: neutral skin tone, muted background
+
+**Style**: studio cinematic light, shallow depth of field
+
+**Avoid (negative prompt)**: cartoon glove, mickey-mouse hand, mitten
+
+## Named references
+
+**Illustrators**: DrawKit
+
+**Movements**: Apple keynote product showcase
+
+**Products / films**: Apple Vision Pro hand gestures marketing
+
+## Example prompt template
+
+> 3D photoreal-stylized hand holding [SUBJECT], anatomically simplified but
+>   cinematically lit with soft skin shader and subsurface scattering, neutral
+>   cream studio background, shallow depth of field, Apple-keynote quality
+>   rendering, soft contact shadow, single light source from upper left.
+> whenToUse: Premium tech marketing, AI demo heroes, when you want to show
+>   "this product is for humans" but with restraint.
+> pairsWith:
+>   prototypeStyles: [recipe-restrained-ai-marketing, style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
+> notForUseWhen: cartoon contexts, brutalism, dense data UI
+
+## When to use
+
+Premium tech marketing, AI demo heroes, when you want to show
 
 ## When NOT to use
 
@@ -56,7 +70,3 @@ cartoon contexts, brutalism, dense data UI
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 156–188 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

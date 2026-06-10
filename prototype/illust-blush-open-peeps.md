@@ -1,47 +1,61 @@
-# Open Peeps (illust)
+---
+styleId: blush-open-peeps
+name: Open Peeps
+category: Hand-drawn / sketch
+subCategory: ink-line-brush
+role: subject
+pairsPrototypes: [style-doodle, recipe-readcv, recipe-editorial-magazine, aesthetic-cottagecore]
+notForUseWhen: cinematic 3D contexts, brutalism, dense data UI
+---
 
-**Tag:** illust-blush-open-peeps  ·  **Category:** Hand-drawn / sketch  ·  **Role affinity:** subject
+# Open Peeps
 
 all forms drawn with 4-6px wobbly black brush line.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- all forms drawn with 4-6px wobbly black brush line
+- white or off-white fill only — never colored
+- characters mix and match modular hair, body, expression
+- warm imperfect line wobble suggests human hand
 
-```yaml
-- styleId: blush-open-peeps
-  name: Open Peeps
-  category: Hand-drawn / sketch
-  subCategory: ink-line-brush
-  role: subject
-  source: blush.design — Open Peeps by Pablo Stanley
-  visualSignatures:
-    - all forms drawn with 4-6px wobbly black brush line
-    - white or off-white fill only — never colored
-    - characters mix and match modular hair, body, expression
-    - warm imperfect line wobble suggests human hand
-  promptKeywords:
-    primary: [hand-drawn, brush line, black-and-white, modular character, peeps]
-    material: ["ink on white paper", "uncolored fills"]
-    line: ["wobbly brush line 5px", "imperfect"]
-    color: ["pure black on cream", "no color fill"]
-    style: ["modular pose", "isolated figure"]
-    avoidKeywords: [color fill, perfect line, vector polish, 3d]
-  namedReferences:
-    illustrators: [Pablo Stanley]
-    movements: [hand-drawn revival 2019]
-    productsOrFilms: [Sketch app marketing, indie SaaS blog headers]
-  examplePromptTemplate: |
-    Hand-drawn character in Open Peeps style, drawn with wobbly 5px black brush
-    line on cream paper, white interior fills no color, modular hair and clothing,
-    expressive natural pose, imperfect human line quality, isolated subject,
-    Pablo Stanley aesthetic.
-  whenToUse: When a corporate-Memphis surface needs a warmer alternative; blogs,
-    indie startups, documentation that wants to feel made-by-a-person.
-  pairsWith:
-    prototypeStyles: [style-doodle, recipe-readcv, recipe-editorial-magazine, aesthetic-cottagecore]
-  notForUseWhen: cinematic 3D contexts, brutalism, dense data UI
-```
+## Prompt keywords
+
+**Primary**: hand-drawn, brush line, black-and-white, modular character, peeps
+
+**Material**: ink on white paper, uncolored fills
+
+**Line**: wobbly brush line 5px, imperfect
+
+**Color**: pure black on cream, no color fill
+
+**Style**: modular pose, isolated figure
+
+**Avoid (negative prompt)**: color fill, perfect line, vector polish, 3d
+
+## Named references
+
+**Illustrators**: Pablo Stanley
+
+**Movements**: hand-drawn revival 2019
+
+**Products / films**: Sketch app marketing, indie SaaS blog headers
+
+## Example prompt template
+
+> Hand-drawn character in Open Peeps style, drawn with wobbly 5px black brush
+>   line on cream paper, white interior fills no color, modular hair and clothing,
+>   expressive natural pose, imperfect human line quality, isolated subject,
+>   Pablo Stanley aesthetic.
+> whenToUse: When a corporate-Memphis surface needs a warmer alternative; blogs,
+>   indie startups, documentation that wants to feel made-by-a-person.
+> pairsWith:
+>   prototypeStyles: [style-doodle, recipe-readcv, recipe-editorial-magazine, aesthetic-cottagecore]
+> notForUseWhen: cinematic 3D contexts, brutalism, dense data UI
+
+## When to use
+
+When a corporate-Memphis surface needs a warmer alternative; blogs,
 
 ## When NOT to use
 
@@ -56,7 +70,3 @@ cinematic 3D contexts, brutalism, dense data UI
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 257–289 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

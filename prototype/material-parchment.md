@@ -1,45 +1,52 @@
-# Parchment / Vellum (animal hide, premium document) (material)
+---
+materialId: parchment
+name: Parchment / Vellum (animal hide, premium document)
+family: analog
+category: paper
+surfaceFinish: matte
+transparency: opaque
+pairsPrototypes: [aesthetic-dark-academia, aesthetic-steampunk, aesthetic-defi-cosmic (achievement certificates)]
+---
 
-**Tag:** material-parchment  ·  **Family:** analog  ·  **Category:** paper · matte
+# Parchment / Vellum (animal hide, premium document)
 
-A matte analog surface.
+A matte surface and deforms: yes — curls dramatically at corners.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: opaque
+
+**Reacts to light**: no specular but visible thickness
+
+**Deforms**: yes — curls dramatically at corners
+
+**Age / wear**: acquired patina (yellowing, blotches)
+
+## Implementation strategies
 
 ```yaml
-- materialId: parchment
-  name: Parchment / Vellum (animal hide, premium document)
-  family: analog
-  category: paper
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: opaque
-    reactsToLight: no specular but visible thickness
-    deforms: yes — curls dramatically at corners
-    age: acquired patina (yellowing, blotches)
-  implementationStrategies:
-    css: |
-      background:
-        radial-gradient(ellipse at 30% 20%, oklch(94% 0.04 70) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, oklch(86% 0.06 50) 0%, transparent 50%),
-        oklch(91% 0.05 60);
-      filter: contrast(1.05);
-    svg: |
-      blotch turbulence pattern at low opacity
-    raster: real parchment scan ideal
-  reactiveBehaviors:
-    light: edge highlight only
-    highlight: no
-    depth: corner curl prominent
-    parallax: no
-  pairsWith:
-    prototypeStyles: [aesthetic-dark-academia, aesthetic-steampunk, aesthetic-defi-cosmic (achievement certificates)]
-  killsTheIllusion:
-    - uniform colour (parchment is naturally splotchy)
-    - perfect rectangle (parchment has irregular hand-cut edges)
+css: |
+  background:
+    radial-gradient(ellipse at 30% 20%, oklch(94% 0.04 70) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, oklch(86% 0.06 50) 0%, transparent 50%),
+    oklch(91% 0.05 60);
+  filter: contrast(1.05);
+svg: |
+  blotch turbulence pattern at low opacity
+raster: real parchment scan ideal
 ```
+
+## Reactive behaviors
+
+**Light**: edge highlight only
+
+**Highlight**: no
+
+**Depth**: corner curl prominent
+
+**Parallax**: no
 
 ## Common implementation mistakes (avoid these)
 
@@ -53,8 +60,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-defi-cosmic (achievement certificates)`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1847–1877 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

@@ -1,42 +1,54 @@
-# Shiny Happy (illust)
+---
+styleId: blush-shiny-happy
+name: Shiny Happy
+category: Flat vector
+subCategory: corporate-memphis
+role: subject
+pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
+notForUseWhen: dark themes, brutalism
+---
 
-**Tag:** illust-blush-shiny-happy  ·  **Category:** Flat vector  ·  **Role affinity:** subject
+# Shiny Happy
 
 shiny happy people holding hands and laughing.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- shiny happy people holding hands and laughing
+- bright joyful palette
+- inclusive group compositions
 
-```yaml
-- styleId: blush-shiny-happy
-  name: Shiny Happy
-  category: Flat vector
-  subCategory: corporate-memphis
-  role: subject
-  source: blush.design — Shiny Happy by Brandon Mendoza
-  visualSignatures:
-    - shiny happy people holding hands and laughing
-    - bright joyful palette
-    - inclusive group compositions
-  promptKeywords:
-    primary: [flat vector, joyful, group, inclusive, bright]
-    material: ["flat fill"]
-    line: ["no line"]
-    color: ["bright sunny"]
-    style: ["group composition", "laughter"]
-    avoidKeywords: [dramatic, dark]
-  namedReferences:
-    illustrators: [Brandon Mendoza]
-  examplePromptTemplate: |
-    Joyful flat vector group of people holding hands and laughing, bright sunny
-    palette, inclusive diverse composition, no outline, Brandon Mendoza Shiny
-    Happy aesthetic.
-  whenToUse: Community, social impact, celebration marketing.
-  pairsWith:
-    prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
-  notForUseWhen: dark themes, brutalism
-```
+## Prompt keywords
+
+**Primary**: flat vector, joyful, group, inclusive, bright
+
+**Material**: flat fill
+
+**Line**: no line
+
+**Color**: bright sunny
+
+**Style**: group composition, laughter
+
+**Avoid (negative prompt)**: dramatic, dark
+
+## Named references
+
+**Illustrators**: Brandon Mendoza
+
+## Example prompt template
+
+> Joyful flat vector group of people holding hands and laughing, bright sunny
+>   palette, inclusive diverse composition, no outline, Brandon Mendoza Shiny
+>   Happy aesthetic.
+> whenToUse: Community, social impact, celebration marketing.
+> pairsWith:
+>   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
+> notForUseWhen: dark themes, brutalism
+
+## When to use
+
+Community, social impact, celebration marketing.
 
 ## When NOT to use
 
@@ -49,7 +61,3 @@ dark themes, brutalism
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 850–877 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

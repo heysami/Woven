@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-web-brutalism-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-web-brutalism-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # Web brutalism (aesthetic)
 
 **Tag:** `aesthetic`

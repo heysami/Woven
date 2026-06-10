@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-solarpunk-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-solarpunk-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # Solarpunk (aesthetic)
 
 **Tag:** Solarpunk Magazine, Properly Studio ETHWarsaw, Velvetyne Brassia/Hypha/Plantasia, Solarpunk Studio, William Morris Kelmscott revival

@@ -1,3 +1,10 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: recipe-ai-foundry-dark-ui.png
+    reason: Generated UI mockup of this recipe end-to-end — the canonical (shell + style + aesthetic + voice) bundle rendered.
+---
 # AI-foundry dark
 
 A `(shell + style + voice)` bundle for **AI-compute / model-training / chip-architecture marketing** that runs on dark surfaces with oversized neo-grotesque headlines.

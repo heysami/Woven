@@ -1,51 +1,60 @@
-# Film Grain — Portra 400 (colour, fine grain, warm) (material)
+---
+materialId: film-grain-portra-400
+name: Film Grain — Portra 400 (colour, fine grain, warm)
+family: analog
+category: film
+surfaceFinish: matte
+transparency: opaque
+pairsPrototypes: [aesthetic-coastal-grandmother, aesthetic-cottagecore, recipe-editorial-magazine, aesthetic-cottagegoth]
+---
 
-**Tag:** material-film-grain-portra-400  ·  **Family:** analog  ·  **Category:** film · matte
+# Film Grain — Portra 400 (colour, fine grain, warm)
 
-A matte analog surface.
+A matte surface that reacts to light: yes — heavier in shadow.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: opaque
+
+**Reacts to light**: yes — heavier in shadow
+
+**Deforms**: no
+
+**Age / wear**: ageless
+
+## Implementation strategies
 
 ```yaml
-- materialId: film-grain-portra-400
-  name: Film Grain — Portra 400 (colour, fine grain, warm)
-  family: analog
-  category: film
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: opaque
-    reactsToLight: yes — heavier in shadow
-    deforms: no
-    age: ageless
-  implementationStrategies:
-    css: |
-      mix-blend-mode: overlay;
-      opacity: 0.4;
-      filter: saturate(0.92) hue-rotate(2deg);
-    svg: |
-      finer noise — baseFrequency="1.4"
-    raster: scanned Portra grain looping
-  reactiveBehaviors:
-    light: luminance-aware
-    highlight: none
-    depth: none
-    parallax: none
-  pairsWith:
-    prototypeStyles: [aesthetic-coastal-grandmother, aesthetic-cottagecore, recipe-editorial-magazine, aesthetic-cottagegoth]
-  killsTheIllusion:
-    - too coarse grain (Portra is fine)
-    - cold colour grade (Portra is warm)
-  examples:
-    - Magnum portraits
-    - lifestyle editorial
+css: |
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+  filter: saturate(0.92) hue-rotate(2deg);
+svg: |
+  finer noise — baseFrequency="1.4"
+raster: scanned Portra grain looping
 ```
+
+## Reactive behaviors
+
+**Light**: luminance-aware
+
+**Highlight**: none
+
+**Depth**: none
+
+**Parallax**: none
 
 ## Common implementation mistakes (avoid these)
 
 - too coarse grain (Portra is fine)
 - cold colour grade (Portra is warm)
+
+## Examples in the wild
+
+- Magnum portraits
+- lifestyle editorial
 
 ## Pairs with (prototype slugs)
 
@@ -55,8 +64,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-cottagegoth`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2626–2657 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

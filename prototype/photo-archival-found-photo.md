@@ -1,45 +1,59 @@
-# Archival found-photograph treatment (photo)
+---
+styleId: archival-found-photo
+name: Archival found-photograph treatment
+category: archival
+era: 1950s-90s
+pairsPrototypes: [aesthetic-cluttercore, recipe-readcv, aesthetic-corporate-grunge, aesthetic-cottagecore]
+notForUseWhen: Modern tech, restrained luxury, anything aspirational-future.
+---
 
-**Tag:** photo-archival-found-photo  ·  **Era:** 1950s-90s  ·  **Category:** archival  ·  **Role affinity:** hero, section
+# Archival found-photograph treatment
 
 Period-correct degradation: faded color, slight yellowing, edge wear.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/photography-library.md`](../docs/research/photography-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- Period-correct degradation: faded color, slight yellowing, edge wear
+- Snapshot-album composition, slightly off-center
+- Period clothing, vehicles, signage
+- Subject often unaware, candid, family snapshot tone
+- Slight white border, scan dust
 
-```yaml
-- styleId: archival-found-photo
-  name: Archival found-photograph treatment
-  era: 1950s-90s
-  category: archival
-  visualSignatures:
-    - Period-correct degradation: faded color, slight yellowing, edge wear
-    - Snapshot-album composition, slightly off-center
-    - Period clothing, vehicles, signage
-    - Subject often unaware, candid, family snapshot tone
-    - Slight white border, scan dust
-  promptKeywords:
-    primary: [1978 family snapshot, period clothing, off-center composition, faded color, slight white border]
-    lighting: [available period light, often direct sun or kitchen tungsten]
-    cameraOrLens: [Kodak Instamatic, Polaroid, period point-and-shoot]
-    filmStockOrPostProcessing: [Kodachrome 64 faded, slight yellowing, edge wear, scan dust, slight white border, color shift toward magenta with age]
-    mood: [nostalgic, lived, found]
-    avoidKeywords: [retouched, sharp, modern, posed editorial]
-  namedReferences:
-    photographers: [n/a — found-photograph aesthetic]
-    magazines: [Found Magazine, Slice of Life archive, Anthology]
-    movements: [vernacular photography, found photo, family-album aesthetic]
-    brands: [Tuna Melts My Heart, vintage merch brands, era-themed apparel]
-  examplePromptTemplate: |
-    A 1978 family snapshot of three children on a faded yellow couch in a wood-paneled living room, period clothing and a console TV in the background, off-center snapshot composition, slight motion blur on the youngest child's wave. Faded Kodachrome 64 with slight magenta shift, scan dust, edge wear, soft white border, slight yellowing of the highlights. Shot on a Kodak Instamatic 110 with available kitchen tungsten light. Nostalgic, lived, found mood. Archival vernacular photography.
-  whenToUse: Heritage brand, nostalgia marketing, music for older demos, memoir publishing, period drama promo.
-  pairsWith:
-    prototypeStyles: [aesthetic-cluttercore, recipe-readcv, aesthetic-corporate-grunge, aesthetic-cottagecore]
-  notForUseWhen: Modern tech, restrained luxury, anything aspirational-future.
+## Prompt keywords
 
----
-```
+**Primary**: 1978 family snapshot, period clothing, off-center composition, faded color, slight white border
+
+**Lighting**: available period light, often direct sun or kitchen tungsten
+
+**Camera / lens**: Kodak Instamatic, Polaroid, period point-and-shoot
+
+**Film stock / post-processing**: Kodachrome 64 faded, slight yellowing, edge wear, scan dust, slight white border, color shift toward magenta with age
+
+**Mood**: nostalgic, lived, found
+
+**Avoid (negative prompt)**: retouched, sharp, modern, posed editorial
+
+## Named references
+
+**Photographers**: n/a — found-photograph aesthetic
+
+**Magazines**: Found Magazine, Slice of Life archive, Anthology
+
+**Movements**: vernacular photography, found photo, family-album aesthetic
+
+**Brands**: Tuna Melts My Heart, vintage merch brands, era-themed apparel
+
+## Example prompt template
+
+> A 1978 family snapshot of three children on a faded yellow couch in a wood-paneled living room, period clothing and a console TV in the background, off-center snapshot composition, slight motion blur on the youngest child's wave. Faded Kodachrome 64 with slight magenta shift, scan dust, edge wear, soft white border, slight yellowing of the highlights. Shot on a Kodak Instamatic 110 with available kitchen tungsten light. Nostalgic, lived, found mood. Archival vernacular photography.
+> whenToUse: Heritage brand, nostalgia marketing, music for older demos, memoir publishing, period drama promo.
+> pairsWith:
+>   prototypeStyles: [aesthetic-cluttercore, recipe-readcv, aesthetic-corporate-grunge, aesthetic-cottagecore]
+> notForUseWhen: Modern tech, restrained luxury, anything aspirational-future.
+
+## When to use
+
+Heritage brand, nostalgia marketing, music for older demos, memoir publishing, period drama promo.
 
 ## When NOT to use
 
@@ -54,7 +68,3 @@ Modern tech, restrained luxury, anything aspirational-future.
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1273–1303 of `docs/research/photography-library.md`. Full index: `docs/research/photography-library.index.json`._

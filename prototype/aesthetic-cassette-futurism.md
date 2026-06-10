@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-cassette-futurism-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-cassette-futurism-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # Cassette Futurism (aesthetic)
 
 **Tag:** Severance / Lumon MDR · Alien 1979 + MU-TH-UR · Alien: Isolation · Foundation · Berkeley Mono recreations

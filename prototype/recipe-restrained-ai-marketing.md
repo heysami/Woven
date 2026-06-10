@@ -1,3 +1,10 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: recipe-restrained-ai-marketing-ui.png
+    reason: Generated UI mockup of this recipe end-to-end — the canonical (shell + style + aesthetic + voice) bundle rendered.
+---
 # Restrained AI marketing
 
 A `(shell + style + voice)` bundle for **AI-tooling and modern-SaaS marketing pages** that lean on restrained-hairline minimalism instead of marketing flash.

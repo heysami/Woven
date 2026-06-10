@@ -1,15 +1,9 @@
 ---
-# Optional sample-image references. Each entry pairs an image (relative to
-# the prototype/ folder, or absolute under the project root) with the
-# *reason* it belongs to this genre. The landing System tab's design
-# library surfaces these so a project picking this shell can adopt the
-# images as visual references. Picks aren't deterministic — multiple refs
-# are encouraged.
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
 images:
-  - src: shell-bento-grid-1.png
-    reason: Placeholder — replace with an Apple privacy-page-style asymmetric 12-col bento (one bold visual per cell)
-  - src: shell-bento-grid-2.png
-    reason: Placeholder — replace with a low-density bento showing 24px gaps + 16-24px cell radii + generous 32-48px padding
+  - src: shell-bento-grid-ui.png
+    reason: Generated UI mockup showing this shell's structural grammar — grid, density, regions, and characteristic component placement.
 ---
 # Bento grid shell
 

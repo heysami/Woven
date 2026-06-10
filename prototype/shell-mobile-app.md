@@ -1,3 +1,10 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: shell-mobile-app-ui.png
+    reason: Generated UI mockup showing this shell's structural grammar — grid, density, regions, and characteristic component placement.
+---
 # Mobile app shell
 
 **Tag:** `[mobile · top-bar + tab-bar · 1-col-scroll]`

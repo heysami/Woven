@@ -1,39 +1,49 @@
-# Spectrums — Organic blob (illust)
+---
+styleId: spectrums-organic-blob
+name: Spectrums — Organic blob
+category: Abstract / decoration
+subCategory: gradient-blob
+role: decoration
+pairsPrototypes: [style-aurorism, aesthetic-frutiger-aero, recipe-aurora-marketing, style-glassmorphism]
+notForUseWhen: brutalism, hairline-restraint
+---
 
-**Tag:** illust-spectrums-organic-blob  ·  **Category:** Abstract / decoration  ·  **Role affinity:** decoration
+# Spectrums — Organic blob
 
 asymmetric organic free-form blob shapes.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- asymmetric organic free-form blob shapes
+- solid fill or soft gradient
+- bounded by no straight edges
 
-```yaml
-- styleId: spectrums-organic-blob
-  name: Spectrums — Organic blob
-  category: Abstract / decoration
-  subCategory: gradient-blob
-  role: decoration
-  source: spectrums.framer.website
-  visualSignatures:
-    - asymmetric organic free-form blob shapes
-    - solid fill or soft gradient
-    - bounded by no straight edges
-  promptKeywords:
-    primary: [blob, organic, asymmetric, vector, decoration]
-    material: ["solid fill or soft gradient"]
-    line: ["no line"]
-    color: ["pastel single or 2-stop gradient"]
-    style: ["free-form organic"]
-    avoidKeywords: [geometric, sharp]
-  examplePromptTemplate: |
-    Asymmetric organic vector blob shape, solid pastel fill or 2-stop soft
-    gradient, no outline, isolated decoration accent, Spectrums library style.
-  whenToUse: Behind text as background mask, hero background bands.
-  pairsWith:
-    prototypeStyles: [style-aurorism, aesthetic-frutiger-aero, recipe-aurora-marketing, style-glassmorphism]
-  notForUseWhen: brutalism, hairline-restraint
-```
+## Prompt keywords
+
+**Primary**: blob, organic, asymmetric, vector, decoration
+
+**Material**: solid fill or soft gradient
+
+**Line**: no line
+
+**Color**: pastel single or 2-stop gradient
+
+**Style**: free-form organic
+
+**Avoid (negative prompt)**: geometric, sharp
+
+## Example prompt template
+
+> Asymmetric organic vector blob shape, solid pastel fill or 2-stop soft
+>   gradient, no outline, isolated decoration accent, Spectrums library style.
+> whenToUse: Behind text as background mask, hero background bands.
+> pairsWith:
+>   prototypeStyles: [style-aurorism, aesthetic-frutiger-aero, recipe-aurora-marketing, style-glassmorphism]
+> notForUseWhen: brutalism, hairline-restraint
+
+## When to use
+
+Behind text as background mask, hero background bands.
 
 ## When NOT to use
 
@@ -48,7 +58,3 @@ brutalism, hairline-restraint
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1427–1451 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

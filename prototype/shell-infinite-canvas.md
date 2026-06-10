@@ -1,3 +1,10 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: shell-infinite-canvas-ui.png
+    reason: Generated UI mockup showing this shell's structural grammar — grid, density, regions, and characteristic component placement.
+---
 # Infinite canvas shell
 
 **Tag:** `[node-graph / whiteboard · pannable · z-zoom]`

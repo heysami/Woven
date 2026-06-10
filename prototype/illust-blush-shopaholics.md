@@ -1,41 +1,53 @@
-# Shopaholics (illust)
+---
+styleId: blush-shopaholics
+name: Shopaholics
+category: Flat vector
+subCategory: corporate-memphis
+role: subject
+pairsPrototypes: [recipe-bento-marketing, aesthetic-corporate-memphis]
+notForUseWhen: B2B serious, editorial
+---
 
-**Tag:** illust-blush-shopaholics  ·  **Category:** Flat vector  ·  **Role affinity:** subject
+# Shopaholics
 
 e-commerce + retail scenes.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- e-commerce + retail scenes
+- shopping bags, carts, browsing
+- friendly muted palette
 
-```yaml
-- styleId: blush-shopaholics
-  name: Shopaholics
-  category: Flat vector
-  subCategory: corporate-memphis
-  role: subject
-  source: blush.design — Shopaholics by Veronica Iezzi
-  visualSignatures:
-    - e-commerce + retail scenes
-    - shopping bags, carts, browsing
-    - friendly muted palette
-  promptKeywords:
-    primary: [flat vector, ecommerce, shopping, retail, character]
-    material: ["flat fill"]
-    line: ["no line"]
-    color: ["friendly muted"]
-    style: ["retail scene"]
-    avoidKeywords: [photoreal product]
-  namedReferences:
-    illustrators: [Veronica Iezzi]
-  examplePromptTemplate: |
-    Flat vector character with shopping bags browsing retail, friendly muted
-    palette, no outline, Veronica Iezzi Shopaholics ecommerce aesthetic.
-  whenToUse: Ecommerce empty states, checkout flows, retail SaaS.
-  pairsWith:
-    prototypeStyles: [recipe-bento-marketing, aesthetic-corporate-memphis]
-  notForUseWhen: B2B serious, editorial
-```
+## Prompt keywords
+
+**Primary**: flat vector, ecommerce, shopping, retail, character
+
+**Material**: flat fill
+
+**Line**: no line
+
+**Color**: friendly muted
+
+**Style**: retail scene
+
+**Avoid (negative prompt)**: photoreal product
+
+## Named references
+
+**Illustrators**: Veronica Iezzi
+
+## Example prompt template
+
+> Flat vector character with shopping bags browsing retail, friendly muted
+>   palette, no outline, Veronica Iezzi Shopaholics ecommerce aesthetic.
+> whenToUse: Ecommerce empty states, checkout flows, retail SaaS.
+> pairsWith:
+>   prototypeStyles: [recipe-bento-marketing, aesthetic-corporate-memphis]
+> notForUseWhen: B2B serious, editorial
+
+## When to use
+
+Ecommerce empty states, checkout flows, retail SaaS.
 
 ## When NOT to use
 
@@ -48,7 +60,3 @@ B2B serious, editorial
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 796–822 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-frutiger-dark-aero-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-frutiger-dark-aero-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # Frutiger Dark Aero (aesthetic)
 
 **Tag:** Dark Aero (Windows Vista Aero dark / Longhorn builds, Sony PSP & PS3 XrossMediaBar, original Spotify 2014 dark theme, Bloomberg Terminal, Vista-era enterprise dashboards)

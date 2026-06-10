@@ -1,42 +1,54 @@
-# Big Shoes (illust)
+---
+styleId: blush-big-shoes
+name: Big Shoes
+category: Flat vector
+subCategory: flat-iconographic
+role: subject
+pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
+notForUseWhen: B2B serious
+---
 
-**Tag:** illust-blush-big-shoes  ·  **Category:** Flat vector  ·  **Role affinity:** subject
+# Big Shoes
 
 exaggerated big-shoe characters (oversized footwear).
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- exaggerated big-shoe characters (oversized footwear)
+- playful proportions
+- friendly mid-saturation palette
 
-```yaml
-- styleId: blush-big-shoes
-  name: Big Shoes
-  category: Flat vector
-  subCategory: flat-iconographic
-  role: subject
-  source: blush.design — Big Shoes by Elina Cecilia Giglio
-  visualSignatures:
-    - exaggerated big-shoe characters (oversized footwear)
-    - playful proportions
-    - friendly mid-saturation palette
-  promptKeywords:
-    primary: [flat vector, exaggerated shoe, playful proportion, friendly]
-    material: ["flat fill"]
-    line: ["thin 2px optional"]
-    color: ["mid-saturation friendly"]
-    style: ["exaggerated proportion"]
-    avoidKeywords: [realistic anatomy]
-  namedReferences:
-    illustrators: [Elina Cecilia Giglio]
-  examplePromptTemplate: |
-    Flat vector character with exaggerated oversized shoes, playful disproportionate
-    body, friendly mid-saturation palette, optional thin 2px outline, Elina Cecilia
-    Giglio Big Shoes aesthetic.
-  whenToUse: Sneakers, fashion, playful lifestyle brands.
-  pairsWith:
-    prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
-  notForUseWhen: B2B serious
-```
+## Prompt keywords
+
+**Primary**: flat vector, exaggerated shoe, playful proportion, friendly
+
+**Material**: flat fill
+
+**Line**: thin 2px optional
+
+**Color**: mid-saturation friendly
+
+**Style**: exaggerated proportion
+
+**Avoid (negative prompt)**: realistic anatomy
+
+## Named references
+
+**Illustrators**: Elina Cecilia Giglio
+
+## Example prompt template
+
+> Flat vector character with exaggerated oversized shoes, playful disproportionate
+>   body, friendly mid-saturation palette, optional thin 2px outline, Elina Cecilia
+>   Giglio Big Shoes aesthetic.
+> whenToUse: Sneakers, fashion, playful lifestyle brands.
+> pairsWith:
+>   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
+> notForUseWhen: B2B serious
+
+## When to use
+
+Sneakers, fashion, playful lifestyle brands.
 
 ## When NOT to use
 
@@ -49,7 +61,3 @@ B2B serious
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 878–905 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

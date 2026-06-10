@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: style-holographic-ui.png
+    reason: Generated UI mockup showing this style's surface treatment — type, color, shadow, corner, and component register together.
+  - src: style-holographic-isolated.png
+    reason: Isolated subject sample — the style's signature surface (component, card, or hero element) on a neutral background.
+---
 # Holographic / Iridescent (style)
 
 **Tag:** Holographic / Iridescent UI (Apple Pay Cash, visionOS materials, Apple TV+ 2025 rebrand, Robb Owen CSS shaders, Boiler Room 2024 identity)

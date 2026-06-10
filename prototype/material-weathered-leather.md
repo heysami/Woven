@@ -1,50 +1,51 @@
-# Weathered Leather (vintage, distressed) (material)
+---
+materialId: weathered-leather
+name: Weathered Leather (vintage, distressed)
+family: analog
+category: leather
+surfaceFinish: matte
+transparency: opaque
+pairsPrototypes: [aesthetic-dark-academia, aesthetic-steampunk, aesthetic-dieselpunk, aesthetic-cottagegoth, aesthetic-corporate-grunge]
+---
 
-**Tag:** material-weathered-leather  ·  **Family:** analog  ·  **Category:** leather · matte
+# Weathered Leather (vintage, distressed)
 
-A matte analog surface.
+A matte surface that reacts to light: minor specular at non-worn areas and deforms: yes — creases at handle points.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
 
-```yaml
-- materialId: weathered-leather
-  name: Weathered Leather (vintage, distressed)
-  family: analog
-  category: leather
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: opaque
-    reactsToLight: minor specular at non-worn areas
-    deforms: yes — creases at handle points
-    age: acquired patina (cracks, discoloration)
-  implementationStrategies:
-    css: |
-      background:
-        radial-gradient(ellipse at 25% 75%, rgba(0,0,0,0.3), transparent 35%),
-        radial-gradient(ellipse at 75% 25%, rgba(255,255,255,0.06), transparent 35%),
-        oklch(30% 0.06 35);
-    svg: |
-      crack pattern via <feTurbulence baseFrequency="0.08"/> threshold-passed
-    raster: photograph of real weathered leather is essential
-  reactiveBehaviors:
-    light: minor specular at un-worn patches
-    highlight: low intensity, asymmetric
-    depth: subtle crease deepening on hover
-    parallax: minimal
-  pairsWith:
-    prototypeStyles: [aesthetic-dark-academia, aesthetic-steampunk, aesthetic-dieselpunk, aesthetic-cottagegoth, aesthetic-corporate-grunge]
-  killsTheIllusion:
-    - uniform wear (real wear lives at touch-points)
-    - no creases at all
-    - bright fresh leather colour
-```
+**Transparency**: opaque
 
-### 4.6 Film / video / capture family
+**Reacts to light**: minor specular at non-worn areas
+
+**Deforms**: yes — creases at handle points
+
+**Age / wear**: acquired patina (cracks, discoloration)
+
+## Implementation strategies
 
 ```yaml
+css: |
+  background:
+    radial-gradient(ellipse at 25% 75%, rgba(0,0,0,0.3), transparent 35%),
+    radial-gradient(ellipse at 75% 25%, rgba(255,255,255,0.06), transparent 35%),
+    oklch(30% 0.06 35);
+svg: |
+  crack pattern via <feTurbulence baseFrequency="0.08"/> threshold-passed
+raster: photograph of real weathered leather is essential
 ```
+
+## Reactive behaviors
+
+**Light**: minor specular at un-worn patches
+
+**Highlight**: low intensity, asymmetric
+
+**Depth**: subtle crease deepening on hover
+
+**Parallax**: minimal
 
 ## Common implementation mistakes (avoid these)
 
@@ -61,8 +62,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-corporate-grunge`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2550–2584 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

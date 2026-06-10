@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: style-flat-design-ui.png
+    reason: Generated UI mockup showing this style's surface treatment — type, color, shadow, corner, and component register together.
+  - src: style-flat-design-isolated.png
+    reason: Isolated subject sample — the style's signature surface (component, card, or hero element) on a neutral background.
+---
 # Flat Design (style)
 
 **Tag:** iOS 7 2013 · Windows 8 Metro 2012 · Spotify 2013 desktop · NN/g flat-design canon · W3Schools Metro palette

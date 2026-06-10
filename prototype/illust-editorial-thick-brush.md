@@ -1,43 +1,55 @@
-# Editorial thick-brush op-ed (illust)
+---
+styleId: editorial-thick-brush
+name: Editorial thick-brush op-ed
+category: Editorial conceptual
+subCategory: editorial-thick-brush
+role: spot-illustration
+pairsPrototypes: [recipe-newspaper-of-record, recipe-editorial-magazine, style-agate-broadsheet]
+notForUseWhen: marketing, friendly, decorative
+---
 
-**Tag:** illust-editorial-thick-brush  ·  **Category:** Editorial conceptual  ·  **Role affinity:** spot-illustration
+# Editorial thick-brush op-ed
 
 bold thick painted strokes.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- bold thick painted strokes
+- 1-2 colors max plus paper white
+- conceptual single-idea composition
+- newspaper opinion-page aesthetic
 
-```yaml
-- styleId: editorial-thick-brush
-  name: Editorial thick-brush op-ed
-  category: Editorial conceptual
-  subCategory: editorial-thick-brush
-  role: spot-illustration
-  source: curator addition
-  visualSignatures:
-    - bold thick painted strokes
-    - 1-2 colors max plus paper white
-    - conceptual single-idea composition
-    - newspaper opinion-page aesthetic
-  promptKeywords:
-    primary: [editorial, thick brush, op-ed, conceptual, mono color]
-    material: ["sumi-e style ink brush"]
-    line: ["thick gestural brush"]
-    color: ["mono + cream paper"]
-    style: ["op-ed conceptual"]
-    avoidKeywords: [decorative, vector polished, full color]
-  namedReferences:
-    illustrators: [Brian Stauffer, Wesley Bedrosian]
-  examplePromptTemplate: |
-    Editorial op-ed conceptual illustration of [IDEA] with bold thick painted
-    brush strokes, 1-2 colors plus cream paper, single concept, NYT-opinion-
-    page aesthetic.
-  whenToUse: News op-eds, think-pieces, magazine articles.
-  pairsWith:
-    prototypeStyles: [recipe-newspaper-of-record, recipe-editorial-magazine, style-agate-broadsheet]
-  notForUseWhen: marketing, friendly, decorative
-```
+## Prompt keywords
+
+**Primary**: editorial, thick brush, op-ed, conceptual, mono color
+
+**Material**: sumi-e style ink brush
+
+**Line**: thick gestural brush
+
+**Color**: mono + cream paper
+
+**Style**: op-ed conceptual
+
+**Avoid (negative prompt)**: decorative, vector polished, full color
+
+## Named references
+
+**Illustrators**: Brian Stauffer, Wesley Bedrosian
+
+## Example prompt template
+
+> Editorial op-ed conceptual illustration of [IDEA] with bold thick painted
+>   brush strokes, 1-2 colors plus cream paper, single concept, NYT-opinion-
+>   page aesthetic.
+> whenToUse: News op-eds, think-pieces, magazine articles.
+> pairsWith:
+>   prototypeStyles: [recipe-newspaper-of-record, recipe-editorial-magazine, style-agate-broadsheet]
+> notForUseWhen: marketing, friendly, decorative
+
+## When to use
+
+News op-eds, think-pieces, magazine articles.
 
 ## When NOT to use
 
@@ -51,7 +63,3 @@ marketing, friendly, decorative
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 3081–3109 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

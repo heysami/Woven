@@ -1,3 +1,10 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: recipe-warm-restraint-ui.png
+    reason: Generated UI mockup of this recipe end-to-end — the canonical (shell + style + aesthetic + voice) bundle rendered.
+---
 # Warm-restraint / luxury-apothecary
 
 A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's detail file for full vocabulary.

@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: style-brutalist-raw-ui.png
+    reason: Generated UI mockup showing this style's surface treatment — type, color, shadow, corner, and component register together.
+  - src: style-brutalist-raw-isolated.png
+    reason: Isolated subject sample — the style's signature surface (component, card, or hero element) on a neutral background.
+---
 # Brutalist raw web (style)
 
 **Tag:** `style-brutalist-raw`

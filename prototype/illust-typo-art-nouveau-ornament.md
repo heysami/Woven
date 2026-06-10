@@ -1,45 +1,58 @@
-# Art Nouveau ornamental lettering (illust)
+---
+styleId: typo-art-nouveau-ornament
+name: Art Nouveau ornamental lettering
+category: Illustrative typography
+subCategory: art-nouveau-ornament
+role: typography
+pairsPrototypes: [recipe-warm-restraint, aesthetic-dark-academia, aesthetic-cottagecore, aesthetic-fairycore]
+notForUseWhen: tech, brutalism, neon
+---
 
-**Tag:** illust-typo-art-nouveau-ornament  ·  **Category:** Illustrative typography  ·  **Role affinity:** typography
+# Art Nouveau ornamental lettering
 
 letterforms entwined with floral vines, buds, tendrils.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- letterforms entwined with floral vines, buds, tendrils
+- whiplash organic curves
+- terminals curl into leaves
+- frame ornament around the wordmark
 
-```yaml
-- styleId: typo-art-nouveau-ornament
-  name: Art Nouveau ornamental lettering
-  category: Illustrative typography
-  subCategory: art-nouveau-ornament
-  role: typography
-  source: research (Alphonse Mucha, Eugène Grasset)
-  visualSignatures:
-    - letterforms entwined with floral vines, buds, tendrils
-    - whiplash organic curves
-    - terminals curl into leaves
-    - frame ornament around the wordmark
-  promptKeywords:
-    primary: [Art Nouveau, Mucha, ornamental lettering, floral entwined, whiplash curve]
-    material: ["lithograph poster", "ink and gouache"]
-    line: ["fluid organic stroke"]
-    color: ["muted gold ochre sage burgundy"]
-    style: ["framed by floral ornament"]
-    avoidKeywords: [geometric sans, Bauhaus, modern minimal]
-  namedReferences:
-    illustrators: [Alphonse Mucha, Eugène Grasset, Aubrey Beardsley]
-    movements: [Art Nouveau 1890-1910]
-  examplePromptTemplate: |
-    Art Nouveau ornamental wordmark of [WORD], letterforms entwined with floral
-    vines and curling tendrils, whiplash organic curves, terminals curl into
-    leaves, framed by botanical ornament, lithograph poster aesthetic, muted
-    palette of gold ochre sage and burgundy, Alphonse Mucha style.
-  whenToUse: Boutique apothecary, perfume, natural-wine labels, museum poster.
-  pairsWith:
-    prototypeStyles: [recipe-warm-restraint, aesthetic-dark-academia, aesthetic-cottagecore, aesthetic-fairycore]
-  notForUseWhen: tech, brutalism, neon
-```
+## Prompt keywords
+
+**Primary**: Art Nouveau, Mucha, ornamental lettering, floral entwined, whiplash curve
+
+**Material**: lithograph poster, ink and gouache
+
+**Line**: fluid organic stroke
+
+**Color**: muted gold ochre sage burgundy
+
+**Style**: framed by floral ornament
+
+**Avoid (negative prompt)**: geometric sans, Bauhaus, modern minimal
+
+## Named references
+
+**Illustrators**: Alphonse Mucha, Eugène Grasset, Aubrey Beardsley
+
+**Movements**: Art Nouveau 1890-1910
+
+## Example prompt template
+
+> Art Nouveau ornamental wordmark of [WORD], letterforms entwined with floral
+>   vines and curling tendrils, whiplash organic curves, terminals curl into
+>   leaves, framed by botanical ornament, lithograph poster aesthetic, muted
+>   palette of gold ochre sage and burgundy, Alphonse Mucha style.
+> whenToUse: Boutique apothecary, perfume, natural-wine labels, museum poster.
+> pairsWith:
+>   prototypeStyles: [recipe-warm-restraint, aesthetic-dark-academia, aesthetic-cottagecore, aesthetic-fairycore]
+> notForUseWhen: tech, brutalism, neon
+
+## When to use
+
+Boutique apothecary, perfume, natural-wine labels, museum poster.
 
 ## When NOT to use
 
@@ -54,7 +67,3 @@ tech, brutalism, neon
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1570–1600 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

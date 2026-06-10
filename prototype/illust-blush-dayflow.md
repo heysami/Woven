@@ -1,43 +1,55 @@
-# Dayflow (illust)
+---
+styleId: blush-dayflow
+name: Dayflow
+category: Flat vector
+subCategory: corporate-memphis
+role: subject
+pairsPrototypes: [recipe-warm-restraint, aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-readcv]
+notForUseWhen: enterprise, technical, dark themes
+---
 
-**Tag:** illust-blush-dayflow  ·  **Category:** Flat vector  ·  **Role affinity:** subject
+# Dayflow
 
 daily-life micro-moments (coffee, cat, books).
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- daily-life micro-moments (coffee, cat, books)
+- soft pastel palette with cream base
+- cats are recurring motif
+- characters with simple dot eyes
 
-```yaml
-- styleId: blush-dayflow
-  name: Dayflow
-  category: Flat vector
-  subCategory: corporate-memphis
-  role: subject
-  source: blush.design — Dayflow by Pau Barbaro
-  visualSignatures:
-    - daily-life micro-moments (coffee, cat, books)
-    - soft pastel palette with cream base
-    - cats are recurring motif
-    - characters with simple dot eyes
-  promptKeywords:
-    primary: [flat vector, daily-life, pastel, cat, positivity]
-    material: ["flat fill, light grain"]
-    line: ["no line"]
-    color: ["pastel peach mint lilac cream"]
-    style: ["small intimate scene"]
-    avoidKeywords: [intense color, dramatic action]
-  namedReferences:
-    illustrators: [Pau Barbaro]
-  examplePromptTemplate: |
-    Flat vector small intimate scene of a person with cat and coffee, pastel
-    palette of peach mint lilac on cream, simple dot eyes on character, light
-    grain texture, Pau Barbaro Dayflow positivity aesthetic, no outline.
-  whenToUse: Wellness apps, journaling, gratitude content, cozy SaaS.
-  pairsWith:
-    prototypeStyles: [recipe-warm-restraint, aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-readcv]
-  notForUseWhen: enterprise, technical, dark themes
-```
+## Prompt keywords
+
+**Primary**: flat vector, daily-life, pastel, cat, positivity
+
+**Material**: flat fill, light grain
+
+**Line**: no line
+
+**Color**: pastel peach mint lilac cream
+
+**Style**: small intimate scene
+
+**Avoid (negative prompt)**: intense color, dramatic action
+
+## Named references
+
+**Illustrators**: Pau Barbaro
+
+## Example prompt template
+
+> Flat vector small intimate scene of a person with cat and coffee, pastel
+>   palette of peach mint lilac on cream, simple dot eyes on character, light
+>   grain texture, Pau Barbaro Dayflow positivity aesthetic, no outline.
+> whenToUse: Wellness apps, journaling, gratitude content, cozy SaaS.
+> pairsWith:
+>   prototypeStyles: [recipe-warm-restraint, aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-readcv]
+> notForUseWhen: enterprise, technical, dark themes
+
+## When to use
+
+Wellness apps, journaling, gratitude content, cozy SaaS.
 
 ## When NOT to use
 
@@ -52,7 +64,3 @@ enterprise, technical, dark themes
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 538–566 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

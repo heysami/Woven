@@ -1,44 +1,57 @@
-# Bubble graffiti display (illust)
+---
+styleId: typo-bubble-graffiti
+name: Bubble graffiti display
+category: Illustrative typography
+subCategory: bubble-graffiti
+role: typography
+pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics]
+notForUseWhen: B2B, editorial restraint
+---
 
-**Tag:** illust-typo-bubble-graffiti  ·  **Category:** Illustrative typography  ·  **Role affinity:** typography
+# Bubble graffiti display
 
 rounded chunky bubble letterforms.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- rounded chunky bubble letterforms
+- outlined with thick contrasting stroke
+- drop-shadow at offset for dimension
+- spray-paint texture or solid candy color
 
-```yaml
-- styleId: typo-bubble-graffiti
-  name: Bubble graffiti display
-  category: Illustrative typography
-  subCategory: bubble-graffiti
-  role: typography
-  source: research (graffiti, hip-hop typography)
-  visualSignatures:
-    - rounded chunky bubble letterforms
-    - outlined with thick contrasting stroke
-    - drop-shadow at offset for dimension
-    - spray-paint texture or solid candy color
-  promptKeywords:
-    primary: [bubble letter, graffiti, chunky, rounded, outlined]
-    material: ["spray paint or vector candy"]
-    line: ["3-5px contrast outline"]
-    color: ["candy bright or chrome"]
-    style: ["offset drop shadow"]
-    avoidKeywords: [thin elegant, serif]
-  namedReferences:
-    illustrators: [Stash, Mode 2, NYC subway graffiti]
-    movements: [hip-hop typography, 1980s graffiti]
-  examplePromptTemplate: |
-    Bubble graffiti wordmark of [WORD], rounded chunky letterforms outlined
-    with 4px contrasting stroke, offset drop shadow for dimension, spray-paint
-    texture or solid candy color, NYC subway-style hip-hop aesthetic.
-  whenToUse: Street brands, music, youth-skate-culture.
-  pairsWith:
-    prototypeStyles: [aesthetic-urbling, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics]
-  notForUseWhen: B2B, editorial restraint
-```
+## Prompt keywords
+
+**Primary**: bubble letter, graffiti, chunky, rounded, outlined
+
+**Material**: spray paint or vector candy
+
+**Line**: 3-5px contrast outline
+
+**Color**: candy bright or chrome
+
+**Style**: offset drop shadow
+
+**Avoid (negative prompt)**: thin elegant, serif
+
+## Named references
+
+**Illustrators**: Stash, Mode 2, NYC subway graffiti
+
+**Movements**: hip-hop typography, 1980s graffiti
+
+## Example prompt template
+
+> Bubble graffiti wordmark of [WORD], rounded chunky letterforms outlined
+>   with 4px contrasting stroke, offset drop shadow for dimension, spray-paint
+>   texture or solid candy color, NYC subway-style hip-hop aesthetic.
+> whenToUse: Street brands, music, youth-skate-culture.
+> pairsWith:
+>   prototypeStyles: [aesthetic-urbling, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics]
+> notForUseWhen: B2B, editorial restraint
+
+## When to use
+
+Street brands, music, youth-skate-culture.
 
 ## When NOT to use
 
@@ -52,7 +65,3 @@ B2B, editorial restraint
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1753–1782 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

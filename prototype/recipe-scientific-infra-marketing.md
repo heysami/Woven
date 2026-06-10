@@ -1,3 +1,10 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: recipe-scientific-infra-marketing-ui.png
+    reason: Generated UI mockup of this recipe end-to-end — the canonical (shell + style + aesthetic + voice) bundle rendered.
+---
 # Scientific infrastructure marketing
 
 A `(shell + style + voice)` bundle for **protocol-paper / HPC / scientific-infrastructure marketing pages** where the brand reads as "published research, not marketed product."

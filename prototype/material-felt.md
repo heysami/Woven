@@ -1,45 +1,52 @@
-# Felt (matted wool, fuzzy) (material)
+---
+materialId: felt
+name: Felt (matted wool, fuzzy)
+family: analog
+category: fabric
+surfaceFinish: matte
+transparency: opaque
+pairsPrototypes: [style-skeuomorphism (poker felt, billiards), aesthetic-dark-academia, aesthetic-cottagegoth]
+---
 
-**Tag:** material-felt  ·  **Family:** analog  ·  **Category:** fabric · matte
+# Felt (matted wool, fuzzy)
 
-A matte analog surface.
+A matte surface and deforms: yes — squashes on press.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: opaque
+
+**Reacts to light**: no specular
+
+**Deforms**: yes — squashes on press
+
+**Age / wear**: ageless
+
+## Implementation strategies
 
 ```yaml
-- materialId: felt
-  name: Felt (matted wool, fuzzy)
-  family: analog
-  category: fabric
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: opaque
-    reactsToLight: no specular
-    deforms: yes — squashes on press
-    age: ageless
-  implementationStrategies:
-    css: |
-      background: oklch(45% 0.14 145);  /* poker green */
-      filter: url(#feltFuzz);
-    svg: |
-      <filter id="feltFuzz">
-        <feTurbulence baseFrequency="3" numOctaves="2"/>
-        <feColorMatrix values="0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0.15 0"/>
-      </filter>
-    raster: photographed felt for accuracy
-  reactiveBehaviors:
-    light: no
-    highlight: no
-    depth: minor press deformation
-    parallax: no
-  pairsWith:
-    prototypeStyles: [style-skeuomorphism (poker felt, billiards), aesthetic-dark-academia, aesthetic-cottagegoth]
-  killsTheIllusion:
-    - smooth colour with no fuzz
-    - no soft edges (felt cuts soft)
+css: |
+  background: oklch(45% 0.14 145);  /* poker green */
+  filter: url(#feltFuzz);
+svg: |
+  <filter id="feltFuzz">
+    <feTurbulence baseFrequency="3" numOctaves="2"/>
+    <feColorMatrix values="0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0.15 0"/>
+  </filter>
+raster: photographed felt for accuracy
 ```
+
+## Reactive behaviors
+
+**Light**: no
+
+**Highlight**: no
+
+**Depth**: minor press deformation
+
+**Parallax**: no
 
 ## Common implementation mistakes (avoid these)
 
@@ -54,8 +61,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-cottagegoth`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2411–2441 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

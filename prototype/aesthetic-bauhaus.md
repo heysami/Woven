@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-bauhaus-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-bauhaus-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # Bauhaus pure (aesthetic)
 
 **Tag:** Bauhaus-Archiv Berlin, Letterform Archive "Bauhaus Typography at 100", Adobe Hidden Treasures of the Bauhaus Dessau, Vitra Design Museum #itsalldesign, Hue Atlas Bauhaus palette

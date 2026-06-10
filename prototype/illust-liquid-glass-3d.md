@@ -1,42 +1,54 @@
-# Liquid glass 3D translucent (illust)
+---
+styleId: liquid-glass-3d
+name: Liquid glass 3D translucent
+category: 3D
+subCategory: plastic-glossy
+role: spot-illustration
+pairsPrototypes: [style-liquid-glass, recipe-ios-system, style-sf-pro-ios, style-glassmorphism]
+notForUseWhen: brutalism, cottagecore, hand-drawn
+---
 
-**Tag:** illust-liquid-glass-3d  ·  **Category:** 3D  ·  **Role affinity:** spot-illustration
+# Liquid glass 3D translucent
 
 translucent refractive glass-like surface.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- translucent refractive glass-like surface
+- chromatic aberration on edges
+- iOS-style liquid blob
 
-```yaml
-- styleId: liquid-glass-3d
-  name: Liquid glass 3D translucent
-  category: 3D
-  subCategory: plastic-glossy
-  role: spot-illustration
-  source: curator addition + prototype/style-liquid-glass
-  visualSignatures:
-    - translucent refractive glass-like surface
-    - chromatic aberration on edges
-    - iOS-style liquid blob
-  promptKeywords:
-    primary: [liquid glass, translucent, refractive, glass blob, iOS]
-    material: ["refractive glass", "chromatic aberration"]
-    line: ["no line, refractive edge"]
-    color: ["light blue tint + caustic highlight"]
-    style: ["iOS liquid"]
-    avoidKeywords: [matte, opaque, hand-drawn]
-  namedReferences:
-    illustrators: [Apple iOS 18+, Apple Vision Pro UI]
-  examplePromptTemplate: |
-    Liquid-glass 3D translucent object of [SUBJECT], refractive glass surface
-    with chromatic aberration on edges, light blue tint with caustic highlight,
-    Apple iOS liquid-glass aesthetic.
-  whenToUse: Apple-ecosystem products, premium iOS-aligned brands.
-  pairsWith:
-    prototypeStyles: [style-liquid-glass, recipe-ios-system, style-sf-pro-ios, style-glassmorphism]
-  notForUseWhen: brutalism, cottagecore, hand-drawn
-```
+## Prompt keywords
+
+**Primary**: liquid glass, translucent, refractive, glass blob, iOS
+
+**Material**: refractive glass, chromatic aberration
+
+**Line**: no line, refractive edge
+
+**Color**: light blue tint + caustic highlight
+
+**Style**: iOS liquid
+
+**Avoid (negative prompt)**: matte, opaque, hand-drawn
+
+## Named references
+
+**Illustrators**: Apple iOS 18+, Apple Vision Pro UI
+
+## Example prompt template
+
+> Liquid-glass 3D translucent object of [SUBJECT], refractive glass surface
+>   with chromatic aberration on edges, light blue tint with caustic highlight,
+>   Apple iOS liquid-glass aesthetic.
+> whenToUse: Apple-ecosystem products, premium iOS-aligned brands.
+> pairsWith:
+>   prototypeStyles: [style-liquid-glass, recipe-ios-system, style-sf-pro-ios, style-glassmorphism]
+> notForUseWhen: brutalism, cottagecore, hand-drawn
+
+## When to use
+
+Apple-ecosystem products, premium iOS-aligned brands.
 
 ## When NOT to use
 
@@ -51,7 +63,3 @@ brutalism, cottagecore, hand-drawn
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 3222–3249 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

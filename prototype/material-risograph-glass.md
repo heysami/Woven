@@ -1,41 +1,49 @@
-# Risograph-Glass (frosted glass under riso grain) (material)
+---
+materialId: risograph-glass
+name: Risograph-Glass (frosted glass under riso grain)
+family: hybrid
+category: glass
+surfaceFinish: matte
+transparency: translucent
+pairsPrototypes: [aesthetic-acid-design, aesthetic-corporate-grunge, aesthetic-y2k-myspace]
+---
 
-**Tag:** material-risograph-glass  ·  **Family:** hybrid  ·  **Category:** glass · matte
+# Risograph-Glass (frosted glass under riso grain)
 
-A matte hybrid surface.
+A matte surface (translucent) that reacts to light: minimal.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: translucent
+
+**Reacts to light**: minimal
+
+**Deforms**: no
+
+**Age / wear**: ageless
+
+## Implementation strategies
 
 ```yaml
-- materialId: risograph-glass
-  name: Risograph-Glass (frosted glass under riso grain)
-  family: hybrid
-  category: glass
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: translucent
-    reactsToLight: minimal
-    deforms: no
-    age: ageless
-  implementationStrategies:
-    css: |
-      backdrop-filter: blur(20px) saturate(160%);
-      mix-blend-mode: multiply;
-    svg: |
-      stack riso ink halftone over glass panel, slight offset
-    raster: riso grain overlay + photographic substrate
-  reactiveBehaviors:
-    light: no — riso kills the gloss
-    highlight: no
-    depth: hover lift only
-    parallax: substrate parallaxes
-  pairsWith:
-    prototypeStyles: [aesthetic-acid-design, aesthetic-corporate-grunge, aesthetic-y2k-myspace]
-  killsTheIllusion:
-    - glass sheen visible through the riso (riso must dominate top)
+css: |
+  backdrop-filter: blur(20px) saturate(160%);
+  mix-blend-mode: multiply;
+svg: |
+  stack riso ink halftone over glass panel, slight offset
+raster: riso grain overlay + photographic substrate
 ```
+
+## Reactive behaviors
+
+**Light**: no — riso kills the gloss
+
+**Highlight**: no
+
+**Depth**: hover lift only
+
+**Parallax**: substrate parallaxes
 
 ## Common implementation mistakes (avoid these)
 
@@ -48,8 +56,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-y2k-myspace`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 3019–3045 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

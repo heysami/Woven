@@ -1,45 +1,59 @@
-# Daylight lookbook plaster wall (photo)
+---
+styleId: laundry-light-lookbook
+name: Daylight lookbook plaster wall
+category: lookbook
+era: current
+pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-cream-humanist, style-restrained-hairline]
+notForUseWhen: Fast fashion volume e-comm, loud or kinetic brand.
+---
 
-**Tag:** photo-laundry-light-lookbook  ·  **Era:** current  ·  **Category:** lookbook  ·  **Role affinity:** hero, section
+# Daylight lookbook plaster wall
 
 Empty pale plaster or stucco backdrop, natural texture.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/photography-library.md`](../docs/research/photography-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- Empty pale plaster or stucco backdrop, natural texture
+- Side natural light from open door or large window
+- Single subject 3/4 to full-body in garment
+- Subdued styling, casual real-world pose
+- Sometimes outdoor against a textured wall
 
-```yaml
-- styleId: laundry-light-lookbook
-  name: Daylight lookbook plaster wall
-  era: current
-  category: lookbook
-  visualSignatures:
-    - Empty pale plaster or stucco backdrop, natural texture
-    - Side natural light from open door or large window
-    - Single subject 3/4 to full-body in garment
-    - Subdued styling, casual real-world pose
-    - Sometimes outdoor against a textured wall
-  promptKeywords:
-    primary: [pale plaster backdrop, side daylight, full-body garment, casual real pose, textured wall outdoor]
-    lighting: [natural side daylight from open door or window, soft natural fill]
-    cameraOrLens: [Sony A7IV, 50mm at f/2.8]
-    filmStockOrPostProcessing: [natural color, faithful tonality, slight grain]
-    mood: [easy, considered, real-world]
-    avoidKeywords: [studio flash, polished, busy, kinetic]
-  namedReferences:
-    photographers: [Daniel Riera, Quentin de Briey, Joanna Totolici]
-    magazines: [The Gentlewoman, AnOther, Self Service]
-    movements: [post-Margiela quiet lookbook, daylight editorial]
-    brands: [Lemaire, Toteme, Studio Nicholson, Khaite]
-  examplePromptTemplate: |
-    Full-body lookbook of a person in a sand-colored linen suit standing against a textured pale plaster outdoor wall, side daylight from camera-left casting a soft natural shadow camera-right, casual real-world pose with one hand in pocket. Shot on a Sony A7IV with a 50mm at f/2.8, natural faithful color, slight grain, retained linen texture. Easy, considered, real-world mood. Daylight plaster-wall lookbook editorial.
-  whenToUse: Premium contemporary apparel, slow fashion, modern minimal lookbooks, hospitality lifestyle.
-  pairsWith:
-    prototypeStyles: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-cream-humanist, style-restrained-hairline]
-  notForUseWhen: Fast fashion volume e-comm, loud or kinetic brand.
+## Prompt keywords
 
----
-```
+**Primary**: pale plaster backdrop, side daylight, full-body garment, casual real pose, textured wall outdoor
+
+**Lighting**: natural side daylight from open door or window, soft natural fill
+
+**Camera / lens**: Sony A7IV, 50mm at f/2.8
+
+**Film stock / post-processing**: natural color, faithful tonality, slight grain
+
+**Mood**: easy, considered, real-world
+
+**Avoid (negative prompt)**: studio flash, polished, busy, kinetic
+
+## Named references
+
+**Photographers**: Daniel Riera, Quentin de Briey, Joanna Totolici
+
+**Magazines**: The Gentlewoman, AnOther, Self Service
+
+**Movements**: post-Margiela quiet lookbook, daylight editorial
+
+**Brands**: Lemaire, Toteme, Studio Nicholson, Khaite
+
+## Example prompt template
+
+> Full-body lookbook of a person in a sand-colored linen suit standing against a textured pale plaster outdoor wall, side daylight from camera-left casting a soft natural shadow camera-right, casual real-world pose with one hand in pocket. Shot on a Sony A7IV with a 50mm at f/2.8, natural faithful color, slight grain, retained linen texture. Easy, considered, real-world mood. Daylight plaster-wall lookbook editorial.
+> whenToUse: Premium contemporary apparel, slow fashion, modern minimal lookbooks, hospitality lifestyle.
+> pairsWith:
+>   prototypeStyles: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-cream-humanist, style-restrained-hairline]
+> notForUseWhen: Fast fashion volume e-comm, loud or kinetic brand.
+
+## When to use
+
+Premium contemporary apparel, slow fashion, modern minimal lookbooks, hospitality lifestyle.
 
 ## When NOT to use
 
@@ -54,7 +68,3 @@ Fast fashion volume e-comm, loud or kinetic brand.
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1304–1334 of `docs/research/photography-library.md`. Full index: `docs/research/photography-library.index.json`._

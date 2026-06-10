@@ -1,44 +1,57 @@
-# Thick-border cartoon (neubrutalism vector) (illust)
+---
+styleId: thick-border-cartoon
+name: Thick-border cartoon (neubrutalism vector)
+category: Flat vector
+subCategory: thick-border-cartoon
+role: spot-illustration
+pairsPrototypes: [style-neubrutalism, aesthetic-neubrutalism, recipe-brutalist-web, aesthetic-web-brutalism]
+notForUseWhen: warm-restraint, editorial, refined
+---
 
-**Tag:** illust-thick-border-cartoon  ·  **Category:** Flat vector  ·  **Role affinity:** spot-illustration
+# Thick-border cartoon (neubrutalism vector)
 
 4-6px black outline around everything.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- 4-6px black outline around everything
+- flat saturated color fills
+- drop shadow offset 8px solid
+- reads as web brutalism cartoon
 
-```yaml
-- styleId: thick-border-cartoon
-  name: Thick-border cartoon (neubrutalism vector)
-  category: Flat vector
-  subCategory: thick-border-cartoon
-  role: spot-illustration
-  source: curator addition
-  visualSignatures:
-    - 4-6px black outline around everything
-    - flat saturated color fills
-    - drop shadow offset 8px solid
-    - reads as web brutalism cartoon
-  promptKeywords:
-    primary: [thick border, neubrutalism, flat color, hard outline]
-    material: ["flat fill"]
-    line: ["4-6px black"]
-    color: ["saturated primary + bright pop"]
-    style: ["8px offset hard drop shadow"]
-    avoidKeywords: [soft, gradient, thin line]
-  namedReferences:
-    illustrators: [Gumroad rebrand 2021, neubrutalism designers]
-    movements: [Neubrutalism]
-  examplePromptTemplate: |
-    Flat vector illustration of [SUBJECT] with 5px black hard outline, flat
-    saturated primary color fills, 8px offset solid drop shadow, neubrutalism
-    cartoon aesthetic, Gumroad-rebrand style.
-  whenToUse: Indie SaaS, brutalist-adjacent marketing, devtools.
-  pairsWith:
-    prototypeStyles: [style-neubrutalism, aesthetic-neubrutalism, recipe-brutalist-web, aesthetic-web-brutalism]
-  notForUseWhen: warm-restraint, editorial, refined
-```
+## Prompt keywords
+
+**Primary**: thick border, neubrutalism, flat color, hard outline
+
+**Material**: flat fill
+
+**Line**: 4-6px black
+
+**Color**: saturated primary + bright pop
+
+**Style**: 8px offset hard drop shadow
+
+**Avoid (negative prompt)**: soft, gradient, thin line
+
+## Named references
+
+**Illustrators**: Gumroad rebrand 2021, neubrutalism designers
+
+**Movements**: Neubrutalism
+
+## Example prompt template
+
+> Flat vector illustration of [SUBJECT] with 5px black hard outline, flat
+>   saturated primary color fills, 8px offset solid drop shadow, neubrutalism
+>   cartoon aesthetic, Gumroad-rebrand style.
+> whenToUse: Indie SaaS, brutalist-adjacent marketing, devtools.
+> pairsWith:
+>   prototypeStyles: [style-neubrutalism, aesthetic-neubrutalism, recipe-brutalist-web, aesthetic-web-brutalism]
+> notForUseWhen: warm-restraint, editorial, refined
+
+## When to use
+
+Indie SaaS, brutalist-adjacent marketing, devtools.
 
 ## When NOT to use
 
@@ -53,7 +66,3 @@ warm-restraint, editorial, refined
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2284–2313 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

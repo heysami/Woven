@@ -1,40 +1,50 @@
-# Outline wireframe illustration (illust)
+---
+styleId: outline-wireframe-illustration
+name: Outline wireframe illustration
+category: Flat vector
+subCategory: hairline
+role: spot-illustration
+pairsPrototypes: [style-outline-wireframe, style-restrained-hairline, recipe-restrained-ai-marketing, recipe-linear-product-ui]
+notForUseWhen: cottagecore, brutalism, kids
+---
 
-**Tag:** illust-outline-wireframe-illustration  ·  **Category:** Flat vector  ·  **Role affinity:** spot-illustration
+# Outline wireframe illustration
 
 1-2px line, no fill.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- 1-2px line, no fill
+- all forms in single stroke weight
+- clean geometric
 
-```yaml
-- styleId: outline-wireframe-illustration
-  name: Outline wireframe illustration
-  category: Flat vector
-  subCategory: hairline
-  role: spot-illustration
-  source: curator addition + prototype/style-outline-wireframe
-  visualSignatures:
-    - 1-2px line, no fill
-    - all forms in single stroke weight
-    - clean geometric
-  promptKeywords:
-    primary: [outline, wireframe, hairline, line only, no fill]
-    material: ["vector hairline only"]
-    line: ["1-2px uniform"]
-    color: ["mono or single accent"]
-    style: ["clean geometric"]
-    avoidKeywords: [filled, gradient, shading]
-  examplePromptTemplate: |
-    Hairline outline illustration of [SUBJECT], 1.5px uniform stroke, no fill,
-    all forms in single weight, mono or single accent color, clean geometric
-    wireframe aesthetic.
-  whenToUse: Restrained AI marketing, premium tech, technical diagrams.
-  pairsWith:
-    prototypeStyles: [style-outline-wireframe, style-restrained-hairline, recipe-restrained-ai-marketing, recipe-linear-product-ui]
-  notForUseWhen: cottagecore, brutalism, kids
-```
+## Prompt keywords
+
+**Primary**: outline, wireframe, hairline, line only, no fill
+
+**Material**: vector hairline only
+
+**Line**: 1-2px uniform
+
+**Color**: mono or single accent
+
+**Style**: clean geometric
+
+**Avoid (negative prompt)**: filled, gradient, shading
+
+## Example prompt template
+
+> Hairline outline illustration of [SUBJECT], 1.5px uniform stroke, no fill,
+>   all forms in single weight, mono or single accent color, clean geometric
+>   wireframe aesthetic.
+> whenToUse: Restrained AI marketing, premium tech, technical diagrams.
+> pairsWith:
+>   prototypeStyles: [style-outline-wireframe, style-restrained-hairline, recipe-restrained-ai-marketing, recipe-linear-product-ui]
+> notForUseWhen: cottagecore, brutalism, kids
+
+## When to use
+
+Restrained AI marketing, premium tech, technical diagrams.
 
 ## When NOT to use
 
@@ -49,7 +59,3 @@ cottagecore, brutalism, kids
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 3110–3135 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

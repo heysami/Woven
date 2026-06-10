@@ -1,54 +1,62 @@
-# Silkscreen / Serigraphy (textile + poster print) (material)
+---
+materialId: silkscreen
+name: Silkscreen / Serigraphy (textile + poster print)
+family: analog
+category: print
+surfaceFinish: matte
+transparency: opaque (ink layer)
+pairsPrototypes: [aesthetic-acid-design, aesthetic-bauhaus, aesthetic-constructivism, aesthetic-corporate-grunge]
+---
 
-**Tag:** material-silkscreen  ·  **Family:** analog  ·  **Category:** print · matte
+# Silkscreen / Serigraphy (textile + poster print)
 
-A matte analog surface.
+A matte surface (opaque (ink layer)).
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: opaque (ink layer)
+
+**Reacts to light**: no
+
+**Deforms**: no
+
+**Age / wear**: shows wear (ink crackle on textile)
+
+## Implementation strategies
 
 ```yaml
-- materialId: silkscreen
-  name: Silkscreen / Serigraphy (textile + poster print)
-  family: analog
-  category: print
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: opaque (ink layer)
-    reactsToLight: no
-    deforms: no
-    age: shows wear (ink crackle on textile)
-  implementationStrategies:
-    css: |
-      /* per-color layer with slight registration shift and ink-trap edges */
-      .ink-layer { mix-blend-mode: multiply; transform: translate(1px, 1px); }
-    svg: |
-      <feMorphology operator="dilate" radius="0.5"/> for ink trap;
-      <feTurbulence baseFrequency="2"/> for ink texture mask
-    raster: scanned silkscreen print as substrate
-  reactiveBehaviors:
-    light: no
-    highlight: no
-    depth: no (flat sheet)
-    parallax: minimal
-  pairsWith:
-    prototypeStyles: [aesthetic-acid-design, aesthetic-bauhaus, aesthetic-constructivism, aesthetic-corporate-grunge]
-  killsTheIllusion:
-    - too-clean ink edges (real silkscreen has slight bleed)
-    - perfect registration
-    - high gloss inks
-  examples:
-    - Andy Warhol Marilyn series
-    - vintage concert posters
-    - merch tees with cracked ink
+css: |
+  /* per-color layer with slight registration shift and ink-trap edges */
+  .ink-layer { mix-blend-mode: multiply; transform: translate(1px, 1px); }
+svg: |
+  <feMorphology operator="dilate" radius="0.5"/> for ink trap;
+  <feTurbulence baseFrequency="2"/> for ink texture mask
+raster: scanned silkscreen print as substrate
 ```
+
+## Reactive behaviors
+
+**Light**: no
+
+**Highlight**: no
+
+**Depth**: no (flat sheet)
+
+**Parallax**: minimal
 
 ## Common implementation mistakes (avoid these)
 
 - too-clean ink edges (real silkscreen has slight bleed)
 - perfect registration
 - high gloss inks
+
+## Examples in the wild
+
+- Andy Warhol Marilyn series
+- vintage concert posters
+- merch tees with cracked ink
 
 ## Pairs with (prototype slugs)
 
@@ -58,8 +66,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-corporate-grunge`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1967–2000 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

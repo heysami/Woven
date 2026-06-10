@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: style-pixel-bitmap-ui.png
+    reason: Generated UI mockup showing this style's surface treatment — type, color, shadow, corner, and component register together.
+  - src: style-pixel-bitmap-isolated.png
+    reason: Isolated subject sample — the style's signature surface (component, card, or hero element) on a neutral background.
+---
 # Pixel-grid bitmap (style)
 
 **Tag:** `style-pixel-bitmap`

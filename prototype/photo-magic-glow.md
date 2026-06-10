@@ -1,45 +1,59 @@
-# Magic glow product or beauty (photo)
+---
+styleId: magic-glow
+name: Magic glow product or beauty
+category: beauty
+era: current
+pairsPrototypes: [aesthetic-angelcore, aesthetic-fairycore, style-holographic, style-claymorphism]
+notForUseWhen: Documentary, gritty, B2B, hardware.
+---
 
-**Tag:** photo-magic-glow  ·  **Era:** current  ·  **Category:** beauty  ·  **Role affinity:** hero, section
+# Magic glow product or beauty
 
 Internal glow as if subject is lit from within.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/photography-library.md`](../docs/research/photography-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- Internal glow as if subject is lit from within
+- Slight bloom around edges, soft particle dust
+- Saturated single-hue background, often warm gold or rose
+- Macro detail of skin, product, jewelry catching the glow
+- Studio precision with conceptual overlay
 
-```yaml
-- styleId: magic-glow
-  name: Magic glow product or beauty
-  era: current
-  category: beauty
-  visualSignatures:
-    - Internal glow as if subject is lit from within
-    - Slight bloom around edges, soft particle dust
-    - Saturated single-hue background, often warm gold or rose
-    - Macro detail of skin, product, jewelry catching the glow
-    - Studio precision with conceptual overlay
-  promptKeywords:
-    primary: [internal subject glow, soft particle dust, single-hue gold or rose background, macro skin detail, bloom]
-    lighting: [single soft warm key, glow overlay, particle backlight]
-    cameraOrLens: [Canon R5, 100mm macro at f/4]
-    filmStockOrPostProcessing: [warm gold or rose grade, soft bloom, particle highlights, retained skin texture]
-    mood: [enchanted, luminous, magical]
-    avoidKeywords: [hard flash, cool, gritty, harsh]
-  namedReferences:
-    photographers: [Sølve Sundsbø, Nick Knight beauty]
-    magazines: [Allure, Vogue Beauty, Numéro Beauty]
-    movements: [post-2015 beauty CGI-photo hybrid]
-    brands: [Lancôme, Charlotte Tilbury, Dior beauty, Pat McGrath]
-  examplePromptTemplate: |
-    Macro beauty shot of a cheek with a single dusting of gold pigment shimmer, the skin appearing lit from within, soft particle dust floating in the warm gold ambient, single-hue rose-gold background. Single soft warm key light from camera-left with a glow overlay, particle backlight from upper-right. Shot on a Canon R5 with a 100mm macro at f/4, warm gold grade, soft bloom, particle highlights, retained skin texture. Enchanted, luminous, magical mood. Magic glow beauty editorial.
-  whenToUse: Luxury beauty, premium fragrance, jewelry, fine watch detail, anything aspirational-magical.
-  pairsWith:
-    prototypeStyles: [aesthetic-angelcore, aesthetic-fairycore, style-holographic, style-claymorphism]
-  notForUseWhen: Documentary, gritty, B2B, hardware.
+## Prompt keywords
 
----
-```
+**Primary**: internal subject glow, soft particle dust, single-hue gold or rose background, macro skin detail, bloom
+
+**Lighting**: single soft warm key, glow overlay, particle backlight
+
+**Camera / lens**: Canon R5, 100mm macro at f/4
+
+**Film stock / post-processing**: warm gold or rose grade, soft bloom, particle highlights, retained skin texture
+
+**Mood**: enchanted, luminous, magical
+
+**Avoid (negative prompt)**: hard flash, cool, gritty, harsh
+
+## Named references
+
+**Photographers**: Sølve Sundsbø, Nick Knight beauty
+
+**Magazines**: Allure, Vogue Beauty, Numéro Beauty
+
+**Movements**: post-2015 beauty CGI-photo hybrid
+
+**Brands**: Lancôme, Charlotte Tilbury, Dior beauty, Pat McGrath
+
+## Example prompt template
+
+> Macro beauty shot of a cheek with a single dusting of gold pigment shimmer, the skin appearing lit from within, soft particle dust floating in the warm gold ambient, single-hue rose-gold background. Single soft warm key light from camera-left with a glow overlay, particle backlight from upper-right. Shot on a Canon R5 with a 100mm macro at f/4, warm gold grade, soft bloom, particle highlights, retained skin texture. Enchanted, luminous, magical mood. Magic glow beauty editorial.
+> whenToUse: Luxury beauty, premium fragrance, jewelry, fine watch detail, anything aspirational-magical.
+> pairsWith:
+>   prototypeStyles: [aesthetic-angelcore, aesthetic-fairycore, style-holographic, style-claymorphism]
+> notForUseWhen: Documentary, gritty, B2B, hardware.
+
+## When to use
+
+Luxury beauty, premium fragrance, jewelry, fine watch detail, anything aspirational-magical.
 
 ## When NOT to use
 
@@ -54,7 +68,3 @@ Documentary, gritty, B2B, hardware.
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 1149–1179 of `docs/research/photography-library.md`. Full index: `docs/research/photography-library.index.json`._

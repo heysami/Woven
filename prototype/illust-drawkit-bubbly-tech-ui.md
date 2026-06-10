@@ -1,48 +1,62 @@
-# DrawKit Bubbly Tech / UI 3D (illust)
+---
+styleId: drawkit-bubbly-tech-ui
+name: DrawKit Bubbly Tech / UI 3D
+category: 3D
+subCategory: plastic-glossy
+role: spot-illustration
+pairsPrototypes: [style-claymorphism, recipe-bento-marketing, recipe-restrained-ai-marketing, style-neumorphism]
+notForUseWhen: dev-tools marketing wanting credibility, terminal-on-web
+---
 
-**Tag:** illust-drawkit-bubbly-tech-ui  ·  **Category:** 3D  ·  **Role affinity:** spot-illustration
+# DrawKit Bubbly Tech / UI 3D
 
 tech objects (laptops, phones, cards) rendered as inflated bubble forms.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- tech objects (laptops, phones, cards) rendered as inflated bubble forms
+- corner radii so high every prism looks like a pillow
+- pastel-to-mid-saturation gradient on each face
+- tiny bubble decorations floating in the scene
 
-```yaml
-- styleId: drawkit-bubbly-tech-ui
-  name: DrawKit Bubbly Tech / UI 3D
-  category: 3D
-  subCategory: plastic-glossy
-  role: spot-illustration
-  source: drawkit.com/illustration-types/3d (Bubbly Tech & UI)
-  visualSignatures:
-    - tech objects (laptops, phones, cards) rendered as inflated bubble forms
-    - corner radii so high every prism looks like a pillow
-    - pastel-to-mid-saturation gradient on each face
-    - tiny bubble decorations floating in the scene
-  promptKeywords:
-    primary: [3d, bubbly, tech, pillow-shape, inflated, plastic, glossy, pastel]
-    material: ["inflated plastic", "soft pillow form", "glossy lacquer"]
-    line: ["no line"]
-    color: ["pastel gradient", "lilac to mint", "bubblegum pink accent"]
-    style: ["floating composition", "studio bg", "isometric or 3/4 view"]
-    avoidKeywords: [sharp edge, photoreal device, hairline detail, metal chrome]
-  namedReferences:
-    illustrators: [DrawKit]
-    movements: [post-claymorphism tech aesthetic]
-    productsOrFilms: [Notion-era SaaS marketing 2022-2024]
-  examplePromptTemplate: |
-    3D bubbly tech illustration of a laptop with chat bubble, inflated pillow forms,
-    pastel lilac-to-mint gradient surfaces, glossy plastic lacquer finish, soft pink
-    accent floating bubbles, 3/4 isometric view, studio lighting on pale lavender
-    background, soft contact shadow, no hard edges, octane render quality.
-  whenToUse: SaaS hero or feature-block where you want to show product capability
-    without showing the product literally. Pairs with style-claymorphism heroes and
-    bento-marketing recipes.
-  pairsWith:
-    prototypeStyles: [style-claymorphism, recipe-bento-marketing, recipe-restrained-ai-marketing, style-neumorphism]
-  notForUseWhen: dev-tools marketing wanting credibility, terminal-on-web
-```
+## Prompt keywords
+
+**Primary**: 3d, bubbly, tech, pillow-shape, inflated, plastic, glossy, pastel
+
+**Material**: inflated plastic, soft pillow form, glossy lacquer
+
+**Line**: no line
+
+**Color**: pastel gradient, lilac to mint, bubblegum pink accent
+
+**Style**: floating composition, studio bg, isometric or 3/4 view
+
+**Avoid (negative prompt)**: sharp edge, photoreal device, hairline detail, metal chrome
+
+## Named references
+
+**Illustrators**: DrawKit
+
+**Movements**: post-claymorphism tech aesthetic
+
+**Products / films**: Notion-era SaaS marketing 2022-2024
+
+## Example prompt template
+
+> 3D bubbly tech illustration of a laptop with chat bubble, inflated pillow forms,
+>   pastel lilac-to-mint gradient surfaces, glossy plastic lacquer finish, soft pink
+>   accent floating bubbles, 3/4 isometric view, studio lighting on pale lavender
+>   background, soft contact shadow, no hard edges, octane render quality.
+> whenToUse: SaaS hero or feature-block where you want to show product capability
+>   without showing the product literally. Pairs with style-claymorphism heroes and
+>   bento-marketing recipes.
+> pairsWith:
+>   prototypeStyles: [style-claymorphism, recipe-bento-marketing, recipe-restrained-ai-marketing, style-neumorphism]
+> notForUseWhen: dev-tools marketing wanting credibility, terminal-on-web
+
+## When to use
+
+SaaS hero or feature-block where you want to show product capability
 
 ## When NOT to use
 
@@ -57,7 +71,3 @@ dev-tools marketing wanting credibility, terminal-on-web
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 89–122 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._

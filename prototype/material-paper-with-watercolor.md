@@ -1,49 +1,58 @@
-# Paper with Watercolor (botanical illustration substrate) (material)
+---
+materialId: paper-with-watercolor
+name: Paper with Watercolor (botanical illustration substrate)
+family: hybrid
+category: paper
+surfaceFinish: matte
+transparency: translucent (washes)
+pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-fairycore]
+---
 
-**Tag:** material-paper-with-watercolor  ·  **Family:** hybrid  ·  **Category:** paper · matte
+# Paper with Watercolor (botanical illustration substrate)
 
-A matte hybrid surface.
+A matte surface (translucent (washes)) and deforms: yes.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: translucent (washes)
+
+**Reacts to light**: no
+
+**Deforms**: yes
+
+**Age / wear**: shows wear
+
+## Implementation strategies
 
 ```yaml
-- materialId: paper-with-watercolor
-  name: Paper with Watercolor (botanical illustration substrate)
-  family: hybrid
-  category: paper
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: translucent (washes)
-    reactsToLight: no
-    deforms: yes
-    age: shows wear
-  implementationStrategies:
-    css: |
-      background: var(--paper);
-    svg: |
-      paper grain layer + watercolor wash filter layer; multiply blend
-    raster: scanned watercolor on watercolor paper
-  reactiveBehaviors:
-    light: no
-    highlight: no
-    depth: no
-    parallax: paper static; wash subtle scroll-bind
-  pairsWith:
-    prototypeStyles: [aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-fairycore]
-  killsTheIllusion:
-    - watercolor without paper texture (looks plastic)
-    - watercolor with hard edges
-  examples:
-    - Beatrix Potter
-    - children's book illustration
+css: |
+  background: var(--paper);
+svg: |
+  paper grain layer + watercolor wash filter layer; multiply blend
+raster: scanned watercolor on watercolor paper
 ```
+
+## Reactive behaviors
+
+**Light**: no
+
+**Highlight**: no
+
+**Depth**: no
+
+**Parallax**: paper static; wash subtle scroll-bind
 
 ## Common implementation mistakes (avoid these)
 
 - watercolor without paper texture (looks plastic)
 - watercolor with hard edges
+
+## Examples in the wild
+
+- Beatrix Potter
+- children's book illustration
 
 ## Pairs with (prototype slugs)
 
@@ -52,8 +61,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-fairycore`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 3105–3134 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

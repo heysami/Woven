@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-pc-98-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-pc-98-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # PC-98 anime visual novel (aesthetic)
 
 **Tag:** `PC-98 (Touhou PC-98 TH01-05, To Heart 1997, Kanon original, Princess Maker 2, World of Horror)`

@@ -1,55 +1,63 @@
-# Denim (twill weave, indigo fade) (material)
+---
+materialId: denim
+name: Denim (twill weave, indigo fade)
+family: analog
+category: fabric
+surfaceFinish: matte
+transparency: opaque
+pairsPrototypes: [aesthetic-y2k-myspace, aesthetic-cottagecore, aesthetic-corporate-grunge]
+---
 
-**Tag:** material-denim  ·  **Family:** analog  ·  **Category:** fabric · matte
+# Denim (twill weave, indigo fade)
 
-A matte analog surface.
+A matte surface and deforms: yes — soft drape.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: matte
+
+**Transparency**: opaque
+
+**Reacts to light**: no specular
+
+**Deforms**: yes — soft drape
+
+**Age / wear**: acquired patina (whiskers, fade at stress points)
+
+## Implementation strategies
 
 ```yaml
-- materialId: denim
-  name: Denim (twill weave, indigo fade)
-  family: analog
-  category: fabric
-  physicalBehavior:
-    surfaceFinish: matte
-    transparency: opaque
-    reactsToLight: no specular
-    deforms: yes — soft drape
-    age: acquired patina (whiskers, fade at stress points)
-  implementationStrategies:
-    css: |
-      background:
-        repeating-linear-gradient(45deg,
-          oklch(35% 0.10 250) 0px,
-          oklch(40% 0.10 250) 2px,
-          oklch(33% 0.10 250) 4px
-        );
-    svg: noise + slight horizontal-fade gradient at wear points (whiskers)
-    raster: scanned denim is the truth
-  reactiveBehaviors:
-    light: no
-    highlight: no
-    depth: yes — drape
-    parallax: minimal
-  pairsWith:
-    prototypeStyles: [aesthetic-y2k-myspace, aesthetic-cottagecore, aesthetic-corporate-grunge]
-  killsTheIllusion:
-    - perfect uniform indigo (denim is uneven)
-    - no twill direction visible
-    - no fade at stress points
-  examples:
-    - Levi's tab stitching
-    - fashion editorial denim closeups
+css: |
+  background:
+    repeating-linear-gradient(45deg,
+      oklch(35% 0.10 250) 0px,
+      oklch(40% 0.10 250) 2px,
+      oklch(33% 0.10 250) 4px
+    );
+svg: noise + slight horizontal-fade gradient at wear points (whiskers)
+raster: scanned denim is the truth
 ```
+
+## Reactive behaviors
+
+**Light**: no
+
+**Highlight**: no
+
+**Depth**: yes — drape
+
+**Parallax**: minimal
 
 ## Common implementation mistakes (avoid these)
 
 - perfect uniform indigo (denim is uneven)
 - no twill direction visible
 - no fade at stress points
+
+## Examples in the wild
+
+- Levi's tab stitching
+- fashion editorial denim closeups
 
 ## Pairs with (prototype slugs)
 
@@ -58,8 +66,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `aesthetic-corporate-grunge`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2344–2378 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

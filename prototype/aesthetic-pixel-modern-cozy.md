@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in prototype/ and were generated via image_gen.
+images:
+  - src: aesthetic-pixel-modern-cozy-ui.png
+    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+  - src: aesthetic-pixel-modern-cozy-isolated.png
+    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+---
 # Pixel modern cozy (Stardew / Celeste) (aesthetic)
 
 **Tag:** Modern cozy pixel — Stardew Valley / Celeste (Stardew Valley 2016, Celeste 2018, Hyper Light Drifter 2016, Eastward 2021, Sea of Stars 2023)

@@ -1,52 +1,61 @@
-# Thin Glass Chip (iOS-style toggle, Control Center pill) (material)
+---
+materialId: thin-glass-chip
+name: Thin Glass Chip (iOS-style toggle, Control Center pill)
+family: digital
+category: glass
+surfaceFinish: glossy
+transparency: translucent
+pairsPrototypes: [style-glassmorphism, style-liquid-glass, recipe-ios-system]
+---
 
-**Tag:** material-thin-glass-chip  ·  **Family:** digital  ·  **Category:** glass · glossy
+# Thin Glass Chip (iOS-style toggle, Control Center pill)
 
-A glossy digital surface.
+A glossy surface (translucent) that reacts to light: yes — but lighter than full glass; substrate shows through more.
 
-## Full library entry
+## Physical behavior
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+**Surface finish**: glossy
+
+**Transparency**: translucent
+
+**Reacts to light**: yes — but lighter than full glass; substrate shows through more
+
+**Deforms**: no
+
+**Age / wear**: ageless
+
+## Implementation strategies
 
 ```yaml
-- materialId: thin-glass-chip
-  name: Thin Glass Chip (iOS-style toggle, Control Center pill)
-  family: digital
-  category: glass
-  physicalBehavior:
-    surfaceFinish: glossy
-    transparency: translucent
-    reactsToLight: yes — but lighter than full glass; substrate shows through more
-    deforms: no
-    age: ageless
-  implementationStrategies:
-    css: |
-      backdrop-filter: blur(12px) saturate(140%);
-      background: rgba(255,255,255,0.22);
-      border: 0.5px solid rgba(255,255,255,0.4);
-      border-radius: 9999px;
-      padding: 6px 12px;
-    svg: none
-    raster: requires saturated substrate
-  reactiveBehaviors:
-    light: substrate shifts on scroll
-    highlight: subtle on hover (background opacity +0.04)
-    depth: 1px lift on hover
-    parallax: tracks scroll
-  pairsWith:
-    prototypeStyles: [style-glassmorphism, style-liquid-glass, recipe-ios-system]
-  killsTheIllusion:
-    - too much blur (the chip becomes invisible)
-    - chip on flat solid colour with no substrate
-  examples:
-    - iOS Control Center toggles
-    - Apple Maps mode pills
+css: |
+  backdrop-filter: blur(12px) saturate(140%);
+  background: rgba(255,255,255,0.22);
+  border: 0.5px solid rgba(255,255,255,0.4);
+  border-radius: 9999px;
+  padding: 6px 12px;
+svg: none
+raster: requires saturated substrate
 ```
+
+## Reactive behaviors
+
+**Light**: substrate shifts on scroll
+
+**Highlight**: subtle on hover (background opacity +0.04)
+
+**Depth**: 1px lift on hover
+
+**Parallax**: tracks scroll
 
 ## Common implementation mistakes (avoid these)
 
 - too much blur (the chip becomes invisible)
 - chip on flat solid colour with no substrate
+
+## Examples in the wild
+
+- iOS Control Center toggles
+- Apple Maps mode pills
 
 ## Pairs with (prototype slugs)
 
@@ -55,8 +64,4 @@ _Below is the verbatim YAML for this entry — same content the orchestrator + d
 - `recipe-ios-system`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 185–217 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
+<!-- reason: representative reference shot of this material -->

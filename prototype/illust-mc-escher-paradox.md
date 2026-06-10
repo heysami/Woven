@@ -1,44 +1,56 @@
-# M.C. Escher impossible geometry (illust)
+---
+styleId: mc-escher-paradox
+name: M.C. Escher impossible geometry
+category: Surreal / esoteric
+subCategory: mc-escher-paradox
+role: hero
+pairsPrototypes: [aesthetic-op-art, aesthetic-constructivism, recipe-editorial-magazine]
+notForUseWhen: friendly consumer, cottagecore
+---
 
-**Tag:** illust-mc-escher-paradox  ·  **Category:** Surreal / esoteric  ·  **Role affinity:** hero
+# M.C. Escher impossible geometry
 
 tessellated repeating shapes that transform.
 
-## Full library entry
+## Visual signatures
 
-_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/illustration-library.md`](../docs/research/illustration-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
+- tessellated repeating shapes that transform
+- impossible architecture (Penrose stairs, infinite stairwell)
+- high-contrast lithograph black-and-white
+- mathematical precision lines
 
-```yaml
-- styleId: mc-escher-paradox
-  name: M.C. Escher impossible geometry
-  category: Surreal / esoteric
-  subCategory: mc-escher-paradox
-  role: hero
-  source: curator addition (research)
-  visualSignatures:
-    - tessellated repeating shapes that transform
-    - impossible architecture (Penrose stairs, infinite stairwell)
-    - high-contrast lithograph black-and-white
-    - mathematical precision lines
-  promptKeywords:
-    primary: [Escher, tessellation, impossible geometry, Penrose, lithograph]
-    material: ["lithograph wood engraving"]
-    line: ["mathematical precision"]
-    color: ["pure black on warm cream"]
-    style: ["tessellated metamorphosis", "impossible architecture"]
-    avoidKeywords: [color, soft, photoreal]
-  namedReferences:
-    illustrators: [M.C. Escher, Roger Penrose]
-  examplePromptTemplate: |
-    M.C. Escher impossible-geometry composition with tessellated shapes
-    metamorphosing across the plane, impossible architectural staircase
-    based on Penrose triangle, lithograph black-on-cream, mathematical
-    precision lines, mid-century surrealist aesthetic.
-  whenToUse: Math / science brands, puzzle products, premium editorial.
-  pairsWith:
-    prototypeStyles: [aesthetic-op-art, aesthetic-constructivism, recipe-editorial-magazine]
-  notForUseWhen: friendly consumer, cottagecore
-```
+## Prompt keywords
+
+**Primary**: Escher, tessellation, impossible geometry, Penrose, lithograph
+
+**Material**: lithograph wood engraving
+
+**Line**: mathematical precision
+
+**Color**: pure black on warm cream
+
+**Style**: tessellated metamorphosis, impossible architecture
+
+**Avoid (negative prompt)**: color, soft, photoreal
+
+## Named references
+
+**Illustrators**: M.C. Escher, Roger Penrose
+
+## Example prompt template
+
+> M.C. Escher impossible-geometry composition with tessellated shapes
+>   metamorphosing across the plane, impossible architectural staircase
+>   based on Penrose triangle, lithograph black-on-cream, mathematical
+>   precision lines, mid-century surrealist aesthetic.
+> whenToUse: Math / science brands, puzzle products, premium editorial.
+> pairsWith:
+>   prototypeStyles: [aesthetic-op-art, aesthetic-constructivism, recipe-editorial-magazine]
+> notForUseWhen: friendly consumer, cottagecore
+
+## When to use
+
+Math / science brands, puzzle products, premium editorial.
 
 ## When NOT to use
 
@@ -52,7 +64,3 @@ friendly consumer, cottagecore
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
-
----
-
-_Indexed at line 2650–2679 of `docs/research/illustration-library.md`. Full index: `docs/research/illustration-library.index.json`._
