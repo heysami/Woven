@@ -78,6 +78,14 @@ Compose `promptForRasterPhoto` by:
 2. Replacing the template's subject placeholder with `slotIntent`
 3. Appending the project's STYLE prefix (from visual-orchestrator Step 0)
 4. If `secondaryStyleId` exists, splicing in its 2-3 most distinctive keywords (don't dump the full secondary template — that creates prompt soup)
+5. **Appending the universal positive-baseline tail (mandatory).** Per the library's §1 Universal positive-baseline, every photography prompt ends with the `color graded` token, calibrated to the brief register. Choose:
+   - Restrained / minimal briefs → ` Subtly color graded.`
+   - Editorial / standard briefs → ` Color graded.`
+   - Cinematic / mood-led briefs → ` Cinematically color graded.`
+   - Loud / theatrical / era-specific briefs → ` Boldly color graded with <palette anchor>.` (palette anchor comes from the picked style's filmStockOrPostProcessing or primary keywords — e.g. for vaporwave-still-life: "Boldly color graded with pink-cyan duotone")
+   - Documentary / archival (only when brief allows) → ` Restored and color graded.`
+
+   This is non-negotiable. Determine the calibration from envelope `committedAesthetic` + the picked style's `notForUseWhen` (if the style fits restrained briefs, use the restrained tail). Record the chosen phrasing in the output as `colorGradeBaseline`.
 
 Compose `negativePrompt` by concatenating:
 
@@ -93,12 +101,13 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/pe_photo_<slotId>/commit?proje
   -H "Content-Type: application/json" \
   -d '{
     "outputs": {
-      "promptForRasterPhoto": "<composed>",
+      "promptForRasterPhoto": "<composed — MUST end with the color-graded baseline tail>",
       "negativePrompt":       "<composed>",
       "filmStockHint":        "<from library>",
       "lensHint":             "<from library>",
       "lightingHint":         "<from library>",
       "moodHint":             "<from library>",
+      "colorGradeBaseline":   "<which tail was appended — e.g. Subtly / Color / Cinematically / Boldly with palette / Restored>",
       "primaryStyleId":       "<chosen>",
       "secondaryStyleId":     "<chosen or null>",
       "decisionTreeRow":      "<verbatim row from library §3 that you used>",

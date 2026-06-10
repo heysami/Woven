@@ -94,6 +94,29 @@ These go in every photography prompt regardless of style, unless the brief speci
 
 `no watermark, no stock-photo logo, no shutterstock, no getty images caption, no text overlay, no caption, no extra fingers, no deformed hands, no fused fingers, no plastic skin, no airbrushed skin, no over-smoothed skin, no waxy skin, no AI-generated face symmetry, no centered subject (unless directed), no smiling-at-camera (unless directed), no over-saturated, no over-sharpened, no HDR halos, no over-processed, no Instagram filter, no VSCO preset look, no generic stock-photo composition, no double face, no extra limbs, no glitched eyes, no asymmetric pupils, no melted earrings, no warped jewelry, no warped text on garments`
 
+### Universal positive-baseline — ALWAYS append "color graded" (load-bearing)
+
+**Every photography prompt the orchestrator composes ends with the keyword `color graded`.** Non-negotiable. Reason: a photograph that follows the brief's design system / palette / theme can still ship looking flat, washed, or "uncooked" — generators that don't know to color-grade default to a neutral RAW look that feels amateur next to actual editorial work. The `color graded` token is a small lever that consistently pushes the output toward "this looks like someone post-processed it for publication" instead of "this is a straight camera dump."
+
+How to use:
+
+- **Append verbatim** to every prompt's tail, after the named style and before the universal-negatives. The phrase is `color graded` — two words, lowercase, no hyphen, no modifier required.
+- **Pair with a grade direction when the style supplies one.** Many §2 entries declare a specific grade in `filmStockOrPostProcessing` (e.g. "teal-and-orange color grade", "cool muted color grade", "warm shadow tint", "cross-processed E6 in C-41"). When present, use BOTH the style's specific grade AND the universal `color graded` anchor — they reinforce.
+- **When the brief is restrained** (cream-humanist, restrained-AI-marketing, warm-restraint): use `subtly color graded` or `gently color graded` so the polish reads as quiet, not theatrical. The token still goes in — restrained briefs need polish too, just calibrated lower.
+- **When the brief is theatrical** (editorial-magazine, y2k-memphis-loud, vaporwave, cyberpunk): use `boldly color graded` or `aggressively color graded with [palette]` and name the palette anchor when known.
+
+Common pairings for quick reference:
+
+| Brief register | Recommended tail |
+|---|---|
+| Restrained / minimal | `subtly color graded` |
+| Editorial / standard | `color graded` |
+| Cinematic / mood-led | `cinematically color graded` (often with teal-orange or muted-warm-shadow) |
+| Loud / theatrical / era-specific | `boldly color graded with <palette>` |
+| Documentary / archival | `restored and color graded` (when the brief allows; otherwise plain `color graded`) |
+
+Anti-pattern: do NOT prompt for `"unedited"`, `"raw"`, `"straight out of camera"`, `"SOOC"`, `"no post-processing"` even when the brief reads documentary or archival. The orchestrator's job is to ship polished work; the documentary register comes from composition + lighting + film stock keywords, not from forfeiting the grade.
+
 ---
 
 ## 2. Style library

@@ -112,6 +112,15 @@ For each enumerated photographic slot:
    ```
    This returns ~30 lines (the YAML for that ONE entry) — including `examplePromptTemplate`, `promptKeywords`, `avoidKeywords` you couldn't fit in the index without bloating it. Pass these to the photography-style-enricher drawer (or compose inline if dispatching by hand).
 
+5. **Append the universal positive-baseline (load-bearing — never skip).** Every composed `promptForRasterPhoto` MUST end with the `color graded` token per the library's §1 Universal positive-baseline. The phrase is calibrated to the brief register:
+   - Restrained / minimal briefs (cream-humanist, restrained-AI-marketing, warm-restraint) → `subtly color graded`
+   - Editorial / standard briefs (editorial-magazine, lookbook, lifestyle) → `color graded`
+   - Cinematic / mood-led briefs (golden-hour, blue-hour, night-flash, anamorphic-street) → `cinematically color graded`
+   - Loud / theatrical / era-specific briefs (y2k-memphis-loud, vaporwave, cyberpunk, frutiger-aero) → `boldly color graded with <palette anchor from style entry>`
+   - Documentary / archival (when brief allows) → `restored and color graded`
+
+   This is non-negotiable. A photograph that follows the design system / theme can still ship looking flat; the `color graded` anchor consistently pushes the generator toward publication-grade output instead of a neutral RAW dump. Document the chosen tail in `pe_photo_<slotId>.outputs.colorGradeBaseline` for QA traceability.
+
 ### Per-slot enrichment shape (written to workflow.json)
 
 ```jsonc
