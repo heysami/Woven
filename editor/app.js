@@ -13641,7 +13641,7 @@ function PrototypeCatalogLanding({ data }) {
         </div>
       `)}
 
-      ${zoom && html`
+      ${zoom && createPortal(html`
         <div className="proto-catalog-zoom" onClick=${() => setZoom(null)} role="dialog" aria-label="Image preview">
           <button
             className="proto-catalog-zoom-close"
@@ -13656,7 +13656,7 @@ function PrototypeCatalogLanding({ data }) {
             </figcaption>
           </figure>
         </div>
-      `}
+      `, document.body)}
     </div>
   `;
 }
