@@ -232,10 +232,59 @@ The badge prevents the user from over-trusting the preview as "this is what the 
 
 ### The `+ draft` refinement loop (only when imageGen = wired)
 
-When the user replies with `<N> + draft` (or `option N, generate samples`, or any obvious equivalent that names an option AND requests image-gen):
+#### Trigger vocabulary — these all mean +draft, NOT "build the prototype"
 
-1. Stay in the stop-and-ask phase — **do NOT commit the genre yet, do NOT write any source files.**
-2. Use the wired image-gen skill (the one detected during the image-gen availability check — typically a `generate-image` skill, or an image-gen MCP, or native model image output). The call shape is `skill: "generate-image"`, NOT `skill: "raster-photo"` — `raster-photo` is a *medium* classification used by the visual-orchestrator later, not a skill the agent invokes directly. Compose a prompt from the picked option's:
+The user's wording for "give me ONE quick preview image before I commit" is highly varied. Treat ALL of the following as +draft requests — pre-commit, lightweight, single image, no orchestrators, no source writes:
+
+- `<N> + draft` / `1 + draft` (the canonical form)
+- `option <N>, generate samples` / `generate mockup` / `gen the mockup` / `mockup` / `mock up`
+- `generate me the mock up` / `generate mockups` / `show me a mockup`
+- `generate image first` / `generate image before locking` / `image first`
+- `give me a preview` / `show me a sample` / `preview this`
+- `<N> but render it` / `<N> render that` / `try rendering <N>`
+
+The shared signal is "**I want to see what this looks like as a generated image BEFORE you build anything**." That means: produce a single (or at most 2) draft PNG via direct image-gen call, embed it in a re-emitted `<direction-options>` card, then **stop and wait**. Do not start Phase A. Do not commit a genre. Do not write source files. Do not dispatch orchestrators.
+
+If the user's wording is genuinely ambiguous (e.g. "make me the design", "let's build it"), ask one short clarifying question before acting:
+
+> *"Do you want a quick image preview first (no source files), or should I commit the direction and build the prototype? Either is fine."*
+
+#### What +draft IS allowed to do — EXACTLY this, nothing more
+
+ONE direct `POST` to `/__asset_generate` per draft image, using:
+
+```bash
+curl -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @body.json
+```
+
+where `body.json` is:
+
+```json
+{
+  "skill":    "generate-image",
+  "provider": "<from capabilities preamble's Image-generation USER DEFAULT row>",
+  "model":    "<from same row>",
+  "aspect":   "3:2",
+  "output":   ".prototype-options/<TURN_SLUG>/draft-<k>.png",
+  "prompt":   "<composed prompt — see step 2 below>"
+}
+```
+
+That's it. ONE call per draft image, direct daemon endpoint, output writes straight to `.prototype-options/<TURN_SLUG>/`.
+
+#### What +draft is FORBIDDEN to do
+
+- **No `Task` tool dispatches.** No `visual-orchestrator`, no `photography-orchestrator`, no `illustration-orchestrator`, no `creative-visual-orchestrator`, no `material-orchestrator`, no `interactive-polish-orchestrator`, no `1V-*` per-asset drawer, no other subagent. All orchestrators are POST-build only — they exist to enumerate slots in already-written source HTML. **They do not exist for pre-commit previews. Calling visual-orchestrator before Phase A is a Phase E rule violation.**
+- **No HTML files written.** No `frame1.html` / `frame2.html` / `_render/` / `_drafts/`. The +draft path does NOT do "render HTML then screenshot it" — that's overengineered for a pre-commit preview. The agent in studio2 did this exact wrong thing (wrote frame1.html + frame2.html to `.prototype-options/<slug>/_render/` then tried to dispatch visual-orchestrator). **Forbidden.**
+- **No source/ writes at all.** Nothing under `source/<branch>/` until Phase A is reached via an explicit lock-and-build user message.
+- **No workflow.json edits.** No nodes scaffolded, no edges added. Phase E owns workflow.json; +draft doesn't touch it.
+
+#### Step-by-step
+
+1. Stay in the stop-and-ask phase — **do NOT commit the genre yet, do NOT write any source files, do NOT dispatch any orchestrator.**
+2. Compose ONE prompt per draft image from the picked option's:
    - Shell silhouette (a one-line layout description)
    - Style detail file's prompt-friendly mood
    - Aesthetic detail file's named references
@@ -243,11 +292,11 @@ When the user replies with `<N> + draft` (or `option N, generate samples`, or an
    - **Typography as visual-characteristic description** (see *Typography in image-gen prompts* below — never just the bare family name)
    - If a photo register was attached: pull `prompt_keywords` from `prototype/photo-<styleId>.md`
    - If an illust register was attached: pull from `prototype/illust-<styleId>.md`
-3. Generate **2–3 frames** (one hero, one secondary view, optionally one detail) at small thumbnail size (≤768px longest side) so the cost stays low. Save under `.prototype-options/<TURN_SLUG>/draft-<k>.png` using the same TURN_SLUG as the preview recolours.
-4. Re-emit ONLY the picked option's card with the real generated images replacing the recoloured preview, the `◉ auto-preview · no LLM` badge **replaced** with `◉ model-generated mockup · composition + palette only · typography is the model's interpretation, the actual build uses the locked face`, and a fresh prompt: `Lock this direction, pick a different option (1/2/3), or describe a swap.`
+3. Generate **1 frame by default, 2 frames maximum** (one hero, one optional secondary view) at small thumbnail size (≤768px longest side) so the cost stays low. The default is ONE — the user said "give me a quick preview", not "render the whole site". Save under `.prototype-options/<TURN_SLUG>/draft-<k>.png` using the same TURN_SLUG as the preview recolours.
+4. Re-emit ONLY the picked option's card with the real generated image replacing the recoloured preview, the `◉ auto-preview · no LLM` badge **replaced** with `◉ model-generated mockup · composition + palette only · typography is the model's interpretation, the actual build uses the locked face`, and a fresh prompt: `Lock this direction, pick a different option (1/2/3), or describe a swap.`
 5. Still wait for user confirmation. The genre is committed only after the user says yes / 1 / lock it / build / similar after seeing the draft.
 
-If the image-gen call fails (network error, quota, content filter), fall back gracefully: re-emit the option card with the original recoloured preview, add a one-line "*image-gen attempted but failed: [short reason]; showing the mechanical preview instead*", and ask the user whether to retry or pick a different option. Do not silently commit the genre on image-gen failure.
+If the image-gen call fails (network error, quota, content filter), fall back gracefully: re-emit the option card with the original recoloured preview, add a one-line "*image-gen attempted but failed: [short reason]; showing the mechanical preview instead*", and ask the user whether to retry or pick a different option. Do not silently commit the genre on image-gen failure. **DO NOT escalate to visual-orchestrator on failure** — that doesn't help and adds a cascade.
 
 ### Typography in image-gen prompts (Option A — visual-characteristic description)
 
@@ -508,7 +557,9 @@ Standard: every authored HTML opens and renders without console errors, navigati
 
 #### Phase E — Post-build orchestrator dispatch (the part the new Step -1 was skipping)
 
-This is the load-bearing fix the user flagged. After source is written and render-verified, the agent MUST walk the existing orchestrator dispatch chain — each orchestrator's gate is defined in its own manifest under `.claude/agents/<name>.manifest.json`, so the agent's job is sequencing, not gate-evaluation. Dispatch each via the `Task` tool with `subagent_type` matching the manifest's `subagentName`. Walk in this order:
+**Phase E is reachable ONLY after Phases A → B → C → D complete in this turn.** Orchestrators enumerate slots in *already-written source HTML*; they do not exist for pre-commit previews, +draft mockups, "show me an image" requests, or any other pre-build flow. If `source/<branch>/` has no files in it AND no Phase A lock has been written, every orchestrator listed below is **forbidden**. The agent in studio2 broke this by dispatching `visual-orchestrator` from inside the +draft loop — that's a Phase E rule violation and a category error.
+
+After source is written and render-verified, the agent MUST walk the existing orchestrator dispatch chain — each orchestrator's gate is defined in its own manifest under `.claude/agents/<name>.manifest.json`, so the agent's job is sequencing, not gate-evaluation. Dispatch each via the `Task` tool with `subagent_type` matching the manifest's `subagentName`. Walk in this order:
 
 1. **`photography-orchestrator`** — its manifest trigger: "fires when (a) at least one slot will resolve to raster-photo AND (b) an image-generation model is wired into the project". For the acid-design / scrapbook / editorial-warm-restraint family this almost always fires. The orchestrator picks a photo style from `docs/research/photography-library.md`, writes a `pe_photo_<slotId>` enrichment node per photographic slot. Visual-orchestrator reads these later.
 2. **`illustration-orchestrator`** — same shape, for raster-foreground (illustrated subjects with transparency, mascots, vector-with-character). Fires for acid-design, corporate-memphis, kawaii, Y2K-memphis-loud, etc. Picks an illustration style from `docs/research/illustration-library.md`.
