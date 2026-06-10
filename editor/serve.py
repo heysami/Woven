@@ -232,6 +232,24 @@ def _media_resolve_openai_key():
     return _resolve_provider_key("openai")
 
 
+# ── Per-capability default providers (synced from browser localStorage) ─────
+# The editor stores the user's per-capability provider/model picks in
+# localStorage["th.editor.default-providers.v1"] — pure browser state, never
+# written to disk (the picks aren't secret but live alongside the API keys
+# that ARE browser-encrypted, so the storage tier is shared by convention).
+#
+# This cache mirrors those picks so the spawn-side capabilities preamble can
+# surface them to every agent ("for image-gen, prefer openai gpt-image-2
+# unless the user names something else"). The editor POSTs the current
+# localStorage value here on page load AND on every Settings change so the
+# cache stays current. No persistence — restart loses it and the next editor
+# load re-syncs.
+_DEFAULT_PROVIDERS: dict = {}
+
+def _default_providers_get() -> dict:
+    return dict(_DEFAULT_PROVIDERS)
+
+
 def _guess_image_mime(path):
     pl = (path or "").lower()
     if pl.endswith(".jpg") or pl.endswith(".jpeg"): return "image/jpeg"
@@ -5048,6 +5066,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._media_config_set()
             if parsed.path == "/__media_config/test":
                 return self._media_config_test(qs)
+            if parsed.path == "/__default_providers":
+                return self._default_providers_set()
             if parsed.path == "/__asset_generate":
                 return self._asset_generate(qs)
             if parsed.path == "/__llm_run":
@@ -8628,6 +8648,40 @@ class H(http.server.SimpleHTTPRequestHandler):
                         cfg[provider].pop("last_test_at", None)
         _media_config_save(cfg)
         return self._reply(200, {"ok": True})
+
+    def _default_providers_set(self):
+        """POST /__default_providers
+        Body: { agent?: {provider, model, label?}, image?: {...}, video?: {...},
+                svg?: {...}, "3d"?: {...}, lottie?: {...} }
+        Mirrors the editor's localStorage["th.editor.default-providers.v1"]
+        into a daemon-side cache that the capabilities preamble reads when
+        spawning chat agents. No persistence — localStorage stays source of
+        truth; the editor re-POSTs on every load and Settings change."""
+        global _DEFAULT_PROVIDERS
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return self._reply(400, {"error": "empty body"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON", "detail": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        # Whitelist capability keys + shape per row.
+        _CAPS = {"agent", "image", "video", "svg", "3d", "lottie"}
+        cleaned: dict = {}
+        for cap, row in body.items():
+            if cap not in _CAPS: continue
+            if not isinstance(row, dict): continue
+            entry = {}
+            for k in ("provider", "model", "label", "source"):
+                v = row.get(k)
+                if isinstance(v, str) and v.strip():
+                    entry[k] = v.strip()
+            if entry.get("provider"):
+                cleaned[cap] = entry
+        _DEFAULT_PROVIDERS = cleaned
+        return self._reply(200, {"ok": True, "defaults": cleaned})
 
     def _media_config_test(self, qs):
         provider = (_qs_get(qs, "provider") or "openai").strip()

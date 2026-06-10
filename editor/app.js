@@ -6455,7 +6455,38 @@ function saveDefaultProviders(patch) {
   try { localStorage.setItem(DEFAULTS_KEY, JSON.stringify(next)); } catch {}
   // Broadcast so any popover currently open re-reads the new default.
   try { window.dispatchEvent(new CustomEvent("th:default-providers-changed", { detail: next })); } catch {}
+  // v3.6 — Sync to daemon so the capabilities preamble can surface these
+  // defaults to spawned chat agents. localStorage stays source of truth; the
+  // daemon caches in-process and re-receives on every editor load.
+  try { syncDefaultProvidersToDaemon(next); } catch {}
   return next;
+}
+
+// One-shot best-effort POST to the daemon. The daemon caches in-process; if
+// the request fails (offline, daemon restarting), the next save or page load
+// will retry. No retry queue needed.
+function syncDefaultProvidersToDaemon(defaults) {
+  try {
+    fetch("/__default_providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(defaults || {}),
+    }).catch(() => {});
+  } catch {}
+}
+
+// Push current localStorage state to the daemon at boot — covers the case
+// where the daemon was restarted (cache lost) but the editor's localStorage
+// still has the user's saved picks. Idempotent; the daemon just overwrites
+// its cache.
+if (typeof window !== "undefined") {
+  try {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => syncDefaultProvidersToDaemon(loadDefaultProviders()), { once: true });
+    } else {
+      syncDefaultProvidersToDaemon(loadDefaultProviders());
+    }
+  } catch {}
 }
 function getDefaultForCapability(cap) {
   const all = loadDefaultProviders();

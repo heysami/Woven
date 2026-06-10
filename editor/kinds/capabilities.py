@@ -389,6 +389,45 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
         )
     else:
         availability_lines = "  (availability probe failed — assume providers configurable; check via GET /__media_config)"
+
+    # v3.6 — Per-capability default providers, synced from the editor's
+    # localStorage to the daemon via POST /__default_providers. When the user
+    # has set "OpenAI gpt-image-2" as the Image-generation default in Settings,
+    # this block surfaces that to the spawned agent so it doesn't pick a
+    # different provider based on training-data familiarity (the studio bug
+    # where the agent went to fal-ai/flux-pro even though OpenAI was set as
+    # default for image gen).
+    defaults_block = ""
+    try:
+        import sys, os
+        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _editor_dir not in sys.path:
+            sys.path.insert(0, _editor_dir)
+        from serve import _default_providers_get
+        defaults = _default_providers_get()
+        if defaults:
+            _CAP_LABELS = {
+                "agent": "Chat / agent",
+                "image": "Image generation",
+                "video": "Video generation",
+                "svg":   "Vector / SVG generation",
+                "3d":    "3D generation",
+                "lottie": "Lottie animation",
+            }
+            rows = []
+            for cap_key, cap_label in _CAP_LABELS.items():
+                row = defaults.get(cap_key)
+                if not row:
+                    rows.append(f"  • {cap_label:24s}  (Auto — pick any ✓ KEY provider that supports this skill)")
+                    continue
+                pieces = []
+                if row.get("provider"): pieces.append(row["provider"])
+                if row.get("model"):    pieces.append(row["model"])
+                if row.get("source"):   pieces.append(f"({row['source']})")
+                rows.append(f"  • {cap_label:24s}  USER DEFAULT: {' · '.join(pieces)}")
+            defaults_block = "\n".join(rows)
+    except Exception:
+        pass
     tools = _local_tool_availability()
     tool_status = (
         f"  • rembg          {'✓ INSTALLED' if tools.get('rembg') else '⚠ NOT INSTALLED — pip install rembg'}\n"
@@ -445,6 +484,9 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
   • rembg shown as `✓ INSTALLED` below (background-removal pipeline, local)
 
 **Do not refuse the user with "no raster provider available" if ANY of those conditions hold.** Dispatch the relevant orchestrator and let it route through the available path — `/__asset_generate` already knows how to pick API vs CLI vs local fallback per skill.
+
+**Default models per capability THIS RUN** — the user picked these in Settings → API keys → "Default models per capability". When the user hasn't named a specific provider/model in their request, **use the USER DEFAULT row for that capability**. Do not override based on training-data familiarity (e.g. don't pick `fal-ai/flux-pro` just because FLUX is well-known when the user has set OpenAI gpt-image-2 as the Image-generation default). Override only when the user explicitly names a different provider/model in the current request.
+{defaults_block}
 
 **Local tool availability THIS RUN**:
 {tool_status}
