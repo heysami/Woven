@@ -1,11 +1,21 @@
 ---
 # Sample-image references for the System-tab design library. Images sit
-# next to this file in design-library/ and were generated via image_gen.
-images:
-  - src: aesthetic-vector-neovectorheart-ui.png
-    reason: Aesthetic vocabulary in UI.
-  - src: aesthetic-vector-neovectorheart-isolated.png
-    reason: Signature motif, isolated.
+# next to this file in design-library/ and are generated via image_gen.
+#
+# NEEDS REGENERATION (2026-06-11). Prior -ui.png / -isolated.png were
+# pulled because they showed Y2K bubble-chrome glossy hearts + a "heartspace"
+# wellness journaling app — exactly the failure-mode vocabulary the §Forbidden
+# and §Failure mode sections below explicitly warn against. The image_gen
+# prompt evidently latched on to "heart" in the name and ignored the
+# canonical references (Cory Schmitz VALORANT 2020 / SERXPHIS / N2-Antireal).
+#
+# When regenerating: anchor the prompt on §Decoration motifs (45° chamfered
+# cuts, stenciled meta-lines, catalog numbers, ISO dates, three-letter
+# region codes, optional vector-over-photographic-substrate per SERXPHIS)
+# and on §Voice register (`AGENT 014 · REGION NA · TACTICAL`). Refuse the
+# explicit §Forbidden list: no multi-hue gradient, no rounded forms, no
+# free-angle rotation, no kanji-as-texture, no bubble chrome.
+images: []
 ---
 # Neo-Vectorheart (aesthetic)
 
