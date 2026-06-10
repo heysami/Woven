@@ -9818,6 +9818,30 @@ function registerFontUrl(url) {
   return family;
 }
 
+// One-shot Google Fonts <link> injection per family. Used by
+// <direction-options> per-option <display font="X"> / <body font="X"> so the
+// agent can name a family by Google name and the card renders the sample in
+// the real face. Idempotent: re-calling with the same family is a no-op.
+const __thLoadedGoogleFamilies = new Set();
+function ensureGoogleFontFamily(family) {
+  if (!family) return;
+  const key = String(family).trim();
+  if (!key) return;
+  const lower = key.toLowerCase();
+  if (__thLoadedGoogleFamilies.has(lower)) return;
+  __thLoadedGoogleFamilies.add(lower);
+  try {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    // Load a useful weight range so most display/body needs are covered.
+    link.href = "https://fonts.googleapis.com/css2?family="
+      + encodeURIComponent(key).replace(/%20/g, "+")
+      + ":wght@300;400;500;600;700;800;900&display=swap";
+    link.setAttribute("data-th-google-family", lower);
+    document.head.appendChild(link);
+  } catch (_) { /* SSR / non-DOM fallback */ }
+}
+
 function focusFileByPath(path) {
   if (!path) return;
   window.dispatchEvent(new CustomEvent("th:focus-file", { detail: { path: String(path) } }));
@@ -10859,6 +10883,13 @@ const QUESTION_FORM_RE_G    = /<question-form\b([^>]*)>([\s\S]*?)<\/question-for
 // <option value="...">label</option>. Documented in
 // docs/features/onboarding-orchestration-plan.md §Phase 4.
 const DECISION_REQUEST_RE_G = /<decision-request\b([^>]*)>([\s\S]*?)<\/decision-request>/gi;
+// Direction-options — richer cousin of decision-request used by the /prototype
+// skill's Step -1 stop-and-ask. Each <opt> child carries structured palette /
+// typography / image data so the agent doesn't have to emit per-option HTML;
+// the card renders palette chips + Google-font-loaded type sample + image
+// natively. Submit semantics match <decision-request> (single-pick, POSTs
+// `[decision:<id>] <value> — <label>` as the next user message).
+const DIRECTION_OPTIONS_RE_G = /<direction-options\b([^>]*)>([\s\S]*?)<\/direction-options>/gi;
 const INLINE_SVG_RE_G       = /<svg\b[\s\S]*?<\/svg>/gi;
 const INLINE_HTML_RE_G      = /(?:<!doctype html\b|<html\b)[\s\S]*?<\/html>/gi;
 const FENCE_RE_G            = /```[\s\S]*?```/g;
@@ -10887,11 +10918,12 @@ function parseQuestionForms(text) {
   if (!text) return { segments: [{ kind: "text", text }] };
   const looksLikeDiff = /(?:^|\n)(?:@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@|diff --git |\*\*\* (?:Begin Patch|Add File|Update File|End Patch))/.test(text)
     || /(?:^|\n)\+\+\+ [a-z\/]/.test(text);
-  const hasForm     = text.includes("<question-form");
-  const hasDecision = text.includes("<decision-request");
-  const hasSvg      = !looksLikeDiff && /<svg\b/i.test(text);
-  const hasHtml     = !looksLikeDiff && /<(?:html\b|!doctype html\b)/i.test(text);
-  if (!hasForm && !hasDecision && !hasSvg && !hasHtml) {
+  const hasForm      = text.includes("<question-form");
+  const hasDecision  = text.includes("<decision-request");
+  const hasDirection = text.includes("<direction-options");
+  const hasSvg       = !looksLikeDiff && /<svg\b/i.test(text);
+  const hasHtml      = !looksLikeDiff && /<(?:html\b|!doctype html\b)/i.test(text);
+  if (!hasForm && !hasDecision && !hasDirection && !hasSvg && !hasHtml) {
     return { segments: [{ kind: "text", text }] };
   }
 
@@ -10915,10 +10947,11 @@ function parseQuestionForms(text) {
       if (m.index === re.lastIndex) re.lastIndex++;
     }
   };
-  if (hasForm)     collect(QUESTION_FORM_RE_G,    "form");
-  if (hasDecision) collect(DECISION_REQUEST_RE_G, "decision");
-  if (hasSvg)      collect(INLINE_SVG_RE_G,       "svg");
-  if (hasHtml)     collect(INLINE_HTML_RE_G,      "html");
+  if (hasForm)      collect(QUESTION_FORM_RE_G,     "form");
+  if (hasDecision)  collect(DECISION_REQUEST_RE_G,  "decision");
+  if (hasDirection) collect(DIRECTION_OPTIONS_RE_G, "direction");
+  if (hasSvg)       collect(INLINE_SVG_RE_G,        "svg");
+  if (hasHtml)      collect(INLINE_HTML_RE_G,       "html");
 
   // Sort by start, drop overlapping matches (earlier-start wins).
   found.sort((a, b) => a.m.index - b.m.index);
@@ -11003,6 +11036,75 @@ function parseQuestionForms(text) {
           id, prompt, options: opts,
           multiSelect, groupBy, picksPerGroup, minPicks, maxPicks,
         }, raw: c.m[0] });
+      } else {
+        segments.push({ kind: "text", text: c.m[0] });
+      }
+    } else if (c.kind === "direction") {
+      // <direction-options id="..." prompt="..."> ... </direction-options>
+      // Each <opt value="..." [recommended]> ... </opt> carries structured
+      // children: <label>, <axes>, <vibe>, <why>, <palette>, <display font="...">,
+      // <body font="...">, <image src="..." alt="..."/>, <badge>. The card
+      // renders palette chips + Google-font-loaded type samples + image
+      // natively. Submit semantics mirror <decision-request>: single-pick,
+      // POSTs `[decision:<id>] <value> — <label>`.
+      const dirAttrs = c.m[1] || "";
+      const attr = (name, src) => {
+        const m = new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, "i").exec(src);
+        return m ? m[1] : null;
+      };
+      const id     = attr("id",     dirAttrs);
+      const prompt = attr("prompt", dirAttrs);
+      const body   = c.m[2] || "";
+      const opts   = [];
+      const optRe  = /<opt\b([^>]*)>([\s\S]*?)<\/opt>/gi;
+      let om;
+      while ((om = optRe.exec(body)) !== null) {
+        const oattrs = om[1] || "";
+        const value  = attr("value", oattrs);
+        if (!value) continue;
+        const recommended = /\brecommended\b/i.test(oattrs);
+        const obody = om[2] || "";
+        const pull = (tag) => {
+          // case-insensitive, allow attributes, take inner content
+          const r = new RegExp(`<${tag}\\b([^>]*)>([\\s\\S]*?)</${tag}>`, "i").exec(obody);
+          if (!r) return null;
+          return { attrs: r[1] || "", inner: (r[2] || "").trim() };
+        };
+        const pullSelf = (tag) => {
+          // self-closing <image src="..." alt="..."/>
+          const r = new RegExp(`<${tag}\\b([^>]*)/>`, "i").exec(obody)
+                 || new RegExp(`<${tag}\\b([^>]*)></${tag}>`, "i").exec(obody);
+          if (!r) return null;
+          return { attrs: r[1] || "", inner: "" };
+        };
+        const label   = pull("label")?.inner   || "";
+        const axes    = pull("axes")?.inner    || "";
+        const vibe    = pull("vibe")?.inner    || "";
+        const why     = pull("why")?.inner     || "";
+        const palRaw  = pull("palette")?.inner || "";
+        const palette = palRaw.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+        const dispT   = pull("display");
+        const display = dispT
+          ? { font: attr("font", dispT.attrs), weight: attr("weight", dispT.attrs), text: dispT.inner }
+          : null;
+        const bodyT   = pull("body");
+        const bodyTxt = bodyT
+          ? { font: attr("font", bodyT.attrs), weight: attr("weight", bodyT.attrs), text: bodyT.inner }
+          : null;
+        const imgT    = pullSelf("image");
+        const image   = imgT
+          ? { src: attr("src", imgT.attrs), alt: attr("alt", imgT.attrs) || "" }
+          : null;
+        const badge   = pull("badge")?.inner   || "";
+        if (!label) continue;
+        opts.push({
+          value, recommended,
+          label, axes, vibe, why, palette,
+          display, body: bodyTxt, image, badge,
+        });
+      }
+      if (id && opts.length > 0) {
+        segments.push({ kind: "direction", direction: { id, prompt, options: opts }, raw: c.m[0] });
       } else {
         segments.push({ kind: "text", text: c.m[0] });
       }
@@ -11394,6 +11496,124 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   `;
 }
 
+/* DirectionOptionsCard — renders <direction-options> with rich <opt> children.
+   Each option shows palette chips + display/body type samples in real
+   Google-loaded fonts + the recoloured library image (via apiUrl so the
+   daemon routes to the correct project root) + label / axes / vibe / why /
+   badge. Single-click submits — POSTs `[decision:<id>] <value> — <label>` to
+   /__run/<runId>/user-message, same protocol as <decision-request>. */
+function DirectionOptionsCard({ direction, runId, answered, onAnswered, processEnded }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const key = `decision:${direction.id}`;
+  const isAnswered = !!answered;
+  // Lazy-load Google Fonts referenced by every option's <display> / <body>.
+  useEffect(() => {
+    (direction.options || []).forEach(opt => {
+      if (opt.display?.font) ensureGoogleFontFamily(opt.display.font);
+      if (opt.body?.font)    ensureGoogleFontFamily(opt.body.font);
+    });
+  }, [direction]);
+  const submit = async (opt) => {
+    if (!runId || isAnswered || busy) return;
+    setBusy(true); setError(null);
+    const text = `[decision:${direction.id}] ${opt.value} — ${opt.label}`;
+    try {
+      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      try {
+        await fetch(apiUrl(`/__decision/${encodeURIComponent(direction.id)}`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values: [opt.value], labels: [opt.label] }),
+        });
+      } catch (_) { /* durability is non-fatal */ }
+      if (onAnswered) onAnswered(key, opt.value);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return html`
+    <div className=${"chat-direction-card" + (isAnswered ? " is-answered" : "")}>
+      <div className="chat-direction-head">
+        <span className="chat-direction-eyebrow">direction · ${direction.id}</span>
+        ${direction.prompt && html`<div className="chat-direction-prompt">${direction.prompt}</div>`}
+      </div>
+      <div className="chat-direction-options">
+        ${direction.options.map(opt => {
+          const picked = isAnswered && answered === opt.value;
+          const dispStyle = opt.display?.font ? { fontFamily: `"${opt.display.font}", system-ui, sans-serif` } : null;
+          const dispWeight = opt.display?.weight ? { fontWeight: opt.display.weight } : null;
+          const bodyStyle = opt.body?.font ? { fontFamily: `"${opt.body.font}", system-ui, sans-serif` } : null;
+          const bodyWeight = opt.body?.weight ? { fontWeight: opt.body.weight } : null;
+          return html`
+            <button
+              key=${opt.value}
+              type="button"
+              className=${"chat-direction-opt" + (picked ? " is-picked" : "") + (opt.recommended ? " is-recommended" : "")}
+              disabled=${busy || isAnswered || processEnded}
+              onClick=${() => submit(opt)}
+              title=${opt.label}
+            >
+              ${opt.palette?.length > 0 && html`
+                <div className="chat-direction-palette">
+                  ${opt.palette.map((hex, i) => html`
+                    <span
+                      key=${i}
+                      className=${"chat-direction-chip" + (i === opt.palette.length - 1 ? " is-accent" : "")}
+                      style=${{ background: hex }}
+                      title=${hex}
+                    />`)}
+                </div>
+              `}
+              ${opt.display?.text && html`
+                <div className="chat-direction-display" style=${{ ...dispStyle, ...dispWeight }}>
+                  ${opt.display.text}
+                </div>
+              `}
+              ${opt.body?.text && html`
+                <div className="chat-direction-body" style=${{ ...bodyStyle, ...bodyWeight }}>
+                  ${opt.body.text}
+                </div>
+              `}
+              ${opt.image?.src && html`
+                <img
+                  className="chat-direction-image"
+                  src=${apiUrl("/" + opt.image.src.replace(/^\/+/, ""))}
+                  alt=${opt.image.alt || opt.label}
+                  loading="lazy"
+                  onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(apiUrl("/" + opt.image.src.replace(/^\/+/, "")), opt.image.alt || opt.label); }}
+                />
+              `}
+              ${opt.badge && html`<div className="chat-direction-badge"><span className="chat-direction-badge-dot">◉</span> ${opt.badge}</div>`}
+              <div className="chat-direction-meta">
+                <div className="chat-direction-label">
+                  <span className="chat-direction-value">${opt.value}</span>
+                  <span className="chat-direction-title">${opt.label}</span>
+                  ${opt.recommended && html`<span className="chat-direction-recommended">recommended</span>`}
+                </div>
+                ${opt.axes && html`<div className="chat-direction-axes">${opt.axes}</div>`}
+                ${opt.vibe && html`<div className="chat-direction-vibe">Vibe · ${opt.vibe}</div>`}
+                ${opt.why && html`<div className="chat-direction-why">${opt.why}</div>`}
+              </div>
+            </button>
+          `;
+        })}
+      </div>
+      ${error && html`<div className="chat-direction-error">${error}</div>`}
+    </div>
+  `;
+}
+
 function DirectionFormCard({ form, runId, answered, onAnswered, processEnded }) {
   const questions = Array.isArray(form?.questions) ? form.questions : [];
   // The direction form is always a single radio question; we still loop
@@ -11610,6 +11830,20 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
               decision=${seg.decision}
               runId=${runId}
               answered=${answers && answers[dk]}
+              onAnswered=${onAnswered}
+              processEnded=${processEnded}
+            />`;
+          }
+          if (seg.kind === "direction") {
+            // Step -1 stop-and-ask: rich option card with palette + type +
+            // image data emitted as <direction-options> by /prototype. Same
+            // submit protocol as <decision-request>.
+            const dirKey = `decision:${seg.direction.id}`;
+            return html`<${DirectionOptionsCard}
+              key=${`dir${i}`}
+              direction=${seg.direction}
+              runId=${runId}
+              answered=${answers && answers[dirKey]}
               onAnswered=${onAnswered}
               processEnded=${processEnded}
             />`;
