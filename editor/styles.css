@@ -6264,8 +6264,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text-faint);
   white-space: nowrap;
 }
-.chat-slash-item-kind-cc    { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
-.chat-slash-item-kind-media { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
+.chat-slash-item-kind-cc           { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
+.chat-slash-item-kind-media        { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
+.chat-slash-item-kind-orchestrator { background: oklch(94% 0.05 140); color: oklch(40% 0.16 140); }
+.chat-slash-item-kind-library      { background: oklch(94% 0.05 60);  color: oklch(40% 0.15 60); }
 .chat-slash-item-desc {
   grid-row: 2;
   grid-column: 1 / -1;

@@ -1,8 +1,8 @@
 {
   "version": "2.0",
   "library": "illustration",
-  "sourceDir": "prototype/",
-  "totalEntries": 111,
+  "sourceDir": "design-library/",
+  "totalEntries": 108,
   "decisionTree": {
     "aesthetic-dark-academia": {
       "default": "3d-arsham-eroded",
@@ -73,7 +73,6 @@
       "default": "3d-crypto-gold-chrome",
       "alternatives": [
         "3d-tron-emissive-glow",
-        "beeple-dystopia",
         "blush-moneyverse",
         "typo-chromeheart-gothic-luxury"
       ]
@@ -114,7 +113,6 @@
         "blush-fitz",
         "blush-isometric-stickers-vega",
         "blush-palz",
-        "blush-spooky-stickers",
         "blush-wavy-buddies",
         "clay-3d-soft-sculpt",
         "claymation-stop-motion",
@@ -206,7 +204,6 @@
         "blush-goodies",
         "blush-humaaans",
         "blush-isometric-stickers-vega",
-        "blush-lifesavers",
         "blush-moneyverse",
         "blush-palz",
         "blush-patterns",
@@ -243,7 +240,6 @@
         "aurorism-mesh-gradient",
         "blush-cityscapes",
         "blush-humaaans",
-        "blush-lifesavers",
         "blush-yuppies",
         "corporate-memphis-noodle",
         "drawkit-bubbly-tech-ui",
@@ -326,7 +322,6 @@
         "3d-technical-exploded-precision",
         "3d-tron-emissive-glow",
         "aurorism-mesh-gradient",
-        "beeple-dystopia",
         "blush-transhumans",
         "typo-vectorheart-industrial-futurist",
         "wireframe-3d"
@@ -368,7 +363,6 @@
       "default": "3d-tron-emissive-glow",
       "alternatives": [
         "arcane-painterly-hybrid",
-        "beeple-dystopia",
         "blush-transhumans",
         "typo-vectorheart-industrial-futurist",
         "wireframe-3d"
@@ -442,7 +436,6 @@
     "aesthetic-cottagegoth": {
       "default": "beatrix-potter-watercolor",
       "alternatives": [
-        "blush-spooky-stickers",
         "dreamcore-liminal",
         "typo-blackletter-neo-gothic"
       ]
@@ -558,13 +551,6 @@
         "scribbbles-funky-vector"
       ]
     },
-    "aesthetic-dreamcore": {
-      "default": "blush-spooky-stickers",
-      "alternatives": [
-        "dreamcore-liminal",
-        "hilma-af-klint-symbolist"
-      ]
-    },
     "style-brutalist-raw": {
       "default": "blush-transhumans",
       "alternatives": [
@@ -604,6 +590,12 @@
       "alternatives": [
         "origami-paper-3d",
         "skeuomorphic-detailed"
+      ]
+    },
+    "aesthetic-dreamcore": {
+      "default": "dreamcore-liminal",
+      "alternatives": [
+        "hilma-af-klint-symbolist"
       ]
     },
     "recipe-newspaper-of-record": {
@@ -1041,23 +1033,6 @@
       ],
       "sourceFile": "design-library/illust-beatrix-potter-watercolor.md"
     },
-    "beeple-dystopia": {
-      "name": "Beeple dystopian 3D",
-      "category": "Surreal / esoteric",
-      "subCategory": "beeple-dystopia",
-      "role": "hero",
-      "roleAffinity": [
-        "hero"
-      ],
-      "oneLine": "oversized human figures in bleak future landscape.",
-      "notForUseWhen": "friendly SaaS, kids, restrained AI marketing",
-      "pairsPrototypes": [
-        "aesthetic-crypto-degen",
-        "aesthetic-cyberpunk",
-        "recipe-ai-foundry-dark"
-      ],
-      "sourceFile": "design-library/illust-beeple-dystopia.md"
-    },
     "blush-cityscapes": {
       "name": "Cityscapes",
       "category": "Flat vector",
@@ -1283,22 +1258,6 @@
       ],
       "sourceFile": "design-library/illust-blush-isometric-stickers-vega.md"
     },
-    "blush-lifesavers": {
-      "name": "Lifesavers",
-      "category": "Flat vector",
-      "subCategory": "flat-iconographic",
-      "role": "spot-illustration",
-      "roleAffinity": [
-        "spot-illustration"
-      ],
-      "oneLine": "medical objects: organs, bones, pills, wheelchairs.",
-      "notForUseWhen": "gore, brutalism, editorial",
-      "pairsPrototypes": [
-        "recipe-restrained-ai-marketing",
-        "recipe-bento-marketing"
-      ],
-      "sourceFile": "design-library/illust-blush-lifesavers.md"
-    },
     "blush-little-things": {
       "name": "The Little Things",
       "category": "Flat vector",
@@ -1402,23 +1361,6 @@
         "aesthetic-acid-design"
       ],
       "sourceFile": "design-library/illust-blush-power-moves.md"
-    },
-    "blush-spooky-stickers": {
-      "name": "Spooky Stickers",
-      "category": "Flat vector",
-      "subCategory": "thick-border-cartoon",
-      "role": "decoration",
-      "roleAffinity": [
-        "decoration"
-      ],
-      "oneLine": "Halloween doodles: ghosts, pumpkins, cats in costume.",
-      "notForUseWhen": "enterprise, restrained AI",
-      "pairsPrototypes": [
-        "aesthetic-cottagegoth",
-        "aesthetic-dreamcore",
-        "aesthetic-positivity-kawaii"
-      ],
-      "sourceFile": "design-library/illust-blush-spooky-stickers.md"
     },
     "blush-stuck-at-home": {
       "name": "Stuck at Home",

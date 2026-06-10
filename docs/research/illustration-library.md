@@ -23,25 +23,25 @@ The decision flow at runtime:
 Top-level taxonomy. Every entry in §2 must declare exactly one `category` and (when meaningful) one `subCategory`.
 
 - **3D** — anything with rendered volume, materials, lighting.
-  - sub: `clay`, `plasticine`, `fluffy-plush`, `plastic-glossy`, `jelly-gummy`, `wireframe`, `origami`, `low-poly-paper`, `voxel`, `isometric-tech`, `render-cinematic`, `claymation-stop-motion`, `wood-craft`.
+ - sub: `clay`, `plasticine`, `fluffy-plush`, `plastic-glossy`, `jelly-gummy`, `wireframe`, `origami`, `low-poly-paper`, `voxel`, `isometric-tech`, `render-cinematic`, `claymation-stop-motion`, `wood-craft`.
 - **Flat vector** — geometry over rendering.
-  - sub: `corporate-memphis`, `thick-border-cartoon`, `hairline`, `geometric-mid-century`, `geometric-with-grain`, `noodle-people`, `flat-iconographic`, `flat-with-pattern`.
+ - sub: `corporate-memphis`, `thick-border-cartoon`, `hairline`, `geometric-mid-century`, `geometric-with-grain`, `noodle-people`, `flat-iconographic`, `flat-with-pattern`.
 - **Hand-drawn / sketch** — visible mark, traces of tool.
-  - sub: `scribble-marker`, `ink-line-brush`, `pencil-graphite`, `watercolor`, `gouache`, `charcoal`, `marginalia-quirky`, `naive-folk`, `crayon-wax`.
+ - sub: `scribble-marker`, `ink-line-brush`, `pencil-graphite`, `watercolor`, `gouache`, `charcoal`, `marginalia-quirky`, `naive-folk`, `crayon-wax`.
 - **Anime / manga** — Japanese illustration grammar.
-  - sub: `shoujo-soft-line`, `ghibli-watercolor-bg`, `shinkai-hyperreal`, `shonen-active-line`, `kawaii-mascot`, `chibi`, `pc98-visual-novel`.
+ - sub: `shoujo-soft-line`, `ghibli-watercolor-bg`, `shinkai-hyperreal`, `shonen-active-line`, `kawaii-mascot`, `chibi`, `pc98-visual-novel`.
 - **Illustrative typography** — type as the illustration.
-  - sub: `y2k-chrome-3d`, `vectorheart-decorative`, `weingart-deconstructed`, `art-nouveau-ornament`, `hand-lettered-editorial`, `fella-anti-design`, `blackletter-neo-gothic`, `bubble-graffiti`, `illuminated-drop-cap`, `house-industries-revival`, `wood-type-letterpress`.
+ - sub: `y2k-chrome-3d`, `vectorheart-decorative`, `weingart-deconstructed`, `art-nouveau-ornament`, `hand-lettered-editorial`, `fella-anti-design`, `blackletter-neo-gothic`, `bubble-graffiti`, `illuminated-drop-cap`, `house-industries-revival`, `wood-type-letterpress`.
 - **Abstract / decoration** — non-representational, accent role.
-  - sub: `gradient-blob`, `geometric-primitive`, `doodle-arrow`, `sticker-cutout`, `halftone-shape`, `riso-grain-shape`, `squiggle-line`, `wavy-line`, `star-burst`, `aurorism-mesh`.
+ - sub: `gradient-blob`, `geometric-primitive`, `doodle-arrow`, `sticker-cutout`, `halftone-shape`, `riso-grain-shape`, `squiggle-line`, `wavy-line`, `star-burst`, `aurorism-mesh`.
 - **Mid-century / vintage** — historically rooted illustrative idioms.
-  - sub: `saul-bass-cutout`, `mary-blair-stylized`, `charley-harper-minimal-realism`, `eames-mid-century`, `1950s-pulp`, `1970s-airbrush`, `1960s-psychedelic`.
+ - sub: `saul-bass-cutout`, `mary-blair-stylized`, `charley-harper-minimal-realism`, `eames-mid-century`, `1950s-pulp`, `1970s-airbrush`, `1960s-psychedelic`.
 - **Surreal / esoteric** — dreams, symbols, paradox.
-  - sub: `hilma-symbolist`, `mc-escher-paradox`, `cyriak-bodyhorror`, `beeple-dystopia`, `dreamcore-liminal`, `frida-folk-surreal`.
+ - sub: `hilma-symbolist`, `mc-escher-paradox`, `cyriak-bodyhorror`, `dreamcore-liminal`, `frida-folk-surreal`.
 - **Editorial conceptual** — magazine/newspaper one-idea illustration.
-  - sub: `niemann-puzzle`, `editorial-thick-brush`, `nyt-op-ed`, `new-yorker-cover`.
+ - sub: `niemann-puzzle`, `editorial-thick-brush`, `nyt-op-ed`, `new-yorker-cover`.
 - **Children's book / storybook** — soft, narrative, kindly.
-  - sub: `eric-carle-collage`, `beatrix-potter-watercolor`, `jean-jullien-thick-line`, `naive-storybook`, `pop-up-book-cutout`.
+ - sub: `eric-carle-collage`, `beatrix-potter-watercolor`, `jean-jullien-thick-line`, `naive-storybook`, `pop-up-book-cutout`.
 
 ---
 
@@ -106,7 +106,7 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-corporate-memphis | blush-humaaans | corporate-memphis-noodle, blush-allura, blush-yuppies, blush-dayflow | scribbbles-funky-vector |
 | aesthetic-positivity-kawaii | kawaii-mascot | blush-shiny-happy, drawkit-jelly-3d, fluffy-plush-3d, blush-happy-bunch | handyarrows-doodles |
 | aesthetic-cottagecore | beatrix-potter-watercolor | blush-fancy-plants, drawkit-wooden-icons, ghibli-watercolor-bg, gouache-storybook | none |
-| aesthetic-cottagegoth | blush-spooky-stickers | beatrix-potter-watercolor (darker palette), typo-blackletter-neo-gothic | halftone-shape |
+| aesthetic-cottagegoth | — | beatrix-potter-watercolor (darker palette), typo-blackletter-neo-gothic | halftone-shape |
 | aesthetic-solarpunk | drawkit-wooden-icons | blush-go-green, charley-harper-minimal-realism, ghibli-watercolor-bg | spectrums-organic-blob |
 | aesthetic-dreamcore | dreamcore-liminal | hilma-af-klint-symbolist, cyriak-bodyhorror | spectrums-organic-blob |
 | aesthetic-angelcore | hilma-af-klint-symbolist | typo-illuminated-drop-cap | aurorism-mesh-gradient |
@@ -115,7 +115,7 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-y2k-memphis-loud | blush-cool-kids | typo-y2k-chrome-3d, blush-power-moves, blush-tutto-ricco | spectrums-complex-flower |
 | aesthetic-y2k-myspace | typo-y2k-chrome-3d | vector-hands-up-eurodance | spectrums-complex-flower |
 | aesthetic-vaporwave | typo-y2k-chrome-3d | dreamcore-liminal, vector-hands-up-eurodance | aurorism-mesh-gradient |
-| aesthetic-cyberpunk | wireframe-3d | beeple-dystopia, blush-transhumans | aurorism-mesh-gradient |
+| aesthetic-cyberpunk | wireframe-3d | blush-transhumans | aurorism-mesh-gradient |
 | aesthetic-cassette-futurism | blush-hyperspace | saul-bass-cutout, typo-house-industries-revival | halftone-shape |
 | aesthetic-atompunk | blush-hyperspace | saul-bass-cutout, mary-blair-stylized | spectrums-vector-shape-circle |
 | aesthetic-dieselpunk | typo-house-industries-revival | saul-bass-cutout | halftone-shape |
@@ -152,7 +152,7 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-avantropop | typo-y2k-chrome-3d | vector-hands-up-eurodance, blush-transhumans | halftone-shape |
 | aesthetic-urbling | typo-bubble-graffiti | typo-y2k-chrome-3d | halftone-shape |
 | aesthetic-rgb-gamer | voxel-magicavoxel | wireframe-3d, pixel-bitmap-illustration | aurorism-mesh-gradient |
-| aesthetic-crypto-degen | beeple-dystopia | blush-moneyverse, blush-currency-crush | aurorism-mesh-gradient |
+| aesthetic-crypto-degen | — | blush-moneyverse, blush-currency-crush | aurorism-mesh-gradient |
 | aesthetic-defi-cosmic | blush-moneyverse | blush-hyperspace | aurorism-mesh-gradient |
 | aesthetic-depin-hardware | wireframe-3d | isometric-tech-saas | none |
 | aesthetic-goblincore | humanities-marginalia | beatrix-potter-watercolor, hand-drawn-pencil-sketch | none |
@@ -170,7 +170,7 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 
 | recipe slug | Default illustration | Alternatives | Decoration |
 |---|---|---|---|
-| recipe-ai-foundry-dark | aurorism-mesh-gradient (decoration) | wireframe-3d, beeple-dystopia | aurorism-mesh-gradient |
+| recipe-ai-foundry-dark | aurorism-mesh-gradient (decoration) | wireframe-3d | aurorism-mesh-gradient |
 | recipe-aurora-marketing | aurorism-mesh-gradient | drawkit-bubbly-tech-ui | aurorism-mesh-gradient |
 | recipe-bento-marketing | drawkit-isometric-stickers | drawkit-jelly-3d, blush-isometric-stickers-vega, blush-humaaans | shapes-gallery-michalczyk |
 | recipe-bloomberg-dashboard | wireframe-3d (sparingly) | editorial-thick-brush | none |

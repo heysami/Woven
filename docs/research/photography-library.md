@@ -146,12 +146,12 @@ When the source HTML has committed to a prototype.md aesthetic, the orchestrator
 
 | Prototype aesthetic / style | Photography styles that fit | Notes |
 |---|---|---|
-| recipe-editorial-magazine | helmut-newton-flash, tillmans-candid, sorrenti-grain, leibovitz-key-light, magnum-monochrome, shore-color, goldin-diary, weingart-staged, environmental-portrait, vivian-maier-square, backstage-fashion | The editorial magazine recipe is a catch-all for serious photography. Pick by topic warmth: Newton/Sorrenti for cool, Leibovitz/Tillmans for warm. |
+| recipe-editorial-magazine | helmut-newton-flash, tillmans-candid, sorrenti-grain, leibovitz-key-light, magnum-monochrome, shore-color, goldin-diary, weingart-staged, environmental-portrait, vivian-maier-square | The editorial magazine recipe is a catch-all for serious photography. Pick by topic warmth: Newton/Sorrenti for cool, Leibovitz/Tillmans for warm. |
 | recipe-bento-marketing | apple-clean-studio, high-key-beauty, leibovitz-key-light, clean-tech-lifestyle | Bento panels need product-clarity photography. Studio precision over candid. |
 | recipe-restrained-ai-marketing | clean-tech-lifestyle, apple-clean-studio, cereal-lifestyle, cos-lookbook, laundry-light-lookbook, tillmans-candid | Restrained AI marketing rejects gloss; prefers daylight, plaster walls, and quietly capable subjects. |
 | recipe-warm-restraint | aesop-apothecary, kinfolk-warm-minimal, cereal-lifestyle, sorrenti-grain (monochrome), shore-color, environmental-portrait, seventies-soft-grain | The luxury-apothecary recipe. Warm, slow, daylight, single subject, no flash. |
 | aesthetic-y2k-futurism | y2k-flash-glam, genz-flash-disposable, y2k-halftone, frutiger-aero-product, chrome-hearts-editorial, vaporwave-still-life | Y2K wants hard flash and chrome. Halftone for print-look. Frutiger-Aero for product. |
-| aesthetic-y2k-memphis-loud | y2k-halftone, y2k-flash-glam, surreal-still-life, bowie-rock-glamour, eighties-cocaine-glam, skate-zine | Loud Memphis wants oversaturated single hues, hard flash, halftone graphics overlay. |
+| aesthetic-y2k-memphis-loud | y2k-halftone, y2k-flash-glam, surreal-still-life, eighties-cocaine-glam, skate-zine | Loud Memphis wants oversaturated single hues, hard flash, halftone graphics overlay. |
 | aesthetic-frutiger-aero | frutiger-aero-product, magic-glow, high-key-beauty, dreamy-haze | Glossy bright sky-blue-and-grass-green, bokeh, water droplets, optimism. |
 | aesthetic-cottagecore | seventies-soft-grain, kinfolk-warm-minimal, environmental-portrait, fantasy-glow, dreamy-haze | Soft golden warm grain. Window light. Natural texture. No urban subjects. |
 | aesthetic-dark-academia | sorrenti-grain (monochrome), goldin-diary, magnum-monochrome, vivian-maier-square, environmental-portrait | Cool monochrome with warm tungsten accents. Books, candlelight, single window. |
@@ -167,14 +167,14 @@ Additional implicit mappings:
 
 | Prototype slug | Photo styles |
 |---|---|
-| recipe-newspaper-of-record | magnum-monochrome, salgado-contrast, vivian-maier-square, shore-color, war-photojournalism |
+| recipe-newspaper-of-record | magnum-monochrome, salgado-contrast, vivian-maier-square, shore-color |
 | recipe-brutalist-web | gilden-flash-street, skate-zine, y2k-halftone, circuit-bent-glitch |
 | aesthetic-cyberpunk | night-flash-noir, cinematic-street-anamorphic, circuit-bent-glitch, chrome-hearts-editorial |
-| aesthetic-corporate-grunge | archival-found-photo, y2k-halftone, backstage-fashion, skate-zine |
-| aesthetic-vector-hands-up / acid-design / acid-graphics | y2k-halftone, y2k-flash-glam, surreal-still-life, bowie-rock-glamour |
+| aesthetic-corporate-grunge | y2k-halftone, skate-zine |
+| aesthetic-vector-hands-up / acid-design / acid-graphics | y2k-halftone, y2k-flash-glam, surreal-still-life |
 | aesthetic-angelcore / fairycore | dreamy-haze, fantasy-glow, magic-glow, seventies-soft-grain |
 | recipe-devtools-marketing | clean-tech-lifestyle, leibovitz-key-light, apple-clean-studio, environmental-portrait |
-| recipe-readcv | tillmans-candid, shore-color, archival-found-photo, environmental-portrait, laundry-light-lookbook |
+| recipe-readcv | tillmans-candid, shore-color, environmental-portrait, laundry-light-lookbook |
 
 ---
 
@@ -234,7 +234,6 @@ Example legal chains:
 Illegal chains (the orchestrator must refuse):
 
 - Any documentary style + any fashion-flash style — the truth-claim of documentary is broken by editorial post.
-- `war-photojournalism` + any commercial style — never.
 - More than two styles — model coherence breaks down past two.
 
 When chaining, the prompt template is:
@@ -277,12 +276,12 @@ Quick reference for the orchestrator's first-pass:
 | Hero image, tech product | product | apple-clean-studio |
 | Hero image, lifestyle / SaaS | lifestyle | clean-tech-lifestyle |
 | Founder portrait, About Us | editorial-fashion or documentary | leibovitz-key-light or environmental-portrait |
-| Recipe / food card | food | nyt-cooking-food (bright) or bon-appetit-food (moody) |
+| Recipe / food card | food | nyt-cooking-food |
 | E-comm product tile | product | apple-clean-studio (clean) or aesop-apothecary (warm) |
 | Editorial story image | editorial-fashion or documentary | tillmans-candid or magnum-monochrome |
-| Behind-the-scenes feature | BTS | backstage-fashion |
+| Behind-the-scenes feature | BTS | — |
 | Music / streaming card art | conceptual or street | night-flash-noir or vaporwave-still-life |
-| Heritage brand image | archival or documentary | archival-found-photo or vivian-maier-square |
+| Heritage brand image | archival or documentary | vivian-maier-square |
 | Beauty product hero | beauty | high-key-beauty or magic-glow |
 | Beauty editorial story | beauty or editorial-fashion | dreamy-haze or sorrenti-grain |
 | News / journalism | documentary | magnum-monochrome |
@@ -304,17 +303,17 @@ The enrichment node downstream image generators consume is roughly:
 
 ```yaml
 photographyPrompt:
-  positive: |
-    <natural-language paragraph prompt, 60-100 words>
-  negative: |
-    <comma-separated negative keyword list from §4 + style-specific avoidKeywords>
-  meta:
-    styleId: <kebab slug>
-    secondaryStyleId: <kebab slug or null>
-    aspectRatio: <e.g. 2.39:1, 4:5, 1:1, 9:16>
-    aperture: <e.g. f/1.4, f/8>
-    intent: <hero | product | portrait | still-life | editorial | bts | food>
-    confidence: <0.0-1.0>
+ positive: |
+ <natural-language paragraph prompt, 60-100 words>
+ negative: |
+ <comma-separated negative keyword list from §4 + style-specific avoidKeywords>
+ meta:
+ styleId: <kebab slug>
+ secondaryStyleId: <kebab slug or null>
+ aspectRatio: <e.g. 2.39:1, 4:5, 1:1, 9:16>
+ aperture: <e.g. f/1.4, f/8>
+ intent: <hero | product | portrait | still-life | editorial | bts | food>
+ confidence: <0.0-1.0>
 ```
 
 The `confidence` field is set lower (under 0.6) when the orchestrator had to guess between two roughly equally compatible styles; downstream the generator may then produce two candidates instead of one for human selection.

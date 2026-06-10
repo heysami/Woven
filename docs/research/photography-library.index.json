@@ -1,13 +1,12 @@
 {
   "version": "2.0",
   "library": "photography",
-  "sourceDir": "prototype/",
-  "totalEntries": 54,
+  "sourceDir": "design-library/",
+  "totalEntries": 49,
   "decisionTree": {
     "recipe-warm-restraint": {
       "default": "aesop-apothecary",
       "alternatives": [
-        "bon-appetit-food",
         "cereal-lifestyle",
         "golden-hour-indoor-warm",
         "grand-budapest-symmetrical-pastel",
@@ -34,7 +33,6 @@
     "style-serif-warm-paper": {
       "default": "aesop-apothecary",
       "alternatives": [
-        "bon-appetit-food",
         "grand-budapest-symmetrical-pastel",
         "leibovitz-key-light",
         "magnum-monochrome",
@@ -83,40 +81,6 @@
       "alternatives": [
         "frutiger-aero-product",
         "high-key-beauty"
-      ]
-    },
-    "aesthetic-cluttercore": {
-      "default": "archival-found-photo",
-      "alternatives": [
-        "florida-project-candy-anamorphic"
-      ]
-    },
-    "recipe-readcv": {
-      "default": "archival-found-photo",
-      "alternatives": [
-        "backstage-fashion",
-        "shore-color",
-        "tillmans-candid"
-      ]
-    },
-    "aesthetic-corporate-grunge": {
-      "default": "archival-found-photo",
-      "alternatives": [
-        "backstage-fashion"
-      ]
-    },
-    "aesthetic-cottagecore": {
-      "default": "archival-found-photo",
-      "alternatives": [
-        "bon-appetit-food",
-        "fantasy-glow",
-        "golden-hour-indoor-warm",
-        "grand-budapest-symmetrical-pastel",
-        "her-warm-pastel-future",
-        "la-la-land-musical-magic",
-        "seventies-soft-grain",
-        "tillmans-candid",
-        "warm-minimal-daylight"
       ]
     },
     "recipe-terminal-on-web": {
@@ -182,39 +146,6 @@
         "vaporwave-still-life"
       ]
     },
-    "recipe-editorial-magazine": {
-      "default": "backstage-fashion",
-      "alternatives": [
-        "bon-appetit-food",
-        "chrome-hearts-editorial",
-        "cos-lookbook",
-        "eighties-cocaine-glam",
-        "golden-hour-indoor-warm",
-        "goldin-diary",
-        "grand-budapest-symmetrical-pastel",
-        "helmut-newton-flash",
-        "leibovitz-key-light",
-        "magnum-monochrome",
-        "moonlight-miami-pastel-neon",
-        "salgado-contrast",
-        "shore-color",
-        "tillmans-candid",
-        "vivian-maier-square",
-        "weingart-staged"
-      ]
-    },
-    "recipe-restrained-ai-marketing": {
-      "default": "backstage-fashion",
-      "alternatives": [
-        "cereal-lifestyle",
-        "clean-tech-lifestyle",
-        "cos-lookbook",
-        "her-warm-pastel-future",
-        "high-key-beauty",
-        "tillmans-candid",
-        "warm-minimal-daylight"
-      ]
-    },
     "aesthetic-pc-98": {
       "default": "bayer-dither-retro",
       "alternatives": []
@@ -255,31 +186,16 @@
         "face-id-dot-projector"
       ]
     },
-    "aesthetic-vector-hands-up": {
-      "default": "bowie-rock-glamour",
+    "recipe-restrained-ai-marketing": {
+      "default": "cereal-lifestyle",
       "alternatives": [
-        "eighties-cocaine-glam"
+        "clean-tech-lifestyle",
+        "cos-lookbook",
+        "her-warm-pastel-future",
+        "high-key-beauty",
+        "tillmans-candid",
+        "warm-minimal-daylight"
       ]
-    },
-    "aesthetic-y2k-memphis-loud": {
-      "default": "bowie-rock-glamour",
-      "alternatives": [
-        "eighties-cocaine-glam",
-        "genz-flash-disposable",
-        "skate-zine",
-        "y2k-flash-glam",
-        "y2k-halftone"
-      ]
-    },
-    "aesthetic-rgb-gamer": {
-      "default": "bowie-rock-glamour",
-      "alternatives": [
-        "genz-flash-disposable"
-      ]
-    },
-    "aesthetic-acid-design": {
-      "default": "bowie-rock-glamour",
-      "alternatives": []
     },
     "aesthetic-y2k-futurism": {
       "default": "chrome-hearts-editorial",
@@ -294,6 +210,25 @@
         "vaporwave-still-life",
         "y2k-flash-glam",
         "y2k-halftone"
+      ]
+    },
+    "recipe-editorial-magazine": {
+      "default": "chrome-hearts-editorial",
+      "alternatives": [
+        "cos-lookbook",
+        "eighties-cocaine-glam",
+        "golden-hour-indoor-warm",
+        "goldin-diary",
+        "grand-budapest-symmetrical-pastel",
+        "helmut-newton-flash",
+        "leibovitz-key-light",
+        "magnum-monochrome",
+        "moonlight-miami-pastel-neon",
+        "salgado-contrast",
+        "shore-color",
+        "tillmans-candid",
+        "vivian-maier-square",
+        "weingart-staged"
       ]
     },
     "style-dense-mono-dark": {
@@ -371,6 +306,19 @@
       "default": "eighties-cocaine-glam",
       "alternatives": []
     },
+    "aesthetic-y2k-memphis-loud": {
+      "default": "eighties-cocaine-glam",
+      "alternatives": [
+        "genz-flash-disposable",
+        "skate-zine",
+        "y2k-flash-glam",
+        "y2k-halftone"
+      ]
+    },
+    "aesthetic-vector-hands-up": {
+      "default": "eighties-cocaine-glam",
+      "alternatives": []
+    },
     "aesthetic-curly-girly": {
       "default": "euphoria-glitter-neon",
       "alternatives": [
@@ -392,8 +340,24 @@
         "goldin-diary"
       ]
     },
+    "aesthetic-cottagecore": {
+      "default": "fantasy-glow",
+      "alternatives": [
+        "golden-hour-indoor-warm",
+        "grand-budapest-symmetrical-pastel",
+        "her-warm-pastel-future",
+        "la-la-land-musical-magic",
+        "seventies-soft-grain",
+        "tillmans-candid",
+        "warm-minimal-daylight"
+      ]
+    },
     "aesthetic-solarpunk": {
       "default": "fantasy-glow",
+      "alternatives": []
+    },
+    "aesthetic-cluttercore": {
+      "default": "florida-project-candy-anamorphic",
       "alternatives": []
     },
     "aesthetic-frutiger-bright-tertiaries": {
@@ -415,6 +379,10 @@
       "default": "frutiger-aero-product",
       "alternatives": []
     },
+    "aesthetic-rgb-gamer": {
+      "default": "genz-flash-disposable",
+      "alternatives": []
+    },
     "aesthetic-neubrutalism": {
       "default": "gilden-flash-street",
       "alternatives": []
@@ -424,8 +392,7 @@
       "alternatives": [
         "magnum-monochrome",
         "salgado-contrast",
-        "vivian-maier-square",
-        "war-photojournalism"
+        "vivian-maier-square"
       ]
     },
     "aesthetic-coastal-grandmother": {
@@ -466,8 +433,13 @@
       "default": "magnum-monochrome",
       "alternatives": [
         "salgado-contrast",
-        "vivian-maier-square",
-        "war-photojournalism"
+        "vivian-maier-square"
+      ]
+    },
+    "recipe-readcv": {
+      "default": "shore-color",
+      "alternatives": [
+        "tillmans-candid"
       ]
     },
     "aesthetic-anti-design": {
@@ -515,24 +487,6 @@
       ],
       "sourceFile": "design-library/photo-apple-clean-studio.md"
     },
-    "archival-found-photo": {
-      "name": "Archival found-photograph treatment",
-      "category": "archival",
-      "era": "1950s-90s",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "oneLine": "Period-correct degradation: faded color, slight yellowing, edge wear.",
-      "notForUseWhen": "Modern tech, restrained luxury, anything aspirational-future.",
-      "pairsPrototypes": [
-        "aesthetic-cluttercore",
-        "recipe-readcv",
-        "aesthetic-corporate-grunge",
-        "aesthetic-cottagecore"
-      ],
-      "sourceFile": "design-library/photo-archival-found-photo.md"
-    },
     "ascii-art-portrait": {
       "name": "ASCII-art portrait (text-as-image)",
       "category": "archival",
@@ -572,24 +526,6 @@
       ],
       "sourceFile": "design-library/photo-atkinson-dither-mac-classic.md"
     },
-    "backstage-fashion": {
-      "name": "Backstage editorial BTS",
-      "category": "BTS",
-      "era": "current",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "oneLine": "Available light, sometimes mixed with hair-light or makeup-station tungsten.",
-      "notForUseWhen": "Polished hero, conversion product page.",
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-readcv",
-        "aesthetic-corporate-grunge",
-        "recipe-restrained-ai-marketing"
-      ],
-      "sourceFile": "design-library/photo-backstage-fashion.md"
-    },
     "bayer-dither-retro": {
       "name": "Bayer-matrix ordered dither (retro 1-bit)",
       "category": "archival",
@@ -628,41 +564,6 @@
         "style-restrained-hairline"
       ],
       "sourceFile": "design-library/photo-blade-runner-2049-monochrome-sections.md"
-    },
-    "bon-appetit-food": {
-      "name": "Bon Appétit moody food overhead",
-      "category": "food",
-      "era": "current",
-      "roleAffinity": [
-        "food"
-      ],
-      "oneLine": "Dark wood, slate, or aged copper substrate.",
-      "notForUseWhen": "Fast casual, fast food, packaging hero shot, kid food.",
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "style-serif-warm-paper",
-        "recipe-warm-restraint",
-        "aesthetic-cottagecore"
-      ],
-      "sourceFile": "design-library/photo-bon-appetit-food.md"
-    },
-    "bowie-rock-glamour": {
-      "name": "Rock-glamour stage editorial",
-      "category": "glamour",
-      "era": "1970s-1980s",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "oneLine": "Stage lighting recreated in studio: hot rim from behind, single colored gel.",
-      "notForUseWhen": "Restrained luxury, B2B, wellness.",
-      "pairsPrototypes": [
-        "aesthetic-vector-hands-up",
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-rgb-gamer",
-        "aesthetic-acid-design"
-      ],
-      "sourceFile": "design-library/photo-bowie-rock-glamour.md"
     },
     "cereal-lifestyle": {
       "name": "Cereal magazine slow-travel lifestyle",
@@ -1383,23 +1284,6 @@
         "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/photo-vivian-maier-square.md"
-    },
-    "war-photojournalism": {
-      "name": "Frontline war photojournalism",
-      "category": "documentary",
-      "era": "1990s-current",
-      "roleAffinity": [
-        "hero",
-        "section",
-        "portrait"
-      ],
-      "oneLine": "35mm or 28mm wide lens, very close to action.",
-      "notForUseWhen": "Any commercial application. Reserved for editorial truth.",
-      "pairsPrototypes": [
-        "recipe-newspaper-of-record",
-        "style-agate-broadsheet"
-      ],
-      "sourceFile": "design-library/photo-war-photojournalism.md"
     },
     "warm-minimal-daylight": {
       "name": "Warm-minimal daylight (Kinfolk / quiet lookbook)",

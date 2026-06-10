@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "library": "material",
-  "sourceDir": "prototype/",
+  "sourceDir": "design-library/",
   "totalEntries": 78,
   "decisionTree": {
     "recipe-terminal-on-web": {

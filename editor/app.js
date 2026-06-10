@@ -8888,8 +8888,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
    while the agent is mid-turn (status === "streaming" / "connecting").
    Cmd/Ctrl+Enter sends; plain Enter inserts a newline. */
 // v3.x — Slash-command menu cache. Shared across ChatComposer mounts so the
-// /__cc_skills fetch happens once per page session. Lives at module scope —
-// React state would re-fetch on every mount.
+// /__cc_skills / /__orchestrators / /__prototype_catalog fetches happen once
+// per page session. Lives at module scope — React state would re-fetch on
+// every mount.
+//
+// Item shape (unified across sources):
+//   { kind, slug, name, description, invocation, insertText, source?, plugin? }
+//
+//   kind         "media" | "cc" | "orchestrator" | "library"
+//   invocation   visible token shown in the menu (e.g. "/foo", "@bar", "#baz")
+//   insertText   what we paste into the composer when the user picks the item.
+//                Falls back to `invocation + " "` if absent.
 let __slashSkillCache = null;
 async function __loadSlashSkills() {
   if (__slashSkillCache) return __slashSkillCache;
@@ -8900,25 +8909,77 @@ async function __loadSlashSkills() {
     name:        sk.label,
     description: sk.hint,
     invocation:  "/" + sk.id,
+    insertText:  "/" + sk.id + " ",
     source:      sk.pathway === "Local" ? "local" : "media",
   }));
+  // Fan out the three optional fetches in parallel so a slow endpoint can't
+  // gate the others. Each is wrapped so a failure leaves the rest intact —
+  // the menu degrades to "just the sources that loaded" rather than empty.
+  const [ccRes, orchRes, libRes] = await Promise.all([
+    fetch(apiUrl("/__cc_skills")).catch(() => null),
+    fetch(apiUrl("/__orchestrators")).catch(() => null),
+    fetch(apiUrl("/__prototype_catalog")).catch(() => null),
+  ]);
   try {
-    const r = await fetch(apiUrl("/__cc_skills"));
-    if (r.ok) {
-      const j = await r.json();
+    if (ccRes && ccRes.ok) {
+      const j = await ccRes.json();
       for (const s of (j.skills || [])) {
+        const inv = s.invocation || ("/" + s.slug);
         items.push({
           kind:        "cc",
           slug:        s.slug,
           name:        s.name,
           description: s.description || "",
-          invocation:  s.invocation || ("/" + s.slug),
+          invocation:  inv,
+          insertText:  inv + " ",
           source:      s.source || "plugin",
           plugin:      s.plugin,
         });
       }
     }
-  } catch { /* daemon may not yet have the endpoint — leave media-only list */ }
+  } catch { /* leave whatever loaded */ }
+  try {
+    if (orchRes && orchRes.ok) {
+      const j = await orchRes.json();
+      // Only surface enabled orchestrators — a disabled one in the project's
+      // toggles is invisible to the spawned agent's prompt anyway, so picking
+      // it from the menu would set the user up for a no-op.
+      for (const o of (j.orchestrators || [])) {
+        if (o.enabled === false) continue;
+        const tok = "@" + o.id;
+        items.push({
+          kind:        "orchestrator",
+          slug:        o.id,
+          name:        o.label || o.id,
+          description: o.tagline || "",
+          invocation:  tok,
+          insertText:  tok + " ",
+        });
+      }
+    }
+  } catch { /* leave whatever loaded */ }
+  try {
+    if (libRes && libRes.ok) {
+      const j = await libRes.json();
+      // Design library is grouped {shells, styles, aesthetics, recipes, …}
+      // — flatten with a per-group prefix so the kind chip can show the
+      // category and `/shell`, `/aesthetic` filter narrowing works.
+      for (const g of (j.groups || [])) {
+        for (const it of (g.items || [])) {
+          const tok = "#" + it.slug;
+          items.push({
+            kind:        "library",
+            slug:        it.slug,
+            name:        it.title || it.slug,
+            description: it.summary || g.label || "",
+            invocation:  tok,
+            insertText:  (it.path || ("design-library/" + it.file)) + " — ",
+            libraryGroup: g.key,
+          });
+        }
+      }
+    }
+  } catch { /* leave whatever loaded */ }
   __slashSkillCache = items;
   return items;
 }
@@ -9314,7 +9375,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const q = slashQuery.trim().toLowerCase();
     if (!q) return slashSkills.slice(0, 12);
     return slashSkills.filter(s => {
-      const hay = (s.slug + " " + (s.name || "") + " " + (s.description || "")).toLowerCase();
+      const hay = (s.kind + " " + (s.libraryGroup || "") + " " + s.slug + " " + (s.name || "") + " " + (s.description || "")).toLowerCase();
       return hay.includes(q);
     }).slice(0, 12);
   })();
@@ -9343,9 +9404,11 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
 
   const insertSlashSkill = (sk) => {
     if (!sk) return;
-    // Replace the entire `/query` prefix with `<invocation> ` — the trailing
-    // space gives the user a cursor position to type their args from.
-    const next = sk.invocation + " ";
+    // Replace the entire `/query` prefix with the item's insertText (skills:
+    // `/foo `; orchestrators: `@id `; library: `design-library/<file> — `).
+    // The trailing space / dash gives the user a cursor position to type
+    // their args from. Falls back to `invocation + " "` for legacy items.
+    const next = sk.insertText || (sk.invocation + " ");
     setText(next);
     setSlashOpen(false);
     // Refocus the textarea so the user can keep typing.
@@ -9516,32 +9579,39 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           }}
         />
         ${slashOpen && filteredSlashSkills.length > 0 && html`
-          <div className="chat-slash-menu" role="listbox" aria-label="Skills">
+          <div className="chat-slash-menu" role="listbox" aria-label="Skills, orchestrators, and design library">
             <div className="chat-slash-head">
-              <span className="chat-slash-head-title">Skills</span>
+              <span className="chat-slash-head-title">Skills · orchestrators · design library</span>
               <span className="chat-slash-head-meta">${filteredSlashSkills.length} of ${slashSkills.length} — ↑↓ navigate, ↵ insert, Esc close</span>
             </div>
-            ${filteredSlashSkills.map((sk, i) => html`
-              <button
-                key=${sk.invocation + ":" + sk.slug + ":" + (sk.plugin || "")}
-                type="button"
-                className=${"chat-slash-item" + (i === slashIndex ? " is-active" : "")}
-                role="option"
-                aria-selected=${i === slashIndex ? "true" : "false"}
-                onMouseEnter=${() => setSlashIndex(i)}
-                onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
-              >
-                <code className="chat-slash-item-cmd">${sk.invocation}</code>
-                <span className="chat-slash-item-name">${sk.name}</span>
-                <span className=${"chat-slash-item-kind chat-slash-item-kind-" + sk.kind}>${sk.kind === "media" ? "media" : "custom"}</span>
-                ${sk.description && html`<span className="chat-slash-item-desc">${sk.description}</span>`}
-              </button>
-            `)}
+            ${filteredSlashSkills.map((sk, i) => {
+              const kindLabel = sk.kind === "media"        ? "media"
+                              : sk.kind === "cc"           ? "skill"
+                              : sk.kind === "orchestrator" ? "orchestrator"
+                              : sk.kind === "library"      ? (sk.libraryGroup || "library")
+                              : sk.kind;
+              return html`
+                <button
+                  key=${sk.kind + ":" + sk.invocation + ":" + sk.slug + ":" + (sk.plugin || "")}
+                  type="button"
+                  className=${"chat-slash-item" + (i === slashIndex ? " is-active" : "")}
+                  role="option"
+                  aria-selected=${i === slashIndex ? "true" : "false"}
+                  onMouseEnter=${() => setSlashIndex(i)}
+                  onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
+                >
+                  <code className="chat-slash-item-cmd">${sk.invocation}</code>
+                  <span className="chat-slash-item-name">${sk.name}</span>
+                  <span className=${"chat-slash-item-kind chat-slash-item-kind-" + sk.kind}>${kindLabel}</span>
+                  ${sk.description && html`<span className="chat-slash-item-desc">${sk.description}</span>`}
+                </button>
+              `;
+            })}
           </div>
         `}
         ${slashOpen && filteredSlashSkills.length === 0 && slashSkills.length > 0 && html`
           <div className="chat-slash-menu chat-slash-menu-empty">
-            <div className="chat-slash-empty">No skill matches “${slashQuery}”. Esc to dismiss.</div>
+            <div className="chat-slash-empty">No skill, orchestrator, or library entry matches “${slashQuery}”. Esc to dismiss.</div>
           </div>
         `}
       </div>
