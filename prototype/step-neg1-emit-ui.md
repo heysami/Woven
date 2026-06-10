@@ -53,9 +53,12 @@ I want to lock direction before drawing — taste decisions belong to you, not m
     <palette>#bg,#surface,#fg,#muted,#border,#accent</palette>
     <display font="<Google-Fonts family name, e.g. Inter>"><real candidate display headline from brief — NOT "Lorem"></display>
     <body font="<Google-Fonts family name>"><real candidate body sentence from brief — 1–2 sentences></body>
-    <image axis="shell"     src=".prototype-options/<TURN_SLUG>/option-1-shell.png"     alt="Shell · <shell-X>"/>
+    <!-- aesthetic + style + shell ALWAYS emit, in this order. When the option's aesthetic is "(none)",
+         the aesthetic IMAGE still emits using the representative-fallback rule above; only the
+         committed <axes> text says "(none)". -->
+    <image axis="aesthetic" src=".prototype-options/<TURN_SLUG>/option-1-aesthetic.png" alt="Aesthetic · <aesthetic-Z or representative-fallback>"/>
     <image axis="style"     src=".prototype-options/<TURN_SLUG>/option-1-style.png"     alt="Style · <style-Y>"/>
-    <image axis="aesthetic" src=".prototype-options/<TURN_SLUG>/option-1-aesthetic.png" alt="Aesthetic · <aesthetic-Z>"/>
+    <image axis="shell"     src=".prototype-options/<TURN_SLUG>/option-1-shell.png"     alt="Shell · <shell-X>"/>
     <!-- emit photo / illust ONLY when the decisionTree hits AND the orchestrator gate is open (step-neg1-register.md) -->
     <image axis="photo"     src=".prototype-options/<TURN_SLUG>/option-1-photo.png"     alt="Photo · <photo-styleId>"/>
     <image axis="illust"    src=".prototype-options/<TURN_SLUG>/option-1-illust.png"    alt="Illust · <illust-styleId>"/>
@@ -64,21 +67,25 @@ I want to lock direction before drawing — taste decisions belong to you, not m
 
   <opt value="2">
     <label><human label></label>
-    <axes>Shell: <…> · Style: <…> · Aesthetic: <…></axes>
+    <axes>Shell: <…> · Style: <…> · Aesthetic: (none)</axes>
     <vibe><one word></vibe>
     <why>Trade-off vs Option 1: <what you gain, what you lose></why>
     <palette>#…,#…,#…,#…,#…,#…</palette>
     <display font="<family>"><display sample></display>
     <body font="<family>"><body sample></body>
-    <image axis="shell"     src=".prototype-options/<TURN_SLUG>/option-2-shell.png"     alt="Shell · <shell-X>"/>
+    <!-- Aesthetic image STILL emits even when the committed aesthetic is "(none)" — uses the
+         style→representative-aesthetic fallback (e.g. restrained-hairline → anti-design,
+         dense-mono-dark → cassette-futurism). The image is illustrative; the build will honour
+         the committed (none). -->
+    <image axis="aesthetic" src=".prototype-options/<TURN_SLUG>/option-2-aesthetic.png" alt="Aesthetic · <representative-fallback-id>"/>
     <image axis="style"     src=".prototype-options/<TURN_SLUG>/option-2-style.png"     alt="Style · <style-Y>"/>
-    <!-- omit the aesthetic <image> when this option's aesthetic is "(none)" -->
+    <image axis="shell"     src=".prototype-options/<TURN_SLUG>/option-2-shell.png"     alt="Shell · <shell-X>"/>
     <!-- omit photo / illust <image> tags when the decisionTree returns no hit, the orchestrator gate is closed, or the source PNG hasn't been added to the library yet — the text register strip from step-neg1-register.md still carries that info -->
-    <badge>auto-preview · no LLM · 2 axes recoloured from design-library/</badge>
+    <badge>auto-preview · no LLM · 3 axes recoloured from design-library/</badge>
   </opt>
 
   <opt value="3">
-    [same shape — third distinct direction; emit one <image axis="..."> per committed + registered axis (2-5 images)]
+    [same shape — third distinct direction; emit aesthetic + style + shell always (3 images) + photo / illust when their gates open (4-5 images)]
   </opt>
 
 </direction-options>
@@ -113,8 +120,8 @@ Per-`<opt>` child tags (all optional, but `<label>` is effectively required beca
 - `<palette>#hex,#hex,#hex,#hex,#hex,#hex</palette>` — exactly 6 hex tokens, comma-separated. Order: `bg,surface,fg,muted,border,accent`. The LAST chip is rendered as the accent (highlighted ring).
 - `<display font="<Google-Fonts family>">text</display>` — display sample. The chat lazy-loads the family via Google Fonts CSS link and renders the text in that family with a tasteful display weight (700–800) and tight tracking. Use a REAL candidate headline from the brief, not "Aa Bb" placeholder.
 - `<body font="<Google-Fonts family>">text</body>` — body sample. Same shape as `<display>` but rendered at body size with normal weight. Use a REAL candidate body sentence from the brief.
-- `<image axis="shell|style|aesthetic|photo|illust" src="..." alt="..."/>` — per-axis recoloured library preview. **Emit one `<image>` tag per committed + registered axis** (2 to 5 per option; aesthetic image omitted when "(none)"; photo / illust image emitted only when the corresponding decisionTree hits AND the orchestrator gate is open AND the source PNG exists). The chat renders them as a horizontal strip with the axis name as caption under each thumbnail; the strip wraps to a second row when there are more than 3 cells. The `axis="..."` attribute is REQUIRED — it drives the caption and the layout order (shell · style · aesthetic · photo · illust, left to right, top to bottom). The chat resolves `src` via `apiUrl()`, so project context is preserved automatically. Click-to-zoom wired by default.
-- `<badge>...</badge>` — short footer line, typically `auto-preview · no LLM · N axes recoloured from design-library/` where N is the actual count of `<image>` tags this option emits (2-5). The chat prepends an `◉` glyph in the accent colour.
+- `<image axis="aesthetic|style|shell|photo|illust" src="..." alt="..."/>` — per-axis recoloured library preview. **Emit one `<image>` tag per always-emit + registered axis** (3 to 5 per option: aesthetic + style + shell always; photo / illust only when the corresponding decisionTree hits AND the orchestrator gate is open AND the source PNG exists). The chat renders them as a horizontal strip with the axis name as caption under each thumbnail; the strip wraps to a second row when there are more than 3 cells. The `axis="..."` attribute is REQUIRED — it drives the caption and the layout order (**aesthetic · style · shell · photo · illust**, left to right, top to bottom — aesthetic and style first because they're the visually decisive pair). The chat resolves `src` via `apiUrl()`, so project context is preserved automatically. Click-to-zoom wired by default.
+- `<badge>...</badge>` — short footer line, typically `auto-preview · no LLM · N axes recoloured from design-library/` where N is the actual count of `<image>` tags this option emits (3-5). The chat prepends an `◉` glyph in the accent colour.
 
 What the agent does NOT need to emit:
 
@@ -157,23 +164,48 @@ Each `<opt>` emits a `<badge>` child whose text the chat prepends with a `◉` g
 - **Type sample** — the candidate strings come from the brief; the chat's `ensureGoogleFontFamily` lazy-loads the family via a `<link>` and renders in the real face.
 - **Library preview images** — `scripts/prototype-recolor.py` is pure OKLab/RBF math, no model. A deterministic colour swap of baked references (one per axis), NOT a fresh generation.
 
-Recommended badge text per option: `auto-preview · no LLM · N axes recoloured from design-library/` where N is the actual `<image>` tag count for that option (2-5: always shell + style; +1 each for aesthetic / photo / illust when those axes emit). Under 80 chars. The `◉` glyph is added automatically; do NOT include it yourself.
+Recommended badge text per option: `auto-preview · no LLM · N axes recoloured from design-library/` where N is the actual `<image>` tag count for that option (3-5: always aesthetic + style + shell; +1 each for photo / illust when those gates open). Under 80 chars. The `◉` glyph is added automatically; do NOT include it yourself.
 
 ## Which library images to preview per option — ONE image PER COMMITTED + REGISTERED AXIS
 
-**The rule: emit one `<image axis="...">` per committed or registered axis on each option. Never a single recipe summary image.**
+**The rule: emit one `<image axis="...">` per committed or registered axis on each option. Aesthetic and style are the visually decisive pair — they ALWAYS emit. Shell is the layout chassis (less informative at the vibe-pick stage) — it emits AFTER aesthetic + style. Never a single recipe summary image.**
 
-The user is comparing three directions across multiple axes (shell, style, aesthetic, and — when the option's picks resolve to raster registers — photography and illustration). One merged "most-decisive" thumbnail hides what each axis contributes — the user can't tell whether they're picking that *shell*, that *style*, that *aesthetic*, that *photography register*, that *illustration register*, or some inseparable combination. Showing each axis as its own thumbnail makes the contribution legible and makes "option 1 but with option 3's aesthetic" or "option 2 but with option 1's photo register" a sayable thing.
+The user is comparing three directions across multiple axes (aesthetic, style, shell, and — when the option's picks resolve to raster registers — photography and illustration). One merged "most-decisive" thumbnail hides what each axis contributes — the user can't tell whether they're picking that *aesthetic*, that *style*, that *shell*, that *photography register*, that *illustration register*, or some inseparable combination. Showing each axis as its own thumbnail makes the contribution legible and makes "option 1 but with option 3's aesthetic" or "option 2 but with option 1's photo register" a sayable thing.
 
-**The five axes, in left-to-right strip order:**
+**The five axes, in left-to-right strip order (most-decisive first):**
 
 | Axis | When to emit | Source PNG path |
 |---|---|---|
-| `shell` | ALWAYS | `design-library/shell-<id>-ui.png` |
+| `aesthetic` | ALWAYS. When the option's *committed* aesthetic is `(none)`, the agent still picks a **representative** aesthetic for the visual — closest-shipped fit for the option's style (see "(none)" fallback rules below). The committed `<axes>` text on the option still reads `Aesthetic: (none)`; the image is illustrative only. | `design-library/aesthetic-<id>-ui.png` |
 | `style` | ALWAYS | `design-library/style-<id>-ui.png` |
-| `aesthetic` | When the option's aesthetic is NOT `(none)` | `design-library/aesthetic-<id>-ui.png` |
+| `shell` | ALWAYS | `design-library/shell-<id>-ui.png` |
 | `photo` | When the option's picks resolve to a photography decisionTree hit AND the photography orchestrator is on AND `imageGen` is wired (see step-neg1-register.md gates) | `design-library/photo-<styleId>-ui.png` |
 | `illust` | When the option's picks resolve to an illustration decisionTree hit AND the illustration orchestrator is on AND `imageGen` is wired (see step-neg1-register.md gates) | `design-library/illust-<styleId>-ui.png` |
+
+### Aesthetic `(none)` fallback — which representative aesthetic to use
+
+Many adult-pro directions (Linear, Bloomberg, Read.cv, Aesop) intentionally have no aesthetic — that's how the committed direction reads in the `<axes>` text. But the per-option thumbnail strip still ships an `<image axis="aesthetic">`, because aesthetic + style together is what the user reads to grasp the vibe — dropping the aesthetic cell when "(none)" is committed leaves a hole that makes the option harder to compare against options that DO have an aesthetic.
+
+Pick the representative aesthetic from this style → aesthetic-id table (extend as needed; when the style isn't listed, pick the closest sibling):
+
+| Committed style | Representative aesthetic (when option's aesthetic is `(none)`) |
+|---|---|
+| `restrained-hairline` | `aesthetic-anti-design` (Dieter Rams orthodoxy — "(none)" closest to zero-ornament adult-pro) |
+| `oversized-neo-grotesque` | `aesthetic-swiss-modernist` (Müller-Brockmann / Vignelli — the canonical typographic register) |
+| `cream-humanist` | `aesthetic-maximalism` (Gentlewoman-considered, when warmth wants a cultural anchor) |
+| `serif-warm-paper-editorial` | `aesthetic-maximalism` |
+| `dense-mono-dark` | `aesthetic-cassette-futurism` (CRT-phosphor adjacency — closest cultural sibling) |
+| `agate-numeric-broadsheet` | `aesthetic-swiss-modernist` |
+| `bold-display-marketing` | `aesthetic-bauhaus` (primary-color editorial confidence) |
+| `flat-design` | `aesthetic-de-stijl-neoplasticism` (primary-color flat geometric — closest movement) |
+| `material-elevation-m1m2` / `material-dynamic-m3` | `aesthetic-bauhaus` (when no era is named) |
+| `sf-pro-system-ios` | `aesthetic-frutiger-aero` (consumer-warm system surface) |
+| `aurorism-mesh-gradient` | `aesthetic-frutiger-aero` |
+| `glassmorphism` / `liquid-glass` | `aesthetic-frutiger-aero` |
+| `terminal-mono` | `aesthetic-cassette-futurism` |
+| `brutalist-raw-web` | `aesthetic-web-brutalism-original` |
+
+The representative pick is illustrative, NOT committal — when the user picks the option, the agent reads the committed `<axes>` text ("Aesthetic: (none)") and does NOT pull the representative aesthetic into the build. The recoloured representative image only helps the user feel the vibe.
 
 **Result:** each option emits **2 to 5 `<image>` tags** depending on its picks and the orchestrator gates. The chat renders them as one horizontal strip with the axis name as caption under each thumbnail; the strip wraps to a second row when there are more than 3 cells.
 
@@ -198,21 +230,24 @@ TURN_SLUG="$(date +%s)-$(openssl rand -hex 2)"     # e.g. 1781067126-a3f9
 mkdir -p ".prototype-options/${TURN_SLUG}"
 ```
 
-Then run the recolor **once per axis × per option** into the slugged subdirectory. Build a per-option axis list — always `shell` + `style`; plus `aesthetic` when not `(none)`; plus `photo` / `illust` when the corresponding decisionTree returns a hit AND the orchestrator gate from step-neg1-register.md is open. The same option palette goes to every axis call — the user is comparing axes of ONE direction, so they must share tokens:
+Then run the recolor **once per axis × per option** into the slugged subdirectory. Build a per-option axis list in display order — aesthetic + style + shell always; plus photo / illust when the corresponding decisionTree returns a hit AND the orchestrator gate from step-neg1-register.md is open. The same option palette goes to every axis call — the user is comparing axes of ONE direction, so they must share tokens:
 
 ```bash
 # Run for option N. Repeat for each option 1..3.
-# AXES list is built per-option:
-#   - always include "shell" and "style"
-#   - include "aesthetic" if option's aesthetic != "(none)"
-#   - include "photo"  if photography decisionTree hits for this option AND photo gate is open
-#   - include "illust" if illustration decisionTree hits for this option AND illust gate is open
+# AXES list is built per-option in display order:
+#   - aesthetic: ALWAYS. If option's aesthetic == "(none)", use the representative
+#                aesthetic from the style→aesthetic-id fallback table above
+#                (e.g. restrained-hairline → anti-design).
+#   - style:    ALWAYS.
+#   - shell:    ALWAYS.
+#   - photo:    if photography decisionTree hits for this option AND photo gate is open.
+#   - illust:   if illustration decisionTree hits for this option AND illust gate is open.
 # IDS holds the per-axis library styleId for this option, e.g.
-#   shell=editorial-broken-grid style=oversized-neo-grotesque aesthetic=swiss-modernist
-#   photo=helmut-newton-flash   illust=blush-cool-kids
+#   aesthetic=anti-design  style=restrained-hairline  shell=two-column-app
+#   photo=aesop-apothecary illust=blush-cool-kids
 
 for AXIS in $AXES; do
-  STYLE_ID="${IDS[$AXIS]}"                 # e.g. helmut-newton-flash for AXIS=photo
+  STYLE_ID="${IDS[$AXIS]}"                 # e.g. anti-design when AXIS=aesthetic + (none) fallback fired
   SRC="design-library/${AXIS}-${STYLE_ID}-ui.png"
   if [ ! -f "$SRC" ]; then continue; fi    # skip axis if PNG hasn't been added to the library yet
   python scripts/prototype-recolor.py \
@@ -222,22 +257,22 @@ for AXIS in $AXES; do
 done
 ```
 
-Per option this produces 2-5 output PNGs:
+Per option this produces 3-5 output PNGs:
 
 ```
-.prototype-options/<TURN_SLUG>/option-1-shell.png
-.prototype-options/<TURN_SLUG>/option-1-style.png
-.prototype-options/<TURN_SLUG>/option-1-aesthetic.png    (omitted if option's aesthetic is "(none)")
+.prototype-options/<TURN_SLUG>/option-1-aesthetic.png    (ALWAYS — representative fallback used when option's aesthetic is "(none)")
+.prototype-options/<TURN_SLUG>/option-1-style.png        (ALWAYS)
+.prototype-options/<TURN_SLUG>/option-1-shell.png        (ALWAYS)
 .prototype-options/<TURN_SLUG>/option-1-photo.png        (omitted if no photo decisionTree hit or gate closed or PNG missing)
 .prototype-options/<TURN_SLUG>/option-1-illust.png       (omitted if no illust decisionTree hit or gate closed or PNG missing)
 ```
 
-And reference each slugged path in its own `<image axis="...">` tag inside the `<opt>`:
+And reference each slugged path in its own `<image axis="...">` tag inside the `<opt>`, **in display order — aesthetic + style + shell + photo + illust**:
 
 ```
-<image axis="shell"     src=".prototype-options/<TURN_SLUG>/option-1-shell.png"     alt="Shell · <shell-id>"/>
+<image axis="aesthetic" src=".prototype-options/<TURN_SLUG>/option-1-aesthetic.png" alt="Aesthetic · <aesthetic-id-or-fallback>"/>
 <image axis="style"     src=".prototype-options/<TURN_SLUG>/option-1-style.png"     alt="Style · <style-id>"/>
-<image axis="aesthetic" src=".prototype-options/<TURN_SLUG>/option-1-aesthetic.png" alt="Aesthetic · <aesthetic-id>"/>
+<image axis="shell"     src=".prototype-options/<TURN_SLUG>/option-1-shell.png"     alt="Shell · <shell-id>"/>
 <image axis="photo"     src=".prototype-options/<TURN_SLUG>/option-1-photo.png"     alt="Photo · <photo-styleId>"/>
 <image axis="illust"    src=".prototype-options/<TURN_SLUG>/option-1-illust.png"    alt="Illust · <illust-styleId>"/>
 ```

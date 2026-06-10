@@ -11700,13 +11700,17 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                 // per axis (shell · style · aesthetic). Order is forced even
                 // when the agent emits them out of order. Legacy single-image
                 // emissions fall through to the back-compat path below.
-                // Strip render order: shell · style · aesthetic · photo · illust.
-                // Photo / illust thumbnails appear only when the option's picks
-                // resolve to a photography / illustration decisionTree hit AND
+                // Strip render order: aesthetic · style · shell · photo · illust.
+                // Aesthetic + style are the visually decisive pair and lead the
+                // strip; shell follows; photo / illust trail (and appear only
+                // when the option's picks resolve to a decisionTree hit AND
                 // the corresponding orchestrator gate is open AND the library
-                // PNG exists (see prototype/step-neg1-register.md).
-                const AXIS_ORDER = ["shell", "style", "aesthetic", "photo", "illust"];
-                const AXIS_LABEL = { shell: "Shell", style: "Style", aesthetic: "Aesthetic", photo: "Photo", illust: "Illust" };
+                // PNG exists — see prototype/step-neg1-register.md). When the
+                // option's committed aesthetic is "(none)", the aesthetic
+                // thumbnail still emits using a representative-fallback id
+                // (see prototype/step-neg1-emit-ui.md).
+                const AXIS_ORDER = ["aesthetic", "style", "shell", "photo", "illust"];
+                const AXIS_LABEL = { aesthetic: "Aesthetic", style: "Style", shell: "Shell", photo: "Photo", illust: "Illust" };
                 const imgs = Array.isArray(opt.images) ? opt.images.filter(im => im && im.src) : [];
                 const haveAxes = imgs.some(im => im.axis);
                 if (imgs.length > 1 && haveAxes) {
