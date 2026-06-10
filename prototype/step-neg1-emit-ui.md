@@ -76,7 +76,7 @@ I want to lock direction before drawing — taste decisions belong to you, not m
 </direction-options>
 
 [INCLUDE ONLY IF imageGen = wired:]
-**Want real samples before you commit?** Type `1 + draft` (or `2 + draft` / `3 + draft`) into chat instead of clicking the card, and I'll spend one extra turn generating 2–3 actual mockup frames using the wired image-gen model, then re-show the option with the real samples. The direction still isn't locked until you confirm after seeing the drafts.
+**Want a real preview image first?** Type `1 + draft` (or `2 + draft` / `3 + draft`) into chat instead of clicking the card, and I'll spend one extra turn generating a single preview PNG with the wired image-gen model (no HTML, no source files — just the image), then re-show the option with the real preview replacing the recoloured one. The direction still isn't locked until you confirm after seeing the preview.
 
 [INCLUDE ALWAYS as a final line:]
 Don't see what you want? Type your own direction in chat — e.g. *"option 1 but in warm cream, no accent"* or *"give me a dark-mode dense dashboard instead"*.
