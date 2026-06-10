@@ -6,9 +6,21 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-persona-5-heist-pop, style-pixel-bitmap, recipe-y2k-memphis-loud]
 notForUseWhen: restrained-editorial, cottagecore, B2B-clean, premium-luxury-restraint
-images:
-  - src: illust-spiderverse-comic-halftone.png
-    reason: Illustration style sample.
+# NEEDS REGENERATION (2026-06-11). Prior illust-spiderverse-comic-halftone.png
+# was pulled — it showed a figure jumping with a box near buildings but
+# lacked the DEFINING SIGNATURE of this aesthetic: Ben-Day dots, line
+# hatching, halftone screens applied via custom crosshatch shaders, comic-
+# book printing artifacts (color misregistration, paper-grain noise, ink-
+# bleed). Without those shaders baked into the render, the result reads as
+# a generic stylized illustration, not as Spider-Verse comic-halftone.
+#
+# When regenerating: the prompt MUST anchor on Ben-Day dot pattern,
+# halftone screen overlays, hatched shading, slight CMYK misregistration on
+# character silhouettes (the multi-colour ink-edge offset), and paper-grain
+# noise. The character can be anything — Spider-Man-adjacent or original —
+# but the print-shader treatment over CG is the whole point. See §Visual
+# signatures below for the full checklist.
+images: []
 ---
 
 # Spider-Verse comic-halftone (Sony Imageworks)

@@ -6,9 +6,20 @@ subCategory: ink-line-brush
 role: subject
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-y2k-futurism, recipe-ai-foundry-dark, style-brutalist-raw, aesthetic-cassette-futurism]
 notForUseWhen: cottagecore, restrained editorial, warm-lifestyle, B2B-clean
-images:
-  - src: illust-blush-transhumans.png
-    reason: Illustration style sample.
+# NEEDS REGENERATION (2026-06-11). Prior illust-blush-transhumans.png was
+# pulled — it showed three glossy painterly 3D characters with pink/purple
+# gradient background. That is EXACTLY the "glossy 3D plastic sticker"
+# misread the Correction note below explicitly flags. The actual aesthetic
+# is INKY, HAND-BRUSHED, MONOCHROME-FIRST.
+#
+# When regenerating: the prompt MUST anchor on bold black brush strokes
+# drawn quickly and imperfectly, stark black-and-white base (NOT 3D render,
+# NOT smooth gradients, NOT glossy plastic), optional flat color overlays
+# layered on top of the B&W (the Blush coloring system), cyborg / transhuman
+# subject matter (visors, antennae, robotic arms), isolated on transparent
+# or flat background. Avoid: glossy 3D, painterly gradients, smooth
+# rendering, Pixar-adjacent character design. See §Visual signatures below.
+images: []
 ---
 
 # Transhumans (Pablo Stanley — punk-zine cyborg ink)
