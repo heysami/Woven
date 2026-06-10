@@ -6971,6 +6971,7 @@ function composeModeAwarePrompt(mode, userText) {
       "[Context: you're chatting from WORKFLOW MODE of the prototype editor.]",
       "The user is looking at the workflow node canvas — a ComfyUI-style graph that connects prompt → skill → asset nodes to generate ideas and visual content. Bias your responses toward: node graph operations (add / remove / wire nodes), prompt engineering for visual generation, evaluating + remixing asset outputs, dispatching skills (generate-image, svg-gen, shader, threejs, rembg, etc.).",
       "Editor data (frames, IA, user flow, entities) is secondary context — only touch editor/data.js or source/ files if the user explicitly asks.",
+      "**If the user asks to generate / build / create / make / scaffold / start / spin up / mock up / draw / design / rebuild / extend / update a website / app / dashboard / landing / portfolio / mobile prototype / multi-page UI / DS gallery / editorial spread / any source/* artefact, you MUST invoke the `/prototype` skill via the Skill tool BEFORE any write to `source/<branch>/` and BEFORE deciding a genre / style / aesthetic / palette / typography. Do NOT commit a 'genre' or pick a recipe inline from the skill description or from training-data design vocabulary — the discipline (Step -1 stop-and-ask, three-options pick UI with palette + type + recoloured preview, photo / illust register strips, image-gen availability gating) lives inside the skill body and is loaded only when you invoke the skill.**",
       "",
       text,
     ].join("\n");
@@ -6980,6 +6981,7 @@ function composeModeAwarePrompt(mode, userText) {
       "[Context: you're chatting from EDITOR MODE of the prototype editor.]",
       "The user is looking at the multi-view design tool (Canvas / Prototype / User flow / IA / Design system / Entities / State machine / Timeline / Grid). Bias your responses toward: prototype source code (source/), the project data file (editor/data.js — frames, lanes, arrows, entities, primitives), the design-system trio (design-systems/<id>/), and Workflow 1/2 operations.",
       "Workflow node-graph operations (workflow/workflow.json, asset generation) are secondary context — only touch them if the user explicitly asks.",
+      "**If the user asks to generate / build / create / make / scaffold / start / spin up / mock up / draw / design / rebuild / extend / update a website / app / dashboard / landing / portfolio / mobile prototype / multi-page UI / DS gallery / editorial spread / any source/* artefact, you MUST invoke the `/prototype` skill via the Skill tool BEFORE any write to `source/<branch>/` and BEFORE deciding a genre / style / aesthetic / palette / typography. Do NOT commit a 'genre' or pick a recipe inline from the skill description or from training-data design vocabulary — the discipline (Step -1 stop-and-ask, three-options pick UI with palette + type + recoloured preview, photo / illust register strips, image-gen availability gating) lives inside the skill body and is loaded only when you invoke the skill.**",
       "",
       text,
     ].join("\n");
