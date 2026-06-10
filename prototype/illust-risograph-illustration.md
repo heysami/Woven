@@ -42,13 +42,9 @@ notForUseWhen: enterprise polish, photoreal
 ## Example prompt template
 
 > Risograph 2-color illustration of [SUBJECT], soy-ink riso palette of
->   fluorescent pink and teal, visible diffusion-dither grain, intentional
->   registration shift creating colored fringes at edges, Risotto Studio
->   aesthetic.
-> whenToUse: Indie editorial, music zines, contemporary art posters.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-readcv, aesthetic-anti-design, style-raster-cutout]
-> notForUseWhen: enterprise polish, photoreal
+> fluorescent pink and teal, visible diffusion-dither grain, intentional
+> registration shift creating colored fringes at edges, Risotto Studio
+> aesthetic.
 
 ## When to use
 

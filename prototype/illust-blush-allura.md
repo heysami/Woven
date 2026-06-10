@@ -40,12 +40,8 @@ everyday-life scenes (office, park, walking).
 ## Example prompt template
 
 > Flat vector everyday-life scene of [SUBJECT], clean rounded vector characters,
->   muted dusty palette of pink sage and cream, simple background with one prop,
->   Vijay Verma Allura aesthetic, friendly creative storytelling.
-> whenToUse: Blog headers, content marketing for lifestyle / wellness SaaS.
-> pairsWith:
->   prototypeStyles: [aesthetic-corporate-memphis, recipe-bento-marketing, recipe-warm-restraint, aesthetic-coastal-grandmother]
-> notForUseWhen: youth-music brands, brutalism
+> muted dusty palette of pink sage and cream, simple background with one prop,
+> Vijay Verma Allura aesthetic, friendly creative storytelling.
 
 ## When to use
 

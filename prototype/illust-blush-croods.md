@@ -39,13 +39,8 @@ vibrant bold-color characters with strong expressive faces.
 ## Example prompt template
 
 > Vibrant flat vector character with expressive face and dynamic action pose,
->   bold saturated palette, fully formed facial features unlike noodle-people,
->   Vijay Verma Croods aesthetic, isolated subject.
-> whenToUse: When corporate-Memphis fatigue hits — needs an expressive face but
->   still vector.
-> pairsWith:
->   prototypeStyles: [aesthetic-maximalism, aesthetic-positivity-kawaii, aesthetic-y2k-memphis-loud]
-> notForUseWhen: restrained AI marketing, brutalism
+> bold saturated palette, fully formed facial features unlike noodle-people,
+> Vijay Verma Croods aesthetic, isolated subject.
 
 ## When to use
 

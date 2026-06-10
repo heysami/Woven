@@ -40,12 +40,8 @@ bold thick painted strokes.
 ## Example prompt template
 
 > Editorial op-ed conceptual illustration of [IDEA] with bold thick painted
->   brush strokes, 1-2 colors plus cream paper, single concept, NYT-opinion-
->   page aesthetic.
-> whenToUse: News op-eds, think-pieces, magazine articles.
-> pairsWith:
->   prototypeStyles: [recipe-newspaper-of-record, recipe-editorial-magazine, style-agate-broadsheet]
-> notForUseWhen: marketing, friendly, decorative
+> brush strokes, 1-2 colors plus cream paper, single concept, NYT-opinion-
+> page aesthetic.
 
 ## When to use
 

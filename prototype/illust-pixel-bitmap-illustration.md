@@ -41,12 +41,8 @@ explicit pixel grid, no anti-aliasing.
 ## Example prompt template
 
 > Pixel bitmap illustration of [SUBJECT] with explicit pixel grid no anti-
->   aliasing, [ERA]-limited palette, dithering for shading, isolated on
->   transparent or solid color background.
-> whenToUse: Gaming brands, retro tech, indie game marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-pixel-nes-mario, aesthetic-pixel-game-boy-mono, aesthetic-pixel-snes-jrpg, aesthetic-pixel-arcade, aesthetic-pixel-modern-cozy, aesthetic-pixel-ps1-tactics-ogre, style-pixel-bitmap]
-> notForUseWhen: cinematic, photoreal, warm-restraint
+> aliasing, [ERA]-limited palette, dithering for shading, isolated on
+> transparent or solid color background.
 
 ## When to use
 

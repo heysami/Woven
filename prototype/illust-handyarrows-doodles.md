@@ -39,11 +39,7 @@ playful hand-drawn elements: stars, hearts, sparkles, dots, swirls.
 ## Example prompt template
 
 > Hand-drawn playful doodle of a sparkle/star/heart with informal marker line
->   2-3px, mono black on white, decoration accent, HandyArrows Doodles style.
-> whenToUse: Sprinkle around headlines, between sections, as bullet substitutes.
-> pairsWith:
->   prototypeStyles: [style-doodle, aesthetic-positivity-kawaii, recipe-readcv, aesthetic-curly-girly]
-> notForUseWhen: minimalist, brutalism
+> 2-3px, mono black on white, decoration accent, HandyArrows Doodles style.
 
 ## When to use
 

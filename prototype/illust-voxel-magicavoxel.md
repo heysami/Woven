@@ -44,12 +44,8 @@ notForUseWhen: editorial, brutalism, warm-restraint
 ## Example prompt template
 
 > Voxel 3D pixel-art diorama of [SUBJECT], cubes assembled into form with
->   per-cube color, soft MagicaVoxel global illumination, isometric composition,
->   limited palette, modern voxel diorama aesthetic.
-> whenToUse: Gaming brands, indie tech, pixel-revival marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-pixel-modern-cozy, aesthetic-pixel-snes-jrpg, aesthetic-pixel-arcade, aesthetic-rgb-gamer]
-> notForUseWhen: editorial, brutalism, warm-restraint
+> per-cube color, soft MagicaVoxel global illumination, isometric composition,
+> limited palette, modern voxel diorama aesthetic.
 
 ## When to use
 

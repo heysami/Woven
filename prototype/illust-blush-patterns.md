@@ -39,12 +39,8 @@ tileable repeating patterns.
 ## Example prompt template
 
 > Tileable repeating pattern of dots squiggles and simple shapes, editorial
->   modern muted palette with one accent color, flat fill no shading, Pablo
->   Stanley Blush Patterns aesthetic.
-> whenToUse: Background bands, section dividers, wallpaper accents.
-> pairsWith:
->   prototypeStyles: [aesthetic-bauhaus, aesthetic-de-stijl, aesthetic-corporate-memphis, recipe-bento-marketing]
-> notForUseWhen: cluttered scenes, photoreal
+> modern muted palette with one accent color, flat fill no shading, Pablo
+> Stanley Blush Patterns aesthetic.
 
 ## When to use
 

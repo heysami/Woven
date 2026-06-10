@@ -42,13 +42,9 @@ delicate thin character lines.
 ## Example prompt template
 
 > Shoujo soft-line anime character [SUBJECT], delicate 1-2px line, large
->   expressive eyes with star glints, pastel pink cream sky palette, screentone
->   sparkle halo around character, Naoshi Komi / Ai Yazawa inspired soft shoujo
->   aesthetic.
-> whenToUse: Youth lifestyle, beauty, friendship apps, romance fiction.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-curly-girly, aesthetic-pc-98]
-> notForUseWhen: B2B, brutalism
+> expressive eyes with star glints, pastel pink cream sky palette, screentone
+> sparkle halo around character, Naoshi Komi / Ai Yazawa inspired soft shoujo
+> aesthetic.
 
 ## When to use
 

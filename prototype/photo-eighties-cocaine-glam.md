@@ -46,10 +46,6 @@ Hard rim light from behind, soft fill from front.
 ## Example prompt template
 
 > Half-body editorial of a woman in a black sequined gown with shoulder pads and a single large gold earring, big teased hair, head tilted with a confident half-smile, eye contact through camera. Hard rim light from behind catching every sequin, large softbox front fill creating shaped catchlights in the eyes, painted gradient blue-to-mauve studio backdrop. Shot on a Mamiya RB67 with a 90mm, Kodak Ektachrome saturated color, slight blue-magenta cast. Confident, brassy, Studio 54 mood. 1980s cocaine-glam editorial.
-> whenToUse: Beauty for older or nostalgia demos, premium spirit and tobacco-adjacent marketing, hospitality nostalgia, retro music marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vector-hands-up]
-> notForUseWhen: Restrained luxury, minimal, anything wellness.
 
 ## When to use
 

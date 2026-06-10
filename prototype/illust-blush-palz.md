@@ -39,12 +39,8 @@ modern characters with fun colors + simple abstract shape accents.
 ## Example prompt template
 
 > Modern flat vector character with rounded chunky body, simple dot eyes,
->   surrounded by floating abstract geometric shape accents, fun mid-saturation
->   palette with one vibrant pop color, Ana Copenicker Palz aesthetic.
-> whenToUse: Consumer apps wanting friendly approachable feel.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis, recipe-bento-marketing]
-> notForUseWhen: editorial, brutalism
+> surrounded by floating abstract geometric shape accents, fun mid-saturation
+> palette with one vibrant pop color, Ana Copenicker Palz aesthetic.
 
 ## When to use
 

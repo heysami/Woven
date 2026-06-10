@@ -44,14 +44,9 @@ matte fingerprinted clay surface with subtle thumbprint dents.
 ## Example prompt template
 
 > Handcrafted polymer clay sculpture of [SUBJECT], matte fingerprinted surface
->   with subtle thumbprint texture, soft rounded forms no sharp edges, muted
->   palette of dusty terracotta butter yellow and sage, isolated on coordinated
->   paper stage, soft top-down studio light, octane render, claymation aesthetic.
-> whenToUse: Style-claymorphism interfaces, warm-restraint marketing, premium
->   children's brands.
-> pairsWith:
->   prototypeStyles: [style-claymorphism, recipe-warm-restraint, aesthetic-cottagecore, aesthetic-positivity-kawaii]
-> notForUseWhen: cyberpunk, brutalism, neon
+> with subtle thumbprint texture, soft rounded forms no sharp edges, muted
+> palette of dusty terracotta butter yellow and sage, isolated on coordinated
+> paper stage, soft top-down studio light, octane render, claymation aesthetic.
 
 ## When to use
 

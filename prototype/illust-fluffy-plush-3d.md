@@ -42,13 +42,9 @@ long fiber fur shader covering the whole form.
 ## Example prompt template
 
 > 3D fluffy plush stuffed-toy character of [SUBJECT], long fiber fur shader
->   covering the whole form, felt fabric inlay for accents, pastel palette of
->   pink ivory and sky blue, soft studio light with slight backlight, mascot
->   pose, octane render, Jellycat-inspired plush aesthetic.
-> whenToUse: Kids brands, comfort apps, plush product marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-curly-girly, style-claymorphism, aesthetic-fairycore]
-> notForUseWhen: B2B, brutalism, dark themes
+> covering the whole form, felt fabric inlay for accents, pastel palette of
+> pink ivory and sky blue, soft studio light with slight backlight, mascot
+> pose, octane render, Jellycat-inspired plush aesthetic.
 
 ## When to use
 

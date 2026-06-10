@@ -45,10 +45,6 @@ Single hard flash on a tall confident female subject, falloff into pure black.
 ## Example prompt template
 
 > A tall woman in a black tailored Yves Saint Laurent tuxedo and stiletto heels, mid-stride across a marble Monte Carlo hotel lobby at noon, half-turned toward the camera with an imperious oblique gaze. Single hard on-camera flash with daylight fill, sharp kicker shadow falling onto a column behind her, background fall-off into deep cyan-black. Shot on a Canon 35mm SLR with a 35mm lens, Kodachrome 64, slight cyan shadows, deep blacks. Imperious, controlled, voyeuristic mood. Helmut Newton 1980s editorial style.
-> whenToUse: Premium fashion editorial, watch and jewelry campaigns, luxury hospitality, anything where the brief calls for power, control, sex, or coolness. The default for restrained-luxury fashion stories.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-warm-restraint, style-oversized-neo-grotesque, aesthetic-swiss-modernist]
-> notForUseWhen: Brief is sincere, sentimental, family-friendly, or wholesome.
 
 ## When to use
 

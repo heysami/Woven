@@ -44,13 +44,9 @@ bulbous 3D letterforms with chrome / liquid metal surface.
 ## Example prompt template
 
 > Y2K chrome 3D typography of the word [WORD], bulbous liquid-metal letterforms
->   with environment-mapped chrome surface reflecting cyan-and-magenta sky,
->   polished mirror finish, drop shadow with pink bleed, lens flare sparkle,
->   early-2000s retro-futurist wordmark, isolated on gradient background.
-> whenToUse: Y2K revival branding, music marketing, beauty drops, Gen-Z fashion.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-futurism, aesthetic-y2k-memphis-loud, aesthetic-vaporwave, aesthetic-frutiger-chromecore]
-> notForUseWhen: editorial restraint, B2B, Bauhaus
+> with environment-mapped chrome surface reflecting cyan-and-magenta sky,
+> polished mirror finish, drop shadow with pink bleed, lens flare sparkle,
+> early-2000s retro-futurist wordmark, isolated on gradient background.
 
 ## When to use
 

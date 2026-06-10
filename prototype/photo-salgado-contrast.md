@@ -46,10 +46,6 @@ High-contrast monochrome, deep black point, retained shadow detail.
 ## Example prompt template
 
 > Black-and-white photograph of gold miners climbing a steep mud-walled pit in Serra Pelada, dozens of figures stacked diagonally, atmospheric dust haze cutting through hard overhead sun, biblical compositional grandeur. Shot on a Pentax 645 medium format with a 75mm lens, high-contrast print, deep black point but retained shadow detail in the figures, fine medium-format grain. Grave, dignified, monumental mood. Sebastião Salgado documentary style.
-> whenToUse: Heritage industry brands, environmental campaign, sustainability marketing, museum content.
-> pairsWith:
->   prototypeStyles: [recipe-newspaper-of-record, style-agate-broadsheet, recipe-editorial-magazine, style-serif-warm-paper]
-> notForUseWhen: Fashion, consumer product, anything cheerful.
 
 ## When to use
 

@@ -35,11 +35,7 @@ waxy texture with visible drag marks.
 ## Example prompt template
 
 > Wax-crayon drawing of [SUBJECT] with visible drag-mark texture, bright
->   primary colors, intentionally childlike quality on textured paper.
-> whenToUse: Kids products, education, playful campaigns.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-wacky-pomo, aesthetic-cluttercore]
-> notForUseWhen: enterprise, brutalism
+> primary colors, intentionally childlike quality on textured paper.
 
 ## When to use
 

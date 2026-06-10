@@ -46,10 +46,6 @@ Stage lighting recreated in studio: hot rim from behind, single colored gel.
 ## Example prompt template
 
 > Half-body editorial of a performer in glitter makeup and an asymmetric sequined jumpsuit, mid-performance pose with one arm raised, head tilted back. Hot rim backlight from upper-right catching the glitter, smoke haze in the air, single blue colored gel ambient from camera-left. Shot on a Hasselblad 500CM with an 80mm, Kodak Ektachrome saturated, slight diffusion, retained sequin detail. Theatrical, defiant, iconic mood. 1970s glam-rock stage editorial in the Mick Rock lineage.
-> whenToUse: Music marketing, concert posters, fashion editorial for music-adjacent brands, retro nostalgia.
-> pairsWith:
->   prototypeStyles: [aesthetic-vector-hands-up, aesthetic-y2k-memphis-loud, aesthetic-rgb-gamer, aesthetic-acid-design]
-> notForUseWhen: Restrained luxury, B2B, wellness.
 
 ## When to use
 

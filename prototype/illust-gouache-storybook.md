@@ -40,12 +40,8 @@ opaque matte gouache layered blocky color.
 ## Example prompt template
 
 > Modern gouache storybook illustration of [SUBJECT], opaque matte gouache
->   layered blocky color, dry-brush highlights, subtle paper grain in midtones,
->   hand-painted edges, muted palette, Carson Ellis aesthetic.
-> whenToUse: Children's books, editorial, indie storytelling.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, recipe-warm-restraint, recipe-editorial-magazine, aesthetic-dark-academia]
-> notForUseWhen: tech, brutalism
+> layered blocky color, dry-brush highlights, subtle paper grain in midtones,
+> hand-painted edges, muted palette, Carson Ellis aesthetic.
 
 ## When to use
 

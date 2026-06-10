@@ -46,10 +46,6 @@ Warm muted palette, beige, cream, soft brown.
 ## Example prompt template
 
 > A woman folding cream linen at a soft-cream kitchen counter, wearing a wheat-colored knit sweater, a small ceramic mug of tea steaming beside her, dried lavender in a stoneware vase upper-right. Soft window light from camera-left with slightly blown highlights on the linen, no hard shadow. Shot on a Canon 5D with a 50mm at f/2.8, warm beige palette, slightly faded soft contrast. Slow, warm, considered mood. Kinfolk warm-minimal editorial.
-> whenToUse: Wellness, slow lifestyle, hospitality, home goods, tea and coffee brands, parenting for older demos.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, style-cream-humanist, aesthetic-cottagecore, aesthetic-coastal-grandmother]
-> notForUseWhen: Tech, fast e-comm, B2B, edgy fashion.
 
 ## When to use
 

@@ -42,12 +42,8 @@ subjects assembled from torn painted tissue paper.
 ## Example prompt template
 
 > Eric Carle tissue-paper collage of [SUBJECT], assembled from torn painted
->   tissue paper with visible acrylic brush texture, bright bold layered color
->   with semi-transparent overlap, rough torn edges, children's book aesthetic.
-> whenToUse: Kids brands, education products, picture-book aesthetic.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-cottagecore, style-raster-cutout]
-> notForUseWhen: B2B, brutalism, polished tech
+> tissue paper with visible acrylic brush texture, bright bold layered color
+> with semi-transparent overlap, rough torn edges, children's book aesthetic.
 
 ## When to use
 

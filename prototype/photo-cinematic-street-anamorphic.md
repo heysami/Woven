@@ -46,10 +46,6 @@ Anamorphic 2.39:1 wide aspect, oval bokeh, blue horizontal lens flares.
 ## Example prompt template
 
 > A lone figure in a long overcoat walking away from camera down a wet, fog-filled alleyway at night, silhouetted against a distant pink neon sign. Single practical light source, volumetric beams cutting through the mist, deep ambient fall-off in the foreground. Shot on an Arri Alexa with a 50mm anamorphic lens, 2.39:1 aspect ratio, oval bokeh on the distant sign, horizontal blue flare across the frame, teal shadows and warm orange highlight grade, gentle filmic grain. Contemplative, melancholy, observed mood.
-> whenToUse: Hero video stills, premium tech ads, fragrance, automotive, anything that needs to read as "film" not "photo."
-> pairsWith:
->   prototypeStyles: [aesthetic-cyberpunk, aesthetic-cassette-futurism, recipe-ai-foundry-dark, style-dense-mono-dark]
-> notForUseWhen: Anything bright, daylight-driven, product e-comm.
 
 ## When to use
 

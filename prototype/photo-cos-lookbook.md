@@ -46,10 +46,6 @@ Plaster wall or seamless paper backdrop, neutral palette.
 ## Example prompt template
 
 > Full-body lookbook photograph of a person in an oversized wool coat over a knit polo and wide-leg trousers, standing against a plaster wall backdrop, neutral pose with a slight forward step, looking just past camera-right with no smile. Single large softbox from camera-left, soft even gentle shadow on the wall. Shot on a Sony A7R with an 85mm at f/4, faithful slightly-cool color, retained wool texture and trouser drape. Composed, modern, restrained mood. COS lookbook editorial.
-> whenToUse: Apparel e-comm, contemporary fashion lookbook, modern minimal hospitality, premium home goods, premium tech apparel.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-restrained-ai-marketing, style-restrained-hairline, style-oversized-neo-grotesque]
-> notForUseWhen: Loud or kinetic brand, fast e-comm with high SKU count.
 
 ## When to use
 

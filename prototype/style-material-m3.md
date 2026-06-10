@@ -3,9 +3,9 @@
 # next to this file in prototype/ and were generated via image_gen.
 images:
   - src: style-material-m3-ui.png
-    reason: Generated UI mockup showing this style's surface treatment — type, color, shadow, corner, and component register together.
+    reason: Style surface UI mockup.
   - src: style-material-m3-isolated.png
-    reason: Isolated subject sample — the style's signature surface (component, card, or hero element) on a neutral background.
+    reason: Signature surface, isolated.
 ---
 # Material Design (M3, dynamic-color) (style)
 

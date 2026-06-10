@@ -42,14 +42,9 @@ intentionally misshapen, irregular hand-lettered glyphs.
 ## Example prompt template
 
 > Hand-lettered wordmark of [WORD] in Ed Fella style — each letter individually
->   drawn with irregular shape, no consistent baseline, sharpie-on-paper texture,
->   collaged with hand-drawn ornament, mostly black with one red accent,
->   intentionally amateur anti-design aesthetic.
-> whenToUse: Art-school flyers, indie zines, underground music, brutalism-
->   adjacent editorial.
-> pairsWith:
->   prototypeStyles: [aesthetic-anti-design, aesthetic-web-brutalism, recipe-brutalist-web, aesthetic-corporate-grunge]
-> notForUseWhen: enterprise, polished SaaS
+> drawn with irregular shape, no consistent baseline, sharpie-on-paper texture,
+> collaged with hand-drawn ornament, mostly black with one red accent,
+> intentionally amateur anti-design aesthetic.
 
 ## When to use
 

@@ -42,13 +42,9 @@ bold cut-paper shapes with rough scissor edges.
 ## Example prompt template
 
 > Saul Bass cutout collage poster for [CONCEPT], bold cut-paper shapes with
->   rough hand-cut scissor edges, flat 3-color palette of black + cream + red,
->   single dramatic concept, jagged hand-cut typography integrated, mid-century
->   film-title aesthetic.
-> whenToUse: Editorial hero, premium film/event marketing, museum-quality identity.
-> pairsWith:
->   prototypeStyles: [aesthetic-cassette-futurism, aesthetic-atompunk, recipe-editorial-magazine, aesthetic-constructivism]
-> notForUseWhen: friendly SaaS, brutalism, cottagecore
+> rough hand-cut scissor edges, flat 3-color palette of black + cream + red,
+> single dramatic concept, jagged hand-cut typography integrated, mid-century
+> film-title aesthetic.
 
 ## When to use
 

@@ -42,12 +42,8 @@ clay character with armature bones showing through pose.
 ## Example prompt template
 
 > Claymation stop-motion still of [SUBJECT], plasticine clay character over
->   wire armature with visible thumbprints and tool marks, hand-painted backdrop,
->   school-set primary palette, Aardman Wallace-and-Gromit aesthetic.
-> whenToUse: Children's brands, premium kid film marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, style-claymorphism, aesthetic-wacky-pomo]
-> notForUseWhen: enterprise, brutalism
+> wire armature with visible thumbprints and tool marks, hand-painted backdrop,
+> school-set primary palette, Aardman Wallace-and-Gromit aesthetic.
 
 ## When to use
 

@@ -46,10 +46,6 @@ Highly constructed scene, every element placed intentionally.
 ## Example prompt template
 
 > A single oversized ceramic lemon sitting on a small wooden stool in the corner of an empty plaster-walled room, scale slightly off, every element deliberately placed. Single soft daylight from a high window upper-right, no fill, even falloff into the corner shadow. Shot on a Hasselblad medium format with an 80mm at f/8, single-hue yellow saturation against the warm plaster, painterly highlight, retained shadow detail. Contemplative, surreal, deliberate mood. Conceptual fine-art still life, Toiletpaper Magazine adjacent.
-> whenToUse: High-concept editorial, luxury fashion campaign, perfume, niche book covers, gallery print.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, aesthetic-dreamcore, style-bold-display, aesthetic-anti-design]
-> notForUseWhen: Mass-market product, B2B SaaS, anything quick-to-decode.
 
 ## When to use
 

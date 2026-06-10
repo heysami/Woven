@@ -45,14 +45,9 @@ quirky hand-drawn characters echoing medieval-manuscript marginalia.
 ## Example prompt template
 
 > Hand-drawn quirky character in medieval manuscript marginalia style,
->   scratchy ink quill line 2px, pure black on transparent background, naive
->   amateur quality intentionally rough, absurd hybrid creature or robed
->   figure, Lev Inunnink Humanities aesthetic — anti-AI human warmth.
-> whenToUse: Editorial blogs that want to signal human craft over AI slop;
->   long-form essays; sites where the illustration says "a person made this."
-> pairsWith:
->   prototypeStyles: [aesthetic-dark-academia, recipe-editorial-magazine, recipe-newspaper-of-record, recipe-readcv, style-serif-warm-paper]
-> notForUseWhen: SaaS marketing, cute-friendly contexts, 3D contexts
+> scratchy ink quill line 2px, pure black on transparent background, naive
+> amateur quality intentionally rough, absurd hybrid creature or robed
+> figure, Lev Inunnink Humanities aesthetic — anti-AI human warmth.
 
 ## When to use
 

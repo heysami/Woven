@@ -46,10 +46,6 @@ Stone, concrete, raw plaster, or linen substrate.
 ## Example prompt template
 
 > A single Aesop amber glass apothecary bottle on a raw concrete shelf with a sprig of dried lavender resting beside it, a diagonal hard-edged shadow from a window upper-left crossing the shelf. Single soft daylight, no fill. Shot on a Hasselblad H6D with a 100mm macro at f/5.6, muted earth palette, no saturation push, gentle film grain. Calm, considered, apothecary mood. Aesop-style product still life. Composition strict three-quarter angle, generous negative space camera-right.
-> whenToUse: Skincare, fragrance, premium personal care, slow-luxury packaging, hospitality amenity kits.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, style-cream-humanist, style-serif-warm-paper, style-restrained-hairline]
-> notForUseWhen: Mass-market product, anything loud, family CPG.
 
 ## When to use
 

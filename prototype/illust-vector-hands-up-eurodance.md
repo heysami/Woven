@@ -40,13 +40,9 @@ high-gloss anime-inflected vector characters.
 ## Example prompt template
 
 > High-gloss vector anime character with raised arms in Eurodance pose, rave
->   headphones and visor, glossy specular highlights, palette of cyan lime green
->   hot pink and chrome silver, sparkles and lens flare, late-90s Hands-Up
->   record-sleeve aesthetic.
-> whenToUse: Music marketing, rave/dance branding, Y2K revival.
-> pairsWith:
->   prototypeStyles: [aesthetic-vector-hands-up, aesthetic-y2k-futurism, aesthetic-vaporwave, aesthetic-acid-design]
-> notForUseWhen: editorial restraint, B2B
+> headphones and visor, glossy specular highlights, palette of cyan lime green
+> hot pink and chrome silver, sparkles and lens flare, late-90s Hands-Up
+> record-sleeve aesthetic.
 
 ## When to use
 

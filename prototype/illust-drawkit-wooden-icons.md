@@ -44,14 +44,9 @@ hand-carved beech / pine grain visible on every surface.
 ## Example prompt template
 
 > 3D wooden craft icon of a [SUBJECT], hand-carved beech with visible grain,
->   simplified block forms joined by carved seams, natural honey-to-walnut palette,
->   matte sealed timber finish, soft studio diffuse light on warm cream background,
->   soft contact shadow, no specular, artisanal quality.
-> whenToUse: Cottagecore, solarpunk, warm-restraint, dark-academia — anything that
->   wants to whisper "natural, slow, made-by-hand."
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, aesthetic-solarpunk, recipe-warm-restraint, aesthetic-dark-academia, aesthetic-coastal-grandmother]
-> notForUseWhen: crypto-degen, cyberpunk, RGB gamer
+> simplified block forms joined by carved seams, natural honey-to-walnut palette,
+> matte sealed timber finish, soft studio diffuse light on warm cream background,
+> soft contact shadow, no specular, artisanal quality.
 
 ## When to use
 

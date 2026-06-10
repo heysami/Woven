@@ -44,13 +44,9 @@ smooth 3D character with expressive big eyes.
 ## Example prompt template
 
 > Pixar-style CGI character of [SUBJECT], smooth 3D form with expressive
->   oversized eyes, subsurface skin shader, soft hair, cinematic 3-point
->   lighting with rim highlight, vibrant saturated palette, RenderMan-quality
->   feature-animation aesthetic.
-> whenToUse: Family brands, kid products, premium-friendly mascots.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, style-claymorphism]
-> notForUseWhen: editorial, brutalism, restrained-AI
+> oversized eyes, subsurface skin shader, soft hair, cinematic 3-point
+> lighting with rim highlight, vibrant saturated palette, RenderMan-quality
+> feature-animation aesthetic.
 
 ## When to use
 

@@ -39,12 +39,8 @@ underline strokes in many flavors: wavy, looped, double, sketch.
 ## Example prompt template
 
 > Hand-drawn underline stroke (wavy/looped/double) or bracket grouping mark,
->   2-4px marker line, mono black on white, HandyArrows Underlines style,
->   decoration accent only.
-> whenToUse: Emphasizing words in display headlines, grouping related items.
-> pairsWith:
->   prototypeStyles: [style-doodle, recipe-readcv, aesthetic-corporate-memphis, aesthetic-y2k-memphis-loud]
-> notForUseWhen: hairline-restraint design systems
+> 2-4px marker line, mono black on white, HandyArrows Underlines style,
+> decoration accent only.
 
 ## When to use
 

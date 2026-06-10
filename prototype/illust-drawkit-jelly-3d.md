@@ -44,16 +44,9 @@ translucent gummy-bear surface with subsurface light.
 ## Example prompt template
 
 > 3D translucent jelly character mascot, rounded bouncy limbs, no facial features
->   or simple dot eyes, subsurface scattering with inner glow, glossy specular highlight,
->   bright candy palette of neon yellow magenta and cyan, studio three-point lighting,
->   soft contact shadow on white background, playful pose, isolated subject, 8k render.
-> whenToUse: When a marketing surface needs an empty-headed friendly mascot that
->   signals "approachable fintech / startup with personality." Pairs with
->   style-claymorphism and recipe-restrained-ai-marketing when you need a single
->   accent that doesn't read as corporate-Memphis fatigue.
-> pairsWith:
->   prototypeStyles: [style-claymorphism, aesthetic-positivity-kawaii, recipe-restrained-ai-marketing, style-skeuomorphism]
-> notForUseWhen: dense Bloomberg-style data UI, brutalist or editorial layouts
+> or simple dot eyes, subsurface scattering with inner glow, glossy specular highlight,
+> bright candy palette of neon yellow magenta and cyan, studio three-point lighting,
+> soft contact shadow on white background, playful pose, isolated subject, 8k render.
 
 ## When to use
 

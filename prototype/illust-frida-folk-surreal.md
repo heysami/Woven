@@ -42,13 +42,9 @@ botanical vines framing portrait.
 ## Example prompt template
 
 > Frida Kahlo folk-surrealist composition of [SUBJECT], framed by lush
->   botanical vines with symbolic monkeys and parrots, vibrant Mexican palette
->   of vermillion turquoise jade and gold, oil-on-tin texture, personal
->   symbolic surrealism aesthetic.
-> whenToUse: Mexican-influenced brands, latina identity, cultural celebration.
-> pairsWith:
->   prototypeStyles: [aesthetic-maximalism, aesthetic-cottagecore, aesthetic-y2k-memphis-loud]
-> notForUseWhen: minimalist tech, brutalism
+> botanical vines with symbolic monkeys and parrots, vibrant Mexican palette
+> of vermillion turquoise jade and gold, oil-on-tin texture, personal
+> symbolic surrealism aesthetic.
 
 ## When to use
 

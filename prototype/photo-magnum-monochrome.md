@@ -46,10 +46,6 @@ notForUseWhen: Product e-comm, anything aspirational-consumer.
 ## Example prompt template
 
 > Black-and-white photograph of a vegetable vendor mid-gesture handing change to an unseen customer in a covered Mumbai marketplace, environmental context of stacked produce and patterned awning, composition organized around the diagonal of the awning rope. Available daylight from above, soft natural shadow. Shot on a Leica M6 with a 35mm lens, Kodak Tri-X 400, full tonal range, fine grain. Observed, dignified, witness mood. Magnum decisive-moment style. Subject not aware of the camera.
-> whenToUse: Editorial journalism, NGO marketing, humanitarian campaigns, museum, archival heritage brands.
-> pairsWith:
->   prototypeStyles: [recipe-newspaper-of-record, style-agate-broadsheet, style-serif-warm-paper, recipe-editorial-magazine]
-> notForUseWhen: Product e-comm, anything aspirational-consumer.
 
 ## When to use
 

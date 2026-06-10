@@ -42,13 +42,9 @@ geometric forms with spiritual symbolic meaning.
 ## Example prompt template
 
 > Hilma af Klint esoteric symbolist composition with logarithmic spirals,
->   vesica piscis, U-glyph for spiritual realm, botanical flower motif with
->   sacred geometry overlay, pastel palette of sea green lilac rose pink and
->   soft yellow, watercolor and gouache, Paintings for the Temple aesthetic.
-> whenToUse: Mindfulness, wellness, esoteric brands, premium editorial hero.
-> pairsWith:
->   prototypeStyles: [aesthetic-angelcore, aesthetic-dreamcore, aesthetic-fairycore, style-aurorism]
-> notForUseWhen: tech, brutalism, neon
+> vesica piscis, U-glyph for spiritual realm, botanical flower motif with
+> sacred geometry overlay, pastel palette of sea green lilac rose pink and
+> soft yellow, watercolor and gouache, Paintings for the Temple aesthetic.
 
 ## When to use
 

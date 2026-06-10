@@ -46,10 +46,6 @@ Empty pale plaster or stucco backdrop, natural texture.
 ## Example prompt template
 
 > Full-body lookbook of a person in a sand-colored linen suit standing against a textured pale plaster outdoor wall, side daylight from camera-left casting a soft natural shadow camera-right, casual real-world pose with one hand in pocket. Shot on a Sony A7IV with a 50mm at f/2.8, natural faithful color, slight grain, retained linen texture. Easy, considered, real-world mood. Daylight plaster-wall lookbook editorial.
-> whenToUse: Premium contemporary apparel, slow fashion, modern minimal lookbooks, hospitality lifestyle.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-cream-humanist, style-restrained-hairline]
-> notForUseWhen: Fast fashion volume e-comm, loud or kinetic brand.
 
 ## When to use
 

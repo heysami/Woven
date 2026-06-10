@@ -46,10 +46,6 @@ Pastel pink and cyan dominant, soft pastel gradient backdrop.
 ## Example prompt template
 
 > Studio still life of a small plaster Roman bust on a chrome pedestal, a single palm leaf entering from upper-right, a CRT screen in the background showing static, pastel pink and cyan gradient backdrop. Soft even studio light with a pink gel ambient from camera-left. Shot on a Canon 5D with a 50mm at f/8, pastel pink-cyan grade, slight chromatic aberration, faint VHS scanlines overlay. Dreamy, ironic, nostalgic-future mood. Vaporwave still life conceptual photography.
-> whenToUse: Music streaming art, ironic-nostalgic brand campaigns, indie game key art, club night posters.
-> pairsWith:
->   prototypeStyles: [aesthetic-vaporwave, aesthetic-y2k-futurism, aesthetic-cassette-futurism, aesthetic-dreamcore]
-> notForUseWhen: Heritage, wellness, premium consumer.
 
 ## When to use
 

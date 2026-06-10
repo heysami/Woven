@@ -42,13 +42,9 @@ nature subjects (birds, fish, mammals) distilled to geometric shapes.
 ## Example prompt template
 
 > Charley Harper minimal-realism nature illustration of [BIRD/ANIMAL],
->   distilled to geometric shapes, flat clean ink color, symmetric balanced
->   composition, muted warm palette with one bright spot accent, US National
->   Park Service poster aesthetic.
-> whenToUse: Nature brands, conservation, premium outdoor goods.
-> pairsWith:
->   prototypeStyles: [aesthetic-solarpunk, aesthetic-cottagecore, recipe-warm-restraint, aesthetic-coastal-grandmother]
-> notForUseWhen: photoreal, brutalism, cyberpunk
+> distilled to geometric shapes, flat clean ink color, symmetric balanced
+> composition, muted warm palette with one bright spot accent, US National
+> Park Service poster aesthetic.
 
 ## When to use
 

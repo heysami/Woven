@@ -46,10 +46,6 @@ notForUseWhen: Premium, wellness, luxury, family.
 ## Example prompt template
 
 > Frame of a skater mid-kickflip over a concrete ledge at a downtown plaza at night, board visible mid-air, foot partially out of frame, hard on-camera flash punching the subject forward against ambient streetlight in the background. Shot on a Yashica T4 with a 35mm lens, Kodak Gold 200 push-processed, heavy grain, slight overexposure on the white t-shirt. Raw, kinetic, in-the-action mood. Skate zine 35mm flash editorial.
-> whenToUse: Streetwear, skateboard brands, youth-targeted music, energy drinks, action sports.
-> pairsWith:
->   prototypeStyles: [aesthetic-web-brutalism, recipe-brutalist-web, aesthetic-acid-graphics, aesthetic-y2k-memphis-loud]
-> notForUseWhen: Premium, wellness, luxury, family.
 
 ## When to use
 

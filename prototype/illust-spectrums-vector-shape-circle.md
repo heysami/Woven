@@ -35,11 +35,7 @@ clean geometric circles with variations: dotted, double-stroked, segmented.
 ## Example prompt template
 
 > Geometric circle decoration — variant (dotted/double-stroked/segmented),
->   single accent color, vector flat, isolated, Spectrums library aesthetic.
-> whenToUse: Background hero accents, bullet substitutes.
-> pairsWith:
->   prototypeStyles: [aesthetic-bauhaus, aesthetic-de-stijl, aesthetic-swiss-modernist, recipe-swiss-grid]
-> notForUseWhen: cluttered scenes
+> single accent color, vector flat, isolated, Spectrums library aesthetic.
 
 ## When to use
 

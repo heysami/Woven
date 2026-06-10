@@ -42,12 +42,8 @@ thick black brush stroke (8-10px) outlining everything.
 ## Example prompt template
 
 > Thick-brush cartoon illustration of [SUBJECT] in Jean Jullien style, 8-10px
->   black brush stroke outlining everything, lively flat color fills, witty
->   absurd one-liner observation, French Bande-Dessinée aesthetic.
-> whenToUse: Editorial humor, indie books, friendly campaign branding.
-> pairsWith:
->   prototypeStyles: [style-doodle, recipe-editorial-magazine, recipe-readcv]
-> notForUseWhen: enterprise, photoreal
+> black brush stroke outlining everything, lively flat color fills, witty
+> absurd one-liner observation, French Bande-Dessinée aesthetic.
 
 ## When to use
 

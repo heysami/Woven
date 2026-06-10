@@ -39,12 +39,8 @@ shiny happy people holding hands and laughing.
 ## Example prompt template
 
 > Joyful flat vector group of people holding hands and laughing, bright sunny
->   palette, inclusive diverse composition, no outline, Brandon Mendoza Shiny
->   Happy aesthetic.
-> whenToUse: Community, social impact, celebration marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
-> notForUseWhen: dark themes, brutalism
+> palette, inclusive diverse composition, no outline, Brandon Mendoza Shiny
+> Happy aesthetic.
 
 ## When to use
 

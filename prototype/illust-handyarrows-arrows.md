@@ -42,12 +42,8 @@ notForUseWhen: dense data UI, brutalism
 ## Example prompt template
 
 > Hand-drawn arrow with slight wobble, 3px marker line, single black stroke
->   on white, simple chevron terminus, vector SVG decoration, HandyArrows style,
->   decoration-only no subject.
-> whenToUse: Pointing at headlines, marking flow steps, illustrating "click here."
-> pairsWith:
->   prototypeStyles: [style-doodle, aesthetic-corporate-memphis, recipe-bento-marketing, recipe-readcv]
-> notForUseWhen: dense data UI, brutalism
+> on white, simple chevron terminus, vector SVG decoration, HandyArrows style,
+> decoration-only no subject.
 
 ## When to use
 

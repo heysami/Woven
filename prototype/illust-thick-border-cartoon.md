@@ -42,12 +42,8 @@ notForUseWhen: warm-restraint, editorial, refined
 ## Example prompt template
 
 > Flat vector illustration of [SUBJECT] with 5px black hard outline, flat
->   saturated primary color fills, 8px offset solid drop shadow, neubrutalism
->   cartoon aesthetic, Gumroad-rebrand style.
-> whenToUse: Indie SaaS, brutalist-adjacent marketing, devtools.
-> pairsWith:
->   prototypeStyles: [style-neubrutalism, aesthetic-neubrutalism, recipe-brutalist-web, aesthetic-web-brutalism]
-> notForUseWhen: warm-restraint, editorial, refined
+> saturated primary color fills, 8px offset solid drop shadow, neubrutalism
+> cartoon aesthetic, Gumroad-rebrand style.
 
 ## When to use
 

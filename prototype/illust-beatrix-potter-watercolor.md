@@ -42,14 +42,9 @@ animals in human clothing (dresses, suits).
 ## Example prompt template
 
 > Beatrix Potter soft watercolor illustration of [ANIMAL] wearing tiny human
->   clothing (dress / coat), fine pen-and-ink outline, muted palette of moss
->   green cranberry tan and walnut, pastoral cottage setting, classic children's
->   book aesthetic.
-> whenToUse: Children's bookstore brands, cottagecore lifestyle, English-country
->   apothecary, heritage brands.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, aesthetic-cottagegoth, recipe-warm-restraint, aesthetic-dark-academia]
-> notForUseWhen: tech, brutalism, modern minimal
+> clothing (dress / coat), fine pen-and-ink outline, muted palette of moss
+> green cranberry tan and walnut, pastoral cottage setting, classic children's
+> book aesthetic.
 
 ## When to use
 

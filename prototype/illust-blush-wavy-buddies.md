@@ -44,14 +44,9 @@ everything is a wavy curving line — limbs, hair, shadows.
 ## Example prompt template
 
 > Hand-drawn character mid-action shopping, every line is wavy and curving
->   including limbs and hair, 4px black brush line outline, flat bright primary
->   color fills behind line, cream background, playful Susana Salas Wavy Buddies
->   style, isolated subject.
-> whenToUse: Ecommerce empty states, lifestyle content, content blog headers
->   that want movement and personality.
-> pairsWith:
->   prototypeStyles: [style-doodle, aesthetic-curly-girly, aesthetic-positivity-kawaii]
-> notForUseWhen: B2B serious, brutalism, financial dashboards
+> including limbs and hair, 4px black brush line outline, flat bright primary
+> color fills behind line, cream background, playful Susana Salas Wavy Buddies
+> style, isolated subject.
 
 ## When to use
 

@@ -46,10 +46,6 @@ Single large softbox or umbrella, ambient kept in.
 ## Example prompt template
 
 > A mid-career architect in her studio, standing among rolled drawings and a half-built balsa model, wearing a navy linen apron over a white shirt, looking past camera-left in thought. Single 60" softlighter softbox above and camera-right, ambient daylight from a window retained at half power, gentle falloff into the studio interior. Shot on a Hasselblad H6D with an 80mm lens, rich color, painterly chiaroscuro tonality, retained warm ambient. Theatrical, deliberate, thoughtful mood. Annie Leibovitz Vanity Fair portrait style. Wide-ish three-quarter frame.
-> whenToUse: Founder portraits, About Us photography, magazine-style profile shots, conference speaker headshots that need to feel cinematic. The default for "tell their story" briefs.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-devtools-marketing, recipe-bento-marketing, style-serif-warm-paper]
-> notForUseWhen: Quick product, e-comm hero, anything needing many subjects in one shot.
 
 ## When to use
 

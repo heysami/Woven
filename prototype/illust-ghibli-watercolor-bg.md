@@ -44,13 +44,9 @@ hand-painted watercolor matte background.
 ## Example prompt template
 
 > Studio Ghibli watercolor background of [SCENE], hand-painted matte watercolor,
->   layered cumulus sky, dappled forest light, pastoral Japanese countryside,
->   soft natural palette of sky blue sage and cream, gentle character outline
->   over painted background, Kazuo Oga inspired.
-> whenToUse: Wellness, mindfulness, nature brands, premium editorial.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, aesthetic-solarpunk, aesthetic-coastal-grandmother, recipe-warm-restraint, aesthetic-fairycore]
-> notForUseWhen: tech, brutalism, neon
+> layered cumulus sky, dappled forest light, pastoral Japanese countryside,
+> soft natural palette of sky blue sage and cream, gentle character outline
+> over painted background, Kazuo Oga inspired.
 
 ## When to use
 

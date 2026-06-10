@@ -3,7 +3,7 @@
 # next to this file in prototype/ and were generated via image_gen.
 images:
   - src: recipe-material-3-ui.png
-    reason: Generated UI mockup of this recipe end-to-end — the canonical (shell + style + aesthetic + voice) bundle rendered.
+    reason: Full recipe UI mockup.
 ---
 # Material 3 Android app
 

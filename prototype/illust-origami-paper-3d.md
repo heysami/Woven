@@ -42,13 +42,9 @@ subject built from folded paper planes.
 ## Example prompt template
 
 > Origami folded-paper 3D sculpture of [SUBJECT], visible fold creases as
->   structural lines, solid pastel paper color (mint / coral / cream), matte
->   paper texture, triangular cast shadows, studio light, paper-craft sculpture
->   aesthetic, Akira Yoshizawa inspired.
-> whenToUse: Japanese-influenced brands, paper-product companies, mindfulness apps.
-> pairsWith:
->   prototypeStyles: [aesthetic-solarpunk, aesthetic-coastal-grandmother, recipe-warm-restraint, style-skeuomorphism]
-> notForUseWhen: cyberpunk, brutalism
+> structural lines, solid pastel paper color (mint / coral / cream), matte
+> paper texture, triangular cast shadows, studio light, paper-craft sculpture
+> aesthetic, Akira Yoshizawa inspired.
 
 ## When to use
 

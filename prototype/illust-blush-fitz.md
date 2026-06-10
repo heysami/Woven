@@ -39,11 +39,7 @@ sports characters (basketball, baseball, soccer).
 ## Example prompt template
 
 > Flat vector athlete mid-action playing basketball, team uniform bright
->   palette, dynamic athletic pose, no outline, Ana Copenicker Fitz aesthetic.
-> whenToUse: Sports apps, fitness, team SaaS.
-> pairsWith:
->   prototypeStyles: [aesthetic-corporate-memphis, aesthetic-positivity-kawaii]
-> notForUseWhen: editorial
+> palette, dynamic athletic pose, no outline, Ana Copenicker Fitz aesthetic.
 
 ## When to use
 

@@ -39,12 +39,8 @@ bouncy characters mid-action.
 ## Example prompt template
 
 > Bouncy flat vector character mid-action in dope energetic pose, bright
->   friendly palette, comic exaggeration, no outline, Pablo Stanley Happy
->   Bunch aesthetic.
-> whenToUse: When your brand voice is "good vibes."
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
-> notForUseWhen: serious enterprise
+> friendly palette, comic exaggeration, no outline, Pablo Stanley Happy
+> Bunch aesthetic.
 
 ## When to use
 

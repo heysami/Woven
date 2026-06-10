@@ -39,12 +39,8 @@ bright colors, bold patterns, fierce style.
 ## Example prompt template
 
 > Bold flat vector character in fierce confident pose, bright palette of
->   fuchsia electric blue and yellow, bold geometric patterns in clothing and
->   background, Isabela Humphrey Power Moves aesthetic.
-> whenToUse: Women-empowerment, beauty, athleisure, music branding.
-> pairsWith:
->   prototypeStyles: [aesthetic-maximalism, aesthetic-y2k-memphis-loud, aesthetic-acid-design]
-> notForUseWhen: B2B serious, restrained AI
+> fuchsia electric blue and yellow, bold geometric patterns in clothing and
+> background, Isabela Humphrey Power Moves aesthetic.
 
 ## When to use
 

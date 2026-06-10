@@ -42,14 +42,9 @@ letterforms stretched to extreme spacing, layered halftones.
 ## Example prompt template
 
 > Weingart-style deconstructed typography of [WORD] with extreme letter-spacing,
->   reversed-out on heavy black block, layered halftone screen overlay, single
->   red accent, disrupted-grid composition, letterpress paper texture, Basel
->   School Swiss Punk aesthetic.
-> whenToUse: Editorial covers, art books, design-conference posters, brutalist-
->   adjacent serious work.
-> pairsWith:
->   prototypeStyles: [aesthetic-web-brutalism, recipe-brutalist-web, aesthetic-swiss-modernist, recipe-editorial-magazine]
-> notForUseWhen: friendly consumer UI, kids, Y2K bling
+> reversed-out on heavy black block, layered halftone screen overlay, single
+> red accent, disrupted-grid composition, letterpress paper texture, Basel
+> School Swiss Punk aesthetic.
 
 ## When to use
 

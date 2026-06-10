@@ -39,12 +39,8 @@ eco-doodles: trees, recycling, solar panels.
 ## Example prompt template
 
 > Flat vector eco illustration of a tree with solar panels and recycling
->   motif, sage forest green palette with cream and sky blue accents, friendly
->   simple shapes, Edward Tapia Go Green aesthetic.
-> whenToUse: Sustainability brands, climate-tech, solarpunk-adjacent.
-> pairsWith:
->   prototypeStyles: [aesthetic-solarpunk, aesthetic-frutiger-eco, aesthetic-cottagecore]
-> notForUseWhen: edgy, brutalism, neon
+> motif, sage forest green palette with cream and sky blue accents, friendly
+> simple shapes, Edward Tapia Go Green aesthetic.
 
 ## When to use
 

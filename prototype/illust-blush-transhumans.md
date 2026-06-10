@@ -39,13 +39,9 @@ characters transcending biological limits — cyborg parts, robot heads.
 ## Example prompt template
 
 > Stylized 3D-ish flat vector character with cyborg elements (robotic arm,
->   visor), glossy plastic shading with subtle 1px highlights, electric magenta
->   and cyan futurist palette, sticker style isolated, Pablo Stanley Transhumans
->   aesthetic.
-> whenToUse: AI products, futurism marketing, cyberpunk-adjacent positive UX.
-> pairsWith:
->   prototypeStyles: [aesthetic-cyberpunk, aesthetic-y2k-futurism, aesthetic-vaporwave]
-> notForUseWhen: cottagecore, editorial
+> visor), glossy plastic shading with subtle 1px highlights, electric magenta
+> and cyan futurist palette, sticker style isolated, Pablo Stanley Transhumans
+> aesthetic.
 
 ## When to use
 

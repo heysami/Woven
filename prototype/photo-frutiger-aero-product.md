@@ -46,10 +46,6 @@ Glossy 3D-rendered surfaces, water droplets, bubbles.
 ## Example prompt template
 
 > A translucent glossy consumer headphone floating just above a vivid green grass surface with macro water droplets clinging to the rim, bright sky-blue background with golden bokeh spheres, two small soap bubbles drifting in the upper-right. Bright outdoor daylight, glossy specular highlights on the chrome detailing, slight HDR pop. Shot on a Canon 5D with a 100mm macro at f/2.8, oversaturated cheerful color, blown sky highlight. Optimistic, sky-fresh, 2007 mood. Frutiger Aero glossy product environment.
-> whenToUse: Consumer-electronics retro campaigns, Y2K-aesthetic stock, sky-positive product marketing, nostalgia plays.
-> pairsWith:
->   prototypeStyles: [aesthetic-frutiger-aero, aesthetic-frutiger-chromecore, aesthetic-frutiger-tranquil-serenity, style-glassmorphism, style-liquid-glass]
-> notForUseWhen: Luxury, restrained, premium B2B.
 
 ## When to use
 

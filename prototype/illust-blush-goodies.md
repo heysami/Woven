@@ -39,11 +39,7 @@ small assorted sticker-style objects.
 ## Example prompt template
 
 > Flat vector sticker of [SUBJECT], playful flat fill, optional 2px soft
->   outline, isolated on white, Blush Goodies aesthetic.
-> whenToUse: Decorative accents on marketing surfaces.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, aesthetic-cluttercore, aesthetic-maximalism]
-> notForUseWhen: minimalist single-hero
+> outline, isolated on white, Blush Goodies aesthetic.
 
 ## When to use
 

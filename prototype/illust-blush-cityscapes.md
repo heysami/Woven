@@ -40,13 +40,9 @@ towns, cities, hilly landscapes.
 ## Example prompt template
 
 > Flat vector cityscape landscape with buildings and hills, no perspective,
->   muted modern palette of beige sage and dusty pink with one accent color,
->   wide horizontal composition for background decoration use, Pablo Stanley
->   Cityscapes aesthetic.
-> whenToUse: As background bands for marketing pages; hero sub-scene.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-corporate-memphis]
-> notForUseWhen: brutalism, editorial
+> muted modern palette of beige sage and dusty pink with one accent color,
+> wide horizontal composition for background decoration use, Pablo Stanley
+> Cityscapes aesthetic.
 
 ## When to use
 

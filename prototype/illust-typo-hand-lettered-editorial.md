@@ -39,12 +39,8 @@ bespoke brush lettering with confident smooth curves.
 ## Example prompt template
 
 > Bespoke hand-lettered wordmark of [WORD] with confident smooth brush curves,
->   subtle swash and hairline ornament, restrained 2-color palette, high-end
->   editorial polish, Jessica Hische contemporary lettering aesthetic.
-> whenToUse: Premium editorial, book covers, magazine titles, restaurant identity.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-warm-restraint, style-serif-warm-paper, recipe-readcv]
-> notForUseWhen: brutalism, sans-only design system
+> subtle swash and hairline ornament, restrained 2-color palette, high-end
+> editorial polish, Jessica Hische contemporary lettering aesthetic.
 
 ## When to use
 

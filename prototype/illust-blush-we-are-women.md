@@ -39,12 +39,8 @@ diverse female + non-binary figures.
 ## Example prompt template
 
 > Flat vector diverse group of women and non-binary figures in empowerment
->   pose, bold saturated palette, inclusive composition with varied skin tones
->   and body types, no outline, Blush We Are Women aesthetic.
-> whenToUse: International Women's Day, equality campaigns, social-impact brands.
-> pairsWith:
->   prototypeStyles: [aesthetic-corporate-memphis, aesthetic-maximalism]
-> notForUseWhen: B2B technical
+> pose, bold saturated palette, inclusive composition with varied skin tones
+> and body types, no outline, Blush We Are Women aesthetic.
 
 ## When to use
 

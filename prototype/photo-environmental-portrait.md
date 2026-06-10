@@ -46,10 +46,6 @@ Subject in their own context (workshop, kitchen, fishing boat).
 ## Example prompt template
 
 > A potter in his late fifties standing at his wheel in a brick workshop, clay-streaked apron, half-body wide framing showing shelves of unfired ware behind him, hands resting on the wheel, calm direct gaze just past the camera. Single open-door daylight from camera-left, soft white reflector fill from camera-right. Shot on a Fuji X100V at 35mm equivalent at f/4, natural color, gentle highlight roll-off, slight grain, retained warmth in the brick wall. Grounded, dignified, present mood. Environmental documentary portrait.
-> whenToUse: Founder portraits, artisan brand storytelling, About Us sections, "Behind the craft" series.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-warm-restraint, style-serif-warm-paper, style-cream-humanist]
-> notForUseWhen: Fast e-comm, product hero, anything that should be impersonal.
 
 ## When to use
 

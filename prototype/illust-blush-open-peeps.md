@@ -44,14 +44,9 @@ all forms drawn with 4-6px wobbly black brush line.
 ## Example prompt template
 
 > Hand-drawn character in Open Peeps style, drawn with wobbly 5px black brush
->   line on cream paper, white interior fills no color, modular hair and clothing,
->   expressive natural pose, imperfect human line quality, isolated subject,
->   Pablo Stanley aesthetic.
-> whenToUse: When a corporate-Memphis surface needs a warmer alternative; blogs,
->   indie startups, documentation that wants to feel made-by-a-person.
-> pairsWith:
->   prototypeStyles: [style-doodle, recipe-readcv, recipe-editorial-magazine, aesthetic-cottagecore]
-> notForUseWhen: cinematic 3D contexts, brutalism, dense data UI
+> line on cream paper, white interior fills no color, modular hair and clothing,
+> expressive natural pose, imperfect human line quality, isolated subject,
+> Pablo Stanley aesthetic.
 
 ## When to use
 

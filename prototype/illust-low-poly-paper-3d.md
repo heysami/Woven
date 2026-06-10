@@ -42,13 +42,9 @@ faceted polygon surfaces like a paper Pepakura model.
 ## Example prompt template
 
 > Low-poly paper-craft 3D sculpture of [SUBJECT], faceted polygon surfaces
->   like a Pepakura model, sharp polygon edges as visible creases, per-face
->   flat shading in muted palette, wall-mount trophy composition, paper-craft
->   aesthetic.
-> whenToUse: Modern minimalist marketing, geometric brand identities.
-> pairsWith:
->   prototypeStyles: [aesthetic-bauhaus, aesthetic-constructivism, aesthetic-swiss-modernist]
-> notForUseWhen: cute, soft, photoreal
+> like a Pepakura model, sharp polygon edges as visible creases, per-face
+> flat shading in muted palette, wall-mount trophy composition, paper-craft
+> aesthetic.
 
 ## When to use
 

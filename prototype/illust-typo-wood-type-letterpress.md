@@ -42,13 +42,9 @@ chunky slab letterforms with grain showing through ink.
 ## Example prompt template
 
 > Wood-type letterpress poster wordmark of [WORD], chunky slab letterforms
->   with wood grain showing through inked impression, registration imperfections,
->   palette of vintage red black on cream, Hatch Show Print circus-poster
->   aesthetic.
-> whenToUse: Music venues, craft beer, festival posters, americana branding.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, recipe-warm-restraint, recipe-editorial-magazine, aesthetic-corporate-grunge]
-> notForUseWhen: tech, brutalism
+> with wood grain showing through inked impression, registration imperfections,
+> palette of vintage red black on cream, Hatch Show Print circus-poster
+> aesthetic.
 
 ## When to use
 

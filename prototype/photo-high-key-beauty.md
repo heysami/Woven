@@ -46,10 +46,6 @@ Pure white seamless backdrop, even all around.
 ## Example prompt template
 
 > Tight beauty crop of a woman's face on a pure white seamless backdrop, sharp focus on the eyes, glossy lip highlight, single architectural gold earring. Clamshell beauty lighting: large softbox above, white reflector below, near-shadowless. Shot on a Canon R5 with a 100mm macro at f/8, pure even white, retained skin pore texture, slight saturation push on the lip. Graphic, clean, iconic mood. High-key beauty editorial.
-> whenToUse: Cosmetics e-comm hero, beauty product launch, fragrance for modern minimal brands.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, style-glassmorphism, style-liquid-glass, recipe-restrained-ai-marketing]
-> notForUseWhen: Editorial mood, lifestyle, anything narrative.
 
 ## When to use
 

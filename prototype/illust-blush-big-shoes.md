@@ -39,12 +39,8 @@ exaggerated big-shoe characters (oversized footwear).
 ## Example prompt template
 
 > Flat vector character with exaggerated oversized shoes, playful disproportionate
->   body, friendly mid-saturation palette, optional thin 2px outline, Elina Cecilia
->   Giglio Big Shoes aesthetic.
-> whenToUse: Sneakers, fashion, playful lifestyle brands.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis]
-> notForUseWhen: B2B serious
+> body, friendly mid-saturation palette, optional thin 2px outline, Elina Cecilia
+> Giglio Big Shoes aesthetic.
 
 ## When to use
 

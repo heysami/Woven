@@ -46,10 +46,6 @@ Direct flash, glossy reflective fabrics, lipgloss high-shine.
 ## Example prompt template
 
 > Half-body shot of a woman in a chrome-finish silver mesh top with rhinestone choker, mid-laugh at a club, head tilted back, lipgloss catching a hard direct flash. Cool ambient club lighting in the background falls off into ice blue, slight motion blur on the hands. Shot on an early 2000s compact digital camera, 35mm equivalent, signature early-digital sharpness, slight magenta shift, blown highlight on the forehead and gloss. Reflective, kinetic, slick mood. Y2K McBling glamour editorial.
-> whenToUse: Pop music streaming art, energy drink, club, beauty for younger demos, fashion lookbook with Y2K reference.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-futurism, aesthetic-frutiger-aero, aesthetic-y2k-memphis-loud, aesthetic-curly-girly]
-> notForUseWhen: Heritage brand, B2B, wellness.
 
 ## When to use
 

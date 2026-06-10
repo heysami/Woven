@@ -39,12 +39,8 @@ translucent refractive glass-like surface.
 ## Example prompt template
 
 > Liquid-glass 3D translucent object of [SUBJECT], refractive glass surface
->   with chromatic aberration on edges, light blue tint with caustic highlight,
->   Apple iOS liquid-glass aesthetic.
-> whenToUse: Apple-ecosystem products, premium iOS-aligned brands.
-> pairsWith:
->   prototypeStyles: [style-liquid-glass, recipe-ios-system, style-sf-pro-ios, style-glassmorphism]
-> notForUseWhen: brutalism, cottagecore, hand-drawn
+> with chromatic aberration on edges, light blue tint with caustic highlight,
+> Apple iOS liquid-glass aesthetic.
 
 ## When to use
 

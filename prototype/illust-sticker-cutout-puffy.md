@@ -35,11 +35,7 @@ subject with white halo outline like die-cut sticker.
 ## Example prompt template
 
 > Die-cut sticker of [SUBJECT] with 8px white halo outline, subtle drop
->   shadow for stuck-on feel, slight 3D pillow lift, isolated on background.
-> whenToUse: Casual product pages, scrapbook substrates, playful marketing.
-> pairsWith:
->   prototypeStyles: [shell-scrapbook-substrate, aesthetic-cluttercore, recipe-bento-marketing]
-> notForUseWhen: editorial restraint, brutalism
+> shadow for stuck-on feel, slight 3D pillow lift, isolated on background.
 
 ## When to use
 

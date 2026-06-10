@@ -44,14 +44,9 @@ hand-painted plants in terracotta or ceramic pots.
 ## Example prompt template
 
 > Hand-painted gouache illustration of a houseplant in terracotta pot, matte
->   chalky finish with subtle brush texture, sage-green leaves and warm cream
->   background, no outline, painted edge quality, isolated as spot illustration,
->   Susana Ortiz Fancy Plants style.
-> whenToUse: Cottagecore, wellness brands, plant care, food editorial, cozy
->   lifestyle content.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, aesthetic-solarpunk, aesthetic-coastal-grandmother, recipe-warm-restraint]
-> notForUseWhen: tech, finance, anything cool-toned
+> chalky finish with subtle brush texture, sage-green leaves and warm cream
+> background, no outline, painted edge quality, isolated as spot illustration,
+> Susana Ortiz Fancy Plants style.
 
 ## When to use
 

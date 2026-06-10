@@ -46,10 +46,6 @@ Internal glow as if subject is lit from within.
 ## Example prompt template
 
 > Macro beauty shot of a cheek with a single dusting of gold pigment shimmer, the skin appearing lit from within, soft particle dust floating in the warm gold ambient, single-hue rose-gold background. Single soft warm key light from camera-left with a glow overlay, particle backlight from upper-right. Shot on a Canon R5 with a 100mm macro at f/4, warm gold grade, soft bloom, particle highlights, retained skin texture. Enchanted, luminous, magical mood. Magic glow beauty editorial.
-> whenToUse: Luxury beauty, premium fragrance, jewelry, fine watch detail, anything aspirational-magical.
-> pairsWith:
->   prototypeStyles: [aesthetic-angelcore, aesthetic-fairycore, style-holographic, style-claymorphism]
-> notForUseWhen: Documentary, gritty, B2B, hardware.
 
 ## When to use
 

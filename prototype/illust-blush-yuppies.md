@@ -40,13 +40,9 @@ polished modern characters with relatable office scenes.
 ## Example prompt template
 
 > Refined modern flat vector character in office scene, polished friendly
->   pose, sophisticated muted palette of sage rust cream and taupe, no outline
->   with subtle internal detail lines, UI-ready isolated composition, Irene
->   Falgueras Yuppies aesthetic.
-> whenToUse: Productivity SaaS, B2B with personality, onboarding flows.
-> pairsWith:
->   prototypeStyles: [recipe-linear-product-ui, recipe-bento-marketing, recipe-restrained-ai-marketing]
-> notForUseWhen: editorial, brutalism, youth-music
+> pose, sophisticated muted palette of sage rust cream and taupe, no outline
+> with subtle internal detail lines, UI-ready isolated composition, Irene
+> Falgueras Yuppies aesthetic.
 
 ## When to use
 

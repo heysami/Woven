@@ -46,10 +46,6 @@ Medium format Pentax 67 or Hasselblad, 80mm normal lens.
 ## Example prompt template
 
 > Tight black-and-white close-up of a young woman's face, freckles and sea-salted hair across the cheek, eyes half-closed, no makeup. Lit by soft late-afternoon window light from camera-right with no fill. Shot on a Pentax 67 with an 80mm lens, deep tritone print preserving every grain of the negative, gentle highlight roll-off. Intimate, dreamy, unguarded mood. Mario Sorrenti early-1990s Calvin Klein campaign feel. Subject slightly off-center, soft focus on the lashes.
-> whenToUse: Fragrance campaigns, monochrome editorial, intimate portraiture, anywhere the brief reads as "tender" or "first love" or "skin."
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, style-cream-humanist, style-serif-warm-paper, aesthetic-coastal-grandmother]
-> notForUseWhen: Anything needing color, product detail, or commercial-explicit subject.
 
 ## When to use
 

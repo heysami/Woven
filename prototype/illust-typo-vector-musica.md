@@ -40,13 +40,9 @@ music-festival poster lettering: chunky display + decorative motif.
 ## Example prompt template
 
 > Music festival poster typography for [WORD], chunky display lettering mixed
->   with vintage scripts and geometric sans, layered with illustrative musical
->   motifs (notes, instruments, stage silhouette), rich gradient with halftone
->   overlay, Vector Música aesthetic.
-> whenToUse: Music marketing, festival branding, nightlife.
-> pairsWith:
->   prototypeStyles: [aesthetic-vector-vector-musica, aesthetic-acid-design, aesthetic-vaporwave]
-> notForUseWhen: editorial restraint, B2B
+> with vintage scripts and geometric sans, layered with illustrative musical
+> motifs (notes, instruments, stage silhouette), rich gradient with halftone
+> overlay, Vector Música aesthetic.
 
 ## When to use
 

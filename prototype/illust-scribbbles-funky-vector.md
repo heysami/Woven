@@ -44,13 +44,8 @@ single-line abstract scribbles — squiggles, loops, tangles.
 ## Example prompt template
 
 > Loose abstract scribble made with single 4px marker line, vector shape,
->   monochrome, decoration-only no subject, isolated on white, Scribbbles.design
->   funky aesthetic — like a marker doodle test.
-> whenToUse: Background accent, replacing solid divider lines, highlighting
->   words like a manual underline.
-> pairsWith:
->   prototypeStyles: [style-doodle, aesthetic-corporate-memphis, recipe-bento-marketing, aesthetic-positivity-kawaii]
-> notForUseWhen: editorial, brutalism, photoreal
+> monochrome, decoration-only no subject, isolated on white, Scribbbles.design
+> funky aesthetic — like a marker doodle test.
 
 ## When to use
 

@@ -3,9 +3,9 @@
 # next to this file in prototype/ and were generated via image_gen.
 images:
   - src: aesthetic-y2k-myspace-ui.png
-    reason: Generated UI mockup committing this aesthetic's vocabulary at a usable density — palette, type tone, decoration motifs in context.
+    reason: Aesthetic vocabulary in UI.
   - src: aesthetic-y2k-myspace-isolated.png
-    reason: Isolated subject sample — the aesthetic's signature motif / texture / illustration treatment on a neutral background.
+    reason: Signature motif, isolated.
 ---
 # Y2K MySpace (aesthetic)
 

@@ -40,12 +40,8 @@ HB-to-6B graphite range on cream paper.
 ## Example prompt template
 
 > Pencil-graphite sketch of [SUBJECT] on cream paper, HB-to-6B range with
->   cross-hatched shadows, visible construction lines and faint eraser marks,
->   sketchbook-page aesthetic.
-> whenToUse: Editorial illustration, design portfolios, hand-craft brands.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-readcv, aesthetic-dark-academia, recipe-warm-restraint]
-> notForUseWhen: tech, brutalism, polished
+> cross-hatched shadows, visible construction lines and faint eraser marks,
+> sketchbook-page aesthetic.
 
 ## When to use
 

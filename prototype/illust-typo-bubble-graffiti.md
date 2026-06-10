@@ -42,12 +42,8 @@ rounded chunky bubble letterforms.
 ## Example prompt template
 
 > Bubble graffiti wordmark of [WORD], rounded chunky letterforms outlined
->   with 4px contrasting stroke, offset drop shadow for dimension, spray-paint
->   texture or solid candy color, NYC subway-style hip-hop aesthetic.
-> whenToUse: Street brands, music, youth-skate-culture.
-> pairsWith:
->   prototypeStyles: [aesthetic-urbling, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics]
-> notForUseWhen: B2B, editorial restraint
+> with 4px contrasting stroke, offset drop shadow for dimension, spray-paint
+> texture or solid candy color, NYC subway-style hip-hop aesthetic.
 
 ## When to use
 

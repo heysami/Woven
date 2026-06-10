@@ -40,12 +40,8 @@ photo cutouts assembled into surreal scene.
 ## Example prompt template
 
 > Raster photo-cutout collage of [SCENE], scanned magazine photos assembled
->   with intentionally ragged cut edges, mixed-media zine aesthetic, surreal
->   arrangement.
-> whenToUse: Music posters, fashion editorial, contemporary art.
-> pairsWith:
->   prototypeStyles: [style-raster-cutout, aesthetic-anti-design, aesthetic-acid-design, recipe-editorial-magazine]
-> notForUseWhen: B2B, polished SaaS
+> with intentionally ragged cut edges, mixed-media zine aesthetic, surreal
+> arrangement.
 
 ## When to use
 

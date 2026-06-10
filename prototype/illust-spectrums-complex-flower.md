@@ -35,12 +35,8 @@ flower-like radial shapes, complex stars, mandala-adjacent forms.
 ## Example prompt template
 
 > Radial symmetric flower or star vector shape, solid single-color fill,
->   multi-petal geometric form, isolated decoration, Spectrums complex
->   shape aesthetic.
-> whenToUse: Hero accents, decorative section dividers, headline halos.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-memphis-loud, aesthetic-curly-girly, aesthetic-positivity-kawaii, aesthetic-acid-design]
-> notForUseWhen: minimalist hairline UI
+> multi-petal geometric form, isolated decoration, Spectrums complex
+> shape aesthetic.
 
 ## When to use
 

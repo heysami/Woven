@@ -46,10 +46,6 @@ Volumetric god-rays cutting through atmosphere.
 ## Example prompt template
 
 > A figure in a long velvet cloak standing in a sunlit forest clearing, volumetric god-rays cutting through the canopy from upper-right, warm rim light haloing the subject, soft natural fill from the moss-covered ground. Shot on an Arri Alexa with an 85mm and a cinematic glow filter, warm grade, emerald saturation, gentle halation, slight grain. Magical, reverent, dreamlike mood. Fantasy editorial in the lineage of Annie Leibovitz Disney Dream Portraits.
-> whenToUse: Game marketing, fantasy publishing, premium fragrance with mythological angle, theme park, niche perfume.
-> pairsWith:
->   prototypeStyles: [aesthetic-fairycore, aesthetic-cottagegoth, aesthetic-cottagecore, aesthetic-solarpunk]
-> notForUseWhen: B2B, modern minimal, tech product.
 
 ## When to use
 

@@ -40,13 +40,9 @@ single large initial letter painted with gold leaf.
 ## Example prompt template
 
 > Illuminated drop cap initial letter [LETTER], painted with gold leaf and
->   gouache on vellum, botanical vines and small creatures entwined around
->   the form, palette of gold lapis blue vermillion and ivory, fine ink
->   outline, medieval manuscript aesthetic, 6 lines tall.
-> whenToUse: Long-form editorial, literary site, book-cover design.
-> pairsWith:
->   prototypeStyles: [aesthetic-dark-academia, recipe-editorial-magazine, recipe-newspaper-of-record, style-serif-warm-paper]
-> notForUseWhen: tech, brutalism, anything sans-serif
+> gouache on vellum, botanical vines and small creatures entwined around
+> the form, palette of gold lapis blue vermillion and ivory, fine ink
+> outline, medieval manuscript aesthetic, 6 lines tall.
 
 ## When to use
 

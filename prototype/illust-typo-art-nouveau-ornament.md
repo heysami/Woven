@@ -42,13 +42,9 @@ letterforms entwined with floral vines, buds, tendrils.
 ## Example prompt template
 
 > Art Nouveau ornamental wordmark of [WORD], letterforms entwined with floral
->   vines and curling tendrils, whiplash organic curves, terminals curl into
->   leaves, framed by botanical ornament, lithograph poster aesthetic, muted
->   palette of gold ochre sage and burgundy, Alphonse Mucha style.
-> whenToUse: Boutique apothecary, perfume, natural-wine labels, museum poster.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, aesthetic-dark-academia, aesthetic-cottagecore, aesthetic-fairycore]
-> notForUseWhen: tech, brutalism, neon
+> vines and curling tendrils, whiplash organic curves, terminals curl into
+> leaves, framed by botanical ornament, lithograph poster aesthetic, muted
+> palette of gold ochre sage and burgundy, Alphonse Mucha style.
 
 ## When to use
 

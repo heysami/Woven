@@ -42,12 +42,8 @@ mid-century American commercial lettering revival.
 ## Example prompt template
 
 > Polished retro American commercial lettering for [WORD], 1960s sign-painter
->   style with subtle ornament accent, palette of coral cream and navy,
->   lithograph crisp print quality, House Industries revival aesthetic.
-> whenToUse: Beverage brands, premium consumer goods, retro restaurant identity.
-> pairsWith:
->   prototypeStyles: [aesthetic-cassette-futurism, aesthetic-coastal-grandmother, recipe-warm-restraint, recipe-editorial-magazine]
-> notForUseWhen: brutalism, tech-futurist
+> style with subtle ornament accent, palette of coral cream and navy,
+> lithograph crisp print quality, House Industries revival aesthetic.
 
 ## When to use
 

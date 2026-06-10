@@ -39,12 +39,8 @@ cozy small joys: coffee, books, popcorn.
 ## Example prompt template
 
 > Cozy flat vector intimate vignette of coffee and book on table, warm cream
->   palette with dusty pink accent, small joyful composition, Susana Salas Little
->   Things aesthetic.
-> whenToUse: Wellness, journaling, lifestyle blogs.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, aesthetic-cottagecore, recipe-readcv]
-> notForUseWhen: B2B technical
+> palette with dusty pink accent, small joyful composition, Susana Salas Little
+> Things aesthetic.
 
 ## When to use
 

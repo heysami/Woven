@@ -40,12 +40,8 @@ blackletter foundation with sharp ornate flourishes.
 ## Example prompt template
 
 > Blackletter neo-gothic wordmark of [WORD], high-contrast broken-pen strokes,
->   sharp ornate flourishes, paired with dagger or flame ornament, mono black
->   or crimson accent, fashion-streetwear blackletter aesthetic.
-> whenToUse: Streetwear, metal music, dark editorial, gothic brands.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagegoth, aesthetic-dark-academia, aesthetic-corporate-grunge]
-> notForUseWhen: friendly SaaS, Bauhaus, kawaii
+> sharp ornate flourishes, paired with dagger or flame ornament, mono black
+> or crimson accent, fashion-streetwear blackletter aesthetic.
 
 ## When to use
 

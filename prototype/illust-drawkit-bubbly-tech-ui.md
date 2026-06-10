@@ -44,15 +44,9 @@ tech objects (laptops, phones, cards) rendered as inflated bubble forms.
 ## Example prompt template
 
 > 3D bubbly tech illustration of a laptop with chat bubble, inflated pillow forms,
->   pastel lilac-to-mint gradient surfaces, glossy plastic lacquer finish, soft pink
->   accent floating bubbles, 3/4 isometric view, studio lighting on pale lavender
->   background, soft contact shadow, no hard edges, octane render quality.
-> whenToUse: SaaS hero or feature-block where you want to show product capability
->   without showing the product literally. Pairs with style-claymorphism heroes and
->   bento-marketing recipes.
-> pairsWith:
->   prototypeStyles: [style-claymorphism, recipe-bento-marketing, recipe-restrained-ai-marketing, style-neumorphism]
-> notForUseWhen: dev-tools marketing wanting credibility, terminal-on-web
+> pastel lilac-to-mint gradient surfaces, glossy plastic lacquer finish, soft pink
+> accent floating bubbles, 3/4 isometric view, studio lighting on pale lavender
+> background, soft contact shadow, no hard edges, octane render quality.
 
 ## When to use
 

@@ -46,10 +46,6 @@ Photo passed through visible CMYK halftone dot pattern.
 ## Example prompt template
 
 > Editorial half-body portrait of a young person in a chrome top, posed three-quarter, rendered as a coarse CMYK halftone print with visible large dot pattern, slight cyan-magenta channel misregistration, warm newsprint paper texture, electric pink and cyan dominant. The dot pattern roughly 60 LPI, the paper tone slightly yellow-warm. Zine, raw, kinetic mood. Y2K newsprint halftone treatment over a fashion editorial frame.
-> whenToUse: Music posters, zine, streetwear lookbook, Gen-Z marketing, hero images for editorial websites that want to reference print culture.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-memphis-loud, aesthetic-y2k-futurism, aesthetic-acid-graphics, recipe-y2k-memphis-loud]
-> notForUseWhen: Luxury, premium, anything aspirational-clean.
 
 ## When to use
 

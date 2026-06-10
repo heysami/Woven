@@ -40,13 +40,9 @@ tessellated repeating shapes that transform.
 ## Example prompt template
 
 > M.C. Escher impossible-geometry composition with tessellated shapes
->   metamorphosing across the plane, impossible architectural staircase
->   based on Penrose triangle, lithograph black-on-cream, mathematical
->   precision lines, mid-century surrealist aesthetic.
-> whenToUse: Math / science brands, puzzle products, premium editorial.
-> pairsWith:
->   prototypeStyles: [aesthetic-op-art, aesthetic-constructivism, recipe-editorial-magazine]
-> notForUseWhen: friendly consumer, cottagecore
+> metamorphosing across the plane, impossible architectural staircase
+> based on Penrose triangle, lithograph black-on-cream, mathematical
+> precision lines, mid-century surrealist aesthetic.
 
 ## When to use
 

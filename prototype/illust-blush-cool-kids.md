@@ -44,14 +44,9 @@ bold abstract patterns on clothing (checkerboard, stripes, dots).
 ## Example prompt template
 
 > Flat vector character with chunky simplified body in dynamic tilted pose,
->   clothing covered in bold abstract patterns — checkerboard stripes and dots —
->   vibrant saturated palette of fuchsia teal and yellow, high contrast, no
->   outline, Irene Falgueras Cool Kids aesthetic.
-> whenToUse: Music, culture, youth-targeted product — when you want personality
->   over neutrality.
-> pairsWith:
->   prototypeStyles: [aesthetic-maximalism, aesthetic-y2k-memphis-loud, aesthetic-positivity-kawaii, aesthetic-acid-design]
-> notForUseWhen: enterprise, serious finance, restrained AI marketing
+> clothing covered in bold abstract patterns — checkerboard stripes and dots —
+> vibrant saturated palette of fuchsia teal and yellow, high contrast, no
+> outline, Irene Falgueras Cool Kids aesthetic.
 
 ## When to use
 

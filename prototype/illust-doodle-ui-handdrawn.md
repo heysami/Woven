@@ -40,12 +40,8 @@ wobbly hand-drawn line as if on whiteboard.
 ## Example prompt template
 
 > Doodle UI hand-drawn illustration of [SUBJECT] with wobbly 2px marker line,
->   irregular shapes never perfectly geometric, mono black with one accent,
->   Excalidraw whiteboard-sketch aesthetic.
-> whenToUse: Devtools marketing, design-thinking brands, whiteboard-app products.
-> pairsWith:
->   prototypeStyles: [style-doodle, recipe-devtools-marketing, recipe-readcv]
-> notForUseWhen: photoreal, enterprise polish
+> irregular shapes never perfectly geometric, mono black with one accent,
+> Excalidraw whiteboard-sketch aesthetic.
 
 ## When to use
 

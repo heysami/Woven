@@ -46,10 +46,6 @@ Datamoshing, channel shift, scanline artifacts.
 ## Example prompt template
 
 > Editorial portrait of a young person in a chrome jacket transformed by circuit-bent glitch treatment, datamoshed channel shift across the face, vertical pixel-sorting stripes through the lower frame, saturated RGB primaries, JPEG compression artifacts, scanline overlay, slight VHS noise. Aggressive, broken, kinetic mood. Glitch art editorial treatment.
-> whenToUse: Music streaming art, electronic music posters, cyberpunk-themed game key art, edgy fashion, indie experimental editorial.
-> pairsWith:
->   prototypeStyles: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-acid-graphics, style-holographic]
-> notForUseWhen: Premium, B2B, anything restrained or sincere.
 
 ## When to use
 

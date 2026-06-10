@@ -46,10 +46,6 @@ Warm Kodachrome amber and earth tones.
 ## Example prompt template
 
 > Editorial of a young woman in a suede jacket and silk scarf walking through a sunlit meadow at golden hour, long hair caught in motion, mid-laugh looking back over her shoulder. Low golden sun from camera-right, soft natural fill, dreamy halation around the rim of her hair. Shot on a Pentax K1000 with a 50mm f/1.4, Kodachrome 64, amber and warm earth tones, soft warm grain. Dreamy, romantic, free mood. 1970s soft-grain editorial.
-> whenToUse: Heritage fashion, nostalgia campaigns, wellness for older demographics, hospitality summer marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-warm-restraint, style-cream-humanist]
-> notForUseWhen: Tech, B2B, modern minimal.
 
 ## When to use
 

@@ -42,13 +42,9 @@ notForUseWhen: B2B, brutalism, tech
 ## Example prompt template
 
 > Mary Blair stylized mid-century illustration of [SCENE], 2D flat geometric
->   composition with swirling imaginative shapes, bold non-naturalistic palette
->   of turquoise magenta and gold, gouache and tempera matte texture, Disney
->   concept-art aesthetic.
-> whenToUse: Premium kids brands, theme-park identity, vintage-feel editorial.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, recipe-editorial-magazine, aesthetic-fairycore]
-> notForUseWhen: B2B, brutalism, tech
+> composition with swirling imaginative shapes, bold non-naturalistic palette
+> of turquoise magenta and gold, gouache and tempera matte texture, Disney
+> concept-art aesthetic.
 
 ## When to use
 

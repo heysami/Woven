@@ -46,10 +46,6 @@ Subject mid-action with the product, natural ambient light.
 ## Example prompt template
 
 > A person in a soft wool sweater seated at a pale ash desk in a modernist office with a single large plant camera-right, hands resting on a sleek laptop, mid-thought looking just past the camera. Soft window daylight from camera-left, even ambient, no hard shadow. Shot on a Sony A7R with a 35mm at f/4, faithful slightly-cool color, retained product detail and wool texture. Capable, modern, present mood. Clean tech-lifestyle hero photograph.
-> whenToUse: SaaS marketing hero, premium tech product pages, modern lifestyle apps, productivity-tool marketing.
-> pairsWith:
->   prototypeStyles: [recipe-devtools-marketing, recipe-restrained-ai-marketing, recipe-bento-marketing, recipe-linear-product-ui]
-> notForUseWhen: Editorial mood, fast fashion, anything kinetic.
 
 ## When to use
 

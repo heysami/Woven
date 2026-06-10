@@ -35,12 +35,8 @@ notForUseWhen: dense data UI, brutalism
 ## Example prompt template
 
 > Refined geometric or organic vector shape (wave/drip/soft polygon), flat
->   fill or 2-stop gradient, editorial mid-saturation color, decoration only,
->   Monika Michalczyk Shapes.gallery style.
-> whenToUse: Designer portfolios, editorial sites, refined SaaS marketing.
-> pairsWith:
->   prototypeStyles: [recipe-neo-grotesque-portfolio, recipe-readcv, style-bold-display, recipe-bento-marketing]
-> notForUseWhen: dense data UI, brutalism
+> fill or 2-stop gradient, editorial mid-saturation color, decoration only,
+> Monika Michalczyk Shapes.gallery style.
 
 ## When to use
 

@@ -46,10 +46,6 @@ notForUseWhen: Conversion product, fashion, anything fast.
 ## Example prompt template
 
 > Color photograph of an empty motel parking lot at noon in 1973 Texas, a single yellow Buick parked diagonally, ice-machine and sun-bleached sign in the middle ground, flat blue sky filling the upper third. Hard noon sun, deep shadows under the motel awning, even flat lighting. Shot on a 4x5 large format view camera at f/22, Kodak 4x5 transparency, saturated 1970s color, slight cyan cast, edge-to-edge sharpness. Observed, attentive, banal-transformed mood. Stephen Shore Uncommon Places fine-art style.
-> whenToUse: Editorial fine-art content, slow travel brands, archive-driven storytelling, brand books that want gravitas without gloss.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-readcv, style-serif-warm-paper, recipe-warm-restraint]
-> notForUseWhen: Conversion product, fashion, anything fast.
 
 ## When to use
 

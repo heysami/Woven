@@ -44,14 +44,9 @@ rigid geometric torso + modular limbs that snap together.
 ## Example prompt template
 
 > Flat vector illustration of a single human figure, modular geometric body,
->   faceless head with simple hair silhouette, flat solid color clothing in
->   earth-tone palette with one accent pop, no line, no shading, no background,
->   standing in casual pose, Pablo Stanley Humaaans style.
-> whenToUse: Inclusive product surfaces, empty states, status pages, where you
->   need a person but want zero personality projection.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-corporate-memphis, recipe-linear-product-ui]
-> notForUseWhen: editorial, brutalism, anything emotive
+> faceless head with simple hair silhouette, flat solid color clothing in
+> earth-tone palette with one accent pop, no line, no shading, no background,
+> standing in casual pose, Pablo Stanley Humaaans style.
 
 ## When to use
 

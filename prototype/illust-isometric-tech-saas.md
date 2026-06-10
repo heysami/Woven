@@ -42,13 +42,9 @@ notForUseWhen: editorial, brutalism, cottagecore
 ## Example prompt template
 
 > 2.5D isometric SaaS scene showing platform architecture with floating UI
->   panels and small characters interacting, soft-shaded vector with subtle
->   gradient surfaces, purple-to-blue tech gradient background, soft glow
->   accents, IBM-era B2B isometric aesthetic.
-> whenToUse: B2B SaaS hero, platform marketing, technical onboarding.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, recipe-linear-product-ui, recipe-devtools-marketing, recipe-scientific-infra-marketing]
-> notForUseWhen: editorial, brutalism, cottagecore
+> panels and small characters interacting, soft-shaded vector with subtle
+> gradient surfaces, purple-to-blue tech gradient background, soft glow
+> accents, IBM-era B2B isometric aesthetic.
 
 ## When to use
 

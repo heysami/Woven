@@ -3,9 +3,9 @@
 # next to this file in prototype/ and were generated via image_gen.
 images:
   - src: style-dense-mono-dark-ui.png
-    reason: Generated UI mockup showing this style's surface treatment — type, color, shadow, corner, and component register together.
+    reason: Style surface UI mockup.
   - src: style-dense-mono-dark-isolated.png
-    reason: Isolated subject sample — the style's signature surface (component, card, or hero element) on a neutral background.
+    reason: Signature surface, isolated.
 ---
 # Dense mono dark (Bloomberg-style) (style)
 

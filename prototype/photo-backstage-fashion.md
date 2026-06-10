@@ -46,10 +46,6 @@ Available light, sometimes mixed with hair-light or makeup-station tungsten.
 ## Example prompt template
 
 > Backstage photograph of a model in a white silk robe sitting in a director's chair, hair in foil curlers, phone in hand, half-applied makeup, garment racks of metallic dresses out of focus behind. Available mixed tungsten from makeup station with soft natural light from a window upper-right, slight tolerated motion blur on the phone. Shot on a Leica Q2 with a 28mm at f/2, natural color with slight desaturation. Observed, in-process, intimate-professional mood. Backstage editorial BTS, fashion week documentary.
-> whenToUse: Behind-the-scenes content for fashion, beauty launches, behind-the-craft brand storytelling, documentary marketing.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-readcv, aesthetic-corporate-grunge, recipe-restrained-ai-marketing]
-> notForUseWhen: Polished hero, conversion product page.
 
 ## When to use
 

@@ -35,11 +35,7 @@ circle / arc / wave with halftone-dot fill.
 ## Example prompt template
 
 > Halftone-dot fill geometric shape (circle / arc / wave), retro print-press
->   aesthetic, mono or 2-color, decoration accent.
-> whenToUse: Editorial accents, indie posters, retro branding.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, aesthetic-anti-design, aesthetic-y2k-memphis-loud]
-> notForUseWhen: minimalist clean SaaS
+> aesthetic, mono or 2-color, decoration accent.
 
 ## When to use
 

@@ -39,11 +39,7 @@ Halloween doodles: ghosts, pumpkins, cats in costume.
 ## Example prompt template
 
 > Spooky-cute Halloween sticker of [SUBJECT], thick 3px black outline, palette
->   of orange black and purple, flat fill, isolated, Blush Spooky Stickers style.
-> whenToUse: Seasonal Halloween, gaming, edgy-friendly brand moments.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagegoth, aesthetic-dreamcore, aesthetic-positivity-kawaii]
-> notForUseWhen: enterprise, restrained AI
+> of orange black and purple, flat fill, isolated, Blush Spooky Stickers style.
 
 ## When to use
 

@@ -46,10 +46,6 @@ Direct on-camera flash in intimate domestic interiors.
 ## Example prompt template
 
 > Intimate flash photograph of two people sitting on the edge of an unmade bed in a small apartment, one half-dressed in a slip, the other in a t-shirt smoking, slight tilt to the framing, hard direct on-camera flash with available tungsten lamp ambient retained, saturated reds and ambers, slight grain. Shot on a Nikon F2 with on-camera flash and a 35mm lens, Kodachrome 64. Intimate, vulnerable, honest, lived mood. Nan Goldin Ballad of Sexual Dependency diary style.
-> whenToUse: Indie fashion, LGBTQ-targeted campaigns, music for indie scenes, AIDS-history editorial, intimate documentary content.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, aesthetic-cottagegoth, aesthetic-dark-academia, aesthetic-dreamcore]
-> notForUseWhen: Family-friendly product, B2B, anything wholesome.
 
 ## When to use
 

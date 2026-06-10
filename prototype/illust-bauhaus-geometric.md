@@ -39,12 +39,8 @@ primary geometric shapes — circle, square, triangle.
 ## Example prompt template
 
 > Bauhaus geometric composition of [SUBJECT] using primary shapes (circle
->   square triangle) and primary colors (red blue yellow) on black or white,
->   rigid grid composition, Herbert Bayer aesthetic.
-> whenToUse: Design education, modernist brand, architectural firms.
-> pairsWith:
->   prototypeStyles: [aesthetic-bauhaus, aesthetic-de-stijl, aesthetic-constructivism, aesthetic-swiss-modernist]
-> notForUseWhen: warm, cottagecore, playful
+> square triangle) and primary colors (red blue yellow) on black or white,
+> rigid grid composition, Herbert Bayer aesthetic.
 
 ## When to use
 

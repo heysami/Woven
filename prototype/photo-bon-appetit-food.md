@@ -46,10 +46,6 @@ Dark wood, slate, or aged copper substrate.
 ## Example prompt template
 
 > Overhead 90-degree photograph of a half-eaten pasta dish on a vintage ceramic plate, crumbs and a drip of olive oil on a dark walnut table, a bone-handled fork resting on the edge of the plate, a linen napkin crumpled top-right. Single soft window light from camera-left, long natural shadow stretching camera-right, no fill. Shot on a Canon R5 with a 50mm at f/4, moody warm tone, deep shadow, jewel-tone food saturation retained. Appetizing, lived-in mood. Bon Appétit editorial food style.
-> whenToUse: Restaurant marketing, recipe content, premium grocery, food magazine editorial.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, style-serif-warm-paper, recipe-warm-restraint, aesthetic-cottagecore]
-> notForUseWhen: Fast casual, fast food, packaging hero shot, kid food.
 
 ## When to use
 

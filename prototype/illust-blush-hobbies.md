@@ -39,11 +39,7 @@ characters doing favorite activities (weight lifting, skateboarding, dancing, tr
 ## Example prompt template
 
 > Flat vector character doing a hobby (skateboarding), mid-motion action pose,
->   bright friendly palette, no outline, Jal Reed Hobbies aesthetic.
-> whenToUse: Lifestyle apps, fitness, hobby-marketplace SaaS.
-> pairsWith:
->   prototypeStyles: [aesthetic-corporate-memphis, aesthetic-positivity-kawaii, recipe-bento-marketing]
-> notForUseWhen: enterprise
+> bright friendly palette, no outline, Jal Reed Hobbies aesthetic.
 
 ## When to use
 

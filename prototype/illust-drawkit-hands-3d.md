@@ -44,14 +44,9 @@ anatomically simplified but realistically lit hand renders.
 ## Example prompt template
 
 > 3D photoreal-stylized hand holding [SUBJECT], anatomically simplified but
->   cinematically lit with soft skin shader and subsurface scattering, neutral
->   cream studio background, shallow depth of field, Apple-keynote quality
->   rendering, soft contact shadow, single light source from upper left.
-> whenToUse: Premium tech marketing, AI demo heroes, when you want to show
->   "this product is for humans" but with restraint.
-> pairsWith:
->   prototypeStyles: [recipe-restrained-ai-marketing, style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
-> notForUseWhen: cartoon contexts, brutalism, dense data UI
+> cinematically lit with soft skin shader and subsurface scattering, neutral
+> cream studio background, shallow depth of field, Apple-keynote quality
+> rendering, soft contact shadow, single light source from upper left.
 
 ## When to use
 

@@ -42,12 +42,8 @@ super-cute round simplified character.
 ## Example prompt template
 
 > Super-cute kawaii mascot of [SUBJECT], oversized round head with tiny body,
->   simple dot eyes and small smile mouth, pastel pink mint cream palette,
->   Sanrio-style cute mascot aesthetic.
-> whenToUse: Kid products, comfort apps, kawaii youth brands.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-curly-girly]
-> notForUseWhen: B2B serious
+> simple dot eyes and small smile mouth, pastel pink mint cream palette,
+> Sanrio-style cute mascot aesthetic.
 
 ## When to use
 

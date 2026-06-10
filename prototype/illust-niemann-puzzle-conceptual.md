@@ -41,13 +41,9 @@ minimal line work over real object photo.
 ## Example prompt template
 
 > Christoph Niemann conceptual puzzle illustration: a [REAL OBJECT] photographed
->   flat on white, minimal 2px precise line drawn over it transforms it into
->   [CONCEPT] — viewer's brain completes the joke, 2 colors maximum, Sunday
->   Sketches aesthetic.
-> whenToUse: Editorial think-pieces, op-ed, magazine cover.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, recipe-newspaper-of-record, recipe-readcv, style-serif-warm-paper]
-> notForUseWhen: marketing-decorative, brutalism
+> flat on white, minimal 2px precise line drawn over it transforms it into
+> [CONCEPT] — viewer's brain completes the joke, 2 colors maximum, Sunday
+> Sketches aesthetic.
 
 ## When to use
 

@@ -39,12 +39,8 @@ groups of 2-4 figures sharing moments.
 ## Example prompt template
 
 > Flat vector scene of 3 figures sharing intimate moment, warm earth palette
->   of rust ochre and cream, no outline, friendly faces, Veronica Iezzi Family
->   Values aesthetic.
-> whenToUse: Healthcare, family services, community products.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, aesthetic-corporate-memphis, aesthetic-coastal-grandmother]
-> notForUseWhen: solo-product hero
+> of rust ochre and cream, no outline, friendly faces, Veronica Iezzi Family
+> Values aesthetic.
 
 ## When to use
 

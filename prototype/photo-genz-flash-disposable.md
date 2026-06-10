@@ -46,10 +46,6 @@ Hard on-camera flash, often at a party or backstage, slight red-eye risk.
 ## Example prompt template
 
 > Backstage at a fashion show, a young model in a chrome-finish mesh top mid-laugh with a plastic cup raised, head half-turned, hair caught in motion. Hard direct on-camera flash, mild red-eye, deep dark ambient fall-off, slight reflective sheen on the lipgloss and on the chrome rings of the top. Shot on a Fujifilm QuickSnap disposable on Superia 400, soft plastic-lens vignette, magenta color shift in the shadows, blown highlight on the forehead. Careless, kinetic mood, off-center crop. 2025 backstage editorial.
-> whenToUse: Gen-Z fashion, fragrance for younger demos, music streaming, club-night posters, lookbooks for streetwear, anything that needs to read as 2024-25 cool.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-futurism, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics, aesthetic-rgb-gamer]
-> notForUseWhen: Luxury, B2B, anything sincere, anything elderly-targeted.
 
 ## When to use
 

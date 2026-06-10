@@ -39,12 +39,8 @@ everyday isometric objects with white halo.
 ## Example prompt template
 
 > Isometric sticker of [SUBJECT], 30-degree angle, flat-shaded surfaces,
->   6px white halo outline, pastel palette with saturated accent, isolated on
->   neutral bg, Mariana Gonzalez Vega Blush isometric aesthetic.
-> whenToUse: Same as drawkit-isometric-stickers; tighter sticker-pack feel.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, recipe-linear-product-ui, aesthetic-positivity-kawaii]
-> notForUseWhen: editorial, brutalism
+> 6px white halo outline, pastel palette with saturated accent, isolated on
+> neutral bg, Mariana Gonzalez Vega Blush isometric aesthetic.
 
 ## When to use
 

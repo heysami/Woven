@@ -46,10 +46,6 @@ Hard direct on-camera flash on subject at night.
 ## Example prompt template
 
 > Half-body portrait of a person in a black leather biker jacket on a Shibuya street corner at 1 a.m., looking just past camera-left with a confident half-smile, hand in pocket. Hard direct on-camera flash punching the subject forward, cyan and magenta neon signs in the background out of focus as small bokeh circles, no fill light. Shot on a Canon EOS R6 with a 28mm lens at f/2.8, CineStill 800T halation around the highlights, crushed black background, sharp focus on the eyes. Confident, nocturnal, magnetic mood. Tokyo neon-noir street portrait.
-> whenToUse: Streetwear campaigns, music streaming app art, neon-themed editorial, club marketing, anything that wants to read as 2 a.m.
-> pairsWith:
->   prototypeStyles: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-y2k-futurism, recipe-ai-foundry-dark]
-> notForUseWhen: Daylight product, family, wellness.
 
 ## When to use
 

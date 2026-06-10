@@ -35,11 +35,7 @@ asymmetric organic free-form blob shapes.
 ## Example prompt template
 
 > Asymmetric organic vector blob shape, solid pastel fill or 2-stop soft
->   gradient, no outline, isolated decoration accent, Spectrums library style.
-> whenToUse: Behind text as background mask, hero background bands.
-> pairsWith:
->   prototypeStyles: [style-aurorism, aesthetic-frutiger-aero, recipe-aurora-marketing, style-glassmorphism]
-> notForUseWhen: brutalism, hairline-restraint
+> gradient, no outline, isolated decoration accent, Spectrums library style.
 
 ## When to use
 

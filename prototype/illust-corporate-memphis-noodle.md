@@ -45,14 +45,9 @@ flat geometric humans, disproportionate.
 ## Example prompt template
 
 > Corporate Memphis flat vector illustration of figures, disproportionate
->   bodies with bendy noodle limbs and small heads, non-representational skin
->   colors (blue / purple / green), no facial features, flat solid-color
->   background, Alice Lee Slack style.
-> whenToUse: Big-tech mainstream marketing where neutrality is the safe choice.
->   Use sparingly given fatigue.
-> pairsWith:
->   prototypeStyles: [aesthetic-corporate-memphis, recipe-bento-marketing, recipe-restrained-ai-marketing]
-> notForUseWhen: indie / editorial / brutalism — anywhere personality matters
+> bodies with bendy noodle limbs and small heads, non-representational skin
+> colors (blue / purple / green), no facial features, flat solid-color
+> background, Alice Lee Slack style.
 
 ## When to use
 

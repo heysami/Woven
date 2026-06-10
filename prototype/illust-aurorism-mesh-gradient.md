@@ -40,12 +40,8 @@ smooth multi-stop mesh gradient.
 ## Example prompt template
 
 > Aurora mesh-gradient background, smooth multi-stop blend of teal violet
->   pink and sage flowing like northern lights, full-bleed canvas decoration,
->   ethereal Aurorism aesthetic.
-> whenToUse: Hero backgrounds, AI/tech marketing decoration.
-> pairsWith:
->   prototypeStyles: [style-aurorism, recipe-aurora-marketing, recipe-ai-foundry-dark, recipe-restrained-ai-marketing, style-holographic, style-liquid-glass]
-> notForUseWhen: brutalism, editorial, terminal
+> pink and sage flowing like northern lights, full-bleed canvas decoration,
+> ethereal Aurorism aesthetic.
 
 ## When to use
 

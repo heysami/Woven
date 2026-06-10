@@ -39,12 +39,8 @@ photoreal materials — leather stitch, brushed metal, wood grain.
 ## Example prompt template
 
 > Skeuomorphic detailed 3D rendering of [SUBJECT] with photoreal material
->   detail — leather stitching, brushed aluminum, polished wood grain, iOS-6
->   era texture quality, octane render.
-> whenToUse: Premium consumer products with material storytelling.
-> pairsWith:
->   prototypeStyles: [style-skeuomorphism, recipe-warm-restraint]
-> notForUseWhen: flat-vector marketing, brutalism
+> detail — leather stitching, brushed aluminum, polished wood grain, iOS-6
+> era texture quality, octane render.
 
 ## When to use
 

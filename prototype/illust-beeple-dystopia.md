@@ -42,13 +42,9 @@ oversized human figures in bleak future landscape.
 ## Example prompt template
 
 > Beeple-style dystopian 3D scene of an oversized human figure in bleak
->   post-apocalyptic landscape, dramatic smoky red sky with industrial grey,
->   Cinema 4D + Octane render quality, political commentary subject,
->   EVERYDAYS aesthetic.
-> whenToUse: Edgy cultural commentary, NFT-adjacent art brand, music album.
-> pairsWith:
->   prototypeStyles: [aesthetic-crypto-degen, aesthetic-cyberpunk, recipe-ai-foundry-dark]
-> notForUseWhen: friendly SaaS, kids, restrained AI marketing
+> post-apocalyptic landscape, dramatic smoky red sky with industrial grey,
+> Cinema 4D + Octane render quality, political commentary subject,
+> EVERYDAYS aesthetic.
 
 ## When to use
 

@@ -42,13 +42,9 @@ near-photographic anime backgrounds with stratus clouds.
 ## Example prompt template
 
 > Makoto Shinkai hyperreal anime scene of [SUBJECT], near-photographic detailed
->   background, stratus cloud sky with golden hour lens flare, dense Japanese
->   cityscape or suburban level crossing, palette of gold dusk blue and neon
->   sign accents, quiet two-shot character framing, cinematic anime aesthetic.
-> whenToUse: Premium anime-influenced product marketing, lifestyle storytelling.
-> pairsWith:
->   prototypeStyles: [aesthetic-cottagecore, recipe-warm-restraint, aesthetic-coastal-grandmother]
-> notForUseWhen: B2B serious, brutalism
+> background, stratus cloud sky with golden hour lens flare, dense Japanese
+> cityscape or suburban level crossing, palette of gold dusk blue and neon
+> sign accents, quiet two-shot character framing, cinematic anime aesthetic.
 
 ## When to use
 

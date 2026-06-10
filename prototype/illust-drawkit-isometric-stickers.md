@@ -44,14 +44,9 @@ everyday objects (laptop, coffee, book) in true 2:1 isometric.
 ## Example prompt template
 
 > Isometric sticker of [SUBJECT] at 30-degree axonometric angle, flat-shaded
->   plastic surfaces with single highlight stroke per facet, 6px white halo
->   outline around the entire form, detached drop shadow at 15% opacity, pastel
->   palette with one saturated accent color, isolated on neutral background.
-> whenToUse: B2B SaaS where the product needs to be cute but legible, Notion-era
->   feature blocks, onboarding state illos.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, recipe-linear-product-ui, aesthetic-positivity-kawaii]
-> notForUseWhen: editorial magazine, brutalism, dark cinematic UI
+> plastic surfaces with single highlight stroke per facet, 6px white halo
+> outline around the entire form, detached drop shadow at 15% opacity, pastel
+> palette with one saturated accent color, isolated on neutral background.
 
 ## When to use
 

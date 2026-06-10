@@ -40,13 +40,9 @@ photoreal source material multiplied into impossible forms.
 ## Example prompt template
 
 > Cyriak-style surreal photo composite of [SUBJECT] with limbs and eyes
->   multiplied across the form into Droste-effect recursion, masked photoreal
->   source material, darkly comic body horror, impossible multiplication
->   aesthetic.
-> whenToUse: Music videos, edgy editorial, surreal art-house brands. Use carefully.
-> pairsWith:
->   prototypeStyles: [aesthetic-dreamcore, aesthetic-anti-design, aesthetic-acid-graphics]
-> notForUseWhen: friendly, B2B, family
+> multiplied across the form into Droste-effect recursion, masked photoreal
+> source material, darkly comic body horror, impossible multiplication
+> aesthetic.
 
 ## When to use
 

@@ -40,12 +40,8 @@ cute stylized cash, coins, cards as flat icons.
 ## Example prompt template
 
 > Cute flat icon illustration of a dollar bill, chunky friendly form with
->   subtle pillow shading, candy palette of pink mint and lavender, sticker
->   style with optional white halo, Gustavo Pedrosa Currency Crush aesthetic.
-> whenToUse: Consumer fintech onboarding, neobank, friendly money UI.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, recipe-bento-marketing, style-claymorphism]
-> notForUseWhen: institutional finance, brutalism
+> subtle pillow shading, candy palette of pink mint and lavender, sticker
+> style with optional white halo, Gustavo Pedrosa Currency Crush aesthetic.
 
 ## When to use
 

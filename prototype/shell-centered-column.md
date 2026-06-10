@@ -3,7 +3,7 @@
 # next to this file in prototype/ and were generated via image_gen.
 images:
   - src: shell-centered-column-ui.png
-    reason: Generated UI mockup showing this shell's structural grammar — grid, density, regions, and characteristic component placement.
+    reason: Shell structure UI mockup.
 ---
 # Centered narrow-column shell
 

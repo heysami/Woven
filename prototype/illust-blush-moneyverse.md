@@ -41,13 +41,9 @@ money/finance objects in cosmic context (bitcoins flying through space).
 ## Example prompt template
 
 > Retro-futurist flat illustration of bitcoins flying through cosmic space,
->   rounded thick shapes with subtle paper grain texture, mid-century palette of
->   orange teal mustard with gold coin accent, playful absurd composition, Pau
->   Barbaro Moneyverse style, isolated on cream.
-> whenToUse: Friendly fintech, crypto-onramp products, finance blog headers.
-> pairsWith:
->   prototypeStyles: [aesthetic-defi-cosmic, aesthetic-crypto-degen, recipe-bento-marketing]
-> notForUseWhen: serious financial dashboards, Bloomberg
+> rounded thick shapes with subtle paper grain texture, mid-century palette of
+> orange teal mustard with gold coin accent, playful absurd composition, Pau
+> Barbaro Moneyverse style, isolated on cream.
 
 ## When to use
 

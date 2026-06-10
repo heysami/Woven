@@ -39,12 +39,8 @@ medical objects: organs, bones, pills, wheelchairs.
 ## Example prompt template
 
 > Friendly flat vector medical illustration of a heart organ, clean clinical
->   look with soft pink and sage palette on white, no outline, Deivid Saenz
->   Lifesavers healthcare aesthetic.
-> whenToUse: Health tech, telemedicine, pharma onboarding.
-> pairsWith:
->   prototypeStyles: [recipe-restrained-ai-marketing, recipe-bento-marketing]
-> notForUseWhen: gore, brutalism, editorial
+> look with soft pink and sage palette on white, no outline, Deivid Saenz
+> Lifesavers healthcare aesthetic.
 
 ## When to use
 

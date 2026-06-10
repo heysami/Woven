@@ -39,11 +39,7 @@ e-commerce + retail scenes.
 ## Example prompt template
 
 > Flat vector character with shopping bags browsing retail, friendly muted
->   palette, no outline, Veronica Iezzi Shopaholics ecommerce aesthetic.
-> whenToUse: Ecommerce empty states, checkout flows, retail SaaS.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, aesthetic-corporate-memphis]
-> notForUseWhen: B2B serious, editorial
+> palette, no outline, Veronica Iezzi Shopaholics ecommerce aesthetic.
 
 ## When to use
 

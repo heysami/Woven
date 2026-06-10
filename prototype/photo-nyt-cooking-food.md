@@ -46,10 +46,6 @@ Bright daylight, light wood, marble, or pale linen surface.
 ## Example prompt template
 
 > Three-quarter angle photograph of a wooden cutting board on a pale ash counter, hands in frame slicing scallions diagonally, a small bowl of toasted sesame seeds and a half-empty bottle of soy sauce in soft focus background. Bright diffused daylight from a large window camera-right, even forgiving exposure, no hard shadow. Shot on a Sony A7IV with a 50mm at f/4, slightly cool natural color, no vignette. Bright, capable, friendly mood. NYT Cooking editorial home-cook style.
-> whenToUse: Recipe content for daylight-positive brands, home-cooking app marketing, wellness food, kitchen tools, grocery.
-> pairsWith:
->   prototypeStyles: [recipe-readcv, style-cream-humanist, aesthetic-coastal-grandmother, recipe-restrained-ai-marketing]
-> notForUseWhen: Fine dining, moody restaurant marketing, fast food.
 
 ## When to use
 

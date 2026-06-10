@@ -40,12 +40,8 @@ sleek confident characters with bouncy pink dogs.
 ## Example prompt template
 
 > Sleek confident flat vector character in fashion editorial pose with bouncy
->   pink dog at heel, vivid doodle accents floating around, palette of hot pink
->   navy and gold, Jorge Margarido Tutto Ricco style, no outline, isolated.
-> whenToUse: Fashion ecommerce, lifestyle apps with attitude, beauty brand blogs.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-memphis-loud, aesthetic-curly-girly, aesthetic-maximalism]
-> notForUseWhen: B2B serious
+> pink dog at heel, vivid doodle accents floating around, palette of hot pink
+> navy and gold, Jorge Margarido Tutto Ricco style, no outline, isolated.
 
 ## When to use
 

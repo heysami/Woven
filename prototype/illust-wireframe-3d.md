@@ -41,13 +41,8 @@ polygon mesh wireframe shown without solid fill.
 ## Example prompt template
 
 > 3D wireframe mesh rendering of [SUBJECT], polygon mesh shown as thin 1px
->   neon cyan lines on dark navy background, no surface fill, isometric
->   composition, technical-diagram cyberpunk aesthetic.
-> whenToUse: Tech marketing for 3D / spatial / engineering products, Tron-
->   inspired branding.
-> pairsWith:
->   prototypeStyles: [aesthetic-cyberpunk, aesthetic-cassette-futurism, recipe-terminal-on-web, recipe-ai-foundry-dark]
-> notForUseWhen: warm consumer, cottagecore, friendly
+> neon cyan lines on dark navy background, no surface fill, isometric
+> composition, technical-diagram cyberpunk aesthetic.
 
 ## When to use
 

@@ -42,13 +42,9 @@ hand-crafted vector letterforms with floral / heart / bauble accents.
 ## Example prompt template
 
 > Decorative hand-crafted vector wordmark of [WORD], custom letterforms with
->   embedded dingbats stars and hearts inside the counters, swashes curling
->   from terminals, palette of pink cream brick red and sage, romance-novel
->   indie-craft Vectorheart aesthetic.
-> whenToUse: Boutique brands, craft-cocktail menus, indie publications.
-> pairsWith:
->   prototypeStyles: [aesthetic-vector-neovectorheart, aesthetic-vector-vectorbloom, aesthetic-curly-girly, recipe-warm-restraint]
-> notForUseWhen: tech, B2B, brutalism
+> embedded dingbats stars and hearts inside the counters, swashes curling
+> from terminals, palette of pink cream brick red and sage, romance-novel
+> indie-craft Vectorheart aesthetic.
 
 ## When to use
 

@@ -42,12 +42,8 @@ thick uniform black lines defining all forms.
 ## Example prompt template
 
 > Keith Haring pop-art illustration of dancing figures, thick uniform 6px
->   black outline, radiant motion lines around figures, flat primary palette
->   of red yellow blue and green, no shading, 1980s NYC street-art aesthetic.
-> whenToUse: Pride campaigns, activism brands, youth culture, music venues.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-maximalism, aesthetic-anti-design]
-> notForUseWhen: enterprise, brutalism, cottagecore
+> black outline, radiant motion lines around figures, flat primary palette
+> of red yellow blue and green, no shading, 1980s NYC street-art aesthetic.
 
 ## When to use
 

@@ -46,10 +46,6 @@ Cool muted palette, slight blue-gray cast.
 ## Example prompt template
 
 > A small human figure walking through a wide cool-toned concrete and oak-floor modernist apartment interior, generous negative space, cool muted palette dominated by gray and oak. Soft overcast daylight from a large window upper-left, no hard shadow. Shot on a Fuji GFX medium format with a 50mm equivalent at f/5.6, cool muted color grade, slight blue-gray cast, retained highlight detail. Calm, considered, slow mood. Cereal magazine slow-lifestyle editorial.
-> whenToUse: Hospitality, real estate, modernist furniture, Scandi brands, slow-lifestyle apps, premium travel.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-restrained-hairline, style-cream-humanist]
-> notForUseWhen: Tech B2B, fast-paced consumer, anything kinetic.
 
 ## When to use
 

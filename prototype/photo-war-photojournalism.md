@@ -46,10 +46,6 @@ notForUseWhen: Any commercial application. Reserved for editorial truth.
 ## Example prompt template
 
 > A civilian woman shielding a child crossing a dusty street, captured mid-stride in the harsh midday smoke-filtered light of a conflict zone, available light only, slight tilt to the horizon, imperfect composition with the edge of a broken vehicle clipping the right frame. Shot on a Canon 5D with a 28mm prime, saturated journalism color, slight grain, mild motion blur on the child's foot. Grave, witness mood. War photojournalism, James Nachtwey lineage.
-> whenToUse: Editorial only — news, documentary film stills, NGO campaign. NEVER for consumer brand work.
-> pairsWith:
->   prototypeStyles: [recipe-newspaper-of-record, style-agate-broadsheet]
-> notForUseWhen: Any commercial application. Reserved for editorial truth.
 
 ## When to use
 

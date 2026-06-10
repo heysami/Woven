@@ -46,10 +46,6 @@ notForUseWhen: Anything aspirational, hospitality, luxury, wellness.
 ## Example prompt template
 
 > Extreme close-up of a middle-aged man in a fur coat mid-stride on Fifth Avenue at noon, caught startled by a hard flash held at arm's length, every wrinkle and skin pore in sharp detail, crushed black background, hot highlight bouncing off the forehead and the fur. Shot on a Leica M6 with a 28mm lens, Kodak Tri-X 400, harsh contrast, slight grain, slight motion blur on the hand. Aggressive, intrusive, raw mood. Bruce Gilden NYC street style. The composition off-center, the subject's face filling 80% of the frame.
-> whenToUse: Editorial photography for music, streetwear, journalism-flavored marketing, anything that wants to read as confrontational and real.
-> pairsWith:
->   prototypeStyles: [recipe-brutalist-web, aesthetic-neubrutalism, aesthetic-web-brutalism, recipe-newspaper-of-record]
-> notForUseWhen: Anything aspirational, hospitality, luxury, wellness.
 
 ## When to use
 

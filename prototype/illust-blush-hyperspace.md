@@ -44,13 +44,9 @@ retro-futurist space doodles: rockets, planets, astronauts.
 ## Example prompt template
 
 > Retro-futurist mid-century illustration of a rocket and planet, thick rounded
->   flat shapes with subtle paper grain, palette of mid-century orange teal and
->   mustard, 3px rounded line, diagonal flying composition, Mathew Wong Hyperspace
->   aesthetic, spot illustration on cream.
-> whenToUse: When you want retro-cool, atompunk, or playful tech without going Y2K.
-> pairsWith:
->   prototypeStyles: [aesthetic-atompunk, aesthetic-cassette-futurism, aesthetic-frutiger-eco]
-> notForUseWhen: photoreal, dense data UI
+> flat shapes with subtle paper grain, palette of mid-century orange teal and
+> mustard, 3px rounded line, diagonal flying composition, Mathew Wong Hyperspace
+> aesthetic, spot illustration on cream.
 
 ## When to use
 

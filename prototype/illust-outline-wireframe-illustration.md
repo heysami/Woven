@@ -35,12 +35,8 @@ notForUseWhen: cottagecore, brutalism, kids
 ## Example prompt template
 
 > Hairline outline illustration of [SUBJECT], 1.5px uniform stroke, no fill,
->   all forms in single weight, mono or single accent color, clean geometric
->   wireframe aesthetic.
-> whenToUse: Restrained AI marketing, premium tech, technical diagrams.
-> pairsWith:
->   prototypeStyles: [style-outline-wireframe, style-restrained-hairline, recipe-restrained-ai-marketing, recipe-linear-product-ui]
-> notForUseWhen: cottagecore, brutalism, kids
+> all forms in single weight, mono or single accent color, clean geometric
+> wireframe aesthetic.
 
 ## When to use
 

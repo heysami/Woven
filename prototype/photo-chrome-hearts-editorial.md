@@ -45,10 +45,6 @@ Heavy on-camera flash on goth-luxe subjects, leather and chrome jewelry catching
 ## Example prompt template
 
 > Close-up of a young person's wrist stacked with silver Chrome Hearts cuffs and a leather glove, hand resting on a hotel marble sink at 4 a.m., the chrome catching a hard direct flash. Slight motion blur as the wrist turns. Mixed warm tungsten ambient bleeding into the highlights. Crushed blacks, warm shadow tint, signature digital point-and-shoot color noise. Shot on an early 2000s compact digital, 35mm equivalent. Decadent, insomniac, after-hours mood. Off-center crop, the face out of frame.
-> whenToUse: Streetwear drops, jewelry campaigns, fragrance for younger demos, club-luxe lookbooks, fashion editorial for brands that want to read as 2025-cool without being too referential.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-futurism, aesthetic-cyberpunk, recipe-editorial-magazine, aesthetic-web-brutalism]
-> notForUseWhen: Family product, B2B, anything wholesome.
 
 ## When to use
 

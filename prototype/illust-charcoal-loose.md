@@ -35,11 +35,7 @@ smudged willow charcoal.
 ## Example prompt template
 
 > Loose willow-charcoal sketch of [SUBJECT] with smudged broad strokes, rich
->   darks, paper white showing through, expressive mark-making.
-> whenToUse: Editorial portrait, art-school brand.
-> pairsWith:
->   prototypeStyles: [recipe-editorial-magazine, aesthetic-dark-academia]
-> notForUseWhen: tech, brutalism, polished
+> darks, paper white showing through, expressive mark-making.
 
 ## When to use
 

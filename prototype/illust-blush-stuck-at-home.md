@@ -39,12 +39,8 @@ domestic daily-life scenes during lockdown.
 ## Example prompt template
 
 > Flat vector cozy domestic interior scene with figure on couch with book,
->   palette of peach lavender and sage, small intimate vignette composition,
->   no outline, Mariana Gonzalez Vega Stuck at Home aesthetic.
-> whenToUse: WFH product marketing, journaling, wellness, home decor apps.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, aesthetic-cottagecore, aesthetic-coastal-grandmother]
-> notForUseWhen: outdoor/adventure, brutalism
+> palette of peach lavender and sage, small intimate vignette composition,
+> no outline, Mariana Gonzalez Vega Stuck at Home aesthetic.
 
 ## When to use
 

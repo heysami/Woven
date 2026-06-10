@@ -40,12 +40,8 @@ daily-life micro-moments (coffee, cat, books).
 ## Example prompt template
 
 > Flat vector small intimate scene of a person with cat and coffee, pastel
->   palette of peach mint lilac on cream, simple dot eyes on character, light
->   grain texture, Pau Barbaro Dayflow positivity aesthetic, no outline.
-> whenToUse: Wellness apps, journaling, gratitude content, cozy SaaS.
-> pairsWith:
->   prototypeStyles: [recipe-warm-restraint, aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-readcv]
-> notForUseWhen: enterprise, technical, dark themes
+> palette of peach mint lilac on cream, simple dot eyes on character, light
+> grain texture, Pau Barbaro Dayflow positivity aesthetic, no outline.
 
 ## When to use
 

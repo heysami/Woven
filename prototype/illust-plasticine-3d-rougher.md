@@ -42,13 +42,9 @@ oilier surface than clay, more visible tool marks.
 ## Example prompt template
 
 > Plasticine modeling-clay 3D sculpture of [SUBJECT] with visible tool-mark
->   texture and oilier surface, slightly chunky proportions, palette of
->   saturated primary plus earth tones, school-art-room maquette feel,
->   octane render, Pingu-era stop-motion aesthetic.
-> whenToUse: Playful kid-targeted brands, retro stop-motion-feel marketing.
-> pairsWith:
->   prototypeStyles: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis, aesthetic-wacky-pomo]
-> notForUseWhen: refined, restrained, AI marketing
+> texture and oilier surface, slightly chunky proportions, palette of
+> saturated primary plus earth tones, school-art-room maquette feel,
+> octane render, Pingu-era stop-motion aesthetic.
 
 ## When to use
 

@@ -46,10 +46,6 @@ Pure white or pure black seamless backdrop, no horizon line.
 ## Example prompt template
 
 > A single titanium consumer product floating just above a pure white seamless backdrop, sharp edge highlights along the aluminum chamfer, soft gradient fill across the matte top surface. Two large 4x6 softboxes left and right at 45 degrees, controlled specular highlight, no shadow on the backdrop. Shot on a Phase One IQ4 with an 80mm macro at f/11, color-managed, dust-clean, no grain. Precise, premium, certain mood. Apple keynote product photography style.
-> whenToUse: Hardware product, consumer electronics hero, e-commerce premium product page, app store icons-from-photo.
-> pairsWith:
->   prototypeStyles: [recipe-bento-marketing, recipe-ios-system, style-sf-pro-ios, style-glassmorphism, style-liquid-glass]
-> notForUseWhen: Lifestyle storytelling, editorial, anything needing context or mood.
 
 ## When to use
 

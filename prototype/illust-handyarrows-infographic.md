@@ -39,11 +39,7 @@ circles, brackets, numbers, callout elements.
 ## Example prompt template
 
 > Hand-drawn infographic accent — circle around a word or bracket to group
->   elements, 2-3px marker line, mono black, HandyArrows Infographic style.
-> whenToUse: Annotating screenshots, wireframe markup, highlighting key terms.
-> pairsWith:
->   prototypeStyles: [style-doodle, recipe-bento-marketing, recipe-readcv]
-> notForUseWhen: high-polish enterprise
+> elements, 2-3px marker line, mono black, HandyArrows Infographic style.
 
 ## When to use
 

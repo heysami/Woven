@@ -39,11 +39,7 @@ full-figure hand-drawn illustrations.
 ## Example prompt template
 
 > Full hand-drawn spot illustration of a [SUBJECT], marker 3-4px line, mono
->   or limited two-color, single artist's hand, HandyArrows Illustrations style.
-> whenToUse: Editorial articles, indie SaaS blog headers, indie product hero.
-> pairsWith:
->   prototypeStyles: [style-doodle, recipe-readcv, recipe-editorial-magazine]
-> notForUseWhen: corporate Fortune-500
+> or limited two-color, single artist's hand, HandyArrows Illustrations style.
 
 ## When to use
 

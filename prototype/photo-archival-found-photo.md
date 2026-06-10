@@ -46,10 +46,6 @@ Period-correct degradation: faded color, slight yellowing, edge wear.
 ## Example prompt template
 
 > A 1978 family snapshot of three children on a faded yellow couch in a wood-paneled living room, period clothing and a console TV in the background, off-center snapshot composition, slight motion blur on the youngest child's wave. Faded Kodachrome 64 with slight magenta shift, scan dust, edge wear, soft white border, slight yellowing of the highlights. Shot on a Kodak Instamatic 110 with available kitchen tungsten light. Nostalgic, lived, found mood. Archival vernacular photography.
-> whenToUse: Heritage brand, nostalgia marketing, music for older demos, memoir publishing, period drama promo.
-> pairsWith:
->   prototypeStyles: [aesthetic-cluttercore, recipe-readcv, aesthetic-corporate-grunge, aesthetic-cottagecore]
-> notForUseWhen: Modern tech, restrained luxury, anything aspirational-future.
 
 ## When to use
 

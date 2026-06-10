@@ -46,10 +46,6 @@ Single saturated backdrop, no horizon.
 ## Example prompt template
 
 > A single ripe banana balanced upright on a small silver chain coiled on a flat saturated cobalt blue backdrop, no horizon, hard directional studio light from camera-right casting a clean diagonal shadow, dominant cobalt single-hue palette. Shot on a Phase One IQ4 with a 100mm macro at f/8, oversaturated, dust-clean retouch. Surreal, ironic, witty mood. Conceptual still-life editorial in Toiletpaper Magazine lineage.
-> whenToUse: High-concept beauty, snack and beverage editorial, conceptual e-comm hero, gallery and magazine, ironic premium.
-> pairsWith:
->   prototypeStyles: [aesthetic-y2k-memphis-loud, aesthetic-wacky-pomo, style-bold-display, aesthetic-acid-graphics]
-> notForUseWhen: Anything sincere, B2B, wellness, heritage.
 
 ## When to use
 
