@@ -9822,12 +9822,24 @@ function registerFontUrl(url) {
 // <direction-options> per-option <display font="X"> / <body font="X"> so the
 // agent can name a family by Google name and the card renders the sample in
 // the real face. Idempotent: re-calling with the same family is a no-op.
+// System fonts that don't exist on Google Fonts (Times New Roman, Georgia,
+// Arial, Helvetica, etc.) skip the link injection entirely — the browser
+// resolves them locally and a 404'd Google Fonts request would just pollute
+// devtools without providing any face.
 const __thLoadedGoogleFamilies = new Set();
+const SYSTEM_FONT_FAMILIES = new Set([
+  "times new roman", "times", "georgia", "garamond", "palatino", "book antiqua",
+  "arial", "helvetica", "verdana", "tahoma", "trebuchet ms", "calibri", "cambria",
+  "courier new", "courier", "consolas", "monaco", "menlo",
+  "system-ui", "-apple-system", "blinkmacsystemfont", "ui-sans-serif",
+  "ui-serif", "ui-monospace", "serif", "sans-serif", "monospace",
+]);
 function ensureGoogleFontFamily(family) {
   if (!family) return;
   const key = String(family).trim();
   if (!key) return;
   const lower = key.toLowerCase();
+  if (SYSTEM_FONT_FAMILIES.has(lower)) return;  // local-only; no Google request
   if (__thLoadedGoogleFamilies.has(lower)) return;
   __thLoadedGoogleFamilies.add(lower);
   try {
@@ -11085,11 +11097,23 @@ function parseQuestionForms(text) {
         const palette = palRaw.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
         const dispT   = pull("display");
         const display = dispT
-          ? { font: attr("font", dispT.attrs), weight: attr("weight", dispT.attrs), text: dispT.inner }
+          ? {
+              font:     attr("font",     dispT.attrs),
+              weight:   attr("weight",   dispT.attrs),
+              case:     attr("case",     dispT.attrs),  // "upper" / "lower" / "title" / null
+              tracking: attr("tracking", dispT.attrs),  // CSS letter-spacing, e.g. "-0.04em"
+              text:     dispT.inner,
+            }
           : null;
         const bodyT   = pull("body");
         const bodyTxt = bodyT
-          ? { font: attr("font", bodyT.attrs), weight: attr("weight", bodyT.attrs), text: bodyT.inner }
+          ? {
+              font:     attr("font",     bodyT.attrs),
+              weight:   attr("weight",   bodyT.attrs),
+              case:     attr("case",     bodyT.attrs),
+              tracking: attr("tracking", bodyT.attrs),
+              text:     bodyT.inner,
+            }
           : null;
         const imgT    = pullSelf("image");
         const image   = imgT
@@ -11551,10 +11575,18 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
       <div className="chat-direction-options">
         ${direction.options.map(opt => {
           const picked = isAnswered && answered === opt.value;
-          const dispStyle = opt.display?.font ? { fontFamily: `"${opt.display.font}", system-ui, sans-serif` } : null;
-          const dispWeight = opt.display?.weight ? { fontWeight: opt.display.weight } : null;
-          const bodyStyle = opt.body?.font ? { fontFamily: `"${opt.body.font}", system-ui, sans-serif` } : null;
-          const bodyWeight = opt.body?.weight ? { fontWeight: opt.body.weight } : null;
+          const caseMap = { upper: "uppercase", lower: "lowercase", title: "capitalize", normal: "none" };
+          const buildTextStyle = (spec) => {
+            if (!spec) return null;
+            const out = {};
+            if (spec.font)     out.fontFamily     = `"${spec.font}", system-ui, sans-serif`;
+            if (spec.weight)   out.fontWeight     = spec.weight;
+            if (spec.case)     out.textTransform  = caseMap[String(spec.case).toLowerCase()] || spec.case;
+            if (spec.tracking) out.letterSpacing  = spec.tracking;
+            return out;
+          };
+          const dispStyle = buildTextStyle(opt.display);
+          const bodyStyle = buildTextStyle(opt.body);
           return html`
             <button
               key=${opt.value}
@@ -11576,12 +11608,12 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                 </div>
               `}
               ${opt.display?.text && html`
-                <div className="chat-direction-display" style=${{ ...dispStyle, ...dispWeight }}>
+                <div className="chat-direction-display" style=${dispStyle}>
                   ${opt.display.text}
                 </div>
               `}
               ${opt.body?.text && html`
-                <div className="chat-direction-body" style=${{ ...bodyStyle, ...bodyWeight }}>
+                <div className="chat-direction-body" style=${bodyStyle}>
                   ${opt.body.text}
                 </div>
               `}
@@ -13104,15 +13136,25 @@ function OnboardingAssetProvidersSection({ mediaCfg, headless }) {
 function OnboardingLocalToolRow({ pkg }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
   const [err, setErr] = useState(null);
   const probe = useCallback(async () => {
     setErr(null);
     try {
       const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}`));
       const j = await r.json();
-      setStatus(j);
+      setStatus(prev => {
+        // v3.4.48 — Don't let a flaky probe downgrade a state we already
+        // confirmed via /__local_install's server-side verify. First-time
+        // `import rembg` after fresh install was occasionally exceeding the
+        // probe's subprocess timeout, flipping the row back to "Install" even
+        // though pip + verify both succeeded. If we already saw installed:true,
+        // keep it unless this probe explicitly confirms still-installed.
+        if (prev && prev.installed && !(j && j.installed)) return prev;
+        return j;
+      });
     } catch (e) {
-      setStatus({ installed: false });
+      setStatus(prev => prev && prev.installed ? prev : { installed: false });
       setErr(String(e?.message || e));
     }
   }, [pkg.id]);
@@ -13126,7 +13168,19 @@ function OnboardingLocalToolRow({ pkg }) {
         body: JSON.stringify({ package: pkg.id }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!j.ok) setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
+      if (!j.ok) {
+        setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
+      } else {
+        // v3.4.48 — Trust the server's verify result authoritatively. The
+        // install endpoint already ran `python -c "import pkg; print(version)"`
+        // and confirmed importability — relying on a follow-up probe was racy
+        // on fresh installs (see probe() above). Set installed:true here so
+        // the row updates instantly and the projects-landing gate clears.
+        setStatus({ installed: true, version: j.version || "unknown" });
+      }
+      // Best-effort follow-up probe — but probe() now refuses to downgrade
+      // the just-confirmed installed:true state, so a slow/flaky probe can't
+      // flip the button back to "Install".
       await probe();
       // v3.4.41 — Notify useRequiredLocalSkills (the hook the projects-landing
       // setup-card gate consults) so the empty state can unmount the moment
@@ -13135,6 +13189,16 @@ function OnboardingLocalToolRow({ pkg }) {
     } catch (e) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
+  };
+  // v3.4.48 — Manual re-check escape hatch. If the auto-detect ever lands
+  // wrong (slow first-import, daemon restart mid-install, etc.) the user can
+  // re-run the probe without a page refresh. Also notifies the landing gate.
+  const recheck = async () => {
+    setRechecking(true);
+    try {
+      await probe();
+      try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
+    } finally { setRechecking(false); }
   };
   const installed = !!(status && status.installed);
   // v3.4.45 — Just ONE small REQUIRED pill when missing. No row-wide red
@@ -13161,6 +13225,15 @@ function OnboardingLocalToolRow({ pkg }) {
         <span className="onboarding-tool-hint">${pkg.hint}</span>
         <div className="onboarding-tool-actions">
           <a className="onboarding-tool-docs" href=${pkg.docsUrl} target="_blank" rel="noopener">docs ↗</a>
+          ${!installed && html`
+            <button
+              type="button"
+              className="tbtn"
+              disabled=${busy || rechecking}
+              title=${`Re-check whether ${pkg.label} is installed — useful if the auto-detect after install was slow or stale`}
+              onClick=${recheck}
+            >${rechecking ? "Checking…" : "Re-check"}</button>
+          `}
           <button
             className=${"tbtn " + (!installed ? "tbtn-primary" : "")}
             disabled=${busy}
@@ -44562,6 +44635,7 @@ function WorkflowExportRow({ project, busy, onSave }) {
 function WorkflowLocalPackageRow({ pkg }) {
   const [status, setStatus] = useState(null);   // null → loading | { installed, version }
   const [busy, setBusy] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
   const [logOut, setLogOut] = useState(null);   // last install output (success or fail)
   const [err, setErr] = useState(null);
 
@@ -44570,9 +44644,12 @@ function WorkflowLocalPackageRow({ pkg }) {
     try {
       const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}`));
       const j = await r.json();
-      setStatus(j);
+      // v3.4.48 — Don't let a flaky probe downgrade a state we already
+      // confirmed via /__local_install's server-side verify. See the
+      // OnboardingLocalToolRow probe for the full rationale.
+      setStatus(prev => (prev && prev.installed && !(j && j.installed)) ? prev : j);
     } catch (e) {
-      setStatus({ installed: false });
+      setStatus(prev => prev && prev.installed ? prev : { installed: false });
       setErr(String(e?.message || e));
     }
   }, [pkg.id]);
@@ -44590,6 +44667,9 @@ function WorkflowLocalPackageRow({ pkg }) {
       setLogOut(j);
       if (!j.ok) {
         setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
+      } else {
+        // v3.4.48 — Trust the server's verify result; don't wait on a probe.
+        setStatus({ installed: true, version: j.version || "unknown" });
       }
       await probe();
       // v3.4.41 — Notify useRequiredLocalSkills (consumed by the projects-
@@ -44599,6 +44679,15 @@ function WorkflowLocalPackageRow({ pkg }) {
     } catch (e) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
+  };
+
+  // v3.4.48 — Manual re-check button (see OnboardingLocalToolRow).
+  const recheck = async () => {
+    setRechecking(true);
+    try {
+      await probe();
+      try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
+    } finally { setRechecking(false); }
   };
 
   const installed = !!(status && status.installed);
@@ -44616,6 +44705,15 @@ function WorkflowLocalPackageRow({ pkg }) {
       </div>
       <div className="workflow-settings-row">
         <span className="workflow-settings-localhint">${pkg.hint}</span>
+        ${!installed && html`
+          <button
+            type="button"
+            className="tbtn"
+            disabled=${busy || rechecking}
+            title=${`Re-check whether ${pkg.label} is installed`}
+            onClick=${recheck}
+          >${rechecking ? "Checking…" : "Re-check"}</button>
+        `}
         <button
           className=${"tbtn " + (!installed ? "tbtn-primary" : "")}
           disabled=${busy}

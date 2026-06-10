@@ -11212,7 +11212,14 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _local_status(self, qs):
         """GET /__local_status?package=rembg → {installed, version?}.
         Probes via a subprocess `python -c "import rembg"` so we read the
-        live sys.path that pip install --user would have updated."""
+        live sys.path that pip install --user would have updated.
+
+        Timeout note: first-time `import rembg` on macOS can stall well past
+        15 s — Python compiles .pyc files for the just-downloaded package,
+        onnxruntime loads native dylibs, and Gatekeeper may verify the freshly
+        downloaded binary the first time it's used. We give it 60 s and degrade
+        TimeoutExpired into a clean `installed: false` instead of an unhandled
+        500 so the client UI stays consistent."""
         pkg = (_qs_get(qs, "package") or "").strip()
         if pkg not in self._LOCAL_PACKAGES:
             return self._reply(400, {"error": f"unknown local package: {pkg}", "known": list(self._LOCAL_PACKAGES.keys())})
@@ -11220,10 +11227,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         try:
             r = subprocess.run(
                 [sys.executable, "-c", f"import {import_name}; import sys; print(getattr({import_name}, '__version__', 'unknown'))"],
-                capture_output=True, timeout=15, check=False,
+                capture_output=True, timeout=60, check=False,
             )
             installed = (r.returncode == 0)
             version = (r.stdout.decode("utf-8", "replace").strip() if installed else None)
+        except subprocess.TimeoutExpired:
+            return self._reply(200, {"package": pkg, "installed": False, "version": None, "probe_timeout": True})
         except Exception as e:
             return self._reply(500, {"error": f"probe failed: {e}"})
         return self._reply(200, {"package": pkg, "installed": installed, "version": version})
@@ -11264,20 +11273,43 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"pip spawn failed: {e}"})
         stdout = (r.stdout or b"").decode("utf-8", "replace")
         stderr = (r.stderr or b"").decode("utf-8", "replace")
-        # Verify post-install.
+        # Verify post-install. Also fetch the version in the same subprocess
+        # so the client doesn't have to follow up with a separate /__local_status
+        # probe (that follow-up probe was racy on fresh installs — first-time
+        # `import rembg` could exceed the probe's timeout and the UI would
+        # revert to "Install" even though pip + verify both succeeded).
+        # Timeout is 60 s for the same reason _local_status uses 60 s.
         import_name = self._LOCAL_PACKAGES[pkg]["import"]
-        verify = subprocess.run(
-            [sys.executable, "-c", f"import {import_name}"],
-            capture_output=True, timeout=15, check=False,
+        verify_code = (
+            f"import {import_name}; "
+            f"print(getattr({import_name}, '__version__', 'unknown'))"
         )
-        installed = (verify.returncode == 0)
+        verify_stdout = ""
+        verify_stderr = ""
+        verify_rc = None
+        verify_timeout = False
+        try:
+            verify = subprocess.run(
+                [sys.executable, "-c", verify_code],
+                capture_output=True, timeout=60, check=False,
+            )
+            verify_rc = verify.returncode
+            verify_stdout = (verify.stdout or b"").decode("utf-8", "replace")
+            verify_stderr = (verify.stderr or b"").decode("utf-8", "replace")
+        except subprocess.TimeoutExpired:
+            verify_timeout = True
+            verify_stderr = "verify subprocess timed out after 60 s"
+        installed = (verify_rc == 0)
+        version = verify_stdout.strip() if installed else None
         return self._reply(200 if installed else 502, {
             "ok": installed,
             "package": pkg,
+            "version": version,
             "stdout": stdout[-4000:],
             "stderr": stderr[-4000:],
-            "verify_returncode": verify.returncode,
-            "verify_stderr": (verify.stderr or b"").decode("utf-8", "replace")[-2000:],
+            "verify_returncode": verify_rc,
+            "verify_stderr": verify_stderr[-2000:],
+            "verify_timeout": verify_timeout,
         })
 
     # ── Phase 4c — library: project asset listing + delete ─────────────
