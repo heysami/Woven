@@ -13599,7 +13599,7 @@ function ModelInstallDialog({ onClose, onRefresh }) {
 // read-only reference; Orchestrators has its toggle. State lives here; sidebar
 // items show counts so the user knows the size of each surface before clicking.
 function SystemLanding() {
-  const [activeSection, setActiveSection] = useState("orchestrators");
+  const [activeSection, setActiveSection] = useState("prototype");
 
   // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
   const [caps, setCaps]         = useState(null);
@@ -13618,12 +13618,12 @@ function SystemLanding() {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
+    { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
+      hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "skills",     label: "Skills",     count: skills.length,
       hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
-    { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
-      hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
     { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 63,
       hint: "Every .claude/agents/*.md — drawers, lenses, orchestrators, cross-cutting" },
     { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
