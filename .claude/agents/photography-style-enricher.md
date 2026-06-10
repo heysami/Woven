@@ -54,23 +54,26 @@ Filter remaining candidates by `index.entries[styleId].roleAffinity` — must in
 ### 2.5 Optional secondary (chaining)
 Optionally add a secondary styleId from the alternatives when the brief calls for two registers (e.g. primary + film-stock modifier).
 
-## 3. Slice the library entry + compose the prompt
+## 3. Read the entry's self-contained detail file + compose the prompt
 
-NOW (and only now) read the library file — only the entry's slice:
+The picked styleId has a **self-contained per-entry file** at `prototype/photo-<styleId>.md` — small (1-2KB), no library reading required. Read THAT, not the big library.
+
+```bash
+cat "$TH_PROJECT_ROOT/prototype/photo-<styleId>.md" \
+  || cat "$TH_PROTOCOL_ROOT/prototype/photo-<styleId>.md"
+```
+
+The file contains a `## Full library entry` section with the verbatim YAML for this one entry — including `examplePromptTemplate`, all `promptKeywords` groups, `avoidKeywords`, `namedReferences`, `whenToUse`, `notForUseWhen`. Pull what you need from there.
+
+**Fallback** — if the per-entry file is missing (e.g., a freshly-added library entry that hasn't been regenerated yet), sed-slice the big library using `index.entries[<styleId>].lineRange`:
 
 ```bash
 LIB=docs/research/photography-library.md
 RANGE=$(python3 -c "import json; print(*json.load(open('docs/research/photography-library.index.json'))['entries']['<styleId>']['lineRange'])")
-START=$(echo $RANGE | cut -d' ' -f1)
-END=$(echo $RANGE | cut -d' ' -f2)
-sed -n "${START},${END}p" "$LIB"
+sed -n "$(echo $RANGE | cut -d' ' -f1),$(echo $RANGE | cut -d' ' -f2)p" "$LIB"
 ```
 
-That returns ~30 lines (the YAML for one entry). Pull from it:
-
-- `examplePromptTemplate` (paste-ready template)
-- `promptKeywords.primary` + `.lighting` + `.cameraOrLens` + `.filmStockOrPostProcessing` + `.mood`
-- `promptKeywords.avoidKeywords`
+Same content, slightly more expensive to compute. Surface to user that the per-entry file is missing so they can re-run `scripts/regen-prototype-details.py`.
 
 Compose `promptForRasterPhoto` by:
 

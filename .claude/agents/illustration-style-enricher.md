@@ -55,7 +55,20 @@ Pure JSON. Returns `{default, alternatives[], decoration}`. The illustration lib
 ### 2.4 Optional secondary
 For register-chaining (flat-vector mascot in watercolor scene, clay-3D hero with handlettering accents).
 
-## 3. Slice the entry + compose the prompt
+## 3. Read the entry's self-contained detail file + compose the prompt
+
+```bash
+cat "$TH_PROJECT_ROOT/prototype/illust-<styleId>.md" \
+  || cat "$TH_PROTOCOL_ROOT/prototype/illust-<styleId>.md"
+```
+
+Self-contained (~1-2KB) with the verbatim YAML for the entry. Pull:
+
+- `examplePromptTemplate`
+- `promptKeywords.primary` + `.material` + `.line` + `.color` + `.style`
+- `promptKeywords.avoidKeywords`
+
+**Fallback (per-entry file missing)** — sed-slice using `index.entries[<styleId>].lineRange`:
 
 ```bash
 LIB=docs/research/illustration-library.md
@@ -63,11 +76,7 @@ RANGE=$(python3 -c "import json; print(*json.load(open('docs/research/illustrati
 sed -n "$(echo $RANGE | cut -d' ' -f1),$(echo $RANGE | cut -d' ' -f2)p" "$LIB"
 ```
 
-Returns ~30 lines of YAML. Pull:
-
-- `examplePromptTemplate`
-- `promptKeywords.primary` + `.material` + `.line` + `.color` + `.style`
-- `promptKeywords.avoidKeywords`
+Surface to user that `scripts/regen-prototype-details.py` needs re-running.
 
 Compose `promptForRasterForeground` by:
 

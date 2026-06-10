@@ -1,29 +1,57 @@
 # VHS-Frutiger (Frutiger Aero with VHS distortion) (material)
 
+**Tag:** material-vhs-frutiger  ·  **Family:** hybrid  ·  **Category:** digital-effect · glossy
 
-**Tag:** material-vhs-frutiger
-  ·  **Family:** hybrid  ·  **Category:** digital-effect  ·  **Surface:** glossy  ·  **Transparency:** translucent
+A glossy hybrid surface.
 
-A glossy surface (translucent) that reacts to light: yes and deforms: yes — VHS tracking bars.
+## Full library entry
 
-**Examples in the wild**
+_Below is the verbatim YAML for this entry — same content the orchestrator + drawer read at dispatch. Edit upstream in [`docs/research/material-library.md`](../docs/research/material-library.md) then re-run `scripts/regen-prototype-details.py` + `scripts/build-library-indexes.py` to propagate._
 
-- corporate-melancholic Vektroid record sleeves
-- PrismCorp fake-multinational catalogues
+```yaml
+- materialId: vhs-frutiger
+  name: VHS-Frutiger (Frutiger Aero with VHS distortion)
+  family: hybrid
+  category: digital-effect
+  physicalBehavior:
+    surfaceFinish: glossy
+    transparency: translucent
+    reactsToLight: yes
+    deforms: yes — VHS tracking bars
+    age: shows wear (drop-outs)
+  implementationStrategies:
+    css: |
+      filter: contrast(1.05) saturate(1.05);
+    svg: glass panel + VHS chromatic-aberration filter stack
+    raster: photographic plate + VHS overlay
+    video: 30fps VHS distortion loop atop the Frutiger glass scene
+  reactiveBehaviors:
+    light: glass highlight via pointer; VHS shifts at periodic intervals
+    highlight: yes
+    depth: minimal
+    parallax: substrate parallaxes
+  pairsWith:
+    prototypeStyles: [aesthetic-vaporwave, aesthetic-y2k-myspace, aesthetic-cassette-futurism]
+  killsTheIllusion:
+    - VHS effect blocking the Frutiger water/sky motif (riso-style overlay should let plate through)
+  examples:
+    - corporate-melancholic Vektroid record sleeves
+    - PrismCorp fake-multinational catalogues
+```
 
-**Common implementation mistakes (avoid these)**
+## Common implementation mistakes (avoid these)
 
 - VHS effect blocking the Frutiger water/sky motif (riso-style overlay should let plate through)
 
-**Pairs with** (prototype slugs)
+## Pairs with (prototype slugs)
 
 - `aesthetic-vaporwave`
 - `aesthetic-y2k-myspace`
 - `aesthetic-cassette-futurism`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference shot of the material -->
+<!-- reason: representative reference shot of this style -->
 
 ---
 
-_Full entry in [docs/research/material-library.md](../docs/research/material-library.md)._
+_Indexed at line 3046–3074 of `docs/research/material-library.md`. Full index: `docs/research/material-library.index.json`._
