@@ -81,31 +81,38 @@ Positive signals (any one = `wired`):
 
 No positive signal → `imageGen = missing`. When in doubt, treat as missing — the cost of falsely claiming image-gen is wired is a user confusion downstream; the cost of falsely claiming it's missing is one extra line of text.
 
-### The stop-and-ask UI — every option ships with rough visuals
+### The stop-and-ask UI — emit a `<decision-request>` block, NOT markdown
 
-When any trigger fires, produce **one** message in the shape below, then **STOP**. No tool calls beyond the per-option recolor below, no detail-file reads for the picked option, no genre commit, no `<artifact>`, no TodoWrite. Wait for the user to reply.
+The Woven chat renders interactive forms ONLY when the agent emits a `<decision-request>` block (parser at `editor/app.js:10866`). Plain markdown three-option lists do NOT become clickable cards. The chat's markdown renderer also:
 
-Each option carries three rough visuals so the user picks with a mental image in hand, not from a paragraph of prose:
+- **DOES** render bare `#RRGGBB` / `#RGB` / `oklch(...)` / `linear-gradient(...)` as inline colour swatches — but ONLY if the hex is **not wrapped in backticks**. Backticks make it a `<code>` block (the code matcher fires first in `inlineParse`).
+- **DOES** render bare `https://...png|jpg|webp|gif|svg` URLs as inline thumbnails — but does NOT understand markdown `![alt](path)` syntax for relative paths. A markdown `![]()` with a relative path falls through to the `link` matcher and renders as a click-to-focus-file button that points at a non-existent frame — the **dead "view image" button** the user keeps clicking.
+- **DOES NOT** render typography in a real font from inline text. Type samples must live in a sandboxed iframe.
 
-1. **Palette swatch row** — the 5–6 committed hex tokens for that option, inline.
-2. **Typography sample** — display + body sample using the option's font stack, each with the actual sample string the user will see in the prototype (a real headline candidate from the brief, not "Aa Bb Cc").
-3. **Library-image preview** — ONE reference image from `prototype/<axisFile>-ui.png` (or `-isolated.png`) recoloured into the option's palette so the colours land. Picked per the *Which library image* rule below.
+Therefore: every visual goes inside ONE `<decision-request>` block whose per-option `preview="..."` references a small HTML file the agent composes per option. The chat renders each option as a clickable button with an inline iframe preview (palette chips + type sample + recoloured image) ABOVE the option label. Single-click submits.
 
-The palette and typography pieces use the chat surface's existing hex / type rendering — emit the data inline in the shape below and the chat layer renders chips and samples. The image is a recoloured PNG written to a per-turn cache path and referenced via a standard markdown image.
+When any trigger fires, the agent's turn does this in order:
+
+1. **Compose the three option directions** (shell / style / aesthetic / palette / type / Why / Trade-off / register / raster-risk flag — all the data fields from prior versions).
+2. **Recolour the library image per option** via `scripts/prototype-recolor.py` → `.prototype-options/option-<N>.png` (per the Recoloring section below).
+3. **Write the per-option preview HTML** → `.prototype-options/option-<N>-preview.html` (per the *Per-option preview HTML* section below). This file contains the palette chips, real typography sample in the option's font stack, the recolored image, and the `◉ auto-preview · no LLM` footer badge.
+4. **Emit the single chat message** in the shape below.
+5. **STOP** the turn. No tool calls after emission, no detail-file reads for the picked option, no genre commit, no `<artifact>`, no TodoWrite. Wait for the user's reply.
+
+Emit exactly this message shape:
 
 ```
 I want to lock direction before drawing — taste decisions belong to you, not me.
 
 [INCLUDE ONLY IF imageGen = missing:]
 > ⚠ **No image-generation model is wired into this session.** The palette, type
-> samples, and preview image below are produced **mechanically** — the recolor is
-> deterministic OKLab math (`scripts/prototype-recolor.py`), the type sample is
+> samples, and preview image below are produced **mechanically** — the recolour
+> is deterministic OKLab math (scripts/prototype-recolor.py), the type sample is
 > just the brief's candidate strings set in the option's font stack, nothing is
 > drawn by an LLM. Options that depend on raster imagery (photo, illustration,
 > raster cutouts, pixel sprites, anime portraits) **cannot be fully realised in
-> the final build** without an image-gen route — they are flagged `⚠ raster-risk`
-> below. If you need a raster-dependent vibe, wire image generation first, or
-> pick a CSS/SVG-realisable option.
+> the final build** without an image-gen route — they are flagged ⚠ raster-risk
+> below. Wire image-gen first, or pick a CSS/SVG-realisable option.
 
 **What I'm reading from your brief:**
 - Subject: <one line, or "unclear — please name">
@@ -114,68 +121,135 @@ I want to lock direction before drawing — taste decisions belong to you, not m
 - Screens I'd draw: <2–6 named views, or "unclear">
 
 [INCLUDE ONLY IF Trigger C fired:]
-**Tension I'm seeing:** <one short paragraph naming the mismatch and what it implies — e.g. "You named brutalist but the audience is six-year-olds; brutalist is high-friction at that age. Keep brutalist as a deliberate move, or swap to a kids-friendly direction?">
+**Tension I'm seeing:** <one short paragraph naming the mismatch — e.g. "You named brutalist but the audience is six-year-olds; brutalist is high-friction at that age. Keep brutalist as a deliberate move, or swap to a kids-friendly direction?">
 
-**Three directions — pick one (or describe your own):**
-
----
-
-**Option 1 — [recipe or ad-hoc combo] (recommended)** [APPEND IF option uses any needs-raster pick AND imageGen=missing: ` ⚠ raster-risk`]
-
-Shell · `shell-X` — [one phrase why]
-Style · `style-Y` — [one phrase why]
-Aesthetic · `aesthetic-Z` or *none* — [one phrase why]
-Vibe · [one word] · Why safest: [one sentence tying it to brief tags]
-
-`◉ auto-preview · no LLM` *(palette, type sample, and image below are mechanically derived — not generated by a model)*
-
-Palette · `#bg` · `#surface` · `#fg` · `#muted` · `#border` · `#accent`
-Type · **Display** "[real candidate headline from brief]" — Iowan Old Style, Charter, Georgia, serif
-       **Body** "[real candidate body sentence from brief]" — system sans
-
-Preview · ![option 1 preview](.prototype-options/option-1.png) *(recoloured from `prototype/<picked-library>.png`)*
-
-[INCLUDE per the Photo + illust register strip rules below, AND ONLY IF imageGen = wired:]
-Photo register · `<styleId>` — [one-line mood] · refs: [named refs]
-Illust register · `<styleId>` — [one-line style] · refs: [named refs]
-
-[INCLUDE IF option uses any needs-raster pick AND imageGen = missing:]
-⚠ **Raster-risk:** this direction calls for [photography / illustration / pixel sprites / anime portraits / scrapbook cutouts]. With no image-gen wired, the final prototype will fall back to the substitution policy in the Raster requirements section — you may end up in a different (raster-free) genre than this preview suggests.
-
----
-
-**Option 2 — [genuinely different direction]** [APPEND ` ⚠ raster-risk` if applicable]
-
-[same shape — Shell / Style / Aesthetic / Vibe / `◉ auto-preview · no LLM` / Palette / Type / Preview / register strip if wired / raster-risk note if applicable]
-Trade-off · [what you gain vs option 1, what you lose]
-
----
-
-**Option 3 — [third distinct direction]** [APPEND ` ⚠ raster-risk` if applicable]
-
-[same shape]
-Trade-off · [what's different]
-
----
-
-Pick: 1, 2, 3, "option N + change W", "you pick", or describe a different direction.
+<decision-request id="prototype-direction" prompt="Pick a direction — palette, type, and a recoloured library preview shown per option">
+  <option value="1" preview=".prototype-options/option-1-preview.html">Option 1 — <recipe-or-combo label> (recommended)[ ⚠ raster-risk if applicable] · Shell: <shell-X> · Style: <style-Y> · Aesthetic: <aesthetic-Z or none> · Vibe: <one-word> · Why safest: <one sentence></option>
+  <option value="2" preview=".prototype-options/option-2-preview.html">Option 2 — <combo label>[ ⚠ raster-risk if applicable] · Shell: <shell-X> · Style: <style-Y> · Aesthetic: <…> · Vibe: <…> · Trade-off vs 1: <one sentence></option>
+  <option value="3" preview=".prototype-options/option-3-preview.html">Option 3 — <combo label>[ ⚠ raster-risk if applicable] · Shell: <shell-X> · Style: <style-Y> · Aesthetic: <…> · Vibe: <…> · Trade-off: <one sentence></option>
+</decision-request>
 
 [INCLUDE ONLY IF imageGen = wired:]
+**Want real samples before you commit?** Type `1 + draft` (or `2 + draft` / `3 + draft`) into chat instead of clicking, and I'll spend one extra turn generating 2–3 actual mockup frames in that direction using the wired image-gen model, then re-show the option with the real samples. The direction still isn't locked until you confirm after seeing the drafts.
 
-**Want real samples before you commit?** Reply `<N> + draft` (e.g. `2 + draft`) and I'll spend one extra turn generating 2–3 actual mockup frames in that direction using the wired image-gen model, then re-show the option with the real samples instead of the recolour. The direction still isn't locked until you confirm after seeing the drafts.
+[INCLUDE ALWAYS as a final line:]
+Don't see what you want? Type your own direction in chat — e.g. *"option 1 but in warm cream, no accent"* or *"give me a dark-mode dense dashboard instead"*.
 ```
 
-After this message: **stop the turn.** Do not pre-Read the picked option's detail files. Do not pre-scaffold. Do not narrate "I'll wait." The next user message is your input.
+After this message: **stop the turn.** The chat renders the `<decision-request>` as a card with three option buttons, each carrying an inline sandboxed-iframe preview of `.prototype-options/option-N-preview.html`. The first click commits — the chat POSTs `[decision:prototype-direction] N — <label>` as the next user message, which is the agent's input for the build phase. If the user types `N + draft` (or describes their own direction) instead of clicking, the agent handles that text per the *When the user replies* section.
+
+### Per-option preview HTML — composition spec
+
+Each option's `preview="..."` points at `.prototype-options/option-<N>-preview.html`. The chat loads it via `apiUrl(path)` in a `sandbox="allow-scripts"` iframe — `allow-same-origin` is intentionally absent, so the iframe can fetch images (no cookie needed) but cannot read same-origin storage. The agent writes this file before emitting the `<decision-request>`.
+
+Template (substitute the bracketed values per option; keep all CSS inline so no external stylesheet is needed):
+
+```html
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Option <N></title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=<display-google-family>:wght@400;700;800&family=<body-google-family>:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg:      <#bg>;
+    --surface: <#surface>;
+    --fg:      <#fg>;
+    --muted:   <#muted>;
+    --border:  <#border>;
+    --accent:  <#accent>;
+  }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--fg); }
+  body { padding:14px 16px 12px; font-family: system-ui, -apple-system, sans-serif; font-size:12px; line-height:1.45; }
+  .pal { display:flex; gap:4px; margin:0 0 12px; }
+  .chip { width:30px; height:30px; border-radius:5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); position:relative; }
+  .chip[data-accent="true"] { box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), 0 0 0 2px var(--surface), 0 0 0 3px var(--accent); }
+  .type-display {
+    font-family: <display-font-stack>;
+    font-weight: 800;
+    font-size: clamp(20px, 4.6vw, 28px);
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    color: var(--fg);
+    margin: 0 0 6px;
+  }
+  .type-body {
+    font-family: <body-font-stack>;
+    font-weight: 400;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin: 0 0 12px;
+    max-width: 38ch;
+  }
+  .preview-img { width: 100%; display: block; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border); }
+  .register {
+    font-size: 10px;
+    color: var(--muted);
+    margin: 10px 0 0;
+    line-height: 1.35;
+  }
+  .register strong { color: var(--fg); font-weight: 600; }
+  .badge {
+    margin-top: 10px;
+    font-size: 9.5px;
+    color: var(--muted);
+    opacity: .8;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .badge::before { content: "◉"; color: var(--accent); }
+</style></head>
+<body>
+  <div class="pal">
+    <div class="chip" style="background: var(--bg)"></div>
+    <div class="chip" style="background: var(--surface)"></div>
+    <div class="chip" style="background: var(--fg)"></div>
+    <div class="chip" style="background: var(--muted)"></div>
+    <div class="chip" style="background: var(--border)"></div>
+    <div class="chip" data-accent="true" style="background: var(--accent)"></div>
+  </div>
+  <h2 class="type-display"><real candidate display headline from brief — not "Lorem"></h2>
+  <p class="type-body"><real candidate body sentence from brief — 1–2 sentences></p>
+  <img class="preview-img" src="./option-<N>.png" alt="Recoloured library reference for option <N>">
+  [INCLUDE IF photo register hit AND imageGen = wired:]
+  <p class="register"><strong>Photo register:</strong> <styleId> — <one-line mood> · refs: <named refs></p>
+  [INCLUDE IF illust register hit AND imageGen = wired:]
+  <p class="register"><strong>Illust register:</strong> <styleId> — <one-line style> · refs: <named refs></p>
+  [INCLUDE IF option uses any needs-raster pick AND imageGen = missing:]
+  <p class="register" style="color: oklch(60% 0.18 30);"><strong>⚠ Raster-risk:</strong> needs <photography / illustration / pixel sprites / etc>; without image-gen wired this final-build will substitute per the Raster-requirements policy.</p>
+  <p class="badge">auto-preview · no LLM · recoloured from prototype/<picked-library>.png</p>
+</body></html>
+```
+
+Composition notes:
+
+- `<display-google-family>` and `<body-google-family>` are the **Google Fonts family names** for the option's chosen style. Pick from a small canonical set per style: oversized-neo-grotesque → `Inter` (display) + `Inter` (body); cream-humanist → `Fraunces` + `Inter`; web-brutalism → `Space Grotesk` + `JetBrains Mono`; restrained-hairline → `Inter` + `Inter`; serif-warm-paper → `EB Garamond` + `EB Garamond`. If the style's preferred face is not on Google Fonts, fall back to the closest match and let the system-font stack handle non-loaded faces — never block the iframe on a missing font.
+- `<display-font-stack>` and `<body-font-stack>` are the full CSS `font-family` declarations (e.g. `"Inter", -apple-system, system-ui, sans-serif`).
+- `<#bg>`, `<#surface>`, `<#fg>`, `<#muted>`, `<#border>`, `<#accent>` are the SAME six tokens passed to `prototype-recolor.py --tokens` — the iframe and the recoloured PNG share one palette.
+- The image `src="./option-<N>.png"` resolves relative to the iframe's location at `.prototype-options/option-<N>-preview.html?project=<id>`, so it loads `.prototype-options/option-<N>.png` from the project root. The daemon's `translate_path` (serve.py) routes project-relative paths via Referer when `?project=` is missing on relative loads — so no extra query string is needed in `src`.
+- All CSS is inline (single `<style>` block). No external stylesheet. The iframe is small and should render fully on first paint.
+- The `◉ auto-preview · no LLM` badge sits as a footer line inside the preview. With `imageGen = wired`, the message text above the decision-request explains the `+ draft` path; the badge inside still applies because THIS preview is recoloured, not generated.
+
+### Why the option `<label>` text matters (and how it renders)
+
+The `<option value="N">...label...</option>` body is rendered as the button's caption underneath the iframe preview. Keep it ≤ 200 chars; use ` · ` (space-middot-space) as the field separator so the chat's flex-layout doesn't wrap awkwardly. The chat parser collapses whitespace via `.replace(/\s+/g, " ")` — newlines inside the option body are normalised away, so structure the label as one line of separated fields, not a paragraph. Don't put markdown inside `<option>` — it isn't re-parsed.
 
 ### The `◉ auto-preview · no LLM` badge — what it covers and why
 
-The badge sits on every option's preview block to be honest about provenance:
+The badge sits as a footer line INSIDE each per-option preview HTML iframe to be honest about provenance:
 
-- **Palette swatches** — the 5–6 hex tokens are *committed* by the agent's axis pick (recipe palette, or shell+style+aesthetic synthesis), then rendered as chips by the chat layer. The hex values are choices the agent makes; the rendering is mechanical.
-- **Type sample** — the candidate strings come from the brief, the font stack comes from the picked style's detail file. No model generates the typography image.
-- **Library preview image** — the source is `prototype/<axisFile>-ui.png` (a curated reference). The recolour is `scripts/prototype-recolor.py` (pure OKLab/RBF math, no model). The output image is a deterministic colour swap of a baked reference, NOT a fresh generation.
+- **Palette swatches** — the 5–6 hex tokens are *committed* by the agent's axis pick (recipe palette, or shell+style+aesthetic synthesis), painted as CSS chips inside the iframe. The hex values are choices the agent makes; the rendering is mechanical.
+- **Type sample** — the candidate strings come from the brief, the font stack comes from the picked style's detail file (Google Fonts loaded via `<link>` inside the iframe). No model generates the typography image — the iframe renders real text in real fonts.
+- **Library preview image** — the source is `prototype/<axisFile>-ui.png` (a curated reference). The recolour is `scripts/prototype-recolor.py` (pure OKLab/RBF math, no model). The output image embedded as `<img>` inside the iframe is a deterministic colour swap of a baked reference, NOT a fresh generation.
 
-The badge prevents the user from over-trusting the preview as "this is what the prototype will look like." It signals: *this is a structural sketch in the right palette, not a render.* If they want a real render, that's what the `+ draft` option below the cards is for. Keep the badge inline, exactly as `◉ auto-preview · no LLM` (the disc glyph + the words) so the chat renderer can chip it consistently.
+The badge prevents the user from over-trusting the preview as "this is what the prototype will look like." It signals: *this is a structural sketch in the right palette, not a render.* For a real render, the `+ draft` invitation outside the decision-request is the escape hatch. Keep the badge inside the iframe, exactly as `◉ auto-preview · no LLM · recoloured from prototype/<picked-library>.png` (the disc glyph + the words + the source-reference suffix).
 
 ### The `+ draft` refinement loop (only when imageGen = wired)
 
@@ -207,22 +281,29 @@ For each option, pick **one** library image — the one belonging to the **most-
 
 If the chosen file doesn't exist on disk (`ls prototype/<file>` to confirm before the recolor call), fall back to the next axis down. Never invent a path.
 
-### Recoloring the library image to the option's palette
+### Recoloring the library image + writing the per-option preview HTML
 
-Library images are raster — their baked-in colours won't match each option's committed palette. Recolor each picked library image into the option's hex tokens before embedding, so the preview reads on-vibe instead of off-by-default-purple.
+For each of the three options, the agent writes TWO files into `.prototype-options/` at the project root before emitting the `<decision-request>`:
+
+1. **The recoloured PNG** — `option-<N>.png` — produced by running `scripts/prototype-recolor.py` against the picked library image.
+2. **The preview HTML** — `option-<N>-preview.html` — composed per the *Per-option preview HTML* template above, which `<img src="./option-<N>.png">` references.
 
 Run **once per option**:
 
 ```bash
 python scripts/prototype-recolor.py \
     prototype/<picked-library-image>.png \
-    .prototype-options/option-<n>.png \
+    .prototype-options/option-<N>.png \
     --tokens "#bg,#surface,#fg,#muted,#border,#accent"
 ```
 
+Then write `.prototype-options/option-<N>-preview.html` per the template, substituting `<#bg>`…`<#accent>` with the SAME hex tokens, picking display + body Google Font families per the style, and pasting candidate brief strings into the type sample.
+
 The wrapper (`scripts/prototype-recolor.py`) extracts the source palette in OKLab, identifies the source accent (highest chroma) and source neutrals (the rest), matches them by lightness to the option's tokens, and writes a smooth perceptual recolor — light areas stay light, dark areas stay dark, only hue/chroma snap. Under the hood it calls `scripts/recolor_palette.py` (Chang-et-al palette-based recoloring, OKLab/OKLCH). Read `scripts/recolor_palette.GUIDE.md` if you need finer control (single-axis edits, chroma scaling, target_rgb mapping).
 
-**Output path convention:** `.prototype-options/option-<n>.png` at the project root. The folder is ephemeral — once the user picks, the build phase ignores it. Don't write outside the project root; don't write into `prototype/` (that's the protocol-mount library and is read-only). If `numpy`/`pillow` aren't available (`python3 -c "import numpy, PIL"` fails), `pip install numpy pillow` first — both are pure-Python and install in seconds. If the recolor still fails for any reason, embed the original library image and add a one-line caption "*preview colors are illustrative — the prototype will use the palette above*"; don't drop the visuals entirely.
+**Output path convention:** `.prototype-options/` at the project root. The folder is ephemeral — once the user picks, the build phase ignores it. Don't write outside the project root; don't write into `prototype/` (that's the protocol-mount library and is read-only). If `numpy`/`pillow` aren't available (`python3 -c "import numpy, PIL"` fails), `pip install numpy pillow` first — both are pure-Python and install in seconds. If the recolor fails for any reason, write the preview HTML anyway with `<img src="../prototype/<picked-library>.png">` as a same-origin fallback and add a `<p class="register">` line "*preview colours are illustrative — the build will use the palette above*"; never drop the visuals entirely.
+
+**Quick verify the preview is reachable** before emitting the `<decision-request>`: each option's `option-<N>-preview.html` and `option-<N>.png` must exist on disk under the project root. The chat's iframe will request them via `apiUrl()` against the daemon; missing files render an empty iframe, which looks identical to the bug we just fixed. One `ls .prototype-options/` line in a single Bash call is enough.
 
 ### Photography + illustration register strip (per option, only when the direction asks for it)
 
@@ -276,29 +357,26 @@ No raster image is embedded in the strip — only inline text. The chat renderer
 
 ### Side-by-side compact layout when only one axis varies
 
-If the three options differ on **only one axis** (they share two of three picks — e.g. all are `three-column-app + restrained-hairline + <different aesthetic>`), collapse the repeated axes into a single header and render the three varying picks side-by-side with a double-ended arrow `↔` between them. This makes the comparison sharp instead of forcing the user to diff three repeated paragraphs.
+The `<decision-request>` card already lays out three options as three horizontal buttons — side-by-side is the default rendering, no manual table needed. What changes when only one axis varies is two things:
 
-Use this shape (replaces the three full Option cards above when the single-axis condition holds):
+1. **The `prompt="..."` attribute names the axis.** Use `prompt="Aesthetic varies — pick one (Shell + Style shared)"` or `prompt="Style varies — pick one (Shell + Aesthetic shared)"` or `prompt="Shell varies — pick one (Style + Aesthetic shared)"`. The shared picks go in the prompt, so the option labels can focus on just the varying axis.
+2. **The option label collapses to the varying axis only.** Instead of repeating Shell / Style / Aesthetic / Vibe / Trade-off in all three buttons, name just the varying axis: `Option 1 — aesthetic-cottagecore · pressed-flowers warmth · trade-off: cosier, less editorial`. Saves user eye-time.
+
+The preview HTML iframe inside each button still shows the full palette + type + recoloured image per option — those are the visual differentiators along the varying axis, and they ARE what changes between options. The chat renders them in three columns automatically.
+
+Example single-axis variation (aesthetic varies, three-column-app + restrained-hairline shared):
 
 ```
-**All three share:** Shell · `shell-X` · Style · `style-Y` · Vibe family · [one word]
-
-**Aesthetic varies — pick one:**
-
-| Option 1 — `aesthetic-A` | ↔ | Option 2 — `aesthetic-B` | ↔ | Option 3 — `aesthetic-C` |
-|---|---|---|---|---|
-| [one-phrase why] | | [one-phrase why] | | [one-phrase why] |
-| Palette · `#bg`·`#surface`·`#fg`·`#muted`·`#border`·`#accent` | | Palette · `#…`·`#…`·`#…`·`#…`·`#…`·`#…` | | Palette · `#…`·`#…`·`#…`·`#…`·`#…`·`#…` |
-| Type · Display "[…]" · Body "[…]" | | Type · Display "[…]" · Body "[…]" | | Type · Display "[…]" · Body "[…]" |
-| ![](.prototype-options/option-1.png) | | ![](.prototype-options/option-2.png) | | ![](.prototype-options/option-3.png) |
-| Trade-off · [one phrase] | | Trade-off · [one phrase] | | Trade-off · [one phrase] |
-
-Pick 1, 2, 3, or describe a different aesthetic.
+<decision-request id="prototype-direction" prompt="Aesthetic varies — pick one (three-column-app + restrained-hairline shared, vibe family: composed)">
+  <option value="1" preview=".prototype-options/option-1-preview.html">Option 1 — aesthetic-cottagecore · pressed-flowers warmth · trade-off: cosier, less editorial</option>
+  <option value="2" preview=".prototype-options/option-2-preview.html">Option 2 — aesthetic-dark-academia · oxblood-and-leather mood · trade-off: heavier, more literary</option>
+  <option value="3" preview=".prototype-options/option-3-preview.html">Option 3 — (none) · pure restraint, no era cue · trade-off: most timeless, least distinctive</option>
+</decision-request>
 ```
 
-The same compact shape applies when the varying axis is `shell` or `style` instead of `aesthetic` — replace the header label accordingly ("Shell varies — pick one:" / "Style varies — pick one:"). The double-ended arrow `↔` in the column header row signals "these are alternatives along one axis," not "stages of a flow." Keep the arrow literal `↔`; the chat renderer doesn't substitute it.
+When the three options differ on **two or three axes**, use the full option-label shape (Shell · Style · Aesthetic · Vibe · Why/Trade-off) from the main template — the user needs to see all three axes spelled out.
 
-When the three options differ on **two or three axes**, fall back to the full three-card vertical layout above — side-by-side gets unreadable when each card has a different shell silhouette in its preview.
+Markdown-table layouts with literal `↔` arrows are NOT supported by the chat renderer (the previous version of this section described them — they rendered as a static table the user couldn't click). Don't emit them. The clickable three-button row IS the side-by-side layout.
 
 ### Diversity rule for the three options
 
@@ -306,11 +384,15 @@ The three must differ on at least one axis — ideally the aesthetic axis (the t
 
 ### When the user replies
 
-- **Numbered pick or "the X one"** → that's the commit. Read the picked option's detail files from `./prototype/`, build. No re-confirm.
+The chat posts the user's reply as a normal user message regardless of whether they clicked or typed. Distinguish by prefix:
+
+- **Click on an option button** → next user message starts with `[decision:prototype-direction] <N> — <label>` (the chat's auto-format). That `<N>` is the commit. Read the picked option's detail files from `./prototype/`, build. No re-confirm.
+- **Free-text numbered pick** ("option 2", "go with 2", "the second one") → same as a click: commit, build.
 - **Pick + small swap** ("option 2 but warmer", "1 with the bento shell") → apply the swap, build, no re-confirm.
+- **`<N> + draft`** (when `imageGen = wired`) → the `+ draft` refinement loop in *The `+ draft` refinement loop* section above. Do NOT commit the genre yet.
 - **"You pick" / "your call" / "whatever"** → pick option 1 (your recommended), commit it in a one-line comment, build.
-- **Different direction entirely** → re-run the trigger check on the new signal. If still vague or mismatched, ask again. If now coherent, commit and build.
-- **Question back to you** ("what's the difference between 1 and 3?", "which is denser?") → answer their question briefly, then re-point to the three options (don't redraw the whole form).
+- **Different direction entirely** ("give me a dark dashboard instead", "make it warmer cream", "I want oversized type") → re-run the trigger check on the new signal. If still vague or mismatched, emit a fresh `<decision-request>` with new options. If now coherent, commit and build.
+- **Question back to you** ("what's the difference between 1 and 3?", "which is denser?") → answer their question briefly in chat, then leave the existing decision card in place (it's still answerable — don't redraw).
 
 ### What this replaces
 
