@@ -235,18 +235,48 @@ The badge prevents the user from over-trusting the preview as "this is what the 
 When the user replies with `<N> + draft` (or `option N, generate samples`, or any obvious equivalent that names an option AND requests image-gen):
 
 1. Stay in the stop-and-ask phase — **do NOT commit the genre yet, do NOT write any source files.**
-2. Use the wired image-gen skill (the one detected during the image-gen availability check — typically a `generate-image` skill, or an image-gen MCP, or native model image output). Compose a prompt from the picked option's:
+2. Use the wired image-gen skill (the one detected during the image-gen availability check — typically a `generate-image` skill, or an image-gen MCP, or native model image output). The call shape is `skill: "generate-image"`, NOT `skill: "raster-photo"` — `raster-photo` is a *medium* classification used by the visual-orchestrator later, not a skill the agent invokes directly. Compose a prompt from the picked option's:
    - Shell silhouette (a one-line layout description)
    - Style detail file's prompt-friendly mood
    - Aesthetic detail file's named references
    - Palette (passed as hex tokens in the prompt)
+   - **Typography as visual-characteristic description** (see *Typography in image-gen prompts* below — never just the bare family name)
    - If a photo register was attached: pull `prompt_keywords` from `prototype/photo-<styleId>.md`
    - If an illust register was attached: pull from `prototype/illust-<styleId>.md`
-3. Generate **2–3 frames** (one hero, one secondary view, optionally one detail) at small thumbnail size (≤768px longest side) so the cost stays low. Save under `.prototype-options/option-<N>-draft-<k>.png`.
-4. Re-emit ONLY the picked option's card with the real generated images replacing the recoloured preview, the `◉ auto-preview · no LLM` badge **removed from the preview row** (it WAS generated this time), and a fresh prompt: `Lock this direction, pick a different option (1/2/3), or describe a swap.`
+3. Generate **2–3 frames** (one hero, one secondary view, optionally one detail) at small thumbnail size (≤768px longest side) so the cost stays low. Save under `.prototype-options/<TURN_SLUG>/draft-<k>.png` using the same TURN_SLUG as the preview recolours.
+4. Re-emit ONLY the picked option's card with the real generated images replacing the recoloured preview, the `◉ auto-preview · no LLM` badge **replaced** with `◉ model-generated mockup · composition + palette only · typography is the model's interpretation, the actual build uses the locked face`, and a fresh prompt: `Lock this direction, pick a different option (1/2/3), or describe a swap.`
 5. Still wait for user confirmation. The genre is committed only after the user says yes / 1 / lock it / build / similar after seeing the draft.
 
 If the image-gen call fails (network error, quota, content filter), fall back gracefully: re-emit the option card with the original recoloured preview, add a one-line "*image-gen attempted but failed: [short reason]; showing the mechanical preview instead*", and ask the user whether to retry or pick a different option. Do not silently commit the genre on image-gen failure.
+
+### Typography in image-gen prompts (Option A — visual-characteristic description)
+
+Text-to-image models (FLUX, SDXL, Imagen, DALL-E) **do not recognise font family names**. Asking for "Space Grotesk" produces "vaguely sans"; asking for "Fraunces" produces "vaguely serif". The model has never seen the .ttf file — it knows visual patterns from training data, not foundry catalogues.
+
+To steer the model toward the right typographic feel, the `+ draft` prompt MUST translate the picked option's `<display font>` and `<body font>` into a **visual-characteristic description**, not the family name. Use the table below as the lookup; pick the row that matches the locked family, paste the description into the prompt verbatim:
+
+| `<display font>` / `<body font>` | Visual-characteristic description for the image-gen prompt |
+|---|---|
+| `Inter` | clean modern neo-grotesque sans-serif, slightly humanist warmth, tall x-height, open apertures, two-storey 'a' and 'g', similar to SF Pro / IBM Plex Sans |
+| `Space Grotesk` | geometric grotesque sans-serif, slightly compressed, tall x-height, single-storey 'a', sharp angled terminals, modern technical feel, similar to Eurostile or DIN at display sizes |
+| `Fraunces` | warm humanist contemporary serif, wavy and high-contrast, ball terminals on 'a' and 'f', distinctive two-storey curvy 'g' descender, somewhere between Cooper and Recoleta |
+| `EB Garamond` | classic old-style book serif, low contrast, oblique stress, small x-height, traditional Renaissance feel, similar to Adobe Garamond |
+| `Source Serif 4` | refined transitional serif, moderate contrast, slightly modern proportions, similar to Source Serif Pro or PT Serif |
+| `IBM Plex Serif` | warm slab-influenced serif with restrained personality, similar to Liberation Serif or PT Serif |
+| `Times New Roman` | classic transitional serif, thin strokes, ball terminals, the default-Office serif look — emphasise newspaper / formal-letter associations |
+| `JetBrains Mono` | clean technical monospace, distinctive ligatures (=>, !=), slab-like serifs on i/l/1 to disambiguate, IDE-coding feel, similar to Fira Code |
+| `Press Start 2P` | pixel-perfect bitmap, 5×7 grid, blocky uppercase 8-bit arcade feel, similar to NES title screens |
+| `DM Sans` | rounded geometric sans-serif, warm friendly tone, slightly compressed, similar to Avenir Next or Proxima Soft |
+| `Roboto` | neutral utilitarian sans-serif, mechanical skeleton with friendly curves, Android-native feel |
+| `Söhne` / `Helvetica Neue` / system-ui fallback | classic neo-grotesque sans-serif, low contrast, tight tracking at display sizes, Swiss-modernist feel, similar to Helvetica or Akzidenz-Grotesk |
+
+For families not in the table, the agent composes a description on the same axes: **classification** (sans / serif / mono / display / slab / script) · **construction** (geometric / humanist / grotesque / transitional / old-style) · **personality** (warm / clinical / technical / decorative) · **distinctive features** (two-storey 'a', ball terminals, sharp angles, etc.) · **similar to** (a well-known reference the model has seen).
+
+**Prompt assembly shape:** prepend the description, then say "all headlines set as" and the headline text. Example for an `oversized-neo-grotesque + Space Grotesk` Option 1:
+
+> `... oversized geometric grotesque sans-serif headlines: tall x-height, single-storey 'a', sharp angled terminals, modern technical feel, similar to Eurostile or DIN at display sizes. All headlines set as "WE DON'T DO QUIET" in the locked accent hex #ff4d2e on warm paper #f4f3ef. Body text in a clean neo-grotesque sans with slight humanist warmth, similar to SF Pro. NEVER mention the family name "Space Grotesk" or "Inter" in the prompt — the model doesn't know those names.`
+
+**Honest about the limit:** even with visual-characteristic descriptions, the model produces an *interpretation*, not pixel-accurate typography. The +draft mockup shows composition direction and palette — type fidelity comes through in the actual build (Phase C+), where the prototype uses the real Google Fonts via `<link>` in the HTML head. The badge replacement in step 4 above makes this explicit to the user.
 
 ### Which library image to preview per option (axis-decisiveness)
 
