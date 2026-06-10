@@ -36,9 +36,9 @@ Same for the palette: every hex in `<palette>` becomes a `:root` var. Don't subs
 
 Once Phase A is locked, `Read` the three detail files identified in `<axes>`:
 
-- `./prototype/shell-<id>.md` — layout primitives, density classes, skeleton HTML
-- `./prototype/style-<id>.md` — surface treatment vocabulary, depth grammar, shape language, optical inheritance
-- `./prototype/aesthetic-<id>.md` (if not "(none)") — cultural register, era cues, decoration vocabulary, named references
+- `./design-library/shell-<id>.md` — layout primitives, density classes, skeleton HTML
+- `./design-library/style-<id>.md` — surface treatment vocabulary, depth grammar, shape language, optical inheritance
+- `./design-library/aesthetic-<id>.md` (if not "(none)") — cultural register, era cues, decoration vocabulary, named references
 
 Plus, if a `recipe-<id>.md` was named, `Read` that too — recipes bundle all three picks with proven combinations.
 

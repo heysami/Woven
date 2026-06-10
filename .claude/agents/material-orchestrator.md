@@ -19,14 +19,14 @@ cat "$TH_PROTOCOL_ROOT/docs/research/material-library.index.json" \
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 ```
 
-`docs/research/material-library.md` is now a **primer only** — §1 Material principles (luminance, depth, deformation, refraction, anisotropy, age) + §6 Reactive-behaviour reference + §7 Prototype-style decision-tree prose + §8 Anti-patterns + Appendix (~3K words). **Per-entry source files live at `prototype/material-<materialId>.md`** — hand-edited, YAML frontmatter for structured fields + markdown body for physical-behavior prose + a YAML codeblock holding the verbatim `implementationStrategies` (CSS / SVG filter / GLSL / raster / video). The drawer reads them at dispatch; you only need the index.
+`docs/research/material-library.md` is now a **primer only** — §1 Material principles (luminance, depth, deformation, refraction, anisotropy, age) + §6 Reactive-behaviour reference + §7 Prototype-style decision-tree prose + §8 Anti-patterns + Appendix (~3K words). **Per-entry source files live at `design-library/material-<materialId>.md`** — hand-edited, YAML frontmatter for structured fields + markdown body for physical-behavior prose + a YAML codeblock holding the verbatim `implementationStrategies` (CSS / SVG filter / GLSL / raster / video). The drawer reads them at dispatch; you only need the index.
 
 Material index schema (same as photo + illust, plus material-specific fields):
 - `entries[materialId].family` — `digital | analog | hybrid`
 - `entries[materialId].surfaceFinish` — `matte | glossy | textured | semi-gloss | metallic | iridescent`
-- `entries[materialId].sourceFile` — pointer to `prototype/material-<materialId>.md`
+- `entries[materialId].sourceFile` — pointer to `design-library/material-<materialId>.md`
 
-If the index file is missing, return `runStatus: error` with `runError: "material-library.index.json not found — run scripts/build-library-indexes.py to regenerate from prototype/material-*.md files."`.
+If the index file is missing, return `runStatus: error` with `runError: "material-library.index.json not found — run scripts/build-library-indexes.py to regenerate from design-library/material-*.md files."`.
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 

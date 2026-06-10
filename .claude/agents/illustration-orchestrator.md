@@ -19,9 +19,9 @@ cat "$TH_PROTOCOL_ROOT/docs/research/illustration-library.index.json" \
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 ```
 
-`docs/research/illustration-library.md` is now a **primer only** (categories taxonomy, decision-tree prose, universal negatives) — ~3K words. **Per-entry source files live at `prototype/illust-<styleId>.md`**, hand-edited. The drawer reads them at dispatch; you only need the index to pick the entry. Same schema as `photography-library.index.json` (see that file's §0).
+`docs/research/illustration-library.md` is now a **primer only** (categories taxonomy, decision-tree prose, universal negatives) — ~3K words. **Per-entry source files live at `design-library/illust-<styleId>.md`**, hand-edited. The drawer reads them at dispatch; you only need the index to pick the entry. Same schema as `photography-library.index.json` (see that file's §0).
 
-If the index file is missing, return `runStatus: error` with `runError: "illustration-library.index.json not found — run scripts/build-library-indexes.py to regenerate from prototype/illust-*.md files."` and stop.
+If the index file is missing, return `runStatus: error` with `runError: "illustration-library.index.json not found — run scripts/build-library-indexes.py to regenerate from design-library/illust-*.md files."` and stop.
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 

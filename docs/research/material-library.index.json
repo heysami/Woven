@@ -685,7 +685,7 @@
         "aesthetic-atompunk",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/material-ansi-art.md"
+      "sourceFile": "design-library/material-ansi-art.md"
     },
     "ascii-art-surface": {
       "name": "ASCII Art Surface (text-as-pixel)",
@@ -698,7 +698,7 @@
         "recipe-terminal-on-web",
         "aesthetic-web-brutalism"
       ],
-      "sourceFile": "prototype/material-ascii-art-surface.md"
+      "sourceFile": "design-library/material-ascii-art-surface.md"
     },
     "aurora-mesh": {
       "name": "Aurora Mesh Gradient (Stripe / Vercel / Linear)",
@@ -712,7 +712,7 @@
         "aesthetic-frutiger-aero",
         "aesthetic-frutiger-dark-aero"
       ],
-      "sourceFile": "prototype/material-aurora-mesh.md"
+      "sourceFile": "design-library/material-aurora-mesh.md"
     },
     "barrel-pincushion-warp": {
       "name": "Barrel / Pincushion Lens Warp (wide-lens optical distortion)",
@@ -728,7 +728,7 @@
         "recipe-aurora-marketing",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/material-barrel-pincushion-warp.md"
+      "sourceFile": "design-library/material-barrel-pincushion-warp.md"
     },
     "brushed-aluminum": {
       "name": "Brushed Aluminum (anisotropic metal)",
@@ -742,7 +742,7 @@
         "aesthetic-steampunk",
         "style-skeuomorphism (recorder-as-tape-deck)"
       ],
-      "sourceFile": "prototype/material-brushed-aluminum.md"
+      "sourceFile": "design-library/material-brushed-aluminum.md"
     },
     "cad-blueprint": {
       "name": "CAD Blueprint (white-on-blue technical drawing)",
@@ -758,7 +758,7 @@
         "aesthetic-steampunk",
         "style-restrained-hairline"
       ],
-      "sourceFile": "prototype/material-cad-blueprint.md"
+      "sourceFile": "design-library/material-cad-blueprint.md"
     },
     "ceramic-glaze": {
       "name": "Ceramic Glaze (high-gloss porcelain finish)",
@@ -770,7 +770,7 @@
         "style-skeuomorphism (porcelain mascot)",
         "aesthetic-cottagecore (enamelware)"
       ],
-      "sourceFile": "prototype/material-ceramic-glaze.md"
+      "sourceFile": "design-library/material-ceramic-glaze.md"
     },
     "charcoal-drawing": {
       "name": "Charcoal Drawing (smudged, expressive)",
@@ -783,7 +783,7 @@
         "aesthetic-cottagegoth",
         "aesthetic-anti-design"
       ],
-      "sourceFile": "prototype/material-charcoal-drawing.md"
+      "sourceFile": "design-library/material-charcoal-drawing.md"
     },
     "chromatic-aberration-lens": {
       "name": "Lens Chromatic Aberration (radial RGB split toward corners)",
@@ -799,7 +799,7 @@
         "aesthetic-frutiger-dark-aero",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/material-chromatic-aberration-lens.md"
+      "sourceFile": "design-library/material-chromatic-aberration-lens.md"
     },
     "chrome-mirror": {
       "name": "Chrome Mirror (Y2K chromecore / cyber-sigil)",
@@ -814,7 +814,7 @@
         "aesthetic-cyberpunk",
         "aesthetic-urbling"
       ],
-      "sourceFile": "prototype/material-chrome-mirror.md"
+      "sourceFile": "design-library/material-chrome-mirror.md"
     },
     "chrome-on-velvet": {
       "name": "Chrome on Velvet (Y2K luxury substrate)",
@@ -828,7 +828,7 @@
         "aesthetic-y2k-futurism",
         "style-holographic"
       ],
-      "sourceFile": "prototype/material-chrome-on-velvet.md"
+      "sourceFile": "design-library/material-chrome-on-velvet.md"
     },
     "coated-glossy-paper": {
       "name": "Coated Glossy Paper (magazine cover stock)",
@@ -841,7 +841,7 @@
         "aesthetic-y2k-memphis-loud",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/material-coated-glossy-paper.md"
+      "sourceFile": "design-library/material-coated-glossy-paper.md"
     },
     "concrete": {
       "name": "Concrete (raw industrial)",
@@ -855,7 +855,7 @@
         "aesthetic-cassette-futurism",
         "recipe-brutalist-web"
       ],
-      "sourceFile": "prototype/material-concrete.md"
+      "sourceFile": "design-library/material-concrete.md"
     },
     "copper-patina": {
       "name": "Copper with Verdigris Patina",
@@ -869,7 +869,7 @@
         "aesthetic-solarpunk",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/material-copper-patina.md"
+      "sourceFile": "design-library/material-copper-patina.md"
     },
     "corduroy": {
       "name": "Corduroy (ribbed pile fabric)",
@@ -882,7 +882,7 @@
         "aesthetic-dark-academia",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/material-corduroy.md"
+      "sourceFile": "design-library/material-corduroy.md"
     },
     "crt-phosphor": {
       "name": "CRT Phosphor (raster scan with subpixel RGB)",
@@ -897,7 +897,7 @@
         "aesthetic-cyberpunk",
         "style-pixel-bitmap"
       ],
-      "sourceFile": "prototype/material-crt-phosphor.md"
+      "sourceFile": "design-library/material-crt-phosphor.md"
     },
     "datamosh-compression-smear": {
       "name": "Datamosh (codec interpolation failure)",
@@ -913,7 +913,7 @@
         "aesthetic-dreamcore",
         "aesthetic-weirdcore"
       ],
-      "sourceFile": "prototype/material-datamosh-compression-smear.md"
+      "sourceFile": "design-library/material-datamosh-compression-smear.md"
     },
     "denim": {
       "name": "Denim (twill weave, indigo fade)",
@@ -926,7 +926,7 @@
         "aesthetic-cottagecore",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/material-denim.md"
+      "sourceFile": "design-library/material-denim.md"
     },
     "displacement-ripple": {
       "name": "Displacement Ripple (interactive pointer-driven warp)",
@@ -942,7 +942,7 @@
         "aesthetic-frutiger-aero",
         "recipe-aurora-marketing"
       ],
-      "sourceFile": "prototype/material-displacement-ripple.md"
+      "sourceFile": "design-library/material-displacement-ripple.md"
     },
     "dithered-1bit": {
       "name": "1-bit Dither (Obra Dinn / Game Boy threshold)",
@@ -956,7 +956,7 @@
         "aesthetic-web-brutalism",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/material-dithered-1bit.md"
+      "sourceFile": "design-library/material-dithered-1bit.md"
     },
     "dust-scratches": {
       "name": "Dust + Scratches (archival distress)",
@@ -971,7 +971,7 @@
         "aesthetic-corporate-grunge",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/material-dust-scratches.md"
+      "sourceFile": "design-library/material-dust-scratches.md"
     },
     "felt": {
       "name": "Felt (matted wool, fuzzy)",
@@ -985,7 +985,7 @@
         "aesthetic-dark-academia",
         "aesthetic-cottagegoth"
       ],
-      "sourceFile": "prototype/material-felt.md"
+      "sourceFile": "design-library/material-felt.md"
     },
     "film-grain-cinestill-800t": {
       "name": "Film Grain — CineStill 800T (tungsten, halation, neon glow)",
@@ -999,7 +999,7 @@
         "aesthetic-cassette-futurism",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/material-film-grain-cinestill-800t.md"
+      "sourceFile": "design-library/material-film-grain-cinestill-800t.md"
     },
     "film-grain-portra-400": {
       "name": "Film Grain — Portra 400 (colour, fine grain, warm)",
@@ -1013,7 +1013,7 @@
         "recipe-editorial-magazine",
         "aesthetic-cottagegoth"
       ],
-      "sourceFile": "prototype/material-film-grain-portra-400.md"
+      "sourceFile": "design-library/material-film-grain-portra-400.md"
     },
     "film-grain-tri-x": {
       "name": "Film Grain — Tri-X 400 (B&W, coarse grain)",
@@ -1028,7 +1028,7 @@
         "aesthetic-vaporwave",
         "aesthetic-cottagegoth"
       ],
-      "sourceFile": "prototype/material-film-grain-tri-x.md"
+      "sourceFile": "design-library/material-film-grain-tri-x.md"
     },
     "foxing-stain": {
       "name": "Foxing / Tea Stain (paper aging)",
@@ -1042,7 +1042,7 @@
         "aesthetic-cottagecore",
         "aesthetic-cottagegoth"
       ],
-      "sourceFile": "prototype/material-foxing-stain.md"
+      "sourceFile": "design-library/material-foxing-stain.md"
     },
     "frosted-glass": {
       "name": "Frosted Glass (canonical glassmorphism)",
@@ -1060,7 +1060,7 @@
         "aesthetic-vaporwave",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/material-frosted-glass.md"
+      "sourceFile": "design-library/material-frosted-glass.md"
     },
     "glossy-plastic-aqua": {
       "name": "Glossy Plastic (Frutiger Aero / Apple Aqua / Windows Vista wet button)",
@@ -1074,7 +1074,7 @@
         "aesthetic-frutiger-chromecore",
         "style-skeuomorphism"
       ],
-      "sourceFile": "prototype/material-glossy-plastic-aqua.md"
+      "sourceFile": "design-library/material-glossy-plastic-aqua.md"
     },
     "gold-leaf": {
       "name": "Gold Leaf (rich warm metal)",
@@ -1088,7 +1088,7 @@
         "aesthetic-urbling",
         "style-holographic"
       ],
-      "sourceFile": "prototype/material-gold-leaf.md"
+      "sourceFile": "design-library/material-gold-leaf.md"
     },
     "halftone-cmyk": {
       "name": "Halftone CMYK (newspaper / comic process)",
@@ -1103,7 +1103,7 @@
         "aesthetic-y2k-memphis-loud",
         "recipe-newspaper-of-record"
       ],
-      "sourceFile": "prototype/material-halftone-cmyk.md"
+      "sourceFile": "design-library/material-halftone-cmyk.md"
     },
     "hand-architect-sketch": {
       "name": "Hand Architect Sketch (Le Corbusier / Frank Lloyd Wright register)",
@@ -1119,7 +1119,7 @@
         "style-serif-warm-paper",
         "aesthetic-cottagecore"
       ],
-      "sourceFile": "prototype/material-hand-architect-sketch.md"
+      "sourceFile": "design-library/material-hand-architect-sketch.md"
     },
     "heat-haze-shimmer": {
       "name": "Heat Haze Shimmer (mirage / hot tarmac warp)",
@@ -1134,7 +1134,7 @@
         "aesthetic-coastal-grandmother",
         "recipe-aurora-marketing"
       ],
-      "sourceFile": "prototype/material-heat-haze-shimmer.md"
+      "sourceFile": "design-library/material-heat-haze-shimmer.md"
     },
     "holographic-foil": {
       "name": "Holographic Foil (Pokemon card / Apple Pay Cash)",
@@ -1149,7 +1149,7 @@
         "aesthetic-vaporwave",
         "style-liquid-glass"
       ],
-      "sourceFile": "prototype/material-holographic-foil.md"
+      "sourceFile": "design-library/material-holographic-foil.md"
     },
     "holographic-paper": {
       "name": "Holographic-Paper (iridescent foil on textured paper)",
@@ -1162,7 +1162,7 @@
         "aesthetic-y2k-futurism",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/material-holographic-paper.md"
+      "sourceFile": "design-library/material-holographic-paper.md"
     },
     "ink-bleed-on-paper": {
       "name": "Ink Bleed (fountain pen / felt-tip on uncoated)",
@@ -1177,7 +1177,7 @@
         "aesthetic-cottagegoth",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/material-ink-bleed-on-paper.md"
+      "sourceFile": "design-library/material-ink-bleed-on-paper.md"
     },
     "ink-wash-sumi-e": {
       "name": "Ink Wash (sumi-e / brush-and-ink)",
@@ -1191,7 +1191,7 @@
         "aesthetic-cottagegoth",
         "aesthetic-vaporwave (Japanese gloss element)"
       ],
-      "sourceFile": "prototype/material-ink-wash-sumi-e.md"
+      "sourceFile": "design-library/material-ink-wash-sumi-e.md"
     },
     "iso-line-drawing": {
       "name": "Isometric Line Drawing (axonometric vector, no fill)",
@@ -1207,7 +1207,7 @@
         "aesthetic-atompunk",
         "aesthetic-cassette-futurism"
       ],
-      "sourceFile": "prototype/material-iso-line-drawing.md"
+      "sourceFile": "design-library/material-iso-line-drawing.md"
     },
     "jpeg-block-corruption": {
       "name": "JPEG Block Corruption (8×8 macroblock aesthetic)",
@@ -1223,7 +1223,7 @@
         "aesthetic-weirdcore",
         "aesthetic-dreamcore"
       ],
-      "sourceFile": "prototype/material-jpeg-block-corruption.md"
+      "sourceFile": "design-library/material-jpeg-block-corruption.md"
     },
     "kraft-paper": {
       "name": "Kraft Paper (brown unbleached cardstock)",
@@ -1237,7 +1237,7 @@
         "aesthetic-goblincore",
         "recipe-newspaper-of-record"
       ],
-      "sourceFile": "prototype/material-kraft-paper.md"
+      "sourceFile": "design-library/material-kraft-paper.md"
     },
     "legal-pad": {
       "name": "Legal Pad (ruled yellow paper)",
@@ -1250,7 +1250,7 @@
         "aesthetic-dark-academia",
         "recipe-newspaper-of-record"
       ],
-      "sourceFile": "prototype/material-legal-pad.md"
+      "sourceFile": "design-library/material-legal-pad.md"
     },
     "letterpress-emboss": {
       "name": "Letterpress / Emboss (raised-impression printing)",
@@ -1264,7 +1264,7 @@
         "aesthetic-dark-academia",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/material-letterpress-emboss.md"
+      "sourceFile": "design-library/material-letterpress-emboss.md"
     },
     "linen-weave": {
       "name": "Linen Weave (Apple-linen / textbook substrate)",
@@ -1278,7 +1278,7 @@
         "aesthetic-coastal-grandmother",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/material-linen-weave.md"
+      "sourceFile": "design-library/material-linen-weave.md"
     },
     "liquid-glass": {
       "name": "Liquid Glass (Apple WWDC25)",
@@ -1294,7 +1294,7 @@
         "aesthetic-holographic",
         "aesthetic-y2k-futurism"
       ],
-      "sourceFile": "prototype/material-liquid-glass.md"
+      "sourceFile": "design-library/material-liquid-glass.md"
     },
     "marble": {
       "name": "Marble (veined stone)",
@@ -1308,7 +1308,7 @@
         "aesthetic-vaporwave (the marble bust!)",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/material-marble.md"
+      "sourceFile": "design-library/material-marble.md"
     },
     "material-tonal-surface": {
       "name": "Material 3 Tonal Surface (dynamic-color elevation)",
@@ -1322,7 +1322,7 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-frutiger-eco"
       ],
-      "sourceFile": "prototype/material-material-tonal-surface.md"
+      "sourceFile": "design-library/material-material-tonal-surface.md"
     },
     "matte-clay": {
       "name": "Matte Clay (claymorphism)",
@@ -1336,7 +1336,7 @@
         "aesthetic-frutiger-eco",
         "aesthetic-corporate-memphis"
       ],
-      "sourceFile": "prototype/material-matte-clay.md"
+      "sourceFile": "design-library/material-matte-clay.md"
     },
     "monospace-code-grid": {
       "name": "Monospace Code Grid (IDE / terminal text as visual material)",
@@ -1352,7 +1352,7 @@
         "style-dense-mono-dark",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/material-monospace-code-grid.md"
+      "sourceFile": "design-library/material-monospace-code-grid.md"
     },
     "motion-blur-streak": {
       "name": "Motion Blur Streak (directional motion artifact)",
@@ -1368,7 +1368,7 @@
         "recipe-aurora-marketing",
         "aesthetic-frutiger-aero"
       ],
-      "sourceFile": "prototype/material-motion-blur-streak.md"
+      "sourceFile": "design-library/material-motion-blur-streak.md"
     },
     "nes-rom-corruption": {
       "name": "NES ROM Corruption (palette-flipped sprites, garbled tile data)",
@@ -1383,7 +1383,7 @@
         "aesthetic-cyberpunk",
         "aesthetic-acid-graphics"
       ],
-      "sourceFile": "prototype/material-nes-rom-corruption.md"
+      "sourceFile": "design-library/material-nes-rom-corruption.md"
     },
     "oil-on-water": {
       "name": "Oil-on-Water Iridescence (organic dichroic)",
@@ -1397,7 +1397,7 @@
         "aesthetic-vaporwave",
         "aesthetic-cyberpunk"
       ],
-      "sourceFile": "prototype/material-oil-on-water.md"
+      "sourceFile": "design-library/material-oil-on-water.md"
     },
     "paper-with-watercolor": {
       "name": "Paper with Watercolor (botanical illustration substrate)",
@@ -1410,7 +1410,7 @@
         "aesthetic-coastal-grandmother",
         "aesthetic-fairycore"
       ],
-      "sourceFile": "prototype/material-paper-with-watercolor.md"
+      "sourceFile": "design-library/material-paper-with-watercolor.md"
     },
     "parchment": {
       "name": "Parchment / Vellum (animal hide, premium document)",
@@ -1423,7 +1423,7 @@
         "aesthetic-steampunk",
         "aesthetic-defi-cosmic (achievement certificates)"
       ],
-      "sourceFile": "prototype/material-parchment.md"
+      "sourceFile": "design-library/material-parchment.md"
     },
     "pebbled-leather": {
       "name": "Pebbled Leather (luxury goods finish)",
@@ -1436,7 +1436,7 @@
         "aesthetic-dark-academia",
         "aesthetic-defi-cosmic"
       ],
-      "sourceFile": "prototype/material-pebbled-leather.md"
+      "sourceFile": "design-library/material-pebbled-leather.md"
     },
     "pencil-graphite": {
       "name": "Pencil Graphite (HB to 6B sketch)",
@@ -1450,7 +1450,7 @@
         "aesthetic-corporate-grunge",
         "aesthetic-anti-design"
       ],
-      "sourceFile": "prototype/material-pencil-graphite.md"
+      "sourceFile": "design-library/material-pencil-graphite.md"
     },
     "photocopy-xerox": {
       "name": "Photocopy / Xerox (toner crush)",
@@ -1465,7 +1465,7 @@
         "aesthetic-acid-graphics",
         "aesthetic-curly-girly"
       ],
-      "sourceFile": "prototype/material-photocopy-xerox.md"
+      "sourceFile": "design-library/material-photocopy-xerox.md"
     },
     "pixel-bitmap": {
       "name": "Pixel Bitmap (integer-grid surface)",
@@ -1480,7 +1480,7 @@
         "aesthetic-pixel-game-boy-mono",
         "aesthetic-pc-98"
       ],
-      "sourceFile": "prototype/material-pixel-bitmap.md"
+      "sourceFile": "design-library/material-pixel-bitmap.md"
     },
     "plotter-pen-line": {
       "name": "Plotter Pen Line (HP 7475 single-weight ink-on-paper)",
@@ -1496,7 +1496,7 @@
         "recipe-newspaper-of-record",
         "style-restrained-hairline"
       ],
-      "sourceFile": "prototype/material-plotter-pen-line.md"
+      "sourceFile": "design-library/material-plotter-pen-line.md"
     },
     "polaroid-instant": {
       "name": "Polaroid / Instant Photo (square frame, faded chemistry)",
@@ -1511,7 +1511,7 @@
         "aesthetic-coastal-grandmother",
         "recipe-readcv"
       ],
-      "sourceFile": "prototype/material-polaroid-instant.md"
+      "sourceFile": "design-library/material-polaroid-instant.md"
     },
     "rgb-channel-split": {
       "name": "RGB Channel Split (intentional large-displacement chromatic split)",
@@ -1527,7 +1527,7 @@
         "aesthetic-acid-design",
         "recipe-terminal-on-web"
       ],
-      "sourceFile": "prototype/material-rgb-channel-split.md"
+      "sourceFile": "design-library/material-rgb-channel-split.md"
     },
     "risograph-glass": {
       "name": "Risograph-Glass (frosted glass under riso grain)",
@@ -1540,7 +1540,7 @@
         "aesthetic-corporate-grunge",
         "aesthetic-y2k-myspace"
       ],
-      "sourceFile": "prototype/material-risograph-glass.md"
+      "sourceFile": "design-library/material-risograph-glass.md"
     },
     "risograph": {
       "name": "Risograph (limited-palette spot-color print)",
@@ -1555,7 +1555,7 @@
         "aesthetic-y2k-myspace",
         "aesthetic-corporate-memphis"
       ],
-      "sourceFile": "prototype/material-risograph.md"
+      "sourceFile": "design-library/material-risograph.md"
     },
     "scanned-glass": {
       "name": "Scanned Glass (digital glass on analog paper substrate)",
@@ -1568,7 +1568,7 @@
         "aesthetic-dark-academia",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/material-scanned-glass.md"
+      "sourceFile": "design-library/material-scanned-glass.md"
     },
     "schematic-pcb-trace": {
       "name": "Schematic / PCB Trace (circuit-board aesthetic)",
@@ -1584,7 +1584,7 @@
         "recipe-scientific-infra-marketing",
         "recipe-devtools-marketing"
       ],
-      "sourceFile": "prototype/material-schematic-pcb-trace.md"
+      "sourceFile": "design-library/material-schematic-pcb-trace.md"
     },
     "signal-interference": {
       "name": "Signal Interference (hum bars, sync errors, vertical hold drift)",
@@ -1600,7 +1600,7 @@
         "recipe-terminal-on-web",
         "style-dense-mono-dark"
       ],
-      "sourceFile": "prototype/material-signal-interference.md"
+      "sourceFile": "design-library/material-signal-interference.md"
     },
     "silk": {
       "name": "Silk (lustrous fabric)",
@@ -1614,7 +1614,7 @@
         "aesthetic-coastal-grandmother",
         "aesthetic-defi-cosmic"
       ],
-      "sourceFile": "prototype/material-silk.md"
+      "sourceFile": "design-library/material-silk.md"
     },
     "silkscreen": {
       "name": "Silkscreen / Serigraphy (textile + poster print)",
@@ -1628,7 +1628,7 @@
         "aesthetic-constructivism",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/material-silkscreen.md"
+      "sourceFile": "design-library/material-silkscreen.md"
     },
     "smooth-leather": {
       "name": "Smooth Leather (full-grain, polished)",
@@ -1640,7 +1640,7 @@
         "style-skeuomorphism",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/material-smooth-leather.md"
+      "sourceFile": "design-library/material-smooth-leather.md"
     },
     "soft-ui-foam": {
       "name": "Soft UI / Neumorphic Foam",
@@ -1654,7 +1654,7 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-frutiger-eco"
       ],
-      "sourceFile": "prototype/material-soft-ui-foam.md"
+      "sourceFile": "design-library/material-soft-ui-foam.md"
     },
     "thin-glass-chip": {
       "name": "Thin Glass Chip (iOS-style toggle, Control Center pill)",
@@ -1667,7 +1667,7 @@
         "style-liquid-glass",
         "recipe-ios-system"
       ],
-      "sourceFile": "prototype/material-thin-glass-chip.md"
+      "sourceFile": "design-library/material-thin-glass-chip.md"
     },
     "torn-edge": {
       "name": "Torn Edge (paper / fabric / film)",
@@ -1681,7 +1681,7 @@
         "aesthetic-y2k-myspace",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/material-torn-edge.md"
+      "sourceFile": "design-library/material-torn-edge.md"
     },
     "uncoated-paper": {
       "name": "Uncoated Paper (soft, porous, ink-absorbing)",
@@ -1696,7 +1696,7 @@
         "aesthetic-cottagegoth",
         "style-raster-cutout"
       ],
-      "sourceFile": "prototype/material-uncoated-paper.md"
+      "sourceFile": "design-library/material-uncoated-paper.md"
     },
     "vellum-translucency": {
       "name": "Vellum / Tracing Paper Translucency",
@@ -1710,7 +1710,7 @@
         "aesthetic-cottagegoth",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/material-vellum-translucency.md"
+      "sourceFile": "design-library/material-vellum-translucency.md"
     },
     "vhs-distortion": {
       "name": "VHS Distortion (chromatic aberration + scanlines + bleed)",
@@ -1725,7 +1725,7 @@
         "aesthetic-y2k-myspace",
         "aesthetic-acid-graphics"
       ],
-      "sourceFile": "prototype/material-vhs-distortion.md"
+      "sourceFile": "design-library/material-vhs-distortion.md"
     },
     "vhs-frutiger": {
       "name": "VHS-Frutiger (Frutiger Aero with VHS distortion)",
@@ -1738,7 +1738,7 @@
         "aesthetic-y2k-myspace",
         "aesthetic-cassette-futurism"
       ],
-      "sourceFile": "prototype/material-vhs-frutiger.md"
+      "sourceFile": "design-library/material-vhs-frutiger.md"
     },
     "watercolor-wash": {
       "name": "Watercolor Wash (wet-on-wet, granulation)",
@@ -1752,7 +1752,7 @@
         "aesthetic-fairycore",
         "style-doodle"
       ],
-      "sourceFile": "prototype/material-watercolor-wash.md"
+      "sourceFile": "design-library/material-watercolor-wash.md"
     },
     "weathered-leather": {
       "name": "Weathered Leather (vintage, distressed)",
@@ -1767,7 +1767,7 @@
         "aesthetic-cottagegoth",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/material-weathered-leather.md"
+      "sourceFile": "design-library/material-weathered-leather.md"
     },
     "wireframe-3d-line": {
       "name": "Wireframe 3D (Tron-style line-only volumetric)",
@@ -1784,7 +1784,7 @@
         "style-terminal-mono",
         "recipe-scientific-infra-marketing"
       ],
-      "sourceFile": "prototype/material-wireframe-3d-line.md"
+      "sourceFile": "design-library/material-wireframe-3d-line.md"
     },
     "wood-grain-walnut": {
       "name": "Wood Grain (walnut, dark, vertical grain)",
@@ -1798,7 +1798,7 @@
         "aesthetic-steampunk",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/material-wood-grain-walnut.md"
+      "sourceFile": "design-library/material-wood-grain-walnut.md"
     }
   }
 }

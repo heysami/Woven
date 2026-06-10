@@ -18160,6 +18160,35 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex-direction: column;
   gap: 5px;
 }
+/* Multi-axis strip — one thumbnail per axis. Possible axes:
+   shell · style · aesthetic · photo · illust (2-5 thumbnails per option).
+   Photo / illust appear when the option's picks resolve to a register
+   decisionTree hit. Layout uses auto-fit so 2-3 cells render on one row,
+   4-5 cells wrap to two rows without crushing thumbnails. */
+.chat-direction-image-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 4px;
+  margin-bottom: 5px;
+}
+.chat-direction-image-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.chat-direction-image-cell .chat-direction-image {
+  max-height: 110px;
+}
+.chat-direction-image-axis-label {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: center;
+  line-height: 1.2;
+}
 .chat-direction-image {
   display: block;
   width: 100%;

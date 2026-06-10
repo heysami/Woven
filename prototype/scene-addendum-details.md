@@ -121,3 +121,59 @@ In addition to the base token block, scene-based prototypes need a small extensi
 ```
 
 Glass panel overlays use `backdrop-filter: blur(var(--scene-overlay-blur))` with the translucent background. **One overlay style across the whole scene** — never per-panel variation.
+
+---
+
+# Hybrid composition — drawing chrome with scene moments
+
+Originally lived in PROTOTYPE.md §Scene-based addendum. Moved here so it loads only when a scene gate has actually opened.
+
+
+A museum site is editorial chrome + a studio scene front door + deep-zoom IIIF work pages + a small map for "plan your visit." A logistics product is restrained product UI chrome + a real-world MapLibre map view. A portfolio is Read.cv chrome + a shader hero on one project page. These prototypes have **one drawing genre and multiple scene moments**, not "one genre" total.
+
+The compositional rule:
+
+- **One drawing genre commits the chrome.** Page shell, nav, type stack, paper colour, accent, voice register, motion budget for non-scene UI. This is the publication's identity and the visitor's continuous frame.
+- **Each scene moment commits its own scene-based genre.** A studio at the front door and deep-zoom work pages are two scene genres — Immersive 3D and Deep-zoom IIIF — not one blended thing. Never mix scene genres inside a single moment.
+- **Scene moments inherit token vocabulary from the chrome.** The scene overlay tokens (`--scene-overlay-bg`, `--scene-control`, `--scene-accent`) derive via `color-mix` from the drawing genre's paper / ink / accent. Glass panels over a Three.js scene use the same paper-translucent that essay cards use on editorial pages. Otherwise the scene reads as a different site bolted on.
+- **Voice register holds across both modes.** If the essay voice is measured-curatorial, the scene's overlay labels and audio captions are measured-curatorial too. No marketing-flat captions inside the scene; no chatty microcopy in the chrome.
+- **Scenes earn their place individually.** Two scene moments justified by the brief is right. Five scene moments because "more = better" dilutes each one — every additional scene halves the attention each carries, and the GPU bill rises.
+- **One scene instance live at a time.** Mount on route entry, dispose on route exit. The drawing chrome stays mounted. Never hold a Three.js canvas, an OpenSeadragon viewer, and a MapLibre map in memory simultaneously.
+
+## Three hybrid layout patterns
+
+| Pattern | When | Behaviour |
+|---|---|---|
+| **Full-page scene with floating chrome** | Front door; immersive moments where the scene IS the page | Canvas fills the viewport. Drawing-genre nav, captions, controls float as glass panels styled with the scene-overlay tokens. Chrome is muted; scene dominates. |
+| **Drawing page with embedded scene** | Editorial body with one in-context scene (a small map inside an article, a 3D rotation of a sculpture mid-essay) | Standard editorial layout. Scene occupies a defined content slot — width matches the body column or breaks out by exactly one step. Mount when scrolled into view; pause when out of view. |
+| **Split layout — scene one side, prose the other** | Work pages where the visitor reads about a painting while seeing it deep-zoomed; data-led storytelling | Two-column shell. Scene pane is sticky/locked while the prose scrolls. Pane proportions follow recalled values (1:2, 3:2, 4:5) — not invented. |
+
+## Tokens flow downward, never invented inside the scene
+
+Commit the drawing genre's `:root` block first. Derive scene chrome from it:
+
+```css
+:root {
+  /* Drawing genre commits — paper, ink, accent */
+  --paper: oklch(96% 0.008 80);
+  --ink: oklch(20% 0.02 80);
+  --accent: oklch(45% 0.12 60);          /* curatorial ochre */
+
+  /* Scene chrome derived from drawing tokens */
+  --scene-overlay-bg: color-mix(in oklch, var(--paper) 78%, transparent);
+  --scene-overlay-border: color-mix(in oklch, var(--ink) 18%, transparent);
+  --scene-control: var(--ink);
+  --scene-accent: var(--accent);          /* same accent, in-canvas */
+}
+```
+
+If the scene's overlay needs to read as "ours," it comes from the publication's palette — never neon picked out of thin air.
+
+## Scene-based genre entries — index
+
+Runtime experiences: 3D, real-world maps, deep-zoom imagery, shaders, simulations, spatial audio, AR/VR, node graphs, timelines. Commit one scene per page; mount on route entry, dispose on exit.
+
+**Workflow:** (1) commit one scene-based genre per scene moment, (2) `Read` [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) for the full runtime vocabulary (library choice, lighting, camera controls, motion, failure mode).
+
+The scene genres themselves (Immersive 3D / Deep-zoom document / Real-world map / Globe / Shader canvas / Gaussian-splat / Spatial audio / Node graph / Timeline / CAD / VR / Real-time data sim / Audio-visual / AR camera-passthrough) are documented inline in [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) — read that file once any scene gate opens; do not invent CDN library choices.
+

@@ -51,11 +51,75 @@ Brushed metal looks different at different viewing angles because the micro-groo
 
 Materials acquire patina. Copper greens, paper yellows, leather creases at the same handle-points. The orchestrator may commit `wearProfile: ageless | shows-wear | acquired-patina` per material. Acquired-patina materials need ASYMMETRIC distress — wear that lives where a hand or hinge would touch, not random global noise.
 
+### 1.7 Pointer-interaction reactions — proximity, hover, click
+
+Every material the orchestrator commits MUST also commit a reaction (or a deliberate non-reaction) for each of the three pointer-interaction intents. These are distinct AXES, not redundant alternatives — a glass card reacts to all three differently, and the combined choreography is what makes the material feel alive instead of static.
+
+> Intent ≠ modality. §6 organises pointer events by modality (pointermove / pointerdown / etc.) because the permission/perf profiles differ per API. This section organises the same events by INTENT — what the user is doing — because the FELT reaction is the contract the material is honouring. A material's entry should declare both: "responds to proximity → soft sheen drift" + "responds via pointermove handler at viewport scope".
+
+**Proximity (pointer NEAR the element but not over it).** The pointer is inside a radius (typically 200–500px) of the element's bounding box, with the cursor still in dead-zone. Subtlest of the three; the highest-craft layer. Used by Vision OS, Apple visionOS-era marketing pages, Linear's CTA hover sheen, Stripe's gradient bloom. Implementation: a SINGLE viewport-level `pointermove` handler writes `--mx` / `--my` to `:root` once per frame; each material computes its own distance via `calc()` on its bounding-box centre vs the cursor.
+
+- **What reacts to proximity:** glass (sheen drift), holographic (hue lean), chrome (environment-map nudge), aurora-mesh (blob centroid pulls toward cursor), iridescent (hue rotation falls off with distance), liquid-glass (refraction centre shifts), oil-on-water (dichroic phase shift).
+- **What MUST NOT react to proximity:** matte materials (uncoated paper, concrete, suede, raw clay) — the illusion is that they DON'T reflect anything. A matte material that leans toward the cursor reads as broken.
+- **Falloff curve:** linear is too even; inverse-square (1/d²) feels right, clamped at a max distance. Out beyond ~500px, the reaction is zero.
+- **Battery:** highest cost of the three because it runs every frame as long as the cursor moves. Disable entirely under `prefers-reduced-motion` and on `(pointer: coarse)` (touch). Throttle to rAF.
+
+**Hover (pointer OVER the element).** Binary on/off; usually achievable with CSS-only `:hover`. Distinct from proximity in that the reaction is bigger and the cursor's relative position INSIDE the element typically drives a parallax/tilt vector. The middle-cost layer.
+
+- **Glass:** backdrop-blur intensity ticks up (e.g., 12px → 16px); inset 1px white top-edge highlight brightens; saturate boost rises 10–20%.
+- **Clay / soft plastic:** inset shadow grows to suggest finger-impression depth — the "press is about to happen" cue.
+- **Holographic / iridescent:** full conic-gradient rotation driven by `--px` / `--py` (the cursor's local position inside the element); hue travel of 40–50°.
+- **Chrome / brushed metal:** specular highlight tracks the pointer; on anisotropic metals the highlight stretches ALONG the grain, never across.
+- **Paper / cardstock:** corner curl reveal (top-right triangle gradient mask appears); subtle lift via `transform: translateY(-1px)`.
+- **Wood / leather:** subtle warm-hue tick + faint specular brighten + 1.01–1.02× lift.
+- **Liquid-glass:** refraction `feDisplacementMap` scale ticks up.
+- **What MUST NOT react to hover:** concrete, raw uncoated paper, brutalist surfaces — committing hover-lift on these breaks the brief (the genre's whole point is that the surface is honest about its weight).
+
+**Click / press (pointerdown → pointerup).** The deformation/feedback moment. Brief (100–250ms), snappy, then snap back. The cheapest layer; CSS `:active` handles most cases.
+
+- **Clay / soft plastic:** `transform: scale(0.97)` + inset shadow growth — the press impression.
+- **Glass / liquid-glass:** quick 1px white inset rim-flash; NO scale (glass doesn't squish).
+- **Material M3:** ink ripple expanding from the click point — pure M3 signature.
+- **Paper:** brief press impression (corner-pinch suggestion) + subtle `translateY(1px)`.
+- **Brittle materials (ceramic glaze, frosted glass, marble):** micro-shake animation (3px lateral wobble over 80ms) — like the surface chimes when struck.
+- **Liquid (oil-on-water, mercury, water-droplet):** `feDisplacementMap` ripple emanates from the click point; CSS-radial-mask travelling outward at ~600px/s.
+- **Metal (brushed-aluminum, chrome, gold-leaf):** brief specular flare at the click point.
+- **Holographic / iridescent:** glint flash at click point — a momentary hue-rotate burst.
+- **Matte materials:** opacity dip (1.0 → 0.92) — no geometric deformation, just the acknowledgement.
+- **Universal rule:** the click reaction MUST resolve back to rest within 250ms. Anything longer reads as a stuck state.
+
+**Three-intent commit per material.** Every entry in §3–§5 SHOULD declare:
+
+```yaml
+reactiveBehaviors:
+  proximity: "<reaction>, falloff 1/d² over 400px"   # or "none — matte"
+  hover:     "<reaction>"                             # or "none — anti-pattern for this material"
+  click:     "<reaction>, 150ms resolve"              # or "none — surface absorbs"
+```
+
+When the entry does not yet declare these, the orchestrator inherits the default for the surface finish:
+
+| Surface finish | Default proximity | Default hover | Default click |
+|---|---|---|---|
+| matte | none | opacity +4% | opacity −8% (150ms) |
+| semi-gloss | subtle highlight drift | highlight intensify | rim-flash (120ms) |
+| glossy | sheen drift along surface | sheen brighten + lift 1px | scale(0.98) (120ms) |
+| metallic | env-map nudge | specular tracks pointer | specular flare (100ms) |
+| iridescent | hue lean 6–10° | full conic travel | glint burst (180ms) |
+| translucent | substrate parallax | blur intensify + saturate | rim-flash (120ms) |
+| textured | none (grain is static) | subtle hue tick | opacity dip (150ms) |
+
+**Reduced-motion contract.** Every reactive material MUST honour `prefers-reduced-motion: reduce` by collapsing proximity → none, hover → colour/opacity shift only (no transform), click → opacity shift only (no transform, no ripple, no displacement). Static visual state must remain readable.
+
+**Touch contract.** On `(pointer: coarse)` (touch devices), proximity is meaningless (fingers don't hover from afar) — disable entirely. Hover should be deferred to `:active`/`:focus-visible` only, or fired-and-released on tap. Click reactions are universal.
+
 ---
 
 ## 2. Material taxonomy
 
 Each entry below uses YAML-in-markdown. The schema is consistent: `materialId`, `name`, `family` (digital / analog / hybrid), `category`, `physicalBehavior`, `implementationStrategies` (CSS / SVG / WebGL / raster / video), `reactiveBehaviors`, `pairsWith.prototypeStyles`, `killsTheIllusion`, `examples`, `references`.
+
+The `reactiveBehaviors` block declares — at minimum — the three pointer-interaction intents from §1.7 (`proximity`, `hover`, `click`), plus the legacy axes (`light`, `highlight`, `depth`, `parallax`). When an entry omits one of the three intents, the orchestrator inherits the surface-finish default from §1.7's defaults table.
 
 Forty-eight entries follow, organised into Digital (§3), Analog (§4), and Hybrid (§5).
 
@@ -63,15 +127,15 @@ Forty-eight entries follow, organised into Digital (§3), Analog (§4), and Hybr
 
 ## Entry catalogue — moved to per-file sources
 
-**Each of the 78 entries in this library is its own source-of-truth file in `prototype/material-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
+**Each of the 78 entries in this library is its own source-of-truth file in `design-library/material-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
 
 Where to find an entry:
 
 - **Browse the System tab → Design library** in the editor. The Material bucket lists all entries as cards with image-sample slots.
-- **List from the shell:** `ls prototype/material-*.md`
+- **List from the shell:** `ls design-library/material-*.md`
 - **Read one programmatically:** the `.index.json` companion file (e.g. `docs/research/material-library.index.json`) maps every entry id to its source path, and orchestrators consume that index to route a slot to the right entry without scanning the big primer.
 
-To add a new entry, create a new `prototype/material-<entryId>.md` with YAML frontmatter and markdown body (use any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. That script reads the prototype directory; the primer below is for principles only.
+To add a new entry, create a new `design-library/material-<entryId>.md` with YAML frontmatter and markdown body (use any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. That script reads the prototype directory; the primer below is for principles only.
 
 ## 6. Reactive-behaviour reference
 
@@ -148,7 +212,45 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
   ```
 - **Used by:** all materials with layered substrate (frosted-glass, aurora-mesh, scanned-glass, paper-with-watercolor).
 
-### 6.4 pointerdown / press (universal)
+### 6.4 pointermove at viewport scope — proximity (universal)
+
+The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one per material instance. A page with twelve glass cards must not bind twelve `pointermove` listeners — every material reads from one shared `--mx` / `--my` written to `:root`, and computes its own distance via CSS `calc()` on its bounding-box centre.
+
+- **Support:** Universal (W3C Pointer Events).
+- **Permission:** None.
+- **Mobile-vs-desktop:** Desktop only — touch has no "near" state. Gate behind `@media (pointer: fine)` and `@media (hover: hover)`.
+- **Battery cost:** One listener, throttled to rAF, ~1µs work per frame. Cheap. The expensive bit is the per-material `calc()` chain — keep proximity reactions on ≤20 elements per page.
+- **Reduced-motion fallback:** Detach the listener entirely; pin `--mx` / `--my` to neutral (50vw / 50vh).
+- **Pattern:**
+  ```js
+  // ONCE per page — not per material
+  if (matchMedia('(pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    let pending = false;
+    addEventListener('pointermove', e => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        document.documentElement.style.setProperty('--mx', e.clientX + 'px');
+        document.documentElement.style.setProperty('--my', e.clientY + 'px');
+        pending = false;
+      });
+    }, { passive: true });
+  }
+  ```
+  ```css
+  /* per-material: compute its own proximity falloff */
+  .holo {
+    --cx: 50%; /* element centre, can be set via JS once on layout */
+    --cy: 50%;
+    --d:  max(0px, 400px - hypot(var(--mx) - var(--cx), var(--my) - var(--cy)));
+    --lean: calc(var(--d) / 400px);  /* 0..1, peaks when pointer at centre */
+    filter: hue-rotate(calc(var(--lean) * 12deg));
+  }
+  ```
+  *(CSS `hypot()` ships in Chromium 125+ and Safari 17.2+; provide a JS fallback for older.)*
+- **Used by:** glass (sheen drift), holographic (hue lean), chrome (env-map nudge), aurora-mesh (blob centroid drift), liquid-glass (refraction centre shift). Per §1.7's contract.
+
+### 6.5 pointerdown / press (universal)
 
 - **Support:** Universal.
 - **Permission:** None.
@@ -166,7 +268,7 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
   ```
 - **Used by:** matte-clay, soft-ui-foam, glossy-plastic-aqua, material-tonal-surface (ripple), liquid-glass.
 
-### 6.5 prefers-reduced-motion (universal baseline)
+### 6.6 prefers-reduced-motion (universal baseline)
 
 - **Support:** Universal in modern browsers.
 - **Permission:** None — driven by OS setting.
@@ -188,7 +290,7 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
   ```
 - **Discipline:** Every reactive material MUST set sensible defaults for the CSS custom props it reads. The reduced-motion override pins those props to neutral and the material falls back to a static, centered state. NEVER hide a material entirely under reduced-motion — it must still be visible, just still.
 
-### 6.6 prefers-reduced-transparency / prefers-contrast (Apple HIG)
+### 6.7 prefers-reduced-transparency / prefers-contrast (Apple HIG)
 
 - **Support:** Safari/macOS only.
 - **Permission:** Driven by OS.
@@ -445,7 +547,22 @@ The single highest-value contribution of this dossier — common AI-tells the or
 - **No CRT curvature.** Real CRT is convex.
 - **VHS distortion on a hi-res 4K asset.** The original tape was 240 lines.
 
-### 8.16 General
+### 8.16 Pointer-interaction-reaction anti-patterns
+
+- **Proximity reaction on a matte material.** Concrete, raw paper, suede leaning toward a cursor — the whole illusion of matte is that the surface scatters light diffusely and doesn't track anything. Refuse.
+- **Hover-lift on `style-neubrutalism` / `aesthetic-neubrutalism` / `recipe-brutalist-web`.** The brief is HONESTY about weight; nothing lifts. Refuse.
+- **Click reaction that doesn't resolve.** Anything held past 250ms reads as a stuck state. Snap back.
+- **Scale on glass.** Glass doesn't squish. Use rim-flash or backdrop-blur tick instead.
+- **Ripple on materials that aren't Material M3.** The ink ripple is an M3 signature; on a glass card it reads as borrowed-from-Android.
+- **Proximity binding per-instance.** Twelve glass cards must NOT bind twelve viewport `pointermove` listeners. ONE handler at `:root`, every material reads `--mx` / `--my` and computes distance via CSS `calc()`.
+- **Proximity reaction firing on touch.** Touch has no "near" state — fingers don't hover from afar. Gate with `@media (pointer: fine) and (hover: hover)`.
+- **Hover transform driven by JS when CSS `:hover` would do.** Binary on/off doesn't need a JS handler; reserve JS for proximity (continuous distance) and for hover effects that need cursor-local position.
+- **Two materials reacting at the same proximity radius with overlapping bounding boxes.** They appear to chase the cursor in lockstep. Stagger radii or commit ONE proximity material per region.
+- **Click ripple on a held button.** If the action repeats while held (volume up), the ripple stacks and visually thrashes. One ripple per `pointerdown`, ignore re-fires until pointerup.
+- **Hover reaction without click reaction.** Reads as half-finished; the user hovers, the surface lifts, the click does nothing felt. Commit both or commit neither.
+- **Conflicting hover and proximity.** If proximity already brightens the highlight, the hover state must intensify FURTHER — not reset to baseline.
+
+### 8.17 General
 
 - **Multiple light sources on one page.** Commit ONE direction.
 - **Material applied to "no material" prototype slugs.** Some genres (neubrutalism, flat-design, vector-vectordelia) WANT the lack of material. Refuse to dispatch.
@@ -552,4 +669,4 @@ function bindReactive(el, opts = {}) {
 
 ---
 
-End of dossier. Total entries: **48** (digital: 19, analog: 23, hybrid: 6). Decision tree covers **80+ prototype slugs**. Reactive modalities: **6** (pointermove, DeviceOrientationEvent, scroll, pointerdown, prefers-reduced-motion, prefers-reduced-transparency/contrast).
+End of dossier. Total entries: **48** (digital: 19, analog: 23, hybrid: 6). Decision tree covers **80+ prototype slugs**. Reactive modalities: **7** (pointermove at element, pointermove at viewport / proximity, DeviceOrientationEvent, scroll, pointerdown, prefers-reduced-motion, prefers-reduced-transparency/contrast). Pointer-interaction intents: **3** (proximity, hover, click) — each material declares a reaction (or deliberate non-reaction) per intent in its `reactiveBehaviors` block.

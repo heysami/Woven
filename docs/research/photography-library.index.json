@@ -2,39 +2,40 @@
   "version": "2.0",
   "library": "photography",
   "sourceDir": "prototype/",
-  "totalEntries": 42,
+  "totalEntries": 54,
   "decisionTree": {
     "recipe-warm-restraint": {
       "default": "aesop-apothecary",
       "alternatives": [
         "bon-appetit-food",
         "cereal-lifestyle",
-        "environmental-portrait",
+        "golden-hour-indoor-warm",
+        "grand-budapest-symmetrical-pastel",
         "helmut-newton-flash",
-        "kinfolk-warm-minimal",
-        "laundry-light-lookbook",
+        "her-warm-pastel-future",
+        "la-la-land-musical-magic",
         "seventies-soft-grain",
         "shore-color",
-        "sorrenti-grain"
+        "sorrenti-grain",
+        "warm-minimal-daylight"
       ]
     },
     "style-cream-humanist": {
       "default": "aesop-apothecary",
       "alternatives": [
         "cereal-lifestyle",
-        "environmental-portrait",
-        "kinfolk-warm-minimal",
-        "laundry-light-lookbook",
-        "nyt-cooking-food",
+        "golden-hour-indoor-warm",
+        "her-warm-pastel-future",
         "seventies-soft-grain",
-        "sorrenti-grain"
+        "sorrenti-grain",
+        "warm-minimal-daylight"
       ]
     },
     "style-serif-warm-paper": {
       "default": "aesop-apothecary",
       "alternatives": [
         "bon-appetit-food",
-        "environmental-portrait",
+        "grand-budapest-symmetrical-pastel",
         "leibovitz-key-light",
         "magnum-monochrome",
         "salgado-contrast",
@@ -46,15 +47,18 @@
     "style-restrained-hairline": {
       "default": "aesop-apothecary",
       "alternatives": [
+        "blade-runner-2049-monochrome-sections",
         "cereal-lifestyle",
         "cos-lookbook",
-        "laundry-light-lookbook"
+        "warm-minimal-daylight"
       ]
     },
     "recipe-bento-marketing": {
       "default": "apple-clean-studio",
       "alternatives": [
         "clean-tech-lifestyle",
+        "florida-project-candy-anamorphic",
+        "her-warm-pastel-future",
         "high-key-beauty",
         "leibovitz-key-light"
       ]
@@ -83,13 +87,14 @@
     },
     "aesthetic-cluttercore": {
       "default": "archival-found-photo",
-      "alternatives": []
+      "alternatives": [
+        "florida-project-candy-anamorphic"
+      ]
     },
     "recipe-readcv": {
       "default": "archival-found-photo",
       "alternatives": [
         "backstage-fashion",
-        "nyt-cooking-food",
         "shore-color",
         "tillmans-candid"
       ]
@@ -105,9 +110,76 @@
       "alternatives": [
         "bon-appetit-food",
         "fantasy-glow",
-        "kinfolk-warm-minimal",
+        "golden-hour-indoor-warm",
+        "grand-budapest-symmetrical-pastel",
+        "her-warm-pastel-future",
+        "la-la-land-musical-magic",
         "seventies-soft-grain",
-        "tillmans-candid"
+        "tillmans-candid",
+        "warm-minimal-daylight"
+      ]
+    },
+    "recipe-terminal-on-web": {
+      "default": "ascii-art-portrait",
+      "alternatives": [
+        "atkinson-dither-mac-classic",
+        "bayer-dither-retro"
+      ]
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "ascii-art-portrait",
+      "alternatives": [
+        "cinematic-street-anamorphic",
+        "vaporwave-still-life"
+      ]
+    },
+    "style-terminal-mono": {
+      "default": "ascii-art-portrait",
+      "alternatives": []
+    },
+    "aesthetic-web-brutalism": {
+      "default": "ascii-art-portrait",
+      "alternatives": [
+        "atkinson-dither-mac-classic",
+        "chrome-hearts-editorial",
+        "databend-jpeg-corrupt",
+        "gilden-flash-street",
+        "skate-zine"
+      ]
+    },
+    "aesthetic-pixel-game-boy-mono": {
+      "default": "ascii-art-portrait",
+      "alternatives": [
+        "atkinson-dither-mac-classic",
+        "bayer-dither-retro"
+      ]
+    },
+    "recipe-devtools-marketing": {
+      "default": "ascii-art-portrait",
+      "alternatives": [
+        "clean-tech-lifestyle",
+        "leibovitz-key-light"
+      ]
+    },
+    "style-pixel-bitmap": {
+      "default": "atkinson-dither-mac-classic",
+      "alternatives": [
+        "bayer-dither-retro"
+      ]
+    },
+    "aesthetic-vaporwave": {
+      "default": "atkinson-dither-mac-classic",
+      "alternatives": [
+        "bayer-dither-retro",
+        "circuit-bent-glitch",
+        "databend-jpeg-corrupt",
+        "euphoria-glitter-neon",
+        "fallen-angels-wide-angle-neon",
+        "moonlight-miami-pastel-neon",
+        "night-flash-noir",
+        "pixel-stretch-time-displacement",
+        "rgb-chromatic-split",
+        "vaporwave-still-life"
       ]
     },
     "recipe-editorial-magazine": {
@@ -117,11 +189,13 @@
         "chrome-hearts-editorial",
         "cos-lookbook",
         "eighties-cocaine-glam",
-        "environmental-portrait",
+        "golden-hour-indoor-warm",
         "goldin-diary",
+        "grand-budapest-symmetrical-pastel",
         "helmut-newton-flash",
         "leibovitz-key-light",
         "magnum-monochrome",
+        "moonlight-miami-pastel-neon",
         "salgado-contrast",
         "shore-color",
         "tillmans-candid",
@@ -135,10 +209,50 @@
         "cereal-lifestyle",
         "clean-tech-lifestyle",
         "cos-lookbook",
+        "her-warm-pastel-future",
         "high-key-beauty",
-        "laundry-light-lookbook",
-        "nyt-cooking-food",
-        "tillmans-candid"
+        "tillmans-candid",
+        "warm-minimal-daylight"
+      ]
+    },
+    "aesthetic-pc-98": {
+      "default": "bayer-dither-retro",
+      "alternatives": []
+    },
+    "aesthetic-y2k-myspace": {
+      "default": "bayer-dither-retro",
+      "alternatives": []
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "blade-runner-2049-monochrome-sections",
+      "alternatives": [
+        "cinematic-street-anamorphic",
+        "face-id-dot-projector",
+        "night-flash-noir"
+      ]
+    },
+    "aesthetic-cyberpunk": {
+      "default": "blade-runner-2049-monochrome-sections",
+      "alternatives": [
+        "chrome-hearts-editorial",
+        "cinematic-street-anamorphic",
+        "circuit-bent-glitch",
+        "databend-jpeg-corrupt",
+        "face-id-dot-projector",
+        "fallen-angels-wide-angle-neon",
+        "night-flash-noir",
+        "pixel-stretch-time-displacement",
+        "rgb-chromatic-split"
+      ]
+    },
+    "recipe-scientific-infra-marketing": {
+      "default": "blade-runner-2049-monochrome-sections",
+      "alternatives": []
+    },
+    "aesthetic-defi-cosmic": {
+      "default": "blade-runner-2049-monochrome-sections",
+      "alternatives": [
+        "face-id-dot-projector"
       ]
     },
     "aesthetic-vector-hands-up": {
@@ -153,7 +267,6 @@
         "eighties-cocaine-glam",
         "genz-flash-disposable",
         "skate-zine",
-        "surreal-still-life",
         "y2k-flash-glam",
         "y2k-halftone"
       ]
@@ -171,70 +284,41 @@
     "aesthetic-y2k-futurism": {
       "default": "chrome-hearts-editorial",
       "alternatives": [
+        "euphoria-glitter-neon",
+        "face-id-dot-projector",
+        "fallen-angels-wide-angle-neon",
         "genz-flash-disposable",
         "night-flash-noir",
+        "pixel-stretch-time-displacement",
+        "rgb-chromatic-split",
         "vaporwave-still-life",
         "y2k-flash-glam",
         "y2k-halftone"
-      ]
-    },
-    "aesthetic-cyberpunk": {
-      "default": "chrome-hearts-editorial",
-      "alternatives": [
-        "cinematic-street-anamorphic",
-        "circuit-bent-glitch",
-        "night-flash-noir"
-      ]
-    },
-    "aesthetic-web-brutalism": {
-      "default": "chrome-hearts-editorial",
-      "alternatives": [
-        "gilden-flash-street",
-        "skate-zine"
-      ]
-    },
-    "aesthetic-cassette-futurism": {
-      "default": "cinematic-street-anamorphic",
-      "alternatives": [
-        "vaporwave-still-life"
-      ]
-    },
-    "recipe-ai-foundry-dark": {
-      "default": "cinematic-street-anamorphic",
-      "alternatives": [
-        "night-flash-noir"
       ]
     },
     "style-dense-mono-dark": {
       "default": "cinematic-street-anamorphic",
       "alternatives": []
     },
-    "aesthetic-vaporwave": {
-      "default": "circuit-bent-glitch",
-      "alternatives": [
-        "night-flash-noir",
-        "vaporwave-still-life"
-      ]
-    },
     "aesthetic-acid-graphics": {
       "default": "circuit-bent-glitch",
       "alternatives": [
+        "databend-jpeg-corrupt",
         "genz-flash-disposable",
+        "pixel-stretch-time-displacement",
+        "rgb-chromatic-split",
         "skate-zine",
-        "surreal-still-life",
         "y2k-halftone"
       ]
     },
     "style-holographic": {
       "default": "circuit-bent-glitch",
       "alternatives": [
-        "magic-glow"
-      ]
-    },
-    "recipe-devtools-marketing": {
-      "default": "clean-tech-lifestyle",
-      "alternatives": [
-        "leibovitz-key-light"
+        "euphoria-glitter-neon",
+        "fallen-angels-wide-angle-neon",
+        "magic-glow",
+        "pixel-stretch-time-displacement",
+        "rgb-chromatic-split"
       ]
     },
     "recipe-linear-product-ui": {
@@ -245,6 +329,13 @@
       "default": "cos-lookbook",
       "alternatives": [
         "helmut-newton-flash"
+      ]
+    },
+    "recipe-brutalist-web": {
+      "default": "databend-jpeg-corrupt",
+      "alternatives": [
+        "gilden-flash-street",
+        "skate-zine"
       ]
     },
     "aesthetic-dreamcore": {
@@ -270,10 +361,29 @@
     },
     "aesthetic-positivity-kawaii": {
       "default": "dreamy-haze",
-      "alternatives": []
+      "alternatives": [
+        "euphoria-glitter-neon",
+        "florida-project-candy-anamorphic",
+        "moonlight-miami-pastel-neon"
+      ]
     },
     "aesthetic-urbling": {
       "default": "eighties-cocaine-glam",
+      "alternatives": []
+    },
+    "aesthetic-curly-girly": {
+      "default": "euphoria-glitter-neon",
+      "alternatives": [
+        "florida-project-candy-anamorphic",
+        "y2k-flash-glam"
+      ]
+    },
+    "aesthetic-depin-hardware": {
+      "default": "face-id-dot-projector",
+      "alternatives": []
+    },
+    "aesthetic-zenless-zone-zero-retrofuture": {
+      "default": "fallen-angels-wide-angle-neon",
       "alternatives": []
     },
     "aesthetic-cottagegoth": {
@@ -286,9 +396,14 @@
       "default": "fantasy-glow",
       "alternatives": []
     },
+    "aesthetic-frutiger-bright-tertiaries": {
+      "default": "florida-project-candy-anamorphic",
+      "alternatives": []
+    },
     "aesthetic-frutiger-aero": {
       "default": "frutiger-aero-product",
       "alternatives": [
+        "la-la-land-musical-magic",
         "y2k-flash-glam"
       ]
     },
@@ -299,12 +414,6 @@
     "aesthetic-frutiger-tranquil-serenity": {
       "default": "frutiger-aero-product",
       "alternatives": []
-    },
-    "recipe-brutalist-web": {
-      "default": "gilden-flash-street",
-      "alternatives": [
-        "skate-zine"
-      ]
     },
     "aesthetic-neubrutalism": {
       "default": "gilden-flash-street",
@@ -319,20 +428,34 @@
         "war-photojournalism"
       ]
     },
+    "aesthetic-coastal-grandmother": {
+      "default": "golden-hour-indoor-warm",
+      "alternatives": [
+        "grand-budapest-symmetrical-pastel",
+        "seventies-soft-grain",
+        "sorrenti-grain",
+        "warm-minimal-daylight"
+      ]
+    },
     "aesthetic-dark-academia": {
-      "default": "goldin-diary",
-      "alternatives": []
+      "default": "golden-hour-indoor-warm",
+      "alternatives": [
+        "goldin-diary"
+      ]
     },
     "aesthetic-swiss-modernist": {
       "default": "helmut-newton-flash",
       "alternatives": []
     },
-    "aesthetic-coastal-grandmother": {
-      "default": "kinfolk-warm-minimal",
+    "recipe-aurora-marketing": {
+      "default": "la-la-land-musical-magic",
+      "alternatives": []
+    },
+    "style-bold-display": {
+      "default": "la-la-land-musical-magic",
       "alternatives": [
-        "nyt-cooking-food",
-        "seventies-soft-grain",
-        "sorrenti-grain"
+        "moonlight-miami-pastel-neon",
+        "weingart-staged"
       ]
     },
     "style-claymorphism": {
@@ -347,22 +470,8 @@
         "war-photojournalism"
       ]
     },
-    "aesthetic-wacky-pomo": {
-      "default": "surreal-still-life",
-      "alternatives": []
-    },
-    "style-bold-display": {
-      "default": "surreal-still-life",
-      "alternatives": [
-        "weingart-staged"
-      ]
-    },
     "aesthetic-anti-design": {
       "default": "weingart-staged",
-      "alternatives": []
-    },
-    "aesthetic-curly-girly": {
-      "default": "y2k-flash-glam",
       "alternatives": []
     },
     "recipe-y2k-memphis-loud": {
@@ -386,7 +495,7 @@
         "style-serif-warm-paper",
         "style-restrained-hairline"
       ],
-      "sourceFile": "prototype/photo-aesop-apothecary.md"
+      "sourceFile": "design-library/photo-aesop-apothecary.md"
     },
     "apple-clean-studio": {
       "name": "Apple-clean studio product",
@@ -404,7 +513,7 @@
         "style-glassmorphism",
         "style-liquid-glass"
       ],
-      "sourceFile": "prototype/photo-apple-clean-studio.md"
+      "sourceFile": "design-library/photo-apple-clean-studio.md"
     },
     "archival-found-photo": {
       "name": "Archival found-photograph treatment",
@@ -422,7 +531,46 @@
         "aesthetic-corporate-grunge",
         "aesthetic-cottagecore"
       ],
-      "sourceFile": "prototype/photo-archival-found-photo.md"
+      "sourceFile": "design-library/photo-archival-found-photo.md"
+    },
+    "ascii-art-portrait": {
+      "name": "ASCII-art portrait (text-as-image)",
+      "category": "archival",
+      "era": "1990s-current revival",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Photo rendered entirely from **ASCII characters** (or extended ANSI character set) — text-as-image. Dark areas use dense characters (`@`, `#`, `M`), midtones use medium-density (`+`, `=`, `*`), highlights use sparse (`.`, ` `). Monospace, high-contrast. Used for tech / dev-tools marketing, terminal-on-web hero images, hacker-culture editorial, retro-BBS revival.",
+      "notForUseWhen": "warm-lifestyle, premium-luxury, photoreal product",
+      "pairsPrototypes": [
+        "recipe-terminal-on-web",
+        "aesthetic-cassette-futurism",
+        "style-terminal-mono",
+        "aesthetic-web-brutalism",
+        "aesthetic-pixel-game-boy-mono",
+        "recipe-devtools-marketing"
+      ],
+      "sourceFile": "design-library/photo-ascii-art-portrait.md"
+    },
+    "atkinson-dither-mac-classic": {
+      "name": "Atkinson dither (original-Macintosh classic)",
+      "category": "archival",
+      "era": "1984-89 revival",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** — created for the original Macintosh in 1984. Distinct from Bayer (regular grid) in that Atkinson is **error-diffusion** but only spreads ¾ of the quantization error (vs Floyd-Steinberg's full error), producing **stronger contrast, blown-out highlights, lots of white space**. The hallmark of early Macintosh screenshots, HyperCard stacks, MacPaint compositions. Bolder and cleaner than Bayer or Floyd-Steinberg.",
+      "notForUseWhen": "premium-luxury, warm-lifestyle, photoreal product",
+      "pairsPrototypes": [
+        "aesthetic-pixel-game-boy-mono",
+        "style-pixel-bitmap",
+        "recipe-terminal-on-web",
+        "aesthetic-vaporwave",
+        "aesthetic-web-brutalism"
+      ],
+      "sourceFile": "design-library/photo-atkinson-dither-mac-classic.md"
     },
     "backstage-fashion": {
       "name": "Backstage editorial BTS",
@@ -440,7 +588,46 @@
         "aesthetic-corporate-grunge",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/photo-backstage-fashion.md"
+      "sourceFile": "design-library/photo-backstage-fashion.md"
+    },
+    "bayer-dither-retro": {
+      "name": "Bayer-matrix ordered dither (retro 1-bit)",
+      "category": "archival",
+      "era": "1980s-90s revival",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Photo reduced to **1-bit** (or limited palette) using a **Bayer-matrix ordered-dithering algorithm** — produces a regular ordered-grid dotted pattern that looks like classic Game Boy / Macintosh / PC-98 era graphics. Distinct from halftone (which is luminance-modulated DOT SIZE) — Bayer is REGULAR-GRID threshold, dots are uniform in size, the PATTERN density is what changes per luminance zone. Also distinct from Atkinson dither (which is error-diffusion, irregular).",
+      "notForUseWhen": "premium-luxury, warm-lifestyle, photoreal product",
+      "pairsPrototypes": [
+        "aesthetic-pixel-game-boy-mono",
+        "aesthetic-pc-98",
+        "aesthetic-vaporwave",
+        "recipe-terminal-on-web",
+        "style-pixel-bitmap",
+        "aesthetic-y2k-myspace"
+      ],
+      "sourceFile": "design-library/photo-bayer-dither-retro.md"
+    },
+    "blade-runner-2049-monochrome-sections": {
+      "name": "Blade Runner 2049 monochrome-sections (Deakins)",
+      "category": "cinematic",
+      "era": "2017 / neo-noir sci-fi",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Denis Villeneuve's *Blade Runner 2049* (2017), shot by **Roger Deakins** (Oscar for this film). The signature is the **single-chromatic monochromatic sections** — entire sequences bathed in ONE color (Las Vegas in **deep amber-orange/Martian red**, Niander Wallace's lair in **yellow**, the LAPD orphanage in **blue-grey**, the seawall in **green-grey**). Deakins built **custom Tiffen amber filters** for the Vegas sequences. Soft halogen-like light replaces the original 1982 film's hard noir shadows — there is *\"no binary division of light and dark; everyone exists on a continuous spectrum between reality and artificiality.\"*",
+      "notForUseWhen": "cottagecore, kids brands, warm-lifestyle, positivity-kawaii, restrained-warm-editorial",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "aesthetic-cyberpunk",
+        "recipe-scientific-infra-marketing",
+        "aesthetic-defi-cosmic",
+        "style-restrained-hairline"
+      ],
+      "sourceFile": "design-library/photo-blade-runner-2049-monochrome-sections.md"
     },
     "bon-appetit-food": {
       "name": "Bon Appétit moody food overhead",
@@ -457,7 +644,7 @@
         "recipe-warm-restraint",
         "aesthetic-cottagecore"
       ],
-      "sourceFile": "prototype/photo-bon-appetit-food.md"
+      "sourceFile": "design-library/photo-bon-appetit-food.md"
     },
     "bowie-rock-glamour": {
       "name": "Rock-glamour stage editorial",
@@ -475,7 +662,7 @@
         "aesthetic-rgb-gamer",
         "aesthetic-acid-design"
       ],
-      "sourceFile": "prototype/photo-bowie-rock-glamour.md"
+      "sourceFile": "design-library/photo-bowie-rock-glamour.md"
     },
     "cereal-lifestyle": {
       "name": "Cereal magazine slow-travel lifestyle",
@@ -494,7 +681,7 @@
         "style-restrained-hairline",
         "style-cream-humanist"
       ],
-      "sourceFile": "prototype/photo-cereal-lifestyle.md"
+      "sourceFile": "design-library/photo-cereal-lifestyle.md"
     },
     "chrome-hearts-editorial": {
       "name": "Chrome Hearts night-glam editorial",
@@ -512,7 +699,7 @@
         "recipe-editorial-magazine",
         "aesthetic-web-brutalism"
       ],
-      "sourceFile": "prototype/photo-chrome-hearts-editorial.md"
+      "sourceFile": "design-library/photo-chrome-hearts-editorial.md"
     },
     "cinematic-street-anamorphic": {
       "name": "Cinematic anamorphic street",
@@ -530,7 +717,7 @@
         "recipe-ai-foundry-dark",
         "style-dense-mono-dark"
       ],
-      "sourceFile": "prototype/photo-cinematic-street-anamorphic.md"
+      "sourceFile": "design-library/photo-cinematic-street-anamorphic.md"
     },
     "circuit-bent-glitch": {
       "name": "Circuit-bent glitch photo effect",
@@ -548,7 +735,7 @@
         "aesthetic-acid-graphics",
         "style-holographic"
       ],
-      "sourceFile": "prototype/photo-circuit-bent-glitch.md"
+      "sourceFile": "design-library/photo-circuit-bent-glitch.md"
     },
     "clean-tech-lifestyle": {
       "name": "Clean tech-lifestyle hero",
@@ -567,7 +754,7 @@
         "recipe-bento-marketing",
         "recipe-linear-product-ui"
       ],
-      "sourceFile": "prototype/photo-clean-tech-lifestyle.md"
+      "sourceFile": "design-library/photo-clean-tech-lifestyle.md"
     },
     "cos-lookbook": {
       "name": "COS lookbook clean editorial",
@@ -585,7 +772,26 @@
         "style-restrained-hairline",
         "style-oversized-neo-grotesque"
       ],
-      "sourceFile": "prototype/photo-cos-lookbook.md"
+      "sourceFile": "design-library/photo-cos-lookbook.md"
+    },
+    "databend-jpeg-corrupt": {
+      "name": "Databend / JPEG-corruption glitch",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Photo file corrupted at the **bytestream / file-format level** — JPEG block artifacts smeared into impossible geometry, PNG line-corruption causing horizontal channel-shifts, half-loaded image frames with chunks of green/magenta error-color. Distinct from `circuit-bent-glitch` (which is POST-PROCESSED stylised glitch art) — databending is FILE-FORMAT corruption that yields CHAOTIC ACCIDENTAL geometry that no human would design. The randomness is the point.",
+      "notForUseWhen": "premium-luxury, restrained editorial, B2B-serious, warm-lifestyle",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-vaporwave",
+        "aesthetic-acid-graphics",
+        "aesthetic-web-brutalism",
+        "recipe-brutalist-web"
+      ],
+      "sourceFile": "design-library/photo-databend-jpeg-corrupt.md"
     },
     "dreamy-haze": {
       "name": "Dreamy soft haze portrait",
@@ -603,7 +809,7 @@
         "aesthetic-fairycore",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/photo-dreamy-haze.md"
+      "sourceFile": "design-library/photo-dreamy-haze.md"
     },
     "eighties-cocaine-glam": {
       "name": "1980s cocaine-glam editorial",
@@ -621,26 +827,64 @@
         "recipe-editorial-magazine",
         "aesthetic-vector-hands-up"
       ],
-      "sourceFile": "prototype/photo-eighties-cocaine-glam.md"
+      "sourceFile": "design-library/photo-eighties-cocaine-glam.md"
     },
-    "environmental-portrait": {
-      "name": "Environmental documentary portrait",
-      "category": "documentary",
-      "era": "1970s-current",
+    "euphoria-glitter-neon": {
+      "name": "Euphoria glitter-neon emotional-realism (Rév)",
+      "category": "cinematic",
+      "era": "2019-current / HBO Gen-Z drama",
       "roleAffinity": [
         "hero",
-        "section",
-        "portrait"
+        "section"
       ],
-      "oneLine": "Subject in their own context (workshop, kitchen, fishing boat).",
-      "notForUseWhen": "Fast e-comm, product hero, anything that should be impersonal.",
+      "oneLine": "HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) — the show that **invented the 2020s neon-glitter visual vocabulary**. The signature is **emotional realism** (Levinson's term) — the show looks like teenagers IMAGINE their lives to be, not based on documentary realism. Highly saturated pigment makeup (Doniella Davy) survives under Rév's dark colored lighting because the soft shades kept getting lost — **neons weren't a style choice; they were a problem-solving decision that became a global trend.**",
+      "notForUseWhen": "B2B-clean, brutalism, restrained-editorial, cottagecore, premium-luxury-restraint",
       "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-warm-restraint",
-        "style-serif-warm-paper",
-        "style-cream-humanist"
+        "aesthetic-vaporwave",
+        "aesthetic-y2k-futurism",
+        "aesthetic-positivity-kawaii",
+        "style-holographic",
+        "aesthetic-curly-girly"
       ],
-      "sourceFile": "prototype/photo-environmental-portrait.md"
+      "sourceFile": "design-library/photo-euphoria-glitter-neon.md"
+    },
+    "face-id-dot-projector": {
+      "name": "Face-ID dot-projector / structured-light depth scan",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-projector pattern — **30,000+ infrared dots** projected onto the surface in a structured grid, the dots distorting along the contours of the face to reveal its 3D shape. Sci-fi / biometric / surveillance / AI-identity register. The dots themselves luminous against deep-shadow skin. Distinct from glitch art — this is BIOMETRIC SCAN, not corruption; the technology is real and the aesthetic emerges from that physical apparatus.",
+      "notForUseWhen": "warm-lifestyle, cottagecore, kids brands, restrained editorial",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-y2k-futurism",
+        "recipe-ai-foundry-dark",
+        "aesthetic-defi-cosmic",
+        "aesthetic-depin-hardware"
+      ],
+      "sourceFile": "design-library/photo-face-id-dot-projector.md"
+    },
+    "fallen-angels-wide-angle-neon": {
+      "name": "Fallen Angels wide-angle neon-distortion (Doyle)",
+      "category": "cinematic",
+      "era": "1995 / Hong Kong neo-noir",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Wong Kar-Wai's *Fallen Angels* (1995, *堕落天使*), shot by **Christopher Doyle** — the most extreme expression of the Wong/Doyle wide-angle handheld neon-soaked Hong Kong nightscape vocabulary. Doyle famously **started with a 9.8mm lens** and Wong Kar-Wai said *\"let's go further\"* — they ended up at **6.8mm**, an ultra-ultrawide that distorts the entire frame. The result: subjects are **simultaneously intimate (the camera is millimeters from their face) and alienated (the wide-angle distortion bends the space around them).**",
+      "notForUseWhen": "B2B-clean, premium-restraint, warm-lifestyle, cottagecore, brutalism",
+      "pairsPrototypes": [
+        "aesthetic-vaporwave",
+        "aesthetic-cyberpunk",
+        "style-holographic",
+        "aesthetic-zenless-zone-zero-retrofuture",
+        "aesthetic-y2k-futurism"
+      ],
+      "sourceFile": "design-library/photo-fallen-angels-wide-angle-neon.md"
     },
     "fantasy-glow": {
       "name": "Fantasy glow magical lighting",
@@ -658,7 +902,26 @@
         "aesthetic-cottagecore",
         "aesthetic-solarpunk"
       ],
-      "sourceFile": "prototype/photo-fantasy-glow.md"
+      "sourceFile": "design-library/photo-fantasy-glow.md"
+    },
+    "florida-project-candy-anamorphic": {
+      "name": "Florida Project candy-anamorphic (Zabe)",
+      "category": "cinematic",
+      "era": "2017 / contemporary hyperreal",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Sean Baker's *The Florida Project* (2017), shot by **Alexis Zabe** on **anamorphic 35mm film with Panavision Millennium XL2 + vintage E-series lenses**. The signature is the **already-candy-colored Florida** (purple motel, orange domes, mint pastels — found in the real-world location, not painted) photographed with the colors **\"popped by just a degree\"** to suggest a child's heightened sensory perception. Baker's rule: *\"when I think of childhood, colors seem more vibrant — just enhance everything by a hair, but not hyper-real.\"*",
+      "notForUseWhen": "premium-luxury, brutalism, restrained-editorial, dark themes",
+      "pairsPrototypes": [
+        "aesthetic-positivity-kawaii",
+        "aesthetic-curly-girly",
+        "recipe-bento-marketing",
+        "aesthetic-cluttercore",
+        "aesthetic-frutiger-bright-tertiaries"
+      ],
+      "sourceFile": "design-library/photo-florida-project-candy-anamorphic.md"
     },
     "frutiger-aero-product": {
       "name": "Frutiger Aero glossy product environment",
@@ -676,7 +939,7 @@
         "style-glassmorphism",
         "style-liquid-glass"
       ],
-      "sourceFile": "prototype/photo-frutiger-aero-product.md"
+      "sourceFile": "design-library/photo-frutiger-aero-product.md"
     },
     "genz-flash-disposable": {
       "name": "Gen-Z disposable-camera flash editorial",
@@ -694,7 +957,7 @@
         "aesthetic-acid-graphics",
         "aesthetic-rgb-gamer"
       ],
-      "sourceFile": "prototype/photo-genz-flash-disposable.md"
+      "sourceFile": "design-library/photo-genz-flash-disposable.md"
     },
     "gilden-flash-street": {
       "name": "Bruce Gilden flash street portrait",
@@ -712,7 +975,28 @@
         "aesthetic-web-brutalism",
         "recipe-newspaper-of-record"
       ],
-      "sourceFile": "prototype/photo-gilden-flash-street.md"
+      "sourceFile": "design-library/photo-gilden-flash-street.md"
+    },
+    "golden-hour-indoor-warm": {
+      "name": "Golden-hour indoor warm (rays through window)",
+      "category": "lifestyle",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "Late-afternoon (or early-morning) sun streaming **through a window into a domestic interior** — bedroom, kitchen, living room, gallery, studio. Strong directional warm-yellow rays cast visible streaks across the floor or wall. Subject lit from one side with a golden rim-light, deep warm-shadow on the opposite side. **Distinct from `photo-warm-minimal-daylight`** (which is overcast or open-door — no directional sun rays) — this one is the SPECIFIC magic moment of sunset hitting an interior space. Domestic / intimate / nostalgic / verging-on-melancholy register.",
+      "notForUseWhen": "fast e-comm, edgy fashion volume, B2B, kinetic-tech, restrained-clean tech marketing",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "aesthetic-coastal-grandmother",
+        "recipe-warm-restraint",
+        "style-cream-humanist",
+        "aesthetic-dark-academia",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/photo-golden-hour-indoor-warm.md"
     },
     "goldin-diary": {
       "name": "Nan Goldin diary flash",
@@ -730,7 +1014,26 @@
         "aesthetic-dark-academia",
         "aesthetic-dreamcore"
       ],
-      "sourceFile": "prototype/photo-goldin-diary.md"
+      "sourceFile": "design-library/photo-goldin-diary.md"
+    },
+    "grand-budapest-symmetrical-pastel": {
+      "name": "Grand Budapest symmetrical-pastel (Yeoman / Anderson)",
+      "category": "cinematic",
+      "era": "2014 / Wes Anderson canon",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Wes Anderson's *The Grand Budapest Hotel* (2014), shot by **Robert Yeoman** — Anderson's lifelong DP. The signature is **rigorous symmetrical composition** within a **pastel storybook palette** (pinks, purples, reds, blues, browns), with **three different aspect ratios deployed for three different eras**: 1.37:1 for 1930s, 2.35:1 for 1960s, 1.85:1 for 1980s. The whole film reads as a sequence of perfectly composed dollhouse vignettes.",
+      "notForUseWhen": "cyberpunk, brutalism, gritty-documentary, kinetic-tech, urban-grit",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-warm-restraint",
+        "aesthetic-cottagecore",
+        "style-serif-warm-paper",
+        "aesthetic-coastal-grandmother"
+      ],
+      "sourceFile": "design-library/photo-grand-budapest-symmetrical-pastel.md"
     },
     "helmut-newton-flash": {
       "name": "Helmut Newton on-camera flash glamour",
@@ -748,7 +1051,26 @@
         "style-oversized-neo-grotesque",
         "aesthetic-swiss-modernist"
       ],
-      "sourceFile": "prototype/photo-helmut-newton-flash.md"
+      "sourceFile": "design-library/photo-helmut-newton-flash.md"
+    },
+    "her-warm-pastel-future": {
+      "name": "Her warm-pastel near-future (van Hoytema)",
+      "category": "cinematic",
+      "era": "2013 / near-future melancholy",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Spike Jonze's *Her* (2013), shot by **Hoyte van Hoytema** on ARRI Alexa (his first feature on digital — proving warm dreamy looks don't need film). The signature is the **deliberate refusal of blue** — van Hoytema and Jonze decided against blue specifically *\"to make sure it didn't seem too dystopian or foreboding.\"* Instead the entire film is warm-cast: pale purples, caramel browns, sage, putty, ecru, O'Keeffe reds, Rothko raspberry, creamy whites. **\"A little bit of red in every frame\"** was the rule.",
+      "notForUseWhen": "cyberpunk, dystopian, dark-mode-only, brutalism",
+      "pairsPrototypes": [
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "aesthetic-cottagecore",
+        "style-cream-humanist",
+        "recipe-bento-marketing"
+      ],
+      "sourceFile": "design-library/photo-her-warm-pastel-future.md"
     },
     "high-key-beauty": {
       "name": "High-key beauty white seamless",
@@ -766,44 +1088,26 @@
         "style-liquid-glass",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/photo-high-key-beauty.md"
+      "sourceFile": "design-library/photo-high-key-beauty.md"
     },
-    "kinfolk-warm-minimal": {
-      "name": "Kinfolk warm minimal editorial",
-      "category": "lifestyle",
-      "era": "2011-current",
-      "roleAffinity": [
-        "hero",
-        "section",
-        "portrait"
-      ],
-      "oneLine": "Warm muted palette, beige, cream, soft brown.",
-      "notForUseWhen": "Tech, fast e-comm, B2B, edgy fashion.",
-      "pairsPrototypes": [
-        "recipe-warm-restraint",
-        "style-cream-humanist",
-        "aesthetic-cottagecore",
-        "aesthetic-coastal-grandmother"
-      ],
-      "sourceFile": "prototype/photo-kinfolk-warm-minimal.md"
-    },
-    "laundry-light-lookbook": {
-      "name": "Daylight lookbook plaster wall",
-      "category": "lookbook",
-      "era": "current",
+    "la-la-land-musical-magic": {
+      "name": "La La Land musical-magic (Sandgren)",
+      "category": "cinematic",
+      "era": "2016 / 1950s musical revival",
       "roleAffinity": [
         "hero",
         "section"
       ],
-      "oneLine": "Empty pale plaster or stucco backdrop, natural texture.",
-      "notForUseWhen": "Fast fashion volume e-comm, loud or kinetic brand.",
+      "oneLine": "Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm CinemaScope (2.55:1)** — the original CinemaScope ratio used by old Hollywood musicals. The visual signature is the romantic deployment of **primary colors (red, blue, yellow) as emotional storytelling tools**, set against magic-hour LA twilight skies that lean **mercury-vapor cool** rather than the actual sodium-vapor warm of real streetlights.",
+      "notForUseWhen": "B2B-clean, brutalism, restrained-editorial, dark themes",
       "pairsPrototypes": [
+        "recipe-aurora-marketing",
+        "aesthetic-frutiger-aero",
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
-        "style-cream-humanist",
-        "style-restrained-hairline"
+        "style-bold-display",
+        "aesthetic-cottagecore"
       ],
-      "sourceFile": "prototype/photo-laundry-light-lookbook.md"
+      "sourceFile": "design-library/photo-la-la-land-musical-magic.md"
     },
     "leibovitz-key-light": {
       "name": "Annie Leibovitz one-light portraiture",
@@ -821,7 +1125,7 @@
         "recipe-bento-marketing",
         "style-serif-warm-paper"
       ],
-      "sourceFile": "prototype/photo-leibovitz-key-light.md"
+      "sourceFile": "design-library/photo-leibovitz-key-light.md"
     },
     "magic-glow": {
       "name": "Magic glow product or beauty",
@@ -839,7 +1143,7 @@
         "style-holographic",
         "style-claymorphism"
       ],
-      "sourceFile": "prototype/photo-magic-glow.md"
+      "sourceFile": "design-library/photo-magic-glow.md"
     },
     "magnum-monochrome": {
       "name": "Magnum monochrome documentary",
@@ -858,7 +1162,25 @@
         "style-serif-warm-paper",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/photo-magnum-monochrome.md"
+      "sourceFile": "design-library/photo-magnum-monochrome.md"
+    },
+    "moonlight-miami-pastel-neon": {
+      "name": "Moonlight Miami pastel-neon (Laxton)",
+      "category": "cinematic",
+      "era": "2016 / contemporary intimacy",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Barry Jenkins' *Moonlight* (2016), shot by **James Laxton** on ARRI Alexa in **CinemaScope** — Jenkins called Liberty City a *\"beautiful nightmare\"* and described their move as *\"paint this nightmare in beautiful tones.\"* The signature is the **dreamlike-but-Miami-rooted palette**: pastels (peach, lavender, mint) layered with neon (pink, purple, cyan), all bathed in tropical greens, applied to intimate close-up portraiture. Laxton shot 98% of the film himself, hand-held by his own body, to maintain proximity-as-intimacy.",
+      "notForUseWhen": "B2B-clean, brutalism, restrained-clean tech marketing, gritty-documentary",
+      "pairsPrototypes": [
+        "aesthetic-vaporwave",
+        "recipe-editorial-magazine",
+        "style-bold-display",
+        "aesthetic-positivity-kawaii"
+      ],
+      "sourceFile": "design-library/photo-moonlight-miami-pastel-neon.md"
     },
     "night-flash-noir": {
       "name": "Night flash neon-noir portrait",
@@ -876,24 +1198,45 @@
         "aesthetic-y2k-futurism",
         "recipe-ai-foundry-dark"
       ],
-      "sourceFile": "prototype/photo-night-flash-noir.md"
+      "sourceFile": "design-library/photo-night-flash-noir.md"
     },
-    "nyt-cooking-food": {
-      "name": "NYT Cooking bright daylight food",
-      "category": "food",
+    "pixel-stretch-time-displacement": {
+      "name": "Pixel-stretch / time-displacement photo effect",
+      "category": "conceptual",
       "era": "current",
       "roleAffinity": [
-        "food"
+        "hero",
+        "bg"
       ],
-      "oneLine": "Bright daylight, light wood, marble, or pale linen surface.",
-      "notForUseWhen": "Fine dining, moody restaurant marketing, fast food.",
+      "oneLine": "One row or column of pixels — typically selected from the subject's eye-line, lip-line, or strongest contour — **stretched horizontally or vertically across the entire frame**, creating a surreal smeared-motion streak. The classic Photoshop pixel-stretch technique. Used for album art (Coldplay, LCD Soundsystem-era covers), music videos, slow-burn editorial, abstract magazine spreads.",
+      "notForUseWhen": "warm-lifestyle, premium-luxury, restrained editorial",
       "pairsPrototypes": [
-        "recipe-readcv",
-        "style-cream-humanist",
-        "aesthetic-coastal-grandmother",
-        "recipe-restrained-ai-marketing"
+        "aesthetic-vaporwave",
+        "aesthetic-cyberpunk",
+        "aesthetic-acid-graphics",
+        "style-holographic",
+        "aesthetic-y2k-futurism"
       ],
-      "sourceFile": "prototype/photo-nyt-cooking-food.md"
+      "sourceFile": "design-library/photo-pixel-stretch-time-displacement.md"
+    },
+    "rgb-chromatic-split": {
+      "name": "RGB chromatic-split / channel-shift",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Photo's **red, green, and blue channels separated and offset** — horizontal slide (classic CRT-fail), diagonal slide (more chaotic), or random offset (full glitch). The result: ghosted color fringes around every high-contrast edge. The classic VHS-tracking-fail / cheap-lens chromatic-aberration / 90s-music-video glitch look. Distinct from `circuit-bent-glitch` in that it's CHANNEL-SHIFT-ONLY — no datamosh, no pixel-sort, no compression noise. One technique, used with discipline.",
+      "notForUseWhen": "premium-luxury, restrained editorial, B2B-serious, warm-lifestyle",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-vaporwave",
+        "aesthetic-y2k-futurism",
+        "aesthetic-acid-graphics",
+        "style-holographic"
+      ],
+      "sourceFile": "design-library/photo-rgb-chromatic-split.md"
     },
     "salgado-contrast": {
       "name": "Sebastião Salgado biblical contrast",
@@ -912,7 +1255,7 @@
         "recipe-editorial-magazine",
         "style-serif-warm-paper"
       ],
-      "sourceFile": "prototype/photo-salgado-contrast.md"
+      "sourceFile": "design-library/photo-salgado-contrast.md"
     },
     "seventies-soft-grain": {
       "name": "1970s soft warm grain editorial",
@@ -930,7 +1273,7 @@
         "recipe-warm-restraint",
         "style-cream-humanist"
       ],
-      "sourceFile": "prototype/photo-seventies-soft-grain.md"
+      "sourceFile": "design-library/photo-seventies-soft-grain.md"
     },
     "shore-color": {
       "name": "Stephen Shore Uncommon Places banal-color",
@@ -948,7 +1291,7 @@
         "style-serif-warm-paper",
         "recipe-warm-restraint"
       ],
-      "sourceFile": "prototype/photo-shore-color.md"
+      "sourceFile": "design-library/photo-shore-color.md"
     },
     "skate-zine": {
       "name": "Skate zine 35mm flash",
@@ -967,7 +1310,7 @@
         "aesthetic-acid-graphics",
         "aesthetic-y2k-memphis-loud"
       ],
-      "sourceFile": "prototype/photo-skate-zine.md"
+      "sourceFile": "design-library/photo-skate-zine.md"
     },
     "sorrenti-grain": {
       "name": "Mario Sorrenti grain and tonality",
@@ -985,25 +1328,7 @@
         "style-serif-warm-paper",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/photo-sorrenti-grain.md"
-    },
-    "surreal-still-life": {
-      "name": "Surreal still-life conceptual",
-      "category": "conceptual",
-      "era": "current",
-      "roleAffinity": [
-        "hero",
-        "bg"
-      ],
-      "oneLine": "Single saturated backdrop, no horizon.",
-      "notForUseWhen": "Anything sincere, B2B, wellness, heritage.",
-      "pairsPrototypes": [
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-wacky-pomo",
-        "style-bold-display",
-        "aesthetic-acid-graphics"
-      ],
-      "sourceFile": "prototype/photo-surreal-still-life.md"
+      "sourceFile": "design-library/photo-sorrenti-grain.md"
     },
     "tillmans-candid": {
       "name": "Wolfgang Tillmans degree-zero candid",
@@ -1021,7 +1346,7 @@
         "aesthetic-cottagecore",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/photo-tillmans-candid.md"
+      "sourceFile": "design-library/photo-tillmans-candid.md"
     },
     "vaporwave-still-life": {
       "name": "Vaporwave pastel still life",
@@ -1039,7 +1364,7 @@
         "aesthetic-cassette-futurism",
         "aesthetic-dreamcore"
       ],
-      "sourceFile": "prototype/photo-vaporwave-still-life.md"
+      "sourceFile": "design-library/photo-vaporwave-still-life.md"
     },
     "vivian-maier-square": {
       "name": "Vivian Maier square street observational",
@@ -1057,7 +1382,7 @@
         "style-agate-broadsheet",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/photo-vivian-maier-square.md"
+      "sourceFile": "design-library/photo-vivian-maier-square.md"
     },
     "war-photojournalism": {
       "name": "Frontline war photojournalism",
@@ -1074,7 +1399,28 @@
         "recipe-newspaper-of-record",
         "style-agate-broadsheet"
       ],
-      "sourceFile": "prototype/photo-war-photojournalism.md"
+      "sourceFile": "design-library/photo-war-photojournalism.md"
+    },
+    "warm-minimal-daylight": {
+      "name": "Warm-minimal daylight (Kinfolk / quiet lookbook)",
+      "category": "lifestyle",
+      "era": "2011-current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "The shared register behind 2010s Kinfolk-magazine slow-living interiors AND post-Margiela quiet-lookbook plaster-wall exteriors. Soft natural daylight, warm muted palette, considered slow mood, generous negative space. Two sub-variants in one entry — pick by context.",
+      "notForUseWhen": "Tech fast-paced, edgy fashion, fast e-comm, loud kinetic brand",
+      "pairsPrototypes": [
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "style-cream-humanist",
+        "style-restrained-hairline",
+        "aesthetic-cottagecore",
+        "aesthetic-coastal-grandmother"
+      ],
+      "sourceFile": "design-library/photo-warm-minimal-daylight.md"
     },
     "weingart-staged": {
       "name": "Staged conceptual fine-art (Wolfgang Weingart adjacent)",
@@ -1092,7 +1438,7 @@
         "style-bold-display",
         "aesthetic-anti-design"
       ],
-      "sourceFile": "prototype/photo-weingart-staged.md"
+      "sourceFile": "design-library/photo-weingart-staged.md"
     },
     "y2k-flash-glam": {
       "name": "Y2K glossy flash glamour",
@@ -1110,7 +1456,7 @@
         "aesthetic-y2k-memphis-loud",
         "aesthetic-curly-girly"
       ],
-      "sourceFile": "prototype/photo-y2k-flash-glam.md"
+      "sourceFile": "design-library/photo-y2k-flash-glam.md"
     },
     "y2k-halftone": {
       "name": "Y2K halftone newsprint effect",
@@ -1128,7 +1474,7 @@
         "aesthetic-acid-graphics",
         "recipe-y2k-memphis-loud"
       ],
-      "sourceFile": "prototype/photo-y2k-halftone.md"
+      "sourceFile": "design-library/photo-y2k-halftone.md"
     }
   }
 }

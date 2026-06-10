@@ -2,31 +2,245 @@
   "version": "2.0",
   "library": "illustration",
   "sourceDir": "prototype/",
-  "totalEntries": 108,
+  "totalEntries": 111,
   "decisionTree": {
-    "style-aurorism": {
-      "default": "aurorism-mesh-gradient",
+    "aesthetic-dark-academia": {
+      "default": "3d-arsham-eroded",
       "alternatives": [
-        "hilma-af-klint-symbolist",
-        "spectrums-organic-blob"
+        "beatrix-potter-watercolor",
+        "charcoal-loose",
+        "drawkit-wooden-icons",
+        "gouache-storybook",
+        "hand-drawn-pencil-sketch",
+        "humanities-marginalia",
+        "typo-art-nouveau-ornament",
+        "typo-blackletter-neo-gothic"
       ]
     },
-    "recipe-aurora-marketing": {
-      "default": "aurorism-mesh-gradient",
+    "aesthetic-defi-cosmic": {
+      "default": "3d-arsham-eroded",
       "alternatives": [
-        "spectrums-organic-blob"
+        "3d-crypto-gold-chrome",
+        "3d-tron-emissive-glow",
+        "blush-moneyverse"
       ]
     },
-    "recipe-ai-foundry-dark": {
-      "default": "aurorism-mesh-gradient",
+    "recipe-warm-restraint": {
+      "default": "3d-arsham-eroded",
       "alternatives": [
+        "3d-fur-rendered-mascot",
+        "3d-knit-yarn-character",
+        "arcane-painterly-hybrid",
+        "beatrix-potter-watercolor",
+        "blush-corporate-memphis-scenes",
+        "blush-fancy-plants",
+        "blush-little-things",
+        "blush-stuck-at-home",
+        "charley-harper-minimal-realism",
+        "clay-3d-soft-sculpt",
+        "drawkit-wooden-icons",
+        "ghibli-watercolor-bg",
+        "gouache-storybook",
+        "hand-drawn-pencil-sketch",
+        "origami-paper-3d",
+        "pixar-inside-out-emotion-volumetric",
+        "pixar-soul-great-before-pastel",
+        "shinkai-hyperreal-anime",
+        "skeuomorphic-detailed",
+        "typo-art-nouveau-ornament",
+        "typo-hand-lettered-editorial",
+        "typo-house-industries-revival",
+        "typo-wood-type-letterpress"
+      ]
+    },
+    "aesthetic-vaporwave": {
+      "default": "3d-arsham-eroded",
+      "alternatives": [
+        "3d-ps1-low-poly",
+        "dreamcore-liminal",
+        "typo-vector-musica",
+        "typo-y2k-chrome-3d"
+      ]
+    },
+    "style-restrained-hairline": {
+      "default": "3d-arsham-eroded",
+      "alternatives": [
+        "3d-premium-product-hero",
+        "outline-wireframe-illustration"
+      ]
+    },
+    "aesthetic-crypto-degen": {
+      "default": "3d-crypto-gold-chrome",
+      "alternatives": [
+        "3d-tron-emissive-glow",
         "beeple-dystopia",
-        "wireframe-3d"
+        "blush-moneyverse",
+        "typo-chromeheart-gothic-luxury"
+      ]
+    },
+    "aesthetic-urbling": {
+      "default": "3d-crypto-gold-chrome",
+      "alternatives": [
+        "typo-bubble-graffiti",
+        "typo-chromeheart-gothic-luxury"
+      ]
+    },
+    "aesthetic-y2k-futurism": {
+      "default": "3d-crypto-gold-chrome",
+      "alternatives": [
+        "blush-transhumans",
+        "typo-chromeheart-gothic-luxury",
+        "typo-y2k-chrome-3d"
+      ]
+    },
+    "style-holographic": {
+      "default": "3d-crypto-gold-chrome",
+      "alternatives": [
+        "3d-tron-emissive-glow",
+        "aurorism-mesh-gradient",
+        "typo-chromeheart-gothic-luxury"
+      ]
+    },
+    "aesthetic-positivity-kawaii": {
+      "default": "3d-fur-rendered-mascot",
+      "alternatives": [
+        "3d-inflatable-balloon",
+        "3d-knit-yarn-character",
+        "blush-cool-kids",
+        "blush-corporate-memphis-energetic",
+        "blush-corporate-memphis-scenes",
+        "blush-croods",
+        "blush-currency-crush",
+        "blush-fitz",
+        "blush-isometric-stickers-vega",
+        "blush-palz",
+        "blush-spooky-stickers",
+        "blush-wavy-buddies",
+        "clay-3d-soft-sculpt",
+        "claymation-stop-motion",
+        "crayon-wax-children",
+        "drawkit-isometric-stickers",
+        "drawkit-jelly-3d",
+        "eric-carle-tissue-collage",
+        "fluffy-plush-3d",
+        "handyarrows-illustration",
+        "kawaii-mascot",
+        "keith-haring-radiant",
+        "mary-blair-stylized",
+        "overwatch-stylized-pbr",
+        "pixar-coco-folk-vibrant",
+        "pixar-inside-out-emotion-volumetric",
+        "plasticine-3d-rougher",
+        "scribbbles-funky-vector",
+        "shoujo-soft-line-anime",
+        "spectrums-complex-flower"
+      ]
+    },
+    "aesthetic-cottagecore": {
+      "default": "3d-fur-rendered-mascot",
+      "alternatives": [
+        "3d-knit-yarn-character",
+        "beatrix-potter-watercolor",
+        "blush-fancy-plants",
+        "blush-go-green",
+        "blush-little-things",
+        "blush-open-peeps",
+        "blush-stuck-at-home",
+        "charley-harper-minimal-realism",
+        "clay-3d-soft-sculpt",
+        "drawkit-wooden-icons",
+        "eric-carle-tissue-collage",
+        "frida-folk-surreal",
+        "ghibli-watercolor-bg",
+        "gouache-storybook",
+        "shinkai-hyperreal-anime",
+        "typo-art-nouveau-ornament",
+        "typo-wood-type-letterpress"
+      ]
+    },
+    "aesthetic-frutiger-eco": {
+      "default": "3d-fur-rendered-mascot",
+      "alternatives": [
+        "3d-knit-yarn-character",
+        "blush-go-green",
+        "blush-hyperspace"
+      ]
+    },
+    "style-claymorphism": {
+      "default": "3d-fur-rendered-mascot",
+      "alternatives": [
+        "3d-inflatable-balloon",
+        "blush-currency-crush",
+        "clay-3d-soft-sculpt",
+        "claymation-stop-motion",
+        "drawkit-bubbly-tech-ui",
+        "drawkit-jelly-3d",
+        "fluffy-plush-3d",
+        "overwatch-stylized-pbr",
+        "pixar-inside-out-emotion-volumetric",
+        "pixar-soul-great-before-pastel"
+      ]
+    },
+    "aesthetic-frutiger-aero": {
+      "default": "3d-inflatable-balloon",
+      "alternatives": [
+        "3d-spline-bubbly-product",
+        "overwatch-stylized-pbr",
+        "pixar-elemental-translucent",
+        "pixar-inside-out-emotion-volumetric",
+        "spectrums-organic-blob"
+      ]
+    },
+    "aesthetic-frutiger-bright-tertiaries": {
+      "default": "3d-inflatable-balloon",
+      "alternatives": []
+    },
+    "recipe-bento-marketing": {
+      "default": "3d-inflatable-balloon",
+      "alternatives": [
+        "3d-premium-product-hero",
+        "blush-cityscapes",
+        "blush-corporate-memphis-energetic",
+        "blush-corporate-memphis-scenes",
+        "blush-currency-crush",
+        "blush-goodies",
+        "blush-humaaans",
+        "blush-isometric-stickers-vega",
+        "blush-lifesavers",
+        "blush-moneyverse",
+        "blush-palz",
+        "blush-patterns",
+        "blush-yuppies",
+        "corporate-memphis-noodle",
+        "drawkit-bubbly-tech-ui",
+        "drawkit-isometric-stickers",
+        "handyarrows-illustration",
+        "isometric-tech-saas",
+        "overwatch-stylized-pbr",
+        "scribbbles-funky-vector",
+        "shapes-gallery-michalczyk",
+        "sticker-cutout-puffy"
+      ]
+    },
+    "aesthetic-coastal-grandmother": {
+      "default": "3d-knit-yarn-character",
+      "alternatives": [
+        "blush-corporate-memphis-scenes",
+        "blush-fancy-plants",
+        "blush-stuck-at-home",
+        "charley-harper-minimal-realism",
+        "drawkit-wooden-icons",
+        "ghibli-watercolor-bg",
+        "origami-paper-3d",
+        "pixar-soul-great-before-pastel",
+        "shinkai-hyperreal-anime",
+        "typo-house-industries-revival"
       ]
     },
     "recipe-restrained-ai-marketing": {
-      "default": "aurorism-mesh-gradient",
+      "default": "3d-premium-product-hero",
       "alternatives": [
+        "aurorism-mesh-gradient",
         "blush-cityscapes",
         "blush-humaaans",
         "blush-lifesavers",
@@ -35,18 +249,163 @@
         "drawkit-bubbly-tech-ui",
         "drawkit-hands-3d",
         "drawkit-jelly-3d",
-        "outline-wireframe-illustration"
+        "outline-wireframe-illustration",
+        "pixar-soul-great-before-pastel"
       ]
     },
-    "style-holographic": {
-      "default": "aurorism-mesh-gradient",
-      "alternatives": []
+    "recipe-scientific-infra-marketing": {
+      "default": "3d-premium-product-hero",
+      "alternatives": [
+        "3d-technical-exploded-precision",
+        "isometric-tech-saas"
+      ]
     },
-    "style-liquid-glass": {
-      "default": "aurorism-mesh-gradient",
+    "recipe-ios-system": {
+      "default": "3d-premium-product-hero",
       "alternatives": [
         "drawkit-hands-3d",
         "liquid-glass-3d"
+      ]
+    },
+    "aesthetic-depin-hardware": {
+      "default": "3d-premium-product-hero",
+      "alternatives": [
+        "3d-technical-exploded-precision",
+        "3d-tron-emissive-glow"
+      ]
+    },
+    "aesthetic-pixel-ps1-tactics-ogre": {
+      "default": "3d-ps1-low-poly",
+      "alternatives": [
+        "pixel-bitmap-illustration"
+      ]
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "3d-ps1-low-poly",
+      "alternatives": [
+        "3d-technical-exploded-precision",
+        "blush-hyperspace",
+        "blush-transhumans",
+        "saul-bass-cutout",
+        "typo-house-industries-revival",
+        "wireframe-3d"
+      ]
+    },
+    "aesthetic-pc-98": {
+      "default": "3d-ps1-low-poly",
+      "alternatives": [
+        "shoujo-soft-line-anime"
+      ]
+    },
+    "recipe-terminal-on-web": {
+      "default": "3d-ps1-low-poly",
+      "alternatives": [
+        "wireframe-3d"
+      ]
+    },
+    "recipe-devtools-marketing": {
+      "default": "3d-spline-bubbly-product",
+      "alternatives": [
+        "3d-technical-exploded-precision",
+        "doodle-ui-handdrawn",
+        "isometric-tech-saas",
+        "typo-vectorheart-industrial-futurist"
+      ]
+    },
+    "recipe-aurora-marketing": {
+      "default": "3d-spline-bubbly-product",
+      "alternatives": [
+        "aurorism-mesh-gradient",
+        "pixar-elemental-translucent",
+        "spectrums-organic-blob"
+      ]
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "3d-spline-bubbly-product",
+      "alternatives": [
+        "3d-technical-exploded-precision",
+        "3d-tron-emissive-glow",
+        "aurorism-mesh-gradient",
+        "beeple-dystopia",
+        "blush-transhumans",
+        "typo-vectorheart-industrial-futurist",
+        "wireframe-3d"
+      ]
+    },
+    "style-glassmorphism": {
+      "default": "3d-spline-bubbly-product",
+      "alternatives": [
+        "liquid-glass-3d",
+        "pixar-elemental-translucent",
+        "spectrums-organic-blob"
+      ]
+    },
+    "style-liquid-glass": {
+      "default": "3d-spline-bubbly-product",
+      "alternatives": [
+        "aurorism-mesh-gradient",
+        "drawkit-hands-3d",
+        "liquid-glass-3d",
+        "pixar-elemental-translucent"
+      ]
+    },
+    "style-aurorism": {
+      "default": "3d-spline-bubbly-product",
+      "alternatives": [
+        "aurorism-mesh-gradient",
+        "hilma-af-klint-symbolist",
+        "pixar-elemental-translucent",
+        "pixar-inside-out-emotion-volumetric",
+        "pixar-soul-great-before-pastel",
+        "spectrums-organic-blob"
+      ]
+    },
+    "aesthetic-dieselpunk": {
+      "default": "3d-technical-exploded-precision",
+      "alternatives": []
+    },
+    "aesthetic-cyberpunk": {
+      "default": "3d-tron-emissive-glow",
+      "alternatives": [
+        "arcane-painterly-hybrid",
+        "beeple-dystopia",
+        "blush-transhumans",
+        "typo-vectorheart-industrial-futurist",
+        "wireframe-3d"
+      ]
+    },
+    "aesthetic-honkai-star-rail-polished-sf": {
+      "default": "arcane-painterly-hybrid",
+      "alternatives": [
+        "overwatch-stylized-pbr"
+      ]
+    },
+    "aesthetic-belle-u-painterly-vr": {
+      "default": "arcane-painterly-hybrid",
+      "alternatives": []
+    },
+    "recipe-editorial-magazine": {
+      "default": "arcane-painterly-hybrid",
+      "alternatives": [
+        "blush-open-peeps",
+        "charcoal-loose",
+        "editorial-thick-brush",
+        "gouache-storybook",
+        "halftone-shape",
+        "hand-drawn-pencil-sketch",
+        "handyarrows-illustration",
+        "humanities-marginalia",
+        "jean-jullien-thick-line",
+        "mary-blair-stylized",
+        "mc-escher-paradox",
+        "pixar-coco-folk-vibrant",
+        "raster-cutout-collage",
+        "risograph-illustration",
+        "saul-bass-cutout",
+        "typo-hand-lettered-editorial",
+        "typo-house-industries-revival",
+        "typo-weingart-deconstructed",
+        "typo-wood-type-letterpress"
       ]
     },
     "aesthetic-bauhaus": {
@@ -80,27 +439,6 @@
         "typo-weingart-deconstructed"
       ]
     },
-    "aesthetic-cottagecore": {
-      "default": "beatrix-potter-watercolor",
-      "alternatives": [
-        "blush-dayflow",
-        "blush-fancy-plants",
-        "blush-go-green",
-        "blush-little-things",
-        "blush-open-peeps",
-        "blush-stuck-at-home",
-        "charley-harper-minimal-realism",
-        "clay-3d-soft-sculpt",
-        "drawkit-wooden-icons",
-        "eric-carle-tissue-collage",
-        "frida-folk-surreal",
-        "ghibli-watercolor-bg",
-        "gouache-storybook",
-        "shinkai-hyperreal-anime",
-        "typo-art-nouveau-ornament",
-        "typo-wood-type-letterpress"
-      ]
-    },
     "aesthetic-cottagegoth": {
       "default": "beatrix-potter-watercolor",
       "alternatives": [
@@ -109,150 +447,20 @@
         "typo-blackletter-neo-gothic"
       ]
     },
-    "recipe-warm-restraint": {
-      "default": "beatrix-potter-watercolor",
-      "alternatives": [
-        "blush-allura",
-        "blush-dayflow",
-        "blush-family-values",
-        "blush-fancy-plants",
-        "blush-little-things",
-        "blush-stuck-at-home",
-        "charley-harper-minimal-realism",
-        "clay-3d-soft-sculpt",
-        "drawkit-wooden-icons",
-        "ghibli-watercolor-bg",
-        "gouache-storybook",
-        "hand-drawn-pencil-sketch",
-        "origami-paper-3d",
-        "shinkai-hyperreal-anime",
-        "skeuomorphic-detailed",
-        "typo-art-nouveau-ornament",
-        "typo-hand-lettered-editorial",
-        "typo-house-industries-revival",
-        "typo-vectorheart-decorative",
-        "typo-wood-type-letterpress"
-      ]
-    },
-    "aesthetic-dark-academia": {
-      "default": "beatrix-potter-watercolor",
-      "alternatives": [
-        "charcoal-loose",
-        "drawkit-wooden-icons",
-        "gouache-storybook",
-        "hand-drawn-pencil-sketch",
-        "humanities-marginalia",
-        "typo-art-nouveau-ornament",
-        "typo-blackletter-neo-gothic",
-        "typo-illuminated-drop-cap"
-      ]
-    },
-    "aesthetic-crypto-degen": {
-      "default": "beeple-dystopia",
-      "alternatives": [
-        "blush-moneyverse"
-      ]
-    },
-    "aesthetic-cyberpunk": {
-      "default": "beeple-dystopia",
-      "alternatives": [
-        "blush-transhumans",
-        "wireframe-3d"
-      ]
-    },
     "aesthetic-corporate-memphis": {
-      "default": "blush-allura",
+      "default": "blush-cityscapes",
       "alternatives": [
-        "blush-big-shoes",
-        "blush-cityscapes",
-        "blush-family-values",
+        "blush-corporate-memphis-energetic",
+        "blush-corporate-memphis-scenes",
         "blush-fitz",
-        "blush-happy-bunch",
-        "blush-hobbies",
         "blush-humaaans",
         "blush-palz",
         "blush-patterns",
-        "blush-shiny-happy",
-        "blush-shopaholics",
         "blush-we-are-women",
         "corporate-memphis-noodle",
-        "handyarrows-arrows",
-        "handyarrows-underlines",
+        "handyarrows-illustration",
         "plasticine-3d-rougher",
         "scribbbles-funky-vector"
-      ]
-    },
-    "recipe-bento-marketing": {
-      "default": "blush-allura",
-      "alternatives": [
-        "blush-cityscapes",
-        "blush-currency-crush",
-        "blush-goodies",
-        "blush-hobbies",
-        "blush-humaaans",
-        "blush-isometric-stickers-vega",
-        "blush-lifesavers",
-        "blush-moneyverse",
-        "blush-palz",
-        "blush-patterns",
-        "blush-shopaholics",
-        "blush-yuppies",
-        "corporate-memphis-noodle",
-        "drawkit-bubbly-tech-ui",
-        "drawkit-isometric-stickers",
-        "handyarrows-arrows",
-        "handyarrows-infographic",
-        "isometric-tech-saas",
-        "scribbbles-funky-vector",
-        "shapes-gallery-michalczyk",
-        "sticker-cutout-puffy"
-      ]
-    },
-    "aesthetic-coastal-grandmother": {
-      "default": "blush-allura",
-      "alternatives": [
-        "blush-dayflow",
-        "blush-family-values",
-        "blush-fancy-plants",
-        "blush-stuck-at-home",
-        "charley-harper-minimal-realism",
-        "drawkit-wooden-icons",
-        "ghibli-watercolor-bg",
-        "origami-paper-3d",
-        "shinkai-hyperreal-anime",
-        "typo-house-industries-revival"
-      ]
-    },
-    "aesthetic-positivity-kawaii": {
-      "default": "blush-big-shoes",
-      "alternatives": [
-        "blush-cool-kids",
-        "blush-croods",
-        "blush-currency-crush",
-        "blush-fitz",
-        "blush-happy-bunch",
-        "blush-hobbies",
-        "blush-isometric-stickers-vega",
-        "blush-palz",
-        "blush-shiny-happy",
-        "blush-spooky-stickers",
-        "blush-wavy-buddies",
-        "clay-3d-soft-sculpt",
-        "claymation-stop-motion",
-        "crayon-wax-children",
-        "drawkit-isometric-stickers",
-        "drawkit-jelly-3d",
-        "eric-carle-tissue-collage",
-        "fluffy-plush-3d",
-        "handyarrows-doodles",
-        "kawaii-mascot",
-        "keith-haring-radiant",
-        "mary-blair-stylized",
-        "pixar-render-cinematic",
-        "plasticine-3d-rougher",
-        "scribbbles-funky-vector",
-        "shoujo-soft-line-anime",
-        "spectrums-complex-flower"
       ]
     },
     "aesthetic-maximalism": {
@@ -264,7 +472,8 @@
         "blush-tutto-ricco",
         "blush-we-are-women",
         "frida-folk-surreal",
-        "keith-haring-radiant"
+        "keith-haring-radiant",
+        "pixar-coco-folk-vibrant"
       ]
     },
     "aesthetic-y2k-memphis-loud": {
@@ -275,8 +484,8 @@
         "blush-tutto-ricco",
         "frida-folk-surreal",
         "halftone-shape",
-        "handyarrows-underlines",
         "spectrums-complex-flower",
+        "spiderverse-comic-halftone",
         "typo-bubble-graffiti",
         "typo-y2k-chrome-3d"
       ]
@@ -287,39 +496,8 @@
         "blush-power-moves",
         "raster-cutout-collage",
         "spectrums-complex-flower",
-        "typo-vector-musica",
-        "vector-hands-up-eurodance"
-      ]
-    },
-    "style-claymorphism": {
-      "default": "blush-currency-crush",
-      "alternatives": [
-        "clay-3d-soft-sculpt",
-        "claymation-stop-motion",
-        "drawkit-bubbly-tech-ui",
-        "drawkit-jelly-3d",
-        "fluffy-plush-3d",
-        "pixar-render-cinematic"
-      ]
-    },
-    "recipe-readcv": {
-      "default": "blush-dayflow",
-      "alternatives": [
-        "blush-little-things",
-        "blush-open-peeps",
-        "doodle-ui-handdrawn",
-        "hand-drawn-pencil-sketch",
-        "handyarrows-arrows",
-        "handyarrows-doodles",
-        "handyarrows-illustrations",
-        "handyarrows-infographic",
-        "handyarrows-underlines",
-        "humanities-marginalia",
-        "jean-jullien-thick-line",
-        "niemann-puzzle-conceptual",
-        "risograph-illustration",
-        "shapes-gallery-michalczyk",
-        "typo-hand-lettered-editorial"
+        "spiderverse-comic-halftone",
+        "typo-vector-musica"
       ]
     },
     "aesthetic-solarpunk": {
@@ -332,16 +510,11 @@
         "origami-paper-3d"
       ]
     },
-    "aesthetic-frutiger-eco": {
-      "default": "blush-go-green",
-      "alternatives": [
-        "blush-hyperspace"
-      ]
-    },
     "aesthetic-cluttercore": {
       "default": "blush-goodies",
       "alternatives": [
         "crayon-wax-children",
+        "pixar-coco-folk-vibrant",
         "sticker-cutout-puffy"
       ]
     },
@@ -361,78 +534,41 @@
         "saul-bass-cutout"
       ]
     },
-    "aesthetic-cassette-futurism": {
-      "default": "blush-hyperspace",
+    "recipe-readcv": {
+      "default": "blush-little-things",
       "alternatives": [
-        "saul-bass-cutout",
-        "typo-house-industries-revival",
-        "wireframe-3d"
+        "blush-open-peeps",
+        "doodle-ui-handdrawn",
+        "hand-drawn-pencil-sketch",
+        "handyarrows-illustration",
+        "humanities-marginalia",
+        "jean-jullien-thick-line",
+        "risograph-illustration",
+        "shapes-gallery-michalczyk",
+        "typo-hand-lettered-editorial"
       ]
-    },
-    "aesthetic-defi-cosmic": {
-      "default": "blush-moneyverse",
-      "alternatives": []
     },
     "style-doodle": {
       "default": "blush-open-peeps",
       "alternatives": [
         "blush-wavy-buddies",
         "doodle-ui-handdrawn",
-        "handyarrows-arrows",
-        "handyarrows-doodles",
-        "handyarrows-illustrations",
-        "handyarrows-infographic",
-        "handyarrows-underlines",
+        "handyarrows-illustration",
         "jean-jullien-thick-line",
         "scribbbles-funky-vector"
-      ]
-    },
-    "recipe-editorial-magazine": {
-      "default": "blush-open-peeps",
-      "alternatives": [
-        "charcoal-loose",
-        "editorial-thick-brush",
-        "gouache-storybook",
-        "halftone-shape",
-        "hand-drawn-pencil-sketch",
-        "handyarrows-illustrations",
-        "humanities-marginalia",
-        "jean-jullien-thick-line",
-        "mary-blair-stylized",
-        "mc-escher-paradox",
-        "niemann-puzzle-conceptual",
-        "raster-cutout-collage",
-        "risograph-illustration",
-        "saul-bass-cutout",
-        "typo-hand-lettered-editorial",
-        "typo-house-industries-revival",
-        "typo-illuminated-drop-cap",
-        "typo-weingart-deconstructed",
-        "typo-wood-type-letterpress"
       ]
     },
     "aesthetic-dreamcore": {
       "default": "blush-spooky-stickers",
       "alternatives": [
-        "cyriak-bodyhorror",
         "dreamcore-liminal",
         "hilma-af-klint-symbolist"
       ]
     },
-    "aesthetic-y2k-futurism": {
+    "style-brutalist-raw": {
       "default": "blush-transhumans",
       "alternatives": [
-        "typo-y2k-chrome-3d",
-        "vector-hands-up-eurodance"
-      ]
-    },
-    "aesthetic-vaporwave": {
-      "default": "blush-transhumans",
-      "alternatives": [
-        "dreamcore-liminal",
-        "typo-vector-musica",
-        "typo-y2k-chrome-3d",
-        "vector-hands-up-eurodance"
+        "typo-vectorheart-industrial-futurist"
       ]
     },
     "aesthetic-curly-girly": {
@@ -440,11 +576,10 @@
       "alternatives": [
         "blush-wavy-buddies",
         "fluffy-plush-3d",
-        "handyarrows-doodles",
+        "handyarrows-illustration",
         "kawaii-mascot",
         "shoujo-soft-line-anime",
-        "spectrums-complex-flower",
-        "typo-vectorheart-decorative"
+        "spectrums-complex-flower"
       ]
     },
     "aesthetic-wacky-pomo": {
@@ -454,39 +589,11 @@
         "plasticine-3d-rougher"
       ]
     },
-    "aesthetic-anti-design": {
-      "default": "cyriak-bodyhorror",
-      "alternatives": [
-        "halftone-shape",
-        "keith-haring-radiant",
-        "raster-cutout-collage",
-        "risograph-illustration",
-        "typo-fella-anti-design"
-      ]
-    },
-    "aesthetic-acid-graphics": {
-      "default": "cyriak-bodyhorror",
-      "alternatives": [
-        "typo-bubble-graffiti"
-      ]
-    },
-    "recipe-devtools-marketing": {
-      "default": "doodle-ui-handdrawn",
-      "alternatives": [
-        "isometric-tech-saas"
-      ]
-    },
     "style-neumorphism": {
       "default": "drawkit-bubbly-tech-ui",
       "alternatives": []
     },
     "style-sf-pro-ios": {
-      "default": "drawkit-hands-3d",
-      "alternatives": [
-        "liquid-glass-3d"
-      ]
-    },
-    "recipe-ios-system": {
       "default": "drawkit-hands-3d",
       "alternatives": [
         "liquid-glass-3d"
@@ -502,9 +609,7 @@
     "recipe-newspaper-of-record": {
       "default": "editorial-thick-brush",
       "alternatives": [
-        "humanities-marginalia",
-        "niemann-puzzle-conceptual",
-        "typo-illuminated-drop-cap"
+        "humanities-marginalia"
       ]
     },
     "style-agate-broadsheet": {
@@ -524,7 +629,17 @@
         "ghibli-watercolor-bg",
         "hilma-af-klint-symbolist",
         "mary-blair-stylized",
+        "pixar-coco-folk-vibrant",
         "typo-art-nouveau-ornament"
+      ]
+    },
+    "aesthetic-anti-design": {
+      "default": "halftone-shape",
+      "alternatives": [
+        "keith-haring-radiant",
+        "raster-cutout-collage",
+        "risograph-illustration",
+        "typo-fella-anti-design"
       ]
     },
     "aesthetic-angelcore": {
@@ -534,19 +649,7 @@
     "style-serif-warm-paper": {
       "default": "humanities-marginalia",
       "alternatives": [
-        "niemann-puzzle-conceptual",
-        "typo-hand-lettered-editorial",
-        "typo-illuminated-drop-cap"
-      ]
-    },
-    "recipe-scientific-infra-marketing": {
-      "default": "isometric-tech-saas",
-      "alternatives": []
-    },
-    "style-glassmorphism": {
-      "default": "liquid-glass-3d",
-      "alternatives": [
-        "spectrums-organic-blob"
+        "typo-hand-lettered-editorial"
       ]
     },
     "aesthetic-op-art": {
@@ -554,10 +657,6 @@
       "alternatives": []
     },
     "style-outline-wireframe": {
-      "default": "outline-wireframe-illustration",
-      "alternatives": []
-    },
-    "style-restrained-hairline": {
       "default": "outline-wireframe-illustration",
       "alternatives": []
     },
@@ -587,13 +686,11 @@
         "voxel-magicavoxel"
       ]
     },
-    "aesthetic-pixel-ps1-tactics-ogre": {
-      "default": "pixel-bitmap-illustration",
-      "alternatives": []
-    },
     "style-pixel-bitmap": {
       "default": "pixel-bitmap-illustration",
-      "alternatives": []
+      "alternatives": [
+        "spiderverse-comic-halftone"
+      ]
     },
     "recipe-neo-grotesque-portfolio": {
       "default": "shapes-gallery-michalczyk",
@@ -603,16 +700,16 @@
       "default": "shapes-gallery-michalczyk",
       "alternatives": []
     },
-    "aesthetic-pc-98": {
-      "default": "shoujo-soft-line-anime",
-      "alternatives": []
-    },
-    "aesthetic-frutiger-aero": {
-      "default": "spectrums-organic-blob",
-      "alternatives": []
-    },
     "recipe-swiss-grid": {
       "default": "spectrums-vector-shape-circle",
+      "alternatives": []
+    },
+    "aesthetic-persona-5-heist-pop": {
+      "default": "spiderverse-comic-halftone",
+      "alternatives": []
+    },
+    "recipe-y2k-memphis-loud": {
+      "default": "spiderverse-comic-halftone",
       "alternatives": []
     },
     "shell-scrapbook-substrate": {
@@ -648,7 +745,7 @@
         "typo-wood-type-letterpress"
       ]
     },
-    "aesthetic-urbling": {
+    "aesthetic-acid-graphics": {
       "default": "typo-bubble-graffiti",
       "alternatives": []
     },
@@ -657,31 +754,237 @@
       "alternatives": []
     },
     "aesthetic-vector-neovectorheart": {
-      "default": "typo-vectorheart-decorative",
+      "default": "typo-vectorheart-industrial-futurist",
       "alternatives": []
     },
     "aesthetic-vector-vectorbloom": {
-      "default": "typo-vectorheart-decorative",
+      "default": "typo-vectorheart-industrial-futurist",
       "alternatives": []
     },
     "aesthetic-frutiger-chromecore": {
       "default": "typo-y2k-chrome-3d",
       "alternatives": []
     },
-    "aesthetic-vector-hands-up": {
-      "default": "vector-hands-up-eurodance",
-      "alternatives": []
-    },
     "aesthetic-rgb-gamer": {
       "default": "voxel-magicavoxel",
-      "alternatives": []
-    },
-    "recipe-terminal-on-web": {
-      "default": "wireframe-3d",
       "alternatives": []
     }
   },
   "entries": {
+    "3d-arsham-eroded": {
+      "name": "Arsham eroded-sculpture 3D",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Daniel Arsham's signature **eroded-relic** style — classical sculpture forms (Greco-Roman busts, classical drapery, modern objects) decayed as if unearthed centuries from now, with **crystals, calcite, selenite, or volcanic ash** emerging from the broken interiors. Monochrome base (chalk-white, ash-grey, blue calcite, or bronze) with metallic or crystalline accent revealing through the erosion. Speaks to \"future relic\" / time-decay / archaeology-of-the-now. Used for high-end fashion (Dior x Arsham), luxury crypto, gallery work, gravitas tech-marketing.",
+      "notForUseWhen": "positivity-kawaii, friendly-tech, kids' brands",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "aesthetic-defi-cosmic",
+        "recipe-warm-restraint",
+        "aesthetic-vaporwave",
+        "style-restrained-hairline"
+      ],
+      "sourceFile": "design-library/illust-3d-arsham-eroded.md"
+    },
+    "3d-crypto-gold-chrome": {
+      "name": "Crypto gold-chrome 3D (Bitcoin / token coin)",
+      "category": "3D",
+      "subCategory": "plastic-glossy",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Bitcoin, Ethereum, generic crypto coin or token symbols rendered as **polished gold or chrome 3D objects** — often floating mid-frame with a soft drop-shadow, sometimes with a circular halo / neon ring / rim-light. Saturated luxury palette. Used for DeFi product launches, NFT marketing, crypto-exchange hero shots, token-presale pages, web3 brand decks. The \"money is shiny and the future is shiny too\" register.",
+      "notForUseWhen": "cottagecore, restrained editorial, B2B-clean, warm-lifestyle",
+      "pairsPrototypes": [
+        "aesthetic-defi-cosmic",
+        "aesthetic-crypto-degen",
+        "aesthetic-urbling",
+        "aesthetic-y2k-futurism",
+        "style-holographic"
+      ],
+      "sourceFile": "design-library/illust-3d-crypto-gold-chrome.md"
+    },
+    "3d-fur-rendered-mascot": {
+      "name": "Fur-rendered mascot 3D (Pixar Sully-grade)",
+      "category": "3D",
+      "subCategory": "fluffy-plush",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Pixar-Monsters-Inc-grade simulated fur — characters and objects rendered with **millions of individually-simulated hairs**, soft cuddly volume, big-fluffy-touchable form. The \"warm hug\" / \"I want to pet it\" register. Sully from Monsters Inc has 2.3M hairs (5.5M in Monsters University) — that's the benchmark. Used for friendly-tech mascots, kids' brands, soft-luxury skincare, anywhere you want a character that feels touchable through the screen.",
+      "notForUseWhen": "brutalism, cyberpunk, B2B-serious, restrained editorial",
+      "pairsPrototypes": [
+        "aesthetic-positivity-kawaii",
+        "aesthetic-cottagecore",
+        "recipe-warm-restraint",
+        "aesthetic-frutiger-eco",
+        "style-claymorphism"
+      ],
+      "sourceFile": "design-library/illust-3d-fur-rendered-mascot.md"
+    },
+    "3d-inflatable-balloon": {
+      "name": "Inflatable balloon 3D (Wannathis-grade)",
+      "category": "3D",
+      "subCategory": "plastic-glossy",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Characters, objects and even typography rendered as if **inflated like beach balls or pool toys** — high-gloss specular highlights, visible seam-marks where the panels meet, hovering soft shadows underneath, plump round volumes squashed slightly by their own weight. The Wannathis-Inflatable / Apple-Vision-marketing / Dribbble-2024-2026 register.",
+      "notForUseWhen": "brutalism, restrained editorial, dark themes, B2B-serious",
+      "pairsPrototypes": [
+        "aesthetic-frutiger-aero",
+        "aesthetic-positivity-kawaii",
+        "aesthetic-frutiger-bright-tertiaries",
+        "recipe-bento-marketing",
+        "style-claymorphism"
+      ],
+      "sourceFile": "design-library/illust-3d-inflatable-balloon.md"
+    },
+    "3d-knit-yarn-character": {
+      "name": "Knit / yarn 3D character (cozy wool)",
+      "category": "3D",
+      "subCategory": "fluffy-plush",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Characters and objects modeled to look like they're **knitted from wool, crocheted from yarn, or felted from raw fiber** — visible stitch pattern repeating across the surface, soft fiber-fuzz at the silhouette edges, slight stitch-row imperfections that read as \"made by hand.\" Cozy / craft / slow-living register. Distinct from `illust-claymation-stop-motion` (clay surface), `illust-3d-fur-rendered-mascot` (simulated fur), and `illust-3d-plush-toy-soft` (fabric-stuffed with seams) — knit-yarn is FIBRE-STITCH with visible loops.",
+      "notForUseWhen": "cyberpunk, brutalism, B2B-tech, edgy fashion",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "aesthetic-coastal-grandmother",
+        "recipe-warm-restraint",
+        "aesthetic-positivity-kawaii",
+        "aesthetic-frutiger-eco"
+      ],
+      "sourceFile": "design-library/illust-3d-knit-yarn-character.md"
+    },
+    "3d-premium-product-hero": {
+      "name": "Premium product hero 3D (Apple / Ledger-Stax-grade)",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Apple-product-marketing-grade premium device hero render — the **Apple Vision Pro / Apple Watch Ultra / Ledger Stax / Framework laptop** treatment. Sleek minimal device on a plain backdrop (gradient or pure white/black) with dramatic single key-light, accurate hi-fidelity material rendering (brushed aluminum + curved glass + leather strap + e-ink screen + chamfered edges), studio product-photography vibe. Distinct from `illust-3d-tron-emissive-glow` (which adds glow accents) — this entry is WITHOUT glow; **premium materials + dramatic lighting** do the work. The \"luxury device speaks for itself\" register.",
+      "notForUseWhen": "cottagecore, brutalism, kids brands, hand-made craft",
+      "pairsPrototypes": [
+        "recipe-restrained-ai-marketing",
+        "recipe-scientific-infra-marketing",
+        "recipe-bento-marketing",
+        "recipe-ios-system",
+        "style-restrained-hairline",
+        "aesthetic-depin-hardware"
+      ],
+      "sourceFile": "design-library/illust-3d-premium-product-hero.md"
+    },
+    "3d-ps1-low-poly": {
+      "name": "PS1-era low-poly 3D",
+      "category": "3D",
+      "subCategory": "low-poly-paper",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Characters, objects, and environments rendered in the **PlayStation-1-era low-poly aesthetic** — angular silhouettes, low-resolution texture maps (256×256 for hero, 128×128 for everything else), vertex-jitter / wobble (because the PS1 had no subpixel precision), flat-shaded planes, no antialiasing, affine texture mapping (textures warp on tilted faces). Used for retro-game revival, nostalgic gaming brands, demoscene-adjacent work, vaporwave hybrids, indie-game marketing.",
+      "notForUseWhen": "premium-luxury, restrained editorial, photoreal product",
+      "pairsPrototypes": [
+        "aesthetic-pixel-ps1-tactics-ogre",
+        "aesthetic-vaporwave",
+        "aesthetic-cassette-futurism",
+        "aesthetic-pc-98",
+        "recipe-terminal-on-web"
+      ],
+      "sourceFile": "design-library/illust-3d-ps1-low-poly.md"
+    },
+    "3d-spline-bubbly-product": {
+      "name": "Spline-era browser-3D bubbly product",
+      "category": "3D",
+      "subCategory": "plastic-glossy",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic — soft volumetric blobs, glossy plastic spheres, iridescent holographic gradients, interactive 3D shapes that float, morph, and respond to scroll/pointer. The 2022-2026 dev-tools / AI-product / fintech landing-page register.",
+      "notForUseWhen": "brutalism, cottagecore, restrained editorial",
+      "pairsPrototypes": [
+        "recipe-devtools-marketing",
+        "recipe-aurora-marketing",
+        "recipe-ai-foundry-dark",
+        "style-glassmorphism",
+        "style-liquid-glass",
+        "style-aurorism",
+        "aesthetic-frutiger-aero"
+      ],
+      "sourceFile": "design-library/illust-3d-spline-bubbly-product.md"
+    },
+    "3d-technical-exploded-precision": {
+      "name": "Technical exploded-view precision 3D",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "The internals of a device rendered as a **3D exploded-view technical illustration** — components floating apart in their assembly relationships (PCB, battery, antenna, sensor array, mechanical chassis, screws), often with **hairline label-lines** connecting components to small annotations or product-spec text. Clean grey/white backdrop, sharp directional studio shadow, no environment clutter. Engineering / precision / \"look how it's built\" register. Distinct from generic 3D product render in that the WHOLE is taken APART to make the assembly legible.",
+      "notForUseWhen": "cottagecore, kids brands, warm-lifestyle, positivity-kawaii",
+      "pairsPrototypes": [
+        "recipe-devtools-marketing",
+        "recipe-scientific-infra-marketing",
+        "recipe-ai-foundry-dark",
+        "aesthetic-depin-hardware",
+        "aesthetic-cassette-futurism",
+        "aesthetic-dieselpunk"
+      ],
+      "sourceFile": "design-library/illust-3d-technical-exploded-precision.md"
+    },
+    "3d-tron-emissive-glow": {
+      "name": "Tron-emissive glow 3D (clean dark + glowing accents)",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Clean dark 3D objects — hardware devices, abstract geometric forms, sci-fi props — with **glowing emissive lines or panel-edges** as deliberate accents. The Tron-Lines aesthetic. The object is otherwise dark monochrome (matte black, gunmetal, anodised carbon) and geometrically precise; the glow is the SINGLE highlight that does the talking. Always on dark backdrop so the emissive really pops. Distinct from gritty cyberpunk (which is weathered, decay-y) — this is GEOMETRIC-CLEAN cyberpunk, the Apple-Vision-Pro-promo / NVIDIA-RTX / Tron-Legacy register.",
+      "notForUseWhen": "cottagecore, warm-lifestyle, restrained-clean editorial, kids brands",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "aesthetic-cyberpunk",
+        "aesthetic-depin-hardware",
+        "aesthetic-defi-cosmic",
+        "aesthetic-crypto-degen",
+        "style-holographic"
+      ],
+      "sourceFile": "design-library/illust-3d-tron-emissive-glow.md"
+    },
+    "arcane-painterly-hybrid": {
+      "name": "Arcane painterly 2.5D hybrid (Fortiche)",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Netflix's *Arcane* (Riot Games + **Fortiche Productions**, 2021 / 2024) — the canonical reference for **hand-painted texture over 3D geometry**, the so-called **\"2.5D hybrid\"**. The signature is **manually painted textures (Photoshop) wrapped onto Autodesk Maya 3D models**, with painterly highlights, shadows, brushstrokes and imperfections baked into texture maps — every frame reflects emotional and artistic intent rather than procedural uniformity. The result reads as both 3D (volume, motion, depth) AND 2D (visible brushwork, painterly shading, hand-drawn line accents).",
+      "notForUseWhen": "cottagecore, kids brands, restrained-tech, B2B-clean",
+      "pairsPrototypes": [
+        "aesthetic-honkai-star-rail-polished-sf",
+        "aesthetic-belle-u-painterly-vr",
+        "aesthetic-cyberpunk",
+        "recipe-editorial-magazine",
+        "recipe-warm-restraint"
+      ],
+      "sourceFile": "design-library/illust-arcane-painterly-hybrid.md"
+    },
     "aurorism-mesh-gradient": {
       "name": "Aurorism mesh gradient",
       "category": "Abstract / decoration",
@@ -700,7 +1003,7 @@
         "style-holographic",
         "style-liquid-glass"
       ],
-      "sourceFile": "prototype/illust-aurorism-mesh-gradient.md"
+      "sourceFile": "design-library/illust-aurorism-mesh-gradient.md"
     },
     "bauhaus-geometric": {
       "name": "Bauhaus pure geometric",
@@ -718,7 +1021,7 @@
         "aesthetic-constructivism",
         "aesthetic-swiss-modernist"
       ],
-      "sourceFile": "prototype/illust-bauhaus-geometric.md"
+      "sourceFile": "design-library/illust-bauhaus-geometric.md"
     },
     "beatrix-potter-watercolor": {
       "name": "Beatrix Potter soft watercolor",
@@ -736,7 +1039,7 @@
         "recipe-warm-restraint",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/illust-beatrix-potter-watercolor.md"
+      "sourceFile": "design-library/illust-beatrix-potter-watercolor.md"
     },
     "beeple-dystopia": {
       "name": "Beeple dystopian 3D",
@@ -753,41 +1056,7 @@
         "aesthetic-cyberpunk",
         "recipe-ai-foundry-dark"
       ],
-      "sourceFile": "prototype/illust-beeple-dystopia.md"
-    },
-    "blush-allura": {
-      "name": "Allura",
-      "category": "Flat vector",
-      "subCategory": "corporate-memphis",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "everyday-life scenes (office, park, walking).",
-      "notForUseWhen": "youth-music brands, brutalism",
-      "pairsPrototypes": [
-        "aesthetic-corporate-memphis",
-        "recipe-bento-marketing",
-        "recipe-warm-restraint",
-        "aesthetic-coastal-grandmother"
-      ],
-      "sourceFile": "prototype/illust-blush-allura.md"
-    },
-    "blush-big-shoes": {
-      "name": "Big Shoes",
-      "category": "Flat vector",
-      "subCategory": "flat-iconographic",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "exaggerated big-shoe characters (oversized footwear).",
-      "notForUseWhen": "B2B serious",
-      "pairsPrototypes": [
-        "aesthetic-positivity-kawaii",
-        "aesthetic-corporate-memphis"
-      ],
-      "sourceFile": "prototype/illust-blush-big-shoes.md"
+      "sourceFile": "design-library/illust-beeple-dystopia.md"
     },
     "blush-cityscapes": {
       "name": "Cityscapes",
@@ -804,7 +1073,7 @@
         "recipe-restrained-ai-marketing",
         "aesthetic-corporate-memphis"
       ],
-      "sourceFile": "prototype/illust-blush-cityscapes.md"
+      "sourceFile": "design-library/illust-blush-cityscapes.md"
     },
     "blush-cool-kids": {
       "name": "Cool Kids",
@@ -822,7 +1091,43 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-acid-design"
       ],
-      "sourceFile": "prototype/illust-blush-cool-kids.md"
+      "sourceFile": "design-library/illust-blush-cool-kids.md"
+    },
+    "blush-corporate-memphis-energetic": {
+      "name": "Corporate-Memphis Energetic Action (Blush)",
+      "category": "Flat vector",
+      "subCategory": "corporate-memphis",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Bright-palette mid-action flat-vector characters — bouncy, dope, doing hobbies, group celebration. Merges Blush's Happy-Bunch / Hobbies / Shiny-Happy families. Distinct from the Scenes variant (muted, single-prop, everyday-quiet) by saturation and motion energy.",
+      "notForUseWhen": "enterprise serious, brutalism, dark themes",
+      "pairsPrototypes": [
+        "aesthetic-corporate-memphis",
+        "aesthetic-positivity-kawaii",
+        "recipe-bento-marketing"
+      ],
+      "sourceFile": "design-library/illust-blush-corporate-memphis-energetic.md"
+    },
+    "blush-corporate-memphis-scenes": {
+      "name": "Corporate-Memphis Everyday Scenes (Blush)",
+      "category": "Flat vector",
+      "subCategory": "corporate-memphis",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Flat-vector everyday-life scenes — characters going about daily activity (office, park, walking, shopping, family moments) on a simple single-prop background. Merges Blush's Allura / Big-Shoes / Dayflow / Family-Values / Shopaholics families.",
+      "notForUseWhen": "brutalism, youth-music, dark themes",
+      "pairsPrototypes": [
+        "aesthetic-corporate-memphis",
+        "recipe-bento-marketing",
+        "recipe-warm-restraint",
+        "aesthetic-coastal-grandmother",
+        "aesthetic-positivity-kawaii"
+      ],
+      "sourceFile": "design-library/illust-blush-corporate-memphis-scenes.md"
     },
     "blush-croods": {
       "name": "Croods",
@@ -839,7 +1144,7 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-y2k-memphis-loud"
       ],
-      "sourceFile": "prototype/illust-blush-croods.md"
+      "sourceFile": "design-library/illust-blush-croods.md"
     },
     "blush-currency-crush": {
       "name": "Currency Crush",
@@ -856,42 +1161,7 @@
         "recipe-bento-marketing",
         "style-claymorphism"
       ],
-      "sourceFile": "prototype/illust-blush-currency-crush.md"
-    },
-    "blush-dayflow": {
-      "name": "Dayflow",
-      "category": "Flat vector",
-      "subCategory": "corporate-memphis",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "daily-life micro-moments (coffee, cat, books).",
-      "notForUseWhen": "enterprise, technical, dark themes",
-      "pairsPrototypes": [
-        "recipe-warm-restraint",
-        "aesthetic-cottagecore",
-        "aesthetic-coastal-grandmother",
-        "recipe-readcv"
-      ],
-      "sourceFile": "prototype/illust-blush-dayflow.md"
-    },
-    "blush-family-values": {
-      "name": "Family Values",
-      "category": "Flat vector",
-      "subCategory": "corporate-memphis",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "groups of 2-4 figures sharing moments.",
-      "notForUseWhen": "solo-product hero",
-      "pairsPrototypes": [
-        "recipe-warm-restraint",
-        "aesthetic-corporate-memphis",
-        "aesthetic-coastal-grandmother"
-      ],
-      "sourceFile": "prototype/illust-blush-family-values.md"
+      "sourceFile": "design-library/illust-blush-currency-crush.md"
     },
     "blush-fancy-plants": {
       "name": "Fancy Plants",
@@ -909,7 +1179,7 @@
         "aesthetic-coastal-grandmother",
         "recipe-warm-restraint"
       ],
-      "sourceFile": "prototype/illust-blush-fancy-plants.md"
+      "sourceFile": "design-library/illust-blush-fancy-plants.md"
     },
     "blush-fitz": {
       "name": "Fitz",
@@ -925,7 +1195,7 @@
         "aesthetic-corporate-memphis",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-blush-fitz.md"
+      "sourceFile": "design-library/illust-blush-fitz.md"
     },
     "blush-go-green": {
       "name": "Go Green",
@@ -942,7 +1212,7 @@
         "aesthetic-frutiger-eco",
         "aesthetic-cottagecore"
       ],
-      "sourceFile": "prototype/illust-blush-go-green.md"
+      "sourceFile": "design-library/illust-blush-go-green.md"
     },
     "blush-goodies": {
       "name": "Goodies",
@@ -959,40 +1229,7 @@
         "aesthetic-cluttercore",
         "aesthetic-maximalism"
       ],
-      "sourceFile": "prototype/illust-blush-goodies.md"
-    },
-    "blush-happy-bunch": {
-      "name": "Happy Bunch",
-      "category": "Flat vector",
-      "subCategory": "flat-with-pattern",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "bouncy characters mid-action.",
-      "notForUseWhen": "serious enterprise",
-      "pairsPrototypes": [
-        "aesthetic-positivity-kawaii",
-        "aesthetic-corporate-memphis"
-      ],
-      "sourceFile": "prototype/illust-blush-happy-bunch.md"
-    },
-    "blush-hobbies": {
-      "name": "Hobbies",
-      "category": "Flat vector",
-      "subCategory": "corporate-memphis",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "characters doing favorite activities (weight lifting, skateboarding, dancing, travel).",
-      "notForUseWhen": "enterprise",
-      "pairsPrototypes": [
-        "aesthetic-corporate-memphis",
-        "aesthetic-positivity-kawaii",
-        "recipe-bento-marketing"
-      ],
-      "sourceFile": "prototype/illust-blush-hobbies.md"
+      "sourceFile": "design-library/illust-blush-goodies.md"
     },
     "blush-humaaans": {
       "name": "Humaaans",
@@ -1010,7 +1247,7 @@
         "aesthetic-corporate-memphis",
         "recipe-linear-product-ui"
       ],
-      "sourceFile": "prototype/illust-blush-humaaans.md"
+      "sourceFile": "design-library/illust-blush-humaaans.md"
     },
     "blush-hyperspace": {
       "name": "Hyperspace",
@@ -1027,7 +1264,7 @@
         "aesthetic-cassette-futurism",
         "aesthetic-frutiger-eco"
       ],
-      "sourceFile": "prototype/illust-blush-hyperspace.md"
+      "sourceFile": "design-library/illust-blush-hyperspace.md"
     },
     "blush-isometric-stickers-vega": {
       "name": "Blush Isometric Stickers (Mariana Gonzalez Vega)",
@@ -1044,7 +1281,7 @@
         "recipe-linear-product-ui",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-blush-isometric-stickers-vega.md"
+      "sourceFile": "design-library/illust-blush-isometric-stickers-vega.md"
     },
     "blush-lifesavers": {
       "name": "Lifesavers",
@@ -1060,7 +1297,7 @@
         "recipe-restrained-ai-marketing",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/illust-blush-lifesavers.md"
+      "sourceFile": "design-library/illust-blush-lifesavers.md"
     },
     "blush-little-things": {
       "name": "The Little Things",
@@ -1077,7 +1314,7 @@
         "aesthetic-cottagecore",
         "recipe-readcv"
       ],
-      "sourceFile": "prototype/illust-blush-little-things.md"
+      "sourceFile": "design-library/illust-blush-little-things.md"
     },
     "blush-moneyverse": {
       "name": "Moneyverse",
@@ -1094,7 +1331,7 @@
         "aesthetic-crypto-degen",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/illust-blush-moneyverse.md"
+      "sourceFile": "design-library/illust-blush-moneyverse.md"
     },
     "blush-open-peeps": {
       "name": "Open Peeps",
@@ -1112,7 +1349,7 @@
         "recipe-editorial-magazine",
         "aesthetic-cottagecore"
       ],
-      "sourceFile": "prototype/illust-blush-open-peeps.md"
+      "sourceFile": "design-library/illust-blush-open-peeps.md"
     },
     "blush-palz": {
       "name": "Palz",
@@ -1129,7 +1366,7 @@
         "aesthetic-corporate-memphis",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/illust-blush-palz.md"
+      "sourceFile": "design-library/illust-blush-palz.md"
     },
     "blush-patterns": {
       "name": "Patterns (Pablo Stanley)",
@@ -1147,7 +1384,7 @@
         "aesthetic-corporate-memphis",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/illust-blush-patterns.md"
+      "sourceFile": "design-library/illust-blush-patterns.md"
     },
     "blush-power-moves": {
       "name": "Power Moves",
@@ -1164,39 +1401,7 @@
         "aesthetic-y2k-memphis-loud",
         "aesthetic-acid-design"
       ],
-      "sourceFile": "prototype/illust-blush-power-moves.md"
-    },
-    "blush-shiny-happy": {
-      "name": "Shiny Happy",
-      "category": "Flat vector",
-      "subCategory": "corporate-memphis",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "shiny happy people holding hands and laughing.",
-      "notForUseWhen": "dark themes, brutalism",
-      "pairsPrototypes": [
-        "aesthetic-positivity-kawaii",
-        "aesthetic-corporate-memphis"
-      ],
-      "sourceFile": "prototype/illust-blush-shiny-happy.md"
-    },
-    "blush-shopaholics": {
-      "name": "Shopaholics",
-      "category": "Flat vector",
-      "subCategory": "corporate-memphis",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "e-commerce + retail scenes.",
-      "notForUseWhen": "B2B serious, editorial",
-      "pairsPrototypes": [
-        "recipe-bento-marketing",
-        "aesthetic-corporate-memphis"
-      ],
-      "sourceFile": "prototype/illust-blush-shopaholics.md"
+      "sourceFile": "design-library/illust-blush-power-moves.md"
     },
     "blush-spooky-stickers": {
       "name": "Spooky Stickers",
@@ -1213,7 +1418,7 @@
         "aesthetic-dreamcore",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-blush-spooky-stickers.md"
+      "sourceFile": "design-library/illust-blush-spooky-stickers.md"
     },
     "blush-stuck-at-home": {
       "name": "Stuck at Home",
@@ -1230,24 +1435,26 @@
         "aesthetic-cottagecore",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/illust-blush-stuck-at-home.md"
+      "sourceFile": "design-library/illust-blush-stuck-at-home.md"
     },
     "blush-transhumans": {
-      "name": "Transhumans",
-      "category": "3D",
-      "subCategory": "plastic-glossy",
+      "name": "Transhumans (Pablo Stanley — punk-zine cyborg ink)",
+      "category": "Hand-drawn / sketch",
+      "subCategory": "ink-line-brush",
       "role": "subject",
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "characters transcending biological limits — cyborg parts, robot heads.",
-      "notForUseWhen": "cottagecore, editorial",
+      "oneLine": "Pablo Stanley's open-source **Transhumans** collection (transhumans.xyz, also on Blush.design) — characters transcending biological limits with cyborg parts, reflective visors, robot heads, mechanical accessories. The actual aesthetic is **punk-zine ink**: bold brush strokes drawn quickly and imperfectly, **stark black and white** base with optional color overlays (the Blush coloring system layers tints on top). Inspired by 80s sci-fi cinema, kawaii minimalism, Japanese illustration, and the literal transhumanism movement. CC0 open-source.",
+      "notForUseWhen": "cottagecore, restrained editorial, warm-lifestyle, B2B-clean",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
         "aesthetic-y2k-futurism",
-        "aesthetic-vaporwave"
+        "recipe-ai-foundry-dark",
+        "style-brutalist-raw",
+        "aesthetic-cassette-futurism"
       ],
-      "sourceFile": "prototype/illust-blush-transhumans.md"
+      "sourceFile": "design-library/illust-blush-transhumans.md"
     },
     "blush-tutto-ricco": {
       "name": "Tutto Ricco",
@@ -1264,7 +1471,7 @@
         "aesthetic-curly-girly",
         "aesthetic-maximalism"
       ],
-      "sourceFile": "prototype/illust-blush-tutto-ricco.md"
+      "sourceFile": "design-library/illust-blush-tutto-ricco.md"
     },
     "blush-wavy-buddies": {
       "name": "Wavy Buddies",
@@ -1281,7 +1488,7 @@
         "aesthetic-curly-girly",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-blush-wavy-buddies.md"
+      "sourceFile": "design-library/illust-blush-wavy-buddies.md"
     },
     "blush-we-are-women": {
       "name": "We Are Women",
@@ -1297,7 +1504,7 @@
         "aesthetic-corporate-memphis",
         "aesthetic-maximalism"
       ],
-      "sourceFile": "prototype/illust-blush-we-are-women.md"
+      "sourceFile": "design-library/illust-blush-we-are-women.md"
     },
     "blush-yuppies": {
       "name": "Yuppies",
@@ -1314,7 +1521,7 @@
         "recipe-bento-marketing",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/illust-blush-yuppies.md"
+      "sourceFile": "design-library/illust-blush-yuppies.md"
     },
     "charcoal-loose": {
       "name": "Loose charcoal sketch",
@@ -1330,7 +1537,7 @@
         "recipe-editorial-magazine",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/illust-charcoal-loose.md"
+      "sourceFile": "design-library/illust-charcoal-loose.md"
     },
     "charley-harper-minimal-realism": {
       "name": "Charley Harper minimal-realism nature",
@@ -1348,7 +1555,7 @@
         "recipe-warm-restraint",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/illust-charley-harper-minimal-realism.md"
+      "sourceFile": "design-library/illust-charley-harper-minimal-realism.md"
     },
     "clay-3d-soft-sculpt": {
       "name": "3D Clay / Soft Sculpt",
@@ -1366,7 +1573,7 @@
         "aesthetic-cottagecore",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-clay-3d-soft-sculpt.md"
+      "sourceFile": "design-library/illust-clay-3d-soft-sculpt.md"
     },
     "claymation-stop-motion": {
       "name": "Claymation stop-motion 3D",
@@ -1383,7 +1590,7 @@
         "style-claymorphism",
         "aesthetic-wacky-pomo"
       ],
-      "sourceFile": "prototype/illust-claymation-stop-motion.md"
+      "sourceFile": "design-library/illust-claymation-stop-motion.md"
     },
     "corporate-memphis-noodle": {
       "name": "Corporate Memphis noodle-people",
@@ -1400,7 +1607,7 @@
         "recipe-bento-marketing",
         "recipe-restrained-ai-marketing"
       ],
-      "sourceFile": "prototype/illust-corporate-memphis-noodle.md"
+      "sourceFile": "design-library/illust-corporate-memphis-noodle.md"
     },
     "crayon-wax-children": {
       "name": "Crayon / wax children",
@@ -1417,24 +1624,7 @@
         "aesthetic-wacky-pomo",
         "aesthetic-cluttercore"
       ],
-      "sourceFile": "prototype/illust-crayon-wax-children.md"
-    },
-    "cyriak-bodyhorror": {
-      "name": "Cyriak surreal multiplication",
-      "category": "Surreal / esoteric",
-      "subCategory": "cyriak-bodyhorror",
-      "role": "hero",
-      "roleAffinity": [
-        "hero"
-      ],
-      "oneLine": "photoreal source material multiplied into impossible forms.",
-      "notForUseWhen": "friendly, B2B, family",
-      "pairsPrototypes": [
-        "aesthetic-dreamcore",
-        "aesthetic-anti-design",
-        "aesthetic-acid-graphics"
-      ],
-      "sourceFile": "prototype/illust-cyriak-bodyhorror.md"
+      "sourceFile": "design-library/illust-crayon-wax-children.md"
     },
     "doodle-ui-handdrawn": {
       "name": "Doodle UI hand-drawn (Excalidraw-style)",
@@ -1451,7 +1641,7 @@
         "recipe-devtools-marketing",
         "recipe-readcv"
       ],
-      "sourceFile": "prototype/illust-doodle-ui-handdrawn.md"
+      "sourceFile": "design-library/illust-doodle-ui-handdrawn.md"
     },
     "drawkit-bubbly-tech-ui": {
       "name": "DrawKit Bubbly Tech / UI 3D",
@@ -1469,7 +1659,7 @@
         "recipe-restrained-ai-marketing",
         "style-neumorphism"
       ],
-      "sourceFile": "prototype/illust-drawkit-bubbly-tech-ui.md"
+      "sourceFile": "design-library/illust-drawkit-bubbly-tech-ui.md"
     },
     "drawkit-hands-3d": {
       "name": "DrawKit Hands Illustrations",
@@ -1487,7 +1677,7 @@
         "style-sf-pro-ios",
         "recipe-ios-system"
       ],
-      "sourceFile": "prototype/illust-drawkit-hands-3d.md"
+      "sourceFile": "design-library/illust-drawkit-hands-3d.md"
     },
     "drawkit-isometric-stickers": {
       "name": "DrawKit / Blush Isometric Stickers",
@@ -1504,7 +1694,7 @@
         "recipe-linear-product-ui",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-drawkit-isometric-stickers.md"
+      "sourceFile": "design-library/illust-drawkit-isometric-stickers.md"
     },
     "drawkit-jelly-3d": {
       "name": "DrawKit Jelly Characters 3D",
@@ -1522,7 +1712,7 @@
         "recipe-restrained-ai-marketing",
         "style-skeuomorphism"
       ],
-      "sourceFile": "prototype/illust-drawkit-jelly-3d.md"
+      "sourceFile": "design-library/illust-drawkit-jelly-3d.md"
     },
     "drawkit-wooden-icons": {
       "name": "DrawKit Wooden Icons 3D",
@@ -1541,7 +1731,7 @@
         "aesthetic-dark-academia",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/illust-drawkit-wooden-icons.md"
+      "sourceFile": "design-library/illust-drawkit-wooden-icons.md"
     },
     "dreamcore-liminal": {
       "name": "Dreamcore liminal scene",
@@ -1558,7 +1748,7 @@
         "aesthetic-vaporwave",
         "aesthetic-cottagegoth"
       ],
-      "sourceFile": "prototype/illust-dreamcore-liminal.md"
+      "sourceFile": "design-library/illust-dreamcore-liminal.md"
     },
     "editorial-thick-brush": {
       "name": "Editorial thick-brush op-ed",
@@ -1575,7 +1765,7 @@
         "recipe-editorial-magazine",
         "style-agate-broadsheet"
       ],
-      "sourceFile": "prototype/illust-editorial-thick-brush.md"
+      "sourceFile": "design-library/illust-editorial-thick-brush.md"
     },
     "eric-carle-tissue-collage": {
       "name": "Eric Carle tissue-paper collage",
@@ -1592,7 +1782,7 @@
         "aesthetic-cottagecore",
         "style-raster-cutout"
       ],
-      "sourceFile": "prototype/illust-eric-carle-tissue-collage.md"
+      "sourceFile": "design-library/illust-eric-carle-tissue-collage.md"
     },
     "fluffy-plush-3d": {
       "name": "3D Fluffy / Plush",
@@ -1610,7 +1800,7 @@
         "style-claymorphism",
         "aesthetic-fairycore"
       ],
-      "sourceFile": "prototype/illust-fluffy-plush-3d.md"
+      "sourceFile": "design-library/illust-fluffy-plush-3d.md"
     },
     "frida-folk-surreal": {
       "name": "Frida Kahlo folk surrealism",
@@ -1627,7 +1817,7 @@
         "aesthetic-cottagecore",
         "aesthetic-y2k-memphis-loud"
       ],
-      "sourceFile": "prototype/illust-frida-folk-surreal.md"
+      "sourceFile": "design-library/illust-frida-folk-surreal.md"
     },
     "ghibli-watercolor-bg": {
       "name": "Studio Ghibli watercolor background",
@@ -1646,7 +1836,7 @@
         "recipe-warm-restraint",
         "aesthetic-fairycore"
       ],
-      "sourceFile": "prototype/illust-ghibli-watercolor-bg.md"
+      "sourceFile": "design-library/illust-ghibli-watercolor-bg.md"
     },
     "gouache-storybook": {
       "name": "Modern gouache storybook",
@@ -1664,7 +1854,7 @@
         "recipe-editorial-magazine",
         "aesthetic-dark-academia"
       ],
-      "sourceFile": "prototype/illust-gouache-storybook.md"
+      "sourceFile": "design-library/illust-gouache-storybook.md"
     },
     "halftone-shape": {
       "name": "Halftone retro shape",
@@ -1681,7 +1871,7 @@
         "aesthetic-anti-design",
         "aesthetic-y2k-memphis-loud"
       ],
-      "sourceFile": "prototype/illust-halftone-shape.md"
+      "sourceFile": "design-library/illust-halftone-shape.md"
     },
     "hand-drawn-pencil-sketch": {
       "name": "Pencil graphite sketch",
@@ -1699,95 +1889,28 @@
         "aesthetic-dark-academia",
         "recipe-warm-restraint"
       ],
-      "sourceFile": "prototype/illust-hand-drawn-pencil-sketch.md"
+      "sourceFile": "design-library/illust-hand-drawn-pencil-sketch.md"
     },
-    "handyarrows-arrows": {
-      "name": "HandyArrows — Hand-drawn Arrows (185+)",
-      "category": "Abstract / decoration",
-      "subCategory": "doodle-arrow",
+    "handyarrows-illustration": {
+      "name": "HandyArrows — Single-hand illustration pack (Eren Can Arica)",
+      "category": "Hand-drawn / sketch",
+      "subCategory": "ink-line-brush",
       "role": "decoration",
       "roleAffinity": [
         "decoration"
       ],
-      "oneLine": "185+ hand-drawn arrow SVGs in varied styles.",
-      "notForUseWhen": "dense data UI, brutalism",
+      "oneLine": "The entire HandyArrows library — arrows, doodles, full illustrations, infographic accents, underlines — drawn by one hand (Eren Can Arica / Eronred). Single artist, single marker, consistent wobble, one entry to rule them all. Promptable per sub-asset role (arrow / doodle / illustration / infographic / underline).",
+      "notForUseWhen": "dense data UI, brutalism, corporate Fortune-500",
       "pairsPrototypes": [
         "style-doodle",
         "aesthetic-corporate-memphis",
-        "recipe-bento-marketing",
-        "recipe-readcv"
-      ],
-      "sourceFile": "prototype/illust-handyarrows-arrows.md"
-    },
-    "handyarrows-doodles": {
-      "name": "HandyArrows — Doodles",
-      "category": "Abstract / decoration",
-      "subCategory": "squiggle-line",
-      "role": "decoration",
-      "roleAffinity": [
-        "decoration"
-      ],
-      "oneLine": "playful hand-drawn elements: stars, hearts, sparkles, dots, swirls.",
-      "notForUseWhen": "minimalist, brutalism",
-      "pairsPrototypes": [
-        "style-doodle",
         "aesthetic-positivity-kawaii",
-        "recipe-readcv",
-        "aesthetic-curly-girly"
-      ],
-      "sourceFile": "prototype/illust-handyarrows-doodles.md"
-    },
-    "handyarrows-illustrations": {
-      "name": "HandyArrows — Illustrations",
-      "category": "Hand-drawn / sketch",
-      "subCategory": "ink-line-brush",
-      "role": "spot-illustration",
-      "roleAffinity": [
-        "spot-illustration"
-      ],
-      "oneLine": "full-figure hand-drawn illustrations.",
-      "notForUseWhen": "corporate Fortune-500",
-      "pairsPrototypes": [
-        "style-doodle",
+        "aesthetic-curly-girly",
+        "recipe-bento-marketing",
         "recipe-readcv",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/illust-handyarrows-illustrations.md"
-    },
-    "handyarrows-infographic": {
-      "name": "HandyArrows — Infographic",
-      "category": "Abstract / decoration",
-      "subCategory": "doodle-arrow",
-      "role": "decoration",
-      "roleAffinity": [
-        "decoration"
-      ],
-      "oneLine": "circles, brackets, numbers, callout elements.",
-      "notForUseWhen": "high-polish enterprise",
-      "pairsPrototypes": [
-        "style-doodle",
-        "recipe-bento-marketing",
-        "recipe-readcv"
-      ],
-      "sourceFile": "prototype/illust-handyarrows-infographic.md"
-    },
-    "handyarrows-underlines": {
-      "name": "HandyArrows — Underlines & Brackets",
-      "category": "Abstract / decoration",
-      "subCategory": "doodle-arrow",
-      "role": "decoration",
-      "roleAffinity": [
-        "decoration"
-      ],
-      "oneLine": "underline strokes in many flavors: wavy, looped, double, sketch.",
-      "notForUseWhen": "hairline-restraint design systems",
-      "pairsPrototypes": [
-        "style-doodle",
-        "recipe-readcv",
-        "aesthetic-corporate-memphis",
-        "aesthetic-y2k-memphis-loud"
-      ],
-      "sourceFile": "prototype/illust-handyarrows-underlines.md"
+      "sourceFile": "design-library/illust-handyarrows-illustration.md"
     },
     "hilma-af-klint-symbolist": {
       "name": "Hilma af Klint esoteric symbolism",
@@ -1805,7 +1928,7 @@
         "aesthetic-fairycore",
         "style-aurorism"
       ],
-      "sourceFile": "prototype/illust-hilma-af-klint-symbolist.md"
+      "sourceFile": "design-library/illust-hilma-af-klint-symbolist.md"
     },
     "humanities-marginalia": {
       "name": "Humanities (medieval-marginalia revival)",
@@ -1824,7 +1947,7 @@
         "recipe-readcv",
         "style-serif-warm-paper"
       ],
-      "sourceFile": "prototype/illust-humanities-marginalia.md"
+      "sourceFile": "design-library/illust-humanities-marginalia.md"
     },
     "isometric-tech-saas": {
       "name": "Isometric tech SaaS scene",
@@ -1842,7 +1965,7 @@
         "recipe-devtools-marketing",
         "recipe-scientific-infra-marketing"
       ],
-      "sourceFile": "prototype/illust-isometric-tech-saas.md"
+      "sourceFile": "design-library/illust-isometric-tech-saas.md"
     },
     "jean-jullien-thick-line": {
       "name": "Jean Jullien thick brush cartoon",
@@ -1859,7 +1982,7 @@
         "recipe-editorial-magazine",
         "recipe-readcv"
       ],
-      "sourceFile": "prototype/illust-jean-jullien-thick-line.md"
+      "sourceFile": "design-library/illust-jean-jullien-thick-line.md"
     },
     "kawaii-mascot": {
       "name": "Kawaii mascot",
@@ -1875,7 +1998,7 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-curly-girly"
       ],
-      "sourceFile": "prototype/illust-kawaii-mascot.md"
+      "sourceFile": "design-library/illust-kawaii-mascot.md"
     },
     "keith-haring-radiant": {
       "name": "Keith Haring radiant pop",
@@ -1892,7 +2015,7 @@
         "aesthetic-maximalism",
         "aesthetic-anti-design"
       ],
-      "sourceFile": "prototype/illust-keith-haring-radiant.md"
+      "sourceFile": "design-library/illust-keith-haring-radiant.md"
     },
     "liquid-glass-3d": {
       "name": "Liquid glass 3D translucent",
@@ -1910,7 +2033,7 @@
         "style-sf-pro-ios",
         "style-glassmorphism"
       ],
-      "sourceFile": "prototype/illust-liquid-glass-3d.md"
+      "sourceFile": "design-library/illust-liquid-glass-3d.md"
     },
     "low-poly-paper-3d": {
       "name": "Low-Poly Paper Craft 3D",
@@ -1927,7 +2050,7 @@
         "aesthetic-constructivism",
         "aesthetic-swiss-modernist"
       ],
-      "sourceFile": "prototype/illust-low-poly-paper-3d.md"
+      "sourceFile": "design-library/illust-low-poly-paper-3d.md"
     },
     "mary-blair-stylized": {
       "name": "Mary Blair stylized mid-century",
@@ -1944,7 +2067,7 @@
         "recipe-editorial-magazine",
         "aesthetic-fairycore"
       ],
-      "sourceFile": "prototype/illust-mary-blair-stylized.md"
+      "sourceFile": "design-library/illust-mary-blair-stylized.md"
     },
     "mc-escher-paradox": {
       "name": "M.C. Escher impossible geometry",
@@ -1961,25 +2084,7 @@
         "aesthetic-constructivism",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/illust-mc-escher-paradox.md"
-    },
-    "niemann-puzzle-conceptual": {
-      "name": "Christoph Niemann puzzle-design",
-      "category": "Editorial conceptual",
-      "subCategory": "niemann-puzzle",
-      "role": "spot-illustration",
-      "roleAffinity": [
-        "spot-illustration"
-      ],
-      "oneLine": "minimal line work over real object photo.",
-      "notForUseWhen": "marketing-decorative, brutalism",
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-newspaper-of-record",
-        "recipe-readcv",
-        "style-serif-warm-paper"
-      ],
-      "sourceFile": "prototype/illust-niemann-puzzle-conceptual.md"
+      "sourceFile": "design-library/illust-mc-escher-paradox.md"
     },
     "origami-paper-3d": {
       "name": "Origami / Folded Paper 3D",
@@ -1997,7 +2102,7 @@
         "recipe-warm-restraint",
         "style-skeuomorphism"
       ],
-      "sourceFile": "prototype/illust-origami-paper-3d.md"
+      "sourceFile": "design-library/illust-origami-paper-3d.md"
     },
     "outline-wireframe-illustration": {
       "name": "Outline wireframe illustration",
@@ -2015,23 +2120,102 @@
         "recipe-restrained-ai-marketing",
         "recipe-linear-product-ui"
       ],
-      "sourceFile": "prototype/illust-outline-wireframe-illustration.md"
+      "sourceFile": "design-library/illust-outline-wireframe-illustration.md"
     },
-    "pixar-render-cinematic": {
-      "name": "Pixar / Disney CGI cinematic",
+    "overwatch-stylized-pbr": {
+      "name": "Overwatch stylized-PBR hero (Blizzard)",
+      "category": "3D",
+      "subCategory": "plastic-glossy",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Blizzard's *Overwatch* (2016 + 2023 Overwatch 2) — the canonical reference for **Pixar-grade stylized 3D applied to a real-time game engine**. The signature is **stylized PBR (Physically Based Rendering)** — PBR materials with disciplined art-direction constraints on saturation, value, and geometry. Plus **exaggerated character silhouettes** so readable they can be identified at any distance by pose alone (Reinhardt's hammer, Lúcio's headphones, D.Va's mech profile, Tracer's leggings — all silhouette anchors that read at any pose, any distance).",
+      "notForUseWhen": "restrained-editorial, brutalism, cottagecore, premium-luxury-restraint",
+      "pairsPrototypes": [
+        "aesthetic-positivity-kawaii",
+        "aesthetic-frutiger-aero",
+        "aesthetic-honkai-star-rail-polished-sf",
+        "recipe-bento-marketing",
+        "style-claymorphism"
+      ],
+      "sourceFile": "design-library/illust-overwatch-stylized-pbr.md"
+    },
+    "pixar-coco-folk-vibrant": {
+      "name": "Pixar Coco folk-vibrant Land of the Dead",
       "category": "3D",
       "subCategory": "render-cinematic",
       "role": "subject",
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "smooth 3D character with expressive big eyes.",
-      "notForUseWhen": "editorial, brutalism, restrained-AI",
+      "oneLine": "Pixar's *Coco* (2017, Lee Unkrich) — the canonical reference for **Mexican folk-art vocabulary applied to Pixar-grade 3D**. The signature is the **Land of the Dead** — *\"a vibrant explosion of color\"* (Unkrich's brief) — with the **marigold-petal bridge** literally connecting worlds, **calaveras** (sugar-skull face paint motifs) etched around eyes and chin, **alebrijes** (psychedelic spirit-animal folk sculptures) as spiritual guides, and **papel picado** (cut-paper banners) as decorative architecture. The whole afterlife is built like a glowing, tiered, ever-expanding folk-art cathedral.",
+      "notForUseWhen": "restrained-editorial, brutalism, B2B-clean, cyberpunk",
+      "pairsPrototypes": [
+        "aesthetic-cluttercore",
+        "aesthetic-maximalism",
+        "aesthetic-positivity-kawaii",
+        "recipe-editorial-magazine",
+        "aesthetic-fairycore"
+      ],
+      "sourceFile": "design-library/illust-pixar-coco-folk-vibrant.md"
+    },
+    "pixar-elemental-translucent": {
+      "name": "Pixar Elemental translucent-material",
+      "category": "3D",
+      "subCategory": "jelly-gummy",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Pixar's *Elemental* (2023, Peter Sohn) — the canonical reference for **characters MADE of their element**, with full material-physics simulation. Ember (fire) is **self-illuminating** — she **lights the scene as a light source**. Wade (water) is **refractive and reflective**. Pixar built \"Pixar's most fully simulated character\" for Ember — physics + cartoony appeal — with **151,000 computers** required to render the film; every frame has at least one (often both) fire and water simulations.",
+      "notForUseWhen": "brutalism, restrained-editorial, B2B-clean, gritty-documentary",
+      "pairsPrototypes": [
+        "style-liquid-glass",
+        "style-glassmorphism",
+        "style-aurorism",
+        "aesthetic-frutiger-aero",
+        "recipe-aurora-marketing"
+      ],
+      "sourceFile": "design-library/illust-pixar-elemental-translucent.md"
+    },
+    "pixar-inside-out-emotion-volumetric": {
+      "name": "Pixar Inside Out emotion-volumetric",
+      "category": "3D",
+      "subCategory": "fluffy-plush",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Pixar's *Inside Out* (2015, Pete Docter) — the canonical reference for **abstract emotions personified as volumetric particle-bodies**. The signature is the emotion characters: Joy, Sadness, Fear, Disgust, Anger — each rendered with a **body surface beneath a volumetric particle aura** that radiates outward from skin. Joy's particles emanate most (her wrist is **transparent** — Docter wanted to show \"the characters are made of energy\"), Anger is the most solid, Sadness/Fear sit between. The **emotion-color → memory-orb** vocabulary became universal shorthand.",
+      "notForUseWhen": "brutalism, cyberpunk, restrained-editorial, B2B-clean",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
-        "style-claymorphism"
+        "recipe-warm-restraint",
+        "style-aurorism",
+        "style-claymorphism",
+        "aesthetic-frutiger-aero"
       ],
-      "sourceFile": "prototype/illust-pixar-render-cinematic.md"
+      "sourceFile": "design-library/illust-pixar-inside-out-emotion-volumetric.md"
+    },
+    "pixar-soul-great-before-pastel": {
+      "name": "Pixar Soul Great-Before pastel-abstract",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Pixar's *Soul* (2020, Pete Docter + Kemp Powers) — the canonical reference for **abstract-spiritual character design**. The Great Before is the un-Earth-like soul-realm where new souls are prepared before birth, designed as **\"deceptively simple, big bold beautiful shapes, abstract buildings unlike any on Earth.\"** The signature element: **the Counselors (the \"Jerrys\")** — flexible, \"living\" white **single-stroke lines** that contort like Picasso line drawings, can be literally anything because they're the universe dumbing itself down for humans to comprehend it. Pastel translucent souls float through soft pastel architecture. Earth scenes (NYC) are photoreal, contrasting the spiritual register sharply.",
+      "notForUseWhen": "brutalism, cyberpunk, gritty-documentary, kinetic-tech, dark themes",
+      "pairsPrototypes": [
+        "recipe-warm-restraint",
+        "style-aurorism",
+        "recipe-restrained-ai-marketing",
+        "style-claymorphism",
+        "aesthetic-coastal-grandmother"
+      ],
+      "sourceFile": "design-library/illust-pixar-soul-great-before-pastel.md"
     },
     "pixel-bitmap-illustration": {
       "name": "Pixel bitmap illustration",
@@ -2052,7 +2236,7 @@
         "aesthetic-pixel-ps1-tactics-ogre",
         "style-pixel-bitmap"
       ],
-      "sourceFile": "prototype/illust-pixel-bitmap-illustration.md"
+      "sourceFile": "design-library/illust-pixel-bitmap-illustration.md"
     },
     "plasticine-3d-rougher": {
       "name": "3D Plasticine (rougher than clay)",
@@ -2069,7 +2253,7 @@
         "aesthetic-corporate-memphis",
         "aesthetic-wacky-pomo"
       ],
-      "sourceFile": "prototype/illust-plasticine-3d-rougher.md"
+      "sourceFile": "design-library/illust-plasticine-3d-rougher.md"
     },
     "raster-cutout-collage": {
       "name": "Raster cutout collage",
@@ -2087,7 +2271,7 @@
         "aesthetic-acid-design",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/illust-raster-cutout-collage.md"
+      "sourceFile": "design-library/illust-raster-cutout-collage.md"
     },
     "risograph-illustration": {
       "name": "Risograph 2-color illustration",
@@ -2105,7 +2289,7 @@
         "aesthetic-anti-design",
         "style-raster-cutout"
       ],
-      "sourceFile": "prototype/illust-risograph-illustration.md"
+      "sourceFile": "design-library/illust-risograph-illustration.md"
     },
     "saul-bass-cutout": {
       "name": "Saul Bass cutout collage",
@@ -2123,7 +2307,7 @@
         "recipe-editorial-magazine",
         "aesthetic-constructivism"
       ],
-      "sourceFile": "prototype/illust-saul-bass-cutout.md"
+      "sourceFile": "design-library/illust-saul-bass-cutout.md"
     },
     "scribbbles-funky-vector": {
       "name": "Scribbbles funky vector scribble",
@@ -2141,7 +2325,7 @@
         "recipe-bento-marketing",
         "aesthetic-positivity-kawaii"
       ],
-      "sourceFile": "prototype/illust-scribbbles-funky-vector.md"
+      "sourceFile": "design-library/illust-scribbbles-funky-vector.md"
     },
     "shapes-gallery-michalczyk": {
       "name": "Shapes.gallery — Monika Michalczyk shapes",
@@ -2159,7 +2343,7 @@
         "style-bold-display",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/illust-shapes-gallery-michalczyk.md"
+      "sourceFile": "design-library/illust-shapes-gallery-michalczyk.md"
     },
     "shinkai-hyperreal-anime": {
       "name": "Makoto Shinkai hyperreal anime",
@@ -2176,7 +2360,7 @@
         "recipe-warm-restraint",
         "aesthetic-coastal-grandmother"
       ],
-      "sourceFile": "prototype/illust-shinkai-hyperreal-anime.md"
+      "sourceFile": "design-library/illust-shinkai-hyperreal-anime.md"
     },
     "shoujo-soft-line-anime": {
       "name": "Shoujo soft-line anime",
@@ -2193,7 +2377,7 @@
         "aesthetic-curly-girly",
         "aesthetic-pc-98"
       ],
-      "sourceFile": "prototype/illust-shoujo-soft-line-anime.md"
+      "sourceFile": "design-library/illust-shoujo-soft-line-anime.md"
     },
     "skeuomorphic-detailed": {
       "name": "Skeuomorphic detailed object",
@@ -2209,7 +2393,7 @@
         "style-skeuomorphism",
         "recipe-warm-restraint"
       ],
-      "sourceFile": "prototype/illust-skeuomorphic-detailed.md"
+      "sourceFile": "design-library/illust-skeuomorphic-detailed.md"
     },
     "spectrums-complex-flower": {
       "name": "Spectrums — Complex / Flower",
@@ -2227,7 +2411,7 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-acid-design"
       ],
-      "sourceFile": "prototype/illust-spectrums-complex-flower.md"
+      "sourceFile": "design-library/illust-spectrums-complex-flower.md"
     },
     "spectrums-organic-blob": {
       "name": "Spectrums — Organic blob",
@@ -2245,7 +2429,7 @@
         "recipe-aurora-marketing",
         "style-glassmorphism"
       ],
-      "sourceFile": "prototype/illust-spectrums-organic-blob.md"
+      "sourceFile": "design-library/illust-spectrums-organic-blob.md"
     },
     "spectrums-vector-shape-circle": {
       "name": "Spectrums — Circle family",
@@ -2263,7 +2447,26 @@
         "aesthetic-swiss-modernist",
         "recipe-swiss-grid"
       ],
-      "sourceFile": "prototype/illust-spectrums-vector-shape-circle.md"
+      "sourceFile": "design-library/illust-spectrums-vector-shape-circle.md"
+    },
+    "spiderverse-comic-halftone": {
+      "name": "Spider-Verse comic-halftone (Sony Imageworks)",
+      "category": "3D",
+      "subCategory": "render-cinematic",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "*Spider-Man: Into the Spider-Verse* (Sony Pictures Animation, 2018) — the canonical reference for **comic-book printing aesthetic baked into CG**. The signature is **Ben-Day dots, line hatching, halftone screens applied via custom crosshatch shaders** to entire 3D objects/characters/scenes (Sony built the **Hatcher** and **Thresher** tools in Nuke for this). Plus the famous **animating on twos** (12fps poses held over 24fps timeline) that gives it the staccato 2D-animation rhythm audiences subconsciously read as \"comic book.\"",
+      "notForUseWhen": "restrained-editorial, cottagecore, B2B-clean, premium-luxury-restraint",
+      "pairsPrototypes": [
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-acid-design",
+        "aesthetic-persona-5-heist-pop",
+        "style-pixel-bitmap",
+        "recipe-y2k-memphis-loud"
+      ],
+      "sourceFile": "design-library/illust-spiderverse-comic-halftone.md"
     },
     "sticker-cutout-puffy": {
       "name": "Sticker cutout puffy",
@@ -2280,7 +2483,7 @@
         "aesthetic-cluttercore",
         "recipe-bento-marketing"
       ],
-      "sourceFile": "prototype/illust-sticker-cutout-puffy.md"
+      "sourceFile": "design-library/illust-sticker-cutout-puffy.md"
     },
     "thick-border-cartoon": {
       "name": "Thick-border cartoon (neubrutalism vector)",
@@ -2298,7 +2501,7 @@
         "recipe-brutalist-web",
         "aesthetic-web-brutalism"
       ],
-      "sourceFile": "prototype/illust-thick-border-cartoon.md"
+      "sourceFile": "design-library/illust-thick-border-cartoon.md"
     },
     "typo-art-nouveau-ornament": {
       "name": "Art Nouveau ornamental lettering",
@@ -2316,7 +2519,7 @@
         "aesthetic-cottagecore",
         "aesthetic-fairycore"
       ],
-      "sourceFile": "prototype/illust-typo-art-nouveau-ornament.md"
+      "sourceFile": "design-library/illust-typo-art-nouveau-ornament.md"
     },
     "typo-blackletter-neo-gothic": {
       "name": "Blackletter / Neo-Gothic illustrative",
@@ -2333,7 +2536,7 @@
         "aesthetic-dark-academia",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/illust-typo-blackletter-neo-gothic.md"
+      "sourceFile": "design-library/illust-typo-blackletter-neo-gothic.md"
     },
     "typo-bubble-graffiti": {
       "name": "Bubble graffiti display",
@@ -2350,7 +2553,25 @@
         "aesthetic-y2k-memphis-loud",
         "aesthetic-acid-graphics"
       ],
-      "sourceFile": "prototype/illust-typo-bubble-graffiti.md"
+      "sourceFile": "design-library/illust-typo-bubble-graffiti.md"
+    },
+    "typo-chromeheart-gothic-luxury": {
+      "name": "Chrome-Hearts gothic-luxury blackletter",
+      "category": "Illustrative typography",
+      "subCategory": "chromeheart-gothic-luxury",
+      "role": "typography",
+      "roleAffinity": [
+        "typography"
+      ],
+      "oneLine": "The Chrome Hearts brand identity — **Cloister Black** blackletter (Morris Fuller Benton, 1904 — Old English style) rendered in chrome / silver-jewelry finish, with crosses, daggers, fleur-de-lis, and occasional gemstone accents filling the counters. Streetwear-luxury register. The intersection of `illust-typo-blackletter-neo-gothic` (the raw blackletter form) and `illust-typo-y2k-chrome-3d` (the chrome-extruded treatment) — distinct from both because it commits to BOTH together as a coherent brand-bling identity.",
+      "notForUseWhen": "B2B, restrained editorial, Bauhaus, cottagecore",
+      "pairsPrototypes": [
+        "aesthetic-urbling",
+        "aesthetic-y2k-futurism",
+        "style-holographic",
+        "aesthetic-crypto-degen"
+      ],
+      "sourceFile": "design-library/illust-typo-chromeheart-gothic-luxury.md"
     },
     "typo-fella-anti-design": {
       "name": "Ed Fella anti-design hand-letter",
@@ -2368,7 +2589,7 @@
         "recipe-brutalist-web",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/illust-typo-fella-anti-design.md"
+      "sourceFile": "design-library/illust-typo-fella-anti-design.md"
     },
     "typo-hand-lettered-editorial": {
       "name": "Hand-lettered editorial (modern brush)",
@@ -2386,7 +2607,7 @@
         "style-serif-warm-paper",
         "recipe-readcv"
       ],
-      "sourceFile": "prototype/illust-typo-hand-lettered-editorial.md"
+      "sourceFile": "design-library/illust-typo-hand-lettered-editorial.md"
     },
     "typo-house-industries-revival": {
       "name": "House Industries pop-baroque revival",
@@ -2404,25 +2625,7 @@
         "recipe-warm-restraint",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/illust-typo-house-industries-revival.md"
-    },
-    "typo-illuminated-drop-cap": {
-      "name": "Illuminated drop cap (medieval revival)",
-      "category": "Illustrative typography",
-      "subCategory": "illuminated-drop-cap",
-      "role": "typography",
-      "roleAffinity": [
-        "typography"
-      ],
-      "oneLine": "single large initial letter painted with gold leaf.",
-      "notForUseWhen": "tech, brutalism, anything sans-serif",
-      "pairsPrototypes": [
-        "aesthetic-dark-academia",
-        "recipe-editorial-magazine",
-        "recipe-newspaper-of-record",
-        "style-serif-warm-paper"
-      ],
-      "sourceFile": "prototype/illust-typo-illuminated-drop-cap.md"
+      "sourceFile": "design-library/illust-typo-house-industries-revival.md"
     },
     "typo-vector-musica": {
       "name": "Vector Música typographic illustration",
@@ -2439,25 +2642,27 @@
         "aesthetic-acid-design",
         "aesthetic-vaporwave"
       ],
-      "sourceFile": "prototype/illust-typo-vector-musica.md"
+      "sourceFile": "design-library/illust-typo-vector-musica.md"
     },
-    "typo-vectorheart-decorative": {
-      "name": "Vectorheart decorative typography",
+    "typo-vectorheart-industrial-futurist": {
+      "name": "Vectorheart industrial-futurist (Designers Republic / Wipeout)",
       "category": "Illustrative typography",
       "subCategory": "vectorheart-decorative",
       "role": "typography",
       "roleAffinity": [
         "typography"
       ],
-      "oneLine": "hand-crafted vector letterforms with floral / heart / bauble accents.",
-      "notForUseWhen": "tech, B2B, brutalism",
+      "oneLine": "The mid-late-1990s Vectorheart aesthetic — vector typography rooted in Swiss modernism, utilitarian industrial design, brutalism, and Peter Saville's Factory Records covers. Pioneered by **Bionic Systems** and **The Designers Republic**. The Wipeout PSX game UI (designed by Designers Republic) is the canonical example — also known as \"Wipeout Design.\" NOTHING to do with romantic heart-shapes; the \"heart\" is etymologically unrelated.",
+      "notForUseWhen": "cottagecore, romantic-craft, warm-paper editorial",
       "pairsPrototypes": [
         "aesthetic-vector-neovectorheart",
         "aesthetic-vector-vectorbloom",
-        "aesthetic-curly-girly",
-        "recipe-warm-restraint"
+        "aesthetic-cyberpunk",
+        "recipe-devtools-marketing",
+        "recipe-ai-foundry-dark",
+        "style-brutalist-raw"
       ],
-      "sourceFile": "prototype/illust-typo-vectorheart-decorative.md"
+      "sourceFile": "design-library/illust-typo-vectorheart-industrial-futurist.md"
     },
     "typo-weingart-deconstructed": {
       "name": "Weingart deconstructed typography",
@@ -2475,7 +2680,7 @@
         "aesthetic-swiss-modernist",
         "recipe-editorial-magazine"
       ],
-      "sourceFile": "prototype/illust-typo-weingart-deconstructed.md"
+      "sourceFile": "design-library/illust-typo-weingart-deconstructed.md"
     },
     "typo-wood-type-letterpress": {
       "name": "Wood-type letterpress slab",
@@ -2493,7 +2698,7 @@
         "recipe-editorial-magazine",
         "aesthetic-corporate-grunge"
       ],
-      "sourceFile": "prototype/illust-typo-wood-type-letterpress.md"
+      "sourceFile": "design-library/illust-typo-wood-type-letterpress.md"
     },
     "typo-y2k-chrome-3d": {
       "name": "Y2K Chrome 3D typography",
@@ -2511,25 +2716,7 @@
         "aesthetic-vaporwave",
         "aesthetic-frutiger-chromecore"
       ],
-      "sourceFile": "prototype/illust-typo-y2k-chrome-3d.md"
-    },
-    "vector-hands-up-eurodance": {
-      "name": "Vector hands-up Eurodance",
-      "category": "Anime / manga",
-      "subCategory": "pc98-visual-novel",
-      "role": "subject",
-      "roleAffinity": [
-        "subject"
-      ],
-      "oneLine": "high-gloss anime-inflected vector characters.",
-      "notForUseWhen": "editorial restraint, B2B",
-      "pairsPrototypes": [
-        "aesthetic-vector-hands-up",
-        "aesthetic-y2k-futurism",
-        "aesthetic-vaporwave",
-        "aesthetic-acid-design"
-      ],
-      "sourceFile": "prototype/illust-vector-hands-up-eurodance.md"
+      "sourceFile": "design-library/illust-typo-y2k-chrome-3d.md"
     },
     "voxel-magicavoxel": {
       "name": "Voxel Art (MagicaVoxel)",
@@ -2547,7 +2734,7 @@
         "aesthetic-pixel-arcade",
         "aesthetic-rgb-gamer"
       ],
-      "sourceFile": "prototype/illust-voxel-magicavoxel.md"
+      "sourceFile": "design-library/illust-voxel-magicavoxel.md"
     },
     "wireframe-3d": {
       "name": "3D Wireframe / Mesh",
@@ -2565,7 +2752,7 @@
         "recipe-terminal-on-web",
         "recipe-ai-foundry-dark"
       ],
-      "sourceFile": "prototype/illust-wireframe-3d.md"
+      "sourceFile": "design-library/illust-wireframe-3d.md"
     }
   }
 }

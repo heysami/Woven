@@ -47,15 +47,15 @@ Top-level taxonomy. Every entry in §2 must declare exactly one `category` and (
 
 ## Entry catalogue — moved to per-file sources
 
-**Each of the 108 entries in this library is its own source-of-truth file in `prototype/illust-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
+**Each of the 111 entries in this library is its own source-of-truth file in `design-library/illust-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
 
 Where to find an entry:
 
 - **Browse the System tab → Design library** in the editor. The Illustration bucket lists all entries as cards with image-sample slots.
-- **List from the shell:** `ls prototype/illust-*.md`
+- **List from the shell:** `ls design-library/illust-*.md`
 - **Read one programmatically:** the `.index.json` companion file (e.g. `docs/research/illustration-library.index.json`) maps every entry id to its source path, and orchestrators consume that index to route a slot to the right entry without scanning the big primer.
 
-To add a new entry, create a new `prototype/illust-<entryId>.md` with YAML frontmatter and markdown body (use any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. That script reads the prototype directory; the primer below is for principles only.
+To add a new entry, create a new `design-library/illust-<entryId>.md` with YAML frontmatter and markdown body (use any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. That script reads the prototype directory; the primer below is for principles only.
 
 ## 3. Category × prototype decision tree
 

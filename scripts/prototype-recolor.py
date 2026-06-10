@@ -95,7 +95,7 @@ def build_edits(target_tokens: list[str], source_info: list[dict]) -> dict[int, 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("source", help="reference image (e.g. prototype/shell-mobile-app-ui.png)")
+    ap.add_argument("source", help="reference image (e.g. design-library/shell-mobile-app-ui.png)")
     ap.add_argument("output", help="recoloured output PNG path")
     ap.add_argument("--tokens", required=True,
                     help="comma-separated hex tokens for the target palette, "

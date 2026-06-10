@@ -56,11 +56,11 @@ Optionally add a secondary styleId from the alternatives when the brief calls fo
 
 ## 3. Read the per-entry source file + compose the prompt
 
-The picked styleId IS a file: `prototype/photo-<styleId>.md`. That file is the **source of truth** — hand-edited, YAML frontmatter for structured fields + markdown body for prose. There is no "big library" to fall back to anymore; `docs/research/photography-library.md` is now just a primer.
+The picked styleId IS a file: `design-library/photo-<styleId>.md`. That file is the **source of truth** — hand-edited, YAML frontmatter for structured fields + markdown body for prose. There is no "big library" to fall back to anymore; `docs/research/photography-library.md` is now just a primer.
 
 ```bash
-cat "$TH_PROJECT_ROOT/prototype/photo-<styleId>.md" \
-  || cat "$TH_PROTOCOL_ROOT/prototype/photo-<styleId>.md"
+cat "$TH_PROJECT_ROOT/design-library/photo-<styleId>.md" \
+  || cat "$TH_PROTOCOL_ROOT/design-library/photo-<styleId>.md"
 ```
 
 The file structure:
@@ -112,7 +112,7 @@ notForUseWhen: Brief is sincere, sentimental, family-friendly, or wholesome.
 
 Parse the frontmatter for `styleId` / `category` / `notForUseWhen` / `pairsPrototypes`. Read the `## Example prompt template` block for the paste-ready template. Read the `## Prompt keywords` section for the keyword groups. Read the `## When NOT to use` section for the anti-pattern prose.
 
-If the file is missing → emit `runStatus: error` with `runError: "prototype/photo-<styleId>.md not found — the picked styleId has no source file. Either the index is stale (re-run scripts/build-library-indexes.py) or the entry was deleted."` and stop. There is no library file to fall back to.
+If the file is missing → emit `runStatus: error` with `runError: "design-library/photo-<styleId>.md not found — the picked styleId has no source file. Either the index is stale (re-run scripts/build-library-indexes.py) or the entry was deleted."` and stop. There is no library file to fall back to.
 
 Compose `promptForRasterPhoto` by:
 

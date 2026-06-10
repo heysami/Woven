@@ -65,8 +65,8 @@ That's it. ONE call per draft image, direct daemon endpoint, output writes strai
    - Aesthetic detail file's named references
    - Palette (passed as hex tokens in the prompt)
    - **Typography as visual-characteristic description** (see *Typography in image-gen prompts* below — never just the bare family name)
-   - If a photo register was attached: pull `prompt_keywords` from `prototype/photo-<styleId>.md`
-   - If an illust register was attached: pull from `prototype/illust-<styleId>.md`
+   - If a photo register was attached: pull `prompt_keywords` from `design-library/photo-<styleId>.md`
+   - If an illust register was attached: pull from `design-library/illust-<styleId>.md`
 3. Generate **1 preview PNG by default, 2 PNGs maximum** (one hero, one optional secondary view) at small thumbnail size (≤768px longest side). The default is ONE — the user said "give me a quick preview", not "render the whole site". The word "frame" is forbidden in this step's vocabulary — it has muddled the agent into writing `frame1.html` / `frame2.html` before. The output is a PNG. Save under `.prototype-options/<TURN_SLUG>/draft-<k>.png` using the same TURN_SLUG as the preview recolours.
 4. Re-emit ONLY the picked option's card with the real generated image replacing the recoloured preview, the `◉ auto-preview · no LLM` badge **replaced** with `◉ model-generated mockup · composition + palette only · typography is the model's interpretation, the actual build uses the locked face`, and a fresh prompt: `Lock this direction, pick a different option (1/2/3), or describe a swap.`
 5. Still wait for user confirmation. The genre is committed only after the user says yes / 1 / lock it / build / similar after seeing the draft.

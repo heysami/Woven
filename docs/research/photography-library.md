@@ -121,15 +121,15 @@ Anti-pattern: do NOT prompt for `"unedited"`, `"raw"`, `"straight out of camera"
 
 ## Entry catalogue — moved to per-file sources
 
-**Each of the 42 entries in this library is its own source-of-truth file in `prototype/photo-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
+**Each of the 54 entries in this library is its own source-of-truth file in `design-library/photo-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
 
 Where to find an entry:
 
 - **Browse the System tab → Design library** in the editor. The Photography bucket lists all entries as cards with image-sample slots.
-- **List from the shell:** `ls prototype/photo-*.md`
+- **List from the shell:** `ls design-library/photo-*.md`
 - **Read one programmatically:** the `.index.json` companion file (e.g. `docs/research/photography-library.index.json`) maps every entry id to its source path, and orchestrators consume that index to route a slot to the right entry without scanning the big primer.
 
-To add a new entry, create a new `prototype/photo-<entryId>.md` with YAML frontmatter and markdown body (use any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. That script reads the prototype directory; the primer below is for principles only.
+To add a new entry, create a new `design-library/photo-<entryId>.md` with YAML frontmatter and markdown body (use any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. That script reads the prototype directory; the primer below is for principles only.
 
 ## 3. Style-pick decision tree
 

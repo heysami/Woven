@@ -11166,16 +11166,32 @@ function parseQuestionForms(text) {
               text:     bodyT.inner,
             }
           : null;
-        const imgT    = pullSelf("image");
-        const image   = imgT
-          ? { src: attr("src", imgT.attrs), alt: attr("alt", imgT.attrs) || "" }
-          : null;
+        // Per-axis images. Each <opt> may carry one <image axis="..."> per
+        // committed axis (shell / style / aesthetic). We collect ALL of them
+        // into `images`; `image` (singular) stays populated from the first
+        // entry for back-compat with prior single-image emissions. Self-
+        // closing AND paired <image></image> forms are both accepted, same
+        // as `pullSelf` above.
+        const images = [];
+        const imgRe = /<image\b([^>]*)(?:\/>|><\/image>)/gi;
+        let imgM;
+        while ((imgM = imgRe.exec(obody)) !== null) {
+          const ia = imgM[1] || "";
+          const src = attr("src", ia);
+          if (!src) continue;
+          images.push({
+            src,
+            alt:  attr("alt",  ia) || "",
+            axis: attr("axis", ia) || null,  // "shell" / "style" / "aesthetic" / null (legacy)
+          });
+        }
+        const image = images.length ? images[0] : null;
         const badge   = pull("badge")?.inner   || "";
         if (!label) continue;
         opts.push({
           value, recommended,
           label, axes, vibe, why, palette,
-          display, body: bodyTxt, image, badge,
+          display, body: bodyTxt, image, images, badge,
         });
       }
       if (id && opts.length > 0) {
@@ -11679,20 +11695,67 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                   `}
                 </div>
               `}
-              ${opt.image?.src && html`
-                <div className="chat-direction-image-wrap">
-                  <img
-                    className="chat-direction-image"
-                    src=${apiUrl("/" + opt.image.src.replace(/^\/+/, ""))}
-                    alt=${opt.image.alt || opt.label}
-                    loading="lazy"
-                    onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(apiUrl("/" + opt.image.src.replace(/^\/+/, "")), opt.image.alt || opt.label); }}
-                  />
-                  <div className="chat-direction-image-caption">
-                    Layout reference · type inside the image is from the library source, not the chosen face above
-                  </div>
-                </div>
-              `}
+              ${(() => {
+                // Multi-axis path: render a strip with one captioned thumbnail
+                // per axis (shell · style · aesthetic). Order is forced even
+                // when the agent emits them out of order. Legacy single-image
+                // emissions fall through to the back-compat path below.
+                // Strip render order: shell · style · aesthetic · photo · illust.
+                // Photo / illust thumbnails appear only when the option's picks
+                // resolve to a photography / illustration decisionTree hit AND
+                // the corresponding orchestrator gate is open AND the library
+                // PNG exists (see prototype/step-neg1-register.md).
+                const AXIS_ORDER = ["shell", "style", "aesthetic", "photo", "illust"];
+                const AXIS_LABEL = { shell: "Shell", style: "Style", aesthetic: "Aesthetic", photo: "Photo", illust: "Illust" };
+                const imgs = Array.isArray(opt.images) ? opt.images.filter(im => im && im.src) : [];
+                const haveAxes = imgs.some(im => im.axis);
+                if (imgs.length > 1 && haveAxes) {
+                  const ordered = imgs.slice().sort((a, b) => {
+                    const ai = AXIS_ORDER.indexOf(a.axis); const bi = AXIS_ORDER.indexOf(b.axis);
+                    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+                  });
+                  return html`
+                    <div className="chat-direction-image-strip" data-count=${ordered.length}>
+                      ${ordered.map((im, i) => html`
+                        <div className="chat-direction-image-cell" key=${i}>
+                          <img
+                            className="chat-direction-image"
+                            src=${apiUrl("/" + im.src.replace(/^\/+/, ""))}
+                            alt=${im.alt || (im.axis ? AXIS_LABEL[im.axis] : "") || opt.label}
+                            loading="lazy"
+                            onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(apiUrl("/" + im.src.replace(/^\/+/, "")), im.alt || opt.label); }}
+                          />
+                          <div className="chat-direction-image-axis-label">
+                            ${im.axis ? AXIS_LABEL[im.axis] || im.axis : "Reference"}
+                          </div>
+                        </div>
+                      `)}
+                    </div>
+                    <div className="chat-direction-image-caption">
+                      Layout reference · type inside the image is from the library source, not the chosen face above
+                    </div>
+                  `;
+                }
+                // Back-compat: pre-existing single-image emissions still render
+                // the way they always did.
+                if (opt.image?.src) {
+                  return html`
+                    <div className="chat-direction-image-wrap">
+                      <img
+                        className="chat-direction-image"
+                        src=${apiUrl("/" + opt.image.src.replace(/^\/+/, ""))}
+                        alt=${opt.image.alt || opt.label}
+                        loading="lazy"
+                        onClick=${(e) => { e.stopPropagation(); dispatchChatImageZoom(apiUrl("/" + opt.image.src.replace(/^\/+/, "")), opt.image.alt || opt.label); }}
+                      />
+                      <div className="chat-direction-image-caption">
+                        Layout reference · type inside the image is from the library source, not the chosen face above
+                      </div>
+                    </div>
+                  `;
+                }
+                return null;
+              })()}
               ${opt.badge && html`<div className="chat-direction-badge"><span className="chat-direction-badge-dot">◉</span> ${opt.badge}</div>`}
               <div className="chat-direction-meta">
                 <div className="chat-direction-label">
@@ -13537,9 +13600,11 @@ function SystemLanding() {
   // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
   const [caps, setCaps]         = useState(null);
   const [orchestratorsData, setOrchestratorsData] = useState(null);
-  // v3.6 — prototype catalog. Cheap GET; the daemon walks INSTALL_ROOT/prototype/
-  // each call so newly-dropped sample images and edited frontmatter show up
-  // without restarting the server.
+  // v3.6 — design library catalog. Cheap GET; the daemon walks
+  // INSTALL_ROOT/design-library/ each call so newly-dropped sample images
+  // and edited frontmatter show up without restarting the server. (Endpoint
+  // name `/__prototype_catalog` is kept for compatibility — the catalog
+  // sources from design-library/, not from the prototype/ skill-detail folder.)
   const [protoCatalog, setProtoCatalog] = useState(null);
   useEffect(() => {
     fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
@@ -13553,8 +13618,8 @@ function SystemLanding() {
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "skills",     label: "Skills",     count: skills.length,
       hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
-    { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 119,
-      hint: "Shells / styles / aesthetics / recipes — the prototype.md visual catalog" },
+    { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
+      hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
     { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 63,
       hint: "Every .claude/agents/*.md — drawers, lenses, orchestrators, cross-cutting" },
     { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
@@ -13905,16 +13970,20 @@ function CcSkillCard({ skill: sk, reload }) {
 
 
 // ─── PrototypeCatalogLanding ─────────────────────────────────────────────
-// v3.6 — The prototype.md design library, rendered as a browsable catalog.
+// v3.6 — The PROTOTYPE.md-backed design library, rendered as a browsable catalog.
 //
 // What this surface is. Woven prototypes commit a "genre" — a shell + style +
 // aesthetic + voice tuple — before any drawing happens (see PROTOTYPE.md
 // §Step zero). The detail vocabulary for every choice lives one file per
-// option under INSTALL_ROOT/prototype/. Until now those files were only
+// option under INSTALL_ROOT/design-library/. Until now those files were only
 // readable when an agent loaded them mid-build; the user couldn't browse
 // the menu. This component fixes that: the user opens the System tab,
 // switches to "Design library", and scans every shell / style / aesthetic /
-// recipe / scene / step the workspace ships with.
+// recipe / photography / illustration / material the workspace ships with.
+// (Skill-detail files — step-*, scene-addendum-details, gallery-html,
+// demo-dock, raster-requirements, preflight-checklist, woven-repo-conventions,
+// slot-annotations — live in INSTALL_ROOT/prototype/ NOT in design-library/;
+// they describe HOW to draw, not WHAT, and are excluded from this catalog.)
 //
 // Sample images. Each genre can attach 0..N sample images via optional
 // YAML frontmatter (`images: [{src, reason}, ...]`). The reason is the
@@ -13961,14 +14030,18 @@ function PrototypeCatalogLanding({ data }) {
   return html`
     <div className="ref-root">
       <div className="ref-header">
-        <div className="ref-header-title">${total} detail file${total === 1 ? "" : "s"} in the design library</div>
+        <div className="ref-header-title">${total} library entr${total === 1 ? "y" : "ies"} in the design library</div>
         <div className="ref-header-meta">
-          Every shell, style, aesthetic, and recipe a prototype can commit to — the four visual axes.
-          Browse before you pick a direction. Each entry can carry sample images that become reference
-          frames once a project commits — drop a <code>${"<slug>-1.png"}</code> into <code>prototype/</code>
-          and add it to the file's frontmatter under <code>images:</code> with a reason. (Workflow phases
-          and the scene-based addendum live in PROTOTYPE.md directly — they describe <em>how</em> to
-          draw, not what.)
+          Every shell, style, aesthetic, recipe, photography style, illustration style, and material a
+          prototype can commit to — the seven visual axes. Browse before you pick a direction. Each entry
+          can carry sample images that become reference frames once a project commits — drop a
+          <code>${"<slug>-1.png"}</code> into <code>design-library/</code> and add it to the file's
+          frontmatter under <code>images:</code> with a reason. (Skill-detail files —
+          <code>step-*</code>, <code>scene-addendum-details</code>, <code>gallery-html</code>,
+          <code>demo-dock</code>, <code>raster-requirements</code>, <code>preflight-checklist</code>,
+          <code>woven-repo-conventions</code>, <code>slot-annotations</code> — live in
+          <code>prototype/</code> and describe <em>how</em> to draw, not what; they're excluded from
+          this catalog.)
         </div>
         ${data.note && html`<div className="proto-catalog-note">${data.note}</div>`}
       </div>

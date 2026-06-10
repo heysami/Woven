@@ -5059,14 +5059,19 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Protocol docs (shared).
         if parts[:1] == ["docs"] or parts in (["AGENTS.md"], ["PROTOTYPE.md"]):
             return os.path.join(INSTALL_ROOT, *parts)
-        # Prototype detail library (shared, read-only). Per-genre detail .md
-        # files + per-genre sample image references for the landing System
-        # tab's catalog. The folder is committed at INSTALL_ROOT/prototype/
-        # next to PROTOTYPE.md; routing it here means `<img src="/prototype/
-        # foo.png">` from the landing works the same in workspace and
-        # single-project modes — without it the path would resolve under
-        # whichever project happens to load first.
-        if parts[:1] == ["prototype"]:
+        # Design library (shared, read-only). Per-shell / per-style /
+        # per-aesthetic / per-recipe / per-photo / per-illust / per-material
+        # detail .md files + per-entry sample image references for the
+        # landing System tab's catalog. The folder is committed at
+        # INSTALL_ROOT/design-library/ next to PROTOTYPE.md; routing it here
+        # means `<img src="/design-library/foo.png">` from the landing works
+        # the same in workspace and single-project modes — without it the
+        # path would resolve under whichever project happens to load first.
+        # Skill-detail files (step-*, scene-addendum-details, gallery-html,
+        # demo-dock, raster-requirements, preflight-checklist,
+        # woven-repo-conventions, slot-annotations) live in INSTALL_ROOT/
+        # prototype/ — routed by the next clause.
+        if parts[:1] == ["design-library"] or parts[:1] == ["prototype"]:
             return os.path.join(INSTALL_ROOT, *parts)
         # Per-project sources + per-project docs (DESIGN.md, NOTES.md,
         # prototype.json, MERGES.md, FORK_REQUEST.md, edits.json, ...).
@@ -11804,9 +11809,10 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Prototype detail catalog ─────────────────────────────────────────
     #
-    # GET /__prototype_catalog — list every detail .md file under
-    # INSTALL_ROOT/prototype/, grouped by category prefix (shell- / style- /
-    # aesthetic- / recipe- / scene- / step-). Each entry carries:
+    # GET /__prototype_catalog — list every library .md file under
+    # INSTALL_ROOT/design-library/, grouped by category prefix
+    # (shell- / style- / aesthetic- / recipe- / photo- / illust- / material-).
+    # Each entry carries:
     #   {file, category, title, summary, images:[{src, reason}], path}
     #
     # The landing System tab renders this so the user can browse the design
@@ -11833,23 +11839,24 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   # Bento grid shell
     #   ...
     #
-    # `src` may be a bare filename (resolved under /prototype/) or a path
-    # relative to /prototype/. Images that don't exist on disk are still
-    # surfaced — the UI shows a placeholder until the user drops in the
-    # real file. This is intentional: the user adds sample images
+    # `src` may be a bare filename (resolved under /design-library/) or a path
+    # relative to /design-library/. Images that don't exist on disk are
+    # still surfaced — the UI shows a placeholder until the user drops in
+    # the real file. This is intentional: the user adds sample images
     # incrementally and the catalog has to keep working in the meantime.
 
-    # Only the four visual axes are catalog-worthy: shell + style + aesthetic
-    # + recipe. These are WHAT to draw — each carries a vocabulary the user
-    # can adopt and sample images can reference.
+    # Catalog-worthy categories: shell + style + aesthetic + recipe + photo
+    # + illust + material. Each carries a vocabulary the user can adopt and
+    # sample images can reference.
     #
-    # The `step-*.md` files (workflow phases — stack, tokens, layout,
-    # optical, components, content, graphics, motion) describe HOW to draw,
-    # not what; they're playbook chapters and attaching reference images
-    # to them is meaningless. The scene addendum is a single carve-out doc
-    # for the 3D/maps/shaders branch. Both are still readable through
-    # PROTOTYPE.md but are deliberately hidden from the catalog so the
-    # Design library reads as a clean visual menu.
+    # Skill-detail files (step-*, scene-addendum-details, gallery-html,
+    # demo-dock, raster-requirements, preflight-checklist, woven-repo-
+    # conventions, slot-annotations) live in INSTALL_ROOT/prototype/, NOT
+    # in design-library/ — they describe HOW to draw, not what. They're
+    # still readable as PROTOTYPE.md detail files but are not surfaced in
+    # the Design library catalog. The legacy _PROTOTYPE_HIDDEN_PREFIXES
+    # belt-and-braces filter below catches any that accidentally land in
+    # design-library/.
     _PROTOTYPE_CATEGORIES = (
         ("shell",     "Shells",       "Page-level layout chassis — where things sit before any styling is applied."),
         ("style",     "Styles",       "Surface treatment — color, type, hairlines, shadows, radii."),
@@ -11972,7 +11979,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _prototype_catalog(self):
         """GET /__prototype_catalog — emit the design library shipped with
-        this repo (INSTALL_ROOT/prototype/). Returned shape:
+        this repo (INSTALL_ROOT/design-library/). Returned shape:
             {
               groups: [
                 {key, label, description, items: [{file, slug, title, summary, images:[{src, reason, exists}]}]}
@@ -11984,7 +11991,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         The UI surfaces this in the System tab so the user can browse
         what shells / aesthetics / recipes / styles / scenes / steps are
         available, and add sample images per detail file over time."""
-        proto_dir = os.path.join(INSTALL_ROOT, "prototype")
+        proto_dir = os.path.join(INSTALL_ROOT, "design-library")
         groups_by_key = {}
         for key, label, desc in self._PROTOTYPE_CATEGORIES:
             groups_by_key[key] = {"key": key, "label": label, "description": desc, "items": []}
@@ -12015,10 +12022,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     src = (img.get("src") or "").strip()
                     if not src:
                         continue
-                    # Resolve relative `foo.png` to /prototype/foo.png; leave
-                    # explicit absolute / project-relative paths alone.
+                    # Resolve relative `foo.png` to /design-library/foo.png;
+                    # leave explicit absolute / project-relative paths alone.
                     if "/" not in src:
-                        rel = "prototype/" + src
+                        rel = "design-library/" + src
                     else:
                         rel = src.lstrip("/")
                     on_disk = os.path.isfile(os.path.join(INSTALL_ROOT, rel))
@@ -12033,7 +12040,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "title":   parsed["title"] or slug,
                     "summary": parsed["summary"],
                     "images":  images,
-                    "path":    "prototype/" + name,
+                    "path":    "design-library/" + name,
                 }
                 bucket = groups_by_key.get(cat, unknown)
                 bucket["items"].append(item)

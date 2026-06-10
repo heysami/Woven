@@ -42,14 +42,14 @@ priorVerdicts:      []
 
 ## 2. Read the per-entry source file
 
-`prototype/material-<materialId>.md` IS the source of truth — YAML frontmatter + markdown body with prose physical-behavior sections + a YAML codeblock holding the `implementationStrategies` (CSS / SVG / WebGL / raster / video) preserved verbatim.
+`design-library/material-<materialId>.md` IS the source of truth — YAML frontmatter + markdown body with prose physical-behavior sections + a YAML codeblock holding the `implementationStrategies` (CSS / SVG / WebGL / raster / video) preserved verbatim.
 
 ```bash
-cat "$TH_PROJECT_ROOT/prototype/material-<materialId>.md" \
-  || cat "$TH_PROTOCOL_ROOT/prototype/material-<materialId>.md"
+cat "$TH_PROJECT_ROOT/design-library/material-<materialId>.md" \
+  || cat "$TH_PROTOCOL_ROOT/design-library/material-<materialId>.md"
 ```
 
-If the file is missing → `runStatus: error` with `runError: "prototype/material-<materialId>.md not found"`. No library file fallback.
+If the file is missing → `runStatus: error` with `runError: "design-library/material-<materialId>.md not found"`. No library file fallback.
 
 The file is richer than photo/illust per-entry files (~3-5 KB) because materials ship CSS + SVG filter + GLSL + raster + video implementation strategies. Extract:
 

@@ -175,9 +175,9 @@ Some orchestrators carry a curated reference — a body of structured knowledge 
 
 | Orchestrator | Library (full prose) | Index (structured lookup) | Per-entry detail |
 |---|---|---|---|
-| photography-orchestrator | `docs/research/photography-library.md` (13K words, 42 styles) | `docs/research/photography-library.index.json` (32 KB) | `prototype/photo-<styleId>.md` (×42) |
-| illustration-orchestrator | `docs/research/illustration-library.md` (17K words, 108 styles) | `docs/research/illustration-library.index.json` (84 KB) | `prototype/illust-<styleId>.md` (×108) |
-| material-orchestrator | `docs/research/material-library.md` (16K words, 78 materials) | `docs/research/material-library.index.json` (60 KB) | `prototype/material-<materialId>.md` (×78) |
+| photography-orchestrator | `docs/research/photography-library.md` (13K words, 42 styles) | `docs/research/photography-library.index.json` (32 KB) | `design-library/photo-<styleId>.md` (×42) |
+| illustration-orchestrator | `docs/research/illustration-library.md` (17K words, 108 styles) | `docs/research/illustration-library.index.json` (84 KB) | `design-library/illust-<styleId>.md` (×108) |
+| material-orchestrator | `docs/research/material-library.md` (16K words, 78 materials) | `docs/research/material-library.index.json` (60 KB) | `design-library/material-<materialId>.md` (×78) |
 
 The three-tier layout solves a real problem: a library at 15K+ words is too expensive to read once per slot, and orchestrators routinely dispatch against pages with 10–30 slots. Reading the full library every dispatch would burn 300K+ context tokens before any work begins. The index-first / sed-slice pattern drops per-slot cost by ~95%.
 
@@ -195,7 +195,7 @@ The primer is read-once-per-session reference. Not in the dispatch hot-path.
 
 **2. Per-entry source files — `prototype/<prefix>-<entryId>.md`**
 
-**THIS IS THE SOURCE OF TRUTH for each entry.** Hand-edited, one file per entry, ~1-5KB each. YAML frontmatter for structured fields + markdown body for prose. Same model as `prototype/style-glassmorphism.md` and `prototype/aesthetic-vaporwave.md`.
+**THIS IS THE SOURCE OF TRUTH for each entry.** Hand-edited, one file per entry, ~1-5KB each. YAML frontmatter for structured fields + markdown body for prose. Same model as `design-library/style-glassmorphism.md` and `design-library/aesthetic-vaporwave.md`.
 
 File structure:
 

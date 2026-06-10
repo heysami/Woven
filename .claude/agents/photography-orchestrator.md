@@ -19,7 +19,7 @@ cat "$TH_PROTOCOL_ROOT/docs/research/photography-library.index.json" \
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 ```
 
-**The library file is now a primer only.** `docs/research/photography-library.md` carries the prose principles (§1 prompting fundamentals, §3 decision-tree prose, §4 universal negatives, §5 implementation notes) — ~2K words, no per-entry data. **Per-entry source files live at `prototype/photo-<styleId>.md`** — that's where each style is hand-edited. The drawer reads the per-entry file directly at dispatch; you (the orchestrator) only need the index to pick which entry.
+**The library file is now a primer only.** `docs/research/photography-library.md` carries the prose principles (§1 prompting fundamentals, §3 decision-tree prose, §4 universal negatives, §5 implementation notes) — ~2K words, no per-entry data. **Per-entry source files live at `design-library/photo-<styleId>.md`** — that's where each style is hand-edited. The drawer reads the per-entry file directly at dispatch; you (the orchestrator) only need the index to pick which entry.
 
 **The index is structured for orchestrator consumption.** Schema (declared in the index's `version: "1.0"`):
 

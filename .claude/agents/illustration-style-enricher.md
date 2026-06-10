@@ -57,16 +57,16 @@ For register-chaining (flat-vector mascot in watercolor scene, clay-3D hero with
 
 ## 3. Read the per-entry source file + compose the prompt
 
-`prototype/illust-<styleId>.md` IS the source of truth — YAML frontmatter + markdown body. Same structure as `photography-style-enricher.md §3`.
+`design-library/illust-<styleId>.md` IS the source of truth — YAML frontmatter + markdown body. Same structure as `photography-style-enricher.md §3`.
 
 ```bash
-cat "$TH_PROJECT_ROOT/prototype/illust-<styleId>.md" \
-  || cat "$TH_PROTOCOL_ROOT/prototype/illust-<styleId>.md"
+cat "$TH_PROJECT_ROOT/design-library/illust-<styleId>.md" \
+  || cat "$TH_PROTOCOL_ROOT/design-library/illust-<styleId>.md"
 ```
 
 Parse the frontmatter for `styleId` / `category` / `role` / `notForUseWhen` / `pairsPrototypes`. Read `## Example prompt template` for the paste-ready template. Read `## Prompt keywords` for `**Primary**` / `**Material**` / `**Line**` / `**Color**` / `**Style**` / `**Avoid**` groups.
 
-If the file is missing → `runStatus: error` with `runError: "prototype/illust-<styleId>.md not found"`. No library file fallback — the per-entry file is the source.
+If the file is missing → `runStatus: error` with `runError: "design-library/illust-<styleId>.md not found"`. No library file fallback — the per-entry file is the source.
 
 Compose `promptForRasterForeground` by:
 
