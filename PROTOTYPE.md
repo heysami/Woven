@@ -31,49 +31,290 @@ All five are *inherited from a single chosen genre*. You don't invent any of the
 
 ---
 
-## Step -1 — Always confirm direction before building (one carve-out: existing DS)
+## Step -1 — Always stop and ask before committing direction (guaranteed, outside the four carve-outs)
 
-**Default: ALWAYS pause for a one-message confirmation before committing the genre.** The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large. You only skip the confirmation in the single carve-out below.
+**Default: STOP. Surface the direction-pick UI to the user BEFORE choosing a genre.** Do not infer. Do not pre-commit. Do not produce a "recap" that silently locks one and asks for yes/no. Auto mode's "make the reasonable call and keep going" guidance is **explicitly overridden here** — direction is taste, taste is the user's decision, and a silent pick is the single most common cause of "subtly off" output. The cost of one short message is small; the cost of building the wrong-vibe prototype is large.
 
-### The carve-out — existing design system
+This rule is modelled on the open-design (`nexu-io/open-design`) RULE 1 / 5-direction picker discipline: the pick UI applies *even when the brief looks complete* — do not justify skipping with "the brief is rich enough." Skip only in the four narrow carve-outs below; everything else fires the stop-and-ask.
 
-**Check first, before anything else.** If the project already has a committed design system, the visual language is locked and you proceed silently to build. Detection:
+### Carve-outs that skip stop-and-ask (and only these)
 
-- A `design-systems/<id>/` folder exists at the project root (the canonical Woven location — see §12), OR
-- The brief explicitly names a DS the agent has access to ("use the LXP design system", "extend the PXP DS"), OR
-- The user dropped a brand spec / token file / DS reference into the project tree.
+1. **Active design system detected.** A `design-systems/<id>/` folder exists at the project root (the canonical Woven location — see §12), OR the brief names a DS the agent has access to ("use the LXP DS"), OR the user dropped a brand spec / tokens file / DS reference into the project tree. → Read the DS's `styles.css` + `gallery.html`, inherit vocabulary, skip to Step two. The genre commit IS the DS commit.
+2. **In-place edit of an existing prototype.** The user is replying inside an active design with a tweak ("make the headline bigger", "swap slide 3 image", "add a feature row", "tighten the spacing"). → Apply the tweak, no direction question.
+3. **Explicit override in the current turn.** The user typed verbatim "just build", "skip questions", "no questions, go", "you pick", "your call", or an obvious equivalent. → Pick the closest-shipped-product genre yourself, commit it in a one-line comment, build. The user delegated; honor it.
+4. **Reply to your own direction question.** The user's current message answers the three-options ask you just emitted ("option 2", "the bento one", "yes do that", "1 but warmer"). → Apply the pick (and any small swap), build, no re-confirm.
 
-When detected, do NOT ask. Read the DS's `styles.css` + `gallery.html`, inherit its vocabulary, and skip to Step two (shell). The genre commit IS the DS commit.
+### Triggers that REQUIRE the stop-and-ask (any one fires)
 
-### Otherwise — confirm, regardless of how rich the brief is
+Fire the UI whenever none of the four carve-outs apply AND at least one of these is true. In practice this means almost every new-prototype turn.
 
-Even when the brief is non-minimal (palette named, screens listed, reference product cited, >300 chars of texture), you still surface ONE recap message before building. Shape:
+**Trigger A — No DS + new prototype.** The default. If you're being asked to start a prototype from scratch and no design system is committed, fire.
+
+**Trigger B — Vague or incomplete direction.** At least one of these is missing or hand-wavy:
+- **Subject** (what is the prototype OF?)
+- **Audience** (who is looking at it?)
+- **Activity** (what do they DO here — read / scan / decide / configure / browse?)
+- **Screens** (which 2–6 views are being drawn?)
+- **Tone / temperature / reference product**
+
+Specifying *some* of these doesn't satisfy the trigger — fire as soon as one core axis is missing. Picking a "tone" without an audience fires. Listing screens without a subject fires. The whole point is that the model fills these gaps too cheaply on its own; the trigger is what stops the silent fill.
+
+**Trigger C — Direction ↔ audience/objective mismatch signal.** The brief specifies a direction or aesthetic, AND that pick may not fit the stated audience or objective. Red-flag combinations that fire this trigger:
+- Kids / family / consumer-wellness brief + brutalist / cyberpunk / dark-academia / dense-mono picks
+- Finance / enterprise / institutional brief + playful / illustrative / kawaii / Y2K-loud picks
+- Audience that skims (mainstream consumers) + dense-mono / agate-broadsheet / dashboard shells
+- Audience with taste-rigor (designers, luxury buyers, editorial readers) + median-SaaS / corporate-memphis / generic-claymorphism picks
+- Read-deeply activity + bento-grid / dashboard / canvas-floating shells
+- Decide-one-thing activity + masonry / infinite-canvas / cluttercore picks
+- A single named reference the brief internally contradicts ("Bloomberg-dense but warm and pastel")
+
+When you spot a mismatch, do NOT silently override the user's direction and do NOT silently honor it. Surface the tension as part of the ask, and make sure one of the three options is the user's stated direction and one is the alternative the audience/objective points to — so they can see both.
+
+### Image-gen availability check — run once before composing the UI
+
+Before composing the three-options UI, detect whether an image-generation model is wired into this session. The result `imageGen ∈ {wired, missing}` drives three UI decisions below: whether to include the photo/illust register strip, whether to flag raster-dependent options as risky, and whether to offer the `+draft` refinement option.
+
+Positive signals (any one = `wired`):
+1. **A wired image-gen skill.** Check `.claude/agents/*.manifest.json` files for any agent whose `skills` array includes `"generate-image"` (or `"raster-photo"`, `"raster-foreground"`), AND the referenced skill resolves to an actually-callable provider — i.e. the available-skills system reminder in this session lists an image-gen skill (names matching `*image-gen*`, `*generate-image*`, `*dalle*`, `*imagen*`, `*flux*`, `*midjourney*`, `*stable-diffusion*`), OR a loaded MCP exposes image-gen tools.
+2. **Project-level explicit enable.** Active project's `prototype.json` has `imageGen.enabled: true` (or the legacy `capabilities.imageGen: true`).
+3. **Native image output.** The session's model has native image generation listed in its capabilities.
+
+No positive signal → `imageGen = missing`. When in doubt, treat as missing — the cost of falsely claiming image-gen is wired is a user confusion downstream; the cost of falsely claiming it's missing is one extra line of text.
+
+### The stop-and-ask UI — every option ships with rough visuals
+
+When any trigger fires, produce **one** message in the shape below, then **STOP**. No tool calls beyond the per-option recolor below, no detail-file reads for the picked option, no genre commit, no `<artifact>`, no TodoWrite. Wait for the user to reply.
+
+Each option carries three rough visuals so the user picks with a mental image in hand, not from a paragraph of prose:
+
+1. **Palette swatch row** — the 5–6 committed hex tokens for that option, inline.
+2. **Typography sample** — display + body sample using the option's font stack, each with the actual sample string the user will see in the prototype (a real headline candidate from the brief, not "Aa Bb Cc").
+3. **Library-image preview** — ONE reference image from `prototype/<axisFile>-ui.png` (or `-isolated.png`) recoloured into the option's palette so the colours land. Picked per the *Which library image* rule below.
+
+The palette and typography pieces use the chat surface's existing hex / type rendering — emit the data inline in the shape below and the chat layer renders chips and samples. The image is a recoloured PNG written to a per-turn cache path and referenced via a standard markdown image.
 
 ```
-Here's what I'm reading from your brief:
+I want to lock direction before drawing — taste decisions belong to you, not me.
 
-- Genre: <one-line genre commit — e.g. "Bloomberg-dense + scientific-infra marketing">
-- Shell: <best-match shell from §Step two — e.g. "three-column app">
-- Style: <style detail file — e.g. "dense-mono-dark">
-- Aesthetic: <aesthetic detail file or "none" — e.g. "cyberpunk muted">
-- Vibe in one word: <e.g. "ambitious">
-- Screens I'll draw: <2–6 named views>
+[INCLUDE ONLY IF imageGen = missing:]
+> ⚠ **No image-generation model is wired into this session.** The palette, type
+> samples, and preview image below are produced **mechanically** — the recolor is
+> deterministic OKLab math (`scripts/prototype-recolor.py`), the type sample is
+> just the brief's candidate strings set in the option's font stack, nothing is
+> drawn by an LLM. Options that depend on raster imagery (photo, illustration,
+> raster cutouts, pixel sprites, anime portraits) **cannot be fully realised in
+> the final build** without an image-gen route — they are flagged `⚠ raster-risk`
+> below. If you need a raster-dependent vibe, wire image generation first, or
+> pick a CSS/SVG-realisable option.
 
-Confirm to build, or tell me what to swap.
+**What I'm reading from your brief:**
+- Subject: <one line, or "unclear — please name">
+- Audience: <one line, or "unclear">
+- Activity: <one line, or "unclear">
+- Screens I'd draw: <2–6 named views, or "unclear">
+
+[INCLUDE ONLY IF Trigger C fired:]
+**Tension I'm seeing:** <one short paragraph naming the mismatch and what it implies — e.g. "You named brutalist but the audience is six-year-olds; brutalist is high-friction at that age. Keep brutalist as a deliberate move, or swap to a kids-friendly direction?">
+
+**Three directions — pick one (or describe your own):**
+
+---
+
+**Option 1 — [recipe or ad-hoc combo] (recommended)** [APPEND IF option uses any needs-raster pick AND imageGen=missing: ` ⚠ raster-risk`]
+
+Shell · `shell-X` — [one phrase why]
+Style · `style-Y` — [one phrase why]
+Aesthetic · `aesthetic-Z` or *none* — [one phrase why]
+Vibe · [one word] · Why safest: [one sentence tying it to brief tags]
+
+`◉ auto-preview · no LLM` *(palette, type sample, and image below are mechanically derived — not generated by a model)*
+
+Palette · `#bg` · `#surface` · `#fg` · `#muted` · `#border` · `#accent`
+Type · **Display** "[real candidate headline from brief]" — Iowan Old Style, Charter, Georgia, serif
+       **Body** "[real candidate body sentence from brief]" — system sans
+
+Preview · ![option 1 preview](.prototype-options/option-1.png) *(recoloured from `prototype/<picked-library>.png`)*
+
+[INCLUDE per the Photo + illust register strip rules below, AND ONLY IF imageGen = wired:]
+Photo register · `<styleId>` — [one-line mood] · refs: [named refs]
+Illust register · `<styleId>` — [one-line style] · refs: [named refs]
+
+[INCLUDE IF option uses any needs-raster pick AND imageGen = missing:]
+⚠ **Raster-risk:** this direction calls for [photography / illustration / pixel sprites / anime portraits / scrapbook cutouts]. With no image-gen wired, the final prototype will fall back to the substitution policy in the Raster requirements section — you may end up in a different (raster-free) genre than this preview suggests.
+
+---
+
+**Option 2 — [genuinely different direction]** [APPEND ` ⚠ raster-risk` if applicable]
+
+[same shape — Shell / Style / Aesthetic / Vibe / `◉ auto-preview · no LLM` / Palette / Type / Preview / register strip if wired / raster-risk note if applicable]
+Trade-off · [what you gain vs option 1, what you lose]
+
+---
+
+**Option 3 — [third distinct direction]** [APPEND ` ⚠ raster-risk` if applicable]
+
+[same shape]
+Trade-off · [what's different]
+
+---
+
+Pick: 1, 2, 3, "option N + change W", "you pick", or describe a different direction.
+
+[INCLUDE ONLY IF imageGen = wired:]
+
+**Want real samples before you commit?** Reply `<N> + draft` (e.g. `2 + draft`) and I'll spend one extra turn generating 2–3 actual mockup frames in that direction using the wired image-gen model, then re-show the option with the real samples instead of the recolour. The direction still isn't locked until you confirm after seeing the drafts.
 ```
 
-The recap is not the six-axis discovery form. It's a *commit-summary*: what you already inferred, presented for a yes/no/swap. It costs one short turn and removes the entire "subtly off" failure mode.
+After this message: **stop the turn.** Do not pre-Read the picked option's detail files. Do not pre-scaffold. Do not narrate "I'll wait." The next user message is your input.
 
-**Two follow-up behaviours after the recap:**
+### The `◉ auto-preview · no LLM` badge — what it covers and why
 
-1. **User confirms** ("yes", "go", "looks good") → build immediately, no further questions.
-2. **User swaps one axis** ("yes but make it warmer", "swap shell to bento") → apply the swap, build, no second confirmation.
+The badge sits on every option's preview block to be honest about provenance:
 
-Only re-confirm if the swap is large enough to break the whole vibe commit (e.g. user pivots from "finance dashboard" to "kids' app"). Otherwise: apply and go.
+- **Palette swatches** — the 5–6 hex tokens are *committed* by the agent's axis pick (recipe palette, or shell+style+aesthetic synthesis), then rendered as chips by the chat layer. The hex values are choices the agent makes; the rendering is mechanical.
+- **Type sample** — the candidate strings come from the brief, the font stack comes from the picked style's detail file. No model generates the typography image.
+- **Library preview image** — the source is `prototype/<axisFile>-ui.png` (a curated reference). The recolour is `scripts/prototype-recolor.py` (pure OKLab/RBF math, no model). The output image is a deterministic colour swap of a baked reference, NOT a fresh generation.
 
-### When the brief IS minimal
+The badge prevents the user from over-trusting the preview as "this is what the prototype will look like." It signals: *this is a structural sketch in the right palette, not a render.* If they want a real render, that's what the `+ draft` option below the cards is for. Keep the badge inline, exactly as `◉ auto-preview · no LLM` (the disc glyph + the words) so the chat renderer can chip it consistently.
 
-If the prompt is a one-liner with no genre, no palette, no screens, no characters ("make me a dashboard", "build a marketing page") — then yes, run the six-axis discovery per Step zero AND propose the 3 options per Step one. The recap above does not replace discovery; it sits on top of the silent-commit case the old skip-rule used to cover.
+### The `+ draft` refinement loop (only when imageGen = wired)
+
+When the user replies with `<N> + draft` (or `option N, generate samples`, or any obvious equivalent that names an option AND requests image-gen):
+
+1. Stay in the stop-and-ask phase — **do NOT commit the genre yet, do NOT write any source files.**
+2. Use the wired image-gen skill (the one detected during the image-gen availability check — typically a `generate-image` skill, or an image-gen MCP, or native model image output). Compose a prompt from the picked option's:
+   - Shell silhouette (a one-line layout description)
+   - Style detail file's prompt-friendly mood
+   - Aesthetic detail file's named references
+   - Palette (passed as hex tokens in the prompt)
+   - If a photo register was attached: pull `prompt_keywords` from `prototype/photo-<styleId>.md`
+   - If an illust register was attached: pull from `prototype/illust-<styleId>.md`
+3. Generate **2–3 frames** (one hero, one secondary view, optionally one detail) at small thumbnail size (≤768px longest side) so the cost stays low. Save under `.prototype-options/option-<N>-draft-<k>.png`.
+4. Re-emit ONLY the picked option's card with the real generated images replacing the recoloured preview, the `◉ auto-preview · no LLM` badge **removed from the preview row** (it WAS generated this time), and a fresh prompt: `Lock this direction, pick a different option (1/2/3), or describe a swap.`
+5. Still wait for user confirmation. The genre is committed only after the user says yes / 1 / lock it / build / similar after seeing the draft.
+
+If the image-gen call fails (network error, quota, content filter), fall back gracefully: re-emit the option card with the original recoloured preview, add a one-line "*image-gen attempted but failed: [short reason]; showing the mechanical preview instead*", and ask the user whether to retry or pick a different option. Do not silently commit the genre on image-gen failure.
+
+### Which library image to preview per option (axis-decisiveness)
+
+For each option, pick **one** library image — the one belonging to the **most-decisive axis** for that option. Decisiveness order: aesthetic > style > shell. The rule is "if the lower axis already carries the vibe, do not stack a higher-axis image on top of it":
+
+- **Aesthetic named** (not *none*) → use `prototype/aesthetic-<id>-ui.png`. The aesthetic image already implies a shell silhouette and a style surface, so stacking shell/style previews on top is noise.
+- **Aesthetic is none, style is the decisive call** (oversized-neo-grotesque, dense-mono-dark, skeuomorphism, etc.) → use `prototype/style-<id>-ui.png`.
+- **Aesthetic is none AND style is the conventional pairing for the shell** (mobile-app + sf-pro-ios, three-column-app + restrained-hairline) → use `prototype/shell-<id>-ui.png`. The shell silhouette is what changes most across options.
+- **Recipe was the pick** → prefer `prototype/recipe-<id>-ui.png` (it bundles all three axes coherently).
+- **Subject-heavy brief** (a portfolio, a brand mark, a mascot is central) → swap `-ui.png` for `-isolated.png` from the same axis when the isolated subject reads as more representative than the UI render.
+
+If the chosen file doesn't exist on disk (`ls prototype/<file>` to confirm before the recolor call), fall back to the next axis down. Never invent a path.
+
+### Recoloring the library image to the option's palette
+
+Library images are raster — their baked-in colours won't match each option's committed palette. Recolor each picked library image into the option's hex tokens before embedding, so the preview reads on-vibe instead of off-by-default-purple.
+
+Run **once per option**:
+
+```bash
+python scripts/prototype-recolor.py \
+    prototype/<picked-library-image>.png \
+    .prototype-options/option-<n>.png \
+    --tokens "#bg,#surface,#fg,#muted,#border,#accent"
+```
+
+The wrapper (`scripts/prototype-recolor.py`) extracts the source palette in OKLab, identifies the source accent (highest chroma) and source neutrals (the rest), matches them by lightness to the option's tokens, and writes a smooth perceptual recolor — light areas stay light, dark areas stay dark, only hue/chroma snap. Under the hood it calls `scripts/recolor_palette.py` (Chang-et-al palette-based recoloring, OKLab/OKLCH). Read `scripts/recolor_palette.GUIDE.md` if you need finer control (single-axis edits, chroma scaling, target_rgb mapping).
+
+**Output path convention:** `.prototype-options/option-<n>.png` at the project root. The folder is ephemeral — once the user picks, the build phase ignores it. Don't write outside the project root; don't write into `prototype/` (that's the protocol-mount library and is read-only). If `numpy`/`pillow` aren't available (`python3 -c "import numpy, PIL"` fails), `pip install numpy pillow` first — both are pure-Python and install in seconds. If the recolor still fails for any reason, embed the original library image and add a one-line caption "*preview colors are illustrative — the prototype will use the palette above*"; don't drop the visuals entirely.
+
+### Photography + illustration register strip (per option, only when the direction asks for it)
+
+Recipes / aesthetics / styles that resolve to raster-photo slots (editorial, lookbook, warm-restraint, cottagecore, coastal-grandmother, cream-humanist, serif-warm-paper, etc.) and ones that resolve to illustrated raster slots (maximalism, positivity-kawaii, corporate-memphis, Y2K-memphis-loud, etc.) ship with curated photography / illustration registers the production-time orchestrators would pick. The user picking direction should see THAT pick too — but cheaply, without spawning the orchestrator. Add a small strip under each option's library-image preview when the option's direction maps to a register, and suppress the strip when the orchestrator is toggled off.
+
+**Sourcing — read the prebuilt indexes, never the orchestrators:**
+
+```bash
+# Built by scripts/build-library-indexes.py (run after editing prototype/photo-* or prototype/illust-*)
+docs/research/photography-library.index.json    # decisionTree + per-entry summary for the 42 photo styles
+docs/research/illustration-library.index.json   # decisionTree + per-entry summary for the 108 illust styles
+```
+
+Each index's `decisionTree` is keyed by prototype slug (`recipe-warm-restraint`, `style-cream-humanist`, `aesthetic-cottagecore`, `shell-mobile-app`, etc.) and yields `{ default: <styleId>, alternatives: [<styleId>, …] }`. For one option, resolve in this order until you find a hit:
+
+1. `recipe-<id>` (if the option committed a recipe)
+2. `aesthetic-<id>` (if aesthetic ≠ *none*)
+3. `style-<id>`
+4. `shell-<id>`
+
+Take the **default** styleId from the first matched key. If no key matches the option's picks, the option doesn't ship a register strip — that's fine, omit it. Pull the one-line summary and named references from `prototype/photo-<styleId>.md` or `prototype/illust-<styleId>.md` (frontmatter + first ## header).
+
+**Toggle gate — suppress when the orchestrator is off OR image-gen is missing:**
+
+The strip is dropped from every option this turn if **any one** of these is true:
+
+1. **Image-gen missing.** The image-gen availability check above returned `imageGen = missing`. Without a generation route, the photo / illust style would have nowhere to land in the final build, so showing a register would mislead the user. Drop both strips entirely; the missing-image-gen banner at the top of the UI already explains the constraint.
+2. **Orchestrator manifest disabled.** `.claude/agents/photography-orchestrator.manifest.json` → `defaultEnabled: false` drops the photo strip; likewise for `.claude/agents/illustration-orchestrator.manifest.json` and the illust strip.
+3. **Project-level override.** The active project's `prototype.json` → `orchestrators.photography` / `orchestrators.illustration` boolean — when present and `false`, it suppresses regardless of the manifest.
+
+Absent fields = orchestrator default (on). Photo and illust gates are independent — image-gen missing drops BOTH; a single manifest disable drops only its own strip.
+
+**Which strip(s) to include per option — never pile both onto every card:**
+
+- The strip is a *companion* to the library-image preview, not a third visual. Add **at most one** strip per option in the common case.
+- **Photo strip** when the option's direction reads as editorial / lifestyle / lookbook / warm-restraint / longform / luxury-apothecary — i.e. the photo decisionTree returns a default AND no illust hit feels primary.
+- **Illust strip** when the option's direction reads as product-marketing / kids / kawaii / Y2K-memphis-loud / corporate-memphis / maximalism / character-led — i.e. the illust decisionTree returns a default AND the photo hit (if any) is secondary.
+- **Both strips** only when both decisionTrees hit AND the direction genuinely uses both (an editorial site with an illustrated mascot in the masthead). When in doubt, take the photo strip.
+- **No strip** when neither decisionTree has a key matching the option's picks. Restrained-hairline Linear-style and dense-mono-dark Bloomberg-style directions typically fall here — they ship without raster register, and the preview row stays clean.
+
+**Strip shape (inline, single short line per register):**
+
+```
+Photo register · `aesop-apothecary` — warm apothecary still-life, soft daylight, ceramic textures · refs: Aesop product, Toast magazine
+Illust register · `blush-cool-kids` — bold pattern flat-vector with chunky bodies and saturated palette · refs: Irene Falgueras
+```
+
+No raster image is embedded in the strip — only inline text. The chat renderer's hex / type / mention chips handle styling. If you want a colour cue, append the dominant 2–3 hex values pulled from the photo/illust .md's palette / colour-hint section to the end of the line — but don't run the recolor wrapper here; the strip is text-only and cheap.
+
+**Side-by-side compact layout interaction:** when the three options collapse into the single-axis side-by-side table (next section), the photo / illust strip becomes a single row at the bottom of each column — same shape, same gating, same "at most one strip per option" rule.
+
+### Side-by-side compact layout when only one axis varies
+
+If the three options differ on **only one axis** (they share two of three picks — e.g. all are `three-column-app + restrained-hairline + <different aesthetic>`), collapse the repeated axes into a single header and render the three varying picks side-by-side with a double-ended arrow `↔` between them. This makes the comparison sharp instead of forcing the user to diff three repeated paragraphs.
+
+Use this shape (replaces the three full Option cards above when the single-axis condition holds):
+
+```
+**All three share:** Shell · `shell-X` · Style · `style-Y` · Vibe family · [one word]
+
+**Aesthetic varies — pick one:**
+
+| Option 1 — `aesthetic-A` | ↔ | Option 2 — `aesthetic-B` | ↔ | Option 3 — `aesthetic-C` |
+|---|---|---|---|---|
+| [one-phrase why] | | [one-phrase why] | | [one-phrase why] |
+| Palette · `#bg`·`#surface`·`#fg`·`#muted`·`#border`·`#accent` | | Palette · `#…`·`#…`·`#…`·`#…`·`#…`·`#…` | | Palette · `#…`·`#…`·`#…`·`#…`·`#…`·`#…` |
+| Type · Display "[…]" · Body "[…]" | | Type · Display "[…]" · Body "[…]" | | Type · Display "[…]" · Body "[…]" |
+| ![](.prototype-options/option-1.png) | | ![](.prototype-options/option-2.png) | | ![](.prototype-options/option-3.png) |
+| Trade-off · [one phrase] | | Trade-off · [one phrase] | | Trade-off · [one phrase] |
+
+Pick 1, 2, 3, or describe a different aesthetic.
+```
+
+The same compact shape applies when the varying axis is `shell` or `style` instead of `aesthetic` — replace the header label accordingly ("Shell varies — pick one:" / "Style varies — pick one:"). The double-ended arrow `↔` in the column header row signals "these are alternatives along one axis," not "stages of a flow." Keep the arrow literal `↔`; the chat renderer doesn't substitute it.
+
+When the three options differ on **two or three axes**, fall back to the full three-card vertical layout above — side-by-side gets unreadable when each card has a different shell silhouette in its preview.
+
+### Diversity rule for the three options
+
+The three must differ on at least one axis — ideally the aesthetic axis (the taste call). Don't show three flavours of one recipe with only hue varying. Show genuine alternatives, e.g. `mobile-app + claymorphism + positivity-kawaii` vs `mobile-app + doodle + cottagecore` vs `mobile-app + cream-humanist + (none)` — three distinct vibes for the same brief. **When Trigger C fired, one of the three MUST be the brief's stated direction and one MUST be the audience/objective-aligned alternative** — make the trade-off visible.
+
+### When the user replies
+
+- **Numbered pick or "the X one"** → that's the commit. Read the picked option's detail files from `./prototype/`, build. No re-confirm.
+- **Pick + small swap** ("option 2 but warmer", "1 with the bento shell") → apply the swap, build, no re-confirm.
+- **"You pick" / "your call" / "whatever"** → pick option 1 (your recommended), commit it in a one-line comment, build.
+- **Different direction entirely** → re-run the trigger check on the new signal. If still vague or mismatched, ask again. If now coherent, commit and build.
+- **Question back to you** ("what's the difference between 1 and 3?", "which is denser?") → answer their question briefly, then re-point to the three options (don't redraw the whole form).
+
+### What this replaces
+
+The previous Step -1 had a "recap and proceed" path for non-minimal briefs: the model silently pre-committed a genre and presented a recap for yes/no/swap. In practice, users confirmed wrong-vibe picks because the recap read reasonable in isolation, the direction-vs-audience mismatch was never surfaced, and the swap UX implicitly framed the commit as already-decided. **That path is removed.** Every non-carve-out brief now goes through the three-options stop-and-ask above — guaranteed.
 
 ---
 
@@ -203,7 +444,7 @@ Genre selection is decomposed into independent axes — each picked separately, 
 
 **Why three, not one?** Aesthetic is taste. The AI's tag-intersection top-pick is correct most of the time, but the user may want the second-best for reasons not in the brief (their own preference, brand constraints, what they've already tried). Presenting three options surfaces taste-decisions explicitly instead of burying them in a silent AI commit. The recommended pick stays opinionated; the alternatives respect that the user might know something the brief didn't say.
 
-**When to skip the 3-options step:** when Step -1's DS carve-out fires (an existing `design-systems/<id>/` is committed and the visual language is already locked), OR when the brief is extremely specific ("rebuild this exact Bloomberg dashboard at this URL, same shell same style") AND there's only one plausible recipe match. When the brief is rich but no DS exists, the Step -1 recap REPLACES the 3-options step — you've already committed a direction from the brief and surfaced it for confirmation; don't then offer two alternatives the user didn't ask for. Default to asking. The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large.
+**When to skip the 3-options step:** only when one of Step -1's four carve-outs fires — active DS detected, in-place edit, explicit "just build" / "you pick" override, or the user's current message is already a reply to your three-options ask. In every other case (including rich briefs with palette + screens + named reference), Step -1's stop-and-ask is the gate; this Step one workflow is exactly the UI that gate emits. The previous carve-out that let a "rich brief recap" replace the 3-options ask has been removed — it was the silent-commit path that produced wrong-vibe output. Default to asking, guaranteed. The cost of an extra turn is small; the cost of building the wrong-vibe prototype is large.
 
 **Diversity rule for the 3 options:** the three must differ on at least one axis — ideally the aesthetic axis (because that's the taste call). Don't show three options that are all `mobile-app + claymorphism` with only the aesthetic varying by hue. Show genuine alternatives like `mobile-app + claymorphism + positivity-kawaii` vs `mobile-app + doodle + cottagecore` vs `mobile-app + cream-humanist + (none)` — three distinct vibes for the same brief.
 
