@@ -409,17 +409,93 @@ When the three options differ on **two or three axes**, keep the full `<axes>` l
 
 The three must differ on at least one axis — ideally the aesthetic axis (the taste call). Don't show three flavours of one recipe with only hue varying. Show genuine alternatives, e.g. `mobile-app + claymorphism + positivity-kawaii` vs `mobile-app + doodle + cottagecore` vs `mobile-app + cream-humanist + (none)` — three distinct vibes for the same brief. **When Trigger C fired, one of the three MUST be the brief's stated direction and one MUST be the audience/objective-aligned alternative** — make the trade-off visible.
 
-### When the user replies
+### When the user replies — distinguishing the reply shape
 
 The chat posts the user's reply as a normal user message regardless of whether they clicked or typed. Distinguish by prefix:
 
-- **Click on an option button** → next user message starts with `[decision:prototype-direction] <N> — <label>` (the chat's auto-format). That `<N>` is the commit. Read the picked option's detail files from `./prototype/`, build. No re-confirm.
-- **Free-text numbered pick** ("option 2", "go with 2", "the second one") → same as a click: commit, build.
-- **Pick + small swap** ("option 2 but warmer", "1 with the bento shell") → apply the swap, build, no re-confirm.
-- **`<N> + draft`** (when `imageGen = wired`) → the `+ draft` refinement loop in *The `+ draft` refinement loop* section above. Do NOT commit the genre yet.
-- **"You pick" / "your call" / "whatever"** → pick option 1 (your recommended), commit it in a one-line comment, build.
-- **Different direction entirely** ("give me a dark dashboard instead", "make it warmer cream", "I want oversized type") → re-run the trigger check on the new signal. If still vague or mismatched, emit a fresh `<decision-request>` with new options. If now coherent, commit and build.
+- **Click on an option button** → next user message starts with `[decision:prototype-direction] <N> — <label>` (the chat's auto-format). That `<N>` is the commit. Proceed to **Phase A** below.
+- **Free-text numbered pick** ("option 2", "go with 2", "the second one") → same as a click: commit, proceed to Phase A.
+- **Pick + small swap** ("option 2 but warmer", "1 with the bento shell") → start Phase A from the picked option, apply the swap inside Phase A's lock step (override one or two fields, keep the rest), then continue.
+- **`<N> + draft`** (when `imageGen = wired`) → the `+ draft` refinement loop in *The `+ draft` refinement loop* section above. Do NOT enter Phase A yet.
+- **"You pick" / "your call" / "whatever"** → pick option 1 (your recommended), commit it in a one-line comment, proceed to Phase A.
+- **Different direction entirely** ("give me a dark dashboard instead", "make it warmer cream", "I want oversized type") → re-run the trigger check on the new signal. If still vague or mismatched, emit a fresh `<direction-options>` block. If now coherent, build a single-option commit and proceed to Phase A.
 - **Question back to you** ("what's the difference between 1 and 3?", "which is denser?") → answer their question briefly in chat, then leave the existing decision card in place (it's still answerable — don't redraw).
+
+### After the user picks — the full build pipeline (Phases A–F)
+
+**Critical structural rule:** Step -1's stop-and-ask is the FIRST stage of the existing Woven build pipeline, not a self-contained mini-protocol that ends in "write some files." After the pick, the agent MUST execute Phases A → F below in order, integrating with the existing orchestrator fan-out documented in `AGENTS.md` and `docs/agents/subagents/`. Skipping Phases E or improvising inside Phase C is what produced studio's "picked Space Grotesk + JetBrains Mono, built Anton + Space Mono, skipped photography-orchestrator despite picking acid-design (raster-heavy)" failure.
+
+#### Phase A — Lock the contract from the picked `<opt>` (IMMUTABLE through build)
+
+The picked option's child tags are the **immutable contract** for everything downstream. Re-read them from the emitted `<direction-options>` block (they're in your conversation history), and bind them verbatim — no improvisation:
+
+| Picked-opt tag | Locked into | Notes |
+|---|---|---|
+| `<palette>#bg,#surface,#fg,#muted,#border,#accent</palette>` | `:root` CSS variables in `styles.css` | One CSS var per token. Don't invent extra tokens of different hue; derive shades via `oklch()` from THESE. |
+| `<display font="X">` | `--font-display: "X", <sensible fallbacks>;` AND a Google-Fonts `<link>` in every page's `<head>` | If `X` is a system font (Times New Roman, Georgia, Arial, etc.), skip the `<link>` — the family resolves locally. |
+| `<body font="X">` | `--font-body: "X", <sensible fallbacks>;` AND a `<link>` for the family (one combined Google Fonts `<link>` if both display + body are Google). | Same system-font carve-out. |
+| `<axes>Shell: <shell-X> · Style: <style-Y> · Aesthetic: <aesthetic-Z></axes>` | The three detail files to Read in Phase B | These IDs identify exactly which files under `./prototype/` to inherit vocabulary from. |
+| `<vibe>…</vibe>` + `<why>…</why>` + `<label>…</label>` | The genre-commit one-line comment at the top of `styles.css` (or `app.js` line 1) | Captures the WHY for downstream readers. |
+| `<image src="…option-N.png"/>` | (Reference only — do NOT embed the preview PNG in `source/`; it was for the chat preview, not the build.) | Stays in `.prototype-options/` as ephemera. |
+
+**The lock is verbatim, not "inspired by".** If the picked option has `<display font="Space Grotesk">`, the `:root` line is:
+
+```css
+--font-display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+```
+
+NOT `"Anton"`, NOT `"Inter"`, NOT "whatever the agent thinks fits the genre better." The user picked Space Grotesk; the build ships Space Grotesk.
+
+Same for the palette: every hex in `<palette>` becomes a `:root` var. Don't substitute "warmer slate" for `#161616`. If you derive a hover state, do it via `oklch(from var(--accent) calc(l - 0.1) c h)` — anchored to the locked token.
+
+#### Phase B — Read the detail files for genre vocabulary
+
+Once Phase A is locked, `Read` the three detail files identified in `<axes>`:
+
+- `./prototype/shell-<id>.md` — layout primitives, density classes, skeleton HTML
+- `./prototype/style-<id>.md` — surface treatment vocabulary, depth grammar, shape language, optical inheritance
+- `./prototype/aesthetic-<id>.md` (if not "(none)") — cultural register, era cues, decoration vocabulary, named references
+
+Plus, if a `recipe-<id>.md` was named, `Read` that too — recipes bundle all three picks with proven combinations.
+
+**These detail files inform vocabulary, not Phase A locks.** The style detail file may suggest a default font; **the picked `<display font>` overrides that suggestion** — Phase A wins every conflict. The detail files exist to fill in the picks the Step -1 UI didn't surface (shape language, motion budget, voice register, secondary tokens, slot annotation conventions).
+
+#### Phase C — Write source per Subagent 1 conventions
+
+Standard source-write per `docs/agents/subagents/1-source.md`:
+
+- Token block at the TOP of `styles.css` carries Phase A's locked palette + font vars + the genre-commit comment, in that order.
+- `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">` in every page's `<head>` for the picked Google Fonts families.
+- Pages link the DS stylesheet first (if a DS is present), then optional prototype overlay.
+- Every visual slot is annotated for Subagent 1.V — `img-placeholder` with `data-asset-intent` for static imagery, `motion-placeholder` with `data-motion` for decorative loops (see "Slot annotations" section below).
+- The `data-asset-intent` and `data-motion` strings inherit the picked option's `<vibe>` + style detail file's mood. For an `acid-design` pick, slot intents read "neon-on-black acid graphics, distorted chrome, rave-flyer attitude" not "generic hero illustration".
+
+`prototype.json` is written per the AGENTS.md schema (frames / arrows / lanes / entities) — same flow as the prior pipeline, the Step -1 ask doesn't change it.
+
+#### Phase D — Render-verify
+
+Standard: every authored HTML opens and renders without console errors, navigation works, demo data is non-undefined. Fix any errors before Phase E. Screenshot or eval-snapshot to confirm clean state.
+
+#### Phase E — Post-build orchestrator dispatch (the part the new Step -1 was skipping)
+
+This is the load-bearing fix the user flagged. After source is written and render-verified, the agent MUST walk the existing orchestrator dispatch chain — each orchestrator's gate is defined in its own manifest under `.claude/agents/<name>.manifest.json`, so the agent's job is sequencing, not gate-evaluation. Dispatch each via the `Task` tool with `subagent_type` matching the manifest's `subagentName`. Walk in this order:
+
+1. **`photography-orchestrator`** — its manifest trigger: "fires when (a) at least one slot will resolve to raster-photo AND (b) an image-generation model is wired into the project". For the acid-design / scrapbook / editorial-warm-restraint family this almost always fires. The orchestrator picks a photo style from `docs/research/photography-library.md`, writes a `pe_photo_<slotId>` enrichment node per photographic slot. Visual-orchestrator reads these later.
+2. **`illustration-orchestrator`** — same shape, for raster-foreground (illustrated subjects with transparency, mascots, vector-with-character). Fires for acid-design, corporate-memphis, kawaii, Y2K-memphis-loud, etc. Picks an illustration style from `docs/research/illustration-library.md`.
+3. **`creative-visual-orchestrator`** — fires when the committed aesthetic is editorial-loud (acid-design, web-brutalism, y2k-memphis-loud, oversized-neo-grotesque, wacky-pomo, etc.). Promotes flat `<img>` slots into compositions (text-as-mask, asset-cut-into-letters, irregular-clip-path, asset-as-drop-cap). Optional but powerful for the loud register.
+4. **`visual-orchestrator` (Subagent 1.V)** — **mandatory** unless `source/` has zero visual slots. Enumerates every slot, classifies the medium, scaffolds the per-asset node graph in `workflow/workflow.json`, dispatches per-asset drawers (raster-photo, raster-foreground, vector-mark, shader, particle-gl, lottie, 3d, video, motion). Reads the photo/illust enrichments from steps 1–2.
+5. **`material-orchestrator`** — fires when the committed style is material-bearing per `docs/research/material-library.md` decision tree (skeuomorphism, glassmorphism, claymorphism, holographic-iridescent, neumorphism, frutiger-aero, brushed-metal, paper-grain, etc.). Adds reactive material fidelity (refraction on tilt, parallax on scroll, ripple on hover).
+6. **`interactive-polish-orchestrator`** — fires when (a) a DS is present AND (b) the genre is in the restrained-register allow-list per its gate. Adds microanimations, pointer-driven effects, scroll-driven reveals, hover surprises, shader overlays.
+
+For each orchestrator, the agent **does NOT pre-evaluate the trigger** — that's the orchestrator's own job per its manifest. The agent dispatches with the standard envelope (project slug, sourceRoot, projectRoot, genre commit line); the orchestrator reads its manifest's gate against the source and either runs or returns `runStatus:error` if its conditions don't match. The agent moves to the next orchestrator regardless.
+
+The acid-design studio case the user flagged would hit steps 1, 2, 3, 4, and likely 6 — that's why "previously before this stop and ask, agent can identify this and route to related orchestrator" worked, and why the new Step -1 needs to re-establish this dispatch list explicitly.
+
+#### Phase F — Report done
+
+After Phases A–E complete, summarise to the user: what was locked from the pick (palette + fonts + axes), which orchestrators ran (with their reported outcomes — `kept N slots, dropped M`), and what's next (typically: "click Run on the workflow canvas to generate the per-asset bitmaps", or "the polish layer is live — refresh to see microanimations").
+
+If any phase failed (Phase B detail-file missing, Phase C render error, Phase E orchestrator dispatch error), report it explicitly — don't claim "done" when the pipeline broke partway.
 
 ### What this replaces
 
