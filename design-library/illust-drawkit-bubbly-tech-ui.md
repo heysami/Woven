@@ -6,6 +6,9 @@ subCategory: plastic-glossy
 role: spot-illustration
 pairsPrototypes: [style-claymorphism, recipe-bento-marketing, recipe-restrained-ai-marketing, style-neumorphism]
 notForUseWhen: dev-tools marketing wanting credibility, terminal-on-web
+images:
+  - src: illust-drawkit-bubbly-tech-ui.png
+    reason: Illustration style sample.
 ---
 
 # DrawKit Bubbly Tech / UI 3D
