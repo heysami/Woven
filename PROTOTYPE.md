@@ -88,9 +88,10 @@ The Woven chat ships a dedicated rich primitive for this Step — `<direction-op
 When any trigger fires, the agent's turn does this in order:
 
 1. **Compose the three direction picks** (shell / style / aesthetic / palette / type-family / candidate brief strings / why / trade-off / register / raster-risk flag).
-2. **Recolour the library image per option** via `scripts/prototype-recolor.py` → `.prototype-options/option-<N>.png` (per the Recoloring section below). **One PNG per option, that's it.** No preview HTML, no font CSS — the chat owns rendering.
-3. **Emit ONE chat message** in the shape below, containing markdown text + a single `<direction-options>` block.
-4. **STOP** the turn. No detail-file reads for the picked option, no genre commit, no `<artifact>`, no TodoWrite. Wait for the user's reply.
+2. **Pick a per-turn unique slug** for the preview files: `TURN_SLUG="$(date +%s)-$(openssl rand -hex 2)"`. The slug protects chat history — without it, a re-ask overwrites prior PNGs and old messages silently swap their preview image.
+3. **Recolour the library image per option** via `scripts/prototype-recolor.py` → `.prototype-options/<TURN_SLUG>/option-<N>.png` (per the Recoloring section below). **One PNG per option, that's it.** No preview HTML, no font CSS — the chat owns rendering.
+4. **Emit ONE chat message** in the shape below, containing markdown text + a single `<direction-options>` block, with every `<image src="..."/>` carrying the slug.
+5. **STOP** the turn. No detail-file reads for the picked option, no genre commit, no `<artifact>`, no TodoWrite. Wait for the user's reply.
 
 Emit exactly this message shape:
 
@@ -126,7 +127,7 @@ I want to lock direction before drawing — taste decisions belong to you, not m
     <palette>#bg,#surface,#fg,#muted,#border,#accent</palette>
     <display font="<Google-Fonts family name, e.g. Inter>"><real candidate display headline from brief — NOT "Lorem"></display>
     <body font="<Google-Fonts family name>"><real candidate body sentence from brief — 1–2 sentences></body>
-    <image src=".prototype-options/option-1.png" alt="Recoloured library reference"/>
+    <image src=".prototype-options/<TURN_SLUG>/option-1.png" alt="Recoloured library reference"/>
     <badge>auto-preview · no LLM · recoloured from prototype/<picked-library>.png</badge>
   </opt>
 
@@ -138,7 +139,7 @@ I want to lock direction before drawing — taste decisions belong to you, not m
     <palette>#…,#…,#…,#…,#…,#…</palette>
     <display font="<family>"><display sample></display>
     <body font="<family>"><body sample></body>
-    <image src=".prototype-options/option-2.png" alt="Recoloured library reference"/>
+    <image src=".prototype-options/<TURN_SLUG>/option-2.png" alt="Recoloured library reference"/>
     <badge>auto-preview · no LLM</badge>
   </opt>
 
@@ -259,32 +260,43 @@ For each option, pick **one** library image — the one belonging to the **most-
 
 If the chosen file doesn't exist on disk (`ls prototype/<file>` to confirm before the recolor call), fall back to the next axis down. Never invent a path.
 
-### Recoloring the library image (one PNG per option, no preview HTML needed)
+### Recoloring the library image — per-turn unique slug (preserves chat history)
 
-For each of the three options, the agent writes ONE file into `.prototype-options/` at the project root before emitting the `<direction-options>` block: `option-<N>.png`. That's it — no preview HTML, no inline style, no font CSS. The chat's `DirectionOptionsCard` does the layout natively from the structured `<opt>` data.
+For each of the three options, the agent writes ONE file before emitting the `<direction-options>` block. That's it — no preview HTML, no inline style, no font CSS. The chat's `DirectionOptionsCard` does the layout natively from the structured `<opt>` data.
 
-Run **once per option**:
+**Critical: every Step -1 emission MUST use a per-turn unique slug in the path.** Otherwise a re-ask, redo, or new round of options overwrites the previous turn's PNGs and the old chat-history previews silently change. The `<image src="...">` paths in past messages would still point at the same filename, but the file content would now be the new turn's image. The user's already-flagged bug.
+
+**Pick the slug ONCE at the start of the turn**, before any recolor call:
+
+```bash
+TURN_SLUG="$(date +%s)-$(openssl rand -hex 2)"     # e.g. 1781067126-a3f9
+mkdir -p ".prototype-options/${TURN_SLUG}"
+```
+
+Then run the recolor **once per option** into the slugged subdirectory:
 
 ```bash
 python scripts/prototype-recolor.py \
     prototype/<picked-library-image>.png \
-    .prototype-options/option-<N>.png \
+    ".prototype-options/${TURN_SLUG}/option-<N>.png" \
     --tokens "#bg,#surface,#fg,#muted,#border,#accent"
+```
+
+And reference the slugged path in each `<opt>`:
+
+```
+<image src=".prototype-options/<TURN_SLUG>/option-1.png" alt="Recoloured library reference"/>
 ```
 
 The wrapper extracts the source palette in OKLab, identifies the source accent (highest chroma) and source neutrals (the rest), matches them by lightness to the option's tokens, and writes a smooth perceptual recolor — light areas stay light, dark areas stay dark, only hue/chroma snap. Under the hood it calls `scripts/recolor_palette.py` (Chang-et-al palette-based recoloring, OKLab/OKLCH). Read `scripts/recolor_palette.GUIDE.md` if you need finer control (single-axis edits, chroma scaling, target_rgb mapping).
 
-In the emitted `<direction-options>` block, reference the file from each option:
+The chat resolves the `src` via `apiUrl()` automatically — the project-id query parameter is appended at render time, so the daemon routes the image to the correct project root. The slug guarantees the *path itself* is unique per turn, so the browser's HTTP cache never serves a stale PNG and old chat messages keep showing the PNGs that were current when they were emitted.
 
-```
-<image src=".prototype-options/option-1.png" alt="Recoloured library reference"/>
-```
+**Output path convention:** `.prototype-options/<TURN_SLUG>/option-<N>.png` at the project root. The folder is append-only across turns — old slugs stay on disk so prior chat-history messages keep rendering correctly. Don't delete old slugs unless the user explicitly asks for a cleanup; the per-PNG cost (~200–400 KB each) is small relative to the chat-history fidelity gain. Don't write outside the project root; don't write into `prototype/` (that's the protocol-mount library and is read-only). If `numpy`/`pillow` aren't available (`python3 -c "import numpy, PIL"` fails), `pip install numpy pillow` first — both are pure-Python and install in seconds. If the recolor fails for any reason, point the `<image src=...>` at the original library reference (e.g. `src="prototype/<picked-library>.png"`) and add a one-line `<badge>colours illustrative — original library reference shown</badge>`; never drop the visuals entirely.
 
-The chat resolves the `src` via `apiUrl()` automatically — the project-id query parameter is appended at render time, so the daemon routes the image to the correct project root. No Referrer-Policy bug, no broken icons.
+**Quick verify the recoloured PNGs exist** before emitting the `<direction-options>`: each `option-<N>.png` must be on disk under the project root at the slugged path. `ls .prototype-options/${TURN_SLUG}/` in one Bash call is enough.
 
-**Output path convention:** `.prototype-options/` at the project root. The folder is ephemeral — once the user picks, the build phase ignores it. Don't write outside the project root; don't write into `prototype/` (that's the protocol-mount library and is read-only). If `numpy`/`pillow` aren't available (`python3 -c "import numpy, PIL"` fails), `pip install numpy pillow` first — both are pure-Python and install in seconds. If the recolor fails for any reason, point the `<image src=...>` at the original library reference (e.g. `src="prototype/<picked-library>.png"`) and add a one-line `<badge>colours illustrative — original library reference shown</badge>`; never drop the visuals entirely.
-
-**Quick verify the recoloured PNGs exist** before emitting the `<direction-options>`: each `option-<N>.png` must be on disk under the project root. `ls .prototype-options/` in one Bash call is enough.
+**Optional cleanup** (only when the user asks "clean up old previews" or similar): `find .prototype-options -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +` removes slug folders older than 7 days. Never auto-delete — chat history may still reference them.
 
 ### Photography + illustration register strip (per option, only when the direction asks for it)
 
@@ -360,7 +372,7 @@ Example single-axis variation (aesthetic varies, `three-column-app` + `restraine
     <palette>#F7F2E8,#FFFFFF,#3A2E22,#7E6E58,#E5DCC8,#9F4A2E</palette>
     <display font="Fraunces">A quiet place to begin</display>
     <body font="Inter">Three rooms, six rituals, a long shelf of books — start anywhere.</body>
-    <image src=".prototype-options/option-1.png" alt="Cottagecore recolour"/>
+    <image src=".prototype-options/1781067126-a3f9/option-1.png" alt="Cottagecore recolour"/>
     <badge>auto-preview · no LLM</badge>
   </opt>
 
@@ -372,7 +384,7 @@ Example single-axis variation (aesthetic varies, `three-column-app` + `restraine
     <palette>#1C1714,#28201A,#E4DCC8,#857461,#3E2F22,#A14430</palette>
     <display font="EB Garamond">The reading room</display>
     <body font="EB Garamond">Marbled endpapers, a brass lamp, the slow turn of a page.</body>
-    <image src=".prototype-options/option-2.png" alt="Dark academia recolour"/>
+    <image src=".prototype-options/1781067126-a3f9/option-2.png" alt="Dark academia recolour"/>
     <badge>auto-preview · no LLM</badge>
   </opt>
 
@@ -384,7 +396,7 @@ Example single-axis variation (aesthetic varies, `three-column-app` + `restraine
     <palette>#FAFAFA,#FFFFFF,#1A1A1A,#666666,#E5E5E5,#3E5BE6</palette>
     <display font="Inter">Read, watch, listen</display>
     <body font="Inter">A small, slow library. Curated. Searchable. Yours to come back to.</body>
-    <image src=".prototype-options/option-3.png" alt="Restrained recolour"/>
+    <image src=".prototype-options/1781067126-a3f9/option-3.png" alt="Restrained recolour"/>
     <badge>auto-preview · no LLM</badge>
   </opt>
 
