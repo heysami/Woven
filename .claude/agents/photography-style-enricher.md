@@ -54,26 +54,65 @@ Filter remaining candidates by `index.entries[styleId].roleAffinity` — must in
 ### 2.5 Optional secondary (chaining)
 Optionally add a secondary styleId from the alternatives when the brief calls for two registers (e.g. primary + film-stock modifier).
 
-## 3. Read the entry's self-contained detail file + compose the prompt
+## 3. Read the per-entry source file + compose the prompt
 
-The picked styleId has a **self-contained per-entry file** at `prototype/photo-<styleId>.md` — small (1-2KB), no library reading required. Read THAT, not the big library.
+The picked styleId IS a file: `prototype/photo-<styleId>.md`. That file is the **source of truth** — hand-edited, YAML frontmatter for structured fields + markdown body for prose. There is no "big library" to fall back to anymore; `docs/research/photography-library.md` is now just a primer.
 
 ```bash
 cat "$TH_PROJECT_ROOT/prototype/photo-<styleId>.md" \
   || cat "$TH_PROTOCOL_ROOT/prototype/photo-<styleId>.md"
 ```
 
-The file contains a `## Full library entry` section with the verbatim YAML for this one entry — including `examplePromptTemplate`, all `promptKeywords` groups, `avoidKeywords`, `namedReferences`, `whenToUse`, `notForUseWhen`. Pull what you need from there.
+The file structure:
 
-**Fallback** — if the per-entry file is missing (e.g., a freshly-added library entry that hasn't been regenerated yet), sed-slice the big library using `index.entries[<styleId>].lineRange`:
+```markdown
+---
+styleId: helmut-newton-flash
+name: Helmut Newton on-camera flash glamour
+category: editorial-fashion
+era: 1970s-1990s
+pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, ...]
+notForUseWhen: Brief is sincere, sentimental, family-friendly, or wholesome.
+---
 
-```bash
-LIB=docs/research/photography-library.md
-RANGE=$(python3 -c "import json; print(*json.load(open('docs/research/photography-library.index.json'))['entries']['<styleId>']['lineRange'])")
-sed -n "$(echo $RANGE | cut -d' ' -f1),$(echo $RANGE | cut -d' ' -f2)p" "$LIB"
+# Helmut Newton on-camera flash glamour
+
+(one-line summary)
+
+## Visual signatures
+- ...
+
+## Prompt keywords
+**Primary**: ...
+**Lighting**: ...
+**Camera / lens**: ...
+**Film stock / post-processing**: ...
+**Mood**: ...
+**Avoid (negative prompt)**: ...
+
+## Named references
+**Photographers**: ...
+**Magazines**: ...
+
+## Example prompt template
+> A tall woman in a black tailored Yves Saint Laurent tuxedo...
+
+## When to use
+...
+
+## When NOT to use
+...
+
+## Pairs with (prototype slugs)
+- `recipe-editorial-magazine`
+- ...
+
+<!-- image: sample-1.png -->
 ```
 
-Same content, slightly more expensive to compute. Surface to user that the per-entry file is missing so they can re-run `scripts/regen-prototype-details.py`.
+Parse the frontmatter for `styleId` / `category` / `notForUseWhen` / `pairsPrototypes`. Read the `## Example prompt template` block for the paste-ready template. Read the `## Prompt keywords` section for the keyword groups. Read the `## When NOT to use` section for the anti-pattern prose.
+
+If the file is missing → emit `runStatus: error` with `runError: "prototype/photo-<styleId>.md not found — the picked styleId has no source file. Either the index is stale (re-run scripts/build-library-indexes.py) or the entry was deleted."` and stop. There is no library file to fall back to.
 
 Compose `promptForRasterPhoto` by:
 

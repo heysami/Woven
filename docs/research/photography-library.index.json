@@ -1,409 +1,402 @@
 {
-  "version": "1.0",
-  "source": "docs/research/photography-library.md",
+  "version": "2.0",
   "library": "photography",
+  "sourceDir": "prototype/",
   "totalEntries": 42,
   "decisionTree": {
-    "recipe-editorial-magazine": {
-      "default": "helmut-newton-flash"
-    },
-    "recipe-bento-marketing": {
-      "default": "apple-clean-studio"
-    },
-    "recipe-restrained-ai-marketing": {
-      "default": "clean-tech-lifestyle",
-      "alternatives": [
-        "plaster",
-        "and"
-      ]
-    },
     "recipe-warm-restraint": {
       "default": "aesop-apothecary",
       "alternatives": [
-        "slow",
-        "daylight",
-        "single",
-        "no"
+        "bon-appetit-food",
+        "cereal-lifestyle",
+        "environmental-portrait",
+        "helmut-newton-flash",
+        "kinfolk-warm-minimal",
+        "laundry-light-lookbook",
+        "seventies-soft-grain",
+        "shore-color",
+        "sorrenti-grain"
       ]
     },
-    "aesthetic-y2k-futurism": {
-      "default": "y2k-flash-glam"
-    },
-    "aesthetic-y2k-memphis-loud": {
-      "default": "y2k-halftone",
+    "style-cream-humanist": {
+      "default": "aesop-apothecary",
       "alternatives": [
-        "hard",
-        "halftone"
+        "cereal-lifestyle",
+        "environmental-portrait",
+        "kinfolk-warm-minimal",
+        "laundry-light-lookbook",
+        "nyt-cooking-food",
+        "seventies-soft-grain",
+        "sorrenti-grain"
       ]
     },
-    "aesthetic-frutiger-aero": {
-      "default": "frutiger-aero-product",
+    "style-serif-warm-paper": {
+      "default": "aesop-apothecary",
       "alternatives": [
-        "bokeh",
-        "water"
+        "bon-appetit-food",
+        "environmental-portrait",
+        "leibovitz-key-light",
+        "magnum-monochrome",
+        "salgado-contrast",
+        "shore-color",
+        "sorrenti-grain",
+        "vivian-maier-square"
+      ]
+    },
+    "style-restrained-hairline": {
+      "default": "aesop-apothecary",
+      "alternatives": [
+        "cereal-lifestyle",
+        "cos-lookbook",
+        "laundry-light-lookbook"
+      ]
+    },
+    "recipe-bento-marketing": {
+      "default": "apple-clean-studio",
+      "alternatives": [
+        "clean-tech-lifestyle",
+        "high-key-beauty",
+        "leibovitz-key-light"
+      ]
+    },
+    "recipe-ios-system": {
+      "default": "apple-clean-studio",
+      "alternatives": []
+    },
+    "style-sf-pro-ios": {
+      "default": "apple-clean-studio",
+      "alternatives": []
+    },
+    "style-glassmorphism": {
+      "default": "apple-clean-studio",
+      "alternatives": [
+        "frutiger-aero-product",
+        "high-key-beauty"
+      ]
+    },
+    "style-liquid-glass": {
+      "default": "apple-clean-studio",
+      "alternatives": [
+        "frutiger-aero-product",
+        "high-key-beauty"
+      ]
+    },
+    "aesthetic-cluttercore": {
+      "default": "archival-found-photo",
+      "alternatives": []
+    },
+    "recipe-readcv": {
+      "default": "archival-found-photo",
+      "alternatives": [
+        "backstage-fashion",
+        "nyt-cooking-food",
+        "shore-color",
+        "tillmans-candid"
+      ]
+    },
+    "aesthetic-corporate-grunge": {
+      "default": "archival-found-photo",
+      "alternatives": [
+        "backstage-fashion"
       ]
     },
     "aesthetic-cottagecore": {
-      "default": "seventies-soft-grain"
-    },
-    "aesthetic-dark-academia": {
-      "default": "sorrenti-grain",
+      "default": "archival-found-photo",
       "alternatives": [
-        "candlelight",
-        "single"
+        "bon-appetit-food",
+        "fantasy-glow",
+        "kinfolk-warm-minimal",
+        "seventies-soft-grain",
+        "tillmans-candid"
       ]
     },
-    "aesthetic-vaporwave": {
-      "default": "vaporwave-still-life",
+    "recipe-editorial-magazine": {
+      "default": "backstage-fashion",
       "alternatives": [
-        "plaster",
-        "glitches",
-        "neon"
+        "bon-appetit-food",
+        "chrome-hearts-editorial",
+        "cos-lookbook",
+        "eighties-cocaine-glam",
+        "environmental-portrait",
+        "goldin-diary",
+        "helmut-newton-flash",
+        "leibovitz-key-light",
+        "magnum-monochrome",
+        "salgado-contrast",
+        "shore-color",
+        "tillmans-candid",
+        "vivian-maier-square",
+        "weingart-staged"
+      ]
+    },
+    "recipe-restrained-ai-marketing": {
+      "default": "backstage-fashion",
+      "alternatives": [
+        "cereal-lifestyle",
+        "clean-tech-lifestyle",
+        "cos-lookbook",
+        "high-key-beauty",
+        "laundry-light-lookbook",
+        "nyt-cooking-food",
+        "tillmans-candid"
+      ]
+    },
+    "aesthetic-vector-hands-up": {
+      "default": "bowie-rock-glamour",
+      "alternatives": [
+        "eighties-cocaine-glam"
+      ]
+    },
+    "aesthetic-y2k-memphis-loud": {
+      "default": "bowie-rock-glamour",
+      "alternatives": [
+        "eighties-cocaine-glam",
+        "genz-flash-disposable",
+        "skate-zine",
+        "surreal-still-life",
+        "y2k-flash-glam",
+        "y2k-halftone"
+      ]
+    },
+    "aesthetic-rgb-gamer": {
+      "default": "bowie-rock-glamour",
+      "alternatives": [
+        "genz-flash-disposable"
+      ]
+    },
+    "aesthetic-acid-design": {
+      "default": "bowie-rock-glamour",
+      "alternatives": []
+    },
+    "aesthetic-y2k-futurism": {
+      "default": "chrome-hearts-editorial",
+      "alternatives": [
+        "genz-flash-disposable",
+        "night-flash-noir",
+        "vaporwave-still-life",
+        "y2k-flash-glam",
+        "y2k-halftone"
+      ]
+    },
+    "aesthetic-cyberpunk": {
+      "default": "chrome-hearts-editorial",
+      "alternatives": [
+        "cinematic-street-anamorphic",
+        "circuit-bent-glitch",
+        "night-flash-noir"
+      ]
+    },
+    "aesthetic-web-brutalism": {
+      "default": "chrome-hearts-editorial",
+      "alternatives": [
+        "gilden-flash-street",
+        "skate-zine"
+      ]
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "cinematic-street-anamorphic",
+      "alternatives": [
+        "vaporwave-still-life"
+      ]
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "cinematic-street-anamorphic",
+      "alternatives": [
+        "night-flash-noir"
+      ]
+    },
+    "style-dense-mono-dark": {
+      "default": "cinematic-street-anamorphic",
+      "alternatives": []
+    },
+    "aesthetic-vaporwave": {
+      "default": "circuit-bent-glitch",
+      "alternatives": [
+        "night-flash-noir",
+        "vaporwave-still-life"
+      ]
+    },
+    "aesthetic-acid-graphics": {
+      "default": "circuit-bent-glitch",
+      "alternatives": [
+        "genz-flash-disposable",
+        "skate-zine",
+        "surreal-still-life",
+        "y2k-halftone"
+      ]
+    },
+    "style-holographic": {
+      "default": "circuit-bent-glitch",
+      "alternatives": [
+        "magic-glow"
+      ]
+    },
+    "recipe-devtools-marketing": {
+      "default": "clean-tech-lifestyle",
+      "alternatives": [
+        "leibovitz-key-light"
+      ]
+    },
+    "recipe-linear-product-ui": {
+      "default": "clean-tech-lifestyle",
+      "alternatives": []
+    },
+    "style-oversized-neo-grotesque": {
+      "default": "cos-lookbook",
+      "alternatives": [
+        "helmut-newton-flash"
       ]
     },
     "aesthetic-dreamcore": {
       "default": "dreamy-haze",
       "alternatives": [
-        "pastel",
-        "dissolving",
-        "slight"
+        "goldin-diary",
+        "vaporwave-still-life",
+        "weingart-staged"
       ]
     },
-    "aesthetic-coastal-grandmother": {
-      "default": "kinfolk-warm-minimal"
-    },
-    "style-cream-humanist": {
-      "default": "kinfolk-warm-minimal"
-    },
-    "style-serif-warm-paper": {
-      "default": "shore-color"
-    },
-    "style-glassmorphism": {
-      "default": "apple-clean-studio",
+    "aesthetic-angelcore": {
+      "default": "dreamy-haze",
       "alternatives": [
-        "sky"
+        "magic-glow"
       ]
     },
-    "style-liquid-glass": {
-      "default": "frutiger-aero-product"
+    "aesthetic-fairycore": {
+      "default": "dreamy-haze",
+      "alternatives": [
+        "fantasy-glow",
+        "magic-glow"
+      ]
     },
-    "recipe-newspaper-of-record": {
-      "default": "magnum-monochrome"
+    "aesthetic-positivity-kawaii": {
+      "default": "dreamy-haze",
+      "alternatives": []
+    },
+    "aesthetic-urbling": {
+      "default": "eighties-cocaine-glam",
+      "alternatives": []
+    },
+    "aesthetic-cottagegoth": {
+      "default": "fantasy-glow",
+      "alternatives": [
+        "goldin-diary"
+      ]
+    },
+    "aesthetic-solarpunk": {
+      "default": "fantasy-glow",
+      "alternatives": []
+    },
+    "aesthetic-frutiger-aero": {
+      "default": "frutiger-aero-product",
+      "alternatives": [
+        "y2k-flash-glam"
+      ]
+    },
+    "aesthetic-frutiger-chromecore": {
+      "default": "frutiger-aero-product",
+      "alternatives": []
+    },
+    "aesthetic-frutiger-tranquil-serenity": {
+      "default": "frutiger-aero-product",
+      "alternatives": []
     },
     "recipe-brutalist-web": {
-      "default": "gilden-flash-street"
+      "default": "gilden-flash-street",
+      "alternatives": [
+        "skate-zine"
+      ]
     },
-    "aesthetic-cyberpunk": {
-      "default": "night-flash-noir"
+    "aesthetic-neubrutalism": {
+      "default": "gilden-flash-street",
+      "alternatives": []
     },
-    "aesthetic-corporate-grunge": {
-      "default": "archival-found-photo"
+    "recipe-newspaper-of-record": {
+      "default": "gilden-flash-street",
+      "alternatives": [
+        "magnum-monochrome",
+        "salgado-contrast",
+        "vivian-maier-square",
+        "war-photojournalism"
+      ]
     },
-    "recipe-devtools-marketing": {
-      "default": "clean-tech-lifestyle"
+    "aesthetic-dark-academia": {
+      "default": "goldin-diary",
+      "alternatives": []
     },
-    "recipe-readcv": {
-      "default": "tillmans-candid"
+    "aesthetic-swiss-modernist": {
+      "default": "helmut-newton-flash",
+      "alternatives": []
+    },
+    "aesthetic-coastal-grandmother": {
+      "default": "kinfolk-warm-minimal",
+      "alternatives": [
+        "nyt-cooking-food",
+        "seventies-soft-grain",
+        "sorrenti-grain"
+      ]
+    },
+    "style-claymorphism": {
+      "default": "magic-glow",
+      "alternatives": []
+    },
+    "style-agate-broadsheet": {
+      "default": "magnum-monochrome",
+      "alternatives": [
+        "salgado-contrast",
+        "vivian-maier-square",
+        "war-photojournalism"
+      ]
+    },
+    "aesthetic-wacky-pomo": {
+      "default": "surreal-still-life",
+      "alternatives": []
+    },
+    "style-bold-display": {
+      "default": "surreal-still-life",
+      "alternatives": [
+        "weingart-staged"
+      ]
+    },
+    "aesthetic-anti-design": {
+      "default": "weingart-staged",
+      "alternatives": []
+    },
+    "aesthetic-curly-girly": {
+      "default": "y2k-flash-glam",
+      "alternatives": []
+    },
+    "recipe-y2k-memphis-loud": {
+      "default": "y2k-halftone",
+      "alternatives": []
     }
   },
   "entries": {
-    "helmut-newton-flash": {
-      "name": "Helmut Newton on-camera flash glamour",
-      "category": "editorial-fashion",
-      "era": "1970s-1990s",
-      "oneLine": "Single hard flash on a tall confident female subject, falloff into pure black.",
+    "aesop-apothecary": {
+      "name": "Aesop apothecary minimal still life",
+      "category": "product",
+      "era": "current",
       "roleAffinity": [
-        "hero",
-        "section"
+        "product"
       ],
-      "notForUseWhen": "Brief is sincere, sentimental, family-friendly, or wholesome.",
-      "antiPatternKeywords": [
-        "soft",
-        "dreamy",
-        "pastel",
-        "candid",
-        "smiling",
-        "cluttered background"
-      ],
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-warm-restraint",
-        "style-oversized-neo-grotesque",
-        "aesthetic-swiss-modernist"
-      ],
-      "lineRange": [
-        128,
-        157
-      ]
-    },
-    "chrome-hearts-editorial": {
-      "name": "Chrome Hearts night-glam editorial",
-      "category": "editorial-fashion",
-      "era": "2000s revival, current",
-      "oneLine": "Heavy on-camera flash on goth-luxe subjects, leather and chrome jewelry catching highlights.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Family product, B2B, anything wholesome.",
-      "antiPatternKeywords": [
-        "clean studio",
-        "daylight",
-        "smiling",
-        "group shot",
-        "wide landscape"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-y2k-futurism",
-        "aesthetic-cyberpunk",
-        "recipe-editorial-magazine",
-        "aesthetic-web-brutalism"
-      ],
-      "lineRange": [
-        158,
-        187
-      ]
-    },
-    "tillmans-candid": {
-      "name": "Wolfgang Tillmans degree-zero candid",
-      "category": "editorial-fashion",
-      "era": "1990s-current",
-      "oneLine": "One 50mm lens, no retouching, available light, point and shoot.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Luxury, glamour, conversion-focused product pages, B2B.",
-      "antiPatternKeywords": [
-        "studio",
-        "retouched",
-        "posed",
-        "professional model",
-        "dramatic lighting",
-        "glamour"
-      ],
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-readcv",
-        "aesthetic-cottagecore",
-        "recipe-restrained-ai-marketing"
-      ],
-      "lineRange": [
-        188,
-        218
-      ]
-    },
-    "sorrenti-grain": {
-      "name": "Mario Sorrenti grain and tonality",
-      "category": "editorial-fashion",
-      "era": "1990s-current",
-      "oneLine": "Medium format Pentax 67 or Hasselblad, 80mm normal lens.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Anything needing color, product detail, or commercial-explicit subject.",
-      "antiPatternKeywords": [
-        "hard flash",
-        "studio",
-        "posed",
-        "retouched",
-        "glossy"
-      ],
+      "oneLine": "Stone, concrete, raw plaster, or linen substrate.",
+      "notForUseWhen": "Mass-market product, anything loud, family CPG.",
       "pairsPrototypes": [
         "recipe-warm-restraint",
         "style-cream-humanist",
         "style-serif-warm-paper",
-        "aesthetic-coastal-grandmother"
+        "style-restrained-hairline"
       ],
-      "lineRange": [
-        219,
-        249
-      ]
-    },
-    "genz-flash-disposable": {
-      "name": "Gen-Z disposable-camera flash editorial",
-      "category": "editorial-fashion",
-      "era": "current",
-      "oneLine": "Hard on-camera flash, often at a party or backstage, slight red-eye risk.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Luxury, B2B, anything sincere, anything elderly-targeted.",
-      "antiPatternKeywords": [
-        "studio",
-        "retouched",
-        "professional lighting",
-        "soft glamour",
-        "formal pose"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-y2k-futurism",
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-acid-graphics",
-        "aesthetic-rgb-gamer"
-      ],
-      "lineRange": [
-        250,
-        280
-      ]
-    },
-    "leibovitz-key-light": {
-      "name": "Annie Leibovitz one-light portraiture",
-      "category": "editorial-fashion",
-      "era": "1980s-current",
-      "oneLine": "Single large softbox or umbrella, ambient kept in.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Quick product, e-comm hero, anything needing many subjects in one shot.",
-      "antiPatternKeywords": [
-        "snapshot",
-        "candid",
-        "available light only",
-        "harsh flash",
-        "club"
-      ],
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-devtools-marketing",
-        "recipe-bento-marketing",
-        "style-serif-warm-paper"
-      ],
-      "lineRange": [
-        281,
-        311
-      ]
-    },
-    "gilden-flash-street": {
-      "name": "Bruce Gilden flash street portrait",
-      "category": "street",
-      "era": "1980s-current",
-      "oneLine": "28mm wide lens, flash off-camera held in left hand, very close to subject's face.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Anything aspirational, hospitality, luxury, wellness.",
-      "antiPatternKeywords": [
-        "flattering",
-        "glamorous",
-        "posed",
-        "smiling",
-        "soft",
-        "distant"
-      ],
-      "pairsPrototypes": [
-        "recipe-brutalist-web",
-        "aesthetic-neubrutalism",
-        "aesthetic-web-brutalism",
-        "recipe-newspaper-of-record"
-      ],
-      "lineRange": [
-        312,
-        342
-      ]
-    },
-    "vivian-maier-square": {
-      "name": "Vivian Maier square street observational",
-      "category": "street",
-      "era": "1950s-1970s archival",
-      "oneLine": "Square 6x6 medium format, waist-level finder.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Anything contemporary-fashion, fast-paced, conversion-driven.",
-      "antiPatternKeywords": [
-        "posed",
-        "flash",
-        "color",
-        "low-angle dramatic"
-      ],
-      "pairsPrototypes": [
-        "recipe-newspaper-of-record",
-        "style-serif-warm-paper",
-        "style-agate-broadsheet",
-        "recipe-editorial-magazine"
-      ],
-      "lineRange": [
-        343,
-        373
-      ]
-    },
-    "cinematic-street-anamorphic": {
-      "name": "Cinematic anamorphic street",
-      "category": "street",
-      "era": "current",
-      "oneLine": "Anamorphic 2.39:1 wide aspect, oval bokeh, blue horizontal lens flares.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Anything bright, daylight-driven, product e-comm.",
-      "antiPatternKeywords": [
-        "bright",
-        "daylight",
-        "smiling",
-        "posed portrait",
-        "flat lighting"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-cyberpunk",
-        "aesthetic-cassette-futurism",
-        "recipe-ai-foundry-dark",
-        "style-dense-mono-dark"
-      ],
-      "lineRange": [
-        374,
-        404
-      ]
-    },
-    "night-flash-noir": {
-      "name": "Night flash neon-noir portrait",
-      "category": "street",
-      "era": "current",
-      "oneLine": "Hard direct on-camera flash on subject at night.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Daylight product, family, wellness.",
-      "antiPatternKeywords": [
-        "smiling group",
-        "daylight",
-        "soft lighting",
-        "pastel"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-cyberpunk",
-        "aesthetic-vaporwave",
-        "aesthetic-y2k-futurism",
-        "recipe-ai-foundry-dark"
-      ],
-      "lineRange": [
-        405,
-        435
-      ]
+      "sourceFile": "prototype/photo-aesop-apothecary.md"
     },
     "apple-clean-studio": {
       "name": "Apple-clean studio product",
       "category": "product",
       "era": "current",
-      "oneLine": "Pure white or pure black seamless backdrop, no horizon line.",
       "roleAffinity": [
         "product"
       ],
+      "oneLine": "Pure white or pure black seamless backdrop, no horizon line.",
       "notForUseWhen": "Lifestyle storytelling, editorial, anything needing context or mood.",
-      "antiPatternKeywords": [
-        "grain",
-        "vignette",
-        "prop clutter",
-        "lifestyle context",
-        "hand holding"
-      ],
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-ios-system",
@@ -411,273 +404,271 @@
         "style-glassmorphism",
         "style-liquid-glass"
       ],
-      "lineRange": [
-        436,
-        466
-      ]
+      "sourceFile": "prototype/photo-apple-clean-studio.md"
     },
-    "aesop-apothecary": {
-      "name": "Aesop apothecary minimal still life",
-      "category": "product",
-      "era": "current",
-      "oneLine": "Stone, concrete, raw plaster, or linen substrate.",
+    "archival-found-photo": {
+      "name": "Archival found-photograph treatment",
+      "category": "archival",
+      "era": "1950s-90s",
       "roleAffinity": [
-        "product"
+        "hero",
+        "section"
       ],
-      "notForUseWhen": "Mass-market product, anything loud, family CPG.",
-      "antiPatternKeywords": [
-        "bright",
-        "saturated",
-        "plastic",
-        "glossy",
-        "busy backdrop"
-      ],
+      "oneLine": "Period-correct degradation: faded color, slight yellowing, edge wear.",
+      "notForUseWhen": "Modern tech, restrained luxury, anything aspirational-future.",
       "pairsPrototypes": [
-        "recipe-warm-restraint",
-        "style-cream-humanist",
-        "style-serif-warm-paper",
-        "style-restrained-hairline"
+        "aesthetic-cluttercore",
+        "recipe-readcv",
+        "aesthetic-corporate-grunge",
+        "aesthetic-cottagecore"
       ],
-      "lineRange": [
-        467,
-        497
-      ]
+      "sourceFile": "prototype/photo-archival-found-photo.md"
+    },
+    "backstage-fashion": {
+      "name": "Backstage editorial BTS",
+      "category": "BTS",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Available light, sometimes mixed with hair-light or makeup-station tungsten.",
+      "notForUseWhen": "Polished hero, conversion product page.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-readcv",
+        "aesthetic-corporate-grunge",
+        "recipe-restrained-ai-marketing"
+      ],
+      "sourceFile": "prototype/photo-backstage-fashion.md"
     },
     "bon-appetit-food": {
       "name": "Bon Appétit moody food overhead",
       "category": "food",
       "era": "current",
-      "oneLine": "Dark wood, slate, or aged copper substrate.",
       "roleAffinity": [
         "food"
       ],
+      "oneLine": "Dark wood, slate, or aged copper substrate.",
       "notForUseWhen": "Fast casual, fast food, packaging hero shot, kid food.",
-      "antiPatternKeywords": [
-        "bright white backdrop",
-        "perfect plating",
-        "harsh flash",
-        "plastic-looking food"
-      ],
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "style-serif-warm-paper",
         "recipe-warm-restraint",
         "aesthetic-cottagecore"
       ],
-      "lineRange": [
-        498,
-        528
-      ]
+      "sourceFile": "prototype/photo-bon-appetit-food.md"
     },
-    "nyt-cooking-food": {
-      "name": "NYT Cooking bright daylight food",
-      "category": "food",
+    "bowie-rock-glamour": {
+      "name": "Rock-glamour stage editorial",
+      "category": "glamour",
+      "era": "1970s-1980s",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Stage lighting recreated in studio: hot rim from behind, single colored gel.",
+      "notForUseWhen": "Restrained luxury, B2B, wellness.",
+      "pairsPrototypes": [
+        "aesthetic-vector-hands-up",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-rgb-gamer",
+        "aesthetic-acid-design"
+      ],
+      "sourceFile": "prototype/photo-bowie-rock-glamour.md"
+    },
+    "cereal-lifestyle": {
+      "name": "Cereal magazine slow-travel lifestyle",
+      "category": "lifestyle",
       "era": "current",
-      "oneLine": "Bright daylight, light wood, marble, or pale linen surface.",
-      "roleAffinity": [
-        "food"
-      ],
-      "notForUseWhen": "Fine dining, moody restaurant marketing, fast food.",
-      "antiPatternKeywords": [
-        "moody dark",
-        "dramatic shadow",
-        "professional restaurant plating",
-        "food styling perfection"
-      ],
-      "pairsPrototypes": [
-        "recipe-readcv",
-        "style-cream-humanist",
-        "aesthetic-coastal-grandmother",
-        "recipe-restrained-ai-marketing"
-      ],
-      "lineRange": [
-        529,
-        559
-      ]
-    },
-    "magnum-monochrome": {
-      "name": "Magnum monochrome documentary",
-      "category": "documentary",
-      "era": "1950s-current",
-      "oneLine": "35mm Leica with 35mm or 50mm lens, decisive moment.",
       "roleAffinity": [
         "hero",
         "section",
         "portrait"
       ],
-      "notForUseWhen": "Product e-comm, anything aspirational-consumer.",
-      "antiPatternKeywords": [
-        "posed",
-        "smiling-at-camera",
-        "flash",
-        "dramatic color",
-        "glossy"
-      ],
+      "oneLine": "Cool muted palette, slight blue-gray cast.",
+      "notForUseWhen": "Tech B2B, fast-paced consumer, anything kinetic.",
       "pairsPrototypes": [
-        "recipe-newspaper-of-record",
-        "style-agate-broadsheet",
-        "style-serif-warm-paper",
-        "recipe-editorial-magazine"
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "style-restrained-hairline",
+        "style-cream-humanist"
       ],
-      "lineRange": [
-        560,
-        590
-      ]
+      "sourceFile": "prototype/photo-cereal-lifestyle.md"
     },
-    "war-photojournalism": {
-      "name": "Frontline war photojournalism",
-      "category": "documentary",
-      "era": "1990s-current",
-      "oneLine": "35mm or 28mm wide lens, very close to action.",
+    "chrome-hearts-editorial": {
+      "name": "Chrome Hearts night-glam editorial",
+      "category": "editorial-fashion",
+      "era": "2000s revival, current",
       "roleAffinity": [
         "hero",
-        "section",
-        "portrait"
+        "section"
       ],
-      "notForUseWhen": "Any commercial application. Reserved for editorial truth.",
-      "antiPatternKeywords": [
-        "staged",
-        "glossy",
-        "posed",
-        "retouched",
-        "beautiful"
-      ],
+      "oneLine": "Heavy on-camera flash on goth-luxe subjects, leather and chrome jewelry catching highlights.",
+      "notForUseWhen": "Family product, B2B, anything wholesome.",
       "pairsPrototypes": [
-        "recipe-newspaper-of-record",
-        "style-agate-broadsheet"
-      ],
-      "lineRange": [
-        591,
-        621
-      ]
-    },
-    "salgado-contrast": {
-      "name": "Sebastião Salgado biblical contrast",
-      "category": "documentary",
-      "era": "1980s-current",
-      "oneLine": "High-contrast monochrome, deep black point, retained shadow detail.",
-      "roleAffinity": [
-        "hero",
-        "section",
-        "portrait"
-      ],
-      "notForUseWhen": "Fashion, consumer product, anything cheerful.",
-      "antiPatternKeywords": [
-        "color",
-        "snapshot",
-        "low-contrast",
-        "flash",
-        "retouched"
-      ],
-      "pairsPrototypes": [
-        "recipe-newspaper-of-record",
-        "style-agate-broadsheet",
+        "aesthetic-y2k-futurism",
+        "aesthetic-cyberpunk",
         "recipe-editorial-magazine",
-        "style-serif-warm-paper"
+        "aesthetic-web-brutalism"
       ],
-      "lineRange": [
-        622,
-        652
-      ]
+      "sourceFile": "prototype/photo-chrome-hearts-editorial.md"
+    },
+    "cinematic-street-anamorphic": {
+      "name": "Cinematic anamorphic street",
+      "category": "street",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Anamorphic 2.39:1 wide aspect, oval bokeh, blue horizontal lens flares.",
+      "notForUseWhen": "Anything bright, daylight-driven, product e-comm.",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-cassette-futurism",
+        "recipe-ai-foundry-dark",
+        "style-dense-mono-dark"
+      ],
+      "sourceFile": "prototype/photo-cinematic-street-anamorphic.md"
+    },
+    "circuit-bent-glitch": {
+      "name": "Circuit-bent glitch photo effect",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Datamoshing, channel shift, scanline artifacts.",
+      "notForUseWhen": "Premium, B2B, anything restrained or sincere.",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-vaporwave",
+        "aesthetic-acid-graphics",
+        "style-holographic"
+      ],
+      "sourceFile": "prototype/photo-circuit-bent-glitch.md"
+    },
+    "clean-tech-lifestyle": {
+      "name": "Clean tech-lifestyle hero",
+      "category": "lifestyle",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "Subject mid-action with the product, natural ambient light.",
+      "notForUseWhen": "Editorial mood, fast fashion, anything kinetic.",
+      "pairsPrototypes": [
+        "recipe-devtools-marketing",
+        "recipe-restrained-ai-marketing",
+        "recipe-bento-marketing",
+        "recipe-linear-product-ui"
+      ],
+      "sourceFile": "prototype/photo-clean-tech-lifestyle.md"
+    },
+    "cos-lookbook": {
+      "name": "COS lookbook clean editorial",
+      "category": "lookbook",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Plaster wall or seamless paper backdrop, neutral palette.",
+      "notForUseWhen": "Loud or kinetic brand, fast e-comm with high SKU count.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-restrained-ai-marketing",
+        "style-restrained-hairline",
+        "style-oversized-neo-grotesque"
+      ],
+      "sourceFile": "prototype/photo-cos-lookbook.md"
+    },
+    "dreamy-haze": {
+      "name": "Dreamy soft haze portrait",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Diffusion filter or smoke, soft halation around all highlights.",
+      "notForUseWhen": "Hardware product, B2B, anything needing clarity and detail.",
+      "pairsPrototypes": [
+        "aesthetic-dreamcore",
+        "aesthetic-angelcore",
+        "aesthetic-fairycore",
+        "aesthetic-positivity-kawaii"
+      ],
+      "sourceFile": "prototype/photo-dreamy-haze.md"
+    },
+    "eighties-cocaine-glam": {
+      "name": "1980s cocaine-glam editorial",
+      "category": "glamour",
+      "era": "1980s",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Hard rim light from behind, soft fill from front.",
+      "notForUseWhen": "Restrained luxury, minimal, anything wellness.",
+      "pairsPrototypes": [
+        "aesthetic-urbling",
+        "aesthetic-y2k-memphis-loud",
+        "recipe-editorial-magazine",
+        "aesthetic-vector-hands-up"
+      ],
+      "sourceFile": "prototype/photo-eighties-cocaine-glam.md"
     },
     "environmental-portrait": {
       "name": "Environmental documentary portrait",
       "category": "documentary",
       "era": "1970s-current",
-      "oneLine": "Subject in their own context (workshop, kitchen, fishing boat).",
       "roleAffinity": [
         "hero",
         "section",
         "portrait"
       ],
+      "oneLine": "Subject in their own context (workshop, kitchen, fishing boat).",
       "notForUseWhen": "Fast e-comm, product hero, anything that should be impersonal.",
-      "antiPatternKeywords": [
-        "studio",
-        "posed glamour",
-        "smiling at camera",
-        "isolated white backdrop"
-      ],
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-warm-restraint",
         "style-serif-warm-paper",
         "style-cream-humanist"
       ],
-      "lineRange": [
-        653,
-        683
-      ]
+      "sourceFile": "prototype/photo-environmental-portrait.md"
     },
-    "y2k-halftone": {
-      "name": "Y2K halftone newsprint effect",
-      "category": "archival",
-      "era": "2000s revival",
-      "oneLine": "Photo passed through visible CMYK halftone dot pattern.",
+    "fantasy-glow": {
+      "name": "Fantasy glow magical lighting",
+      "category": "conceptual",
+      "era": "current",
       "roleAffinity": [
         "hero",
-        "section"
+        "bg"
       ],
-      "notForUseWhen": "Luxury, premium, anything aspirational-clean.",
-      "antiPatternKeywords": [
-        "smooth gradient",
-        "photoreal skin",
-        "perfect print",
-        "clean"
-      ],
+      "oneLine": "Volumetric god-rays cutting through atmosphere.",
+      "notForUseWhen": "B2B, modern minimal, tech product.",
       "pairsPrototypes": [
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-y2k-futurism",
-        "aesthetic-acid-graphics",
-        "recipe-y2k-memphis-loud"
+        "aesthetic-fairycore",
+        "aesthetic-cottagegoth",
+        "aesthetic-cottagecore",
+        "aesthetic-solarpunk"
       ],
-      "lineRange": [
-        684,
-        714
-      ]
-    },
-    "y2k-flash-glam": {
-      "name": "Y2K glossy flash glamour",
-      "category": "editorial-fashion",
-      "era": "2000s",
-      "oneLine": "Direct flash, glossy reflective fabrics, lipgloss high-shine.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Heritage brand, B2B, wellness.",
-      "antiPatternKeywords": [
-        "film grain",
-        "warm",
-        "natural light",
-        "soft"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-y2k-futurism",
-        "aesthetic-frutiger-aero",
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-curly-girly"
-      ],
-      "lineRange": [
-        715,
-        745
-      ]
+      "sourceFile": "prototype/photo-fantasy-glow.md"
     },
     "frutiger-aero-product": {
       "name": "Frutiger Aero glossy product environment",
       "category": "product",
       "era": "2004-2013",
-      "oneLine": "Glossy 3D-rendered surfaces, water droplets, bubbles.",
       "roleAffinity": [
         "product"
       ],
+      "oneLine": "Glossy 3D-rendered surfaces, water droplets, bubbles.",
       "notForUseWhen": "Luxury, restrained, premium B2B.",
-      "antiPatternKeywords": [
-        "moody",
-        "dark",
-        "gritty",
-        "monochrome",
-        "restrained"
-      ],
       "pairsPrototypes": [
         "aesthetic-frutiger-aero",
         "aesthetic-frutiger-chromecore",
@@ -685,586 +676,459 @@
         "style-glassmorphism",
         "style-liquid-glass"
       ],
-      "lineRange": [
-        746,
-        776
-      ]
+      "sourceFile": "prototype/photo-frutiger-aero-product.md"
     },
-    "vaporwave-still-life": {
-      "name": "Vaporwave pastel still life",
-      "category": "conceptual",
-      "era": "2010s revival of 1980s-90s",
-      "oneLine": "Pastel pink and cyan dominant, soft pastel gradient backdrop.",
-      "roleAffinity": [
-        "hero",
-        "bg"
-      ],
-      "notForUseWhen": "Heritage, wellness, premium consumer.",
-      "antiPatternKeywords": [
-        "natural light",
-        "warm grade",
-        "photojournalism"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-vaporwave",
-        "aesthetic-y2k-futurism",
-        "aesthetic-cassette-futurism",
-        "aesthetic-dreamcore"
-      ],
-      "lineRange": [
-        777,
-        807
-      ]
-    },
-    "eighties-cocaine-glam": {
-      "name": "1980s cocaine-glam editorial",
-      "category": "glamour",
-      "era": "1980s",
-      "oneLine": "Hard rim light from behind, soft fill from front.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Restrained luxury, minimal, anything wellness.",
-      "antiPatternKeywords": [
-        "muted",
-        "natural light",
-        "candid",
-        "minimal"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-urbling",
-        "aesthetic-y2k-memphis-loud",
-        "recipe-editorial-magazine",
-        "aesthetic-vector-hands-up"
-      ],
-      "lineRange": [
-        808,
-        838
-      ]
-    },
-    "seventies-soft-grain": {
-      "name": "1970s soft warm grain editorial",
+    "genz-flash-disposable": {
+      "name": "Gen-Z disposable-camera flash editorial",
       "category": "editorial-fashion",
-      "era": "1970s",
-      "oneLine": "Warm Kodachrome amber and earth tones.",
+      "era": "current",
       "roleAffinity": [
         "hero",
         "section"
       ],
-      "notForUseWhen": "Tech, B2B, modern minimal.",
-      "antiPatternKeywords": [
-        "studio",
-        "hard flash",
-        "cool",
-        "modern",
-        "sharp"
-      ],
+      "oneLine": "Hard on-camera flash, often at a party or backstage, slight red-eye risk.",
+      "notForUseWhen": "Luxury, B2B, anything sincere, anything elderly-targeted.",
       "pairsPrototypes": [
-        "aesthetic-cottagecore",
-        "aesthetic-coastal-grandmother",
-        "recipe-warm-restraint",
-        "style-cream-humanist"
+        "aesthetic-y2k-futurism",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-acid-graphics",
+        "aesthetic-rgb-gamer"
       ],
-      "lineRange": [
-        839,
-        869
-      ]
+      "sourceFile": "prototype/photo-genz-flash-disposable.md"
     },
-    "shore-color": {
-      "name": "Stephen Shore Uncommon Places banal-color",
-      "category": "fine-art",
-      "era": "1970s",
-      "oneLine": "4x5 large format, deep depth of field, full edge sharpness.",
+    "gilden-flash-street": {
+      "name": "Bruce Gilden flash street portrait",
+      "category": "street",
+      "era": "1980s-current",
       "roleAffinity": [
         "hero",
-        "bg"
+        "section"
       ],
-      "notForUseWhen": "Conversion product, fashion, anything fast.",
-      "antiPatternKeywords": [
-        "shallow focus",
-        "candid",
-        "dramatic",
-        "glamorous",
-        "modern"
-      ],
+      "oneLine": "28mm wide lens, flash off-camera held in left hand, very close to subject's face.",
+      "notForUseWhen": "Anything aspirational, hospitality, luxury, wellness.",
       "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-readcv",
-        "style-serif-warm-paper",
-        "recipe-warm-restraint"
+        "recipe-brutalist-web",
+        "aesthetic-neubrutalism",
+        "aesthetic-web-brutalism",
+        "recipe-newspaper-of-record"
       ],
-      "lineRange": [
-        870,
-        900
-      ]
+      "sourceFile": "prototype/photo-gilden-flash-street.md"
     },
     "goldin-diary": {
       "name": "Nan Goldin diary flash",
       "category": "fine-art",
       "era": "1980s-current",
-      "oneLine": "Direct on-camera flash in intimate domestic interiors.",
       "roleAffinity": [
         "hero",
         "bg"
       ],
+      "oneLine": "Direct on-camera flash in intimate domestic interiors.",
       "notForUseWhen": "Family-friendly product, B2B, anything wholesome.",
-      "antiPatternKeywords": [
-        "studio",
-        "retouched",
-        "posed",
-        "glamour",
-        "professional model"
-      ],
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "aesthetic-cottagegoth",
         "aesthetic-dark-academia",
         "aesthetic-dreamcore"
       ],
-      "lineRange": [
-        901,
-        931
-      ]
+      "sourceFile": "prototype/photo-goldin-diary.md"
     },
-    "weingart-staged": {
-      "name": "Staged conceptual fine-art (Wolfgang Weingart adjacent)",
-      "category": "fine-art",
-      "era": "current",
-      "oneLine": "Highly constructed scene, every element placed intentionally.",
+    "helmut-newton-flash": {
+      "name": "Helmut Newton on-camera flash glamour",
+      "category": "editorial-fashion",
+      "era": "1970s-1990s",
       "roleAffinity": [
         "hero",
-        "bg"
+        "section"
       ],
-      "notForUseWhen": "Mass-market product, B2B SaaS, anything quick-to-decode.",
-      "antiPatternKeywords": [
-        "candid",
-        "snapshot",
-        "journalism",
-        "busy composition"
-      ],
+      "oneLine": "Single hard flash on a tall confident female subject, falloff into pure black.",
+      "notForUseWhen": "Brief is sincere, sentimental, family-friendly, or wholesome.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "aesthetic-dreamcore",
-        "style-bold-display",
-        "aesthetic-anti-design"
-      ],
-      "lineRange": [
-        932,
-        962
-      ]
-    },
-    "cereal-lifestyle": {
-      "name": "Cereal magazine slow-travel lifestyle",
-      "category": "lifestyle",
-      "era": "current",
-      "oneLine": "Cool muted palette, slight blue-gray cast.",
-      "roleAffinity": [
-        "hero",
-        "section",
-        "portrait"
-      ],
-      "notForUseWhen": "Tech B2B, fast-paced consumer, anything kinetic.",
-      "antiPatternKeywords": [
-        "warm",
-        "saturated",
-        "busy",
-        "crowd",
-        "motion"
-      ],
-      "pairsPrototypes": [
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
-        "style-restrained-hairline",
-        "style-cream-humanist"
+        "style-oversized-neo-grotesque",
+        "aesthetic-swiss-modernist"
       ],
-      "lineRange": [
-        963,
-        993
-      ]
-    },
-    "kinfolk-warm-minimal": {
-      "name": "Kinfolk warm minimal editorial",
-      "category": "lifestyle",
-      "era": "2011-current",
-      "oneLine": "Warm muted palette, beige, cream, soft brown.",
-      "roleAffinity": [
-        "hero",
-        "section",
-        "portrait"
-      ],
-      "notForUseWhen": "Tech, fast e-comm, B2B, edgy fashion.",
-      "antiPatternKeywords": [
-        "saturated",
-        "hard light",
-        "kinetic",
-        "urban grit"
-      ],
-      "pairsPrototypes": [
-        "recipe-warm-restraint",
-        "style-cream-humanist",
-        "aesthetic-cottagecore",
-        "aesthetic-coastal-grandmother"
-      ],
-      "lineRange": [
-        994,
-        1024
-      ]
-    },
-    "cos-lookbook": {
-      "name": "COS lookbook clean editorial",
-      "category": "lookbook",
-      "era": "current",
-      "oneLine": "Plaster wall or seamless paper backdrop, neutral palette.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Loud or kinetic brand, fast e-comm with high SKU count.",
-      "antiPatternKeywords": [
-        "hard flash",
-        "busy backdrop",
-        "smile",
-        "candid",
-        "retouched skin perfection"
-      ],
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-restrained-ai-marketing",
-        "style-restrained-hairline",
-        "style-oversized-neo-grotesque"
-      ],
-      "lineRange": [
-        1025,
-        1055
-      ]
-    },
-    "surreal-still-life": {
-      "name": "Surreal still-life conceptual",
-      "category": "conceptual",
-      "era": "current",
-      "oneLine": "Single saturated backdrop, no horizon.",
-      "roleAffinity": [
-        "hero",
-        "bg"
-      ],
-      "notForUseWhen": "Anything sincere, B2B, wellness, heritage.",
-      "antiPatternKeywords": [
-        "natural light",
-        "candid",
-        "soft",
-        "busy backdrop"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-wacky-pomo",
-        "style-bold-display",
-        "aesthetic-acid-graphics"
-      ],
-      "lineRange": [
-        1056,
-        1086
-      ]
-    },
-    "dreamy-haze": {
-      "name": "Dreamy soft haze portrait",
-      "category": "conceptual",
-      "era": "current",
-      "oneLine": "Diffusion filter or smoke, soft halation around all highlights.",
-      "roleAffinity": [
-        "hero",
-        "bg"
-      ],
-      "notForUseWhen": "Hardware product, B2B, anything needing clarity and detail.",
-      "antiPatternKeywords": [
-        "hard flash",
-        "gritty",
-        "dark",
-        "saturated",
-        "sharp focus"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-dreamcore",
-        "aesthetic-angelcore",
-        "aesthetic-fairycore",
-        "aesthetic-positivity-kawaii"
-      ],
-      "lineRange": [
-        1087,
-        1117
-      ]
-    },
-    "fantasy-glow": {
-      "name": "Fantasy glow magical lighting",
-      "category": "conceptual",
-      "era": "current",
-      "oneLine": "Volumetric god-rays cutting through atmosphere.",
-      "roleAffinity": [
-        "hero",
-        "bg"
-      ],
-      "notForUseWhen": "B2B, modern minimal, tech product.",
-      "antiPatternKeywords": [
-        "flash",
-        "hard noon sun",
-        "urban",
-        "modern"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-fairycore",
-        "aesthetic-cottagegoth",
-        "aesthetic-cottagecore",
-        "aesthetic-solarpunk"
-      ],
-      "lineRange": [
-        1118,
-        1148
-      ]
-    },
-    "magic-glow": {
-      "name": "Magic glow product or beauty",
-      "category": "beauty",
-      "era": "current",
-      "oneLine": "Internal glow as if subject is lit from within.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Documentary, gritty, B2B, hardware.",
-      "antiPatternKeywords": [
-        "hard flash",
-        "cool",
-        "gritty",
-        "harsh"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-angelcore",
-        "aesthetic-fairycore",
-        "style-holographic",
-        "style-claymorphism"
-      ],
-      "lineRange": [
-        1149,
-        1179
-      ]
-    },
-    "circuit-bent-glitch": {
-      "name": "Circuit-bent glitch photo effect",
-      "category": "conceptual",
-      "era": "current",
-      "oneLine": "Datamoshing, channel shift, scanline artifacts.",
-      "roleAffinity": [
-        "hero",
-        "bg"
-      ],
-      "notForUseWhen": "Premium, B2B, anything restrained or sincere.",
-      "antiPatternKeywords": [
-        "clean",
-        "smooth",
-        "calm",
-        "restrained"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-cyberpunk",
-        "aesthetic-vaporwave",
-        "aesthetic-acid-graphics",
-        "style-holographic"
-      ],
-      "lineRange": [
-        1180,
-        1210
-      ]
-    },
-    "skate-zine": {
-      "name": "Skate zine 35mm flash",
-      "category": "documentary",
-      "era": "1990s-current",
-      "oneLine": "35mm point and shoot, on-camera flash.",
-      "roleAffinity": [
-        "hero",
-        "section",
-        "portrait"
-      ],
-      "notForUseWhen": "Premium, wellness, luxury, family.",
-      "antiPatternKeywords": [
-        "studio",
-        "posed",
-        "retouched",
-        "soft light",
-        "glossy"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-web-brutalism",
-        "recipe-brutalist-web",
-        "aesthetic-acid-graphics",
-        "aesthetic-y2k-memphis-loud"
-      ],
-      "lineRange": [
-        1211,
-        1241
-      ]
-    },
-    "backstage-fashion": {
-      "name": "Backstage editorial BTS",
-      "category": "BTS",
-      "era": "current",
-      "oneLine": "Available light, sometimes mixed with hair-light or makeup-station tungsten.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Polished hero, conversion product page.",
-      "antiPatternKeywords": [
-        "studio polish",
-        "retouched",
-        "posed",
-        "glamour final-look"
-      ],
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "recipe-readcv",
-        "aesthetic-corporate-grunge",
-        "recipe-restrained-ai-marketing"
-      ],
-      "lineRange": [
-        1242,
-        1272
-      ]
-    },
-    "archival-found-photo": {
-      "name": "Archival found-photograph treatment",
-      "category": "archival",
-      "era": "1950s-90s",
-      "oneLine": "Period-correct degradation: faded color, slight yellowing, edge wear.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Modern tech, restrained luxury, anything aspirational-future.",
-      "antiPatternKeywords": [
-        "retouched",
-        "sharp",
-        "modern",
-        "posed editorial"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-cluttercore",
-        "recipe-readcv",
-        "aesthetic-corporate-grunge",
-        "aesthetic-cottagecore"
-      ],
-      "lineRange": [
-        1273,
-        1303
-      ]
-    },
-    "laundry-light-lookbook": {
-      "name": "Daylight lookbook plaster wall",
-      "category": "lookbook",
-      "era": "current",
-      "oneLine": "Empty pale plaster or stucco backdrop, natural texture.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Fast fashion volume e-comm, loud or kinetic brand.",
-      "antiPatternKeywords": [
-        "studio flash",
-        "polished",
-        "busy",
-        "kinetic"
-      ],
-      "pairsPrototypes": [
-        "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
-        "style-cream-humanist",
-        "style-restrained-hairline"
-      ],
-      "lineRange": [
-        1304,
-        1334
-      ]
+      "sourceFile": "prototype/photo-helmut-newton-flash.md"
     },
     "high-key-beauty": {
       "name": "High-key beauty white seamless",
       "category": "beauty",
       "era": "current",
-      "oneLine": "Pure white seamless backdrop, even all around.",
       "roleAffinity": [
         "hero",
         "section"
       ],
+      "oneLine": "Pure white seamless backdrop, even all around.",
       "notForUseWhen": "Editorial mood, lifestyle, anything narrative.",
-      "antiPatternKeywords": [
-        "moody",
-        "shadow",
-        "environment",
-        "candid"
-      ],
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "style-glassmorphism",
         "style-liquid-glass",
         "recipe-restrained-ai-marketing"
       ],
-      "lineRange": [
-        1335,
-        1365
-      ]
+      "sourceFile": "prototype/photo-high-key-beauty.md"
     },
-    "bowie-rock-glamour": {
-      "name": "Rock-glamour stage editorial",
-      "category": "glamour",
-      "era": "1970s-1980s",
-      "oneLine": "Stage lighting recreated in studio: hot rim from behind, single colored gel.",
-      "roleAffinity": [
-        "hero",
-        "section"
-      ],
-      "notForUseWhen": "Restrained luxury, B2B, wellness.",
-      "antiPatternKeywords": [
-        "candid",
-        "natural light",
-        "restrained"
-      ],
-      "pairsPrototypes": [
-        "aesthetic-vector-hands-up",
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-rgb-gamer",
-        "aesthetic-acid-design"
-      ],
-      "lineRange": [
-        1366,
-        1396
-      ]
-    },
-    "clean-tech-lifestyle": {
-      "name": "Clean tech-lifestyle hero",
+    "kinfolk-warm-minimal": {
+      "name": "Kinfolk warm minimal editorial",
       "category": "lifestyle",
-      "era": "current",
-      "oneLine": "Subject mid-action with the product, natural ambient light.",
+      "era": "2011-current",
       "roleAffinity": [
         "hero",
         "section",
         "portrait"
       ],
-      "notForUseWhen": "Editorial mood, fast fashion, anything kinetic.",
-      "antiPatternKeywords": [
-        "moody",
-        "hard flash",
-        "kinetic",
-        "gritty"
-      ],
+      "oneLine": "Warm muted palette, beige, cream, soft brown.",
+      "notForUseWhen": "Tech, fast e-comm, B2B, edgy fashion.",
       "pairsPrototypes": [
-        "recipe-devtools-marketing",
-        "recipe-restrained-ai-marketing",
-        "recipe-bento-marketing",
-        "recipe-linear-product-ui"
+        "recipe-warm-restraint",
+        "style-cream-humanist",
+        "aesthetic-cottagecore",
+        "aesthetic-coastal-grandmother"
       ],
-      "lineRange": [
-        1397,
-        1618
-      ]
+      "sourceFile": "prototype/photo-kinfolk-warm-minimal.md"
+    },
+    "laundry-light-lookbook": {
+      "name": "Daylight lookbook plaster wall",
+      "category": "lookbook",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Empty pale plaster or stucco backdrop, natural texture.",
+      "notForUseWhen": "Fast fashion volume e-comm, loud or kinetic brand.",
+      "pairsPrototypes": [
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "style-cream-humanist",
+        "style-restrained-hairline"
+      ],
+      "sourceFile": "prototype/photo-laundry-light-lookbook.md"
+    },
+    "leibovitz-key-light": {
+      "name": "Annie Leibovitz one-light portraiture",
+      "category": "editorial-fashion",
+      "era": "1980s-current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Single large softbox or umbrella, ambient kept in.",
+      "notForUseWhen": "Quick product, e-comm hero, anything needing many subjects in one shot.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-devtools-marketing",
+        "recipe-bento-marketing",
+        "style-serif-warm-paper"
+      ],
+      "sourceFile": "prototype/photo-leibovitz-key-light.md"
+    },
+    "magic-glow": {
+      "name": "Magic glow product or beauty",
+      "category": "beauty",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Internal glow as if subject is lit from within.",
+      "notForUseWhen": "Documentary, gritty, B2B, hardware.",
+      "pairsPrototypes": [
+        "aesthetic-angelcore",
+        "aesthetic-fairycore",
+        "style-holographic",
+        "style-claymorphism"
+      ],
+      "sourceFile": "prototype/photo-magic-glow.md"
+    },
+    "magnum-monochrome": {
+      "name": "Magnum monochrome documentary",
+      "category": "documentary",
+      "era": "1950s-current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "35mm Leica with 35mm or 50mm lens, decisive moment.",
+      "notForUseWhen": "Product e-comm, anything aspirational-consumer.",
+      "pairsPrototypes": [
+        "recipe-newspaper-of-record",
+        "style-agate-broadsheet",
+        "style-serif-warm-paper",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "prototype/photo-magnum-monochrome.md"
+    },
+    "night-flash-noir": {
+      "name": "Night flash neon-noir portrait",
+      "category": "street",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Hard direct on-camera flash on subject at night.",
+      "notForUseWhen": "Daylight product, family, wellness.",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-vaporwave",
+        "aesthetic-y2k-futurism",
+        "recipe-ai-foundry-dark"
+      ],
+      "sourceFile": "prototype/photo-night-flash-noir.md"
+    },
+    "nyt-cooking-food": {
+      "name": "NYT Cooking bright daylight food",
+      "category": "food",
+      "era": "current",
+      "roleAffinity": [
+        "food"
+      ],
+      "oneLine": "Bright daylight, light wood, marble, or pale linen surface.",
+      "notForUseWhen": "Fine dining, moody restaurant marketing, fast food.",
+      "pairsPrototypes": [
+        "recipe-readcv",
+        "style-cream-humanist",
+        "aesthetic-coastal-grandmother",
+        "recipe-restrained-ai-marketing"
+      ],
+      "sourceFile": "prototype/photo-nyt-cooking-food.md"
+    },
+    "salgado-contrast": {
+      "name": "Sebastião Salgado biblical contrast",
+      "category": "documentary",
+      "era": "1980s-current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "High-contrast monochrome, deep black point, retained shadow detail.",
+      "notForUseWhen": "Fashion, consumer product, anything cheerful.",
+      "pairsPrototypes": [
+        "recipe-newspaper-of-record",
+        "style-agate-broadsheet",
+        "recipe-editorial-magazine",
+        "style-serif-warm-paper"
+      ],
+      "sourceFile": "prototype/photo-salgado-contrast.md"
+    },
+    "seventies-soft-grain": {
+      "name": "1970s soft warm grain editorial",
+      "category": "editorial-fashion",
+      "era": "1970s",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Warm Kodachrome amber and earth tones.",
+      "notForUseWhen": "Tech, B2B, modern minimal.",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "aesthetic-coastal-grandmother",
+        "recipe-warm-restraint",
+        "style-cream-humanist"
+      ],
+      "sourceFile": "prototype/photo-seventies-soft-grain.md"
+    },
+    "shore-color": {
+      "name": "Stephen Shore Uncommon Places banal-color",
+      "category": "fine-art",
+      "era": "1970s",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "4x5 large format, deep depth of field, full edge sharpness.",
+      "notForUseWhen": "Conversion product, fashion, anything fast.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-readcv",
+        "style-serif-warm-paper",
+        "recipe-warm-restraint"
+      ],
+      "sourceFile": "prototype/photo-shore-color.md"
+    },
+    "skate-zine": {
+      "name": "Skate zine 35mm flash",
+      "category": "documentary",
+      "era": "1990s-current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "35mm point and shoot, on-camera flash.",
+      "notForUseWhen": "Premium, wellness, luxury, family.",
+      "pairsPrototypes": [
+        "aesthetic-web-brutalism",
+        "recipe-brutalist-web",
+        "aesthetic-acid-graphics",
+        "aesthetic-y2k-memphis-loud"
+      ],
+      "sourceFile": "prototype/photo-skate-zine.md"
+    },
+    "sorrenti-grain": {
+      "name": "Mario Sorrenti grain and tonality",
+      "category": "editorial-fashion",
+      "era": "1990s-current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Medium format Pentax 67 or Hasselblad, 80mm normal lens.",
+      "notForUseWhen": "Anything needing color, product detail, or commercial-explicit subject.",
+      "pairsPrototypes": [
+        "recipe-warm-restraint",
+        "style-cream-humanist",
+        "style-serif-warm-paper",
+        "aesthetic-coastal-grandmother"
+      ],
+      "sourceFile": "prototype/photo-sorrenti-grain.md"
+    },
+    "surreal-still-life": {
+      "name": "Surreal still-life conceptual",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Single saturated backdrop, no horizon.",
+      "notForUseWhen": "Anything sincere, B2B, wellness, heritage.",
+      "pairsPrototypes": [
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-wacky-pomo",
+        "style-bold-display",
+        "aesthetic-acid-graphics"
+      ],
+      "sourceFile": "prototype/photo-surreal-still-life.md"
+    },
+    "tillmans-candid": {
+      "name": "Wolfgang Tillmans degree-zero candid",
+      "category": "editorial-fashion",
+      "era": "1990s-current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "One 50mm lens, no retouching, available light, point and shoot.",
+      "notForUseWhen": "Luxury, glamour, conversion-focused product pages, B2B.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-readcv",
+        "aesthetic-cottagecore",
+        "recipe-restrained-ai-marketing"
+      ],
+      "sourceFile": "prototype/photo-tillmans-candid.md"
+    },
+    "vaporwave-still-life": {
+      "name": "Vaporwave pastel still life",
+      "category": "conceptual",
+      "era": "2010s revival of 1980s-90s",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Pastel pink and cyan dominant, soft pastel gradient backdrop.",
+      "notForUseWhen": "Heritage, wellness, premium consumer.",
+      "pairsPrototypes": [
+        "aesthetic-vaporwave",
+        "aesthetic-y2k-futurism",
+        "aesthetic-cassette-futurism",
+        "aesthetic-dreamcore"
+      ],
+      "sourceFile": "prototype/photo-vaporwave-still-life.md"
+    },
+    "vivian-maier-square": {
+      "name": "Vivian Maier square street observational",
+      "category": "street",
+      "era": "1950s-1970s archival",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Square 6x6 medium format, waist-level finder.",
+      "notForUseWhen": "Anything contemporary-fashion, fast-paced, conversion-driven.",
+      "pairsPrototypes": [
+        "recipe-newspaper-of-record",
+        "style-serif-warm-paper",
+        "style-agate-broadsheet",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "prototype/photo-vivian-maier-square.md"
+    },
+    "war-photojournalism": {
+      "name": "Frontline war photojournalism",
+      "category": "documentary",
+      "era": "1990s-current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "35mm or 28mm wide lens, very close to action.",
+      "notForUseWhen": "Any commercial application. Reserved for editorial truth.",
+      "pairsPrototypes": [
+        "recipe-newspaper-of-record",
+        "style-agate-broadsheet"
+      ],
+      "sourceFile": "prototype/photo-war-photojournalism.md"
+    },
+    "weingart-staged": {
+      "name": "Staged conceptual fine-art (Wolfgang Weingart adjacent)",
+      "category": "fine-art",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Highly constructed scene, every element placed intentionally.",
+      "notForUseWhen": "Mass-market product, B2B SaaS, anything quick-to-decode.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "aesthetic-dreamcore",
+        "style-bold-display",
+        "aesthetic-anti-design"
+      ],
+      "sourceFile": "prototype/photo-weingart-staged.md"
+    },
+    "y2k-flash-glam": {
+      "name": "Y2K glossy flash glamour",
+      "category": "editorial-fashion",
+      "era": "2000s",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Direct flash, glossy reflective fabrics, lipgloss high-shine.",
+      "notForUseWhen": "Heritage brand, B2B, wellness.",
+      "pairsPrototypes": [
+        "aesthetic-y2k-futurism",
+        "aesthetic-frutiger-aero",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-curly-girly"
+      ],
+      "sourceFile": "prototype/photo-y2k-flash-glam.md"
+    },
+    "y2k-halftone": {
+      "name": "Y2K halftone newsprint effect",
+      "category": "archival",
+      "era": "2000s revival",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Photo passed through visible CMYK halftone dot pattern.",
+      "notForUseWhen": "Luxury, premium, anything aspirational-clean.",
+      "pairsPrototypes": [
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-y2k-futurism",
+        "aesthetic-acid-graphics",
+        "recipe-y2k-memphis-loud"
+      ],
+      "sourceFile": "prototype/photo-y2k-halftone.md"
     }
   }
 }

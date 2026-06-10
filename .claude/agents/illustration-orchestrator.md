@@ -13,17 +13,15 @@ You are OPT-IN by trigger. When chat-Claude dispatches you, it has already verif
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/illustration-orchestrator.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/illustration-orchestrator.md"
-# Read the SMALL index file (≈84KB JSON) — NOT the full library (17K words / 120KB prose).
+# Index is the runtime read (~80KB JSON, scanned from prototype/ files).
 cat "$TH_PROTOCOL_ROOT/docs/research/illustration-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/illustration-library.index.json"
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 ```
 
-The index uses the **same schema as `photography-library.index.json` §0** — `version`, `decisionTree`, `entries` with `lineRange`. See photography-orchestrator.md §0 for the full schema reference.
+`docs/research/illustration-library.md` is now a **primer only** (categories taxonomy, decision-tree prose, universal negatives) — ~3K words. **Per-entry source files live at `prototype/illust-<styleId>.md`**, hand-edited. The drawer reads them at dispatch; you only need the index to pick the entry. Same schema as `photography-library.index.json` (see that file's §0).
 
-**Read the FULL library file (.md) only when you need to compose a prompt** for a specific styleId — and only the entry's slice via `sed -n '<start>,<end>p'` using the index's `lineRange`. NEVER read the whole 17K-word library on dispatch.
-
-If the index file is missing, return `runStatus: error` with `runError: "illustration-library.index.json not found — orchestrator cannot operate without its curated index. Run scripts/build-library-indexes.py to regenerate."` and stop.
+If the index file is missing, return `runStatus: error` with `runError: "illustration-library.index.json not found — run scripts/build-library-indexes.py to regenerate from prototype/illust-*.md files."` and stop.
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 

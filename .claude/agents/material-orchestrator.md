@@ -13,19 +13,20 @@ You are OPT-IN by aesthetic. Standard polish handles microanimation; you handle 
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/material-orchestrator.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/material-orchestrator.md"
-# Read the SMALL index file (≈60KB JSON) — NOT the full library (16K words / 110KB prose).
+# Index is the runtime read (~56KB JSON, scanned from prototype/ files).
 cat "$TH_PROTOCOL_ROOT/docs/research/material-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/material-library.index.json"
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 ```
 
-The material index uses the same schema as `photography-library.index.json` §0 with material-specific fields:
+`docs/research/material-library.md` is now a **primer only** — §1 Material principles (luminance, depth, deformation, refraction, anisotropy, age) + §6 Reactive-behaviour reference + §7 Prototype-style decision-tree prose + §8 Anti-patterns + Appendix (~3K words). **Per-entry source files live at `prototype/material-<materialId>.md`** — hand-edited, YAML frontmatter for structured fields + markdown body for physical-behavior prose + a YAML codeblock holding the verbatim `implementationStrategies` (CSS / SVG filter / GLSL / raster / video). The drawer reads them at dispatch; you only need the index.
+
+Material index schema (same as photo + illust, plus material-specific fields):
 - `entries[materialId].family` — `digital | analog | hybrid`
 - `entries[materialId].surfaceFinish` — `matte | glossy | textured | semi-gloss | metallic | iridescent`
-- `entries[materialId].antiPatternKeywords` — first 3 of the library's `killsTheIllusion[]` list (text-match heuristics for cross-checking implementation mistakes)
-- `entries[materialId].lineRange` — slice the full implementation snippets (CSS / SVG filter / GLSL shader / raster spec / video spec / reactive behaviours) via `sed -n '<start>,<end>p' docs/research/material-library.md`
+- `entries[materialId].sourceFile` — pointer to `prototype/material-<materialId>.md`
 
-Without this index file you cannot operate; if missing, return `runStatus: error` with `runError: "material-library.index.json not found — orchestrator cannot operate. Run scripts/build-library-indexes.py to regenerate."`. NEVER read the whole 16K-word library on dispatch.
+If the index file is missing, return `runStatus: error` with `runError: "material-library.index.json not found — run scripts/build-library-indexes.py to regenerate from prototype/material-*.md files."`.
 
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5/6/7/10.
 

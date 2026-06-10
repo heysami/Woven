@@ -40,24 +40,18 @@ priorVerdicts:      []
 === END ENVELOPE ===
 ```
 
-## 2. Read the material's self-contained detail file
+## 2. Read the per-entry source file
 
-The targeted material has a self-contained per-entry file at `prototype/material-<materialId>.md` (~2-5KB, the full implementation YAML inline). Read THAT, not the big library.
+`prototype/material-<materialId>.md` IS the source of truth — YAML frontmatter + markdown body with prose physical-behavior sections + a YAML codeblock holding the `implementationStrategies` (CSS / SVG / WebGL / raster / video) preserved verbatim.
 
 ```bash
 cat "$TH_PROJECT_ROOT/prototype/material-<materialId>.md" \
   || cat "$TH_PROTOCOL_ROOT/prototype/material-<materialId>.md"
 ```
 
-**Fallback (per-entry file missing)** — sed-slice using `index.entries[<materialId>].lineRange`:
+If the file is missing → `runStatus: error` with `runError: "prototype/material-<materialId>.md not found"`. No library file fallback.
 
-```bash
-LIB=docs/research/material-library.md
-RANGE=$(python3 -c "import json; print(*json.load(open('docs/research/material-library.index.json'))['entries']['<materialId>']['lineRange'])")
-sed -n "$(echo $RANGE | cut -d' ' -f1),$(echo $RANGE | cut -d' ' -f2)p" "$LIB"
-```
-
-Materials are richer than photo/illust entries because they ship CSS + SVG filter + GLSL + raster + video implementation strategies. Extract:
+The file is richer than photo/illust per-entry files (~3-5 KB) because materials ship CSS + SVG filter + GLSL + raster + video implementation strategies. Extract:
 
 - `physicalBehavior` (surface finish, transparency, reactsToLight, deforms, age)
 - `implementationStrategies.css` (CSS snippet, may be empty if shader-only)
