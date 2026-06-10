@@ -6,6 +6,9 @@ subCategory: low-poly-paper
 role: subject
 pairsPrototypes: [aesthetic-pixel-ps1-tactics-ogre, aesthetic-vaporwave, aesthetic-cassette-futurism, aesthetic-pc-98, recipe-terminal-on-web]
 notForUseWhen: premium-luxury, restrained editorial, photoreal product
+images:
+  - src: illust-3d-ps1-low-poly.png
+    reason: Illustration style sample.
 ---
 
 # PS1-era low-poly 3D

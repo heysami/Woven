@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [aesthetic-corporate-memphis, aesthetic-positivity-kawaii, recipe-bento-marketing]
 notForUseWhen: enterprise serious, brutalism, dark themes
+images:
+  - src: illust-blush-corporate-memphis-energetic.png
+    reason: Illustration style sample.
 ---
 
 # Corporate-Memphis Energetic Action (Blush)

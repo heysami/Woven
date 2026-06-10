@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-y2k-futurism, recipe-ai-foundry-dark, aesthetic-defi-cosmic, aesthetic-depin-hardware]
 notForUseWhen: warm-lifestyle, cottagecore, kids brands, restrained editorial
+images:
+  - src: photo-face-id-dot-projector.png
+    reason: Photography style sample.
 ---
 
 # Face-ID dot-projector / structured-light depth scan

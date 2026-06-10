@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-cyberpunk, aesthetic-depin-hardware, aesthetic-defi-cosmic, aesthetic-crypto-degen, style-holographic]
 notForUseWhen: cottagecore, warm-lifestyle, restrained-clean editorial, kids brands
+images:
+  - src: illust-3d-tron-emissive-glow.png
+    reason: Illustration style sample.
 ---
 
 # Tron-emissive glow 3D (clean dark + glowing accents)

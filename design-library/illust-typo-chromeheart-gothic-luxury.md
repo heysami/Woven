@@ -6,6 +6,9 @@ subCategory: chromeheart-gothic-luxury
 role: typography
 pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-futurism, style-holographic, aesthetic-crypto-degen]
 notForUseWhen: B2B, restrained editorial, Bauhaus, cottagecore
+images:
+  - src: illust-typo-chromeheart-gothic-luxury.png
+    reason: Illustration style sample.
 ---
 
 # Chrome-Hearts gothic-luxury blackletter

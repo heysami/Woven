@@ -6,6 +6,9 @@ subCategory: fluffy-plush
 role: subject
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-warm-restraint, aesthetic-positivity-kawaii, aesthetic-frutiger-eco]
 notForUseWhen: cyberpunk, brutalism, B2B-tech, edgy fashion
+images:
+  - src: illust-3d-knit-yarn-character.png
+    reason: Illustration style sample.
 ---
 
 # Knit / yarn 3D character (cozy wool)

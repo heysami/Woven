@@ -5,6 +5,9 @@ category: cinematic
 era: 2019-current / HBO Gen-Z drama
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-y2k-futurism, aesthetic-positivity-kawaii, style-holographic, aesthetic-curly-girly]
 notForUseWhen: B2B-clean, brutalism, restrained-editorial, cottagecore, premium-luxury-restraint
+images:
+  - src: photo-euphoria-glitter-neon.png
+    reason: Photography style sample.
 ---
 
 # Euphoria glitter-neon emotional-realism (Rév)

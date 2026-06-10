@@ -6,6 +6,9 @@ subCategory: fluffy-plush
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, recipe-warm-restraint, style-aurorism, style-claymorphism, aesthetic-frutiger-aero]
 notForUseWhen: brutalism, cyberpunk, restrained-editorial, B2B-clean
+images:
+  - src: illust-pixar-inside-out-emotion-volumetric.png
+    reason: Illustration style sample.
 ---
 
 # Pixar Inside Out emotion-volumetric

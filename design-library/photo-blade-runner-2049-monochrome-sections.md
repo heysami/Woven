@@ -5,6 +5,9 @@ category: cinematic
 era: 2017 / neo-noir sci-fi
 pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-cyberpunk, recipe-scientific-infra-marketing, aesthetic-defi-cosmic, style-restrained-hairline]
 notForUseWhen: cottagecore, kids brands, warm-lifestyle, positivity-kawaii, restrained-warm-editorial
+images:
+  - src: photo-blade-runner-2049-monochrome-sections.png
+    reason: Photography style sample.
 ---
 
 # Blade Runner 2049 monochrome-sections (Deakins)

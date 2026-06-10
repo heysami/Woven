@@ -6,6 +6,9 @@ subCategory: ink-line-brush
 role: decoration
 pairsPrototypes: [style-doodle, aesthetic-corporate-memphis, aesthetic-positivity-kawaii, aesthetic-curly-girly, recipe-bento-marketing, recipe-readcv, recipe-editorial-magazine]
 notForUseWhen: dense data UI, brutalism, corporate Fortune-500
+images:
+  - src: illust-handyarrows-illustration.png
+    reason: Illustration style sample.
 ---
 
 # HandyArrows — Single-hand illustration pack (Eren Can Arica)

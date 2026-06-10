@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-acid-graphics, aesthetic-web-brutalism, recipe-brutalist-web]
 notForUseWhen: premium-luxury, restrained editorial, B2B-serious, warm-lifestyle
+images:
+  - src: photo-databend-jpeg-corrupt.png
+    reason: Photography style sample.
 ---
 
 # Databend / JPEG-corruption glitch

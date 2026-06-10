@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [aesthetic-dark-academia, aesthetic-defi-cosmic, recipe-warm-restraint, aesthetic-vaporwave, style-restrained-hairline]
 notForUseWhen: positivity-kawaii, friendly-tech, kids' brands
+images:
+  - src: illust-3d-arsham-eroded.png
+    reason: Illustration style sample.
 ---
 
 # Arsham eroded-sculpture 3D

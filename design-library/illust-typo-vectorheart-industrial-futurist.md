@@ -6,6 +6,9 @@ subCategory: vectorheart-decorative
 role: typography
 pairsPrototypes: [aesthetic-vector-neovectorheart, aesthetic-vector-vectorbloom, aesthetic-cyberpunk, recipe-devtools-marketing, recipe-ai-foundry-dark, style-brutalist-raw]
 notForUseWhen: cottagecore, romantic-craft, warm-paper editorial
+images:
+  - src: illust-typo-vectorheart-industrial-futurist.png
+    reason: Illustration style sample.
 ---
 
 # Vectorheart industrial-futurist (Designers Republic / Wipeout)

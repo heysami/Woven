@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [aesthetic-corporate-memphis, recipe-bento-marketing, recipe-warm-restraint, aesthetic-coastal-grandmother, aesthetic-positivity-kawaii]
 notForUseWhen: brutalism, youth-music, dark themes
+images:
+  - src: illust-blush-corporate-memphis-scenes.png
+    reason: Illustration style sample.
 ---
 
 # Corporate-Memphis Everyday Scenes (Blush)

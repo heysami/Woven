@@ -5,6 +5,9 @@ category: lifestyle
 era: current
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-warm-restraint, style-cream-humanist, aesthetic-dark-academia, recipe-editorial-magazine]
 notForUseWhen: fast e-comm, edgy fashion volume, B2B, kinetic-tech, restrained-clean tech marketing
+images:
+  - src: photo-golden-hour-indoor-warm.png
+    reason: Photography style sample.
 ---
 
 # Golden-hour indoor warm (rays through window)

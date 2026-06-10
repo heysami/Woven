@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-y2k-futurism, aesthetic-acid-graphics, style-holographic]
 notForUseWhen: premium-luxury, restrained editorial, B2B-serious, warm-lifestyle
+images:
+  - src: photo-rgb-chromatic-split.png
+    reason: Photography style sample.
 ---
 
 # RGB chromatic-split / channel-shift

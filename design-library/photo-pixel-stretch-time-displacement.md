@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cyberpunk, aesthetic-acid-graphics, style-holographic, aesthetic-y2k-futurism]
 notForUseWhen: warm-lifestyle, premium-luxury, restrained editorial
+images:
+  - src: photo-pixel-stretch-time-displacement.png
+    reason: Photography style sample.
 ---
 
 # Pixel-stretch / time-displacement photo effect

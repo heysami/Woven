@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [aesthetic-honkai-star-rail-polished-sf, aesthetic-belle-u-painterly-vr, aesthetic-cyberpunk, recipe-editorial-magazine, recipe-warm-restraint]
 notForUseWhen: cottagecore, kids brands, restrained-tech, B2B-clean
+images:
+  - src: illust-arcane-painterly-hybrid.png
+    reason: Illustration style sample.
 ---
 
 # Arcane painterly 2.5D hybrid (Fortiche)

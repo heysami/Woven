@@ -5,6 +5,9 @@ category: archival
 era: 1990s-current revival
 pairsPrototypes: [recipe-terminal-on-web, aesthetic-cassette-futurism, style-terminal-mono, aesthetic-web-brutalism, aesthetic-pixel-game-boy-mono, recipe-devtools-marketing]
 notForUseWhen: warm-lifestyle, premium-luxury, photoreal product
+images:
+  - src: photo-ascii-art-portrait.png
+    reason: Photography style sample.
 ---
 
 # ASCII-art portrait (text-as-image)

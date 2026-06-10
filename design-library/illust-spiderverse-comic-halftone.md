@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-persona-5-heist-pop, style-pixel-bitmap, recipe-y2k-memphis-loud]
 notForUseWhen: restrained-editorial, cottagecore, B2B-clean, premium-luxury-restraint
+images:
+  - src: illust-spiderverse-comic-halftone.png
+    reason: Illustration style sample.
 ---
 
 # Spider-Verse comic-halftone (Sony Imageworks)

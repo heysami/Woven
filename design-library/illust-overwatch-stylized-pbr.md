@@ -6,6 +6,9 @@ subCategory: plastic-glossy
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-frutiger-aero, aesthetic-honkai-star-rail-polished-sf, recipe-bento-marketing, style-claymorphism]
 notForUseWhen: restrained-editorial, brutalism, cottagecore, premium-luxury-restraint
+images:
+  - src: illust-overwatch-stylized-pbr.png
+    reason: Illustration style sample.
 ---
 
 # Overwatch stylized-PBR hero (Blizzard)

@@ -6,6 +6,9 @@ subCategory: jelly-gummy
 role: subject
 pairsPrototypes: [style-liquid-glass, style-glassmorphism, style-aurorism, aesthetic-frutiger-aero, recipe-aurora-marketing]
 notForUseWhen: brutalism, restrained-editorial, B2B-clean, gritty-documentary
+images:
+  - src: illust-pixar-elemental-translucent.png
+    reason: Illustration style sample.
 ---
 
 # Pixar Elemental translucent-material

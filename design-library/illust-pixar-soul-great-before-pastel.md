@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [recipe-warm-restraint, style-aurorism, recipe-restrained-ai-marketing, style-claymorphism, aesthetic-coastal-grandmother]
 notForUseWhen: brutalism, cyberpunk, gritty-documentary, kinetic-tech, dark themes
+images:
+  - src: illust-pixar-soul-great-before-pastel.png
+    reason: Illustration style sample.
 ---
 
 # Pixar Soul Great-Before pastel-abstract

@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [recipe-devtools-marketing, recipe-scientific-infra-marketing, recipe-ai-foundry-dark, aesthetic-depin-hardware, aesthetic-cassette-futurism, aesthetic-dieselpunk]
 notForUseWhen: cottagecore, kids brands, warm-lifestyle, positivity-kawaii
+images:
+  - src: illust-3d-technical-exploded-precision.png
+    reason: Illustration style sample.
 ---
 
 # Technical exploded-view precision 3D

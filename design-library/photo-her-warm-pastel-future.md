@@ -5,6 +5,9 @@ category: cinematic
 era: 2013 / near-future melancholy
 pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, aesthetic-cottagecore, style-cream-humanist, recipe-bento-marketing]
 notForUseWhen: cyberpunk, dystopian, dark-mode-only, brutalism
+images:
+  - src: photo-her-warm-pastel-future.png
+    reason: Photography style sample.
 ---
 
 # Her warm-pastel near-future (van Hoytema)

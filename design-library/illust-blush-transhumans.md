@@ -6,6 +6,9 @@ subCategory: ink-line-brush
 role: subject
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-y2k-futurism, recipe-ai-foundry-dark, style-brutalist-raw, aesthetic-cassette-futurism]
 notForUseWhen: cottagecore, restrained editorial, warm-lifestyle, B2B-clean
+images:
+  - src: illust-blush-transhumans.png
+    reason: Illustration style sample.
 ---
 
 # Transhumans (Pablo Stanley — punk-zine cyborg ink)

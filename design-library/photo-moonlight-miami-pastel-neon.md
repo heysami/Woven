@@ -5,6 +5,9 @@ category: cinematic
 era: 2016 / contemporary intimacy
 pairsPrototypes: [aesthetic-vaporwave, recipe-editorial-magazine, style-bold-display, aesthetic-positivity-kawaii]
 notForUseWhen: B2B-clean, brutalism, restrained-clean tech marketing, gritty-documentary
+images:
+  - src: photo-moonlight-miami-pastel-neon.png
+    reason: Photography style sample.
 ---
 
 # Moonlight Miami pastel-neon (Laxton)

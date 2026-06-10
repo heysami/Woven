@@ -5,6 +5,9 @@ category: archival
 era: 1980s-90s revival
 pairsPrototypes: [aesthetic-pixel-game-boy-mono, aesthetic-pc-98, aesthetic-vaporwave, recipe-terminal-on-web, style-pixel-bitmap, aesthetic-y2k-myspace]
 notForUseWhen: premium-luxury, warm-lifestyle, photoreal product
+images:
+  - src: photo-bayer-dither-retro.png
+    reason: Photography style sample.
 ---
 
 # Bayer-matrix ordered dither (retro 1-bit)

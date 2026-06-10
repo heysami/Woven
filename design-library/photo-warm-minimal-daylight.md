@@ -5,6 +5,9 @@ category: lifestyle
 era: 2011-current
 pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-cream-humanist, style-restrained-hairline, aesthetic-cottagecore, aesthetic-coastal-grandmother]
 notForUseWhen: Tech fast-paced, edgy fashion, fast e-comm, loud kinetic brand
+images:
+  - src: photo-warm-minimal-daylight.png
+    reason: Photography style sample.
 ---
 
 # Warm-minimal daylight (Kinfolk / quiet lookbook)

@@ -5,6 +5,9 @@ category: archival
 era: 1984-89 revival
 pairsPrototypes: [aesthetic-pixel-game-boy-mono, style-pixel-bitmap, recipe-terminal-on-web, aesthetic-vaporwave, aesthetic-web-brutalism]
 notForUseWhen: premium-luxury, warm-lifestyle, photoreal product
+images:
+  - src: photo-atkinson-dither-mac-classic.png
+    reason: Photography style sample.
 ---
 
 # Atkinson dither (original-Macintosh classic)

@@ -5,6 +5,9 @@ category: cinematic
 era: 2014 / Wes Anderson canon
 pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, aesthetic-cottagecore, style-serif-warm-paper, aesthetic-coastal-grandmother]
 notForUseWhen: cyberpunk, brutalism, gritty-documentary, kinetic-tech, urban-grit
+images:
+  - src: photo-grand-budapest-symmetrical-pastel.png
+    reason: Photography style sample.
 ---
 
 # Grand Budapest symmetrical-pastel (Yeoman / Anderson)

@@ -6,6 +6,9 @@ subCategory: plastic-glossy
 role: subject
 pairsPrototypes: [aesthetic-frutiger-aero, aesthetic-positivity-kawaii, aesthetic-frutiger-bright-tertiaries, recipe-bento-marketing, style-claymorphism]
 notForUseWhen: brutalism, restrained editorial, dark themes, B2B-serious
+images:
+  - src: illust-3d-inflatable-balloon.png
+    reason: Illustration style sample.
 ---
 
 # Inflatable balloon 3D (Wannathis-grade)

@@ -6,6 +6,9 @@ subCategory: plastic-glossy
 role: subject
 pairsPrototypes: [aesthetic-defi-cosmic, aesthetic-crypto-degen, aesthetic-urbling, aesthetic-y2k-futurism, style-holographic]
 notForUseWhen: cottagecore, restrained editorial, B2B-clean, warm-lifestyle
+images:
+  - src: illust-3d-crypto-gold-chrome.png
+    reason: Illustration style sample.
 ---
 
 # Crypto gold-chrome 3D (Bitcoin / token coin)

@@ -5,6 +5,9 @@ category: cinematic
 era: 2017 / contemporary hyperreal
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-curly-girly, recipe-bento-marketing, aesthetic-cluttercore, aesthetic-frutiger-bright-tertiaries]
 notForUseWhen: premium-luxury, brutalism, restrained-editorial, dark themes
+images:
+  - src: photo-florida-project-candy-anamorphic.png
+    reason: Photography style sample.
 ---
 
 # Florida Project candy-anamorphic (Zabe)

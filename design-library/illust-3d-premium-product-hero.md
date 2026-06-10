@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [recipe-restrained-ai-marketing, recipe-scientific-infra-marketing, recipe-bento-marketing, recipe-ios-system, style-restrained-hairline, aesthetic-depin-hardware]
 notForUseWhen: cottagecore, brutalism, kids brands, hand-made craft
+images:
+  - src: illust-3d-premium-product-hero.png
+    reason: Illustration style sample.
 ---
 
 # Premium product hero 3D (Apple / Ledger-Stax-grade)

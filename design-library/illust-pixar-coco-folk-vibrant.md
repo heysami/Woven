@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: subject
 pairsPrototypes: [aesthetic-cluttercore, aesthetic-maximalism, aesthetic-positivity-kawaii, recipe-editorial-magazine, aesthetic-fairycore]
 notForUseWhen: restrained-editorial, brutalism, B2B-clean, cyberpunk
+images:
+  - src: illust-pixar-coco-folk-vibrant.png
+    reason: Illustration style sample.
 ---
 
 # Pixar Coco folk-vibrant Land of the Dead

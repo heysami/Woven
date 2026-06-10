@@ -6,6 +6,9 @@ subCategory: plastic-glossy
 role: subject
 pairsPrototypes: [recipe-devtools-marketing, recipe-aurora-marketing, recipe-ai-foundry-dark, style-glassmorphism, style-liquid-glass, style-aurorism, aesthetic-frutiger-aero]
 notForUseWhen: brutalism, cottagecore, restrained editorial
+images:
+  - src: illust-3d-spline-bubbly-product.png
+    reason: Illustration style sample.
 ---
 
 # Spline-era browser-3D bubbly product

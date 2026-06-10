@@ -6,6 +6,9 @@ subCategory: fluffy-plush
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-cottagecore, recipe-warm-restraint, aesthetic-frutiger-eco, style-claymorphism]
 notForUseWhen: brutalism, cyberpunk, B2B-serious, restrained editorial
+images:
+  - src: illust-3d-fur-rendered-mascot.png
+    reason: Illustration style sample.
 ---
 
 # Fur-rendered mascot 3D (Pixar Sully-grade)

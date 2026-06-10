@@ -5,6 +5,9 @@ category: cinematic
 era: 2016 / 1950s musical revival
 pairsPrototypes: [recipe-aurora-marketing, aesthetic-frutiger-aero, recipe-warm-restraint, style-bold-display, aesthetic-cottagecore]
 notForUseWhen: B2B-clean, brutalism, restrained-editorial, dark themes
+images:
+  - src: photo-la-la-land-musical-magic.png
+    reason: Photography style sample.
 ---
 
 # La La Land musical-magic (Sandgren)
