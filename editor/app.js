@@ -14036,18 +14036,14 @@ function PrototypeCatalogLanding({ data }) {
       <div className="ref-header">
         <div className="ref-header-title">${total} library entr${total === 1 ? "y" : "ies"} in the design library</div>
         <div className="ref-header-meta">
-          Every shell, style, aesthetic, recipe, photography style, illustration style, and material a
-          prototype can commit to — the seven visual axes. Browse before you pick a direction. Each entry
-          can carry sample images that become reference frames once a project commits — drop a
-          <code>${"<slug>-1.png"}</code> into <code>design-library/</code> and add it to the file's
-          frontmatter under <code>images:</code> with a reason. (Skill-detail files —
-          <code>step-*</code>, <code>scene-addendum-details</code>, <code>gallery-html</code>,
-          <code>demo-dock</code>, <code>raster-requirements</code>, <code>preflight-checklist</code>,
-          <code>woven-repo-conventions</code>, <code>slot-annotations</code> — live in
-          <code>prototype/</code> and describe <em>how</em> to draw, not what; they're excluded from
-          this catalog.)
+          The vocabulary every Woven prototype inherits from. Each category feeds a specific consumer:
         </div>
-        ${data.note && html`<div className="proto-catalog-note">${data.note}</div>`}
+        <ul className="ref-header-categories">
+          <li><strong>Shells · Styles · Aesthetics · Recipes</strong> — read by the <code>/prototype</code> skill when a project commits a direction.</li>
+          <li><strong>Photography</strong> — read by <code>photography-orchestrator</code> to art-direct raster-photo slots.</li>
+          <li><strong>Illustration</strong> — read by <code>illustration-orchestrator</code> to art-direct raster-foreground slots.</li>
+          <li><strong>Materials</strong> — read by <code>material-orchestrator</code> for the post-pass fidelity layer (glass, clay, chrome, holographic, paper grain, film grain, etc.).</li>
+        </ul>
       </div>
 
       <div className="ref-filter-row">

@@ -1078,6 +1078,11 @@ button {
 .ref-header-title { font-size: 18px; font-weight: 700; color: var(--text); }
 .ref-header-meta  { font-size: 13px; color: var(--text-muted); line-height: 1.55; max-width: 800px; }
 .ref-header-meta code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); }
+.ref-header-categories { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 4px; max-width: 800px; font-size: 13px; color: var(--text-muted); line-height: 1.55; }
+.ref-header-categories li { padding-left: 14px; position: relative; }
+.ref-header-categories li::before { content: "·"; position: absolute; left: 4px; color: var(--text-faint); font-weight: 700; }
+.ref-header-categories strong { color: var(--text); font-weight: 600; }
+.ref-header-categories code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); font-family: var(--font-mono, ui-monospace, monospace); }
 
 .ref-group         { display: flex; flex-direction: column; gap: 12px; }
 .ref-group-head    { display: flex; flex-direction: column; gap: 4px; }
