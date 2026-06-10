@@ -3739,6 +3739,59 @@ def _agent_version(bin_path: str):
         return None
 
 
+def _agent_logged_in(agent_id: str):
+    """Best-effort: is the user signed in to the CLI's OAuth flow?
+
+    Returns True / False when we can answer with reasonable confidence, and
+    None when the answer is genuinely unknowable from here (so the UI can
+    render a neutral state instead of a misleading "not logged in"). The
+    CLI binary itself doesn't expose an "am I authed" check we can hit
+    quickly, so we fall back to the known credential-store locations.
+
+      - Claude Code  → ~/.claude/.credentials.json (OAuth blob written by
+                       `claude login`) OR a "Claude Code-credentials" entry
+                       in the macOS keychain. Either is sufficient.
+      - Codex CLI    → ~/.codex/auth.json (OAuth blob written by
+                       `codex login`) OR OPENAI_API_KEY in env (the CLI
+                       accepts that as an authed state too).
+
+    We never read the credential contents — only check existence.
+    """
+    home = os.path.expanduser("~")
+    if agent_id == "claude":
+        cred = os.path.join(home, ".claude", ".credentials.json")
+        if os.path.isfile(cred):
+            return True
+        # macOS keychain fallback. `security find-generic-password` exits 0
+        # when the entry exists, 44 when it doesn't. We pass -g so the call
+        # doesn't print the secret to stdout (it goes to stderr, and we
+        # discard both). No UI prompt is shown for read-only existence
+        # checks of items the user already authorised this binary for.
+        try:
+            if sys.platform == "darwin":
+                r = subprocess.run(
+                    ["security", "find-generic-password",
+                     "-s", "Claude Code-credentials"],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if r.returncode == 0:
+                    return True
+                # 44 = SecKeychainSearchCopyNext: item not found
+                if r.returncode == 44:
+                    return False
+        except Exception:
+            pass
+        return False
+    if agent_id == "codex":
+        cred = os.path.join(home, ".codex", "auth.json")
+        if os.path.isfile(cred):
+            return True
+        if (os.environ.get("OPENAI_API_KEY") or "").strip():
+            return True
+        return False
+    return None
+
+
 def _list_available_agents() -> list:
     """Catalog every known agent + whether it's invocable on this machine."""
     out = []
@@ -3750,6 +3803,11 @@ def _list_available_agents() -> list:
             "bin": bin_path,
             "version": _agent_version(bin_path) if bin_path else None,
             "available": bool(bin_path),
+            # v3.6 — Surface "binary present but not logged in" as its own
+            # state so the landing CLI pill can warn before the user fires
+            # a run that would fail with a 401. None = unknown (treated as
+            # "don't show a warning" by the UI).
+            "loggedIn": _agent_logged_in(agent_id),
         })
     return out
 

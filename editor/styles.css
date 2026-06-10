@@ -8089,6 +8089,19 @@ a.ds-badge:hover, button.ds-badge:hover {
 .cli-indicator-missing .cli-dot {
   background: var(--warn, #b45309);
 }
+/* v3.6 — Binary installed, but no OAuth token: paint the same amber as the
+   missing state (it's still actionable — the user has to run `<cli> login`)
+   but slow-pulse the dot so it reads as "waiting on you" rather than the
+   harder "nothing here". Same color as missing keeps the warning vocabulary
+   uniform with the rest of the landing. */
+.cli-indicator-needs-login {
+  border-color: color-mix(in oklch, var(--warn, #b45309) 30%, var(--border));
+  color: color-mix(in oklch, var(--warn, #b45309) 70%, var(--text-muted));
+}
+.cli-indicator-needs-login .cli-dot {
+  background: var(--warn, #b45309);
+  animation: cli-dot-pulse 1.6s ease-in-out infinite;
+}
 .cli-indicator-loading .cli-dot {
   animation: cli-dot-pulse 1.1s ease-in-out infinite;
 }

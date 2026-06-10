@@ -7636,23 +7636,43 @@ function CliIndicator({ compact }) {
     ? "Install it (npm i -g @openai/codex, then run `codex login`) so the agent can dispatch."
     : "Install it (npm i -g @anthropic-ai/claude-code or install the desktop app) so the agent can dispatch.";
   const keyName = preferred === "codex" ? "OpenAI" : "Anthropic";
-  const ok = !!(target && target.available);
+  const installed = !!(target && target.available);
+  // v3.6 — Three-state pill. `loggedIn` is what /__agents now reports; null
+  // (unknown — e.g. older daemon, unsupported CLI) is treated as "don't
+  // warn", same as before. Distinct from `installed` so a working binary
+  // that's never been authed surfaces as "needs login" rather than masquerading
+  // as a fully working install.
+  const loginKnown = !!target && target.loggedIn !== undefined && target.loggedIn !== null;
+  const loggedIn = loginKnown ? !!target.loggedIn : true;
+  const needsLogin = installed && loginKnown && !loggedIn;
+  const ok = installed && loggedIn;
   const version = target && target.version ? String(target.version).split(/\s+/)[0] : null;
-  const tooltip = ok
-    ? `${label} ${version || "available"} at ${target.bin}. Used as the fallback when no ${keyName} API key is set.`
-    : `${label} not on PATH. ${installHint}`;
-  const tipShort = ok
-    ? `${label} ${version || ""} ready`
-    : `${label} not installed`;
+  const loginCmd = preferred === "codex" ? "codex login" : "claude login";
+  let tooltip;
+  let tipShort;
+  if (ok) {
+    tooltip = `${label} ${version || "available"} at ${target.bin}. Used as the fallback when no ${keyName} API key is set.`;
+    tipShort = `${label} ${version || ""} ready`;
+  } else if (needsLogin) {
+    tooltip = `${label} ${version || ""} on PATH at ${target.bin}, but not signed in. Run \`${loginCmd}\` in a plain terminal so the agent can dispatch.`;
+    tipShort = `${label} not signed in — run \`${loginCmd}\``;
+  } else {
+    tooltip = `${label} not on PATH. ${installHint}`;
+    tipShort = `${label} not installed`;
+  }
+  const state = ok ? "ok" : (needsLogin ? "needs-login" : "missing");
+  const labelText = ok
+    ? ((preferred === "codex" ? "Codex " : "CLI ") + (version || ""))
+    : (needsLogin ? `${label} not signed in` : `${label} missing`);
   return html`<span
-    className=${"cli-indicator " + (ok ? "cli-indicator-ok" : "cli-indicator-missing")}
+    className=${"cli-indicator cli-indicator-" + state}
     title=${tooltip}
     data-tip-host="true"
-    data-state=${ok ? "ok" : "missing"}
+    data-state=${state}
     data-cli=${preferred}
   >
     <span className="cli-dot"/>
-    ${!compact && html`<span className="cli-label">${ok ? ((preferred === "codex" ? "Codex " : "CLI ") + (version || "")) : (label + " missing")}</span>`}
+    ${!compact && html`<span className="cli-label">${labelText}</span>`}
     <span className="tab-tip">${tipShort}</span>
   </span>`;
 }
@@ -14844,12 +14864,21 @@ function ProjectsLanding({ info, projects, onReload }) {
     return then.toLocaleDateString();
   };
 
+  // v3.6 — Sort by lastActivity descending so the most recently touched
+  // project lands on top. Projects with no activity stamp sink to the bottom
+  // (Date.parse → NaN → 0). Tie-break on id for stable rendering.
+  const sorted = [...projects].sort((a, b) => {
+    const ta = a && a.lastActivity ? Date.parse(a.lastActivity) || 0 : 0;
+    const tb = b && b.lastActivity ? Date.parse(b.lastActivity) || 0 : 0;
+    if (tb !== ta) return tb - ta;
+    return (a.id || "").localeCompare(b.id || "");
+  });
   const filtered = filter
-    ? projects.filter(p => {
+    ? sorted.filter(p => {
         const q = filter.toLowerCase();
         return (p.id || "").toLowerCase().includes(q) || (p.label || "").toLowerCase().includes(q);
       })
-    : projects;
+    : sorted;
 
   // ──────────────────────────────────────────────────────────────────────────
   // Mount the landing's diamond-field shader on a single full-page canvas
@@ -15204,7 +15233,12 @@ function ProjectsLanding({ info, projects, onReload }) {
                               url.searchParams.set("prototype", sp.id);
                               url.searchParams.delete("branch");
                               url.searchParams.delete("branch_slug");
-                              window.location.href = url.toString();
+                              // v3.6 — Play from the landing always opens in a
+                              // new tab. Earlier it replaced the landing in-
+                              // place, which forced a full nav back through the
+                              // shader-heavy landing every time the user wanted
+                              // to compare prototypes.
+                              window.open(url.toString(), "_blank", "noopener");
                             }}
                           >
                             <span className="landing-card-star-glyph"><${Icon.Play}/></span>
