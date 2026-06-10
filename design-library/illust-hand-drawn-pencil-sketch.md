@@ -6,6 +6,9 @@ subCategory: pencil-graphite
 role: spot-illustration
 pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-dark-academia, recipe-warm-restraint]
 notForUseWhen: tech, brutalism, polished
+images:
+  - src: illust-hand-drawn-pencil-sketch.png
+    reason: Illustration style sample.
 ---
 
 # Pencil graphite sketch

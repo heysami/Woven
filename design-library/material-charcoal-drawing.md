@@ -6,6 +6,9 @@ category: ink
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [aesthetic-dark-academia, aesthetic-cottagegoth, aesthetic-anti-design]
+images:
+  - src: material-charcoal-drawing.png
+    reason: Material fidelity sample.
 ---
 
 # Charcoal Drawing (smudged, expressive)

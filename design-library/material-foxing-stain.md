@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [style-serif-warm-paper, aesthetic-dark-academia, aesthetic-cottagecore, aesthetic-cottagegoth]
+images:
+  - src: material-foxing-stain.png
+    reason: Material fidelity sample.
 ---
 
 # Foxing / Tea Stain (paper aging)

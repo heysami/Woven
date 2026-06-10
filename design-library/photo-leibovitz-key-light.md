@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 1980s-current
 pairsPrototypes: [recipe-editorial-magazine, recipe-devtools-marketing, recipe-bento-marketing, style-serif-warm-paper]
 notForUseWhen: Quick product, e-comm hero, anything needing many subjects in one shot.
+images:
+  - src: photo-leibovitz-key-light.png
+    reason: Photography style sample.
 ---
 
 # Annie Leibovitz one-light portraiture

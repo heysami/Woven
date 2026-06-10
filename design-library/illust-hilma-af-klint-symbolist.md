@@ -6,6 +6,9 @@ subCategory: hilma-symbolist
 role: hero
 pairsPrototypes: [aesthetic-angelcore, aesthetic-dreamcore, aesthetic-fairycore, style-aurorism]
 notForUseWhen: tech, brutalism, neon
+images:
+  - src: illust-hilma-af-klint-symbolist.png
+    reason: Illustration style sample.
 ---
 
 # Hilma af Klint esoteric symbolism

@@ -6,6 +6,9 @@ category: ink
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [style-doodle, aesthetic-dark-academia, aesthetic-corporate-grunge, aesthetic-anti-design]
+images:
+  - src: material-pencil-graphite.png
+    reason: Material fidelity sample.
 ---
 
 # Pencil Graphite (HB to 6B sketch)

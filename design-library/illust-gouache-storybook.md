@@ -6,6 +6,9 @@ subCategory: gouache
 role: subject
 pairsPrototypes: [aesthetic-cottagecore, recipe-warm-restraint, recipe-editorial-magazine, aesthetic-dark-academia]
 notForUseWhen: tech, brutalism
+images:
+  - src: illust-gouache-storybook.png
+    reason: Illustration style sample.
 ---
 
 # Modern gouache storybook

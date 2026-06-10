@@ -6,6 +6,9 @@ subCategory: jean-jullien-thick-line
 role: subject
 pairsPrototypes: [style-doodle, recipe-editorial-magazine, recipe-readcv]
 notForUseWhen: enterprise, photoreal
+images:
+  - src: illust-jean-jullien-thick-line.png
+    reason: Illustration style sample.
 ---
 
 # Jean Jullien thick brush cartoon

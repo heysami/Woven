@@ -6,6 +6,9 @@ category: paper
 surfaceFinish: matte
 transparency: translucent (washes)
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-fairycore]
+images:
+  - src: material-paper-with-watercolor.png
+    reason: Material fidelity sample.
 ---
 
 # Paper with Watercolor (botanical illustration substrate)

@@ -6,6 +6,9 @@ subCategory: gouache
 role: spot-illustration
 pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-anti-design, style-raster-cutout]
 notForUseWhen: enterprise polish, photoreal
+images:
+  - src: illust-risograph-illustration.png
+    reason: Illustration style sample.
 ---
 
 # Risograph 2-color illustration

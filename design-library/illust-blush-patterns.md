@@ -6,6 +6,9 @@ subCategory: geometric-primitive
 role: decoration
 pairsPrototypes: [aesthetic-bauhaus, aesthetic-de-stijl, aesthetic-corporate-memphis, recipe-bento-marketing]
 notForUseWhen: cluttered scenes, photoreal
+images:
+  - src: illust-blush-patterns.png
+    reason: Illustration style sample.
 ---
 
 # Patterns (Pablo Stanley)

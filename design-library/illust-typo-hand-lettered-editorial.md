@@ -6,6 +6,9 @@ subCategory: hand-lettered-editorial
 role: typography
 pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, style-serif-warm-paper, recipe-readcv]
 notForUseWhen: brutalism, sans-only design system
+images:
+  - src: illust-typo-hand-lettered-editorial.png
+    reason: Illustration style sample.
 ---
 
 # Hand-lettered editorial (modern brush)

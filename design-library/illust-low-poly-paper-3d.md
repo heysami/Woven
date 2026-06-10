@@ -6,6 +6,9 @@ subCategory: low-poly-paper
 role: subject
 pairsPrototypes: [aesthetic-bauhaus, aesthetic-constructivism, aesthetic-swiss-modernist]
 notForUseWhen: cute, soft, photoreal
+images:
+  - src: illust-low-poly-paper-3d.png
+    reason: Illustration style sample.
 ---
 
 # Low-Poly Paper Craft 3D

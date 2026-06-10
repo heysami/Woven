@@ -6,6 +6,9 @@ category: iridescent
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [style-holographic, aesthetic-frutiger-chromecore, aesthetic-y2k-futurism, aesthetic-vaporwave, style-liquid-glass]
+images:
+  - src: material-holographic-foil.png
+    reason: Material fidelity sample.
 ---
 
 # Holographic Foil (Pokemon card / Apple Pay Cash)

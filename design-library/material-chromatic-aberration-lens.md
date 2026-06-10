@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cinematic, recipe-bento-marketing, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero, recipe-restrained-ai-marketing]
+images:
+  - src: material-chromatic-aberration-lens.png
+    reason: Material fidelity sample.
 ---
 
 # Lens Chromatic Aberration (radial RGB split toward corners)

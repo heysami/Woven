@@ -6,6 +6,9 @@ category: clay
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-claymorphism, aesthetic-positivity-kawaii, aesthetic-frutiger-eco, aesthetic-corporate-memphis]
+images:
+  - src: material-matte-clay.png
+    reason: Material fidelity sample.
 ---
 
 # Matte Clay (claymorphism)

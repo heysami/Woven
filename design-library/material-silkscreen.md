@@ -6,6 +6,9 @@ category: print
 surfaceFinish: matte
 transparency: opaque (ink layer)
 pairsPrototypes: [aesthetic-acid-design, aesthetic-bauhaus, aesthetic-constructivism, aesthetic-corporate-grunge]
+images:
+  - src: material-silkscreen.png
+    reason: Material fidelity sample.
 ---
 
 # Silkscreen / Serigraphy (textile + poster print)

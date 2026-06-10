@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: spot-illustration
 pairsPrototypes: [style-skeuomorphism, recipe-warm-restraint]
 notForUseWhen: flat-vector marketing, brutalism
+images:
+  - src: illust-skeuomorphic-detailed.png
+    reason: Illustration style sample.
 ---
 
 # Skeuomorphic detailed object

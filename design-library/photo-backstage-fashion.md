@@ -5,6 +5,9 @@ category: BTS
 era: current
 pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-corporate-grunge, recipe-restrained-ai-marketing]
 notForUseWhen: Polished hero, conversion product page.
+images:
+  - src: photo-backstage-fashion.png
+    reason: Photography style sample.
 ---
 
 # Backstage editorial BTS

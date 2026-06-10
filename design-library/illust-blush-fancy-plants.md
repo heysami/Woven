@@ -6,6 +6,9 @@ subCategory: gouache
 role: decoration
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-solarpunk, aesthetic-coastal-grandmother, recipe-warm-restraint]
 notForUseWhen: tech, finance, anything cool-toned
+images:
+  - src: illust-blush-fancy-plants.png
+    reason: Illustration style sample.
 ---
 
 # Fancy Plants

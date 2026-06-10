@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 2000s revival, current
 pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-cyberpunk, recipe-editorial-magazine, aesthetic-web-brutalism]
 notForUseWhen: Family product, B2B, anything wholesome.
+images:
+  - src: photo-chrome-hearts-editorial.png
+    reason: Photography style sample.
 ---
 
 # Chrome Hearts night-glam editorial

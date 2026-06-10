@@ -6,6 +6,9 @@ category: print
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-corporate-grunge, style-raster-cutout, aesthetic-acid-design, aesthetic-y2k-memphis-loud, recipe-newspaper-of-record]
+images:
+  - src: material-halftone-cmyk.png
+    reason: Material fidelity sample.
 ---
 
 # Halftone CMYK (newspaper / comic process)

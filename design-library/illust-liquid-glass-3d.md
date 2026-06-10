@@ -6,6 +6,9 @@ subCategory: plastic-glossy
 role: spot-illustration
 pairsPrototypes: [style-liquid-glass, recipe-ios-system, style-sf-pro-ios, style-glassmorphism]
 notForUseWhen: brutalism, cottagecore, hand-drawn
+images:
+  - src: illust-liquid-glass-3d.png
+    reason: Illustration style sample.
 ---
 
 # Liquid glass 3D translucent

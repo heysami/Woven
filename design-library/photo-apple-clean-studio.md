@@ -5,6 +5,9 @@ category: product
 era: current
 pairsPrototypes: [recipe-bento-marketing, recipe-ios-system, style-sf-pro-ios, style-glassmorphism, style-liquid-glass]
 notForUseWhen: Lifestyle storytelling, editorial, anything needing context or mood.
+images:
+  - src: photo-apple-clean-studio.png
+    reason: Photography style sample.
 ---
 
 # Apple-clean studio product

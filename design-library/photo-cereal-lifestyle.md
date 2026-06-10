@@ -5,6 +5,9 @@ category: lifestyle
 era: current
 pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-restrained-hairline, style-cream-humanist]
 notForUseWhen: Tech B2B, fast-paced consumer, anything kinetic.
+images:
+  - src: photo-cereal-lifestyle.png
+    reason: Photography style sample.
 ---
 
 # Cereal magazine slow-travel lifestyle

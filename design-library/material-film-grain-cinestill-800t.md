@@ -6,6 +6,9 @@ category: film
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-cassette-futurism, recipe-editorial-magazine]
+images:
+  - src: material-film-grain-cinestill-800t.png
+    reason: Material fidelity sample.
 ---
 
 # Film Grain — CineStill 800T (tungsten, halation, neon glow)

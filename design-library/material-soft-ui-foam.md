@@ -6,6 +6,9 @@ category: clay
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-neumorphism, aesthetic-frutiger-tranquil-serenity, aesthetic-positivity-kawaii, aesthetic-frutiger-eco]
+images:
+  - src: material-soft-ui-foam.png
+    reason: Material fidelity sample.
 ---
 
 # Soft UI / Neumorphic Foam

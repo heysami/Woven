@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: transparent
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-dreamcore, aesthetic-frutiger-aero, aesthetic-coastal-grandmother, recipe-aurora-marketing]
+images:
+  - src: material-heat-haze-shimmer.png
+    reason: Material fidelity sample.
 ---
 
 # Heat Haze Shimmer (mirage / hot tarmac warp)

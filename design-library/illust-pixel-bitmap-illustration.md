@@ -6,6 +6,9 @@ subCategory: voxel
 role: subject
 pairsPrototypes: [aesthetic-pixel-nes-mario, aesthetic-pixel-game-boy-mono, aesthetic-pixel-snes-jrpg, aesthetic-pixel-arcade, aesthetic-pixel-modern-cozy, aesthetic-pixel-ps1-tactics-ogre, style-pixel-bitmap]
 notForUseWhen: cinematic, photoreal, warm-restraint
+images:
+  - src: illust-pixel-bitmap-illustration.png
+    reason: Illustration style sample.
 ---
 
 # Pixel bitmap illustration

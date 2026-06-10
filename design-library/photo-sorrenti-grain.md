@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 1990s-current
 pairsPrototypes: [recipe-warm-restraint, style-cream-humanist, style-serif-warm-paper, aesthetic-coastal-grandmother]
 notForUseWhen: Anything needing color, product detail, or commercial-explicit subject.
+images:
+  - src: photo-sorrenti-grain.png
+    reason: Photography style sample.
 ---
 
 # Mario Sorrenti grain and tonality

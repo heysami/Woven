@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-acid-graphics, aesthetic-vaporwave, aesthetic-y2k-futurism, aesthetic-acid-design, recipe-terminal-on-web]
+images:
+  - src: material-rgb-channel-split.png
+    reason: Material fidelity sample.
 ---
 
 # RGB Channel Split (intentional large-displacement chromatic split)

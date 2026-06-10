@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, aesthetic-atompunk, recipe-terminal-on-web, recipe-scientific-infra-marketing, recipe-devtools-marketing]
+images:
+  - src: material-schematic-pcb-trace.png
+    reason: Material fidelity sample.
 ---
 
 # Schematic / PCB Trace (circuit-board aesthetic)

@@ -6,6 +6,9 @@ category: fabric
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-dark-academia, aesthetic-coastal-grandmother]
+images:
+  - src: material-corduroy.png
+    reason: Material fidelity sample.
 ---
 
 # Corduroy (ribbed pile fabric)

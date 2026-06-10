@@ -5,6 +5,9 @@ category: beauty
 era: current
 pairsPrototypes: [aesthetic-angelcore, aesthetic-fairycore, style-holographic, style-claymorphism]
 notForUseWhen: Documentary, gritty, B2B, hardware.
+images:
+  - src: photo-magic-glow.png
+    reason: Photography style sample.
 ---
 
 # Magic glow product or beauty

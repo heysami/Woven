@@ -6,6 +6,9 @@ subCategory: ink-line-brush
 role: subject
 pairsPrototypes: [style-doodle, recipe-readcv, recipe-editorial-magazine, aesthetic-cottagecore]
 notForUseWhen: cinematic 3D contexts, brutalism, dense data UI
+images:
+  - src: illust-blush-open-peeps.png
+    reason: Illustration style sample.
 ---
 
 # Open Peeps

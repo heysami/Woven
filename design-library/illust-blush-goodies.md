@@ -6,6 +6,9 @@ subCategory: flat-iconographic
 role: decoration
 pairsPrototypes: [recipe-bento-marketing, aesthetic-cluttercore, aesthetic-maximalism]
 notForUseWhen: minimalist single-hero
+images:
+  - src: illust-blush-goodies.png
+    reason: Illustration style sample.
 ---
 
 # Goodies

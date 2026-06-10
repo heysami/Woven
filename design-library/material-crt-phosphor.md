@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-atompunk, aesthetic-vaporwave, aesthetic-cyberpunk, style-pixel-bitmap]
+images:
+  - src: material-crt-phosphor.png
+    reason: Material fidelity sample.
 ---
 
 # CRT Phosphor (raster scan with subpixel RGB)

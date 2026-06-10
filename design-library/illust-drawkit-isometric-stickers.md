@@ -6,6 +6,9 @@ subCategory: isometric-tech
 role: spot-illustration
 pairsPrototypes: [recipe-bento-marketing, recipe-linear-product-ui, aesthetic-positivity-kawaii]
 notForUseWhen: editorial magazine, brutalism, dark cinematic UI
+images:
+  - src: illust-drawkit-isometric-stickers.png
+    reason: Illustration style sample.
 ---
 
 # DrawKit / Blush Isometric Stickers

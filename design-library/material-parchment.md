@@ -6,6 +6,9 @@ category: paper
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-dark-academia, aesthetic-steampunk, aesthetic-defi-cosmic (achievement certificates)]
+images:
+  - src: material-parchment.png
+    reason: Material fidelity sample.
 ---
 
 # Parchment / Vellum (animal hide, premium document)

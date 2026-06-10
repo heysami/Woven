@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 1970s
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, recipe-warm-restraint, style-cream-humanist]
 notForUseWhen: Tech, B2B, modern minimal.
+images:
+  - src: photo-seventies-soft-grain.png
+    reason: Photography style sample.
 ---
 
 # 1970s soft warm grain editorial

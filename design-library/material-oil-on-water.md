@@ -6,6 +6,9 @@ category: iridescent
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [style-aurorism, style-holographic, aesthetic-vaporwave, aesthetic-cyberpunk]
+images:
+  - src: material-oil-on-water.png
+    reason: Material fidelity sample.
 ---
 
 # Oil-on-Water Iridescence (organic dichroic)

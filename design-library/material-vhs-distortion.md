@@ -6,6 +6,9 @@ category: film
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cassette-futurism, aesthetic-cyberpunk, aesthetic-y2k-myspace, aesthetic-acid-graphics]
+images:
+  - src: material-vhs-distortion.png
+    reason: Material fidelity sample.
 ---
 
 # VHS Distortion (chromatic aberration + scanlines + bleed)

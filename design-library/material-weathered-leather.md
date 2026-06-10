@@ -6,6 +6,9 @@ category: leather
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-dark-academia, aesthetic-steampunk, aesthetic-dieselpunk, aesthetic-cottagegoth, aesthetic-corporate-grunge]
+images:
+  - src: material-weathered-leather.png
+    reason: Material fidelity sample.
 ---
 
 # Weathered Leather (vintage, distressed)

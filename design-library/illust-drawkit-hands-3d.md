@@ -6,6 +6,9 @@ subCategory: render-cinematic
 role: spot-illustration
 pairsPrototypes: [recipe-restrained-ai-marketing, style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
 notForUseWhen: cartoon contexts, brutalism, dense data UI
+images:
+  - src: illust-drawkit-hands-3d.png
+    reason: Illustration style sample.
 ---
 
 # DrawKit Hands Illustrations

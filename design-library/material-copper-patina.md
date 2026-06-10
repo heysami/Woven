@@ -6,6 +6,9 @@ category: metal
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-steampunk, aesthetic-dieselpunk, aesthetic-solarpunk, aesthetic-dark-academia]
+images:
+  - src: material-copper-patina.png
+    reason: Material fidelity sample.
 ---
 
 # Copper with Verdigris Patina

@@ -5,6 +5,9 @@ category: beauty
 era: current
 pairsPrototypes: [recipe-bento-marketing, style-glassmorphism, style-liquid-glass, recipe-restrained-ai-marketing]
 notForUseWhen: Editorial mood, lifestyle, anything narrative.
+images:
+  - src: photo-high-key-beauty.png
+    reason: Photography style sample.
 ---
 
 # High-key beauty white seamless

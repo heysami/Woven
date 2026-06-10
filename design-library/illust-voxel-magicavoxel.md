@@ -6,6 +6,9 @@ subCategory: voxel
 role: spot-illustration
 pairsPrototypes: [aesthetic-pixel-modern-cozy, aesthetic-pixel-snes-jrpg, aesthetic-pixel-arcade, aesthetic-rgb-gamer]
 notForUseWhen: editorial, brutalism, warm-restraint
+images:
+  - src: illust-voxel-magicavoxel.png
+    reason: Illustration style sample.
 ---
 
 # Voxel Art (MagicaVoxel)

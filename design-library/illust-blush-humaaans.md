@@ -6,6 +6,9 @@ subCategory: noodle-people
 role: subject
 pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-corporate-memphis, recipe-linear-product-ui]
 notForUseWhen: editorial, brutalism, anything emotive
+images:
+  - src: illust-blush-humaaans.png
+    reason: Illustration style sample.
 ---
 
 # Humaaans

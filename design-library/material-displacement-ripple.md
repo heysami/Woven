@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [style-liquid-glass, style-glassmorphism, style-aurorism, aesthetic-dreamcore, aesthetic-frutiger-aero, recipe-aurora-marketing]
+images:
+  - src: material-displacement-ripple.png
+    reason: Material fidelity sample.
 ---
 
 # Displacement Ripple (interactive pointer-driven warp)

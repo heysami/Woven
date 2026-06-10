@@ -5,6 +5,9 @@ category: editorial-fashion
 era: current
 pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics, aesthetic-rgb-gamer]
 notForUseWhen: Luxury, B2B, anything sincere, anything elderly-targeted.
+images:
+  - src: photo-genz-flash-disposable.png
+    reason: Photography style sample.
 ---
 
 # Gen-Z disposable-camera flash editorial

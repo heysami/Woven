@@ -6,6 +6,9 @@ subCategory: ghibli-watercolor-bg
 role: hero
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-solarpunk, aesthetic-coastal-grandmother, recipe-warm-restraint, aesthetic-fairycore]
 notForUseWhen: tech, brutalism, neon
+images:
+  - src: illust-ghibli-watercolor-bg.png
+    reason: Illustration style sample.
 ---
 
 # Studio Ghibli watercolor background

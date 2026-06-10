@@ -5,6 +5,9 @@ category: street
 era: 1950s-1970s archival
 pairsPrototypes: [recipe-newspaper-of-record, style-serif-warm-paper, style-agate-broadsheet, recipe-editorial-magazine]
 notForUseWhen: Anything contemporary-fashion, fast-paced, conversion-driven.
+images:
+  - src: photo-vivian-maier-square.png
+    reason: Photography style sample.
 ---
 
 # Vivian Maier square street observational

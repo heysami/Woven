@@ -6,6 +6,9 @@ category: stone
 surfaceFinish: glossy (polished) or matte (honed)
 transparency: opaque
 pairsPrototypes: [aesthetic-dark-academia, aesthetic-defi-cosmic, aesthetic-vaporwave (the marble bust!), recipe-editorial-magazine]
+images:
+  - src: material-marble.png
+    reason: Material fidelity sample.
 ---
 
 # Marble (veined stone)

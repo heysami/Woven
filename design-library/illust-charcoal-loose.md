@@ -6,6 +6,9 @@ subCategory: charcoal
 role: spot-illustration
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia]
 notForUseWhen: tech, brutalism, polished
+images:
+  - src: illust-charcoal-loose.png
+    reason: Illustration style sample.
 ---
 
 # Loose charcoal sketch

@@ -6,6 +6,9 @@ subCategory: art-nouveau-ornament
 role: typography
 pairsPrototypes: [recipe-warm-restraint, aesthetic-dark-academia, aesthetic-cottagecore, aesthetic-fairycore]
 notForUseWhen: tech, brutalism, neon
+images:
+  - src: illust-typo-art-nouveau-ornament.png
+    reason: Illustration style sample.
 ---
 
 # Art Nouveau ornamental lettering

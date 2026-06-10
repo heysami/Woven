@@ -5,6 +5,9 @@ category: street
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-y2k-futurism, recipe-ai-foundry-dark]
 notForUseWhen: Daylight product, family, wellness.
+images:
+  - src: photo-night-flash-noir.png
+    reason: Photography style sample.
 ---
 
 # Night flash neon-noir portrait

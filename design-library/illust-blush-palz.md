@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis, recipe-bento-marketing]
 notForUseWhen: editorial, brutalism
+images:
+  - src: illust-blush-palz.png
+    reason: Illustration style sample.
 ---
 
 # Palz

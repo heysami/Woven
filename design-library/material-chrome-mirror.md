@@ -6,6 +6,9 @@ category: metal
 surfaceFinish: metallic
 transparency: opaque
 pairsPrototypes: [aesthetic-frutiger-chromecore, aesthetic-y2k-futurism, style-holographic, aesthetic-cyberpunk, aesthetic-urbling]
+images:
+  - src: material-chrome-mirror.png
+    reason: Material fidelity sample.
 ---
 
 # Chrome Mirror (Y2K chromecore / cyber-sigil)

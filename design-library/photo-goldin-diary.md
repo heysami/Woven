@@ -5,6 +5,9 @@ category: fine-art
 era: 1980s-current
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-cottagegoth, aesthetic-dark-academia, aesthetic-dreamcore]
 notForUseWhen: Family-friendly product, B2B, anything wholesome.
+images:
+  - src: photo-goldin-diary.png
+    reason: Photography style sample.
 ---
 
 # Nan Goldin diary flash

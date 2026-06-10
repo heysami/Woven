@@ -6,6 +6,9 @@ subCategory: wood-craft
 role: spot-illustration
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-solarpunk, recipe-warm-restraint, aesthetic-dark-academia, aesthetic-coastal-grandmother]
 notForUseWhen: crypto-degen, cyberpunk, RGB gamer
+images:
+  - src: illust-drawkit-wooden-icons.png
+    reason: Illustration style sample.
 ---
 
 # DrawKit Wooden Icons 3D

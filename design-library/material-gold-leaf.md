@@ -6,6 +6,9 @@ category: metal
 surfaceFinish: metallic
 transparency: opaque
 pairsPrototypes: [aesthetic-dark-academia, aesthetic-defi-cosmic, aesthetic-urbling, style-holographic]
+images:
+  - src: material-gold-leaf.png
+    reason: Material fidelity sample.
 ---
 
 # Gold Leaf (rich warm metal)

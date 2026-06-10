@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cyberpunk, aesthetic-y2k-futurism, aesthetic-cinematic, recipe-aurora-marketing, recipe-bento-marketing]
+images:
+  - src: material-barrel-pincushion-warp.png
+    reason: Material fidelity sample.
 ---
 
 # Barrel / Pincushion Lens Warp (wide-lens optical distortion)

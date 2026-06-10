@@ -5,6 +5,9 @@ category: lifestyle
 era: current
 pairsPrototypes: [recipe-devtools-marketing, recipe-restrained-ai-marketing, recipe-bento-marketing, recipe-linear-product-ui]
 notForUseWhen: Editorial mood, fast fashion, anything kinetic.
+images:
+  - src: photo-clean-tech-lifestyle.png
+    reason: Photography style sample.
 ---
 
 # Clean tech-lifestyle hero

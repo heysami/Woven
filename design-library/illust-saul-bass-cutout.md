@@ -6,6 +6,9 @@ subCategory: saul-bass-cutout
 role: hero
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-atompunk, recipe-editorial-magazine, aesthetic-constructivism]
 notForUseWhen: friendly SaaS, brutalism, cottagecore
+images:
+  - src: illust-saul-bass-cutout.png
+    reason: Illustration style sample.
 ---
 
 # Saul Bass cutout collage

@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-pixel-bitmap, aesthetic-pixel-nes-mario, aesthetic-pixel-snes-jrpg, aesthetic-pixel-game-boy-mono, aesthetic-pc-98]
+images:
+  - src: material-pixel-bitmap.png
+    reason: Material fidelity sample.
 ---
 
 # Pixel Bitmap (integer-grid surface)

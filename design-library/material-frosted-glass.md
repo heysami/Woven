@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [style-glassmorphism, style-liquid-glass, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero, aesthetic-frutiger-chromecore, aesthetic-y2k-futurism, aesthetic-vaporwave, aesthetic-positivity-kawaii]
+images:
+  - src: material-frosted-glass.png
+    reason: Material fidelity sample.
 ---
 
 # Frosted Glass (canonical glassmorphism)

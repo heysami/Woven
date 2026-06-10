@@ -6,6 +6,9 @@ subCategory: marginalia-quirky
 role: spot-illustration
 pairsPrototypes: [aesthetic-dark-academia, recipe-editorial-magazine, recipe-newspaper-of-record, recipe-readcv, style-serif-warm-paper]
 notForUseWhen: SaaS marketing, cute-friendly contexts, 3D contexts
+images:
+  - src: illust-humanities-marginalia.png
+    reason: Illustration style sample.
 ---
 
 # Humanities (medieval-marginalia revival)

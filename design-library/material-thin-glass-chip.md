@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [style-glassmorphism, style-liquid-glass, recipe-ios-system]
+images:
+  - src: material-thin-glass-chip.png
+    reason: Material fidelity sample.
 ---
 
 # Thin Glass Chip (iOS-style toggle, Control Center pill)

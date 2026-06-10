@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 1970s-1990s
 pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, style-oversized-neo-grotesque, aesthetic-swiss-modernist]
 notForUseWhen: Brief is sincere, sentimental, family-friendly, or wholesome.
+images:
+  - src: photo-helmut-newton-flash.png
+    reason: Photography style sample.
 ---
 
 # Helmut Newton on-camera flash glamour

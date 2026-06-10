@@ -6,6 +6,9 @@ category: film
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [style-raster-cutout, aesthetic-cottagecore, aesthetic-y2k-myspace, aesthetic-coastal-grandmother, recipe-readcv]
+images:
+  - src: material-polaroid-instant.png
+    reason: Material fidelity sample.
 ---
 
 # Polaroid / Instant Photo (square frame, faded chemistry)

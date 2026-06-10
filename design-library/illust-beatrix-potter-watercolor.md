@@ -6,6 +6,9 @@ subCategory: beatrix-potter-watercolor
 role: subject
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-cottagegoth, recipe-warm-restraint, aesthetic-dark-academia]
 notForUseWhen: tech, brutalism, modern minimal
+images:
+  - src: illust-beatrix-potter-watercolor.png
+    reason: Illustration style sample.
 ---
 
 # Beatrix Potter soft watercolor

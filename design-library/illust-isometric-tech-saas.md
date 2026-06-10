@@ -6,6 +6,9 @@ subCategory: isometric-tech
 role: hero
 pairsPrototypes: [recipe-bento-marketing, recipe-linear-product-ui, recipe-devtools-marketing, recipe-scientific-infra-marketing]
 notForUseWhen: editorial, brutalism, cottagecore
+images:
+  - src: illust-isometric-tech-saas.png
+    reason: Illustration style sample.
 ---
 
 # Isometric tech SaaS scene

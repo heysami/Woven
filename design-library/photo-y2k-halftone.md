@@ -5,6 +5,9 @@ category: archival
 era: 2000s revival
 pairsPrototypes: [aesthetic-y2k-memphis-loud, aesthetic-y2k-futurism, aesthetic-acid-graphics, recipe-y2k-memphis-loud]
 notForUseWhen: Luxury, premium, anything aspirational-clean.
+images:
+  - src: photo-y2k-halftone.png
+    reason: Photography style sample.
 ---
 
 # Y2K halftone newsprint effect

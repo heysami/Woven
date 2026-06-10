@@ -6,6 +6,9 @@ subCategory: sticker-cutout
 role: decoration
 pairsPrototypes: [shell-scrapbook-substrate, aesthetic-cluttercore, recipe-bento-marketing]
 notForUseWhen: editorial restraint, brutalism
+images:
+  - src: illust-sticker-cutout-puffy.png
+    reason: Illustration style sample.
 ---
 
 # Sticker cutout puffy

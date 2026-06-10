@@ -6,6 +6,9 @@ subCategory: geometric-mid-century
 role: spot-illustration
 pairsPrototypes: [aesthetic-atompunk, aesthetic-cassette-futurism, aesthetic-frutiger-eco]
 notForUseWhen: photoreal, dense data UI
+images:
+  - src: illust-blush-hyperspace.png
+    reason: Illustration style sample.
 ---
 
 # Hyperspace

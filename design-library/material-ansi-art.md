@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy (CRT phosphor inheritance)
 transparency: opaque
 pairsPrototypes: [recipe-terminal-on-web, style-terminal-mono, aesthetic-cyberpunk, aesthetic-cassette-futurism, aesthetic-atompunk, aesthetic-corporate-grunge]
+images:
+  - src: material-ansi-art.png
+    reason: Material fidelity sample.
 ---
 
 # ANSI Art (16-color extended-box character art)

@@ -6,6 +6,9 @@ subCategory: dreamcore-liminal
 role: hero
 pairsPrototypes: [aesthetic-dreamcore, aesthetic-vaporwave, aesthetic-cottagegoth]
 notForUseWhen: SaaS friendly, B2B, kids
+images:
+  - src: illust-dreamcore-liminal.png
+    reason: Illustration style sample.
 ---
 
 # Dreamcore liminal scene

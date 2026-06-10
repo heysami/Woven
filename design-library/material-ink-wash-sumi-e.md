@@ -6,6 +6,9 @@ category: ink
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [aesthetic-anti-design, aesthetic-dark-academia, aesthetic-cottagegoth, aesthetic-vaporwave (Japanese gloss element)]
+images:
+  - src: material-ink-wash-sumi-e.png
+    reason: Material fidelity sample.
 ---
 
 # Ink Wash (sumi-e / brush-and-ink)

@@ -6,6 +6,9 @@ subCategory: blackletter-neo-gothic
 role: typography
 pairsPrototypes: [aesthetic-cottagegoth, aesthetic-dark-academia, aesthetic-corporate-grunge]
 notForUseWhen: friendly SaaS, Bauhaus, kawaii
+images:
+  - src: illust-typo-blackletter-neo-gothic.png
+    reason: Illustration style sample.
 ---
 
 # Blackletter / Neo-Gothic illustrative

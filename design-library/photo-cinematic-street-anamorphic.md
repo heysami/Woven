@@ -5,6 +5,9 @@ category: street
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, recipe-ai-foundry-dark, style-dense-mono-dark]
 notForUseWhen: Anything bright, daylight-driven, product e-comm.
+images:
+  - src: photo-cinematic-street-anamorphic.png
+    reason: Photography style sample.
 ---
 
 # Cinematic anamorphic street

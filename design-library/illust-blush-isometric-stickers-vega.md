@@ -6,6 +6,9 @@ subCategory: isometric-tech
 role: spot-illustration
 pairsPrototypes: [recipe-bento-marketing, recipe-linear-product-ui, aesthetic-positivity-kawaii]
 notForUseWhen: editorial, brutalism
+images:
+  - src: illust-blush-isometric-stickers-vega.png
+    reason: Illustration style sample.
 ---
 
 # Blush Isometric Stickers (Mariana Gonzalez Vega)

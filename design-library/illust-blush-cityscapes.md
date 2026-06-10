@@ -6,6 +6,9 @@ subCategory: geometric-mid-century
 role: decoration
 pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-corporate-memphis]
 notForUseWhen: brutalism, editorial
+images:
+  - src: illust-blush-cityscapes.png
+    reason: Illustration style sample.
 ---
 
 # Cityscapes

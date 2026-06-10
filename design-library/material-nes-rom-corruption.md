@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-pixel-bitmap, aesthetic-pixel-nes-mario, aesthetic-pixel-arcade, aesthetic-cyberpunk, aesthetic-acid-graphics]
+images:
+  - src: material-nes-rom-corruption.png
+    reason: Material fidelity sample.
 ---
 
 # NES ROM Corruption (palette-flipped sprites, garbled tile data)

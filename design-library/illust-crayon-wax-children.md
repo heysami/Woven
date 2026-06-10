@@ -6,6 +6,9 @@ subCategory: crayon-wax
 role: spot-illustration
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-wacky-pomo, aesthetic-cluttercore]
 notForUseWhen: enterprise, brutalism
+images:
+  - src: illust-crayon-wax-children.png
+    reason: Illustration style sample.
 ---
 
 # Crayon / wax children

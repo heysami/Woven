@@ -6,6 +6,9 @@ category: paper
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-y2k-memphis-loud, aesthetic-coastal-grandmother]
+images:
+  - src: material-coated-glossy-paper.png
+    reason: Material fidelity sample.
 ---
 
 # Coated Glossy Paper (magazine cover stock)

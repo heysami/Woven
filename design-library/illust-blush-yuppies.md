@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [recipe-linear-product-ui, recipe-bento-marketing, recipe-restrained-ai-marketing]
 notForUseWhen: editorial, brutalism, youth-music
+images:
+  - src: illust-blush-yuppies.png
+    reason: Illustration style sample.
 ---
 
 # Yuppies

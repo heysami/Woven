@@ -6,6 +6,9 @@ category: metal
 surfaceFinish: semi-gloss
 transparency: opaque
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-dieselpunk, aesthetic-steampunk, style-skeuomorphism (recorder-as-tape-deck)]
+images:
+  - src: material-brushed-aluminum.png
+    reason: Material fidelity sample.
 ---
 
 # Brushed Aluminum (anisotropic metal)

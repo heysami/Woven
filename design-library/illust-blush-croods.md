@@ -6,6 +6,9 @@ subCategory: flat-with-pattern
 role: subject
 pairsPrototypes: [aesthetic-maximalism, aesthetic-positivity-kawaii, aesthetic-y2k-memphis-loud]
 notForUseWhen: restrained AI marketing, brutalism
+images:
+  - src: illust-blush-croods.png
+    reason: Illustration style sample.
 ---
 
 # Croods

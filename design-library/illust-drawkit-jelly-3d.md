@@ -6,6 +6,9 @@ subCategory: jelly-gummy
 role: mascot
 pairsPrototypes: [style-claymorphism, aesthetic-positivity-kawaii, recipe-restrained-ai-marketing, style-skeuomorphism]
 notForUseWhen: dense Bloomberg-style data UI, brutalist or editorial layouts
+images:
+  - src: illust-drawkit-jelly-3d.png
+    reason: Illustration style sample.
 ---
 
 # DrawKit Jelly Characters 3D

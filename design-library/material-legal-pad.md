@@ -6,6 +6,9 @@ category: paper
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism (notes-as-legal-pad), aesthetic-dark-academia, recipe-newspaper-of-record]
+images:
+  - src: material-legal-pad.png
+    reason: Material fidelity sample.
 ---
 
 # Legal Pad (ruled yellow paper)

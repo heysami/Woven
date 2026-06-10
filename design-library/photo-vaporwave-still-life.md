@@ -5,6 +5,9 @@ category: conceptual
 era: 2010s revival of 1980s-90s
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-y2k-futurism, aesthetic-cassette-futurism, aesthetic-dreamcore]
 notForUseWhen: Heritage, wellness, premium consumer.
+images:
+  - src: photo-vaporwave-still-life.png
+    reason: Photography style sample.
 ---
 
 # Vaporwave pastel still life

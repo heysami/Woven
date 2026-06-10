@@ -6,6 +6,9 @@ category: leather
 surfaceFinish: semi-gloss
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism (leather wallet), aesthetic-dark-academia, aesthetic-defi-cosmic]
+images:
+  - src: material-pebbled-leather.png
+    reason: Material fidelity sample.
 ---
 
 # Pebbled Leather (luxury goods finish)

@@ -6,6 +6,9 @@ subCategory: flat-iconographic
 role: spot-illustration
 pairsPrototypes: [recipe-restrained-ai-marketing, recipe-bento-marketing]
 notForUseWhen: gore, brutalism, editorial
+images:
+  - src: illust-blush-lifesavers.png
+    reason: Illustration style sample.
 ---
 
 # Lifesavers

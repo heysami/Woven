@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [aesthetic-corporate-memphis, recipe-bento-marketing, recipe-restrained-ai-marketing]
 notForUseWhen: indie / editorial / brutalism — anywhere personality matters
+images:
+  - src: illust-corporate-memphis-noodle.png
+    reason: Illustration style sample.
 ---
 
 # Corporate Memphis noodle-people

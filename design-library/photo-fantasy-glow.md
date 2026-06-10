@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-fairycore, aesthetic-cottagegoth, aesthetic-cottagecore, aesthetic-solarpunk]
 notForUseWhen: B2B, modern minimal, tech product.
+images:
+  - src: photo-fantasy-glow.png
+    reason: Photography style sample.
 ---
 
 # Fantasy glow magical lighting

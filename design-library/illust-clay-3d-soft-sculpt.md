@@ -6,6 +6,9 @@ subCategory: clay
 role: subject
 pairsPrototypes: [style-claymorphism, recipe-warm-restraint, aesthetic-cottagecore, aesthetic-positivity-kawaii]
 notForUseWhen: cyberpunk, brutalism, neon
+images:
+  - src: illust-clay-3d-soft-sculpt.png
+    reason: Illustration style sample.
 ---
 
 # 3D Clay / Soft Sculpt

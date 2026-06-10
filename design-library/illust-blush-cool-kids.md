@@ -6,6 +6,9 @@ subCategory: flat-with-pattern
 role: subject
 pairsPrototypes: [aesthetic-maximalism, aesthetic-y2k-memphis-loud, aesthetic-positivity-kawaii, aesthetic-acid-design]
 notForUseWhen: enterprise, serious finance, restrained AI marketing
+images:
+  - src: illust-blush-cool-kids.png
+    reason: Illustration style sample.
 ---
 
 # Cool Kids

@@ -6,6 +6,9 @@ category: leather
 surfaceFinish: semi-gloss
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism, aesthetic-dark-academia]
+images:
+  - src: material-smooth-leather.png
+    reason: Material fidelity sample.
 ---
 
 # Smooth Leather (full-grain, polished)

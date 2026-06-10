@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-material-m3, recipe-material-3, aesthetic-positivity-kawaii, aesthetic-frutiger-eco]
+images:
+  - src: material-material-tonal-surface.png
+    reason: Material fidelity sample.
 ---
 
 # Material 3 Tonal Surface (dynamic-color elevation)

@@ -6,6 +6,9 @@ subCategory: wireframe
 role: spot-illustration
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, recipe-terminal-on-web, recipe-ai-foundry-dark]
 notForUseWhen: warm consumer, cottagecore, friendly
+images:
+  - src: illust-wireframe-3d.png
+    reason: Illustration style sample.
 ---
 
 # 3D Wireframe / Mesh

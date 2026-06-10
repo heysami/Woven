@@ -6,6 +6,9 @@ subCategory: mc-escher-paradox
 role: hero
 pairsPrototypes: [aesthetic-op-art, aesthetic-constructivism, recipe-editorial-magazine]
 notForUseWhen: friendly consumer, cottagecore
+images:
+  - src: illust-mc-escher-paradox.png
+    reason: Illustration style sample.
 ---
 
 # M.C. Escher impossible geometry

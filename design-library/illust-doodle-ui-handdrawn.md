@@ -6,6 +6,9 @@ subCategory: scribble-marker
 role: spot-illustration
 pairsPrototypes: [style-doodle, recipe-devtools-marketing, recipe-readcv]
 notForUseWhen: photoreal, enterprise polish
+images:
+  - src: illust-doodle-ui-handdrawn.png
+    reason: Illustration style sample.
 ---
 
 # Doodle UI hand-drawn (Excalidraw-style)

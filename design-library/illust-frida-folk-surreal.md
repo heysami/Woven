@@ -6,6 +6,9 @@ subCategory: frida-folk-surreal
 role: hero
 pairsPrototypes: [aesthetic-maximalism, aesthetic-cottagecore, aesthetic-y2k-memphis-loud]
 notForUseWhen: minimalist tech, brutalism
+images:
+  - src: illust-frida-folk-surreal.png
+    reason: Illustration style sample.
 ---
 
 # Frida Kahlo folk surrealism

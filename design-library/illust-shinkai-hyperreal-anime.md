@@ -6,6 +6,9 @@ subCategory: shinkai-hyperreal
 role: hero
 pairsPrototypes: [aesthetic-cottagecore, recipe-warm-restraint, aesthetic-coastal-grandmother]
 notForUseWhen: B2B serious, brutalism
+images:
+  - src: illust-shinkai-hyperreal-anime.png
+    reason: Illustration style sample.
 ---
 
 # Makoto Shinkai hyperreal anime

@@ -6,6 +6,9 @@ category: film
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-coastal-grandmother, aesthetic-cottagecore, recipe-editorial-magazine, aesthetic-cottagegoth]
+images:
+  - src: material-film-grain-portra-400.png
+    reason: Material fidelity sample.
 ---
 
 # Film Grain — Portra 400 (colour, fine grain, warm)

@@ -6,6 +6,9 @@ category: iridescent
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [style-holographic, aesthetic-y2k-futurism, recipe-editorial-magazine]
+images:
+  - src: material-holographic-paper.png
+    reason: Material fidelity sample.
 ---
 
 # Holographic-Paper (iridescent foil on textured paper)

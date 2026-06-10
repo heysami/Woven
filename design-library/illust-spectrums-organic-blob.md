@@ -6,6 +6,9 @@ subCategory: gradient-blob
 role: decoration
 pairsPrototypes: [style-aurorism, aesthetic-frutiger-aero, recipe-aurora-marketing, style-glassmorphism]
 notForUseWhen: brutalism, hairline-restraint
+images:
+  - src: illust-spectrums-organic-blob.png
+    reason: Illustration style sample.
 ---
 
 # Spectrums — Organic blob

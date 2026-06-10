@@ -6,6 +6,9 @@ subCategory: flat-with-pattern
 role: subject
 pairsPrototypes: [aesthetic-y2k-memphis-loud, aesthetic-curly-girly, aesthetic-maximalism]
 notForUseWhen: B2B serious
+images:
+  - src: illust-blush-tutto-ricco.png
+    reason: Illustration style sample.
 ---
 
 # Tutto Ricco

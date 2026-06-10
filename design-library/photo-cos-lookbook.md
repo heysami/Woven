@@ -5,6 +5,9 @@ category: lookbook
 era: current
 pairsPrototypes: [recipe-editorial-magazine, recipe-restrained-ai-marketing, style-restrained-hairline, style-oversized-neo-grotesque]
 notForUseWhen: Loud or kinetic brand, fast e-comm with high SKU count.
+images:
+  - src: photo-cos-lookbook.png
+    reason: Photography style sample.
 ---
 
 # COS lookbook clean editorial

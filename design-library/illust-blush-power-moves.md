@@ -6,6 +6,9 @@ subCategory: flat-with-pattern
 role: subject
 pairsPrototypes: [aesthetic-maximalism, aesthetic-y2k-memphis-loud, aesthetic-acid-design]
 notForUseWhen: B2B serious, restrained AI
+images:
+  - src: illust-blush-power-moves.png
+    reason: Illustration style sample.
 ---
 
 # Power Moves

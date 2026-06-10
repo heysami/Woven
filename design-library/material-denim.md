@@ -6,6 +6,9 @@ category: fabric
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-y2k-myspace, aesthetic-cottagecore, aesthetic-corporate-grunge]
+images:
+  - src: material-denim.png
+    reason: Material fidelity sample.
 ---
 
 # Denim (twill weave, indigo fade)

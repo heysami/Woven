@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [style-serif-warm-paper, aesthetic-cottagecore, aesthetic-cottagegoth, aesthetic-dark-academia]
+images:
+  - src: material-vellum-translucency.png
+    reason: Material fidelity sample.
 ---
 
 # Vellum / Tracing Paper Translucency

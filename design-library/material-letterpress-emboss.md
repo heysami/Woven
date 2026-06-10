@@ -6,6 +6,9 @@ category: print
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-serif-warm-paper, aesthetic-cottagecore, aesthetic-dark-academia, recipe-editorial-magazine]
+images:
+  - src: material-letterpress-emboss.png
+    reason: Material fidelity sample.
 ---
 
 # Letterpress / Emboss (raised-impression printing)

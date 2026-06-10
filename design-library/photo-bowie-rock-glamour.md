@@ -5,6 +5,9 @@ category: glamour
 era: 1970s-1980s
 pairsPrototypes: [aesthetic-vector-hands-up, aesthetic-y2k-memphis-loud, aesthetic-rgb-gamer, aesthetic-acid-design]
 notForUseWhen: Restrained luxury, B2B, wellness.
+images:
+  - src: photo-bowie-rock-glamour.png
+    reason: Photography style sample.
 ---
 
 # Rock-glamour stage editorial

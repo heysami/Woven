@@ -6,6 +6,9 @@ subCategory: shoujo-soft-line
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-curly-girly, aesthetic-pc-98]
 notForUseWhen: B2B, brutalism
+images:
+  - src: illust-shoujo-soft-line-anime.png
+    reason: Illustration style sample.
 ---
 
 # Shoujo soft-line anime

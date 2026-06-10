@@ -6,6 +6,9 @@ subCategory: thick-border-cartoon
 role: decoration
 pairsPrototypes: [aesthetic-cottagegoth, aesthetic-dreamcore, aesthetic-positivity-kawaii]
 notForUseWhen: enterprise, restrained AI
+images:
+  - src: illust-blush-spooky-stickers.png
+    reason: Illustration style sample.
 ---
 
 # Spooky Stickers

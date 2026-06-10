@@ -6,6 +6,9 @@ category: metal
 surfaceFinish: metallic (chrome) on matte (velvet)
 transparency: opaque
 pairsPrototypes: [aesthetic-urbling, aesthetic-defi-cosmic, aesthetic-y2k-futurism, style-holographic]
+images:
+  - src: material-chrome-on-velvet.png
+    reason: Material fidelity sample.
 ---
 
 # Chrome on Velvet (Y2K luxury substrate)

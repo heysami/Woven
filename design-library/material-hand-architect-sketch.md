@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [recipe-warm-restraint, recipe-editorial-magazine, aesthetic-dark-academia, style-cream-humanist, style-serif-warm-paper, aesthetic-cottagecore]
+images:
+  - src: material-hand-architect-sketch.png
+    reason: Material fidelity sample.
 ---
 
 # Hand Architect Sketch (Le Corbusier / Frank Lloyd Wright register)

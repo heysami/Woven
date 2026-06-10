@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [recipe-devtools-marketing, recipe-terminal-on-web, recipe-ai-foundry-dark, style-terminal-mono, style-dense-mono-dark, recipe-restrained-ai-marketing]
+images:
+  - src: material-monospace-code-grid.png
+    reason: Material fidelity sample.
 ---
 
 # Monospace Code Grid (IDE / terminal text as visual material)

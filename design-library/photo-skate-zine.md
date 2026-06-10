@@ -5,6 +5,9 @@ category: documentary
 era: 1990s-current
 pairsPrototypes: [aesthetic-web-brutalism, recipe-brutalist-web, aesthetic-acid-graphics, aesthetic-y2k-memphis-loud]
 notForUseWhen: Premium, wellness, luxury, family.
+images:
+  - src: photo-skate-zine.png
+    reason: Photography style sample.
 ---
 
 # Skate zine 35mm flash

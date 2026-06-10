@@ -5,6 +5,9 @@ category: street
 era: 1980s-current
 pairsPrototypes: [recipe-brutalist-web, aesthetic-neubrutalism, aesthetic-web-brutalism, recipe-newspaper-of-record]
 notForUseWhen: Anything aspirational, hospitality, luxury, wellness.
+images:
+  - src: photo-gilden-flash-street.png
+    reason: Photography style sample.
 ---
 
 # Bruce Gilden flash street portrait

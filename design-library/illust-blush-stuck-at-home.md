@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [recipe-warm-restraint, aesthetic-cottagecore, aesthetic-coastal-grandmother]
 notForUseWhen: outdoor/adventure, brutalism
+images:
+  - src: illust-blush-stuck-at-home.png
+    reason: Illustration style sample.
 ---
 
 # Stuck at Home

@@ -6,6 +6,9 @@ category: print
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-corporate-grunge, aesthetic-cottagegoth, aesthetic-web-brutalism, aesthetic-acid-graphics, aesthetic-curly-girly]
+images:
+  - src: material-photocopy-xerox.png
+    reason: Material fidelity sample.
 ---
 
 # Photocopy / Xerox (toner crush)

@@ -6,6 +6,9 @@ category: fabric
 surfaceFinish: semi-gloss
 transparency: opaque
 pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-vaporwave, aesthetic-coastal-grandmother, aesthetic-defi-cosmic]
+images:
+  - src: material-silk.png
+    reason: Material fidelity sample.
 ---
 
 # Silk (lustrous fabric)

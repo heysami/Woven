@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 1990s-current
 pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-cottagecore, recipe-restrained-ai-marketing]
 notForUseWhen: Luxury, glamour, conversion-focused product pages, B2B.
+images:
+  - src: photo-tillmans-candid.png
+    reason: Photography style sample.
 ---
 
 # Wolfgang Tillmans degree-zero candid

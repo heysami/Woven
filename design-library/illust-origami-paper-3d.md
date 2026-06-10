@@ -6,6 +6,9 @@ subCategory: origami
 role: subject
 pairsPrototypes: [aesthetic-solarpunk, aesthetic-coastal-grandmother, recipe-warm-restraint, style-skeuomorphism]
 notForUseWhen: cyberpunk, brutalism
+images:
+  - src: illust-origami-paper-3d.png
+    reason: Illustration style sample.
 ---
 
 # Origami / Folded Paper 3D

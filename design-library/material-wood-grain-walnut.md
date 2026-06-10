@@ -6,6 +6,9 @@ category: wood
 surfaceFinish: semi-gloss (varnished) or matte (raw)
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism (library-as-wood-shelf), aesthetic-cottagecore, aesthetic-steampunk, aesthetic-dark-academia]
+images:
+  - src: material-wood-grain-walnut.png
+    reason: Material fidelity sample.
 ---
 
 # Wood Grain (walnut, dark, vertical grain)

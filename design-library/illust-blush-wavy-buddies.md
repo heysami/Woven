@@ -6,6 +6,9 @@ subCategory: ink-line-brush
 role: subject
 pairsPrototypes: [style-doodle, aesthetic-curly-girly, aesthetic-positivity-kawaii]
 notForUseWhen: B2B serious, brutalism, financial dashboards
+images:
+  - src: illust-blush-wavy-buddies.png
+    reason: Illustration style sample.
 ---
 
 # Wavy Buddies

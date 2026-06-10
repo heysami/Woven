@@ -6,6 +6,9 @@ subCategory: geometric-primitive
 role: decoration
 pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-readcv, style-bold-display, recipe-bento-marketing]
 notForUseWhen: dense data UI, brutalism
+images:
+  - src: illust-shapes-gallery-michalczyk.png
+    reason: Illustration style sample.
 ---
 
 # Shapes.gallery — Monika Michalczyk shapes

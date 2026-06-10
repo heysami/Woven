@@ -6,6 +6,9 @@ category: film
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, aesthetic-corporate-grunge, aesthetic-vaporwave, aesthetic-cottagegoth]
+images:
+  - src: material-film-grain-tri-x.png
+    reason: Material fidelity sample.
 ---
 
 # Film Grain — Tri-X 400 (B&W, coarse grain)

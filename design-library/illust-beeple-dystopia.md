@@ -6,6 +6,9 @@ subCategory: beeple-dystopia
 role: hero
 pairsPrototypes: [aesthetic-crypto-degen, aesthetic-cyberpunk, recipe-ai-foundry-dark]
 notForUseWhen: friendly SaaS, kids, restrained AI marketing
+images:
+  - src: illust-beeple-dystopia.png
+    reason: Illustration style sample.
 ---
 
 # Beeple dystopian 3D

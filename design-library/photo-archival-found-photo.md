@@ -5,6 +5,9 @@ category: archival
 era: 1950s-90s
 pairsPrototypes: [aesthetic-cluttercore, recipe-readcv, aesthetic-corporate-grunge, aesthetic-cottagecore]
 notForUseWhen: Modern tech, restrained luxury, anything aspirational-future.
+images:
+  - src: photo-archival-found-photo.png
+    reason: Photography style sample.
 ---
 
 # Archival found-photograph treatment

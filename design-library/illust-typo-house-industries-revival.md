@@ -6,6 +6,9 @@ subCategory: house-industries-revival
 role: typography
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-coastal-grandmother, recipe-warm-restraint, recipe-editorial-magazine]
 notForUseWhen: brutalism, tech-futurist
+images:
+  - src: illust-typo-house-industries-revival.png
+    reason: Illustration style sample.
 ---
 
 # House Industries pop-baroque revival

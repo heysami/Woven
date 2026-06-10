@@ -6,6 +6,9 @@ subCategory: squiggle-line
 role: decoration
 pairsPrototypes: [style-doodle, aesthetic-corporate-memphis, recipe-bento-marketing, aesthetic-positivity-kawaii]
 notForUseWhen: editorial, brutalism, photoreal
+images:
+  - src: illust-scribbbles-funky-vector.png
+    reason: Illustration style sample.
 ---
 
 # Scribbbles funky vector scribble

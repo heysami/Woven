@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-bauhaus, aesthetic-swiss-modernist, recipe-scientific-infra-marketing, aesthetic-atompunk, aesthetic-steampunk, style-restrained-hairline]
+images:
+  - src: material-cad-blueprint.png
+    reason: Material fidelity sample.
 ---
 
 # CAD Blueprint (white-on-blue technical drawing)

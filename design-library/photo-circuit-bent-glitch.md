@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-acid-graphics, style-holographic]
 notForUseWhen: Premium, B2B, anything restrained or sincere.
+images:
+  - src: photo-circuit-bent-glitch.png
+    reason: Photography style sample.
 ---
 
 # Circuit-bent glitch photo effect

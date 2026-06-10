@@ -6,6 +6,9 @@ category: fabric
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism (iOS Game Center linen), aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-dark-academia]
+images:
+  - src: material-linen-weave.png
+    reason: Material fidelity sample.
 ---
 
 # Linen Weave (Apple-linen / textbook substrate)

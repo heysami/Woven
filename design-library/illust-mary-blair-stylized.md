@@ -6,6 +6,9 @@ subCategory: mary-blair-stylized
 role: hero
 pairsPrototypes: [aesthetic-positivity-kawaii, recipe-editorial-magazine, aesthetic-fairycore]
 notForUseWhen: B2B, brutalism, tech
+images:
+  - src: illust-mary-blair-stylized.png
+    reason: Illustration style sample.
 ---
 
 # Mary Blair stylized mid-century

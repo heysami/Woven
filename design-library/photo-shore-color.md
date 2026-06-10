@@ -5,6 +5,9 @@ category: fine-art
 era: 1970s
 pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, style-serif-warm-paper, recipe-warm-restraint]
 notForUseWhen: Conversion product, fashion, anything fast.
+images:
+  - src: photo-shore-color.png
+    reason: Photography style sample.
 ---
 
 # Stephen Shore Uncommon Places banal-color

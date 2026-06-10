@@ -6,6 +6,9 @@ category: paper
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-serif-warm-paper, aesthetic-cottagecore, aesthetic-dark-academia, aesthetic-cottagegoth, style-raster-cutout]
+images:
+  - src: material-uncoated-paper.png
+    reason: Material fidelity sample.
 ---
 
 # Uncoated Paper (soft, porous, ink-absorbing)

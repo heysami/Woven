@@ -6,6 +6,9 @@ subCategory: claymation-stop-motion
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, style-claymorphism, aesthetic-wacky-pomo]
 notForUseWhen: enterprise, brutalism
+images:
+  - src: illust-claymation-stop-motion.png
+    reason: Illustration style sample.
 ---
 
 # Claymation stop-motion 3D

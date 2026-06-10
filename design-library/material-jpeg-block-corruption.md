@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-y2k-myspace, aesthetic-internetcore, aesthetic-cyberpunk, aesthetic-weirdcore, aesthetic-dreamcore]
+images:
+  - src: material-jpeg-block-corruption.png
+    reason: Material fidelity sample.
 ---
 
 # JPEG Block Corruption (8×8 macroblock aesthetic)

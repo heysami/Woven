@@ -6,6 +6,9 @@ category: ceramic
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism (porcelain mascot), aesthetic-cottagecore (enamelware)]
+images:
+  - src: material-ceramic-glaze.png
+    reason: Material fidelity sample.
 ---
 
 # Ceramic Glaze (high-gloss porcelain finish)

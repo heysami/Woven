@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cyberpunk, aesthetic-acid-design, aesthetic-y2k-futurism, aesthetic-dreamcore, aesthetic-weirdcore]
+images:
+  - src: material-datamosh-compression-smear.png
+    reason: Material fidelity sample.
 ---
 
 # Datamosh (codec interpolation failure)

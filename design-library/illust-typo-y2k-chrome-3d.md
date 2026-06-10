@@ -6,6 +6,9 @@ subCategory: y2k-chrome-3d
 role: typography
 pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-y2k-memphis-loud, aesthetic-vaporwave, aesthetic-frutiger-chromecore]
 notForUseWhen: editorial restraint, B2B, Bauhaus
+images:
+  - src: illust-typo-y2k-chrome-3d.png
+    reason: Illustration style sample.
 ---
 
 # Y2K Chrome 3D typography

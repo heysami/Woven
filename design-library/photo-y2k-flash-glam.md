@@ -5,6 +5,9 @@ category: editorial-fashion
 era: 2000s
 pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-frutiger-aero, aesthetic-y2k-memphis-loud, aesthetic-curly-girly]
 notForUseWhen: Heritage brand, B2B, wellness.
+images:
+  - src: photo-y2k-flash-glam.png
+    reason: Photography style sample.
 ---
 
 # Y2K glossy flash glamour

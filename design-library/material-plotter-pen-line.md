@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-swiss-modernist, aesthetic-bauhaus, recipe-scientific-infra-marketing, style-outline-wireframe, recipe-newspaper-of-record, style-restrained-hairline]
+images:
+  - src: material-plotter-pen-line.png
+    reason: Material fidelity sample.
 ---
 
 # Plotter Pen Line (HP 7475 single-weight ink-on-paper)

@@ -5,6 +5,9 @@ category: documentary
 era: 1950s-current
 pairsPrototypes: [recipe-newspaper-of-record, style-agate-broadsheet, style-serif-warm-paper, recipe-editorial-magazine]
 notForUseWhen: Product e-comm, anything aspirational-consumer.
+images:
+  - src: photo-magnum-monochrome.png
+    reason: Photography style sample.
 ---
 
 # Magnum monochrome documentary

@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [aesthetic-cottagegoth, aesthetic-dark-academia, recipe-editorial-magazine]
+images:
+  - src: material-scanned-glass.png
+    reason: Material fidelity sample.
 ---
 
 # Scanned Glass (digital glass on analog paper substrate)

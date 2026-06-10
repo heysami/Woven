@@ -6,6 +6,9 @@ subCategory: halftone-shape
 role: decoration
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-anti-design, aesthetic-y2k-memphis-loud]
 notForUseWhen: minimalist clean SaaS
+images:
+  - src: illust-halftone-shape.png
+    reason: Illustration style sample.
 ---
 
 # Halftone retro shape

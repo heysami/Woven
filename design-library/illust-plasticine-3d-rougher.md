@@ -6,6 +6,9 @@ subCategory: plasticine
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-corporate-memphis, aesthetic-wacky-pomo]
 notForUseWhen: refined, restrained, AI marketing
+images:
+  - src: illust-plasticine-3d-rougher.png
+    reason: Illustration style sample.
 ---
 
 # 3D Plasticine (rougher than clay)

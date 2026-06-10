@@ -6,6 +6,9 @@ subCategory: flat-iconographic
 role: decoration
 pairsPrototypes: [aesthetic-positivity-kawaii, recipe-bento-marketing, style-claymorphism]
 notForUseWhen: institutional finance, brutalism
+images:
+  - src: illust-blush-currency-crush.png
+    reason: Illustration style sample.
 ---
 
 # Currency Crush

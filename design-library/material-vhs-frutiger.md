@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-y2k-myspace, aesthetic-cassette-futurism]
+images:
+  - src: material-vhs-frutiger.png
+    reason: Material fidelity sample.
 ---
 
 # VHS-Frutiger (Frutiger Aero with VHS distortion)

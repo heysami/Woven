@@ -5,6 +5,9 @@ category: product
 era: current
 pairsPrototypes: [recipe-warm-restraint, style-cream-humanist, style-serif-warm-paper, style-restrained-hairline]
 notForUseWhen: Mass-market product, anything loud, family CPG.
+images:
+  - src: photo-aesop-apothecary.png
+    reason: Photography style sample.
 ---
 
 # Aesop apothecary minimal still life

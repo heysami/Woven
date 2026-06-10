@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [aesthetic-corporate-memphis, aesthetic-positivity-kawaii]
 notForUseWhen: editorial
+images:
+  - src: illust-blush-fitz.png
+    reason: Illustration style sample.
 ---
 
 # Fitz

@@ -6,6 +6,9 @@ subCategory: 1960s-psychedelic
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-maximalism, aesthetic-anti-design]
 notForUseWhen: enterprise, brutalism, cottagecore
+images:
+  - src: illust-keith-haring-radiant.png
+    reason: Illustration style sample.
 ---
 
 # Keith Haring radiant pop

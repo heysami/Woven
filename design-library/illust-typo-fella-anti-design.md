@@ -6,6 +6,9 @@ subCategory: fella-anti-design
 role: typography
 pairsPrototypes: [aesthetic-anti-design, aesthetic-web-brutalism, recipe-brutalist-web, aesthetic-corporate-grunge]
 notForUseWhen: enterprise, polished SaaS
+images:
+  - src: illust-typo-fella-anti-design.png
+    reason: Illustration style sample.
 ---
 
 # Ed Fella anti-design hand-letter

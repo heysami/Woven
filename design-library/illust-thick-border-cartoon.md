@@ -6,6 +6,9 @@ subCategory: thick-border-cartoon
 role: spot-illustration
 pairsPrototypes: [style-neubrutalism, aesthetic-neubrutalism, recipe-brutalist-web, aesthetic-web-brutalism]
 notForUseWhen: warm-restraint, editorial, refined
+images:
+  - src: illust-thick-border-cartoon.png
+    reason: Illustration style sample.
 ---
 
 # Thick-border cartoon (neubrutalism vector)

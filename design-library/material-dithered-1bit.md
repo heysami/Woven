@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-pixel-bitmap, aesthetic-pixel-game-boy-mono, aesthetic-web-brutalism, aesthetic-corporate-grunge]
+images:
+  - src: material-dithered-1bit.png
+    reason: Material fidelity sample.
 ---
 
 # 1-bit Dither (Obra Dinn / Game Boy threshold)

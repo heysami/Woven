@@ -5,6 +5,9 @@ category: food
 era: current
 pairsPrototypes: [recipe-editorial-magazine, style-serif-warm-paper, recipe-warm-restraint, aesthetic-cottagecore]
 notForUseWhen: Fast casual, fast food, packaging hero shot, kid food.
+images:
+  - src: photo-bon-appetit-food.png
+    reason: Photography style sample.
 ---
 
 # Bon Appétit moody food overhead

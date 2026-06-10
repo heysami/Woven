@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-raster-cutout, aesthetic-cottagecore, aesthetic-y2k-myspace, aesthetic-corporate-grunge]
+images:
+  - src: material-torn-edge.png
+    reason: Material fidelity sample.
 ---
 
 # Torn Edge (paper / fabric / film)

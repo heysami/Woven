@@ -6,6 +6,9 @@ category: fabric
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-skeuomorphism (poker felt, billiards), aesthetic-dark-academia, aesthetic-cottagegoth]
+images:
+  - src: material-felt.png
+    reason: Material fidelity sample.
 ---
 
 # Felt (matted wool, fuzzy)

@@ -5,6 +5,9 @@ category: fine-art
 era: current
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dreamcore, style-bold-display, aesthetic-anti-design]
 notForUseWhen: Mass-market product, B2B SaaS, anything quick-to-decode.
+images:
+  - src: photo-weingart-staged.png
+    reason: Photography style sample.
 ---
 
 # Staged conceptual fine-art (Wolfgang Weingart adjacent)

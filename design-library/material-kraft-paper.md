@@ -6,6 +6,9 @@ category: paper
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-cottagegoth, aesthetic-goblincore, recipe-newspaper-of-record]
+images:
+  - src: material-kraft-paper.png
+    reason: Material fidelity sample.
 ---
 
 # Kraft Paper (brown unbleached cardstock)

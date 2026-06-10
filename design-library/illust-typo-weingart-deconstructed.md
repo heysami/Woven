@@ -6,6 +6,9 @@ subCategory: weingart-deconstructed
 role: typography
 pairsPrototypes: [aesthetic-web-brutalism, recipe-brutalist-web, aesthetic-swiss-modernist, recipe-editorial-magazine]
 notForUseWhen: friendly consumer UI, kids, Y2K bling
+images:
+  - src: illust-typo-weingart-deconstructed.png
+    reason: Illustration style sample.
 ---
 
 # Weingart deconstructed typography

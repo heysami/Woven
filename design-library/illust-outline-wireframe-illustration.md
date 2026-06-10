@@ -6,6 +6,9 @@ subCategory: hairline
 role: spot-illustration
 pairsPrototypes: [style-outline-wireframe, style-restrained-hairline, recipe-restrained-ai-marketing, recipe-linear-product-ui]
 notForUseWhen: cottagecore, brutalism, kids
+images:
+  - src: illust-outline-wireframe-illustration.png
+    reason: Illustration style sample.
 ---
 
 # Outline wireframe illustration

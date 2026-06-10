@@ -5,6 +5,9 @@ category: glamour
 era: 1980s
 pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vector-hands-up]
 notForUseWhen: Restrained luxury, minimal, anything wellness.
+images:
+  - src: photo-eighties-cocaine-glam.png
+    reason: Photography style sample.
 ---
 
 # 1980s cocaine-glam editorial

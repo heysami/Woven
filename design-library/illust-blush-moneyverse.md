@@ -6,6 +6,9 @@ subCategory: geometric-mid-century
 role: spot-illustration
 pairsPrototypes: [aesthetic-defi-cosmic, aesthetic-crypto-degen, recipe-bento-marketing]
 notForUseWhen: serious financial dashboards, Bloomberg
+images:
+  - src: illust-blush-moneyverse.png
+    reason: Illustration style sample.
 ---
 
 # Moneyverse

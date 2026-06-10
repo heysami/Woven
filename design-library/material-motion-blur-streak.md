@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, aesthetic-cinematic, recipe-bento-marketing, recipe-aurora-marketing, aesthetic-frutiger-aero]
+images:
+  - src: material-motion-blur-streak.png
+    reason: Material fidelity sample.
 ---
 
 # Motion Blur Streak (directional motion artifact)

@@ -5,6 +5,9 @@ category: product
 era: 2004-2013
 pairsPrototypes: [aesthetic-frutiger-aero, aesthetic-frutiger-chromecore, aesthetic-frutiger-tranquil-serenity, style-glassmorphism, style-liquid-glass]
 notForUseWhen: Luxury, restrained, premium B2B.
+images:
+  - src: photo-frutiger-aero-product.png
+    reason: Photography style sample.
 ---
 
 # Frutiger Aero glossy product environment

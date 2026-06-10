@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [style-aurorism, recipe-aurora-marketing, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero]
+images:
+  - src: material-aurora-mesh.png
+    reason: Material fidelity sample.
 ---
 
 # Aurora Mesh Gradient (Stripe / Vercel / Linear)

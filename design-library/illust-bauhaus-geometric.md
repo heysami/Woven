@@ -6,6 +6,9 @@ subCategory: eames-mid-century
 role: hero
 pairsPrototypes: [aesthetic-bauhaus, aesthetic-de-stijl, aesthetic-constructivism, aesthetic-swiss-modernist]
 notForUseWhen: warm, cottagecore, playful
+images:
+  - src: illust-bauhaus-geometric.png
+    reason: Illustration style sample.
 ---
 
 # Bauhaus pure geometric

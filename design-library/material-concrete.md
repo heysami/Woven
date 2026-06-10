@@ -6,6 +6,9 @@ category: stone
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-web-brutalism, aesthetic-corporate-grunge, aesthetic-cassette-futurism, recipe-brutalist-web]
+images:
+  - src: material-concrete.png
+    reason: Material fidelity sample.
 ---
 
 # Concrete (raw industrial)

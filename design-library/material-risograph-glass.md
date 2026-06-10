@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [aesthetic-acid-design, aesthetic-corporate-grunge, aesthetic-y2k-myspace]
+images:
+  - src: material-risograph-glass.png
+    reason: Material fidelity sample.
 ---
 
 # Risograph-Glass (frosted glass under riso grain)

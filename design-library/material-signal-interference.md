@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cassette-futurism, aesthetic-atompunk, aesthetic-cyberpunk, recipe-terminal-on-web, style-dense-mono-dark]
+images:
+  - src: material-signal-interference.png
+    reason: Material fidelity sample.
 ---
 
 # Signal Interference (hum bars, sync errors, vertical hold drift)

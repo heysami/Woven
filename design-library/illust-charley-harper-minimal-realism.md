@@ -6,6 +6,9 @@ subCategory: charley-harper-minimal-realism
 role: spot-illustration
 pairsPrototypes: [aesthetic-solarpunk, aesthetic-cottagecore, recipe-warm-restraint, aesthetic-coastal-grandmother]
 notForUseWhen: photoreal, brutalism, cyberpunk
+images:
+  - src: illust-charley-harper-minimal-realism.png
+    reason: Illustration style sample.
 ---
 
 # Charley Harper minimal-realism nature

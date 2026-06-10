@@ -6,6 +6,9 @@ subCategory: hand-lettered-editorial
 role: typography
 pairsPrototypes: [aesthetic-vector-vector-musica, aesthetic-acid-design, aesthetic-vaporwave]
 notForUseWhen: editorial restraint, B2B
+images:
+  - src: illust-typo-vector-musica.png
+    reason: Illustration style sample.
 ---
 
 # Vector Música typographic illustration

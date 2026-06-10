@@ -6,6 +6,9 @@ subCategory: geometric-primitive
 role: decoration
 pairsPrototypes: [aesthetic-y2k-memphis-loud, aesthetic-curly-girly, aesthetic-positivity-kawaii, aesthetic-acid-design]
 notForUseWhen: minimalist hairline UI
+images:
+  - src: illust-spectrums-complex-flower.png
+    reason: Illustration style sample.
 ---
 
 # Spectrums — Complex / Flower

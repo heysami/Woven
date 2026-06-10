@@ -6,6 +6,9 @@ subCategory: kawaii-mascot
 role: mascot
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-curly-girly]
 notForUseWhen: B2B serious
+images:
+  - src: illust-kawaii-mascot.png
+    reason: Illustration style sample.
 ---
 
 # Kawaii mascot

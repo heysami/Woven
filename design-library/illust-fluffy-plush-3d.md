@@ -6,6 +6,9 @@ subCategory: fluffy-plush
 role: mascot
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-curly-girly, style-claymorphism, aesthetic-fairycore]
 notForUseWhen: B2B, brutalism, dark themes
+images:
+  - src: illust-fluffy-plush-3d.png
+    reason: Illustration style sample.
 ---
 
 # 3D Fluffy / Plush

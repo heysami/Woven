@@ -6,6 +6,9 @@ category: print
 surfaceFinish: matte
 transparency: translucent (per ink layer)
 pairsPrototypes: [aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-corporate-grunge, aesthetic-y2k-myspace, aesthetic-corporate-memphis]
+images:
+  - src: material-risograph.png
+    reason: Material fidelity sample.
 ---
 
 # Risograph (limited-palette spot-color print)

@@ -6,6 +6,9 @@ subCategory: geometric-primitive
 role: decoration
 pairsPrototypes: [aesthetic-bauhaus, aesthetic-de-stijl, aesthetic-swiss-modernist, recipe-swiss-grid]
 notForUseWhen: cluttered scenes
+images:
+  - src: illust-spectrums-vector-shape-circle.png
+    reason: Illustration style sample.
 ---
 
 # Spectrums — Circle family

@@ -6,6 +6,9 @@ subCategory: flat-with-pattern
 role: subject
 pairsPrototypes: [aesthetic-corporate-memphis, aesthetic-maximalism]
 notForUseWhen: B2B technical
+images:
+  - src: illust-blush-we-are-women.png
+    reason: Illustration style sample.
 ---
 
 # We Are Women

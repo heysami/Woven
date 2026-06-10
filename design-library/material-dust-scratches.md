@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cottagegoth, aesthetic-dark-academia, aesthetic-corporate-grunge, recipe-editorial-magazine]
+images:
+  - src: material-dust-scratches.png
+    reason: Material fidelity sample.
 ---
 
 # Dust + Scratches (archival distress)

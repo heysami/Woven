@@ -6,6 +6,9 @@ subCategory: editorial-thick-brush
 role: spot-illustration
 pairsPrototypes: [recipe-newspaper-of-record, recipe-editorial-magazine, style-agate-broadsheet]
 notForUseWhen: marketing, friendly, decorative
+images:
+  - src: illust-editorial-thick-brush.png
+    reason: Illustration style sample.
 ---
 
 # Editorial thick-brush op-ed

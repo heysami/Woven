@@ -6,6 +6,9 @@ category: digital-effect
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-terminal-mono, recipe-terminal-on-web, aesthetic-web-brutalism]
+images:
+  - src: material-ascii-art-surface.png
+    reason: Material fidelity sample.
 ---
 
 # ASCII Art Surface (text-as-pixel)

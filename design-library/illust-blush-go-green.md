@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: spot-illustration
 pairsPrototypes: [aesthetic-solarpunk, aesthetic-frutiger-eco, aesthetic-cottagecore]
 notForUseWhen: edgy, brutalism, neon
+images:
+  - src: illust-blush-go-green.png
+    reason: Illustration style sample.
 ---
 
 # Go Green

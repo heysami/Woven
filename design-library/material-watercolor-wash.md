@@ -6,6 +6,9 @@ category: wash
 surfaceFinish: matte
 transparency: translucent (multiple washes)
 pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-fairycore, style-doodle]
+images:
+  - src: material-watercolor-wash.png
+    reason: Material fidelity sample.
 ---
 
 # Watercolor Wash (wet-on-wet, granulation)

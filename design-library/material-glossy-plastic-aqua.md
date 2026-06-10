@@ -6,6 +6,9 @@ category: plastic
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [aesthetic-frutiger-aero, aesthetic-y2k-futurism, aesthetic-frutiger-chromecore, style-skeuomorphism]
+images:
+  - src: material-glossy-plastic-aqua.png
+    reason: Material fidelity sample.
 ---
 
 # Glossy Plastic (Frutiger Aero / Apple Aqua / Windows Vista wet button)

@@ -6,6 +6,9 @@ subCategory: eric-carle-collage
 role: subject
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-cottagecore, style-raster-cutout]
 notForUseWhen: B2B, brutalism, polished tech
+images:
+  - src: illust-eric-carle-tissue-collage.png
+    reason: Illustration style sample.
 ---
 
 # Eric Carle tissue-paper collage

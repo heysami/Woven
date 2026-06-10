@@ -6,6 +6,9 @@ subCategory: wood-type-letterpress
 role: typography
 pairsPrototypes: [aesthetic-cottagecore, recipe-warm-restraint, recipe-editorial-magazine, aesthetic-corporate-grunge]
 notForUseWhen: tech, brutalism
+images:
+  - src: illust-typo-wood-type-letterpress.png
+    reason: Illustration style sample.
 ---
 
 # Wood-type letterpress slab

@@ -6,6 +6,9 @@ category: ink
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [style-raster-cutout, style-doodle, aesthetic-cottagecore, aesthetic-cottagegoth, aesthetic-dark-academia]
+images:
+  - src: material-ink-bleed-on-paper.png
+    reason: Material fidelity sample.
 ---
 
 # Ink Bleed (fountain pen / felt-tip on uncoated)

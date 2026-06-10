@@ -6,6 +6,9 @@ subCategory: 1970s-airbrush
 role: hero
 pairsPrototypes: [style-raster-cutout, aesthetic-anti-design, aesthetic-acid-design, recipe-editorial-magazine]
 notForUseWhen: B2B, polished SaaS
+images:
+  - src: illust-raster-cutout-collage.png
+    reason: Illustration style sample.
 ---
 
 # Raster cutout collage

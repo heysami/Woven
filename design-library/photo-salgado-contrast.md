@@ -5,6 +5,9 @@ category: documentary
 era: 1980s-current
 pairsPrototypes: [recipe-newspaper-of-record, style-agate-broadsheet, recipe-editorial-magazine, style-serif-warm-paper]
 notForUseWhen: Fashion, consumer product, anything cheerful.
+images:
+  - src: photo-salgado-contrast.png
+    reason: Photography style sample.
 ---
 
 # Sebastião Salgado biblical contrast

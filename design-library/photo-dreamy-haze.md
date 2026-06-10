@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-dreamcore, aesthetic-angelcore, aesthetic-fairycore, aesthetic-positivity-kawaii]
 notForUseWhen: Hardware product, B2B, anything needing clarity and detail.
+images:
+  - src: photo-dreamy-haze.png
+    reason: Photography style sample.
 ---
 
 # Dreamy soft haze portrait

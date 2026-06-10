@@ -6,6 +6,9 @@ subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [recipe-warm-restraint, aesthetic-cottagecore, recipe-readcv]
 notForUseWhen: B2B technical
+images:
+  - src: illust-blush-little-things.png
+    reason: Illustration style sample.
 ---
 
 # The Little Things

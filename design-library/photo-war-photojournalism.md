@@ -5,6 +5,9 @@ category: documentary
 era: 1990s-current
 pairsPrototypes: [recipe-newspaper-of-record, style-agate-broadsheet]
 notForUseWhen: Any commercial application. Reserved for editorial truth.
+images:
+  - src: photo-war-photojournalism.png
+    reason: Photography style sample.
 ---
 
 # Frontline war photojournalism

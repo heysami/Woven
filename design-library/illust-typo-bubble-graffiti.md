@@ -6,6 +6,9 @@ subCategory: bubble-graffiti
 role: typography
 pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-memphis-loud, aesthetic-acid-graphics]
 notForUseWhen: B2B, editorial restraint
+images:
+  - src: illust-typo-bubble-graffiti.png
+    reason: Illustration style sample.
 ---
 
 # Bubble graffiti display

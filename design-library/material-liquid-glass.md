@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: glossy
 transparency: transparent
 pairsPrototypes: [style-liquid-glass, style-glassmorphism, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero, aesthetic-holographic, aesthetic-y2k-futurism]
+images:
+  - src: material-liquid-glass.png
+    reason: Material fidelity sample.
 ---
 
 # Liquid Glass (Apple WWDC25)
