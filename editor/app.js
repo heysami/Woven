@@ -17571,17 +17571,27 @@ function elementCssPath(el) {
 function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   if (!rect) return true;
   if (minNodeWidth && rect.width < minNodeWidth) return true;
-  // 6px slack so bars that exactly hug the canvas edge still show.
+  // v3.5.4 — Only hide when the bar would be COMPLETELY off the canvas
+  // viewport. The previous "any-pixel-of-bleed hides" rule killed the pick
+  // badge + Save/Revert pill whenever a prototype node was wider than the
+  // visible canvas area — the badge anchors near rect.right and the right
+  // edge of a wide node always bleeds past the wrap. With partial overlap
+  // allowed, the badge keeps showing as long as some of it is on-canvas;
+  // z-index stacking (bars at z 40, side panels at z 60+) handles the case
+  // where the bar overlaps a panel. 6px slack on each edge so bars that
+  // sit exactly flush with the wrap still render.
   const SLACK = 6;
   const canvasEl = document.querySelector(".workflow-canvas-wrap");
   if (canvasEl) {
     const c = canvasEl.getBoundingClientRect();
-    if (barLeft < c.left - SLACK || barRight > c.right + SLACK) return true;
-    // Vertical: bars sit at rect.top - 40 (32px chip + 8px gap). If that
-    // anchor would land above the canvas top edge, the bar would paint
-    // over the top nav. Hide so the workflow-bar is never overlaid.
-    const barTop = rect.top - 40;
-    if (barTop < c.top - SLACK) return true;
+    // Entirely past the right edge OR entirely before the left edge → hide.
+    if (barLeft  > c.right + SLACK) return true;
+    if (barRight < c.left  - SLACK) return true;
+    // Vertical: bar bottom = barTop + 32 (chip height). Hide only when the
+    // whole bar sits above the canvas top.
+    const barTop    = rect.top - 40;
+    const barBottom = barTop + 32;
+    if (barBottom < c.top - SLACK) return true;
   }
   return false;
 }
@@ -18570,15 +18580,33 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
     }
   };
   if (!visible || !rect) return null;
-  // Anchor at the node's top-right, offset 8px above the node and aligned
-  // to its right edge. Badge is 32×32 (see CSS), so left = right - 32.
-  // Hide if the badge would bleed under the library / chat-drawer, or if
-  // the node is so narrow that a 32px chip can't sit on it (60px floor).
-  if (shouldHideNodeChrome(rect, rect.right - 32, rect.right, 60)) return null;
+  // Skip on tiny nodes — a 32px chip + Save/Revert pill needs at least
+  // ~60px of node width to read.
+  if (rect.width < 60) return null;
+  // v3.5.4 — Clamp the badge position INSIDE the visible canvas wrap so
+  // the pick chip + Save/Revert pill stay reachable when a prototype node
+  // is wider than the canvas viewport. Previously the badge anchored at
+  // rect.right - 32 (the node's right edge) — for a node that extends past
+  // the chat drawer, the badge would land under the panel and either get
+  // chrome-hidden or visually buried behind the higher-z panel.
+  //
+  // Now: ideal anchor is rect.right - 32; clamp to wrapRect.right - 32 - SLACK
+  // so the badge stays just inside the canvas. Also clamp the top so it
+  // can't paint above the workflow-bar.
+  const SLACK = 6;
+  const wrapEl = document.querySelector(".workflow-canvas-wrap");
+  const wrapRect = wrapEl ? wrapEl.getBoundingClientRect()
+                          : { left: 0, right: window.innerWidth, top: 0 };
+  const idealBadgeLeft = rect.right - 32;
+  const badgeLeft = Math.max(
+    wrapRect.left + SLACK,
+    Math.min(idealBadgeLeft, wrapRect.right - 32 - SLACK),
+  );
+  const badgeTop = Math.max(rect.top - 40, wrapRect.top + SLACK);
   const style = {
     position: "fixed",
-    top: (rect.top - 40) + "px",
-    left: (rect.right - 32) + "px",
+    top:  badgeTop  + "px",
+    left: badgeLeft + "px",
     // z 40 keeps the badge BELOW the chat-drawer (60). Tip uses 50; stage
     // pill stays at 40 alongside the badge.
     zIndex: 40,
@@ -18596,9 +18624,9 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // - 40 with height 32; bubble sits 6px above its top (or 6px below its
   // bottom when flipped).
   const placeTip = () => {
-    const anchorTop = rect.top - 40;
+    const anchorTop    = badgeTop;
     const anchorBottom = anchorTop + 32;
-    const anchorMid = (rect.right - 32) + 16;
+    const anchorMid    = badgeLeft + 16;
     const TIP_HEADROOM = 90;
     const placement = (anchorTop < TIP_HEADROOM) ? "below" : "above";
     setTipPos({
@@ -18634,15 +18662,15 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // empty-canvas click → start marquee + clear selection. Stamping the
   // owning node's id here makes closest() resolve to the badge and the
   // wrap correctly keeps the node selected.
-  // Save / Revert pill — appears to the RIGHT of the pick toggle when this
-  // node has staged inspector edits. Anchored at rect.right + 6px so the
-  // pill extends past the node's right edge. Click handlers dispatch
-  // window-level events the WorkflowSurface listens for (avoids prop-
-  // drilling commit/revert through the portal).
+  // Save / Revert pill — sits to the LEFT of the pick badge (v3.5.4 — was
+  // to the right, but that anchored OUTSIDE the node, which combined with
+  // wide-node clamping put the pill off-canvas). Right-edge anchor 6px
+  // before badge's left so the pill auto-sizes by content. Vertical lines
+  // up with the badge (same clamped top).
   const pillStyle = {
     position: "fixed",
-    top: (rect.top - 40) + "px",
-    left: (rect.right + 6) + "px",
+    top: badgeTop + "px",
+    right: (window.innerWidth - badgeLeft + 6) + "px",
     // Matches the badge — under the chat-drawer (60) so the right panel
     // covers the pill when a node sits at the canvas edge.
     zIndex: 40,
