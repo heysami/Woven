@@ -87,13 +87,22 @@ def timestamp() -> str:
 # only assumption is `python3` on PATH (macOS / Linux) or `python` (Windows).
 # Identical behavior on every kind that ships these helpers.
 
-_SERVE_PY = r'''#!/usr/bin/env python3
+_SERVE_PY_TEMPLATE = r'''#!/usr/bin/env python3
 """Tiny static server with automatic port fallback.
 
 Tries 8000 → 8009. If all are taken, asks the OS for a free port. Writes
 the chosen port to ./.serve-port and prints the URL. Ctrl-C to stop.
+
+The browser is opened at ENTRY (set by the export pass to the bundle's
+entry page — e.g. source/<branch>/index.html or design-systems/<dsId>/
+gallery.html). Falls back to the bucket root if ENTRY is empty.
 """
 import http.server, os, socket, socketserver, sys, webbrowser
+
+# Entry path the browser opens, relative to the bucket root. Empty string
+# means "open the bucket root" (which shows a directory listing if there
+# is no index.html at the root — useful for resources/ bundles).
+ENTRY = __ENTRY_LITERAL__
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
@@ -122,8 +131,12 @@ def _pick():
 PORT = _pick()
 with open(os.path.join(HERE, ".serve-port"), "w", encoding="utf-8") as f:
     f.write(str(PORT))
-url = f"http://localhost:{PORT}/"
-print(f"\n  Serving {HERE}\n  on {url}\n  (Ctrl-C to stop)\n")
+root_url = f"http://localhost:{PORT}/"
+entry_url = root_url + ENTRY.lstrip("/") if ENTRY else root_url
+print(f"\n  Serving {HERE}\n  on {root_url}")
+if ENTRY:
+    print(f"  Opening {entry_url}")
+print(f"  (Ctrl-C to stop)\n")
 
 class _Q(http.server.SimpleHTTPRequestHandler):
     # Disable noisy per-request log lines; print errors only.
@@ -134,7 +147,7 @@ class _Q(http.server.SimpleHTTPRequestHandler):
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("127.0.0.1", PORT), _Q) as httpd:
     try:
-        webbrowser.open(url)
+        webbrowser.open(entry_url)
     except Exception:
         pass
     try:
@@ -165,12 +178,23 @@ if %errorlevel%==0 (
 '''
 
 
-def write_serve_helpers(bucket_dir: str) -> None:
+def write_serve_helpers(bucket_dir: str, entry: "str | None" = None) -> None:
     """Drop the four serve.* files into bucket_dir and chmod the unix
     ones so Finder + a fresh terminal can launch them without extra
-    steps. Idempotent — overwrites any previous helper."""
+    steps. Idempotent — overwrites any previous helper.
+
+    `entry` is the path (relative to bucket_dir) the browser should open
+    when the server starts — e.g. `source/main/index.html` or
+    `design-systems/main/gallery.html`. If omitted, opens the bucket
+    root (which falls back to a directory listing when there's no
+    index.html at the root)."""
+    # Bake the entry literal into _serve.py so the helper has no extra
+    # state to read at runtime. Use repr() so backslashes / quotes in
+    # paths don't break the literal.
+    entry_literal = repr(entry.strip() if isinstance(entry, str) and entry.strip() else "")
+    serve_py = _SERVE_PY_TEMPLATE.replace("__ENTRY_LITERAL__", entry_literal)
     files = [
-        ("_serve.py", _SERVE_PY, 0o755),
+        ("_serve.py", serve_py, 0o755),
         ("serve.command", _SERVE_COMMAND, 0o755),
         ("serve.sh", _SERVE_SH, 0o755),
         ("serve.bat", _SERVE_BAT, 0o644),
@@ -942,7 +966,11 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                 _safe_copy_tree(ds_src, ds_dst, files_written, bucket_root=bucket_dir)
                 facts["dsRef"] = ds_ref
         facts["files"] = files_written
-        write_serve_helpers(bucket_dir)
+        # Prototypes open at the branch-root index.html unless the
+        # dispatcher set a more specific entry (immersive containers do —
+        # see _CONTAINER_SUBFOLDER + assetId resolution above).
+        write_serve_helpers(bucket_dir,
+                            facts.get("entry") or f"source/{branch}/index.html")
         readme = readme_prototype(facts)
 
     # ── design-system node ──────────────────────────────────────────────
@@ -982,7 +1010,10 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
             _safe_copy_tree(ds_src, ds_dst, files_written, bucket_root=bucket_dir)
             facts["dsRef"] = ds_id
             facts["files"] = files_written
-            write_serve_helpers(bucket_dir)
+            # gallery.html is the canonical human-readable entry for a
+            # design-system bundle.
+            write_serve_helpers(bucket_dir,
+                                f"design-systems/{ds_id}/gallery.html")
             readme = readme_design_system(facts)
         else:
             # Empty / unwired DS node — surface a no-artifact README that
@@ -1158,7 +1189,10 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                 shutil.copy2(abs_src, dst)
                 files_written.append(rel_under)
             facts["files"] = files_written
-            write_serve_helpers(bucket_dir)
+            # html-set has no single canonical entry; open the first file
+            # so the user lands on something. The README still lists all.
+            first_entry = files_written[0] if files_written else ""
+            write_serve_helpers(bucket_dir, first_entry)
             readme = readme_html_set(facts)
 
         elif asset_sub in ("html", "three", "viz") or (
@@ -1210,7 +1244,7 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     facts["dsRef"] = ds_id
                     facts["entry"] = f"design-systems/{ds_id}/{ds_rel}"
                     facts["files"] = files_written
-                    write_serve_helpers(bucket_dir)
+                    write_serve_helpers(bucket_dir, facts["entry"])
                     # Re-use the prototype README template, but mark it
                     # as a DS bundle so the header reads as such.
                     readme = readme_prototype({
@@ -1222,7 +1256,7 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     files_written.append(fname)
                     facts["entry"] = fname
                     facts["files"] = files_written
-                    write_serve_helpers(bucket_dir)
+                    write_serve_helpers(bucket_dir, fname)
                     readme = readme_html(facts)
             elif len(parts) >= 3:
                 # source/<branch>/<rest>.html — bundle the whole branch.
@@ -1242,7 +1276,7 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     facts["entry"]  = os.path.relpath(abs_src, os.path.join(project_root, "source", branch)).replace(os.sep, "/")
                     facts["entry"]  = f"source/{branch}/{facts['entry']}"
                     facts["files"]  = files_written
-                    write_serve_helpers(bucket_dir)
+                    write_serve_helpers(bucket_dir, facts["entry"])
                     readme = readme_prototype({**facts, "kind": "prototype"})
                 else:
                     fname = os.path.basename(path)
@@ -1250,7 +1284,7 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     files_written.append(fname)
                     facts["entry"] = fname
                     facts["files"] = files_written
-                    write_serve_helpers(bucket_dir)
+                    write_serve_helpers(bucket_dir, fname)
                     readme = readme_html(facts)
             else:
                 # Single file at source/<file>.html — copy alone.
@@ -1259,7 +1293,7 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                 files_written.append(fname)
                 facts["entry"] = fname
                 facts["files"] = files_written
-                write_serve_helpers(bucket_dir)
+                write_serve_helpers(bucket_dir, fname)
                 readme = readme_html(facts)
 
         else:
