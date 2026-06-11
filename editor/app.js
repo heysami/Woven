@@ -6574,6 +6574,42 @@ function saveSettings(patch) {
   return next;
 }
 
+/* Pending-queue persistence — the composer's send-while-busy queue is
+   React state, so closing the drawer unmounts it and a page refresh
+   discards it entirely. Mirror it to localStorage keyed by runId so a
+   queued reply survives both, then re-drains the moment the next turn
+   opens. Envelopes only hold text + already-uploaded paths (the actual
+   image/file bytes live on disk via /__attachment + /__upload), so a
+   JSON round-trip is lossless. */
+const CHAT_QUEUE_KEY_PREFIX = "th.editor.chat-queue.v1.";
+function loadChatQueue(runId) {
+  if (!runId) return [];
+  try {
+    const raw = localStorage.getItem(CHAT_QUEUE_KEY_PREFIX + runId);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    // Defensive shape-check — older entries or corrupted blobs shouldn't
+    // crash the composer on mount. Drop anything missing required fields.
+    return arr
+      .filter(e => e && typeof e === "object" && typeof e.text === "string")
+      .map(e => ({
+        id: typeof e.id === "number" ? e.id : 0,
+        text: e.text,
+        attachments: Array.isArray(e.attachments) ? e.attachments : [],
+        uploads: Array.isArray(e.uploads) ? e.uploads : [],
+      }));
+  } catch { return []; }
+}
+function saveChatQueue(runId, queue) {
+  if (!runId) return;
+  const key = CHAT_QUEUE_KEY_PREFIX + runId;
+  try {
+    if (!queue || queue.length === 0) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(queue));
+  } catch {}
+}
+
 /* v3.4 — Default-provider-per-capability map. The user picks ONE
    provider+model combo per generation capability (agent / image / video /
    svg / 3d / lottie); spawned nodes inherit those defaults but each
@@ -9215,16 +9251,47 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // queued messages. Policy B: drain on ANY non-busy status transition
   // (done / fail / error) and let the existing user-message ↔ resume
   // fallback recover from a dead process.
-  const [queue, setQueue] = useState([]);   // [{ id, text, attachments, uploads }]
+  // Lazy init from localStorage so a queued reply survives a drawer close
+  // or page refresh — see loadChatQueue / saveChatQueue above. The save
+  // effect (declared below) keeps the persisted copy in sync.
+  const [queue, setQueue] = useState(() => loadChatQueue(runId));   // [{ id, text, attachments, uploads }]
   // Monotonic envelope IDs — Date-free so it doesn't run afoul of replay
-  // tooling that intercepts Date.now / new Date.
-  const queueIdRef = useRef(0);
-  // Previous `disabled` value so the drain effect fires only on the
-  // true → false transition (turn-end), not on every render.
-  const prevDisabledRef = useRef(false);
+  // tooling that intercepts Date.now / new Date. Seed past any restored
+  // IDs so a fresh enqueue can never collide with a re-hydrated one.
+  const queueIdRef = useRef(queue.reduce((m, e) => Math.max(m, e.id || 0), 0));
+  // Tracks which runId the current `queue` state belongs to so the save
+  // effect can refuse to persist when the runId prop is mid-swap (e.g. the
+  // drawer just switched to a different run but the queue still mirrors the
+  // previous one). The load effect updates this ref before resetting state.
+  const queueRunIdRef = useRef(runId);
+  // Previous `disabled` value so the drain effect fires on the
+  // true → false transition (turn-end). Initialised to `true` — not `false`
+  // — so a fresh mount with a restored queue ALSO satisfies fellOpen on the
+  // first idle render and the queue self-empties; otherwise a queue saved
+  // before a refresh would sit indefinitely until the next live turn ended.
+  const prevDisabledRef = useRef(true);
   const fileInputRef = useRef(null);
   const uploadInputRef = useRef(null);
   const taRef = useRef(null);
+
+  // Persist the queue per runId so a drawer close / page refresh doesn't
+  // discard pending messages. Order matters: SAVE is declared first so on
+  // a runId swap render the save fires with stale (previous-runId) state
+  // and is correctly gated out by the ref mismatch; the LOAD effect then
+  // updates the ref and swaps state to the new runId's queue.
+  useEffect(() => {
+    if (!runId) return;
+    if (queueRunIdRef.current !== runId) return;
+    saveChatQueue(runId, queue);
+  }, [queue, runId]);
+  useEffect(() => {
+    if (queueRunIdRef.current === runId) return;
+    queueRunIdRef.current = runId;
+    const restored = runId ? loadChatQueue(runId) : [];
+    setQueue(restored);
+    const maxId = restored.reduce((m, e) => Math.max(m, e.id || 0), 0);
+    if (queueIdRef.current < maxId) queueIdRef.current = maxId;
+  }, [runId]);
 
   const uploadAttachment = useCallback(async (file) => {
     if (!file) return;
