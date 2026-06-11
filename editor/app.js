@@ -22364,6 +22364,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const snapshot = Array.from(pendingInspectorEdits.values());
     if (snapshot.length === 0) return;
     flashPickOp("pending", `Saving ${snapshot.length} edit${snapshot.length === 1 ? "" : "s"}…`);
+    // v3.5.9 — Suppress the iframe auto-reload caused by our OWN write.
+    // After a successful POST to /__html_save, the daemon's file watcher
+    // dispatches th:asset-refresh for the same path. The prototype node's
+    // asset-refresh listener bumps the iframe nonce → React re-mounts from
+    // the unchanged App source → user's DOM edits revert ("after a while
+    // the prototype refresh and it reverted"). Mark each path as "self-
+    // saved" before the POST; asset-refresh handlers below consume the
+    // marker (one-shot: removed after a single skip) so any SUBSEQUENT
+    // change to the same path (e.g. an agent's source update) still
+    // triggers a reload normally.
+    try {
+      if (!window.__thInspectorSelfSavedPaths) window.__thInspectorSelfSavedPaths = new Set();
+      for (const entry of snapshot) {
+        if (entry.path) window.__thInspectorSelfSavedPaths.add(entry.path);
+      }
+    } catch {}
     let okCount = 0;
     for (const entry of snapshot) {
       // Validate the iframe is still alive + the doc matches before serializing.
@@ -22390,6 +22406,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       _dispatchPendingDigest(next);
       return next;
     });
+    // Safety: clear the suppression markers after a 6s window even if no
+    // asset-refresh ever arrived (e.g. watcher quiet) — prevents a stale
+    // marker from swallowing the next legitimate refresh on the same path.
+    try {
+      const paths = snapshot.map(e => e.path).filter(Boolean);
+      setTimeout(() => {
+        try {
+          const set = window.__thInspectorSelfSavedPaths;
+          if (!set) return;
+          for (const p of paths) set.delete(p);
+        } catch {}
+      }, 6000);
+    } catch {}
     flashPickOp(okCount === snapshot.length ? "done" : "error",
       okCount === snapshot.length
         ? `Saved ${okCount} edit${okCount === 1 ? "" : "s"}`
@@ -34273,6 +34302,24 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         ? `source/${branch}/`
         : null;
 
+      // v3.5.9 — One-shot suppression for the iframe reload triggered by an
+      // inspector Save's own POST. commitInspectorEdits seeds the path on
+      // window.__thInspectorSelfSavedPaths before writing; consuming the
+      // marker here (delete after the match) means this single refresh
+      // skips, but the next genuine change to the same path (e.g. an agent
+      // resolves the React source) still bumps the nonce normally.
+      try {
+        const selfSet = window.__thInspectorSelfSavedPaths;
+        if (selfSet && selfSet.size > 0) {
+          const consumed = paths.filter(p => p && selfSet.has(p));
+          if (consumed.length && consumed.length === paths.length) {
+            for (const p of consumed) selfSet.delete(p);
+            return;
+          }
+          // Mixed: drop the self-saved entries, fall through for the rest.
+          for (const p of consumed) selfSet.delete(p);
+        }
+      } catch {}
       const hit = paths.some(p => {
         if (!p || typeof p !== "string") return false;
         // (1) Anything inside the prototype's canonical source folder.
@@ -36821,6 +36868,16 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     if (_isLongRunningInteractive) return;   // skip listener entirely for sim/im/nx HTML
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
+      // v3.5.9 — Inspector-self-save suppression (see prototype-node handler
+      // + commitInspectorEdits for the contract). One-shot: consume the
+      // path so subsequent genuine refreshes still work.
+      try {
+        const selfSet = window.__thInspectorSelfSavedPaths;
+        if (selfSet && selfSet.has(node.path)) {
+          selfSet.delete(node.path);
+          return;
+        }
+      } catch {}
       if (paths.includes(node.path)) setBust(b => b + 1);
     };
     window.addEventListener("th:asset-refresh", handler);
