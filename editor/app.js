@@ -6259,7 +6259,12 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
       />
       <${InspectorPanel} picked=${picked} tool=${tool} edits=${edits} onStyle=${onStyle} onMove=${onMove}/>
       <${ZoomPill} zoom=${zoom}/>
-      <${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>
+      ${/* v3.5 — skip the floating MiniMap when the editor is rendered with
+            ?embed=1 (Canvas-frames node embeds it inside a workflow node).
+            The workflow canvas already has its own minimap docked in the
+            library rail; a second one floating over the embedded surface
+            reads as duplicated chrome and crowds an already-small viewport. */ ""}
+      ${!(_qsFromLocation() && _qsFromLocation().get("embed") === "1") && html`<${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>`}
       ${cloneMode && html`
         <div className="clone-mode-banner" onClick=${(e) => e.stopPropagation()}>
           <${Icon.Copy}/>
