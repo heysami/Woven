@@ -34453,10 +34453,18 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // current one. Same-URL entries (DOM-only snapshots from the legacy
   // capture path) have nothing to restore and would no-op restoreEntry,
   // which would look like the Back button is broken — skip them.
+  //
+  // Final fallback: if past[] is exhausted and the iframe is currently
+  // orphaned (URL doesn't match node.lockedState), route Back to the
+  // locked URL. Without this, a user who navigated off-lock and triggered
+  // the orphan banner has no way out via Back — clicking it does nothing,
+  // which reads as "the page is frozen." Same destination as the Return
+  // button; Back just becomes a sensible escape hatch.
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
+    const f = iframeRef.current;
     const curUrl = (() => {
-      try { return iframeRef.current.contentWindow.location.href; } catch { return null; }
+      try { return f && f.contentWindow.location.href; } catch { return null; }
     })();
     while (hist.past.length) {
       const prev = hist.past.pop();
@@ -34467,7 +34475,19 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         return;
       }
     }
-  }, [restoreEntry]);
+    if (node.lockedState && f && f.contentWindow) {
+      try {
+        const lockedHref = new URL(
+          apiUrl(node.lockedState.pathname) + (node.lockedState.hash || ""),
+          f.contentWindow.location.href
+        ).href;
+        if (lockedHref !== curUrl) {
+          suppressNavTrackRef.current = true;
+          f.contentWindow.location.replace(lockedHref);
+        }
+      } catch {}
+    }
+  }, [restoreEntry, node.lockedState]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
     const curUrl = (() => {

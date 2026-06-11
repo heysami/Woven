@@ -4706,6 +4706,12 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font-size: 11.5px;
   color: var(--text);
   z-index: 1;
+  /* The banner lives ON TOP of the prototype's own header strip. Letting it
+     intercept pointer events meant the user couldn't click the prototype's
+     real nav while the banner was up — which read as "the page is frozen".
+     Pointer events pass through the banner background and message; only the
+     Return button stays clickable, via the matching override below. */
+  pointer-events: none;
 }
 .workflow-node-orphan-msg {
   flex: 1;
@@ -4725,6 +4731,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   padding: 3px 8px;
   border-radius: 4px;
   cursor: pointer;
+  /* Counterpart to the banner's pointer-events: none — re-enable for the
+     one element the user is meant to click. */
+  pointer-events: auto;
 }
 .workflow-node-return:hover {
   background: var(--surface-2);
