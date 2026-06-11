@@ -5411,6 +5411,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._media_config_get()
         if url_path == "/__export_config":
             return self._export_config_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__export_check_name":
+            return self._export_check_name(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ls_dirs":
             return self._ls_dirs(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__list_files":
@@ -10523,6 +10525,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         node_id = (body.get("nodeId") or "").strip()
         if not node_id:
             return self._reply(400, {"error": "missing nodeId in body"})
+        # Optional overrides from the modal: a custom bucket name and an
+        # explicit overwrite flag. Both default to historical behavior.
+        raw_name = body.get("bucketName")
+        if raw_name is not None and not isinstance(raw_name, str):
+            return self._reply(400, {"error": "bucketName must be a string or null"})
+        bucket_name = (raw_name or "").strip() or None
+        overwrite   = bool(body.get("overwrite"))
         export_root = _export_folder_get(pid)
         if not export_root:
             return self._reply(400, {
@@ -10544,12 +10553,60 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not node:
             return self._reply(404, {"error": f"node not found: {node_id!r}"})
         try:
-            manifest = _exports.export_node(node, project_root, export_root)
+            manifest = _exports.export_node(
+                node, project_root, export_root,
+                bucket_name=bucket_name, overwrite=overwrite,
+            )
+        except _exports.BucketExistsError as e:
+            return self._reply(409, {
+                "error":      str(e),
+                "code":       "bucket-exists",
+                "bucketName": e.bucket_name,
+                "bucketDir":  e.bucket_dir,
+                "hint":       "toggle 'Allow override' in the export dialog and try again",
+            })
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         except OSError as e:
             return self._reply(500, {"error": f"export failed: {e}"})
         return self._reply(200, manifest)
+
+    # GET /__export_check_name?project=<id>&name=<name>
+    # Live folder-exists probe used by the export-name modal. Returns the
+    # slugified name (matching exports.safe_bucket_name) and whether a
+    # folder by that name already sits in the configured export folder.
+    def _export_check_name(self, qs):
+        pid = (qs.get("project") or [""])[0].strip() if isinstance(qs, dict) else ""
+        if not pid:
+            pid = "default"
+        raw = (qs.get("name") or [""])[0] if isinstance(qs, dict) else ""
+        if not isinstance(raw, str) or not raw.strip():
+            return self._reply(200, {
+                "ok":     True,
+                "name":   "",
+                "slug":   "",
+                "exists": False,
+            })
+        slug = _exports.safe_bucket_name(raw.strip())
+        export_root = _export_folder_get(pid)
+        if not export_root:
+            return self._reply(200, {
+                "ok":     True,
+                "name":   raw,
+                "slug":   slug,
+                "exists": False,
+                "warn":   "no export folder configured",
+            })
+        root = os.path.expanduser(export_root)
+        full = os.path.join(root, slug)
+        return self._reply(200, {
+            "ok":         True,
+            "name":       raw,
+            "slug":       slug,
+            "exists":     os.path.exists(full),
+            "bucketDir":  full,
+            "exportRoot": root,
+        })
 
     # GET /__source_prototypes?project=<id>
     # Walks `source/` to find every folder containing an `index.html`. Returns

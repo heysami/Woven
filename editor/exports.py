@@ -63,14 +63,28 @@ import shutil
 import stat
 
 
-_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._\- ]+")
+
+
+class BucketExistsError(ValueError):
+    """Raised by export_node when the caller asks for a specific bucket name
+    that already exists and `overwrite` is false. The daemon turns this into
+    HTTP 409 so the UI can prompt the user to enable override."""
+    def __init__(self, bucket_name: str, bucket_dir: str):
+        super().__init__(
+            f"a folder named {bucket_name!r} already exists at {bucket_dir!r}"
+        )
+        self.bucket_name = bucket_name
+        self.bucket_dir  = bucket_dir
 
 
 def safe_bucket_name(label: str, fallback: str = "asset") -> str:
-    """Slugify a node label into a folder-name fragment. Empty → fallback."""
+    """Slugify a node label into a folder-name fragment. Spaces are kept
+    so a user-typed name like 'Onboarding deck' stays human-readable on
+    disk; other unsafe chars collapse to a single dash. Empty → fallback."""
     if not isinstance(label, str):
         label = ""
-    s = _SAFE_NAME_RE.sub("-", label).strip("-")
+    s = _SAFE_NAME_RE.sub("-", label).strip(" -")
     return s or fallback
 
 
@@ -872,13 +886,26 @@ def _resolve_file_from_node(node: dict) -> "str | None":
     return None
 
 
-def export_node(node: dict, project_root: str, export_root: str) -> dict:
+def export_node(
+    node: dict,
+    project_root: str,
+    export_root: str,
+    bucket_name: str | None = None,
+    overwrite: bool = False,
+) -> dict:
     """Top-level entry. Picks a per-kind strategy, writes the bucket,
     returns a structured manifest the caller turns into a JSON response.
 
     Raises ValueError on any input-shape problem the caller should
     surface as HTTP 400; raises OSError on filesystem problems (caller
-    turns into 500).
+    turns into 500). Raises BucketExistsError (a ValueError subclass)
+    when a caller-provided `bucket_name` already exists and overwrite
+    is false — the daemon surfaces this as HTTP 409 so the UI can ask
+    the user to confirm replacement.
+
+    If `bucket_name` is None or empty, the bucket falls back to
+    `<safe_label>__<timestamp>` with auto-increment to avoid collisions
+    (the historical behavior).
     """
     if not isinstance(node, dict):
         raise ValueError("node must be an object")
@@ -899,22 +926,46 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
     kind   = (node.get("kind") or "").strip()
     label  = (node.get("label") or node.get("title") or node.get("id") or kind or "node").strip()
     nodeId = node.get("id") or ""
-    # Bucket name is label + per-second timestamp. Two exports of the same
-    # node within one second would otherwise collide — retry with a short
-    # counter suffix until we find a free name. Caps at 20 attempts so a
-    # genuinely broken filesystem still surfaces the error.
-    base_name = f"{safe_bucket_name(label)}__{timestamp()}"
-    bucket_name = base_name
-    bucket_dir  = os.path.join(export_root, bucket_name)
-    for i in range(1, 20):
-        try:
-            os.makedirs(bucket_dir, exist_ok=False)
-            break
-        except FileExistsError:
-            bucket_name = f"{base_name}-{i:02d}"
-            bucket_dir  = os.path.join(export_root, bucket_name)
+    # Bucket name resolution:
+    #   • Caller supplied a name → slugify, place it directly under export_root.
+    #       Collision is a hard error unless overwrite=True (then rmtree first).
+    #   • Caller did NOT supply a name → fall back to <safe_label>__<timestamp>
+    #     with a 2-digit suffix to dodge a sub-second collision (historical).
+    if isinstance(bucket_name, str) and bucket_name.strip():
+        bucket_name = safe_bucket_name(bucket_name.strip(), fallback=safe_bucket_name(label))
+        bucket_dir  = os.path.join(export_root, bucket_name)
+        if os.path.exists(bucket_dir):
+            if not overwrite:
+                raise BucketExistsError(bucket_name, bucket_dir)
+            # Overwrite — rmtree the existing bucket so the fresh export
+            # doesn't accidentally merge with stale files. Refuse to delete
+            # anything that isn't a directory inside export_root (defense
+            # against export_root being a symlink target or the user picking
+            # a weird path).
+            real_root   = os.path.realpath(export_root)
+            real_bucket = os.path.realpath(bucket_dir)
+            if not real_bucket.startswith(real_root + os.sep):
+                raise ValueError(
+                    f"refusing to overwrite {bucket_dir!r}: not inside export folder {export_root!r}"
+                )
+            if os.path.isdir(bucket_dir) and not os.path.islink(bucket_dir):
+                shutil.rmtree(bucket_dir)
+            else:
+                os.remove(bucket_dir)
+        os.makedirs(bucket_dir, exist_ok=False)
     else:
-        os.makedirs(bucket_dir, exist_ok=False)  # propagate the final exc
+        base_name   = f"{safe_bucket_name(label)}__{timestamp()}"
+        bucket_name = base_name
+        bucket_dir  = os.path.join(export_root, bucket_name)
+        for i in range(1, 20):
+            try:
+                os.makedirs(bucket_dir, exist_ok=False)
+                break
+            except FileExistsError:
+                bucket_name = f"{base_name}-{i:02d}"
+                bucket_dir  = os.path.join(export_root, bucket_name)
+        else:
+            os.makedirs(bucket_dir, exist_ok=False)  # propagate the final exc
 
     facts = {
         "nodeId":    nodeId,

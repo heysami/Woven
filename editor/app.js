@@ -18863,48 +18863,264 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   `, document.body);
 }
 
-/* Run /__export_asset for a node. Shared between the prototype-node and
-   asset-node top-action rows so the click handler stays in one place.
-   • No export folder set → alert with hint to open the ⤓ Exports button.
-   • Success → alert with the bucket path + an optional Finder-reveal
-     (mac only, via the daemon-side `open <dir>` shortcut).
-   • Error → alert with the daemon's error message. */
-async function runExportForNode(nodeId, nodeLabel) {
+/* ─── Export helpers shared by the modal + the dispatch entrypoint ─── */
+
+// Mirror of editor/exports.py::safe_bucket_name. Kept in sync so the live
+// "this name already exists" hint shows the SAME slug the daemon will write.
+// Spaces are kept (folders like "Onboarding deck" are fine on macOS/Linux);
+// only genuinely unsafe chars collapse to a dash.
+function slugifyBucketName(label) {
+  if (typeof label !== "string") label = "";
+  let s = label.replace(/[^A-Za-z0-9._\- ]+/g, "-").replace(/^[\s-]+|[\s-]+$/g, "");
+  return s || "asset";
+}
+
+// Mirror of editor/exports.py::timestamp — YYYYMMDD-HHMMSS local.
+function bucketTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
+       + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+// LocalStorage key for the persistent "Allow override" toggle. Once the user
+// flips it on, future exports start with override pre-armed and the warning
+// banner stays out of their way. They can flip it off again in the modal.
+const EXPORT_ALLOW_OVERRIDE_KEY = "thWovenExportAllowOverride";
+
+function exportAllowOverridePref() {
+  try { return localStorage.getItem(EXPORT_ALLOW_OVERRIDE_KEY) === "1"; }
+  catch { return false; }
+}
+function setExportAllowOverridePref(v) {
   try {
-    const r = await fetch(apiUrl("/__export_asset"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nodeId }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      if (j.hint) {
-        alert(`Export · ${j.error || "failed"}\n\n${j.hint}.`);
-      } else {
-        alert(`Export failed: ${j.error || `HTTP ${r.status}`}`);
-      }
-      return;
-    }
-    const path = j.exportPath || "";
-    const fileCount = (j.files && j.files.length) || 0;
-    const detail = fileCount
-      ? `${fileCount} file${fileCount === 1 ? "" : "s"} bundled.`
-      : "Bundle written (no copied files — see README).";
-    const wantReveal = window.confirm(
-      `Exported ${nodeLabel || nodeId}\n\n${path}\n\n${detail}\n\nReveal in Finder?`
-    );
-    if (wantReveal && path) {
-      // Daemon-side reveal via the existing static-file route doesn't help
-      // since macOS's "open" needs the actual filesystem; the simplest
-      // cross-platform path is to copy to clipboard and trust the user.
-      try {
-        await navigator.clipboard.writeText(path);
-        // No-op alert — clipboard is the signal.
-      } catch {}
-    }
+    if (v) localStorage.setItem(EXPORT_ALLOW_OVERRIDE_KEY, "1");
+    else   localStorage.removeItem(EXPORT_ALLOW_OVERRIDE_KEY);
+  } catch {}
+}
+
+/* Open the export-name modal for a node. The actual POST to /__export_asset
+   happens INSIDE the modal once the user confirms the folder name. Shared
+   between the prototype-node and asset-node top-action rows so the click
+   handler stays in one place.
+   • Dispatches `th:export-prompt` on window — ExportPromptHost (mounted at
+     Root level) listens and renders the modal.
+   • The modal handles success / 409 / error inline. */
+function runExportForNode(nodeId, nodeLabel) {
+  try {
+    window.dispatchEvent(new CustomEvent("th:export-prompt", {
+      detail: { nodeId, nodeLabel: nodeLabel || "" },
+    }));
   } catch (e) {
     alert(`Export failed: ${e.message || e}`);
   }
+}
+
+/* The modal itself + the host that listens for export-prompt events. Mounted
+   once at Root level so every surface that fires runExportForNode (editor,
+   workflow canvas, prototype door) gets the same UI. */
+function ExportNameModal({ nodeId, nodeLabel, onClose }) {
+  // Default name = slugified label + timestamp, mirroring the historical
+  // auto-name. The user can edit it (or wipe the timestamp suffix for a
+  // stable name they'll re-export to repeatedly with override on).
+  const defaultName = `${slugifyBucketName(nodeLabel || nodeId || "asset")}__${bucketTimestamp()}`;
+  const [name, setName]               = useState(defaultName);
+  const [override, setOverride]       = useState(exportAllowOverridePref());
+  const [exists, setExists]           = useState(false);
+  const [slug, setSlug]               = useState(slugifyBucketName(defaultName));
+  const [checking, setChecking]       = useState(false);
+  const [busy, setBusy]               = useState(false);
+  const [error, setError]             = useState(null);
+  const inputRef = useRef(null);
+
+  // Select-all on mount so the user can either tweak the timestamp suffix
+  // or wipe the whole thing and type a stable name.
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      try { inputRef.current.select(); } catch {}
+    }
+  }, []);
+
+  // Debounced existence probe. Re-runs whenever the typed name settles for
+  // 220ms — short enough to feel live, long enough that quick typing doesn't
+  // spam the daemon.
+  useEffect(() => {
+    const trimmed = (name || "").trim();
+    if (!trimmed) {
+      setExists(false);
+      setSlug("");
+      return;
+    }
+    setChecking(true);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(apiUrl(
+          `/__export_check_name?name=${encodeURIComponent(trimmed)}`
+        ));
+        const j = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        setExists(Boolean(j.exists));
+        setSlug(j.slug || slugifyBucketName(trimmed));
+      } catch {
+        if (cancelled) return;
+        // Probe failed — assume no conflict so the user isn't blocked by a
+        // transient daemon hiccup. The POST will still 409 if it genuinely
+        // exists.
+        setExists(false);
+        setSlug(slugifyBucketName(trimmed));
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [name]);
+
+  const handleSubmit = async () => {
+    const trimmed = (name || "").trim();
+    if (!trimmed) return;
+    if (exists && !override) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(apiUrl("/__export_asset"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodeId, bucketName: trimmed, overwrite: override }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 409) {
+        // Lost a race with our debounced check — surface the conflict inline
+        // so the user can flip override on without losing the modal.
+        setExists(true);
+        setError(j.hint || j.error || "A folder with that name already exists.");
+        setBusy(false);
+        return;
+      }
+      if (!r.ok) {
+        setError(j.hint ? `${j.error || "failed"} — ${j.hint}` : (j.error || `HTTP ${r.status}`));
+        setBusy(false);
+        return;
+      }
+      // Success — close modal, then ask about reveal-in-Finder via clipboard
+      // (kept as a confirm() because it's an end-of-flow yes/no, not data
+      // entry; can be revisited later).
+      onClose();
+      const path = j.exportPath || "";
+      const fileCount = (j.files && j.files.length) || 0;
+      const detail = fileCount
+        ? `${fileCount} file${fileCount === 1 ? "" : "s"} bundled.`
+        : "Bundle written (no copied files — see README).";
+      const wantReveal = window.confirm(
+        `Exported ${nodeLabel || nodeId}\n\n${path}\n\n${detail}\n\nCopy path to clipboard?`
+      );
+      if (wantReveal && path) {
+        try { await navigator.clipboard.writeText(path); } catch {}
+      }
+    } catch (e) {
+      setError(`Export failed: ${e.message || e}`);
+      setBusy(false);
+    }
+  };
+
+  const canSubmit = (name || "").trim().length > 0 && !busy && (!exists || override);
+  const inputState = exists ? (override ? "override" : "conflict") : "ok";
+
+  return html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal modal-narrow" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div>
+            <div className="modal-eyebrow">Export bundle</div>
+            <div className="modal-title">${nodeLabel || nodeId}</div>
+          </div>
+          <button className="modal-x" onClick=${onClose} aria-label="Close">×</button>
+        </div>
+        <div className="modal-body">
+          <div className="modal-field">
+            <input
+              ref=${inputRef}
+              className="modal-input export-name-input"
+              data-state=${inputState}
+              value=${name}
+              spellCheck=${false}
+              autoComplete="off"
+              placeholder="Folder name"
+              onInput=${(e) => setName(e.target.value)}
+              onKeyDown=${(e) => {
+                if (e.key === "Enter" && canSubmit) { e.preventDefault(); handleSubmit(); }
+                else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+              }}
+              disabled=${busy}
+            />
+            ${slug && (name || "").trim() && slug !== (name || "").trim() && html`
+              <div className="export-name-hint" data-state=${inputState}>
+                Will save as <code>${slug}</code> (some characters were replaced).
+              </div>
+            `}
+            ${exists && html`
+              <div className="export-name-warn" data-overridden=${override}>
+                <strong>A folder named <code>${slug}</code> already exists.</strong>
+                ${override
+                  ? html` It will be replaced.`
+                  : html` Turn on <em>Allow override</em> to replace it.`}
+              </div>
+            `}
+            ${error && html`
+              <div className="export-name-error">${error}</div>
+            `}
+          </div>
+          <label className="export-override-row">
+            <input
+              type="checkbox"
+              checked=${override}
+              disabled=${busy}
+              onChange=${(e) => {
+                const v = e.target.checked;
+                setOverride(v);
+                // "configured forever" — sticks across sessions.
+                setExportAllowOverridePref(v);
+              }}
+            />
+            <span>Allow override <span className="modal-hint">(remembered)</span></span>
+          </label>
+        </div>
+        <div className="modal-foot">
+          <button className="tbtn" onClick=${onClose} disabled=${busy}>Cancel</button>
+          <button
+            className="tbtn tbtn-primary export-submit-btn"
+            onClick=${handleSubmit}
+            disabled=${!canSubmit}
+            data-disabled=${!canSubmit}
+          >${busy
+              ? `Exporting${slug ? ` ${slug}` : ""}…`
+              : ((slug && (name || "").trim())
+                  ? html`Export as <span className="export-submit-name">${slug}</span>`
+                  : "Enter a name to export")}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ExportPromptHost() {
+  const [target, setTarget] = useState(null);
+  useEffect(() => {
+    const onPrompt = (ev) => {
+      const d = ev.detail || {};
+      if (!d.nodeId) return;
+      setTarget({ nodeId: d.nodeId, nodeLabel: d.nodeLabel || "" });
+    };
+    window.addEventListener("th:export-prompt", onPrompt);
+    return () => window.removeEventListener("th:export-prompt", onPrompt);
+  }, []);
+  if (!target) return null;
+  return html`<${ExportNameModal}
+    nodeId=${target.nodeId}
+    nodeLabel=${target.nodeLabel}
+    onClose=${() => setTarget(null)}
+  />`;
 }
 
 /* Portaled row of action chips that float above the node, aligned to the
@@ -49738,15 +49954,20 @@ function Root() {
   }
   // Project-scoped alternates. Both bypass <App> entirely so their chrome is
   // self-contained and the editor's heavy bootstrap stays out of the way.
-  if (hasProject && view === "prototype") return html`<${PrototypeDoor}/>`;
+  if (hasProject && view === "prototype") return html`<${React.Fragment}>
+    <${PrototypeDoor}/>
+    <${ExportPromptHost}/>
+  <//>`;
   if (hasProject && view === "workflow")  return html`<${React.Fragment}>
     <${WorkflowCanvas}/>
     <${ChatImageLightbox}/>
+    <${ExportPromptHost}/>
   <//>`;
   // Otherwise the regular editor for the active project (or single-mode legacy).
   return html`<${React.Fragment}>
     <${App}/>
     <${ChatImageLightbox}/>
+    <${ExportPromptHost}/>
   <//>`;
 }
 
