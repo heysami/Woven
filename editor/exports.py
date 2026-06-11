@@ -628,6 +628,31 @@ def _node_field(node: dict, *keys: str) -> "str | list | None":
     return None
 
 
+def _is_exportable_source_path(p) -> bool:
+    """An asset's `path` field is exportable when it points inside one of
+    the two project-rooted subtrees we ship: `source/<branch>/...` or
+    `design-systems/<dsId>/...`. The latter is how the editor surfaces
+    DS gallery / spec / token files as assets so they can be picked into
+    prototypes; without this, those nodes fall through to a no-artifact
+    README even though the file exists on disk."""
+    return (
+        isinstance(p, str)
+        and (p.startswith("source/") or p.startswith("design-systems/"))
+    )
+
+
+def _ds_tree_for_path(path: str) -> "tuple[str, str] | None":
+    """If `path` lives under design-systems/<dsId>/..., return
+    (dsId, ds_rel_path) where ds_rel_path is the entry's path relative
+    to the DS root. Returns None for non-DS paths."""
+    if not isinstance(path, str) or not path.startswith("design-systems/"):
+        return None
+    parts = path.split("/", 2)
+    if len(parts) < 3 or not parts[1]:
+        return None
+    return parts[1], parts[2]
+
+
 def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | None":
     """Resolve an `inline-svg:<selector>` asset by reading the bound
     prototype's HTML and extracting the <svg> inside the matching
@@ -1010,8 +1035,10 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         # Placeholder / unwired asset node — no path AND no paths AND no
         # inline content — fall through to a no-artifact README instead of
         # 400ing. Common for nodes the user just dragged in but hasn't run yet.
-        has_path  = isinstance(path, str) and path.startswith("source/")
-        has_paths = any(isinstance(p, str) and p.startswith("source/") for p in paths)
+        # Accepts both `source/<branch>/…` and `design-systems/<dsId>/…`
+        # paths (the editor exposes DS gallery / spec files as assets).
+        has_path  = _is_exportable_source_path(path)
+        has_paths = any(_is_exportable_source_path(p) for p in paths)
         if not has_path and not has_paths and not is_inline:
             if is_inline_bound:
                 # We tried to resolve via boundTo + HTML scan and failed.
@@ -1108,8 +1135,8 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         elif asset_sub == "html-set":
             # Multi-file set. Copy every entry preserving the relative
             # structure relative to its common prefix.
-            valid_paths = [p for p in paths if isinstance(p, str) and p.startswith("source/")]
-            if not valid_paths and isinstance(path, str) and path.startswith("source/"):
+            valid_paths = [p for p in paths if _is_exportable_source_path(p)]
+            if not valid_paths and _is_exportable_source_path(path):
                 valid_paths = [path]
             if not valid_paths:
                 raise ValueError(f"html-set node has no source/ paths (node {nodeId!r})")
@@ -1142,8 +1169,8 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                 and path.lower().endswith(".html")
                 and asset_sub not in {"text", "markdown", "image", "audio",
                                       "video", "3d", "lottie"}):
-            if not (isinstance(path, str) and path.startswith("source/")):
-                raise ValueError(f"html asset node has no source/ path (node {nodeId!r})")
+            if not _is_exportable_source_path(path):
+                raise ValueError(f"html asset node has no source/ or design-systems/ path (node {nodeId!r})")
             abs_src = os.path.join(project_root, path)
             if not os.path.isfile(abs_src):
                 # File referenced but not on disk — fall through to a
@@ -1165,11 +1192,40 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     "files":      files_written, "kind": kind, "nodeId": nodeId,
                     "label":      label,
                 }
-            # If the HTML sits inside source/<branch>/ AND that branch
-            # has additional sibling files (likely a real prototype),
-            # bundle the whole branch tree so relative refs resolve.
-            parts = path.split("/", 2)
-            if len(parts) >= 3:
+            # Pick the bundling strategy based on where the HTML lives.
+            # Three exclusive cases:
+            #   A. design-systems/<dsId>/...  → bundle whole DS tree.
+            #   B. source/<branch>/...        → bundle whole branch tree.
+            #   C. source/<file>.html        → copy single file alone.
+            # Every branch ends with readme + files_written populated; no
+            # branch falls through to the next.
+            ds_info = _ds_tree_for_path(path)
+            parts   = path.split("/", 2)
+            if ds_info:
+                ds_id, ds_rel = ds_info
+                ds_root = os.path.join(project_root, "design-systems", ds_id)
+                if os.path.isdir(ds_root):
+                    ds_dst = os.path.join(bucket_dir, "design-systems", ds_id)
+                    _safe_copy_tree(ds_root, ds_dst, files_written, bucket_root=bucket_dir)
+                    facts["dsRef"] = ds_id
+                    facts["entry"] = f"design-systems/{ds_id}/{ds_rel}"
+                    facts["files"] = files_written
+                    write_serve_helpers(bucket_dir)
+                    # Re-use the prototype README template, but mark it
+                    # as a DS bundle so the header reads as such.
+                    readme = readme_prototype({
+                        **facts, "kind": "design-system", "branch": ds_id,
+                    })
+                else:
+                    fname = os.path.basename(path)
+                    shutil.copy2(abs_src, os.path.join(bucket_dir, fname))
+                    files_written.append(fname)
+                    facts["entry"] = fname
+                    facts["files"] = files_written
+                    write_serve_helpers(bucket_dir)
+                    readme = readme_html(facts)
+            elif len(parts) >= 3:
+                # source/<branch>/<rest>.html — bundle the whole branch.
                 branch = parts[1]
                 branch_root = os.path.join(project_root, "source", branch)
                 if os.path.isdir(branch_root):
@@ -1189,8 +1245,6 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     write_serve_helpers(bucket_dir)
                     readme = readme_prototype({**facts, "kind": "prototype"})
                 else:
-                    # Branch root absent — fall through to a single-file
-                    # copy of just the HTML (handled by the else below).
                     fname = os.path.basename(path)
                     shutil.copy2(abs_src, os.path.join(bucket_dir, fname))
                     files_written.append(fname)
@@ -1211,10 +1265,11 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         else:
             # Single-file resource — image / svg / video / audio / 3d /
             # shader / markdown / text. Goes under resources/<kind>/.
-            if not (isinstance(path, str) and path.startswith("source/")):
+            # Accepts both `source/...` and `design-systems/...` paths.
+            if not _is_exportable_source_path(path):
                 raise ValueError(
-                    f"asset node has no source/ path (node {nodeId!r}, "
-                    f"assetKind={asset_sub!r})"
+                    f"asset node has no source/ or design-systems/ path "
+                    f"(node {nodeId!r}, assetKind={asset_sub!r})"
                 )
             abs_src = os.path.join(project_root, path)
             if not os.path.isfile(abs_src):
@@ -1244,14 +1299,14 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
     # ── single-file media kinds with no `asset` wrapper ─────────────────
     elif kind in _SINGLE_FILE_MEDIA_KINDS:
         path = _resolve_file_from_node(node)
-        if not (isinstance(path, str) and path.startswith("source/")):
+        if not _is_exportable_source_path(path):
             # Placeholder media node — fall back to a no-artifact README
             # rather than 400ing.
             facts["subKind"] = kind
             facts["explanation"] = (
                 f"This `{kind}` node has no file on disk yet. Its upstream producer "
-                "hasn't written a file to `source/` — run the producer first, then "
-                "re-export."
+                "hasn't written a file to `source/` (or `design-systems/`) — run the "
+                "producer first, then re-export."
             )
             readme = readme_no_artifact(facts)
             with open(os.path.join(bucket_dir, "README.md"), "w", encoding="utf-8") as f:
