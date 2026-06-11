@@ -1072,7 +1072,18 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       const isZoomGesture = (e.ctrlKey || e.metaKey);
       if (!isZoomGesture && e.target && e.target.closest) {
         if (e.target.closest('[data-scroll-internally="true"]')) return;
-        if (letSelectedScroll && e.target.closest('[data-selected="true"]')) return;
+        // letSelectedScroll yields to native scroll INSIDE a selected node so
+        // the user can scroll an iframe / textarea / transcript without having
+        // to wheel onto empty canvas first. Some node kinds (canvas-frames —
+        // the embedded editor is locked `interactive:false`, so there is
+        // nothing to scroll) opt OUT by setting `data-no-internal-scroll="true"`
+        // on their selected root; without this escape hatch, selecting such a
+        // node would freeze the workflow canvas's wheel pan/zoom because every
+        // wheel event would bail here.
+        if (letSelectedScroll) {
+          const selEl = e.target.closest('[data-selected="true"]');
+          if (selEl && !selEl.hasAttribute('data-no-internal-scroll')) return;
+        }
       }
       e.preventDefault();
       // If no commit is pending, this is the first event of a new burst —
@@ -33731,6 +33742,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       className="workflow-node workflow-node-frames"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
+      data-no-internal-scroll="true"
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
