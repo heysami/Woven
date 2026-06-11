@@ -17670,42 +17670,42 @@ function _injectInspectorPatch(html, ops) {
     'if(!OPS||!OPS.length)return;',
     'var applying=false;var mo=null;',
     'function $(s){try{return document.querySelector(s);}catch(_){return null;}}',
+    // v3.5.12 — Reorder owns its own element resolution because op.selector +
+    // op.anchor become AMBIGUOUS once the move has been applied (the two
+    // positional selectors resolve crossways — :nth-of-type(N) finds whoever
+    // is currently at position N, which is now the OTHER element). Stable
+    // identity comes from `op.key` stamped on both nodes at edit time:
+    // [data-th-rkey-el] for el, [data-th-rkey-sib] for the anchor sibling.
+    // Idempotency check uses real identities (NOT positions) so a second fire
+    // sees "already adjacent in target order → skip" instead of re-running
+    // insertBefore on the swapped pair.
+    'function applyReorder(op){',
+    '  var elFound=null,sib=null;',
+    '  if(op.key){',
+    '    try{elFound=document.querySelector("[data-th-rkey-el=\\"".concat(op.key,"\\"]"));}catch(_){}',
+    '    try{sib=document.querySelector("[data-th-rkey-sib=\\"".concat(op.key,"\\"]"));}catch(_){}',
+    '  }',
+    '  if(!elFound)elFound=$(op.selector);',
+    '  if(!sib)sib=$(op.anchor);',
+    '  if(!elFound||!sib||!sib.parentElement||sib.parentElement!==elFound.parentElement)return;',
+    '  var stamp=function(){if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}};',
+    '  if(op.position==="before"){',
+    '    if(elFound.nextElementSibling===sib){stamp();return;}',
+    '    sib.parentElement.insertBefore(elFound,sib);',
+    '  }else{',
+    '    if(sib.nextElementSibling===elFound){stamp();return;}',
+    '    sib.parentElement.insertBefore(elFound,sib.nextSibling);',
+    '  }',
+    '  stamp();',
+    '}',
     'function applyOne(op){',
+    '  if(op.type==="reorder"&&op.anchor){applyReorder(op);return;}',
     '  var el=$(op.selector);if(!el)return;',
     '  if(op.type==="style"&&op.styles){',
     '    for(var k in op.styles){try{el.style.setProperty(k,op.styles[k]);}catch(_){}}',
     '  } else if(op.type==="nudge"){',
     '    if(typeof op.left==="number")el.style.left=op.left+"px";',
     '    if(typeof op.top==="number")el.style.top=op.top+"px";',
-    '  } else if(op.type==="reorder"&&op.anchor){',
-    // v3.5.12 — Use the op key (set on el + sib at edit time) for stable
-    // identity. Without this, selectors swap roles after the move and the
-    // next observer fire reverts. Fall back to selectors when keys aren't on
-    // the DOM yet (first apply, or after a React unmount/remount). Re-stamp
-    // keys after every successful apply so subsequent fires use the stable
-    // path. Idempotency check is meaningful only with stable identity.
-    '    var elFound=null,sib=null;',
-    '    if(op.key){',
-    '      try{elFound=document.querySelector("[data-th-rkey-el=\\"".concat(op.key,"\\"]"));}catch(_){}',
-    '      try{sib=document.querySelector("[data-th-rkey-sib=\\"".concat(op.key,"\\"]"));}catch(_){}',
-    '    }',
-    '    if(!elFound)elFound=el;',
-    '    if(!sib)sib=$(op.anchor);',
-    '    if(!elFound||!sib||!sib.parentElement||sib.parentElement!==elFound.parentElement)return;',
-    '    if(op.position==="before"){',
-    '      if(elFound.nextElementSibling===sib){',
-    '        if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}',
-    '        return;',
-    '      }',
-    '      sib.parentElement.insertBefore(elFound,sib);',
-    '    }else{',
-    '      if(sib.nextElementSibling===elFound){',
-    '        if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}',
-    '        return;',
-    '      }',
-    '      sib.parentElement.insertBefore(elFound,sib.nextSibling);',
-    '    }',
-    '    if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}',
     '  } else if(op.type==="duplicate"){',
     '    var sib2=el.nextElementSibling;',
     '    var hasClone=sib2&&sib2.getAttribute("data-th-clone-of")===op.selector;',
@@ -35305,18 +35305,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           </div>
         `;
       })()}
-      ${orphaned && html`
-        <div className="workflow-node-orphan-banner">
-          <span className="workflow-node-orphan-msg">
-            ⚠ Navigated away from locked screen — exposed assets are orphaned.
-          </span>
-          <button
-            className="workflow-node-return"
-            onClick=${returnToLocked}
-            title=${"Return to " + node.lockedState.pathname + (node.lockedState.hash || "")}
-          >↩ Return</button>
-        </div>
-      `}
+      ${/* Orphan banner removed — every navigation that didn't end at the
+         locked screen used to slap a red strip over the iframe's first 30px.
+         The orphan state is already conveyed by the node-level red border
+         (.workflow-node-proto[data-orphan="true"]) and the chrome pin icon's
+         tooltip, and the Back chevron's lockedState fallback covers the
+         Return action. Keeping the banner just got in the way of every other
+         click. */ null}
       ${manageOpen && html`<${WorkflowExposeDialog}
         items=${manageItems}
         initialSelected=${node.exposedAssets || []}
