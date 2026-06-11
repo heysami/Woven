@@ -628,6 +628,104 @@ def _node_field(node: dict, *keys: str) -> "str | list | None":
     return None
 
 
+def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | None":
+    """Resolve an `inline-svg:<selector>` asset by reading the bound
+    prototype's HTML and extracting the <svg> inside the matching
+    element.
+
+    The editor (see app.js, the prototype-iframe scanner) emits asset
+    nodes for icons stamped into prototype HTML at a CSS slot — e.g.
+    `[data-slot="icon-ticket"]`. These nodes carry no `src` because the
+    SVG markup lives in the prototype, not on the node. `boundTo.node`
+    points at the prototype node id; `boundTo.surface` is the CSS
+    selector inside it.
+
+    Returns the SVG markup string, or None if anything can't be resolved
+    (no boundTo, prototype not found, slot not in HTML, no <svg> inside).
+    All failures are non-fatal — the caller falls through to a clear
+    no-artifact README pointing the user at the prototype.
+    """
+    bound = node.get("boundTo") if isinstance(node.get("boundTo"), dict) else None
+    if not bound:
+        return None
+    proto_id = bound.get("node")
+    surface  = bound.get("surface") or ""
+    if not isinstance(proto_id, str) or not isinstance(surface, str):
+        return None
+
+    # Find the prototype node in workflow.json so we know which source/<slug>/
+    # tree to scan. Tolerate a missing workflow.json — caller already verified
+    # project_root exists.
+    wf_path = os.path.join(project_root, "workflow", "workflow.json")
+    if not os.path.isfile(wf_path):
+        return None
+    try:
+        with open(wf_path, "r", encoding="utf-8") as f:
+            wf = json.load(f)
+    except (OSError, ValueError):
+        return None
+    proto = next(
+        (n for n in (wf.get("nodes") or [])
+         if isinstance(n, dict) and n.get("id") == proto_id),
+        None
+    )
+    if not proto:
+        return None
+    slug = (proto.get("prototype") or proto.get("branch") or "main")
+    if not isinstance(slug, str) or not slug.strip():
+        return None
+    slug = slug.strip()
+
+    # Pull the slot id out of the selector — supports [data-slot="x"],
+    # [data-slot='x'], [data-slot=x], and the id-shortcut #x.
+    slot_match = re.search(r'data-slot=["\']?([^"\'\]]+)["\']?', surface)
+    if slot_match:
+        slot = slot_match.group(1)
+        elem_pat = re.compile(
+            r'<([a-zA-Z][a-zA-Z0-9]*)[^>]*data-slot=["\']?'
+            + re.escape(slot) + r'["\']?[^>]*>(.*?)</\1>',
+            re.S,
+        )
+    else:
+        id_match = re.search(r'#([A-Za-z_][\w-]*)', surface)
+        if not id_match:
+            return None
+        slot = id_match.group(1)
+        elem_pat = re.compile(
+            r'<([a-zA-Z][a-zA-Z0-9]*)[^>]*\bid=["\']?'
+            + re.escape(slot) + r'["\']?[^>]*>(.*?)</\1>',
+            re.S,
+        )
+
+    # Scan every HTML file under source/<slug>/ for the slot.
+    branch_root = os.path.join(project_root, "source", slug)
+    if not os.path.isdir(branch_root):
+        return None
+    candidates = []
+    for dirpath, dirnames, filenames in os.walk(branch_root):
+        dirnames[:] = [d for d in dirnames
+                       if not d.startswith(".") and d != "__pycache__"]
+        for name in filenames:
+            if name.endswith(".html"):
+                candidates.append(os.path.join(dirpath, name))
+    # Prefer index.html first, then alphabetical — gives the most likely hit
+    # before we read the rest.
+    candidates.sort(key=lambda p: (0 if os.path.basename(p) == "index.html" else 1, p))
+    for html_path in candidates:
+        try:
+            with open(html_path, "r", encoding="utf-8") as f:
+                html = f.read()
+        except OSError:
+            continue
+        em = elem_pat.search(html)
+        if not em:
+            continue
+        svg = re.search(r"<svg\b.*?</svg>", em.group(2), re.S)
+        if svg:
+            return svg.group(0)
+    return None
+
+
 def _read_dsref_from_data_js(project_root: str, branch: str) -> "str | None":
     """Parse editor/data.js for meta.dsRef. Cheap regex — the file is a
     JS literal but the meta block is shallow and stable. Returns None if
@@ -752,9 +850,22 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
     kind   = (node.get("kind") or "").strip()
     label  = (node.get("label") or node.get("title") or node.get("id") or kind or "node").strip()
     nodeId = node.get("id") or ""
-    bucket_name = f"{safe_bucket_name(label)}__{timestamp()}"
+    # Bucket name is label + per-second timestamp. Two exports of the same
+    # node within one second would otherwise collide — retry with a short
+    # counter suffix until we find a free name. Caps at 20 attempts so a
+    # genuinely broken filesystem still surfaces the error.
+    base_name = f"{safe_bucket_name(label)}__{timestamp()}"
+    bucket_name = base_name
     bucket_dir  = os.path.join(export_root, bucket_name)
-    os.makedirs(bucket_dir, exist_ok=False)
+    for i in range(1, 20):
+        try:
+            os.makedirs(bucket_dir, exist_ok=False)
+            break
+        except FileExistsError:
+            bucket_name = f"{base_name}-{i:02d}"
+            bucket_dir  = os.path.join(export_root, bucket_name)
+    else:
+        os.makedirs(bucket_dir, exist_ok=False)  # propagate the final exc
 
     facts = {
         "nodeId":    nodeId,
@@ -871,16 +982,30 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         paths_raw = _node_field(node, "paths")
         paths = paths_raw if isinstance(paths_raw, list) else []
 
-        # Inline-content assets (`path` starts with `inline:`) carry their
-        # bytes/text in `node.src` rather than as a file on disk. The most
-        # common case is inline SVG harvested from a prototype iframe —
-        # path looks like `inline:svg/<hash>`, src is the `<svg>…</svg>`
-        # markup, assetKind is "svg". inline:canvas snapshots (raster
-        # canvases the prototype scanner captured) come through as a data:
-        # URI in `src`; we decode the base64 payload and write the bytes.
+        # Inline-content assets carry their bytes/text in `node.src`, or
+        # need to be resolved by reading a bound prototype's HTML. Two
+        # path schemes the editor produces (see app.js scanner + slot
+        # binder):
+        #   • `inline:svg/<hash>`  — src = "<svg>…</svg>" markup.
+        #   • `inline:canvas/...`  — src = "data:image/png;base64,…".
+        #   • `inline-svg:<selector>` — NO src; the SVG lives inside a
+        #     bound prototype's HTML at the CSS selector. Resolved by
+        #     scanning source/<slug>/*.html for the slot element.
         inline_src = node.get("src") if isinstance(node.get("src"), str) else None
-        is_inline = isinstance(path, str) and path.startswith("inline:") \
-                    and isinstance(inline_src, str) and inline_src.strip()
+        is_inline_with_src = (
+            isinstance(path, str) and path.startswith("inline:")
+            and isinstance(inline_src, str) and inline_src.strip()
+        )
+        is_inline_bound = (
+            isinstance(path, str) and path.startswith("inline-svg:")
+            and not is_inline_with_src
+        )
+        if is_inline_bound:
+            resolved = _resolve_inline_svg_from_boundto(node, project_root)
+            if resolved:
+                inline_src = resolved
+                is_inline_with_src = True
+        is_inline = is_inline_with_src
 
         # Placeholder / unwired asset node — no path AND no paths AND no
         # inline content — fall through to a no-artifact README instead of
@@ -888,12 +1013,26 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         has_path  = isinstance(path, str) and path.startswith("source/")
         has_paths = any(isinstance(p, str) and p.startswith("source/") for p in paths)
         if not has_path and not has_paths and not is_inline:
-            facts["explanation"] = (
-                "This asset node has no `path` (or `paths`) pointing at a `source/` "
-                "file yet — it's an empty placeholder waiting for an upstream producer "
-                "to write its file. Run the upstream skill/agent first, then re-export "
-                "and you'll get the bundled file with an integration README."
-            )
+            if is_inline_bound:
+                # We tried to resolve via boundTo + HTML scan and failed.
+                # Tell the user which prototype + selector to chase.
+                bound = node.get("boundTo") or {}
+                facts["explanation"] = (
+                    "This icon is bound to a prototype slot but the export pass "
+                    f"couldn't extract the SVG. Path: `{path}`. Bound prototype: "
+                    f"`{bound.get('node') or '?'}`. Selector: `{bound.get('surface') or '?'}`. "
+                    "Either the prototype HTML doesn't have an element matching that "
+                    "selector with an inner `<svg>`, or the prototype hasn't been built "
+                    "yet. Export the bound prototype directly to bundle the icon in "
+                    "context, or open the prototype in the editor to verify the slot."
+                )
+            else:
+                facts["explanation"] = (
+                    "This asset node has no `path` (or `paths`) pointing at a `source/` "
+                    "file yet — it's an empty placeholder waiting for an upstream producer "
+                    "to write its file. Run the upstream skill/agent first, then re-export "
+                    "and you'll get the bundled file with an integration README."
+                )
             readme = readme_no_artifact(facts)
 
         elif is_inline:
@@ -901,9 +1040,23 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
             # resources/<bucket>/<hash>.<ext>. Branches on inline path
             # prefix to pick the right extension + bucket + write mode.
             sub_hint = path.split(":", 1)[1].split("/", 1)[0] if ":" in path else asset_sub
-            hash_or_id = (node.get("svgHash")
-                          or path.rsplit("/", 1)[-1]
-                          or nodeId or "asset")
+            # Filename stem: prefer svgHash, then a slot id extracted from
+            # an `inline-svg:<selector>` path, then the inline:svg/<hash>
+            # tail, then the node id, then "asset". Strip filesystem-
+            # hostile characters so the bucket reads cleanly.
+            stem = node.get("svgHash")
+            if not stem and path.startswith("inline-svg:"):
+                bound_surface = ((node.get("boundTo") or {}).get("surface") or "")
+                slot_m = re.search(r'data-slot=["\']?([^"\']+?)["\']?[\]\s]', bound_surface + " ")
+                if slot_m:
+                    stem = slot_m.group(1)
+                else:
+                    id_m = re.search(r'#([A-Za-z_][\w-]*)', bound_surface)
+                    if id_m: stem = id_m.group(1)
+            if not stem and "/" in path:
+                stem = path.rsplit("/", 1)[-1]
+            stem = (stem or nodeId or "asset")
+            hash_or_id = _SAFE_NAME_RE.sub("-", str(stem)).strip("-") or "asset"
             data_uri = re.match(r"^data:([^;,]+)?(;base64)?,(.*)$", inline_src, re.S)
             if sub_hint == "svg" or asset_sub in ("svg", "vector"):
                 ext, bucket, payload, binary = "svg", "svg", inline_src, False
@@ -981,12 +1134,37 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
             write_serve_helpers(bucket_dir)
             readme = readme_html_set(facts)
 
-        elif asset_sub == "html":
+        elif asset_sub in ("html", "three", "viz") or (
+                # Path-extension fallback for assetKinds the editor invents
+                # for canvas / three.js / viz scenes that ship as a single
+                # .html file but carry a non-html assetKind label.
+                isinstance(path, str)
+                and path.lower().endswith(".html")
+                and asset_sub not in {"text", "markdown", "image", "audio",
+                                      "video", "3d", "lottie"}):
             if not (isinstance(path, str) and path.startswith("source/")):
                 raise ValueError(f"html asset node has no source/ path (node {nodeId!r})")
             abs_src = os.path.join(project_root, path)
             if not os.path.isfile(abs_src):
-                raise ValueError(f"html file missing on disk: {path}")
+                # File referenced but not on disk — fall through to a
+                # no-artifact README rather than 400ing. Common when an
+                # upstream producer hasn't run yet, or the file was
+                # deleted out-of-band.
+                facts["explanation"] = (
+                    f"This `{kind}` (assetKind `{asset_sub}`) node points at `{path}` "
+                    "but no file exists at that path on disk. Either the upstream "
+                    "producer hasn't written the file yet, or the file was removed "
+                    "after the node was created. Re-run the producer or update the "
+                    "node's path, then re-export."
+                )
+                readme = readme_no_artifact(facts)
+                with open(os.path.join(bucket_dir, "README.md"), "w", encoding="utf-8") as f:
+                    f.write(readme)
+                return {
+                    "ok":         True, "exportPath": bucket_dir, "bucketName": bucket_name,
+                    "files":      files_written, "kind": kind, "nodeId": nodeId,
+                    "label":      label,
+                }
             # If the HTML sits inside source/<branch>/ AND that branch
             # has additional sibling files (likely a real prototype),
             # bundle the whole branch tree so relative refs resolve.
@@ -1011,7 +1189,15 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                     write_serve_helpers(bucket_dir)
                     readme = readme_prototype({**facts, "kind": "prototype"})
                 else:
-                    raise ValueError(f"branch dir missing: source/{branch}/")
+                    # Branch root absent — fall through to a single-file
+                    # copy of just the HTML (handled by the else below).
+                    fname = os.path.basename(path)
+                    shutil.copy2(abs_src, os.path.join(bucket_dir, fname))
+                    files_written.append(fname)
+                    facts["entry"] = fname
+                    facts["files"] = files_written
+                    write_serve_helpers(bucket_dir)
+                    readme = readme_html(facts)
             else:
                 # Single file at source/<file>.html — copy alone.
                 fname = os.path.basename(path)
@@ -1032,20 +1218,28 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                 )
             abs_src = os.path.join(project_root, path)
             if not os.path.isfile(abs_src):
-                raise ValueError(f"file missing on disk: {path}")
-            res_kind = _RESOURCE_BUCKET.get(asset_sub) or (asset_sub or "asset")
-            fname = os.path.basename(path)
-            rel_dst = os.path.join("resources", res_kind, fname)
-            abs_dst = os.path.join(bucket_dir, rel_dst)
-            os.makedirs(os.path.dirname(abs_dst), exist_ok=True)
-            shutil.copy2(abs_src, abs_dst)
-            files_written.append(rel_dst.replace(os.sep, "/"))
-            facts["resourceKind"] = res_kind
-            facts["filename"]     = fname
-            facts["files"]        = files_written
-            # No serve.* for single-file resources — the README's
-            # integration snippet covers usage.
-            readme = readme_single_resource(facts)
+                facts["explanation"] = (
+                    f"This asset (kind `{asset_sub}`) points at `{path}` but no file "
+                    "exists at that path on disk. Either the upstream producer hasn't "
+                    "written the file yet, or the file was removed after the node was "
+                    "created. Re-run the producer or update the node's path, then "
+                    "re-export."
+                )
+                readme = readme_no_artifact(facts)
+            else:
+                res_kind = _RESOURCE_BUCKET.get(asset_sub) or (asset_sub or "asset")
+                fname = os.path.basename(path)
+                rel_dst = os.path.join("resources", res_kind, fname)
+                abs_dst = os.path.join(bucket_dir, rel_dst)
+                os.makedirs(os.path.dirname(abs_dst), exist_ok=True)
+                shutil.copy2(abs_src, abs_dst)
+                files_written.append(rel_dst.replace(os.sep, "/"))
+                facts["resourceKind"] = res_kind
+                facts["filename"]     = fname
+                facts["files"]        = files_written
+                # No serve.* for single-file resources — the README's
+                # integration snippet covers usage.
+                readme = readme_single_resource(facts)
 
     # ── single-file media kinds with no `asset` wrapper ─────────────────
     elif kind in _SINGLE_FILE_MEDIA_KINDS:
@@ -1069,7 +1263,20 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
             }
         abs_src = os.path.join(project_root, path)
         if not os.path.isfile(abs_src):
-            raise ValueError(f"file missing on disk: {path}")
+            facts["subKind"] = kind
+            facts["explanation"] = (
+                f"This `{kind}` node points at `{path}` but no file exists at that "
+                "path on disk. Re-run the producer or update the node's path, then "
+                "re-export."
+            )
+            readme = readme_no_artifact(facts)
+            with open(os.path.join(bucket_dir, "README.md"), "w", encoding="utf-8") as f:
+                f.write(readme)
+            return {
+                "ok":         True, "exportPath": bucket_dir, "bucketName": bucket_name,
+                "files":      files_written, "kind": kind, "nodeId": nodeId,
+                "label":      label,
+            }
         res_kind = _RESOURCE_BUCKET.get(kind) or kind
         fname = os.path.basename(path)
         rel_dst = os.path.join("resources", res_kind, fname)
