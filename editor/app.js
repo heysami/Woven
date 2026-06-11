@@ -19096,17 +19096,10 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
               }}
               disabled=${busy}
             />
-            ${localSlug && trimmedName && localSlug !== trimmedName && html`
-              <div className="export-name-hint" data-state=${inputState}>
-                Will save as <code>${localSlug}</code> (some characters were replaced).
-              </div>
-            `}
             ${exists && html`
               <div className="export-name-warn" data-overridden=${override}>
-                <strong>A folder named <code>${localSlug}</code> already exists.</strong>
-                ${override
-                  ? html` It will be replaced.`
-                  : html` Turn on <em>Allow override</em> to replace it.`}
+                <strong>A folder with that name already exists.</strong>
+                ${override ? html` It will be replaced.` : null}
               </div>
             `}
             ${error && html`
