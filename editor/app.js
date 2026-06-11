@@ -9703,37 +9703,51 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             setTimeout(() => setSlashOpen(false), 120);
           }}
         />
-        ${slashOpen && filteredSlashSkills.length > 0 && html`
-          <div className="chat-slash-menu" role="listbox" aria-label="Skills, orchestrators, and design library">
-            <div className="chat-slash-head">
-              <span className="chat-slash-head-title">Skills · orchestrators · design library</span>
-              <span className="chat-slash-head-meta">${filteredSlashSkills.length} of ${slashSkills.length} — ↑↓ navigate, ↵ insert, Esc close</span>
+        ${slashOpen && filteredSlashSkills.length > 0 && (() => {
+          // The list is just tokens, anchor-colored per kind. The detail pane
+          // shows the active row's name + type badge + ≤2-line description.
+          // `activeIdx` clamps slashIndex in case filtering shrank the list
+          // below the previous index before the user's first arrow press.
+          const activeIdx  = Math.min(slashIndex, filteredSlashSkills.length - 1);
+          const activeItem = filteredSlashSkills[activeIdx];
+          const kindLabelFor = (sk) =>
+            sk.kind === "media"        ? "media"
+          : sk.kind === "cc"           ? "skill"
+          : sk.kind === "orchestrator" ? "orchestrator"
+          : sk.kind === "library"      ? (sk.libraryGroup || "library")
+          : sk.kind;
+          return html`
+            <div className="chat-slash-menu" role="listbox" aria-label="Skills, orchestrators, and design library">
+              <div className="chat-slash-head">
+                <span className="chat-slash-head-title">Skills · orchestrators · design library</span>
+                <span className="chat-slash-head-meta">${filteredSlashSkills.length} of ${slashSkills.length} — ↑↓ navigate, ↵ insert, Esc close</span>
+              </div>
+              <div className="chat-slash-list">
+                ${filteredSlashSkills.map((sk, i) => html`
+                  <button
+                    key=${sk.kind + ":" + sk.invocation + ":" + sk.slug + ":" + (sk.plugin || "")}
+                    type="button"
+                    className=${"chat-slash-item chat-slash-item-kind-" + sk.kind + (i === activeIdx ? " is-active" : "")}
+                    role="option"
+                    aria-selected=${i === activeIdx ? "true" : "false"}
+                    onMouseEnter=${() => setSlashIndex(i)}
+                    onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
+                  >${sk.invocation}</button>
+                `)}
+              </div>
+              <div className="chat-slash-detail" aria-live="polite">
+                ${activeItem ? html`
+                  <div className="chat-slash-detail-head">
+                    <span className="chat-slash-detail-name">${activeItem.name}</span>
+                    <span className=${"chat-slash-detail-badge chat-slash-detail-badge-" + activeItem.kind}>${kindLabelFor(activeItem)}</span>
+                  </div>
+                  <code className=${"chat-slash-detail-cmd chat-slash-item-kind-" + activeItem.kind}>${activeItem.invocation}</code>
+                  ${activeItem.description && html`<p className="chat-slash-detail-desc">${activeItem.description}</p>`}
+                ` : html`<div className="chat-slash-detail-empty">Highlight an item to see details.</div>`}
+              </div>
             </div>
-            ${filteredSlashSkills.map((sk, i) => {
-              const kindLabel = sk.kind === "media"        ? "media"
-                              : sk.kind === "cc"           ? "skill"
-                              : sk.kind === "orchestrator" ? "orchestrator"
-                              : sk.kind === "library"      ? (sk.libraryGroup || "library")
-                              : sk.kind;
-              return html`
-                <button
-                  key=${sk.kind + ":" + sk.invocation + ":" + sk.slug + ":" + (sk.plugin || "")}
-                  type="button"
-                  className=${"chat-slash-item" + (i === slashIndex ? " is-active" : "")}
-                  role="option"
-                  aria-selected=${i === slashIndex ? "true" : "false"}
-                  onMouseEnter=${() => setSlashIndex(i)}
-                  onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
-                >
-                  <code className="chat-slash-item-cmd">${sk.invocation}</code>
-                  <span className="chat-slash-item-name">${sk.name}</span>
-                  <span className=${"chat-slash-item-kind chat-slash-item-kind-" + sk.kind}>${kindLabel}</span>
-                  ${sk.description && html`<span className="chat-slash-item-desc">${sk.description}</span>`}
-                </button>
-              `;
-            })}
-          </div>
-        `}
+          `;
+        })()}
         ${slashOpen && filteredSlashSkills.length === 0 && slashSkills.length > 0 && html`
           <div className="chat-slash-menu chat-slash-menu-empty">
             <div className="chat-slash-empty">No skill, orchestrator, or library entry matches “${slashQuery}”. Esc to dismiss.</div>

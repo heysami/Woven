@@ -6241,29 +6241,40 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   min-width: 0;
   width: 100%;
 }
+/* Two-pane: head spans the top; list (left) + detail card (right) below.
+   Anchored to the composer's bottom-left so the popover can grow rightward
+   past the textarea on narrow drawers without re-flowing the chat layout. */
 .chat-slash-menu {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  /* Anchor to the RIGHT of the composer (chat drawer is right-aligned), so
+     when the popover grows past the composer width it grows LEFTWARD into
+     the drawer interior — not rightward off the viewport. */
   right: 0;
+  left: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
   z-index: 50;
-  max-height: 340px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(620px, calc(100vw - 32px));
+  max-height: 380px;
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 .chat-slash-head {
+  grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 4px 8px 6px;
+  gap: 12px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
 }
 .chat-slash-head-title {
   font-size: 10px;
@@ -6275,67 +6286,119 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .chat-slash-head-meta {
   font-size: 10px;
   color: var(--text-faint);
+  white-space: nowrap;
 }
+/* Scrollable token list — keyboard nav scrolls the active row into view */
+.chat-slash-list {
+  grid-column: 1;
+  grid-row: 2;
+  overflow-y: auto;
+  padding: 4px 6px;
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+/* One-line anchor-style token — no inline name, no chip, no inline desc.
+   The kind is conveyed by the token color (see .chat-slash-item-kind-*
+   rules below) and confirmed by the badge in the detail pane. */
 .chat-slash-item {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-rows: auto auto;
-  grid-column-gap: 10px;
+  display: block;
+  width: 100%;
   text-align: left;
   background: transparent;
   border: 0;
-  padding: 6px 10px;
+  padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
-  color: var(--text);
-  width: 100%;
-}
-.chat-slash-item.is-active { background: var(--accent-soft); }
-.chat-slash-item:hover { background: var(--surface-2); }
-.chat-slash-item.is-active:hover { background: var(--accent-soft); }
-.chat-slash-item-cmd {
-  grid-row: 1;
   font-family: ui-monospace, monospace;
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent-text);
-}
-.chat-slash-item-name {
-  grid-row: 1;
-  font-size: 12px;
-  color: var(--text-muted);
+  line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chat-slash-item-kind {
-  grid-row: 1;
+.chat-slash-item.is-active { background: var(--accent-soft); }
+.chat-slash-item:hover      { background: var(--surface-2); }
+.chat-slash-item.is-active:hover { background: var(--accent-soft); }
+
+/* Per-kind anchor color — applied to the token text (button) AND to the
+   monospace `code` block inside the detail pane so the active row's color
+   echoes across both panes. */
+.chat-slash-item-kind-cc           { color: oklch(42% 0.14 200); }
+.chat-slash-item-kind-media        { color: oklch(44% 0.17 295); }
+.chat-slash-item-kind-orchestrator { color: oklch(42% 0.17 140); }
+.chat-slash-item-kind-library      { color: oklch(42% 0.16 60); }
+
+/* Detail card — fills the right column. Description clamps to 2 lines. */
+.chat-slash-detail {
+  grid-column: 2;
+  grid-row: 2;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+.chat-slash-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.chat-slash-detail-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.chat-slash-detail-cmd {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  /* color is inherited from the per-kind class echoed on this node */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-slash-detail-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.chat-slash-detail-empty {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-style: italic;
+}
+.chat-slash-detail-badge {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 3px;
+  white-space: nowrap;
   background: var(--surface-2);
   color: var(--text-faint);
-  white-space: nowrap;
+  flex: 0 0 auto;
 }
-.chat-slash-item-kind-cc           { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
-.chat-slash-item-kind-media        { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
-.chat-slash-item-kind-orchestrator { background: oklch(94% 0.05 140); color: oklch(40% 0.16 140); }
-.chat-slash-item-kind-library      { background: oklch(94% 0.05 60);  color: oklch(40% 0.15 60); }
-.chat-slash-item-desc {
-  grid-row: 2;
-  grid-column: 1 / -1;
-  font-size: 11px;
-  color: var(--text-faint);
-  line-height: 1.4;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chat-slash-menu-empty { padding: 18px; }
+.chat-slash-detail-badge-cc           { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
+.chat-slash-detail-badge-media        { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
+.chat-slash-detail-badge-orchestrator { background: oklch(94% 0.05 140); color: oklch(40% 0.16 140); }
+.chat-slash-detail-badge-library      { background: oklch(94% 0.05 60);  color: oklch(40% 0.15 60); }
+
+.chat-slash-menu-empty { padding: 18px; display: block; }
 .chat-slash-empty { font-size: 12px; color: var(--text-faint); text-align: center; }
 
 /* Phase 4c — Agent chat dialog. Wider modal, scroll body, sticky compose. */
