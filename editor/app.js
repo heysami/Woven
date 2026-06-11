@@ -13866,10 +13866,12 @@ function SystemLanding() {
   // name `/__prototype_catalog` is kept for compatibility — the catalog
   // sources from design-library/, not from the prototype/ skill-detail folder.)
   const [protoCatalog, setProtoCatalog] = useState(null);
+  const [mcpCatalog, setMcpCatalog] = useState(null);
   useEffect(() => {
     fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
     fetch(apiUrl("/__orchestrators")).then(r => r.ok ? r.json() : null).then(setOrchestratorsData).catch(() => {});
     fetch(apiUrl("/__prototype_catalog")).then(r => r.ok ? r.json() : null).then(setProtoCatalog).catch(() => {});
+    fetch(apiUrl("/__mcp_catalog")).then(r => r.ok ? r.json() : null).then(setMcpCatalog).catch(() => {});
   }, []);
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
@@ -13884,6 +13886,8 @@ function SystemLanding() {
       hint: "Every .claude/agents/*.md — drawers, lenses, orchestrators, cross-cutting" },
     { id: "node-kinds", label: "Node kinds", count: caps ? caps.kinds.length : 21,
       hint: "Canvas node types — what each does + how to use it" },
+    { id: "mcp",        label: "MCP servers", count: mcpCatalog ? (mcpCatalog.servers || []).length : 2,
+      hint: "Optional MCP servers wired into spawned claude subprocesses — escalation paths beyond built-in WebFetch / WebSearch" },
   ];
 
   return html`
@@ -13911,6 +13915,7 @@ function SystemLanding() {
         ${activeSection === "prototype"  && html`<${PrototypeCatalogLanding} data=${protoCatalog}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
+        ${activeSection === "mcp"        && html`<${McpLanding}/>`}
       </div>
     </div>
   `;
@@ -14570,6 +14575,116 @@ function SubagentsLanding({ caps }) {
           </div>
         </div>
       `)}
+    </div>
+  `;
+}
+
+
+// ─── McpLanding ───────────────────────────────────────────────────────────
+// MCP server inventory. Reads /__mcp_catalog (display metadata + a `wired`
+// flag computed against .claude/mcp-config.json) and renders a card per
+// server. Read-only: editing the catalog or the runtime config still happens
+// by editing the JSON files in .claude/. The card surfaces purpose,
+// when-to-use, the npx command the daemon spawns, requires-list, and a
+// first-call note (e.g. "start Chrome with --remote-debugging-port=9222").
+function McpLanding() {
+  const [data, setData] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  useEffect(() => {
+    fetch(apiUrl("/__mcp_catalog")).then(r => r.ok ? r.json() : null).then(setData).catch(() => {});
+  }, []);
+  if (!data) {
+    return html`<div className="ref-root"><div className="ref-header"><div className="ref-header-title">Loading MCP catalog…</div></div></div>`;
+  }
+  const servers = data.servers || [];
+  const wiredCount = servers.filter(s => s.wired).length;
+  return html`
+    <div className="ref-root">
+      <div className="ref-header">
+        <div className="ref-header-title">${servers.length} MCP server${servers.length === 1 ? "" : "s"} available · ${wiredCount} wired</div>
+        <div className="ref-header-meta">
+          Optional MCP servers the harness exposes to spawned <code>claude</code>
+          subprocesses via <code>--mcp-config</code>. Built-in <code>WebFetch</code>
+          and <code>WebSearch</code> stay primary; these are escalation paths
+          (Chrome for logged-in pages, Figma for design files). Runtime config:
+          <code>${data.configPath}</code>${data.configured ? "" : " (not present — flag will be skipped at spawn-time)"}.
+        </div>
+      </div>
+
+      <div className="subagent-list">
+        ${servers.map(s => html`
+          <div key=${s.id} className=${"subagent-card" + (openId === s.id ? " is-open" : "")}>
+            <button className="subagent-card-head" onClick=${() => setOpenId(p => p === s.id ? null : s.id)} aria-expanded=${openId === s.id}>
+              <span className="subagent-name">
+                <span style=${{ marginRight: "0.5em", opacity: 0.65 }}>${s.icon || "■"}</span>
+                <code>${s.label || s.id}</code>
+                ${s.wired
+                  ? html`<span className="ref-chip" style=${{ marginLeft: "0.6em", background: "rgba(80,180,120,0.16)", color: "#3a9b65" }}>wired</span>`
+                  : html`<span className="ref-chip" style=${{ marginLeft: "0.6em", opacity: 0.55 }}>not wired</span>`
+                }
+              </span>
+              <span className="subagent-summary">${(s.purpose || "").slice(0, 140)}${(s.purpose || "").length > 140 ? "…" : ""}</span>
+              <span className="subagent-toggle">${openId === s.id ? "▼" : "▶"}</span>
+            </button>
+            ${openId === s.id && html`
+              <div className="subagent-card-body">
+                <div className="subagent-section">
+                  <div className="subagent-section-title">What it does</div>
+                  <div className="subagent-description">${s.purpose}</div>
+                </div>
+                ${s.whenToUse && html`
+                  <div className="subagent-section">
+                    <div className="subagent-section-title">When the agent uses it</div>
+                    <div className="subagent-description">${s.whenToUse}</div>
+                  </div>
+                `}
+                ${s.command && html`
+                  <div className="subagent-section">
+                    <div className="subagent-section-title">Spawn command</div>
+                    <pre className="subagent-codeblock">${s.command}</pre>
+                  </div>
+                `}
+                ${(s.requires && s.requires.length > 0) && html`
+                  <div className="subagent-section">
+                    <div className="subagent-section-title">Requires</div>
+                    <ul style=${{ margin: 0, paddingLeft: "1.2em", lineHeight: 1.5 }}>
+                      ${s.requires.map((r, i) => html`<li key=${i}>${r}</li>`)}
+                    </ul>
+                  </div>
+                `}
+                ${s.firstCallNote && html`
+                  <div className="subagent-section">
+                    <div className="subagent-section-title">First call</div>
+                    <div className="subagent-description">${s.firstCallNote}</div>
+                  </div>
+                `}
+                ${s.toolPrefix && html`
+                  <div className="subagent-section">
+                    <div className="subagent-section-title">Tools exposed as</div>
+                    <code className="ref-chip ref-chip-tool">${s.toolPrefix}*</code>
+                  </div>
+                `}
+                ${s.transport && html`
+                  <div className="subagent-section">
+                    <div className="subagent-section-title">Transport</div>
+                    <code className="ref-chip">${s.transport}</code>
+                  </div>
+                `}
+              </div>
+            `}
+          </div>
+        `)}
+      </div>
+
+      <div className="ref-header" style=${{ marginTop: "1.5em" }}>
+        <div className="ref-header-meta">
+          To add or remove servers, edit
+          <code>${data.catalogPath}</code> (display metadata) and
+          <code>${data.configPath}</code> (the Claude-Code runtime config).
+          Both files are mirrored between <code>Woven/</code> and
+          <code>Woven IN USE/</code>.
+        </div>
+      </div>
     </div>
   `;
 }
@@ -18573,26 +18688,16 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // Skip on tiny nodes — a 32px chip + Save/Revert pill needs at least
   // ~60px of node width to read.
   if (rect.width < 60) return null;
-  // v3.5.4 — Clamp the badge position INSIDE the visible canvas wrap so
-  // the pick chip + Save/Revert pill stay reachable when a prototype node
-  // is wider than the canvas viewport. Previously the badge anchored at
-  // rect.right - 32 (the node's right edge) — for a node that extends past
-  // the chat drawer, the badge would land under the panel and either get
-  // chrome-hidden or visually buried behind the higher-z panel.
-  //
-  // Now: ideal anchor is rect.right - 32; clamp to wrapRect.right - 32 - SLACK
-  // so the badge stays just inside the canvas. Also clamp the top so it
-  // can't paint above the workflow-bar.
-  const SLACK = 6;
-  const wrapEl = document.querySelector(".workflow-canvas-wrap");
-  const wrapRect = wrapEl ? wrapEl.getBoundingClientRect()
-                          : { left: 0, right: window.innerWidth, top: 0 };
-  const idealBadgeLeft = rect.right - 32;
-  const badgeLeft = Math.max(
-    wrapRect.left + SLACK,
-    Math.min(idealBadgeLeft, wrapRect.right - 32 - SLACK),
-  );
-  const badgeTop = Math.max(rect.top - 40, wrapRect.top + SLACK);
+  // v3.5.5 — Anchor the badge at the node's natural top-right corner. The
+  // previous "clamp to canvas viewport" rule (v3.5.4) was meant to keep
+  // the chip reachable when a node extended past the chat-drawer, but it
+  // turned the badge into a free-floating chip that slid to the canvas
+  // edge while panning instead of staying glued to the node. Partial
+  // overlap with panels is fine — z-index keeps the chat-drawer / library
+  // on top — and shouldHideNodeChrome hides the badge once it's fully off.
+  const badgeLeft = rect.right - 32;
+  const badgeTop  = rect.top - 40;
+  if (shouldHideNodeChrome(rect, badgeLeft, badgeLeft + 32, 60)) return null;
   const style = {
     position: "fixed",
     top:  badgeTop  + "px",
