@@ -4343,7 +4343,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
     0 0 0 1px color-mix(in oklch, var(--hot) 6%, transparent),
     0 1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
     0 6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
-  overflow: hidden;
+  /* v3.5 — port labels need to sit OUTSIDE the node body so they don't
+     overlap iframe content. `overflow: clip` + `overflow-clip-margin` keeps
+     the iframe (and any other body content) clipped to the rounded node
+     rect for paint, while extending the clip rect 64px on every side so
+     labels positioned at `right: 100%` / `left: 100%` of their port-zone
+     remain visible. `overflow: hidden` would clip them. */
+  overflow: clip;
+  overflow-clip-margin: 64px;
   transition: box-shadow 0.12s ease;
 }
 .workflow-node:hover {
@@ -4453,6 +4460,49 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-frames-bodydrag:active {
   cursor: grabbing;
+}
+
+/* v3.5 — Canvas-frames node renders as a SECTION on the workflow canvas:
+   dashed border, transparent body, lightweight chrome — so the embedded
+   editor canvas reads as the actual content with the surrounding frame
+   acting as a container, not as another card competing for attention.
+
+   The embed inside is no longer scale-to-fit (see WorkflowFramesNode JSX);
+   the iframe fills the body at 100% × 100% so the editor canvas inside
+   shares the workflow canvas's zoom 1:1. Frames in the embed match the
+   on-screen size of frames on the workflow canvas at the same zoom. */
+.workflow-node-frames {
+  background: color-mix(in oklch, var(--surface-2) 35%, transparent) !important;
+  border: 1.5px dashed color-mix(in oklch, var(--text-faint) 65%, transparent) !important;
+  box-shadow: none !important;
+  border-radius: 14px;
+}
+.workflow-node-frames:hover {
+  border-color: color-mix(in oklch, var(--text-faint) 90%, transparent) !important;
+  box-shadow: none !important;
+}
+.workflow-node-frames[data-selected="true"] {
+  border-color: var(--text) !important;
+  border-style: solid !important;
+  background: color-mix(in oklch, var(--surface-2) 55%, transparent) !important;
+}
+/* Section-bar treatment: the title strip sits above the body (matches the
+   .workflow-node-section-bar pattern) so the body reads as the pure
+   embedded-canvas area, not as a window with chrome on top. */
+.workflow-node-frames-bar {
+  background: transparent !important;
+  color: var(--text-muted);
+}
+/* The body wrapper exists so the iframe can fill 100%×100% without the
+   grid-row sizing logic interfering. Clips so the embedded editor canvas
+   stays inside the rounded section border. */
+.workflow-node-frames-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+  background: var(--surface);
 }
 
 /* ─── v3.3 — Simulation + interactive-media container styling ───────────
@@ -5407,8 +5457,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   pointer-events: none;
   white-space: nowrap;
 }
-.workflow-port-label-left  { left: 14px; }
-.workflow-port-label-right { right: 14px; }
+/* v3.5 — labels sit OUTSIDE the node body so they don't overlap iframe
+   content. `right: 100%` puts the label's right edge at the port-zone's
+   left edge (= node's left edge for `.workflow-port-zone-in` / left-side
+   prototype + agent port variants); `margin-right` then pushes it further
+   left into the .workflow-node's overflow-clip-margin buffer. Same logic
+   mirrored for the right-hand labels. */
+.workflow-port-label-left  { right: 100%; margin-right: 10px; }
+.workflow-port-label-right { left:  100%; margin-left:  10px; }
 .workflow-proto-port:hover .workflow-port-label {
   background: var(--accent-soft);
   border-color: var(--accent);

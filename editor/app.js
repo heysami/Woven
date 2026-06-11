@@ -607,6 +607,11 @@ const Icon = {
   // HTML asset nodes; click enters pick mode where the user picks a
   // sub-element inside the iframe for copy/paste/delete operations.
   PickEl:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 5.5V3a.5.5 0 01.5-.5h2.5M13.5 5.5V3a.5.5 0 00-.5-.5h-2.5M2.5 10.5V13a.5.5 0 00.5.5h2.5M13.5 10.5V13a.5.5 0 01-.5.5h-2.5"/><circle cx="8" cy="8" r="1.4"/><path d="M8 5.6V4M8 12V10.4M5.6 8H4M12 8h-1.6"/></svg>`,
+  // v3.5 — browser-style chevrons for prototype + html-asset iframe back /
+  // forward nav. Single chevron at the canonical 1.5pt stroke, matching the
+  // rest of this icon set so the bar reads as one family.
+  Back:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M10 4L6 8l4 4"/></svg>`,
+  Forward:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4l4 4-4 4"/></svg>`,
 };
 
 // v2.51 — skill glyphs live as plain strings in media-models.js (a data-only
@@ -1351,7 +1356,7 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
     const rect = f.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (f.offsetWidth / rect.width);
     const y = (e.clientY - rect.top)  * (f.offsetHeight / rect.height);
-    let el, sel, elRect, text, parent;
+    let el, sel, elRect, text, parent, self;
     try {
       el = f.contentDocument.elementFromPoint(x, y);
       if (!el || el.tagName === "HTML" || el.tagName === "BODY") return;
@@ -1359,6 +1364,21 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
       const er = el.getBoundingClientRect();
       elRect = { x: er.left, y: er.top, w: er.width, h: er.height };
       text = (el.textContent || "").trim().slice(0, 240);
+      // Picked element's own layout — lets the inspector surface auto-layout
+      // controls (flex-direction) when the picked element is itself a flex
+      // container, not just when it lives inside one.
+      try {
+        const csSelf = f.contentWindow.getComputedStyle(el);
+        self = {
+          layout: {
+            display:        csSelf.display,
+            flexDirection:  csSelf.flexDirection,
+            flexWrap:       csSelf.flexWrap,
+            alignItems:     csSelf.alignItems,
+            justifyContent: csSelf.justifyContent,
+          },
+        };
+      } catch {}
       // Parent layout context — lets the LLM apply edits with grid/flex awareness
       // instead of blindly inserting siblings. See AGENTS.md → "Design audit".
       const p = el.parentElement;
@@ -1386,7 +1406,7 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
     } catch (err) {
       return;
     }
-    onPick({ frameId: frame.id, selector: sel, rect: elRect, snippet: el.outerHTML.slice(0, 280), text, parent });
+    onPick({ frameId: frame.id, selector: sel, rect: elRect, snippet: el.outerHTML.slice(0, 280), text, parent, self });
   };
 
   const meta = gridMeta || D.meta;
@@ -5475,6 +5495,13 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   const isGrid = lay?.display === "grid" || lay?.display === "inline-grid";
   const isRow  = isFlex && !(lay?.flexDirection || "row").startsWith("column");
 
+  // Picked element's OWN layout — when the picked element is itself a flex
+  // container, surface a Direction control so the user can toggle the
+  // auto-layout axis (row ↔ column) without leaving select mode.
+  const selfLay = picked.self?.layout;
+  const selfIsFlex = selfLay?.display === "flex" || selfLay?.display === "inline-flex";
+  const selfFlexDir = styles.flexDirection || selfLay?.flexDirection || "row";
+
   const widthMode  = styles.widthMode  || "auto";
   const widthFixed = styles.widthFixed ?? Math.round(picked.rect.w);
   const heightMode  = styles.heightMode  || "auto";
@@ -5540,6 +5567,21 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
           `}
         </div>
       </div>
+
+      ${selfIsFlex && html`
+        <div className="inspector-section">
+          <div className="inspector-label">Auto layout</div>
+          <div className="inspector-row">
+            <span className="inspector-axis">↔</span>
+            <${Seg} value=${selfFlexDir} onChange=${v => onStyle({ ...styles, flexDirection: v })} options=${[
+              { v: "row",            l: "Row",     title: "Horizontal (row)" },
+              { v: "column",         l: "Col",     title: "Vertical (column)" },
+              { v: "row-reverse",    l: "Row↺",    title: "Row reversed" },
+              { v: "column-reverse", l: "Col↺",    title: "Column reversed" },
+            ]}/>
+          </div>
+        </div>
+      `}
 
       ${(isFlex || isGrid) && html`
         <div className="inspector-section">
@@ -6257,7 +6299,7 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
   const meta = gridMeta || ((typeof D !== "undefined") ? D.meta : {});
   const cellW = (meta?.defaultFrame?.w) || 1440;
   const cellH = (meta?.defaultFrame?.h) || 900;
-  const bb = useMemo(() => {
+  const baseBB = useMemo(() => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     frames.forEach(f => {
       const [fx, fy] = gridXY(f, meta);
@@ -6268,10 +6310,8 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
       maxX = Math.max(maxX, fx + fw);
       maxY = Math.max(maxY, fy + fh + 32);
     });
-    return { minX, minY, w: maxX - minX, h: maxY - minY };
+    return { minX, minY, maxX, maxY };
   }, [frames]);
-  const PAD = 8, MW = 200 - 2*PAD, MH = 130 - 2*PAD;
-  const s = Math.min(MW / bb.w, MH / bb.h);
 
   const wrap = wrapRef?.current;
   const vw = wrap ? wrap.clientWidth : 1200;
@@ -6280,6 +6320,23 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
   const vy = (-pan.y) / zoom;
   const vww = vw / zoom;
   const vhh = vh / zoom;
+  // v3.5 — union with the current viewport so the minimap stays addressable
+  // when the user pans past the frames. Without this, the viewport indicator
+  // clips against the minimap edge (or disappears entirely) and there's no
+  // way to tell which direction the world sits in. Padding the union out by
+  // a few % keeps the indicator from sitting flush against the edge.
+  const unionMinX = Math.min(baseBB.minX, vx);
+  const unionMinY = Math.min(baseBB.minY, vy);
+  const unionMaxX = Math.max(baseBB.maxX, vx + vww);
+  const unionMaxY = Math.max(baseBB.maxY, vy + vhh);
+  const bb = {
+    minX: unionMinX,
+    minY: unionMinY,
+    w: Math.max(1, unionMaxX - unionMinX),
+    h: Math.max(1, unionMaxY - unionMinY),
+  };
+  const PAD = 8, MW = 200 - 2*PAD, MH = 130 - 2*PAD;
+  const s = Math.min(MW / bb.w, MH / bb.h);
 
   return html`
     <div className="minimap">
@@ -6336,8 +6393,8 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef }) {
     return () => ro.disconnect();
   }, []);
 
-  const bb = useMemo(() => {
-    if (!list.length) return { minX: 0, minY: 0, w: 1, h: 1 };
+  const baseBB = useMemo(() => {
+    if (!list.length) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const n of list) {
       const nx = typeof n.x === "number" ? n.x : 0;
@@ -6349,8 +6406,32 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef }) {
       if (nx + nw   > maxX) maxX = nx + nw;
       if (ny + nh   > maxY) maxY = ny + nh;
     }
-    return { minX, minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+    return { minX, minY, maxX, maxY };
   }, [list]);
+  const wrap = wrapRef?.current;
+  const vw = wrap ? wrap.clientWidth  : 1200;
+  const vh = wrap ? wrap.clientHeight : 800;
+  const vx = (-pan.x) / zoom;
+  const vy = (-pan.y) / zoom;
+  const vww = vw / zoom;
+  const vhh = vh / zoom;
+  // v3.5 — union with the current viewport so the minimap stays addressable
+  // when the user pans past the nodes. Without this, panning out of bounds
+  // moves the viewport indicator off the minimap entirely (its left/top
+  // become negative — relative to the node-only bounding box — so the chip
+  // either clips against the edge or paints under the inner padding and
+  // looks like it disappeared). The union guarantees the indicator stays
+  // inside the projected world rect.
+  const unionMinX = Math.min(baseBB.minX, vx);
+  const unionMinY = Math.min(baseBB.minY, vy);
+  const unionMaxX = Math.max(baseBB.maxX, vx + vww);
+  const unionMaxY = Math.max(baseBB.maxY, vy + vhh);
+  const bb = {
+    minX: unionMinX,
+    minY: unionMinY,
+    w: Math.max(1, unionMaxX - unionMinX),
+    h: Math.max(1, unionMaxY - unionMinY),
+  };
   const PAD = 8;
   const MW = Math.max(20, size.w - 2 * PAD);
   const MH = Math.max(20, size.h - 2 * PAD);
@@ -6362,14 +6443,6 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef }) {
   const projH = bb.h * s;
   const offX  = PAD + (MW - projW) / 2;
   const offY  = PAD + (MH - projH) / 2;
-
-  const wrap = wrapRef?.current;
-  const vw = wrap ? wrap.clientWidth  : 1200;
-  const vh = wrap ? wrap.clientHeight : 800;
-  const vx = (-pan.x) / zoom;
-  const vy = (-pan.y) / zoom;
-  const vww = vw / zoom;
-  const vhh = vh / zoom;
 
   return html`
     <div className="workflow-minimap" ref=${hostRef}>
@@ -15650,6 +15723,16 @@ function WorkflowCanvas() {
   }, [libWidth]);
   const startChatResize = useCallback((e) => {
     e.preventDefault();
+    // v3.5 — clear any canvas-node selection at the start of a chat-panel
+    // resize drag. With a node selected, the wrap's pointer-events promotion
+    // turns the iframe + body interactive, which competes with the 4px
+    // resize handle near its right edge — the handle becomes hard to grab.
+    // Dispatching the same "set selection" event the surface listens to
+    // empties the selection deterministically; WorkflowSurface re-renders
+    // its iframes back to pointer-events:none for the duration of the drag.
+    try {
+      window.dispatchEvent(new CustomEvent("th:set-canvas-selection", { detail: { ids: [] } }));
+    } catch {}
     const startX = e.clientX;
     const startW = chatWidth;
     const onMove = (ev) => {
@@ -28854,6 +28937,12 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
   const isGrid = lay && (lay.display === "grid" || lay.display === "inline-grid");
   const isRow  = isFlex && !((lay.flexDirection || "row").startsWith("column"));
 
+  // Picked element's OWN layout — toggles auto-layout direction when the
+  // picked element is itself a flex container.
+  const selfLay = picked.self && picked.self.layout;
+  const selfIsFlex = selfLay && (selfLay.display === "flex" || selfLay.display === "inline-flex");
+  const selfFlexDir = styles.flexDirection || (selfLay && selfLay.flexDirection) || "row";
+
   const widthMode   = styles.widthMode  || "auto";
   const widthFixed  = styles.widthFixed ?? Math.round(picked.rect ? picked.rect.w : 0);
   const heightMode  = styles.heightMode  || "auto";
@@ -28959,6 +29048,20 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
         `}
       </div>
     </div>
+    ${selfIsFlex && html`
+      <div className="zoom-inspector-section">
+        <div className="zoom-inspector-label">Auto layout</div>
+        <div className="zoom-inspector-row">
+          <span className="zoom-inspector-axis">↔</span>
+          <${Seg} value=${selfFlexDir} onChange=${v => set1("flexDirection", v)} options=${[
+            { v: "row",            l: "Row",  title: "Horizontal (row)" },
+            { v: "column",         l: "Col",  title: "Vertical (column)" },
+            { v: "row-reverse",    l: "Row↺", title: "Row reversed" },
+            { v: "column-reverse", l: "Col↺", title: "Column reversed" },
+          ]}/>
+        </div>
+      </div>
+    `}
     ${(isFlex || isGrid) && html`
       <div className="zoom-inspector-section">
         <div className="zoom-inspector-label">Reorder in ${isGrid ? "grid" : "flex"}</div>
@@ -29859,6 +29962,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const rect = zoomRectFor(el, iframeRef.current);
     const label = zoomElementLabel(el);
     let parent = null;
+    let self = null;
     const p = el.parentElement;
     if (p && p.tagName !== "BODY" && p.tagName !== "HTML") {
       try {
@@ -29883,7 +29987,24 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         };
       } catch {}
     }
-    return { zid, rect, label, parent };
+    // Picked element's OWN layout — so the inspector can offer auto-layout
+    // direction toggle when the picked element is itself a flex container.
+    try {
+      const win = el.ownerDocument && el.ownerDocument.defaultView;
+      const csSelf = win ? win.getComputedStyle(el) : null;
+      if (csSelf) {
+        self = {
+          layout: {
+            display:        csSelf.display,
+            flexDirection:  csSelf.flexDirection,
+            flexWrap:       csSelf.flexWrap,
+            alignItems:     csSelf.alignItems,
+            justifyContent: csSelf.justifyContent,
+          },
+        };
+      }
+    } catch {}
+    return { zid, rect, label, parent, self };
   }, []);
 
   // Helper: detect whether an element lives in a nested imported iframe,
@@ -29984,21 +30105,22 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     // Only props PRESENT in nextStyles get touched — partial style edits
     // (just changing background) don't accidentally clear unrelated props.
     const cssKeys = [
-      ["width",        "width"],
-      ["height",       "height"],
-      ["justifySelf",  "justify-self"],
-      ["alignSelf",    "align-self"],
-      ["background",   "background"],
-      ["borderColor",  "border-color"],
-      ["borderWidth",  "border-width"],
-      ["borderStyle",  "border-style"],
-      ["borderRadius", "border-radius"],
-      ["color",        "color"],
-      ["fontFamily",   "font-family"],
-      ["fontSize",     "font-size"],
-      ["fontWeight",   "font-weight"],
-      ["boxShadow",    "box-shadow"],
-      ["filter",       "filter"],
+      ["width",         "width"],
+      ["height",        "height"],
+      ["justifySelf",   "justify-self"],
+      ["alignSelf",     "align-self"],
+      ["flexDirection", "flex-direction"],
+      ["background",    "background"],
+      ["borderColor",   "border-color"],
+      ["borderWidth",   "border-width"],
+      ["borderStyle",   "border-style"],
+      ["borderRadius",  "border-radius"],
+      ["color",         "color"],
+      ["fontFamily",    "font-family"],
+      ["fontSize",      "font-size"],
+      ["fontWeight",    "font-weight"],
+      ["boxShadow",     "box-shadow"],
+      ["filter",        "filter"],
     ];
     for (const [propJs, propCss] of cssKeys) {
       if (!(propJs in nextStyles)) continue;
@@ -32198,6 +32320,21 @@ function WorkflowPickedInspectorDock({
         };
       } catch {}
     }
+    // Picked element's OWN layout — surfaces auto-layout direction control
+    // when the picked element is itself a flex container.
+    let selfInfo = null;
+    try {
+      const scs = win.getComputedStyle(el);
+      selfInfo = {
+        layout: {
+          display:        scs.display,
+          flexDirection:  scs.flexDirection,
+          flexWrap:       scs.flexWrap,
+          alignItems:     scs.alignItems,
+          justifyContent: scs.justifyContent,
+        },
+      };
+    } catch {}
     const rect = el.getBoundingClientRect();
     // v3.4.x — Strip pick-mode editor chrome classes everywhere we surface
     // an element's label so they don't leak ("div.lane-block", not
@@ -32253,6 +32390,7 @@ function WorkflowPickedInspectorDock({
       picked: {
         label: labelTag + (labelCls.length > 1 ? labelCls : ""),
         parent: parentInfo,
+        self: selfInfo,
         rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
       },
       styles: {
@@ -32334,21 +32472,22 @@ function WorkflowPickedInspectorDock({
     const el = pickedDomRef.current;
     if (!doc || !el) return;
     const cssKeys = [
-      ["width",        "width"],
-      ["height",       "height"],
-      ["justifySelf",  "justify-self"],
-      ["alignSelf",    "align-self"],
-      ["background",   "background"],
-      ["borderColor",  "border-color"],
-      ["borderWidth",  "border-width"],
-      ["borderStyle",  "border-style"],
-      ["borderRadius", "border-radius"],
-      ["color",        "color"],
-      ["fontFamily",   "font-family"],
-      ["fontSize",     "font-size"],
-      ["fontWeight",   "font-weight"],
-      ["boxShadow",    "box-shadow"],
-      ["filter",       "filter"],
+      ["width",         "width"],
+      ["height",        "height"],
+      ["justifySelf",   "justify-self"],
+      ["alignSelf",     "align-self"],
+      ["flexDirection", "flex-direction"],
+      ["background",    "background"],
+      ["borderColor",   "border-color"],
+      ["borderWidth",   "border-width"],
+      ["borderStyle",   "border-style"],
+      ["borderRadius",  "border-radius"],
+      ["color",         "color"],
+      ["fontFamily",    "font-family"],
+      ["fontSize",      "font-size"],
+      ["fontWeight",    "font-weight"],
+      ["boxShadow",     "box-shadow"],
+      ["filter",        "filter"],
     ];
     for (const [propJs, propCss] of cssKeys) {
       // Only touch a property if it appears in nextStyles (so toggling
@@ -32821,14 +32960,8 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
-  // Native viewport — the editor at 1920×1200 gives the Canvas tab room
-  // to show several frames + their arrows. Scale to node body.
-  const vw = 1920, vh = 1200;
   const w = Math.max(320, node.w || 800);
   const h = Math.max(220, node.h || 540);
-  const bodyW = Math.max(1, w);
-  const bodyH = Math.max(1, h - 32);
-  const scale = Math.min(bodyW / vw, bodyH / vh);
 
   return html`
     <div
@@ -32839,7 +32972,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       data-node-id=${node.id}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
-      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+      <div className="workflow-node-bar workflow-node-frames-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph"><${Icon.Canvas}/></span>
         <span className="workflow-node-label">Canvas frames · ${protoSlug}</span>
         <span className="workflow-node-bar-spacer"/>
@@ -32858,7 +32991,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           onMouseDown=${(e) => e.stopPropagation()}
         >×<//>
       </div>
-      <div className="workflow-node-iframe-scale">
+      <div className="workflow-node-frames-body">
         <iframe
           key=${node.id + "-" + nonce}
           ref=${iframeRef}
@@ -32866,10 +32999,14 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           src=${iframeSrc}
           title=${"Canvas frames: " + protoSlug}
           style=${{
-            width:  vw + "px",
-            height: vh + "px",
-            transform: "scale(" + scale + ")",
-            transformOrigin: "top left",
+            /* v3.5 — render the embedded editor at native pixel size, no
+               scale-to-fit. The workflow-canvas transform already scales
+               every node uniformly, so frames inside the embed now share
+               the workflow canvas's zoom 1:1 — at 100% workflow zoom, an
+               embedded 1440×900 frame shows at 1440×900 on screen. The
+               body clips to the node bounds. */
+            width:  "100%",
+            height: "100%",
             // Iframe is only interactive when the node is SELECTED. Unselected,
             // the iframe is invisible to the mouse so clicks fall through to
             // the body-drag overlay below — the user can drag the node around
@@ -33468,6 +33605,26 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph"><${Icon.Play}/></span>
+        <${HoverTip}
+          className="workflow-node-action workflow-node-action-nav"
+          tip="Back — navigate the iframe's history one step back."
+          ariaLabel="Back"
+          onClick=${(e) => {
+            e.stopPropagation();
+            try { iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.history.back(); } catch {}
+          }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Back}/><//>
+        <${HoverTip}
+          className="workflow-node-action workflow-node-action-nav"
+          tip="Forward — navigate the iframe's history one step forward."
+          ariaLabel="Forward"
+          onClick=${(e) => {
+            e.stopPropagation();
+            try { iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.history.forward(); } catch {}
+          }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Forward}/><//>
         <span className="workflow-node-label">source/${branch}/</span>
         ${locked && html`
           <span
@@ -35625,6 +35782,28 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             onMouseDown=${(e) => e.stopPropagation()}
             aria-disabled=${!_isCustom}
           >↺<//>
+        `}
+        ${(kind === "html" || kind === "html-set") && html`
+          <${HoverTip}
+            className="workflow-node-action workflow-node-action-nav"
+            tip="Back — navigate the iframe's history one step back."
+            ariaLabel="Back"
+            onClick=${(e) => {
+              e.stopPropagation();
+              try { htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.history.back(); } catch {}
+            }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Back}/><//>
+          <${HoverTip}
+            className="workflow-node-action workflow-node-action-nav"
+            tip="Forward — navigate the iframe's history one step forward."
+            ariaLabel="Forward"
+            onClick=${(e) => {
+              e.stopPropagation();
+              try { htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.history.forward(); } catch {}
+            }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Forward}/><//>
         `}
         <span className="workflow-node-asset-name" title=${path}>${basename}</span>
         ${node.animated && html`<span className="workflow-node-asset-tag" title="SMIL animation detected">◐</span>`}
