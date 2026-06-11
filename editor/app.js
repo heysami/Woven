@@ -34511,6 +34511,14 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
   const NAV_HISTORY_LIMIT = 30;
+  // Bump on every captureChange so the Back / Forward chrome buttons can
+  // re-render with their fresh enabled / disabled state. Refs alone don't
+  // trigger re-renders, so a button reading navHistRef.current.past.length
+  // would otherwise look enabled even after the past is empty — which was
+  // the "I can't press back" symptom: the button was visibly available but
+  // had nothing to do.
+  const [navHistTick, setNavHistTick] = useState(0);
+  const bumpNavHistTick = useCallback(() => setNavHistTick(t => (t + 1) | 0), []);
 
   useEffect(() => {
     const f = iframeRef.current;
@@ -34544,12 +34552,20 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         hist.current = next;
       } else if (!hist.current) {
         hist.current = next;
-      } else if (hist.current.url !== next.url || hist.current.html !== next.html) {
+      } else if (hist.current.url !== next.url) {
+        // Only real URL changes count as new screens. The legacy code also
+        // pushed on body-html diffs (to capture vanilla show/hide
+        // prototypes), but that path polluted past with same-URL DOM-only
+        // entries AND, worst of all, CLEARED future every time the page
+        // mutated its own DOM after a Back — so Forward stopped working
+        // the moment a click-captured "change" fired post-restore. URL
+        // changes only.
         hist.past.push(hist.current);
         if (hist.past.length > NAV_HISTORY_LIMIT) hist.past.shift();
         hist.future = [];
         hist.current = next;
       }
+      bumpNavHistTick();
       try {
         const state = {
           pathname: trackedWin.location.pathname,
@@ -34636,7 +34652,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         }
       } catch {}
     };
-  }, [onIframeState]);
+  }, [onIframeState, bumpNavHistTick]);
 
   // Navigate the iframe to a captured entry's URL via location.replace. The
   // load that follows re-runs the page's scripts, so all interactivity is
@@ -34692,10 +34708,12 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       // about:blank entries that an older snapshotState may have
       // recorded before bailing on the pre-src state.
       if (!curUrl || (prev.url !== curUrl && prev.url && prev.url !== "about:blank")) {
+        bumpNavHistTick();
         restoreEntry(prev);
         return;
       }
     }
+    bumpNavHistTick();
     if (node.lockedState && f && f.contentWindow) {
       try {
         const lockedHref = new URL(
@@ -34708,7 +34726,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         }
       } catch {}
     }
-  }, [restoreEntry, node.lockedState]);
+  }, [restoreEntry, node.lockedState, bumpNavHistTick]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
     const curUrl = (() => {
@@ -34719,11 +34737,38 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       if (hist.current) hist.past.push(hist.current);
       hist.current = next;
       if (!curUrl || (next.url !== curUrl && next.url && next.url !== "about:blank")) {
+        bumpNavHistTick();
         restoreEntry(next);
         return;
       }
     }
-  }, [restoreEntry]);
+    bumpNavHistTick();
+  }, [restoreEntry, bumpNavHistTick]);
+
+  // Disabled-state derivation for the chrome Back / Forward chevrons.
+  // navHistTick is a re-render trigger seeded by captureChange + goBack /
+  // goForward — without it these reads would stay stale on a ref. Back is
+  // enabled when there's anywhere reachable: a non-blank past entry, OR
+  // the iframe is orphaned and the lock URL is still reachable. Forward
+  // mirrors past, sans the lock fallback. ESLint will complain about the
+  // unused navHistTick in deps — that's intentional, it forces the recompute.
+  const _navTickDep = navHistTick; void _navTickDep;
+  const _curHrefForNav = (() => {
+    try { return iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.location.href; } catch { return null; }
+  })();
+  const canGoBack = (
+    navHistRef.current.past.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank")
+    || (!!node.lockedState && !!_curHrefForNav && (() => {
+      try {
+        const lockedHref = new URL(
+          apiUrl(node.lockedState.pathname) + (node.lockedState.hash || ""),
+          _curHrefForNav
+        ).href;
+        return lockedHref !== _curHrefForNav;
+      } catch { return false; }
+    })())
+  );
+  const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
 
   // Header drag — divide screen delta by zoom for world coordinates. We
   // signal start/end up to the surface so it can disable iframe
@@ -35095,15 +35140,21 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         <span className="workflow-node-glyph"><${Icon.Play}/></span>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-nav"
-          tip="Back — step back through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+          tip=${canGoBack
+            ? "Back — step back through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+            : "Back — nothing to go back to. Navigate inside the prototype first, or navigate away from the locked screen."}
           ariaLabel="Back"
+          disabled=${!canGoBack}
           onClick=${(e) => { e.stopPropagation(); goBack(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Back}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-nav"
-          tip="Forward — step forward through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+          tip=${canGoForward
+            ? "Forward — step forward through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+            : "Forward — nothing to go forward to."}
           ariaLabel="Forward"
+          disabled=${!canGoForward}
           onClick=${(e) => { e.stopPropagation(); goForward(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Forward}/><//>
@@ -36840,6 +36891,8 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
   const NAV_HISTORY_LIMIT = 30;
+  const [navHistTick, setNavHistTick] = useState(0);
+  const bumpNavHistTick = useCallback(() => setNavHistTick(t => (t + 1) | 0), []);
   useEffect(() => {
     const f = htmlIframeRef.current;
     if (!f) return;
@@ -36867,12 +36920,15 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         hist.current = next;
       } else if (!hist.current) {
         hist.current = next;
-      } else if (hist.current.url !== next.url || hist.current.html !== next.html) {
+      } else if (hist.current.url !== next.url) {
+        // URL changes only — see the matching comment on the prototype
+        // node's captureChange for the reasoning.
         hist.past.push(hist.current);
         if (hist.past.length > NAV_HISTORY_LIMIT) hist.past.shift();
         hist.future = [];
         hist.current = next;
       }
+      bumpNavHistTick();
     };
     const scheduleClickCapture = () => {
       if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
@@ -36944,7 +37000,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         }
       } catch {}
     };
-  }, []);
+  }, [bumpNavHistTick]);
   // Same DOM-restore freeze fix as WorkflowPrototypeNode — see the long
   // comment on the prototype node's restoreEntry for the reasoning. We
   // navigate via location.replace only; same-URL "DOM-only" snapshots are
@@ -36976,11 +37032,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       if (hist.current) hist.future.push(hist.current);
       hist.current = prev;
       if (!curUrl || (prev.url !== curUrl && prev.url && prev.url !== "about:blank")) {
+        bumpNavHistTick();
         restoreEntry(prev);
         return;
       }
     }
-  }, [restoreEntry]);
+    bumpNavHistTick();
+  }, [restoreEntry, bumpNavHistTick]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
     const curUrl = (() => {
@@ -36991,11 +37049,21 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       if (hist.current) hist.past.push(hist.current);
       hist.current = next;
       if (!curUrl || (next.url !== curUrl && next.url && next.url !== "about:blank")) {
+        bumpNavHistTick();
         restoreEntry(next);
         return;
       }
     }
-  }, [restoreEntry]);
+    bumpNavHistTick();
+  }, [restoreEntry, bumpNavHistTick]);
+  // Disabled-state derivation for the html-asset chrome chevrons. See the
+  // matching block on the prototype node for the reasoning.
+  const _navTickDep = navHistTick; void _navTickDep;
+  const _curHrefForNav = (() => {
+    try { return htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.location.href; } catch { return null; }
+  })();
+  const canGoBack = navHistRef.current.past.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
+  const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
   // v3.3 — Long-running interactive HTML (a simulation runtime, an
   // interactive piece, a narrative experience runtime) owns its OWN state
   // and rAF loop inside the iframe. Auto-busting the iframe on every
@@ -37443,15 +37511,21 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ${(kind === "html" || kind === "html-set") && html`
           <${HoverTip}
             className="workflow-node-action workflow-node-action-nav"
-            tip="Back — step back through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+            tip=${canGoBack
+              ? "Back — step back through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+              : "Back — nothing to go back to. Navigate inside the iframe first."}
             ariaLabel="Back"
+            disabled=${!canGoBack}
             onClick=${(e) => { e.stopPropagation(); goBack(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Back}/><//>
           <${HoverTip}
             className="workflow-node-action workflow-node-action-nav"
-            tip="Forward — step forward through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+            tip=${canGoForward
+              ? "Forward — step forward through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
+              : "Forward — nothing to go forward to."}
             ariaLabel="Forward"
+            disabled=${!canGoForward}
             onClick=${(e) => { e.stopPropagation(); goForward(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Forward}/><//>
