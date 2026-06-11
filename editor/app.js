@@ -17699,14 +17699,20 @@ function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   const canvasEl = document.querySelector(".workflow-canvas-wrap");
   if (canvasEl) {
     const c = canvasEl.getBoundingClientRect();
-    // Entirely past the right edge OR entirely before the left edge → hide.
+    // Sides — partial overlap is OK; the chat-drawer (z 60) and the
+    // library column's z-stacking handle painting on top. Only hide when
+    // the bar is ENTIRELY past one side edge.
     if (barLeft  > c.right + SLACK) return true;
     if (barRight < c.left  - SLACK) return true;
-    // Vertical: bar bottom = barTop + 32 (chip height). Hide only when the
-    // whole bar sits above the canvas top.
-    const barTop    = rect.top - 40;
-    const barBottom = barTop + 32;
-    if (barBottom < c.top - SLACK) return true;
+    // Top — stricter than the sides because the workflow-bar (top nav:
+    // Daemon / CLI / Runs / Settings / Zoom) lives INSIDE workflow-root's
+    // stacking context and can't outrank the body-portaled chrome via
+    // z-index alone. So hide as soon as the bar's TOP edge would land in
+    // the top-nav strip (above the canvas-wrap's top), not just when the
+    // whole bar is above. SLACK leaves 6px of tolerance so a bar that
+    // sits exactly flush with the canvas top still renders.
+    const barTop = rect.top - 40;
+    if (barTop < c.top - SLACK) return true;
   }
   return false;
 }
