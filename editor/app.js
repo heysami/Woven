@@ -15365,23 +15365,25 @@ function ProjectsLanding({ info, projects, onReload }) {
                           <button
                             className="landing-card-star-btn"
                             title=${sp.exists
-                              ? `Open ${sp.path} in the live prototype viewer`
+                              ? `Open ${sp.path} in a new tab (raw source, no editor chrome)`
                               : `${sp.path} — file no longer on disk. Star kept so you can re-create it; click to unstar.`}
                             onClick=${(e) => {
                               e.stopPropagation();
                               if (!sp.exists) return;
-                              const url = new URL(window.location.href);
-                              url.searchParams.set("project", p.id);
-                              url.searchParams.set("view", "prototype");
-                              url.searchParams.set("prototype", sp.id);
-                              url.searchParams.delete("branch");
-                              url.searchParams.delete("branch_slug");
                               // v3.6 — Play from the landing always opens in a
                               // new tab. Earlier it replaced the landing in-
                               // place, which forced a full nav back through the
                               // shader-heavy landing every time the user wanted
                               // to compare prototypes.
-                              window.open(url.toString(), "_blank", "noopener");
+                              // v3.7 — Go straight to the source URL instead of
+                              // the editor's prototype-door view. The door
+                              // wrapped the same source in an iframe with a
+                              // back-chip + breadcrumb top bar; opening the
+                              // source directly drops that chrome so the
+                              // prototype is the only thing in the tab.
+                              const branchPath = sp.id.split("/").map(encodeURIComponent).join("/");
+                              const src = new URL(`/source/${branchPath}/?project=${encodeURIComponent(p.id)}`, window.location.href);
+                              window.open(src.toString(), "_blank", "noopener");
                             }}
                           >
                             <span className="landing-card-star-glyph"><${Icon.Play}/></span>
