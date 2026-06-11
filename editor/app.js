@@ -8044,6 +8044,14 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
   const [runs, setRuns] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const ref = useRef(null);
+  const panelRef = useRef(null);
+  // Trigger rect — recomputed each frame while the panel is open so the
+  // portaled dropdown stays glued to the button when the user scrolls /
+  // resizes / toggles fullscreen. Portaling is necessary because the panel
+  // would otherwise sit inside .workflow-bar (which lives inside the z-auto
+  // workflow-root stacking context), where the body-portaled floating node
+  // chrome (z 40) would paint over it.
+  const [triggerRect, setTriggerRect] = useState(null);
 
   const reload = useCallback(async () => {
     try {
@@ -8076,9 +8084,37 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
 
   useEffect(() => {
     if (!open) return;
-    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // Panel is portaled to body; the off-click handler must accept clicks
+    // both inside the trigger (toggles) and inside the portaled panel
+    // (rows, refresh) as "inside" so a click on a row doesn't immediately
+    // close the panel before the row's onClick fires.
+    const off = (e) => {
+      const insideTrigger = ref.current && ref.current.contains(e.target);
+      const insidePanel   = panelRef.current && panelRef.current.contains(e.target);
+      if (!insideTrigger && !insidePanel) setOpen(false);
+    };
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
+  }, [open]);
+  // rAF-tracked trigger rect — the portaled panel reads it to anchor itself
+  // just below the button. Only runs while open so the menu has zero cost
+  // when closed.
+  useEffect(() => {
+    if (!open) { setTriggerRect(null); return; }
+    let raf = 0; let last = null;
+    const tick = () => {
+      const el = ref.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.bottom !== r.bottom || last.right !== r.right) {
+          last = { top: r.top, right: r.right, bottom: r.bottom, left: r.left };
+          setTriggerRect(last);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [open]);
 
   // "Live" = an agent process that's actively processing (not done with its
@@ -8107,8 +8143,19 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
         ${!compact && html`<span className="runs-label">Runs</span>`}
         ${compact && html`<span className="tab-tip">${liveCount > 0 ? `${liveCount} active` : "Runs"}</span>`}
       </button>
-      ${open && html`
-        <div className="runs-panel">
+      ${open && triggerRect && createPortal(html`
+        <div
+          className="runs-panel"
+          ref=${panelRef}
+          style=${{
+            position: "fixed",
+            top: (triggerRect.bottom + 6) + "px",
+            right: (window.innerWidth - triggerRect.right) + "px",
+            // z 70 sits above the floating node chrome (40-50), the chat
+            // drawer (60), and matches the busy banner — the toolbar
+            // popover should never be painted over by canvas chrome.
+            zIndex: 70,
+          }}>
           <div className="runs-panel-head">
             <span>Agent runs</span>
             <button className="runs-refresh" onClick=${reload} title="Refresh">↻</button>
@@ -8172,7 +8219,7 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
             `;
           })}
         </div>
-      `}
+      `, document.body)}
     </div>
   `;
 }
