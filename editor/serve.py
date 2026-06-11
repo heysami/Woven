@@ -2615,6 +2615,28 @@ AGENT_BIN_ENV = {"claude": "CLAUDE_BIN", "codex": "CODEX_BIN"}
 # Choices (Claude Code 2.1): acceptEdits | auto | bypassPermissions | default | dontAsk | plan
 AGENT_PERMISSION_MODE_DEFAULT = os.environ.get("TH_PERMISSION_MODE") or "bypassPermissions"
 
+# Optional MCP servers the spawned `claude` subprocess can reach. The file
+# declares servers in Claude Code's `--mcp-config` format; the agent picks
+# them up only when both the file exists AND the listed `command` (e.g. npx)
+# is resolvable. Built-in WebFetch / WebSearch stay primary — these servers
+# are escalation paths (Chrome MCP for pages behind a login the user is
+# already authed to in their real browser; Figma MCP for design files).
+AGENT_MCP_CONFIG = os.environ.get("TH_MCP_CONFIG") or os.path.join(
+    INSTALL_ROOT, ".claude", "mcp-config.json"
+)
+
+
+def _mcp_config_spawn_args() -> list:
+    """Return `["--mcp-config", <path>]` if the config file exists, else `[]`.
+
+    Called by every claude spawn site (chat /__run, node ▶ Run, planner).
+    Silently skips when the file is absent so installs without MCP servers
+    wired don't fail with "config file not found" at spawn-time.
+    """
+    if AGENT_MCP_CONFIG and os.path.isfile(AGENT_MCP_CONFIG):
+        return ["--mcp-config", AGENT_MCP_CONFIG]
+    return []
+
 AGENT_DEFS = {
     "claude": {
         "bin": "claude",
@@ -2628,6 +2650,11 @@ AGENT_DEFS = {
         # narrates "Looks like the question prompt was dismissed…" before the
         # tool_result POST can land. With the tool disallowed the agent has to
         # phrase questions as plain text, which the composer handles naturally.
+        #
+        # `--mcp-config` is appended at spawn-time (see _build_claude_args)
+        # because the file may not exist on every install — we only pass the
+        # flag when it does, so dev installs without MCP servers wired don't
+        # fail the spawn with a missing-file error.
         "args": [
             "-p",
             "--input-format", "stream-json",
@@ -4709,6 +4736,34 @@ absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 """
 
 
+# Appended to the system prompt when AGENT_MCP_CONFIG is wired in. Tells the
+# agent the routing policy: built-in WebFetch / WebSearch are primary; the
+# MCP servers are escalation paths. Without this guidance the agent reaches
+# for `chrome` on every web task and burns time spinning up the browser.
+MCP_ROUTING_PROMPT = """
+
+## Web + design tooling
+
+You have built-in `WebFetch` and `WebSearch`, plus two optional MCP servers \
+exposed via `--mcp-config`:
+
+- `mcp__chrome__*` — Chrome DevTools MCP. Attaches to the user's real Chrome \
+  (started with `--remote-debugging-port=9222`) and reuses their logged-in \
+  profile. Use ONLY when `WebFetch` returns 401 / 403 / a login wall, or the \
+  page is JS-rendered and the fetched HTML is empty. First call may fail with \
+  "no Chrome instance on debugging port" — surface that error to the user \
+  verbatim so they can start Chrome with the flag.
+- `mcp__figma__*` — Figma's official hosted MCP. Use when the user mentions \
+  Figma, pastes a figma.com URL, or asks to read / generate a design. First \
+  call triggers an OAuth flow in the user's browser; surface any auth error \
+  to the user verbatim.
+
+Default to `WebFetch` for any URL — it's faster, anonymous, no setup. \
+Only escalate to `mcp__chrome__*` after `WebFetch` actually fails on this \
+URL, not preemptively.
+"""
+
+
 # Env vars Claude Code Desktop / IDE plugins leak into child processes that
 # break standalone `claude` invocations. Symptoms:
 #   • ANTHROPIC_API_KEY="" — CLI sees "API key is set", sends `Authorization:
@@ -5326,6 +5381,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._cc_skills_list()
         if url_path == "/__prototype_catalog":
             return self._prototype_catalog()
+        if url_path == "/__mcp_catalog":
+            return self._mcp_catalog()
         if url_path == "/__workspace":
             return self._workspace_info()
         if url_path == "/__projects":
@@ -6281,6 +6338,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # user's personal /prototype skill used to override visual-orchestrator
         # by telling the agent to use placeholder rectangles instead.
         spawn_args += ["--disable-slash-commands"]
+        spawn_args += _mcp_config_spawn_args()
         # v3.1 — Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
         # *.html write until the agent has called Task with
         # subagent_type='visual-orchestrator'. Soft preamble rules ("you MUST
@@ -6296,6 +6354,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
         if WORKSPACE_DIR and project_root != INSTALL_ROOT:
             sys_prompt += WORKSPACE_LAYOUT_PROMPT
+        if _mcp_config_spawn_args():
+            sys_prompt += MCP_ROUTING_PROMPT
         # v2.50 — bake the capabilities catalog into the preamble so the
         # spawned subagent knows what the app supports (image providers,
         # subagent drawers, endpoints, node kinds). Without this, agents
@@ -9227,6 +9287,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt_parts.append(QUESTION_FORM_SYSTEM_PROMPT)
             if WORKSPACE_DIR and project_root != INSTALL_ROOT:
                 sys_prompt_parts.append(WORKSPACE_LAYOUT_PROMPT)
+            if _mcp_config_spawn_args():
+                sys_prompt_parts.append(MCP_ROUTING_PROMPT)
             sys_prompt = "\n\n".join(p.strip() for p in sys_prompt_parts if p and p.strip())
             spawn_args = [
                 "--print",
@@ -9241,6 +9303,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "--add-dir", project_root,
                 "--append-system-prompt", sys_prompt,
             ]
+            spawn_args += _mcp_config_spawn_args()
             stdin_pipe = subprocess.PIPE
             prompt_stdin = _claude_user_frame(brief)
             prompt_argv = None
@@ -12154,6 +12217,68 @@ class H(http.server.SimpleHTTPRequestHandler):
                 })
         return self._reply(200, {"count": len(out), "skills": out, "root": user_root})
 
+    def _mcp_catalog(self):
+        """GET /__mcp_catalog — emit the MCP servers shipped with this repo.
+
+        Reads .claude/mcp-catalog.json (display metadata) and cross-checks
+        whether each server is currently wired into .claude/mcp-config.json
+        (the runtime config Claude Code reads via --mcp-config). The two
+        files are deliberately separate: mcp-config.json stays a strict
+        Claude-Code payload (no extra keys), mcp-catalog.json carries the
+        human-facing labels / when-to-use / requires notes the System tab
+        renders. Returned shape:
+            {
+              servers:   [{id, label, icon, purpose, whenToUse, package,
+                           transport, command, toolPrefix, requires:[..],
+                           firstCallNote, wired: <bool>}],
+              configPath:  <absolute path to mcp-config.json>,
+              configured:  <bool>     # config file exists + has ≥1 server
+              configuredCount: <int>  # # of servers in the runtime config
+              catalogPath: <absolute path to mcp-catalog.json>
+              note:        <str|None> # top-level _note from catalog
+            }
+        """
+        catalog_path = os.path.join(INSTALL_ROOT, ".claude", "mcp-catalog.json")
+        catalog = {"servers": [], "_note": None}
+        if os.path.isfile(catalog_path):
+            try:
+                with open(catalog_path, "r", encoding="utf-8") as f:
+                    catalog = json.load(f)
+            except Exception:
+                catalog = {"servers": [], "_note": None}
+
+        # Cross-reference with mcp-config.json to compute the `wired` flag
+        # per server. We don't fail if the file is absent — the catalog is
+        # still useful as a "here's what we ship" reference.
+        wired_ids = set()
+        configured_count = 0
+        if AGENT_MCP_CONFIG and os.path.isfile(AGENT_MCP_CONFIG):
+            try:
+                with open(AGENT_MCP_CONFIG, "r", encoding="utf-8") as f:
+                    cfg = json.load(f) or {}
+                servers = cfg.get("mcpServers") or {}
+                wired_ids = set(servers.keys())
+                configured_count = len(wired_ids)
+            except Exception:
+                pass
+
+        out_servers = []
+        for s in (catalog.get("servers") or []):
+            if not isinstance(s, dict):
+                continue
+            entry = dict(s)
+            entry["wired"] = entry.get("id") in wired_ids
+            out_servers.append(entry)
+
+        return self._reply(200, {
+            "servers":         out_servers,
+            "configPath":      AGENT_MCP_CONFIG,
+            "configured":      configured_count > 0,
+            "configuredCount": configured_count,
+            "catalogPath":     catalog_path,
+            "note":            catalog.get("_note"),
+        })
+
     def _cc_skills_upload(self):
         """POST /__cc_skills/upload — multipart body. Each part is either a
         SKILL.md (installed as <harness_skills>/<slug>/SKILL.md) or a .zip
@@ -13231,6 +13356,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # auto-load and override the visual-orchestrator pipeline. Subagents
             # dispatched via the Task tool are unaffected.
             spawn_args += ["--disable-slash-commands"]
+            spawn_args += _mcp_config_spawn_args()
             # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
@@ -13292,6 +13418,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 sys_prompt = sys_prompt + "\n\n" + capabilities_preamble()
             except Exception:
                 pass
+            if _mcp_config_spawn_args():
+                sys_prompt = sys_prompt + MCP_ROUTING_PROMPT
             spawn_args += ["--append-system-prompt", sys_prompt]
         elif agent_id == "codex":
             # v3.5 — Codex chats get the SAME capabilities preamble as Claude
