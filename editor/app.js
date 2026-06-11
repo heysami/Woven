@@ -17653,9 +17653,14 @@ function installPickOverlay(iframeEl, onPick) {
    Existing patch blocks are replaced (we match on the `data-th-patch`
    attribute) so re-saves don't accumulate scripts. */
 function _injectInspectorPatch(html, ops) {
-  if (!html || !ops || !ops.length) return html;
+  if (!html) return html;
+  // Always strip any prior patch block first — otherwise a save with no
+  // pending ops leaves a stale (and possibly buggy, see commit history)
+  // script in place. Strip is unconditional; re-inject is conditional.
+  const stripPrior = (s) => s.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
+  if (!ops || !ops.length) return stripPrior(html);
   let opsJson;
-  try { opsJson = JSON.stringify(ops); } catch { return html; }
+  try { opsJson = JSON.stringify(ops); } catch { return stripPrior(html); }
   // Build the runtime block. Kept inline so the saved file is self-contained
   // and doesn't depend on an extra sidecar fetch.
   const script = [
@@ -17663,7 +17668,7 @@ function _injectInspectorPatch(html, ops) {
     '(function(){',
     'var OPS=', opsJson, ';',
     'if(!OPS||!OPS.length)return;',
-    'var applying=false;',
+    'var applying=false;var mo=null;',
     'function $(s){try{return document.querySelector(s);}catch(_){return null;}}',
     'function applyOne(op){',
     '  var el=$(op.selector);if(!el)return;',
@@ -17673,9 +17678,34 @@ function _injectInspectorPatch(html, ops) {
     '    if(typeof op.left==="number")el.style.left=op.left+"px";',
     '    if(typeof op.top==="number")el.style.top=op.top+"px";',
     '  } else if(op.type==="reorder"&&op.anchor){',
-    '    var sib=$(op.anchor);if(!sib||!sib.parentElement||sib.parentElement!==el.parentElement)return;',
-    '    if(op.position==="before")sib.parentElement.insertBefore(el,sib);',
-    '    else sib.parentElement.insertBefore(el,sib.nextSibling);',
+    // v3.5.12 — Use the op key (set on el + sib at edit time) for stable
+    // identity. Without this, selectors swap roles after the move and the
+    // next observer fire reverts. Fall back to selectors when keys aren't on
+    // the DOM yet (first apply, or after a React unmount/remount). Re-stamp
+    // keys after every successful apply so subsequent fires use the stable
+    // path. Idempotency check is meaningful only with stable identity.
+    '    var elFound=null,sib=null;',
+    '    if(op.key){',
+    '      try{elFound=document.querySelector("[data-th-rkey-el=\\"".concat(op.key,"\\"]"));}catch(_){}',
+    '      try{sib=document.querySelector("[data-th-rkey-sib=\\"".concat(op.key,"\\"]"));}catch(_){}',
+    '    }',
+    '    if(!elFound)elFound=el;',
+    '    if(!sib)sib=$(op.anchor);',
+    '    if(!elFound||!sib||!sib.parentElement||sib.parentElement!==elFound.parentElement)return;',
+    '    if(op.position==="before"){',
+    '      if(elFound.nextElementSibling===sib){',
+    '        if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}',
+    '        return;',
+    '      }',
+    '      sib.parentElement.insertBefore(elFound,sib);',
+    '    }else{',
+    '      if(sib.nextElementSibling===elFound){',
+    '        if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}',
+    '        return;',
+    '      }',
+    '      sib.parentElement.insertBefore(elFound,sib.nextSibling);',
+    '    }',
+    '    if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}',
     '  } else if(op.type==="duplicate"){',
     '    var sib2=el.nextElementSibling;',
     '    var hasClone=sib2&&sib2.getAttribute("data-th-clone-of")===op.selector;',
@@ -17684,16 +17714,23 @@ function _injectInspectorPatch(html, ops) {
     '    if(el.parentElement)el.parentElement.removeChild(el);',
     '  }',
     '}',
+    // applying guards against synchronous re-entry, but MutationObserver
+    // callbacks fire on a microtask AFTER applying is reset — so the flag
+    // alone leaks. Drain mo.takeRecords() inside finally{} so the queued
+    // mutations from our own writes don't trigger the observer callback.
     'function applyAll(){',
     '  if(applying)return;applying=true;',
-    '  try{for(var i=0;i<OPS.length;i++)applyOne(OPS[i]);}finally{applying=false;}',
+    '  try{for(var i=0;i<OPS.length;i++)applyOne(OPS[i]);}',
+    '  finally{if(mo){try{mo.takeRecords();}catch(_){}}applying=false;}',
     '}',
     'function arm(){',
-    '  applyAll();',
+    // Construct observer BEFORE first applyAll so the initial apply's
+    // mutations also get drained.
     '  try{',
-    '    var mo=new MutationObserver(function(){if(!applying)applyAll();});',
+    '    mo=new MutationObserver(function(){if(!applying)applyAll();});',
     '    mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:["style","class"]});',
     '  }catch(_){}',
+    '  applyAll();',
     '}',
     'if(document.readyState==="complete")setTimeout(arm,100);',
     'else window.addEventListener("load",function(){setTimeout(arm,100);});',
@@ -17701,7 +17738,7 @@ function _injectInspectorPatch(html, ops) {
     '</script>',
   ].join("");
   // Replace any prior patch block (so re-saves don't accumulate).
-  const stripped = html.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
+  const stripped = stripPrior(html);
   // Inject right before the closing </body>. Fall back to before </html>,
   // then to the end of the string for hand-edited files.
   const bodyClose = /<\/body>/i;
@@ -22789,31 +22826,58 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const backward = (direction === "up" || direction === "left");
     let anchor = null;
     let position = null;
+    // v3.5.11 — Capture selectors BEFORE mutating. elementCssPath uses
+    // :nth-of-type(N); a move changes el's index AND can shift its anchor's
+    // index (forward path moves the anchor under el's old position). Capture
+    // first; on reload the replay script runs against pre-move React DOM, so
+    // it MUST find el + anchor at their pre-move positions.
+    const elSelectorPre     = elementCssPath(el);
+    let   anchorSelectorPre = "";
+    // v3.5.12 — Selectors alone aren't identity-stable for reorder. After the
+    // first replay applies the move, the elements occupy each other's pre-move
+    // :nth-of-type slots, so the SAME selectors now resolve crossways. Any
+    // subsequent MutationObserver fire (next React update) would re-run
+    // applyOne with swapped element handles → un-do the move. To break the
+    // symmetry, stamp a unique key on BOTH el and anchor so the replay can
+    // re-locate the SAME nodes regardless of position, and do an idempotency
+    // check ("is el already adjacent to sib in the target order?") that's
+    // meaningful against the real identities.
+    //
+    // The key persists into the saved file via pickSerializeClean (which
+    // preserves attributes) and survives React state-driven re-renders that
+    // keep DOM identity. Unmount/remount re-fall-back to selectors for the
+    // first apply, then the patch script re-annotates with the same key.
+    const opKey = `r${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+    try { el.setAttribute("data-th-rkey-el", opKey); } catch {}
     if (backward) {
       const prev = el.previousElementSibling;
       if (!prev) return 0;
       anchor = prev;
       position = "before";   // place el before prev
+      anchorSelectorPre = elementCssPath(prev);
+      try { prev.setAttribute("data-th-rkey-sib", opKey); } catch {}
       parent.insertBefore(el, prev);
     } else {
       const next = el.nextElementSibling;
       if (!next) return 0;
       anchor = next;
       position = "after";    // place el after next (after the move below, next sits before el)
+      anchorSelectorPre = elementCssPath(next);
+      try { next.setAttribute("data-th-rkey-sib", opKey); } catch {}
       parent.insertBefore(next, el);
     }
     // v3.5.10 — Stage with a reorder op record. selector + anchor + position
     // let the post-mount script re-apply the move against the post-React
     // DOM, even when React's render put the element back in its original
-    // source order. We compute the anchor selector BEFORE the local mutation
-    // would invalidate it (anchor's CSS path is stable across re-renders).
+    // source order.
     try {
       const ifr = pickerIframeRef.current;
       if (ifr) stageInspectorEdit(ifr, doc, {
         type:     "reorder",
-        selector: elementCssPath(el),
-        anchor:   elementCssPath(anchor),
+        selector: elSelectorPre,
+        anchor:   anchorSelectorPre,
         position,
+        key:      opKey,
       });
     } catch {}
     flashPickOp("done", `Moved ${direction}`);
@@ -34688,12 +34752,12 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // capture path) have nothing to restore and would no-op restoreEntry,
   // which would look like the Back button is broken — skip them.
   //
-  // Final fallback: if past[] is exhausted and the iframe is currently
-  // orphaned (URL doesn't match node.lockedState), route Back to the
-  // locked URL. Without this, a user who navigated off-lock and triggered
-  // the orphan banner has no way out via Back — clicking it does nothing,
-  // which reads as "the page is frozen." Same destination as the Return
-  // button; Back just becomes a sensible escape hatch.
+  // Final fallback when past is exhausted: navigate to the locked URL,
+  // OR reload the current page if there is none. Many prototypes do their
+  // in-page navigation via React state / show-hide DOM mutation (no URL
+  // change), so our URL-only tracker has nothing to step through. In that
+  // case, a Back click that reloads the iframe gives the user a visible
+  // "reset to the prototype's initial state" action instead of nothing.
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
     const f = iframeRef.current;
@@ -34704,9 +34768,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       const prev = hist.past.pop();
       if (hist.current) hist.future.push(hist.current);
       hist.current = prev;
-      // Skip same-URL entries (legacy DOM-only snapshots) AND any
-      // about:blank entries that an older snapshotState may have
-      // recorded before bailing on the pre-src state.
       if (!curUrl || (prev.url !== curUrl && prev.url && prev.url !== "about:blank")) {
         bumpNavHistTick();
         restoreEntry(prev);
@@ -34714,18 +34775,20 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       }
     }
     bumpNavHistTick();
-    if (node.lockedState && f && f.contentWindow) {
-      try {
+    if (!f || !f.contentWindow) return;
+    try {
+      if (node.lockedState) {
         const lockedHref = new URL(
           apiUrl(node.lockedState.pathname) + (node.lockedState.hash || ""),
           f.contentWindow.location.href
         ).href;
-        if (lockedHref !== curUrl) {
-          suppressNavTrackRef.current = true;
-          f.contentWindow.location.replace(lockedHref);
-        }
-      } catch {}
-    }
+        suppressNavTrackRef.current = true;
+        f.contentWindow.location.replace(lockedHref);
+      } else {
+        suppressNavTrackRef.current = true;
+        f.contentWindow.location.reload();
+      }
+    } catch {}
   }, [restoreEntry, node.lockedState, bumpNavHistTick]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
@@ -34745,29 +34808,17 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     bumpNavHistTick();
   }, [restoreEntry, bumpNavHistTick]);
 
-  // Disabled-state derivation for the chrome Back / Forward chevrons.
-  // navHistTick is a re-render trigger seeded by captureChange + goBack /
-  // goForward — without it these reads would stay stale on a ref. Back is
-  // enabled when there's anywhere reachable: a non-blank past entry, OR
-  // the iframe is orphaned and the lock URL is still reachable. Forward
-  // mirrors past, sans the lock fallback. ESLint will complain about the
-  // unused navHistTick in deps — that's intentional, it forces the recompute.
+  // Forward is the only chevron we disable. Back is always live — even
+  // when our URL tracker has nothing to step back to, Back falls through
+  // to reloading the iframe to its locked URL (the "reset the prototype"
+  // gesture), which is a useful action for DOM-only show/hide prototypes
+  // whose internal navigation never touches the URL. Forward has no
+  // analogous fallback (there's no canonical "forward" reset state), so
+  // we leave its disabled state in place when future[] is empty.
   const _navTickDep = navHistTick; void _navTickDep;
   const _curHrefForNav = (() => {
     try { return iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.location.href; } catch { return null; }
   })();
-  const canGoBack = (
-    navHistRef.current.past.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank")
-    || (!!node.lockedState && !!_curHrefForNav && (() => {
-      try {
-        const lockedHref = new URL(
-          apiUrl(node.lockedState.pathname) + (node.lockedState.hash || ""),
-          _curHrefForNav
-        ).href;
-        return lockedHref !== _curHrefForNav;
-      } catch { return false; }
-    })())
-  );
   const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
 
   // Header drag — divide screen delta by zoom for world coordinates. We
@@ -35140,11 +35191,8 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         <span className="workflow-node-glyph"><${Icon.Play}/></span>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-nav"
-          tip=${canGoBack
-            ? "Back — step back through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
-            : "Back — nothing to go back to. Navigate inside the prototype first, or navigate away from the locked screen."}
+          tip="Back — step back through this prototype's nav history, or reload to the locked screen when there's nothing to step back to."
           ariaLabel="Back"
-          disabled=${!canGoBack}
           onClick=${(e) => { e.stopPropagation(); goBack(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Back}/><//>
@@ -37024,8 +37072,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   }, []);
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
+    const f = htmlIframeRef.current;
     const curUrl = (() => {
-      try { return htmlIframeRef.current.contentWindow.location.href; } catch { return null; }
+      try { return f && f.contentWindow.location.href; } catch { return null; }
     })();
     while (hist.past.length) {
       const prev = hist.past.pop();
@@ -37038,6 +37087,16 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       }
     }
     bumpNavHistTick();
+    // Past exhausted — reload the iframe so the user always gets visible
+    // feedback. DOM-only prototypes (React state, show/hide) don't change
+    // the URL, so URL-only history has nothing for Back to step through;
+    // reloading resets the prototype to its initial state.
+    if (f && f.contentWindow) {
+      try {
+        suppressNavTrackRef.current = true;
+        f.contentWindow.location.reload();
+      } catch {}
+    }
   }, [restoreEntry, bumpNavHistTick]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
@@ -37056,13 +37115,12 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     }
     bumpNavHistTick();
   }, [restoreEntry, bumpNavHistTick]);
-  // Disabled-state derivation for the html-asset chrome chevrons. See the
-  // matching block on the prototype node for the reasoning.
+  // Only Forward gets a disabled state on the html-asset chrome —
+  // see the matching block on the prototype node for the reasoning.
   const _navTickDep = navHistTick; void _navTickDep;
   const _curHrefForNav = (() => {
     try { return htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.location.href; } catch { return null; }
   })();
-  const canGoBack = navHistRef.current.past.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
   const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
   // v3.3 — Long-running interactive HTML (a simulation runtime, an
   // interactive piece, a narrative experience runtime) owns its OWN state
@@ -37511,11 +37569,8 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ${(kind === "html" || kind === "html-set") && html`
           <${HoverTip}
             className="workflow-node-action workflow-node-action-nav"
-            tip=${canGoBack
-              ? "Back — step back through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
-              : "Back — nothing to go back to. Navigate inside the iframe first."}
+            tip="Back — step back through this asset's nav history, or reload the iframe when there's nothing to step back to."
             ariaLabel="Back"
-            disabled=${!canGoBack}
             onClick=${(e) => { e.stopPropagation(); goBack(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Back}/><//>
