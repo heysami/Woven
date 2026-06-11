@@ -18650,6 +18650,118 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
    bounding rect and positions the badge fixed at its top-right, offset
    above the node. This survives canvas pan/zoom because we read the
    screen-space rect every frame — the badge follows the node exactly. */
+
+/* v3.5.7 — Sibling component for the Save / Revert pill. Previously baked
+   into WorkflowNodeSelectBadge, which sharing its early-return on `!rect`
+   killed the pill whenever the badge's rAF hadn't ticked yet (initial
+   mount → no rect → return null → no pill ever). Splitting lets the pill
+   own its own pendingCount + rect tracking and render the moment there
+   are staged edits, regardless of badge state.
+
+   Position: anchored by its RIGHT edge, ideal 6px left of the node's
+   top-right corner. When the node bleeds past the canvas wrap, the pill
+   clamps so its right edge stays inside the wrap — Save / Revert is
+   always reachable. Top clamps so the pill never paints over the top
+   nav. If the host node isn't found yet (initial mount before the
+   prototype has laid out), the pill renders at the wrap's top-right
+   corner as a safe fallback. */
+function WorkflowNodeStagePill({ nodeId }) {
+  const [pendingCount, setPendingCount] = useState(() => {
+    try { return (window.__thPendingInspectorEdits?.byNode?.[nodeId]) || 0; } catch { return 0; }
+  });
+  const [rect, setRect] = useState(null);
+  useEffect(() => {
+    const onPending = (e) => {
+      const byNode = e && e.detail && e.detail.byNode || {};
+      setPendingCount(byNode[nodeId] || 0);
+    };
+    window.addEventListener("th:pending-inspector-edits-changed", onPending);
+    return () => window.removeEventListener("th:pending-inspector-edits-changed", onPending);
+  }, [nodeId]);
+  // Track the host node's screen rect every frame so the pill follows the
+  // node through pan/zoom (same pattern as WorkflowNodeSelectBadge).
+  useEffect(() => {
+    if (pendingCount <= 0) { setRect(null); return; }
+    let raf = 0;
+    let last = null;
+    const tick = () => {
+      const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      if (node) {
+        const r = node.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.right !== r.right
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, right: r.right, width: r.width, height: r.height };
+          setRect(last);
+        }
+      } else if (last) {
+        last = null;
+        setRect(null);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeId, pendingCount]);
+  if (pendingCount <= 0) return null;
+  const SLACK = 6;
+  const wrapEl   = document.querySelector(".workflow-canvas-wrap");
+  const wrapRect = wrapEl ? wrapEl.getBoundingClientRect()
+                          : { left: 0, right: window.innerWidth, top: 0 };
+  // If no rect yet, fall back to the wrap's top-right corner so the user
+  // can still hit Save / Revert. Otherwise anchor by the right edge 6px
+  // left of where the badge would sit (rect.right - 32), clamping inside
+  // the wrap when the node bleeds past it.
+  let pillRight, pillTop;
+  if (rect) {
+    const idealBadgeLeft = rect.right - 32;
+    pillRight = Math.max(
+      window.innerWidth - idealBadgeLeft + SLACK,
+      window.innerWidth - wrapRect.right + SLACK,
+    );
+    pillTop = Math.max(rect.top - 40, wrapRect.top + SLACK);
+  } else {
+    pillRight = window.innerWidth - wrapRect.right + SLACK;
+    pillTop   = wrapRect.top + SLACK;
+  }
+  const pillStyle = {
+    position: "fixed",
+    top:   pillTop   + "px",
+    right: pillRight + "px",
+    zIndex: 40,
+  };
+  const onSaveClick = (e) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent("th:staged-inspector-save"));
+  };
+  const onRevertClick = (e) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent("th:staged-inspector-revert"));
+  };
+  return createPortal(html`
+    <div
+      className="workflow-node-stage-pill"
+      data-node-id=${nodeId}
+      style=${pillStyle}
+      onMouseDown=${(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="workflow-node-stage-btn workflow-node-stage-revert"
+        onClick=${onRevertClick}
+        onMouseDown=${(e) => e.stopPropagation()}
+        title=${"Discard " + pendingCount + " unsaved edit" + (pendingCount === 1 ? "" : "s")}
+      >Revert</button>
+      <button
+        type="button"
+        className="workflow-node-stage-btn workflow-node-stage-save"
+        onClick=${onSaveClick}
+        onMouseDown=${(e) => e.stopPropagation()}
+        title=${"Save " + pendingCount + " edit" + (pendingCount === 1 ? "" : "s") + " to disk"}
+      >Save changes${pendingCount > 1 ? ` (${pendingCount})` : ""}</button>
+    </div>
+  `, document.body);
+}
+
 function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // v3.2.5 — Universal pick-mode. `active` is true when ANY node activated
   // pick-mode, not just `nodeId`. The overlay now installs on every eligible
@@ -18826,48 +18938,15 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // empty-canvas click → start marquee + clear selection. Stamping the
   // owning node's id here makes closest() resolve to the badge and the
   // wrap correctly keeps the node selected.
-  // v3.5.6 — Save / Revert pill anchors to the visible canvas wrap, not
-  // strictly to the badge. Ideal: 6px to the LEFT of the badge (right-edge
-  // anchor at window.innerWidth - badgeLeft + 6). When the badge bleeds
-  // past the wrap right edge, the pill clamps so its right edge sits inside
-  // the canvas. Vertical clamps so the pill never paints over the top nav.
-  // Together this guarantees the user can ALWAYS reach Save / Revert as long
-  // as there are staged edits — even when the node + badge are off-canvas.
-  const SLACK = 6;
-  const wrapEl   = document.querySelector(".workflow-canvas-wrap");
-  const wrapRect = wrapEl ? wrapEl.getBoundingClientRect()
-                          : { left: 0, right: window.innerWidth, top: 0 };
-  const idealPillRight = window.innerWidth - badgeLeft + SLACK;
-  const minPillRight   = window.innerWidth - wrapRect.right + SLACK;
-  const pillRight      = Math.max(idealPillRight, minPillRight);
-  const pillTop        = Math.max(badgeTop, wrapRect.top + SLACK);
-  const pillStyle = {
-    position: "fixed",
-    top:   pillTop   + "px",
-    right: pillRight + "px",
-    // Matches the badge — under the chat-drawer (60) so the right panel
-    // covers the pill when a node sits at the canvas edge.
-    zIndex: 40,
-  };
-  const onSaveClick = (e) => {
-    e.stopPropagation();
-    window.dispatchEvent(new CustomEvent("th:staged-inspector-save"));
-  };
-  const onRevertClick = (e) => {
-    e.stopPropagation();
-    window.dispatchEvent(new CustomEvent("th:staged-inspector-revert"));
-  };
-  // v3.5.6 — Render the badge and the Save/Revert pill as INDEPENDENT
-  // pieces. Bail only when EVERY piece would be invisible. The badge hides
-  // when its anchor is fully off the canvas (shouldHideNodeChrome); the
-  // pill always shows when there are pending edits because its position is
-  // clamped inside the canvas wrap above.
-  const showBadge = !badgeHidden;
-  const showPill  = pendingCount > 0;
-  if (!showBadge && !showPill) return null;
+  // v3.5.7 — Pill moved out to WorkflowNodeStagePill (sibling component).
+  // Badge is back to its plain shape: pick chip + tooltip only. Hide when
+  // shouldHideNodeChrome says the badge is fully off the canvas; the pill
+  // doesn't share this fate anymore — it tracks its own rect and renders
+  // independently the moment pendingCount > 0.
+  if (badgeHidden) return null;
   return createPortal(html`
     <${React.Fragment}>
-      ${showBadge && html`<button
+      <button
         className=${"workflow-node-select-badge" + (active ? " is-active" : "")}
         data-node-id=${nodeId}
         style=${style}
@@ -18878,31 +18957,8 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
         onFocus=${placeTip}
         onBlur=${clearTip}
         aria-label="Pick element"
-      ><${Icon.PickEl}/></button>`}
-      ${showPill && html`
-        <div
-          className="workflow-node-stage-pill"
-          data-node-id=${nodeId}
-          style=${pillStyle}
-          onMouseDown=${(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="workflow-node-stage-btn workflow-node-stage-revert"
-            onClick=${onRevertClick}
-            onMouseDown=${(e) => e.stopPropagation()}
-            title=${"Discard " + pendingCount + " unsaved edit" + (pendingCount === 1 ? "" : "s")}
-          >Revert</button>
-          <button
-            type="button"
-            className="workflow-node-stage-btn workflow-node-stage-save"
-            onClick=${onSaveClick}
-            onMouseDown=${(e) => e.stopPropagation()}
-            title=${"Save " + pendingCount + " edit" + (pendingCount === 1 ? "" : "s") + " to disk"}
-          >Save changes${pendingCount > 1 ? ` (${pendingCount})` : ""}</button>
-        </div>
-      `}
-      ${showBadge && tipBubble}
+      ><${Icon.PickEl}/></button>
+      ${tipBubble}
     <//>
   `, document.body);
 }
@@ -33846,6 +33902,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
       />
 
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+      <${WorkflowNodeStagePill} nodeId=${node.id}/>
       ${selected && html`<${WorkflowNodeTopActions}
         nodeId=${node.id}
         selected=${selected}
@@ -34988,6 +35045,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             (returns null) when neither selected nor active, so the "no
             pick-mode + not selected" case is unchanged. */ ""}
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+      <${WorkflowNodeStagePill} nodeId=${node.id}/>
       ${selected && html`<${WorkflowNodeTopActions}
         nodeId=${node.id}
         selected=${selected}
@@ -37420,7 +37478,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             mounts whenever the asset is picker-eligible (HTML asset bound
             to a real file), regardless of `selected`. The badge's own
             visibility logic handles the actual hide/show. */ ""}
-      ${(kind === "html" || kind === "html-set") && isFileRef && !isInlinePath && html`<${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>`}
+      ${(kind === "html" || kind === "html-set") && isFileRef && !isInlinePath && html`<${React.Fragment}>
+        <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+        <${WorkflowNodeStagePill} nodeId=${node.id}/>
+      <//>`}
       ${selected && html`<${WorkflowNodeTopActions}
         nodeId=${node.id}
         selected=${selected}
@@ -43769,6 +43830,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
 
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+      <${WorkflowNodeStagePill} nodeId=${node.id}/>
       ${selected && html`<${WorkflowNodeTopActions}
         nodeId=${node.id}
         selected=${selected}
