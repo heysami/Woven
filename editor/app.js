@@ -19194,6 +19194,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     window.addEventListener("th:set-canvas-selection", onSetSel);
     return () => window.removeEventListener("th:set-canvas-selection", onSetSel);
   }, []);
+  // Swallow zoom gestures (Cmd/Ctrl + wheel, or trackpad pinch — which the
+  // browser surfaces as wheel events with ctrlKey:true) anywhere OUTSIDE
+  // the canvas-wrap. Without this, pinching on the top nav, library
+  // column, or chat-drawer triggers the browser's page-level zoom, which
+  // scales the whole editor chrome (toolbar, panels, indicators) in a way
+  // the layout was never designed for. The canvas-wrap has its own
+  // preventDefault'd wheel handler that drives `setZoom`, so canvas pinch
+  // still zooms the canvas itself.
+  useEffect(() => {
+    const onWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      // Inside the canvas-wrap → let the canvas's own handler decide.
+      if (t.closest(".workflow-canvas-wrap")) return;
+      // Anywhere else (top nav, library column, chat drawer, runs popover,
+      // settings dialog, etc.) — block the browser's default page zoom.
+      e.preventDefault();
+    };
+    document.addEventListener("wheel", onWheel, { passive: false });
+    return () => document.removeEventListener("wheel", onWheel);
+  }, []);
   const selectedNodeId = useMemo(() => {
     for (const id of selectedNodeIds) return id;
     return null;
@@ -27125,6 +27147,60 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "game-experience").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="game"
+                zoom=${zoom}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "scrapbook-experience").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="scrapbook"
+                zoom=${zoom}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "interactive-polish").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="polish"
+                zoom=${zoom}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "asset").map(n => html`
               <${WorkflowAssetNode}
                 key=${n.id}
@@ -28866,20 +28942,21 @@ function zoomMirrorFontLoaders(parentDoc, nestedDoc) {
   });
 }
 
-function zoomIsReactManaged(el) {
-  if (!el) return false;
-  try {
-    return Object.keys(el).some(k => k.startsWith("__reactProps$") || k.startsWith("__reactFiber$"));
-  } catch { return false; }
+// v3.5.3 — React-managed detection neutralised per user request. The user's
+// downstream reconciliation pipeline handles persistence into the App source,
+// so every structural op (Move / Reorder / Duplicate / Paste / Delete / etc.)
+// in zoom-mode AND pick-mode should attempt the DOM mutation as it did
+// before commit 397a34a. Both helpers now return false unconditionally;
+// every caller that gated on them is implicitly re-enabled. The function
+// shape + name + signature are preserved so flipping the React guard back on
+// is a single-line change here if the workflow ever changes. The footer
+// "React-managed page" warning chip (driven by isReactPage → zoomDocHasReact)
+// also goes silent because zoomDocHasReact returns false now.
+function zoomIsReactManaged(/* el */) {
+  return false;
 }
 
-function zoomDocHasReact(doc) {
-  if (!doc || !doc.body) return false;
-  if (doc.querySelector("[data-reactroot]")) return true;
-  const sample = doc.body.querySelectorAll("div, main, section, header, footer, button");
-  for (let i = 0; i < Math.min(30, sample.length); i++) {
-    if (zoomIsReactManaged(sample[i])) return true;
-  }
+function zoomDocHasReact(/* doc */) {
   return false;
 }
 
@@ -33147,14 +33224,23 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   const assetId = family === "simulation" ? node.simId
                 : family === "interactive" ? node.imId
                 : family === "narrative"   ? node.nxId
+                : family === "game"        ? node.gameId
+                : family === "scrapbook"   ? node.sbId
+                : family === "polish"      ? node.polishId
                 : null;
   const folder  = family === "simulation" ? "simulations"
                 : family === "interactive" ? "interactives"
                 : family === "narrative"   ? "narratives"
+                : family === "game"        ? "games"
+                : family === "scrapbook"   ? "scrapbooks"
+                : family === "polish"      ? "polish"
                 : "";
   const familyLabel = family === "simulation" ? "sim"
                     : family === "interactive" ? "im"
                     : family === "narrative"   ? "nx"
+                    : family === "game"        ? "game"
+                    : family === "scrapbook"   ? "sb"
+                    : family === "polish"      ? "polish"
                     : family;
 
   // Build iframe src targeting the runtime.html the orchestrator committed.
@@ -33349,6 +33435,29 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
         onMouseDown=${onResizeDown}
         title="Drag to resize"
       />
+
+      <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+      ${selected && html`<${WorkflowNodeTopActions}
+        nodeId=${node.id}
+        selected=${selected}
+        actions=${[
+          {
+            key: "export",
+            icon: html`<${Icon.ExportBox}/>`,
+            tip: "Export — bundle this " + (
+                  family === "simulation" ? "simulation"
+                : family === "interactive" ? "interactive piece"
+                : family === "narrative"   ? "narrative experience"
+                : family === "game"        ? "game experience"
+                : family === "scrapbook"   ? "scrapbook experience"
+                : family === "polish"      ? "interactive-polish pass"
+                : "experience") + "'s source tree (including runtime.html, every drawer-committed file, and the bundled design system if referenced) + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). The README's Entry pointer goes straight at the runtime.html for this " + familyLabel + ".",
+            ariaLabel: "Export " + familyLabel,
+            onClick: () => runExportForNode(node.id, node.label || node.title || (familyLabel + ":" + (assetId || ""))),
+            className: "workflow-node-top-action-export",
+          },
+        ]}
+      />`}
     </div>
   `;
 }
@@ -43219,6 +43328,22 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         onPick=${(p) => { patchSpec({ referenceFolder: p }); setFolderPickerOpen(false); }}
       />`}
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
+
+      <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+      ${selected && html`<${WorkflowNodeTopActions}
+        nodeId=${node.id}
+        selected=${selected}
+        actions=${[
+          {
+            key: "export",
+            icon: html`<${Icon.ExportBox}/>`,
+            tip: "Export — bundle this design system into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). The bundle contains design-systems/<dsId>/ with DESIGN.md (token + component spec), styles.css (CSS variables + base styles), and gallery.html (every component rendered together), plus a README and a port-fallback static server so gallery.html opens with one click.",
+            ariaLabel: "Export design system",
+            onClick: () => runExportForNode(node.id, node.label || node.title || ("ds:" + (dsId || ""))),
+            className: "workflow-node-top-action-export",
+          },
+        ]}
+      />`}
     </div>
   `;
 }
