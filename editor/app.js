@@ -34376,6 +34376,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       try {
         if (!trackedWin || !trackedWin.document) return null;
         const url    = trackedWin.location.href;
+        // about:blank is the iframe's pre-src state — the window the user
+        // sees BEFORE the real source has loaded. Treating it as a
+        // navigable "screen" meant the first real load pushed about:blank
+        // onto past[], and the very next Back click navigated the iframe
+        // back to a blank document. Skip the snapshot entirely until the
+        // first real URL lands.
+        if (!url || url === "about:blank") return null;
         const html   = trackedWin.document.body ? trackedWin.document.body.outerHTML : "";
         const scroll = { x: trackedWin.scrollX || 0, y: trackedWin.scrollY || 0 };
         return { url, html, scroll };
@@ -34535,7 +34542,10 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       const prev = hist.past.pop();
       if (hist.current) hist.future.push(hist.current);
       hist.current = prev;
-      if (!curUrl || prev.url !== curUrl) {
+      // Skip same-URL entries (legacy DOM-only snapshots) AND any
+      // about:blank entries that an older snapshotState may have
+      // recorded before bailing on the pre-src state.
+      if (!curUrl || (prev.url !== curUrl && prev.url && prev.url !== "about:blank")) {
         restoreEntry(prev);
         return;
       }
@@ -34562,7 +34572,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       const next = hist.future.pop();
       if (hist.current) hist.past.push(hist.current);
       hist.current = next;
-      if (!curUrl || next.url !== curUrl) {
+      if (!curUrl || (next.url !== curUrl && next.url && next.url !== "about:blank")) {
         restoreEntry(next);
         return;
       }
@@ -36694,6 +36704,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       try {
         if (!trackedWin || !trackedWin.document) return null;
         const url    = trackedWin.location.href;
+        // Skip the iframe's pre-src about:blank state — see the matching
+        // comment on the prototype node's snapshotState.
+        if (!url || url === "about:blank") return null;
         const html   = trackedWin.document.body ? trackedWin.document.body.outerHTML : "";
         const scroll = { x: trackedWin.scrollX || 0, y: trackedWin.scrollY || 0 };
         return { url, html, scroll };
@@ -36816,7 +36829,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       const prev = hist.past.pop();
       if (hist.current) hist.future.push(hist.current);
       hist.current = prev;
-      if (!curUrl || prev.url !== curUrl) {
+      if (!curUrl || (prev.url !== curUrl && prev.url && prev.url !== "about:blank")) {
         restoreEntry(prev);
         return;
       }
@@ -36831,7 +36844,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       const next = hist.future.pop();
       if (hist.current) hist.past.push(hist.current);
       hist.current = next;
-      if (!curUrl || next.url !== curUrl) {
+      if (!curUrl || (next.url !== curUrl && next.url && next.url !== "about:blank")) {
         restoreEntry(next);
         return;
       }
