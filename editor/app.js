@@ -17498,6 +17498,38 @@ function elementCssPath(el) {
    The bar uses the same portal-positioning pattern as the pick badge:
    a rAF poll on the node's `[data-node-id]` rect. Talks to the surface
    via window events so the surface owns mutations + chat dispatch. */
+
+/* Shared visibility guard for every portaled piece of node chrome (asset
+   action bar, picked-element bar, select badge, stage pill, top actions,
+   their popovers/tooltips). Two reasons to hide:
+
+   1. **Bleed past the canvas viewport.** The chrome lives in
+      `document.body` so the workflow-library column (z auto) and the
+      chat-drawer (z 60) don't naturally cover it when a node sits at the
+      canvas edge and the chrome anchors over a panel. Hiding when any
+      pixel of the chrome would extend past `.workflow-canvas-wrap`'s
+      horizontal bounds keeps the panels visually on top.
+   2. **Not enough room on the node itself.** When the node screen rect is
+      narrow (zoomed out, or naturally small), the multiple bars would
+      overlap each other. Each caller passes its own minimum-width
+      threshold; below that the chrome hides.
+
+   `rect` is the node's screen rect, `barLeft`/`barRight` are the predicted
+   screen-x range of THIS chrome bar, `minNodeWidth` is the threshold for
+   reason #2 (omit / 0 to skip). Returns true when the bar should be hidden. */
+function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
+  if (!rect) return true;
+  if (minNodeWidth && rect.width < minNodeWidth) return true;
+  // 6px slack so bars that exactly hug the canvas edge still show.
+  const SLACK = 6;
+  const canvasEl = document.querySelector(".workflow-canvas-wrap");
+  if (canvasEl) {
+    const c = canvasEl.getBoundingClientRect();
+    if (barLeft < c.left - SLACK || barRight > c.right + SLACK) return true;
+  }
+  return false;
+}
+
 function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   const [rect, setRect] = useState(null);
   const [openTool, setOpenTool] = useState(null);
@@ -17576,6 +17608,11 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   const barTop  = rect.top - BAR_HEIGHT - BAR_GAP;
   const popoverTop = barTop + BAR_HEIGHT + 6;
   const popoverLeft = rect.left + Math.min(rect.width / 2, 160); // anchor for translateX(-50%)
+  // Hide when the bar would bleed under the library / chat-drawer, or when
+  // the node is too narrow to fit the bar alongside the right-side badge +
+  // top-actions row (worst case: 4 top actions × 32 + 3 × 4 = 140, plus
+  // BADGE_W 32 + BADGE_GAP 6 = 38, plus this bar 132 = 310px minimum).
+  if (shouldHideNodeChrome(rect, barLeft, barLeft + BAR_WIDTH, 310)) return null;
   // Tooltip placement — small bubble above the hovered button.
   const showTip = (id, el, text) => {
     if (!el) { setTip({ on: null, pos: null }); return; }
@@ -17601,7 +17638,11 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
         top: barTop + "px",
         left: barLeft + "px",
         height: BAR_HEIGHT + "px",
-        zIndex: 60,
+        // z 40 sits BELOW the chat-drawer (60), busy banner (70), and
+        // fullscreen-chat (80) so the right-side panel always paints on
+        // top. Popovers + tooltips off this bar use 45 / 50 respectively
+        // so they layer above the bar but still under the panels.
+        zIndex: 40,
       }}
       onMouseDown=${(e) => e.stopPropagation()}
     >
@@ -17633,7 +17674,9 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
         left: tip.pos.left + "px",
         top:  tip.pos.top  + "px",
         transform: "translate(-50%, -100%)",
-        zIndex: 70,
+        // Tooltip needs to be above its bar (40) + popover (45) but still
+        // under the chat-drawer (60).
+        zIndex: 50,
         pointerEvents: "none",
       }}>${tip.pos.text}</div>
   ` : null;
@@ -17679,7 +17722,8 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
         top: popoverTop + "px",
         left: popoverLeft + "px",
         transform: "translateX(-50%)",
-        zIndex: 65,
+        // Above the bar (40), below the chat-drawer (60).
+        zIndex: 45,
       }}
       onClose=${() => setOpenTool(null)}
       onSubmit=${onSubmit}
@@ -18173,6 +18217,8 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
   const barTop  = rect.top - BAR_HEIGHT - BAR_GAP;
   const popoverTop = barTop + BAR_HEIGHT + 6;
   const popoverLeft = rect.left + Math.min(rect.width / 2, 160);
+  // Same panel-bleed + small-node guard as WorkflowAssetActionBar.
+  if (shouldHideNodeChrome(rect, barLeft, barLeft + BAR_WIDTH, 310)) return null;
   const showTip = (id, el, text) => {
     if (!el) { setTip({ on: null, pos: null }); return; }
     const r = el.getBoundingClientRect();
@@ -18205,7 +18251,9 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
         top: barTop + "px",
         left: barLeft + "px",
         height: BAR_HEIGHT + "px",
-        zIndex: 61,
+        // Mirrors WorkflowAssetActionBar; +1 keeps the picked-element bar
+        // visually on top when both happen to be mounted for the same node.
+        zIndex: 41,
       }}
       onMouseDown=${(e) => e.stopPropagation()}
     >
@@ -18237,7 +18285,8 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
         left: tip.pos.left + "px",
         top:  tip.pos.top  + "px",
         transform: "translate(-50%, -100%)",
-        zIndex: 70,
+        // Above the bar (41) + popover (45), below the chat-drawer (60).
+        zIndex: 50,
         pointerEvents: "none",
       }}>${tip.pos.text}</div>
   ` : null;
@@ -18342,7 +18391,8 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
         top: popoverTop + "px",
         left: popoverLeft + "px",
         transform: "translateX(-50%)",
-        zIndex: 65,
+        // Above the bar (41), below the chat-drawer (60).
+        zIndex: 45,
       }}
       onClose=${() => setOpenTool(null)}
       onSubmit=${onSubmit}
@@ -18466,11 +18516,16 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   if (!visible || !rect) return null;
   // Anchor at the node's top-right, offset 8px above the node and aligned
   // to its right edge. Badge is 32×32 (see CSS), so left = right - 32.
+  // Hide if the badge would bleed under the library / chat-drawer, or if
+  // the node is so narrow that a 32px chip can't sit on it (60px floor).
+  if (shouldHideNodeChrome(rect, rect.right - 32, rect.right, 60)) return null;
   const style = {
     position: "fixed",
     top: (rect.top - 40) + "px",
     left: (rect.right - 32) + "px",
-    zIndex: 60,
+    // z 40 keeps the badge BELOW the chat-drawer (60). Tip uses 50; stage
+    // pill stays at 40 alongside the badge.
+    zIndex: 40,
   };
   // v3.4.x — Tooltip lists the full pick-mode op surface so the user knows
   // what's available without having to discover each shortcut. Mirrors the
@@ -18507,9 +18562,9 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
         transform: tipPos.placement === "above"
           ? "translate(-50%, -100%)"
           : "translate(-50%, 0)",
-        // The bubble must sit on top of the badge AND outrank other
-        // overlays; badge z-index is 60, so 70 keeps the bubble visible.
-        zIndex: 70,
+        // Above the badge (40) but BELOW the chat-drawer (60) so panels
+        // still cover the tooltip when a node sits at the canvas edge.
+        zIndex: 50,
         pointerEvents: "none",
       }}>
       ${tipText}
@@ -18532,7 +18587,9 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
     position: "fixed",
     top: (rect.top - 40) + "px",
     left: (rect.right + 6) + "px",
-    zIndex: 60,
+    // Matches the badge — under the chat-drawer (60) so the right panel
+    // covers the pill when a node sits at the canvas edge.
+    zIndex: 40,
   };
   const onSaveClick = (e) => {
     e.stopPropagation();
@@ -18668,12 +18725,20 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
   // gap before the badge (which is 32px wide and sits flush to rect.right).
   const BTN = 32, GAP = 4, BADGE_W = 32, BADGE_GAP = 6;
   const totalW = visibleActions.length * BTN + (visibleActions.length - 1) * GAP;
+  const stripLeft = rect.right - BADGE_W - BADGE_GAP - totalW;
+  const stripRight = rect.right - BADGE_W - BADGE_GAP;
+  // Hide if the strip would bleed under the panels or if the node is too
+  // narrow to fit (asset-action-bar 132 + this strip's width + badge 32 +
+  // gaps 12).
+  const minWidth = 132 + totalW + 32 + 12;
+  if (shouldHideNodeChrome(rect, stripLeft, stripRight, minWidth)) return null;
   const style = {
     position: "fixed",
     top: (rect.top - 40) + "px",
-    left: (rect.right - BADGE_W - BADGE_GAP - totalW) + "px",
+    left: stripLeft + "px",
     height: BTN + "px",
-    zIndex: 60,
+    // Matches the badge — under the chat-drawer (60) so panels paint on top.
+    zIndex: 40,
   };
   const showTip = (key, el, text) => {
     if (!el || !text) { setTipState(null); return; }
@@ -18689,7 +18754,8 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
         left: tipState.left + "px",
         top:  tipState.top + "px",
         transform: "translate(-50%, -100%)",
-        zIndex: 70,
+        // Above the strip (40), below the chat-drawer (60).
+        zIndex: 50,
         pointerEvents: "none",
       }}>${tipState.text}</div>
   ` : null;
@@ -35412,7 +35478,7 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
         <div
           className="workflow-asset-bg-popover"
           data-node-id=${nodeId}
-          style=${{ position: "fixed", top: rect.top + "px", left: rect.left + "px", zIndex: 70 }}
+          style=${{ position: "fixed", top: rect.top + "px", left: rect.left + "px", zIndex: 50 }}
           onMouseDown=${(e) => e.stopPropagation()}
           onClick=${(e) => e.stopPropagation()}>
           <label className="workflow-asset-bg-row">
