@@ -2004,11 +2004,6 @@ button {
           drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
   pointer-events: none;
 }
-/* v3.5.1 — Default text colours (dark) for cards sitting on the LIGHT side of
-   the diamond field. Cards over the DARK header band get `[data-on-dark="true"]`
-   stamped on them by the JS sampler (see ProjectsLanding mount effect) and the
-   override block below flips the upper-card text to white. The starred-prototype
-   panel has its own opaque white surface and is intentionally NOT flipped. */
 .landing-card-label {
   font-family: var(--font-display), "Bricolage Grotesque", var(--font-sans);
   font-family: "Bricolage Grotesque", var(--font-sans);
@@ -2019,14 +2014,12 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.18s ease;
 }
 .landing-card-id {
   font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
   font-size: 11.5px;
   color: var(--text-faint);
   letter-spacing: 0.02em;
-  transition: color 0.18s ease;
 }
 .landing-card-stats {
   display: flex;
@@ -2034,21 +2027,7 @@ button {
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
-  transition: color 0.18s ease;
 }
-/* v3.5.2 — Per-line dark-band flip. The IntersectionObserver in app.js
-   stamps `data-on-dark` on EACH text element individually (label, id,
-   stats) so they flip white only when each line itself sits over the dark
-   header band — not as a single all-or-nothing card-wide toggle. */
-.landing-card-label[data-on-dark="true"] { color: #ffffff; }
-.landing-card-id[data-on-dark="true"]    { color: rgba(255, 255, 255, 0.7); }
-.landing-card-stats[data-on-dark="true"] { color: rgba(255, 255, 255, 0.78); }
-/* v3.5.1 — Hover solidifies the card to opaque white (see .landing-card:hover
-   rule above). The dark-band text-flip becomes invisible against that white
-   surface, so revert any white-on-dark text back to dark defaults on hover. */
-.landing-card:hover .landing-card-label[data-on-dark="true"] { color: var(--text); }
-.landing-card:hover .landing-card-id[data-on-dark="true"]    { color: var(--text-faint); }
-.landing-card:hover .landing-card-stats[data-on-dark="true"] { color: var(--text-muted); }
 .landing-card-stat-sep { color: var(--text-faint); }
 .landing-card-actions {
   display: inline-flex;

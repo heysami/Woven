@@ -15442,53 +15442,7 @@ function ProjectsLanding({ info, projects, onReload }) {
     return () => window.removeEventListener("resize", update);
   }, [activeTab, projects.length]);
 
-  // v3.5.1 — Auto-flip card text to white when the card sits over the dark
-  // header band (the diamond field draws a dark zone the top `boundaryFn` px
-  // of the viewport; the canvas is `position: fixed` so the dark band stays
-  // at the top regardless of scroll — see SHADER_BG). We compare each card's
-  // title-row centre to the boundary every animation frame and toggle
-  // `data-on-dark="true"`; the CSS override above paints label/id/stats white
-  // when set. A continuous rAF loop is the simplest correct strategy here
-  // because the landing's scroll container varies (window vs .landing-root)
-  // and we'd miss frames if we missed a listener. A bbox read + integer
-  // compare on ≤ a few dozen cards is sub-100µs per frame — cheaper than
-  // wiring multiple event sources.
-  useEffect(() => {
-    // v3.5.2 — Per-LINE text flip. Earlier version stamped `data-on-dark` on
-    // the whole card so every text element flipped white at the same scroll
-    // position (even the ones still sitting below the dark band — the
-    // "edited 5m ago" line jumping to white while it's clearly over the
-    // light area). Now we observe EACH text line independently: label, id,
-    // and stats each carry their own `data-on-dark` attribute based on
-    // whether THAT line's bounding box sits inside the dark header band.
-    //
-    // IntersectionObserver with a top-shrunken root: when an element is NOT
-    // intersecting (i.e. above the shrunken root), it's in the dark band →
-    // attr on, text goes white. When intersecting → attr off, text goes dark.
-    if (typeof IntersectionObserver === "undefined") return;
-    const headerEl = document.querySelector(".landing-header");
-    const boundary = headerEl ? headerEl.offsetHeight : 150;
-    const targets = document.querySelectorAll(
-      ".landing-card .landing-card-label, " +
-      ".landing-card .landing-card-id, " +
-      ".landing-card .landing-card-stats"
-    );
-    if (!targets.length) return;
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (e.isIntersecting) e.target.removeAttribute("data-on-dark");
-        else                  e.target.setAttribute("data-on-dark", "true");
-      }
-    }, {
-      root: null,
-      rootMargin: `-${boundary}px 0px 0px 0px`,
-      threshold: 0,
-    });
-    targets.forEach((t) => io.observe(t));
-    return () => io.disconnect();
-  }, [projects.length, filter, activeTab]);
-
-  // v3.5.x — Starred-list scroll affordance manager. Each .landing-card-stars-
+// v3.5.x — Starred-list scroll affordance manager. Each .landing-card-stars-
   // list element needs:
   //   • .is-scrollable class when scrollHeight > clientHeight (drives the
   //     fade-at-bottom mask + flips overflow to auto so wheel works)
