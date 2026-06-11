@@ -22562,8 +22562,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       for (const [prop, val] of entries) {
         try { el.style.setProperty(prop, val); } catch {}
       }
-      const ok = await _saveIframeHtml(doc, "Paste style");
-      if (!ok) return 0;
+      // v3.5.8 — Stage instead of immediate disk write (see reorder).
+      try {
+        const ifr = pickerIframeRef.current;
+        if (ifr) stageInspectorEdit(ifr, doc);
+      } catch {}
       flashPickOp("done", `Pasted style from <${clip.sourceTag}> (${entries.length} props)`);
       return 1;
     } catch (err) {
@@ -22572,7 +22575,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       pastePickedStyle._inFlight = false;
     }
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
 
   const nudgePickedElement = useCallback(async (dx, dy) => {
     const { el, doc, win } = _resolvePickedLive();
@@ -22594,11 +22597,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const newTop  = readPx(el.style.top,  cs.top)  + dy;
     el.style.left = `${newLeft}px`;
     el.style.top  = `${newTop}px`;
-    flashPickOp("pending", `Nudge ${dx}/${dy}px…`);
-    const ok = await _saveIframeHtml(doc, "Nudge");
-    if (ok) flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
-    return ok ? 1 : 0;
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
+    // v3.5.8 — Stage instead of immediate disk write (see reorder for why).
+    try {
+      const ifr = pickerIframeRef.current;
+      if (ifr) stageInspectorEdit(ifr, doc);
+    } catch {}
+    flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
+    return 1;
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
 
   const reorderPickedElement = useCallback(async (direction) => {
     // direction: "up" | "down" | "left" | "right"
@@ -22641,11 +22647,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // Move next BEFORE el → equivalent to moving el AFTER next.
       parent.insertBefore(next, el);
     }
-    flashPickOp("pending", `Reorder ${direction}…`);
-    const ok = await _saveIframeHtml(doc, "Reorder");
-    if (ok) flashPickOp("done", `Moved ${direction}`);
-    return ok ? 1 : 0;
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
+    // v3.5.8 — Stage the reorder instead of writing it to disk immediately.
+    // Same path the inspector's style edits go through (applyStyle →
+    // stageInspectorEdit), so a Move bumps the Save / Revert pill alongside
+    // any pending style changes on this iframe. The pill batches them all
+    // into one Save click; Revert reloads the iframe from disk and the move
+    // is undone with the same gesture the user expects for style undo.
+    try {
+      const ifr = pickerIframeRef.current;
+      if (ifr) stageInspectorEdit(ifr, doc);
+    } catch {}
+    flashPickOp("done", `Moved ${direction}`);
+    return 1;
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
 
   const duplicatePickedElement = useCallback(async () => {
     const { el, doc } = _resolvePickedLive();
@@ -22666,10 +22680,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       elm.classList.remove("th-pick-hover");
       elm.classList.remove("th-pick-selected");
     });
-    const ok = await _saveIframeHtml(doc, "Duplicate");
-    if (ok) flashPickOp("done", `Duplicated <${tagSnap}>`);
-    return ok ? 1 : 0;
-  }, [_resolvePickedLive, _saveIframeHtml, flashPickOp, _isPickedReactManaged]);
+    // v3.5.8 — Stage instead of immediate disk write (see reorder for why).
+    try {
+      const ifr = pickerIframeRef.current;
+      if (ifr) stageInspectorEdit(ifr, doc);
+    } catch {}
+    flashPickOp("done", `Duplicated <${tagSnap}>`);
+    return 1;
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
 
   // Keyboard shortcuts active only while pickModeNodeId is set. Capture
   // phase so they beat the canvas-level copy/paste/delete handler.
