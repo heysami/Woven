@@ -9463,12 +9463,42 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const removeQueued = (id) => setQueue(prev => prev.filter(q => q.id !== id));
 
   // Filter the loaded skill list against the current slash query (chars after
-  // `/`). Match against slug + name + description so users can find skills
-  // they remember by purpose, not just name. Empty query = full list.
+  // `/`). Match against kind + group + slug + name + description so users can
+  // surface a whole bucket with `/orch` / `/aesthetic` / `/shell` etc., AND
+  // find items by purpose, not just name. Empty query interleaves kinds so
+  // the user sees ALL four sources (skills · orchestrators · library) at
+  // first paint — otherwise the source-ordered list filled the 12-slot cap
+  // with media skills before orchestrators or library entries ever appeared.
   const filteredSlashSkills = (() => {
     if (!slashOpen) return [];
     const q = slashQuery.trim().toLowerCase();
-    if (!q) return slashSkills.slice(0, 12);
+    if (!q) {
+      // Round-robin across kinds → diverse first paint. Stops as soon as
+      // every bucket is drained or the cap fills.
+      const buckets = {
+        media:        slashSkills.filter(s => s.kind === "media"),
+        cc:           slashSkills.filter(s => s.kind === "cc"),
+        orchestrator: slashSkills.filter(s => s.kind === "orchestrator"),
+        library:      slashSkills.filter(s => s.kind === "library"),
+      };
+      // Surface orchestrators + library first so the user immediately sees
+      // the two new menu sources, then mix in skills.
+      const order = ["orchestrator", "library", "media", "cc"];
+      const out = [];
+      const cap = 12;
+      let round = 0;
+      while (out.length < cap) {
+        let added = false;
+        for (const k of order) {
+          if (out.length >= cap) break;
+          const item = buckets[k][round];
+          if (item) { out.push(item); added = true; }
+        }
+        if (!added) break;
+        round++;
+      }
+      return out;
+    }
     return slashSkills.filter(s => {
       const hay = (s.kind + " " + (s.libraryGroup || "") + " " + s.slug + " " + (s.name || "") + " " + (s.description || "")).toLowerCase();
       return hay.includes(q);
@@ -33211,6 +33241,24 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // computation. pushState() navigations don't trigger popstate, so apps
   // using the History API for routing will go undetected here — known
   // limitation, hash-routing is the common case.
+  // v3.5 — Per-iframe back/forward navigation stacks.
+  //   past[]    — URLs the user navigated FROM (oldest first, top = most recent)
+  //   future[]  — URLs popped by Back (top = next to redo on Forward)
+  //   current   — URL currently shown in the iframe
+  //   suppress  — set by Back/Forward before we call location.replace; the
+  //               subsequent load fires capture(), which skips the past push
+  //               so our own programmatic navigation doesn't pollute history
+  //
+  // Why this instead of `iframeRef.current.contentWindow.history.back()`:
+  // same-origin iframes share the JOINT session history with the parent —
+  // calling .history.back() on the iframe's contentWindow may walk a parent
+  // entry, navigating the workflow canvas instead of the prototype. The
+  // per-iframe stack lets the user step through pages they viewed in THIS
+  // node without touching the parent at all. We navigate via
+  // location.replace() so we don't add to the joint session history either.
+  const navHistRef = useRef({ past: [], future: [], current: null });
+  const suppressNavTrackRef = useRef(false);
+
   useEffect(() => {
     const f = iframeRef.current;
     if (!f) return;
@@ -33218,6 +33266,23 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     const capture = () => {
       try {
         if (!trackedWin) return;
+        const url  = trackedWin.location.href;
+        const hist = navHistRef.current;
+        if (suppressNavTrackRef.current) {
+          // This event was triggered by our own Back/Forward — just update
+          // `current`; past/future already reflect the post-navigation state.
+          suppressNavTrackRef.current = false;
+          hist.current = url;
+        } else if (hist.current == null) {
+          // First time we see a URL — seed `current`, no past entry yet.
+          hist.current = url;
+        } else if (hist.current !== url) {
+          // Natural user navigation (link click, hashchange, etc.) — push
+          // the previous URL onto past, clear the redo stack.
+          hist.past.push(hist.current);
+          hist.future = [];
+          hist.current = url;
+        }
         const state = {
           pathname: trackedWin.location.pathname,
           hash: trackedWin.location.hash || "",
@@ -33258,6 +33323,33 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       } catch {}
     };
   }, [onIframeState]);
+
+  const goBack = useCallback(() => {
+    const hist = navHistRef.current;
+    if (!hist.past.length) return;
+    const prevUrl = hist.past.pop();
+    if (hist.current) hist.future.push(hist.current);
+    suppressNavTrackRef.current = true;
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (win) win.location.replace(prevUrl);
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
+  const goForward = useCallback(() => {
+    const hist = navHistRef.current;
+    if (!hist.future.length) return;
+    const nextUrl = hist.future.pop();
+    if (hist.current) hist.past.push(hist.current);
+    suppressNavTrackRef.current = true;
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (win) win.location.replace(nextUrl);
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
 
   // Header drag — divide screen delta by zoom for world coordinates. We
   // signal start/end up to the surface so it can disable iframe
@@ -33629,22 +33721,16 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         <span className="workflow-node-glyph"><${Icon.Play}/></span>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-nav"
-          tip="Back — navigate the iframe's history one step back."
+          tip="Back — step back through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
           ariaLabel="Back"
-          onClick=${(e) => {
-            e.stopPropagation();
-            try { iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.history.back(); } catch {}
-          }}
+          onClick=${(e) => { e.stopPropagation(); goBack(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Back}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-nav"
-          tip="Forward — navigate the iframe's history one step forward."
+          tip="Forward — step forward through this prototype's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
           ariaLabel="Forward"
-          onClick=${(e) => {
-            e.stopPropagation();
-            try { iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.history.forward(); } catch {}
-          }}
+          onClick=${(e) => { e.stopPropagation(); goForward(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Forward}/><//>
         <span className="workflow-node-label">source/${branch}/</span>
@@ -35371,6 +35457,90 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       },
     });
   }, [onChange, node.size]);
+
+  // v3.5 — Per-iframe back/forward navigation stacks for the html asset node.
+  // Same shape as the prototype node's: past[] / future[] / current. We
+  // navigate via location.replace() to stay out of the joint session history
+  // so the workflow canvas isn't affected when the user clicks Back/Forward.
+  const navHistRef = useRef({ past: [], future: [], current: null });
+  const suppressNavTrackRef = useRef(false);
+  useEffect(() => {
+    const f = htmlIframeRef.current;
+    if (!f) return;
+    let trackedWin = null;
+    const capture = () => {
+      try {
+        if (!trackedWin) return;
+        const url = trackedWin.location.href;
+        const hist = navHistRef.current;
+        if (suppressNavTrackRef.current) {
+          suppressNavTrackRef.current = false;
+          hist.current = url;
+        } else if (hist.current == null) {
+          hist.current = url;
+        } else if (hist.current !== url) {
+          hist.past.push(hist.current);
+          hist.future = [];
+          hist.current = url;
+        }
+      } catch {}
+    };
+    const wireWin = () => {
+      try { trackedWin = f.contentWindow; } catch { trackedWin = null; }
+      if (!trackedWin) return;
+      capture();
+      try {
+        trackedWin.addEventListener("hashchange", capture);
+        trackedWin.addEventListener("popstate", capture);
+      } catch {}
+    };
+    const onLoad = () => {
+      try {
+        if (trackedWin) {
+          trackedWin.removeEventListener("hashchange", capture);
+          trackedWin.removeEventListener("popstate", capture);
+        }
+      } catch {}
+      wireWin();
+    };
+    f.addEventListener("load", onLoad);
+    if (f.contentWindow) wireWin();
+    return () => {
+      f.removeEventListener("load", onLoad);
+      try {
+        if (trackedWin) {
+          trackedWin.removeEventListener("hashchange", capture);
+          trackedWin.removeEventListener("popstate", capture);
+        }
+      } catch {}
+    };
+  }, []);
+  const goBack = useCallback(() => {
+    const hist = navHistRef.current;
+    if (!hist.past.length) return;
+    const prevUrl = hist.past.pop();
+    if (hist.current) hist.future.push(hist.current);
+    suppressNavTrackRef.current = true;
+    try {
+      const win = htmlIframeRef.current && htmlIframeRef.current.contentWindow;
+      if (win) win.location.replace(prevUrl);
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
+  const goForward = useCallback(() => {
+    const hist = navHistRef.current;
+    if (!hist.future.length) return;
+    const nextUrl = hist.future.pop();
+    if (hist.current) hist.past.push(hist.current);
+    suppressNavTrackRef.current = true;
+    try {
+      const win = htmlIframeRef.current && htmlIframeRef.current.contentWindow;
+      if (win) win.location.replace(nextUrl);
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
   // v3.3 — Long-running interactive HTML (a simulation runtime, an
   // interactive piece, a narrative experience runtime) owns its OWN state
   // and rAF loop inside the iframe. Auto-busting the iframe on every
@@ -35808,22 +35978,16 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ${(kind === "html" || kind === "html-set") && html`
           <${HoverTip}
             className="workflow-node-action workflow-node-action-nav"
-            tip="Back — navigate the iframe's history one step back."
+            tip="Back — step back through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
             ariaLabel="Back"
-            onClick=${(e) => {
-              e.stopPropagation();
-              try { htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.history.back(); } catch {}
-            }}
+            onClick=${(e) => { e.stopPropagation(); goBack(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Back}/><//>
           <${HoverTip}
             className="workflow-node-action workflow-node-action-nav"
-            tip="Forward — navigate the iframe's history one step forward."
+            tip="Forward — step forward through this asset's nav history. Scoped to THIS iframe; does not navigate the workflow canvas."
             ariaLabel="Forward"
-            onClick=${(e) => {
-              e.stopPropagation();
-              try { htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.history.forward(); } catch {}
-            }}
+            onClick=${(e) => { e.stopPropagation(); goForward(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Forward}/><//>
         `}
