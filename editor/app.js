@@ -17216,23 +17216,131 @@ function installPickOverlay(iframeEl, onPick) {
   let doc;
   try { doc = iframeEl.contentDocument; } catch { return null; }
   if (!doc || !doc.body) return null;
-  // Inject styles.
+  // Inject styles. The Figma-style inspect overlay (Cmd-held hover) uses
+  // padding bands (green, like Figma), gap bands (pink), and child outlines
+  // (blue) so the user can read spacing at a glance without leaving pick
+  // mode. Overlays are position:fixed off doc.body so they layer over the
+  // page without affecting layout.
   const style = doc.createElement("style");
   style.setAttribute("data-th-pick-style", "true");
   style.textContent = `
     .th-pick-hover    { outline: 2px solid #3b82f6 !important; outline-offset: -2px !important; cursor: crosshair !important; }
     .th-pick-selected { outline: 2px solid #ef4444 !important; outline-offset: -2px !important; box-shadow: 0 0 0 4px rgba(239,68,68,0.18) !important; }
     body.th-pick-mode, body.th-pick-mode * { cursor: crosshair !important; user-select: none !important; }
+    .th-inspect-overlay { position: fixed !important; pointer-events: none !important; z-index: 2147483646 !important; box-sizing: border-box !important; margin: 0 !important; padding: 0 !important; border: 0 !important; }
+    .th-inspect-pad  { background: rgba(94, 199, 124, 0.32) !important; }
+    .th-inspect-gap  { background: rgba(247, 91, 199, 0.32) !important; }
+    .th-inspect-child { outline: 1px solid rgba(59, 130, 246, 0.55) !important; outline-offset: -1px !important; }
+    .th-inspect-box  { outline: 1px solid rgba(59, 130, 246, 0.85) !important; outline-offset: -1px !important; }
   `;
   doc.head.appendChild(style);
   doc.body.classList.add("th-pick-mode");
   let currentHover = null;
+  let cmdHeld = false;
+  const inspectOverlays = [];
+  const win = doc.defaultView;
+  const clearInspectOverlays = () => {
+    for (const o of inspectOverlays) { try { o.remove(); } catch {} }
+    inspectOverlays.length = 0;
+  };
+  const makeOverlay = (cls, x, y, w, h) => {
+    if (!(w > 0) || !(h > 0)) return;
+    const o = doc.createElement("div");
+    o.className = "th-inspect-overlay " + cls;
+    o.style.left = x + "px";
+    o.style.top = y + "px";
+    o.style.width = w + "px";
+    o.style.height = h + "px";
+    doc.body.appendChild(o);
+    inspectOverlays.push(o);
+  };
+  // Figma-style inspect: draw padding bands, child outlines, gap bands
+  // around the currently-hovered element. Coordinates are viewport-relative
+  // (getBoundingClientRect + position:fixed overlays sitting on doc.body).
+  const buildInspectOverlays = (target) => {
+    clearInspectOverlays();
+    if (!cmdHeld || !target) return;
+    if (target === doc.body || target === doc.documentElement) return;
+    let cs; try { cs = win.getComputedStyle(target); } catch { return; }
+    const r = target.getBoundingClientRect();
+    if (!(r.width > 0) || !(r.height > 0)) return;
+    // Outer box outline (so the target is clearly framed even without the
+    // blue hover outline — useful when Cmd is held mid-edit).
+    makeOverlay("th-inspect-box", r.left, r.top, r.width, r.height);
+    // Padding bands — clockwise from top.
+    const padT = parseFloat(cs.paddingTop)    || 0;
+    const padR = parseFloat(cs.paddingRight)  || 0;
+    const padB = parseFloat(cs.paddingBottom) || 0;
+    const padL = parseFloat(cs.paddingLeft)   || 0;
+    if (padT > 0.5) makeOverlay("th-inspect-pad", r.left, r.top, r.width, padT);
+    if (padB > 0.5) makeOverlay("th-inspect-pad", r.left, r.bottom - padB, r.width, padB);
+    if (padL > 0.5) makeOverlay("th-inspect-pad", r.left, r.top + padT, padL, r.height - padT - padB);
+    if (padR > 0.5) makeOverlay("th-inspect-pad", r.right - padR, r.top + padT, padR, r.height - padT - padB);
+    // Child outlines + gap bands for flex / grid containers.
+    const kids = Array.from(target.children || [])
+      .filter(c => c && c.getBoundingClientRect)
+      .map(c => ({ el: c, rect: c.getBoundingClientRect() }))
+      .filter(c => c.rect.width > 0 && c.rect.height > 0);
+    for (const k of kids) {
+      makeOverlay("th-inspect-child", k.rect.left, k.rect.top, k.rect.width, k.rect.height);
+    }
+    const disp = cs.display;
+    if ((disp === "flex" || disp === "inline-flex") && kids.length >= 2) {
+      const isRow = !(cs.flexDirection || "row").startsWith("column");
+      const sorted = kids.slice().sort((a, b) => isRow ? a.rect.left - b.rect.left : a.rect.top - b.rect.top);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const a = sorted[i].rect, b = sorted[i+1].rect;
+        if (isRow) {
+          const gx = a.right, gw = b.left - a.right;
+          const gy = Math.max(a.top, b.top), gh = Math.min(a.bottom, b.bottom) - gy;
+          if (gw > 0.5 && gh > 0) makeOverlay("th-inspect-gap", gx, gy, gw, gh);
+        } else {
+          const gy = a.bottom, gh = b.top - a.bottom;
+          const gx = Math.max(a.left, b.left), gw = Math.min(a.right, b.right) - gx;
+          if (gh > 0.5 && gw > 0) makeOverlay("th-inspect-gap", gx, gy, gw, gh);
+        }
+      }
+    } else if ((disp === "grid" || disp === "inline-grid") && kids.length >= 2) {
+      // Bin children by row band and column band; emit horizontal gap
+      // strips between adjacent columns within a row and vertical gap
+      // strips between adjacent rows. Pixel-bin tolerance = 2px.
+      const TOL = 2;
+      const rowOf = new Map();
+      for (const k of kids) {
+        const top = Math.round(k.rect.top / TOL) * TOL;
+        if (!rowOf.has(top)) rowOf.set(top, []);
+        rowOf.get(top).push(k);
+      }
+      const rows = Array.from(rowOf.values()).map(arr => arr.slice().sort((a,b)=>a.rect.left-b.rect.left));
+      rows.sort((a,b)=>a[0].rect.top-b[0].rect.top);
+      for (const row of rows) {
+        for (let i = 0; i < row.length - 1; i++) {
+          const a = row[i].rect, b = row[i+1].rect;
+          const gw = b.left - a.right;
+          if (gw > 0.5) makeOverlay("th-inspect-gap", a.right, Math.max(a.top, b.top), gw, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        }
+      }
+      for (let i = 0; i < rows.length - 1; i++) {
+        const aBottom = Math.max(...rows[i].map(k => k.rect.bottom));
+        const bTop    = Math.min(...rows[i+1].map(k => k.rect.top));
+        const gh = bTop - aBottom;
+        if (gh > 0.5) {
+          const left  = Math.min(...rows[i].map(k => k.rect.left),  ...rows[i+1].map(k => k.rect.left));
+          const right = Math.max(...rows[i].map(k => k.rect.right), ...rows[i+1].map(k => k.rect.right));
+          makeOverlay("th-inspect-gap", left, aBottom, right - left, gh);
+        }
+      }
+    }
+  };
   const onMove = (e) => {
     const t = e.target;
     if (currentHover && currentHover !== t) currentHover.classList.remove("th-pick-hover");
     if (t && t !== currentHover && t !== doc.body && t !== doc.documentElement) {
       t.classList.add("th-pick-hover");
       currentHover = t;
+      if (cmdHeld) buildInspectOverlays(t);
+    } else if (cmdHeld && t === currentHover) {
+      // Same target — overlays already drawn for it; no work.
     }
   };
   const onClick = (e) => {
@@ -17253,11 +17361,40 @@ function installPickOverlay(iframeEl, onPick) {
   // Also block hover-driven nav (e.g. menu auto-expand on hover).
   const onMouseDown = (e) => { e.preventDefault(); e.stopPropagation(); };
   doc.addEventListener("mousedown", onMouseDown, true);
+  // Cmd / Meta listeners — track both doc and host window since focus may
+  // sit in either. Ctrl is treated as the equivalent on non-mac, matching
+  // existing shortcut conventions in this editor.
+  const isInspectKey = (e) => e.key === "Meta" || e.key === "Control" || e.metaKey || e.ctrlKey;
+  const onKeyDown = (e) => {
+    if (!isInspectKey(e)) return;
+    if (cmdHeld) return;
+    cmdHeld = true;
+    if (currentHover) buildInspectOverlays(currentHover);
+  };
+  const onKeyUp = (e) => {
+    if (e.key !== "Meta" && e.key !== "Control") return;
+    cmdHeld = false;
+    clearInspectOverlays();
+  };
+  const onBlurClear = () => { cmdHeld = false; clearInspectOverlays(); };
+  doc.addEventListener("keydown", onKeyDown, true);
+  doc.addEventListener("keyup", onKeyUp, true);
+  if (win) win.addEventListener("blur", onBlurClear);
+  try { window.addEventListener("keydown", onKeyDown, true); } catch {}
+  try { window.addEventListener("keyup", onKeyUp, true); } catch {}
+  try { window.addEventListener("blur", onBlurClear); } catch {}
   return () => {
     try {
       doc.removeEventListener("mousemove", onMove, true);
       doc.removeEventListener("click",    onClick, true);
       doc.removeEventListener("mousedown", onMouseDown, true);
+      doc.removeEventListener("keydown",   onKeyDown, true);
+      doc.removeEventListener("keyup",     onKeyUp,   true);
+      if (win) win.removeEventListener("blur", onBlurClear);
+      try { window.removeEventListener("keydown", onKeyDown, true); } catch {}
+      try { window.removeEventListener("keyup",   onKeyUp,   true); } catch {}
+      try { window.removeEventListener("blur",    onBlurClear); } catch {}
+      clearInspectOverlays();
       doc.querySelectorAll(".th-pick-hover").forEach(el => el.classList.remove("th-pick-hover"));
       doc.querySelectorAll(".th-pick-selected").forEach(el => el.classList.remove("th-pick-selected"));
       doc.body.classList.remove("th-pick-mode");
@@ -18255,6 +18392,12 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   });
   const [rect, setRect] = useState(null);
   const [tipPos, setTipPos] = useState(null);
+  // Pending inspector edits count for THIS node. Re-derived from the
+  // window-level digest dispatched by WorkflowSurface whenever the staging
+  // set changes. Drives the Save / Revert pill visibility next to the badge.
+  const [pendingCount, setPendingCount] = useState(() => {
+    try { return (window.__thPendingInspectorEdits?.byNode?.[nodeId]) || 0; } catch { return 0; }
+  });
   useEffect(() => {
     const onChange = (e) => {
       const aid = e && e.detail && e.detail.activeNodeId;
@@ -18264,11 +18407,19 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
     window.addEventListener("th:pick-mode-changed", onChange);
     return () => window.removeEventListener("th:pick-mode-changed", onChange);
   }, []);
-  // v3.2.2 — Visibility = selected OR pick-mode-active-for-this-node. Keeping
-  // the badge while pick-mode is on lets the user click around the canvas
-  // (which clears node selection) without losing the badge anchor. The
-  // pick-mode session is the source of truth, not the click selection.
-  const visible = selected || active;
+  useEffect(() => {
+    const onPending = (e) => {
+      const byNode = e && e.detail && e.detail.byNode || {};
+      setPendingCount(byNode[nodeId] || 0);
+    };
+    window.addEventListener("th:pending-inspector-edits-changed", onPending);
+    return () => window.removeEventListener("th:pending-inspector-edits-changed", onPending);
+  }, [nodeId]);
+  // v3.2.2 — Visibility = selected OR pick-mode-active-for-this-node OR
+  // there are pending inspector edits to Save/Revert. The pending case
+  // keeps the badge + pill alive after the user exits pick mode so they
+  // can still commit or discard.
+  const visible = selected || active || pendingCount > 0;
   // Poll the node's bounding rect each animation frame so the badge tracks
   // pan/zoom/drag. Only run while visible so hidden badges don't churn rAF.
   useEffect(() => {
@@ -18372,6 +18523,25 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // empty-canvas click → start marquee + clear selection. Stamping the
   // owning node's id here makes closest() resolve to the badge and the
   // wrap correctly keeps the node selected.
+  // Save / Revert pill — appears to the RIGHT of the pick toggle when this
+  // node has staged inspector edits. Anchored at rect.right + 6px so the
+  // pill extends past the node's right edge. Click handlers dispatch
+  // window-level events the WorkflowSurface listens for (avoids prop-
+  // drilling commit/revert through the portal).
+  const pillStyle = {
+    position: "fixed",
+    top: (rect.top - 40) + "px",
+    left: (rect.right + 6) + "px",
+    zIndex: 60,
+  };
+  const onSaveClick = (e) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent("th:staged-inspector-save"));
+  };
+  const onRevertClick = (e) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent("th:staged-inspector-revert"));
+  };
   return createPortal(html`
     <${React.Fragment}>
       <button
@@ -18386,6 +18556,29 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
         onBlur=${clearTip}
         aria-label="Pick element"
       ><${Icon.PickEl}/></button>
+      ${pendingCount > 0 && html`
+        <div
+          className="workflow-node-stage-pill"
+          data-node-id=${nodeId}
+          style=${pillStyle}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="workflow-node-stage-btn workflow-node-stage-revert"
+            onClick=${onRevertClick}
+            onMouseDown=${(e) => e.stopPropagation()}
+            title=${"Discard " + pendingCount + " unsaved edit" + (pendingCount === 1 ? "" : "s")}
+          >Revert</button>
+          <button
+            type="button"
+            className="workflow-node-stage-btn workflow-node-stage-save"
+            onClick=${onSaveClick}
+            onMouseDown=${(e) => e.stopPropagation()}
+            title=${"Save " + pendingCount + " edit" + (pendingCount === 1 ? "" : "s") + " to disk"}
+          >Save changes${pendingCount > 1 ? ` (${pendingCount})` : ""}</button>
+        </div>
+      `}
       ${tipBubble}
     <//>
   `, document.body);
@@ -21524,6 +21717,140 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     }
     return true;
   }, [resolveIframePath, flashPickOp]);
+
+  // ─── Staged inspector edits ─────────────────────────────────────────
+  // Inspector-driven style edits (the dock's Sizing / Auto-layout / Align
+  // / Fill / Outline / etc. fields) WRITE to inline style immediately so
+  // the user sees the change, but their persistence to disk is deferred
+  // until the user explicitly clicks Save. Revert reloads the iframes
+  // back to their on-disk state — the inline edits disappear with the
+  // contentDocument refresh.
+  //
+  // Keyed by iframe path so multiple edits on the same iframe collapse
+  // into one entry. Entry holds the iframe element + doc + nodeId so the
+  // commit path can serialize+POST the right doc, and the badge can show
+  // the Save/Revert affordance anchored to the right node.
+  const [pendingInspectorEdits, setPendingInspectorEdits] = useState(() => new Map());
+  // Resolve a save path for any iframe, not just the current pickerIframeRef.
+  // Mirrors resolveIframePath but takes the iframe explicitly so per-iframe
+  // commit doesn't depend on what's currently picked.
+  const _resolveIframePathFor = useCallback((ifr) => {
+    if (!ifr) return null;
+    try {
+      const loc = ifr.contentWindow && ifr.contentWindow.location;
+      if (loc && loc.pathname) {
+        let p = loc.pathname.replace(/^\/+/, "");
+        if (p.endsWith("/")) p += "index.html";
+        if (p.startsWith("source/") && (p.endsWith(".html") || p.endsWith(".htm"))) return p;
+      }
+    } catch {}
+    const aid = ifr.getAttribute("data-asset-id");
+    if (aid) {
+      const nd = (data.nodes || []).find(n => n.id === aid);
+      if (nd && nd.path) return nd.path;
+    }
+    return null;
+  }, [data]);
+  // Dispatch a digest so badges + any toolbar pill can re-render with the
+  // current pending state. Detail carries per-node counts so each badge
+  // only shows the affordance for its own node.
+  const _dispatchPendingDigest = useCallback((map) => {
+    const byNode = {};
+    let total = 0;
+    for (const v of map.values()) {
+      total++;
+      byNode[v.nodeId || "_anon"] = (byNode[v.nodeId || "_anon"] || 0) + 1;
+    }
+    try {
+      window.__thPendingInspectorEdits = { total, byNode };
+      window.dispatchEvent(new CustomEvent("th:pending-inspector-edits-changed", { detail: { total, byNode } }));
+    } catch {}
+  }, []);
+  const stageInspectorEdit = useCallback((ifr, doc /* , label */) => {
+    if (!ifr || !doc) return;
+    const path = _resolveIframePathFor(ifr);
+    if (!path) return;
+    const nodeId = ifr.getAttribute("data-prototype-id")
+                || ifr.getAttribute("data-asset-id")
+                || "";
+    setPendingInspectorEdits(prev => {
+      const next = new Map(prev);
+      next.set(path, { ifr, doc, path, nodeId });
+      _dispatchPendingDigest(next);
+      return next;
+    });
+  }, [_resolveIframePathFor, _dispatchPendingDigest]);
+  const commitInspectorEdits = useCallback(async () => {
+    const snapshot = Array.from(pendingInspectorEdits.values());
+    if (snapshot.length === 0) return;
+    flashPickOp("pending", `Saving ${snapshot.length} edit${snapshot.length === 1 ? "" : "s"}…`);
+    let okCount = 0;
+    for (const entry of snapshot) {
+      // Validate the iframe is still alive + the doc matches before serializing.
+      const ifr = entry.ifr;
+      if (!ifr || !ifr.isConnected) continue;
+      let curDoc = null;
+      try { curDoc = ifr.contentDocument; } catch {}
+      if (!curDoc || curDoc !== entry.doc) continue;
+      const project = activeProjectId();
+      const fullHtml = pickSerializeClean(entry.doc);
+      const apiU = apiUrl("/__html_save");
+      const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
+      try {
+        const resp = await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: entry.path, html: fullHtml, project }),
+        });
+        if (resp.ok) okCount++;
+      } catch {}
+    }
+    setPendingInspectorEdits(prev => {
+      const next = new Map();
+      _dispatchPendingDigest(next);
+      return next;
+    });
+    flashPickOp(okCount === snapshot.length ? "done" : "error",
+      okCount === snapshot.length
+        ? `Saved ${okCount} edit${okCount === 1 ? "" : "s"}`
+        : `Saved ${okCount} of ${snapshot.length} — some failed`);
+  }, [pendingInspectorEdits, flashPickOp, _dispatchPendingDigest]);
+  const revertInspectorEdits = useCallback(() => {
+    const snapshot = Array.from(pendingInspectorEdits.values());
+    if (snapshot.length === 0) return;
+    for (const entry of snapshot) {
+      const ifr = entry.ifr;
+      if (!ifr || !ifr.isConnected) continue;
+      // Reload from disk — cache-buster bump so the daemon serves the
+      // canonical bytes (NOT the in-memory mutated doc).
+      try {
+        const src = ifr.getAttribute("src") || "";
+        const clean = src.replace(/([?&])_inspstage=\d+/g, "$1").replace(/[?&]$/, "");
+        const sep = clean.includes("?") ? "&" : "?";
+        ifr.setAttribute("src", clean + sep + "_inspstage=" + Date.now());
+      } catch {}
+    }
+    // Clear immediately — the reload completes asynchronously but the
+    // staging entries are invalid the moment we ask for a reload.
+    setPendingInspectorEdits(prev => {
+      const next = new Map();
+      _dispatchPendingDigest(next);
+      return next;
+    });
+    flashPickOp("done", `Reverted ${snapshot.length} edit${snapshot.length === 1 ? "" : "s"}`);
+  }, [pendingInspectorEdits, flashPickOp, _dispatchPendingDigest]);
+  // Listen for badge-dispatched Save / Revert events so the badge UI can
+  // trigger commits without prop-drilling callbacks into createPortal.
+  useEffect(() => {
+    const onSave = () => { commitInspectorEdits(); };
+    const onRevert = () => { revertInspectorEdits(); };
+    window.addEventListener("th:staged-inspector-save", onSave);
+    window.addEventListener("th:staged-inspector-revert", onRevert);
+    return () => {
+      window.removeEventListener("th:staged-inspector-save", onSave);
+      window.removeEventListener("th:staged-inspector-revert", onRevert);
+    };
+  }, [commitInspectorEdits, revertInspectorEdits]);
 
   // Resolve the live DOM node for the picked element, re-querying via
   // pickedElement.path if pickedDomRef has gone stale (iframe re-mounted
@@ -26771,6 +27098,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 pickerIframeRef=${pickerIframeRef}
                 pickedDomRef=${pickedDomRef}
                 onSaveIframeHtml=${_saveIframeHtml}
+                onStageInspectorEdit=${stageInspectorEdit}
                 onMoveElement=${reorderPickedElement}
                 isReactManaged=${_isPickedReactManaged}
                 onClose=${() => { setPickedElement(null); }}
@@ -32321,7 +32649,7 @@ function WorkflowCodePanel({ node, onClose, zoom }) {
 function WorkflowPickedInspectorDock({
   node, zoom, pickedElement,
   pickerIframeRef, pickedDomRef,
-  onSaveIframeHtml, onMoveElement, isReactManaged,
+  onSaveIframeHtml, onStageInspectorEdit, onMoveElement, isReactManaged,
   onClose,
 }) {
   // Refresh tick — bumps whenever we mutate styles so the inspector
@@ -32567,8 +32895,15 @@ function WorkflowPickedInspectorDock({
       }
     }
     setRefreshTick(t => t + 1);
-    try { await onSaveIframeHtml(doc, "Inspector style"); } catch {}
-  }, [pickerIframeRef, pickedDomRef, onSaveIframeHtml, isReactManaged]);
+    // Stage the edit — persistence is deferred until the user explicitly
+    // clicks Save on the badge pill. Falls back to the immediate save path
+    // when no stage callback is wired (defensive — should always be wired
+    // from WorkflowSurface).
+    try {
+      if (typeof onStageInspectorEdit === "function") onStageInspectorEdit(ifr, doc);
+      else if (typeof onSaveIframeHtml === "function") await onSaveIframeHtml(doc, "Inspector style");
+    } catch {}
+  }, [pickerIframeRef, pickedDomRef, onSaveIframeHtml, onStageInspectorEdit, isReactManaged]);
 
   // v3.4.x — Re-pick a different element from the tree links. Updates
   // pickedDomRef + dispatches th:element-picked so WorkflowSurface's
@@ -33044,6 +33379,23 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}
           className="workflow-node-action"
+          tip="Open the editor for this prototype in a new tab (no embed chrome stripped)."
+          ariaLabel="Open in editor"
+          onClick=${(e) => {
+            e.stopPropagation();
+            // The standalone editor URL is the embed URL with `embed=1`
+            // removed so the toolbar / chat / edits panel come back.
+            // apiUrl-aware construction so workspace projects keep the
+            // ?project=… query that serve.py uses for routing.
+            try {
+              const url = apiUrl(`/editor/index.html?view=canvas&prototype=${encodeURIComponent(protoSlug)}`);
+              window.open(url, "_blank", "noopener");
+            } catch {}
+          }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.OpenExt}/><//>
+        <${HoverTip}
+          className="workflow-node-action"
           tip="Refresh — reload editor/data.js and remount the canvas iframe."
           ariaLabel="Refresh canvas frames"
           onClick=${(e) => { e.stopPropagation(); setNonce(n => n + 1); }}
@@ -33073,14 +33425,17 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
                body clips to the node bounds. */
             width:  "100%",
             height: "100%",
-            // Iframe is only interactive when the node is SELECTED. Unselected,
-            // the iframe is invisible to the mouse so clicks fall through to
-            // the body-drag overlay below — the user can drag the node around
-            // without accidentally grabbing the embedded editor's canvas pan/
-            // zoom. Selection commits on mouseup (handled by the surface wrap's
-            // capture-phase handler + armSelectSuppression), so mousedown-into-
-            // drag never flashes the iframe as interactive on the way out.
-            pointerEvents: selected ? "auto" : "none",
+            /* v3.5.1 — ALWAYS pointer-events: none on the canvas-frames
+               iframe. The embedded editor's own pan/zoom is disabled
+               (CanvasView reads ?embed=1 → useEndlessCanvas interactive:
+               false), so when the iframe captured wheel/drag while
+               selected the events died inside it and the workflow canvas
+               appeared FROZEN — couldn't pan, couldn't zoom. Letting
+               events fall straight through to the workflow canvas wrap
+               restores native pan/zoom on the outer surface. The user
+               drives via the "Open in editor" bar button if they want to
+               click into a frame. */
+            pointerEvents: "none",
           }}
         />
         ${!selected && html`
@@ -33255,115 +33610,193 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // computation. pushState() navigations don't trigger popstate, so apps
   // using the History API for routing will go undetected here — known
   // limitation, hash-routing is the common case.
-  // v3.5 — Per-iframe back/forward navigation stacks.
-  //   past[]    — URLs the user navigated FROM (oldest first, top = most recent)
-  //   future[]  — URLs popped by Back (top = next to redo on Forward)
-  //   current   — URL currently shown in the iframe
-  //   suppress  — set by Back/Forward before we call location.replace; the
-  //               subsequent load fires capture(), which skips the past push
-  //               so our own programmatic navigation doesn't pollute history
+  // v3.5.2 — Per-iframe back/forward with three signal sources so the user
+  // can step through every "screen" they saw, not only HTML-page changes:
+  //   1. URL changes via load / hashchange / popstate (handled previously).
+  //   2. SPA route changes via history.pushState / replaceState — the iframe's
+  //      history object is patched so these silent calls fire a custom event
+  //      our captureChange listener responds to.
+  //   3. DOM-only changes after a click that didn't change the URL — vanilla
+  //      show/hide prototypes never reach (1) or (2), so we schedule a
+  //      delayed capture after every click and diff the body's innerHTML
+  //      against the last recorded state.
   //
-  // Why this instead of `iframeRef.current.contentWindow.history.back()`:
-  // same-origin iframes share the JOINT session history with the parent —
-  // calling .history.back() on the iframe's contentWindow may walk a parent
-  // entry, navigating the workflow canvas instead of the prototype. The
-  // per-iframe stack lets the user step through pages they viewed in THIS
-  // node without touching the parent at all. We navigate via
-  // location.replace() so we don't add to the joint session history either.
+  // Entries in past[] / future[] are { url, html, scroll } — small enough to
+  // restore visual state but bounded to NAV_HISTORY_LIMIT to cap memory.
+  // Restoring an entry either navigates to its URL (location.replace, stays
+  // out of the joint session history) for URL changes, or replaces body +
+  // scroll in place for snapshot-only changes.
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
+  const NAV_HISTORY_LIMIT = 30;
 
   useEffect(() => {
     const f = iframeRef.current;
     if (!f) return;
     let trackedWin = null;
-    const capture = () => {
+    let clickCaptureTimer = 0;
+
+    const snapshotState = () => {
       try {
-        if (!trackedWin) return;
-        const url  = trackedWin.location.href;
-        const hist = navHistRef.current;
-        if (suppressNavTrackRef.current) {
-          // This event was triggered by our own Back/Forward — just update
-          // `current`; past/future already reflect the post-navigation state.
-          suppressNavTrackRef.current = false;
-          hist.current = url;
-        } else if (hist.current == null) {
-          // First time we see a URL — seed `current`, no past entry yet.
-          hist.current = url;
-        } else if (hist.current !== url) {
-          // Natural user navigation (link click, hashchange, etc.) — push
-          // the previous URL onto past, clear the redo stack.
-          hist.past.push(hist.current);
-          hist.future = [];
-          hist.current = url;
-        }
+        if (!trackedWin || !trackedWin.document) return null;
+        const url    = trackedWin.location.href;
+        const html   = trackedWin.document.body ? trackedWin.document.body.outerHTML : "";
+        const scroll = { x: trackedWin.scrollX || 0, y: trackedWin.scrollY || 0 };
+        return { url, html, scroll };
+      } catch { return null; }
+    };
+    const captureChange = () => {
+      const next = snapshotState();
+      if (!next) return;
+      const hist = navHistRef.current;
+      if (suppressNavTrackRef.current) {
+        // Our own Back/Forward triggered this — adopt as current, don't push.
+        suppressNavTrackRef.current = false;
+        hist.current = next;
+      } else if (!hist.current) {
+        hist.current = next;
+      } else if (hist.current.url !== next.url || hist.current.html !== next.html) {
+        hist.past.push(hist.current);
+        if (hist.past.length > NAV_HISTORY_LIMIT) hist.past.shift();
+        hist.future = [];
+        hist.current = next;
+      }
+      try {
         const state = {
           pathname: trackedWin.location.pathname,
-          hash: trackedWin.location.hash || "",
+          hash:     trackedWin.location.hash || "",
         };
         onIframeState && onIframeState(state);
-      } catch { /* cross-origin guard */ }
+      } catch {}
+    };
+    const scheduleClickCapture = () => {
+      // Click handlers commonly mutate DOM synchronously OR after a frame
+      // (async route fetches, animations); 250ms is the empirical floor that
+      // catches both without feeling laggy.
+      if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
+      clickCaptureTimer = setTimeout(() => {
+        clickCaptureTimer = 0;
+        captureChange();
+      }, 250);
+    };
+    // Marker-based patching so re-running this effect (or onLoad after a
+    // same-origin in-iframe navigation that keeps contentWindow alive)
+    // doesn't wrap the wrapper. Each `localOrig*` const is captured by THIS
+    // patch's closure only — no outer-scope mutation chain that previously
+    // caused the wrapper to reference itself and stack-overflow.
+    const patchHistory = () => {
+      if (!trackedWin || !trackedWin.history) return;
+      const hist = trackedWin.history;
+      if (hist.__thNavPatched) return;
+      const localOrigPush    = hist.pushState;
+      const localOrigReplace = hist.replaceState;
+      hist.pushState = function(...args) {
+        const r = localOrigPush.apply(this, args);
+        try { trackedWin.dispatchEvent(new Event("thnav-push")); } catch {}
+        return r;
+      };
+      hist.replaceState = function(...args) {
+        const r = localOrigReplace.apply(this, args);
+        try { trackedWin.dispatchEvent(new Event("thnav-replace")); } catch {}
+        return r;
+      };
+      hist.__thNavPatched = true;
     };
     const wireWin = () => {
       try { trackedWin = f.contentWindow; } catch { trackedWin = null; }
       if (!trackedWin) return;
-      capture();
+      patchHistory();
+      captureChange();
       try {
-        trackedWin.addEventListener("hashchange", capture);
-        trackedWin.addEventListener("popstate", capture);
+        trackedWin.addEventListener("hashchange",     captureChange);
+        trackedWin.addEventListener("popstate",       captureChange);
+        trackedWin.addEventListener("thnav-push",     captureChange);
+        trackedWin.addEventListener("thnav-replace",  captureChange);
+        // capture-phase click so we win against stopPropagation inside
+        // the prototype. Delegated listener on document covers dynamically
+        // added elements too.
+        if (trackedWin.document) {
+          trackedWin.document.addEventListener("click", scheduleClickCapture, true);
+        }
       } catch {}
     };
     const onLoad = () => {
-      // Tear down any prior listeners before re-binding to the new contentWindow.
       try {
         if (trackedWin) {
-          trackedWin.removeEventListener("hashchange", capture);
-          trackedWin.removeEventListener("popstate", capture);
+          trackedWin.removeEventListener("hashchange",    captureChange);
+          trackedWin.removeEventListener("popstate",      captureChange);
+          trackedWin.removeEventListener("thnav-push",    captureChange);
+          trackedWin.removeEventListener("thnav-replace", captureChange);
+          if (trackedWin.document) trackedWin.document.removeEventListener("click", scheduleClickCapture, true);
         }
       } catch {}
       wireWin();
     };
     f.addEventListener("load", onLoad);
-    // The iframe may already have completed loading before this effect runs
-    // (cached navigations). Wire immediately in that case.
     if (f.contentWindow) wireWin();
     return () => {
       f.removeEventListener("load", onLoad);
+      if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
       try {
         if (trackedWin) {
-          trackedWin.removeEventListener("hashchange", capture);
-          trackedWin.removeEventListener("popstate", capture);
+          trackedWin.removeEventListener("hashchange",    captureChange);
+          trackedWin.removeEventListener("popstate",      captureChange);
+          trackedWin.removeEventListener("thnav-push",    captureChange);
+          trackedWin.removeEventListener("thnav-replace", captureChange);
+          if (trackedWin.document) trackedWin.document.removeEventListener("click", scheduleClickCapture, true);
         }
       } catch {}
     };
   }, [onIframeState]);
 
+  // Replace iframe state with a captured entry. If the entry's URL differs
+  // from the current iframe URL, navigate via location.replace (the natural
+  // load then re-paints the DOM and our capture sees it as the new state).
+  // If URL matches, do DOM-only restore: replace body, reset scroll.
+  const restoreEntry = useCallback((entry) => {
+    if (!entry) return;
+    suppressNavTrackRef.current = true;
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (!win) { suppressNavTrackRef.current = false; return; }
+      if (win.location.href !== entry.url) {
+        // URL change — natural page load. The captured HTML will not be
+        // re-applied here; the freshly loaded page IS the truth for that URL.
+        win.location.replace(entry.url);
+      } else if (entry.html && win.document.body) {
+        // Same URL → DOM-only restore. Re-parse the saved HTML so we get a
+        // real DOM tree to swap in, then restore scroll position.
+        const parser = new DOMParser();
+        const parsed = parser.parseFromString(entry.html, "text/html");
+        if (parsed.body) win.document.body.replaceWith(parsed.body);
+        try { win.scrollTo(entry.scroll.x, entry.scroll.y); } catch {}
+        // No load event fires for a body swap — clear the suppress flag
+        // ourselves so the next real navigation tracks again.
+        suppressNavTrackRef.current = false;
+      } else {
+        suppressNavTrackRef.current = false;
+      }
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
+
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
     if (!hist.past.length) return;
-    const prevUrl = hist.past.pop();
+    const prev = hist.past.pop();
     if (hist.current) hist.future.push(hist.current);
-    suppressNavTrackRef.current = true;
-    try {
-      const win = iframeRef.current && iframeRef.current.contentWindow;
-      if (win) win.location.replace(prevUrl);
-    } catch {
-      suppressNavTrackRef.current = false;
-    }
-  }, []);
+    restoreEntry(prev);
+    hist.current = prev;
+  }, [restoreEntry]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
     if (!hist.future.length) return;
-    const nextUrl = hist.future.pop();
+    const next = hist.future.pop();
     if (hist.current) hist.past.push(hist.current);
-    suppressNavTrackRef.current = true;
-    try {
-      const win = iframeRef.current && iframeRef.current.contentWindow;
-      if (win) win.location.replace(nextUrl);
-    } catch {
-      suppressNavTrackRef.current = false;
-    }
-  }, []);
+    restoreEntry(next);
+    hist.current = next;
+  }, [restoreEntry]);
 
   // Header drag — divide screen delta by zoom for world coordinates. We
   // signal start/end up to the surface so it can disable iframe
@@ -35472,47 +35905,95 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     });
   }, [onChange, node.size]);
 
-  // v3.5 — Per-iframe back/forward navigation stacks for the html asset node.
-  // Same shape as the prototype node's: past[] / future[] / current. We
-  // navigate via location.replace() to stay out of the joint session history
-  // so the workflow canvas isn't affected when the user clicks Back/Forward.
+  // v3.5.2 — Per-iframe back/forward with pushState patching + DOM snapshots.
+  // Same shape as the prototype node version (see WorkflowPrototypeNode for
+  // detailed comments). Three signal sources: URL events, pushState/
+  // replaceState patches, delayed click captures for DOM-only changes.
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
+  const NAV_HISTORY_LIMIT = 30;
   useEffect(() => {
     const f = htmlIframeRef.current;
     if (!f) return;
     let trackedWin = null;
-    const capture = () => {
+    let clickCaptureTimer = 0;
+
+    const snapshotState = () => {
       try {
-        if (!trackedWin) return;
-        const url = trackedWin.location.href;
-        const hist = navHistRef.current;
-        if (suppressNavTrackRef.current) {
-          suppressNavTrackRef.current = false;
-          hist.current = url;
-        } else if (hist.current == null) {
-          hist.current = url;
-        } else if (hist.current !== url) {
-          hist.past.push(hist.current);
-          hist.future = [];
-          hist.current = url;
-        }
-      } catch {}
+        if (!trackedWin || !trackedWin.document) return null;
+        const url    = trackedWin.location.href;
+        const html   = trackedWin.document.body ? trackedWin.document.body.outerHTML : "";
+        const scroll = { x: trackedWin.scrollX || 0, y: trackedWin.scrollY || 0 };
+        return { url, html, scroll };
+      } catch { return null; }
+    };
+    const captureChange = () => {
+      const next = snapshotState();
+      if (!next) return;
+      const hist = navHistRef.current;
+      if (suppressNavTrackRef.current) {
+        suppressNavTrackRef.current = false;
+        hist.current = next;
+      } else if (!hist.current) {
+        hist.current = next;
+      } else if (hist.current.url !== next.url || hist.current.html !== next.html) {
+        hist.past.push(hist.current);
+        if (hist.past.length > NAV_HISTORY_LIMIT) hist.past.shift();
+        hist.future = [];
+        hist.current = next;
+      }
+    };
+    const scheduleClickCapture = () => {
+      if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
+      clickCaptureTimer = setTimeout(() => {
+        clickCaptureTimer = 0;
+        captureChange();
+      }, 250);
+    };
+    // Same marker-based patching as WorkflowPrototypeNode — see comments
+    // there. The outer-closure pattern recurses-into-itself across effect
+    // re-runs; per-patch closure consts + a window-level marker avoid it.
+    const patchHistory = () => {
+      if (!trackedWin || !trackedWin.history) return;
+      const hist = trackedWin.history;
+      if (hist.__thNavPatched) return;
+      const localOrigPush    = hist.pushState;
+      const localOrigReplace = hist.replaceState;
+      hist.pushState = function(...args) {
+        const r = localOrigPush.apply(this, args);
+        try { trackedWin.dispatchEvent(new Event("thnav-push")); } catch {}
+        return r;
+      };
+      hist.replaceState = function(...args) {
+        const r = localOrigReplace.apply(this, args);
+        try { trackedWin.dispatchEvent(new Event("thnav-replace")); } catch {}
+        return r;
+      };
+      hist.__thNavPatched = true;
     };
     const wireWin = () => {
       try { trackedWin = f.contentWindow; } catch { trackedWin = null; }
       if (!trackedWin) return;
-      capture();
+      patchHistory();
+      captureChange();
       try {
-        trackedWin.addEventListener("hashchange", capture);
-        trackedWin.addEventListener("popstate", capture);
+        trackedWin.addEventListener("hashchange",    captureChange);
+        trackedWin.addEventListener("popstate",      captureChange);
+        trackedWin.addEventListener("thnav-push",    captureChange);
+        trackedWin.addEventListener("thnav-replace", captureChange);
+        if (trackedWin.document) {
+          trackedWin.document.addEventListener("click", scheduleClickCapture, true);
+        }
       } catch {}
     };
     const onLoad = () => {
       try {
         if (trackedWin) {
-          trackedWin.removeEventListener("hashchange", capture);
-          trackedWin.removeEventListener("popstate", capture);
+          trackedWin.removeEventListener("hashchange",    captureChange);
+          trackedWin.removeEventListener("popstate",      captureChange);
+          trackedWin.removeEventListener("thnav-push",    captureChange);
+          trackedWin.removeEventListener("thnav-replace", captureChange);
+          if (trackedWin.document) trackedWin.document.removeEventListener("click", scheduleClickCapture, true);
         }
       } catch {}
       wireWin();
@@ -35521,40 +36002,55 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     if (f.contentWindow) wireWin();
     return () => {
       f.removeEventListener("load", onLoad);
+      if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
       try {
         if (trackedWin) {
-          trackedWin.removeEventListener("hashchange", capture);
-          trackedWin.removeEventListener("popstate", capture);
+          trackedWin.removeEventListener("hashchange",    captureChange);
+          trackedWin.removeEventListener("popstate",      captureChange);
+          trackedWin.removeEventListener("thnav-push",    captureChange);
+          trackedWin.removeEventListener("thnav-replace", captureChange);
+          if (trackedWin.document) trackedWin.document.removeEventListener("click", scheduleClickCapture, true);
         }
       } catch {}
     };
   }, []);
+  const restoreEntry = useCallback((entry) => {
+    if (!entry) return;
+    suppressNavTrackRef.current = true;
+    try {
+      const win = htmlIframeRef.current && htmlIframeRef.current.contentWindow;
+      if (!win) { suppressNavTrackRef.current = false; return; }
+      if (win.location.href !== entry.url) {
+        win.location.replace(entry.url);
+      } else if (entry.html && win.document.body) {
+        const parser = new DOMParser();
+        const parsed = parser.parseFromString(entry.html, "text/html");
+        if (parsed.body) win.document.body.replaceWith(parsed.body);
+        try { win.scrollTo(entry.scroll.x, entry.scroll.y); } catch {}
+        suppressNavTrackRef.current = false;
+      } else {
+        suppressNavTrackRef.current = false;
+      }
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
     if (!hist.past.length) return;
-    const prevUrl = hist.past.pop();
+    const prev = hist.past.pop();
     if (hist.current) hist.future.push(hist.current);
-    suppressNavTrackRef.current = true;
-    try {
-      const win = htmlIframeRef.current && htmlIframeRef.current.contentWindow;
-      if (win) win.location.replace(prevUrl);
-    } catch {
-      suppressNavTrackRef.current = false;
-    }
-  }, []);
+    restoreEntry(prev);
+    hist.current = prev;
+  }, [restoreEntry]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
     if (!hist.future.length) return;
-    const nextUrl = hist.future.pop();
+    const next = hist.future.pop();
     if (hist.current) hist.past.push(hist.current);
-    suppressNavTrackRef.current = true;
-    try {
-      const win = htmlIframeRef.current && htmlIframeRef.current.contentWindow;
-      if (win) win.location.replace(nextUrl);
-    } catch {
-      suppressNavTrackRef.current = false;
-    }
-  }, []);
+    restoreEntry(next);
+    hist.current = next;
+  }, [restoreEntry]);
   // v3.3 — Long-running interactive HTML (a simulation runtime, an
   // interactive piece, a narrative experience runtime) owns its OWN state
   // and rAF loop inside the iframe. Auto-busting the iframe on every
