@@ -34374,10 +34374,19 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     };
   }, [onIframeState]);
 
-  // Replace iframe state with a captured entry. If the entry's URL differs
-  // from the current iframe URL, navigate via location.replace (the natural
-  // load then re-paints the DOM and our capture sees it as the new state).
-  // If URL matches, do DOM-only restore: replace body, reset scroll.
+  // Navigate the iframe to a captured entry's URL via location.replace. The
+  // load that follows re-runs the page's scripts, so all interactivity is
+  // preserved.
+  //
+  // Why we don't roll back DOM-only state changes: an earlier version of
+  // this code replaced document.body with a re-parsed clone of the saved
+  // outerHTML when the URL matched. That swap detached every event listener
+  // the page's scripts bound to the original elements, and <script> tags
+  // inside the parsed body are inert per the DOMParser spec — so handlers
+  // never re-bind. Visually the page matched the snapshot, but every click
+  // landed on nothing: the iframe was frozen until reload. Skipping
+  // same-URL restores is strictly better than that — the page keeps
+  // working, Back simply no-ops for pure show/hide prototypes.
   const restoreEntry = useCallback((entry) => {
     if (!entry) return;
     suppressNavTrackRef.current = true;
@@ -34385,19 +34394,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       const win = iframeRef.current && iframeRef.current.contentWindow;
       if (!win) { suppressNavTrackRef.current = false; return; }
       if (win.location.href !== entry.url) {
-        // URL change — natural page load. The captured HTML will not be
-        // re-applied here; the freshly loaded page IS the truth for that URL.
         win.location.replace(entry.url);
-      } else if (entry.html && win.document.body) {
-        // Same URL → DOM-only restore. Re-parse the saved HTML so we get a
-        // real DOM tree to swap in, then restore scroll position.
-        const parser = new DOMParser();
-        const parsed = parser.parseFromString(entry.html, "text/html");
-        if (parsed.body) win.document.body.replaceWith(parsed.body);
-        try { win.scrollTo(entry.scroll.x, entry.scroll.y); } catch {}
-        // No load event fires for a body swap — clear the suppress flag
-        // ourselves so the next real navigation tracks again.
-        suppressNavTrackRef.current = false;
       } else {
         suppressNavTrackRef.current = false;
       }
@@ -34406,21 +34403,39 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     }
   }, []);
 
+  // Walk past[] back until we find an entry whose URL differs from the
+  // current one. Same-URL entries (DOM-only snapshots from the legacy
+  // capture path) have nothing to restore and would no-op restoreEntry,
+  // which would look like the Back button is broken — skip them.
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
-    if (!hist.past.length) return;
-    const prev = hist.past.pop();
-    if (hist.current) hist.future.push(hist.current);
-    restoreEntry(prev);
-    hist.current = prev;
+    const curUrl = (() => {
+      try { return iframeRef.current.contentWindow.location.href; } catch { return null; }
+    })();
+    while (hist.past.length) {
+      const prev = hist.past.pop();
+      if (hist.current) hist.future.push(hist.current);
+      hist.current = prev;
+      if (!curUrl || prev.url !== curUrl) {
+        restoreEntry(prev);
+        return;
+      }
+    }
   }, [restoreEntry]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
-    if (!hist.future.length) return;
-    const next = hist.future.pop();
-    if (hist.current) hist.past.push(hist.current);
-    restoreEntry(next);
-    hist.current = next;
+    const curUrl = (() => {
+      try { return iframeRef.current.contentWindow.location.href; } catch { return null; }
+    })();
+    while (hist.future.length) {
+      const next = hist.future.pop();
+      if (hist.current) hist.past.push(hist.current);
+      hist.current = next;
+      if (!curUrl || next.url !== curUrl) {
+        restoreEntry(next);
+        return;
+      }
+    }
   }, [restoreEntry]);
 
   // Header drag — divide screen delta by zoom for world coordinates. We
@@ -36639,6 +36654,12 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       } catch {}
     };
   }, []);
+  // Same DOM-restore freeze fix as WorkflowPrototypeNode — see the long
+  // comment on the prototype node's restoreEntry for the reasoning. We
+  // navigate via location.replace only; same-URL "DOM-only" snapshots are
+  // skipped, because replacing document.body with a re-parsed clone
+  // detaches every listener the page's scripts bound and leaves the iframe
+  // visibly intact but functionally frozen.
   const restoreEntry = useCallback((entry) => {
     if (!entry) return;
     suppressNavTrackRef.current = true;
@@ -36647,12 +36668,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       if (!win) { suppressNavTrackRef.current = false; return; }
       if (win.location.href !== entry.url) {
         win.location.replace(entry.url);
-      } else if (entry.html && win.document.body) {
-        const parser = new DOMParser();
-        const parsed = parser.parseFromString(entry.html, "text/html");
-        if (parsed.body) win.document.body.replaceWith(parsed.body);
-        try { win.scrollTo(entry.scroll.x, entry.scroll.y); } catch {}
-        suppressNavTrackRef.current = false;
       } else {
         suppressNavTrackRef.current = false;
       }
@@ -36662,19 +36677,33 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   }, []);
   const goBack = useCallback(() => {
     const hist = navHistRef.current;
-    if (!hist.past.length) return;
-    const prev = hist.past.pop();
-    if (hist.current) hist.future.push(hist.current);
-    restoreEntry(prev);
-    hist.current = prev;
+    const curUrl = (() => {
+      try { return htmlIframeRef.current.contentWindow.location.href; } catch { return null; }
+    })();
+    while (hist.past.length) {
+      const prev = hist.past.pop();
+      if (hist.current) hist.future.push(hist.current);
+      hist.current = prev;
+      if (!curUrl || prev.url !== curUrl) {
+        restoreEntry(prev);
+        return;
+      }
+    }
   }, [restoreEntry]);
   const goForward = useCallback(() => {
     const hist = navHistRef.current;
-    if (!hist.future.length) return;
-    const next = hist.future.pop();
-    if (hist.current) hist.past.push(hist.current);
-    restoreEntry(next);
-    hist.current = next;
+    const curUrl = (() => {
+      try { return htmlIframeRef.current.contentWindow.location.href; } catch { return null; }
+    })();
+    while (hist.future.length) {
+      const next = hist.future.pop();
+      if (hist.current) hist.past.push(hist.current);
+      hist.current = next;
+      if (!curUrl || next.url !== curUrl) {
+        restoreEntry(next);
+        return;
+      }
+    }
   }, [restoreEntry]);
   // v3.3 — Long-running interactive HTML (a simulation runtime, an
   // interactive piece, a narrative experience runtime) owns its OWN state
