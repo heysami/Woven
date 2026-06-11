@@ -18964,11 +18964,9 @@ function runExportForNode(nodeId, nodeLabel) {
    once at Root level so every surface that fires runExportForNode (editor,
    workflow canvas, prototype door) gets the same UI. */
 function ExportNameModal({ nodeId, nodeLabel, onClose }) {
-  // Default name = slugified label + timestamp, mirroring the historical
-  // auto-name. The user can edit it (or wipe the timestamp suffix for a
-  // stable name they'll re-export to repeatedly with override on).
-  const defaultName = `${slugifyBucketName(nodeLabel || nodeId || "asset")}__${bucketTimestamp()}`;
-  const [name, setName]               = useState(defaultName);
+  // Empty by default — the user types whatever they want. The placeholder
+  // ("Export as ...") tells them what to do.
+  const [name, setName]               = useState("");
   const [override, setOverride]       = useState(exportAllowOverridePref());
   const [exists, setExists]           = useState(false);
   const [busy, setBusy]               = useState(false);
@@ -18976,19 +18974,14 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
   const inputRef = useRef(null);
 
   // Local-computed slug. Mirrors editor/exports.py::safe_bucket_name 1:1, so
-  // the hint / warn banner / button label can render INSTANTLY without
-  // waiting for the server probe — no stale-slug flash between keystrokes.
-  // The server probe is reserved for the existence check below.
+  // the warn banner renders INSTANTLY without waiting for the server probe —
+  // no stale-slug flash between keystrokes. The server probe is reserved
+  // for the existence check below.
   const trimmedName = (name || "").trim();
   const localSlug   = trimmedName ? slugifyBucketName(trimmedName) : "";
 
-  // Select-all on mount so the user can either tweak the timestamp suffix
-  // or wipe the whole thing and type a stable name.
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-      try { inputRef.current.select(); } catch {}
-    }
+    if (inputRef.current) inputRef.current.focus();
   }, []);
 
   // Debounced existence probe. Re-runs whenever the typed name settles for
@@ -19088,7 +19081,7 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
               value=${name}
               spellCheck=${false}
               autoComplete="off"
-              placeholder="Folder name"
+              placeholder="Export as..."
               onInput=${(e) => setName(e.target.value)}
               onKeyDown=${(e) => {
                 if (e.key === "Enter" && canSubmit) { e.preventDefault(); handleSubmit(); }
@@ -19128,11 +19121,7 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
             onClick=${handleSubmit}
             disabled=${!canSubmit}
             data-disabled=${!canSubmit}
-          >${busy
-              ? `Exporting${localSlug ? ` ${localSlug}` : ""}…`
-              : (localSlug
-                  ? html`Export as <span className="export-submit-name">${localSlug}</span>`
-                  : "Enter a name to export")}</button>
+          >${busy ? "Exporting…" : "Export"}</button>
         </div>
       </div>
     </div>
