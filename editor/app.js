@@ -17601,30 +17601,26 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   const [openTool, setOpenTool] = useState(null);
   const [tip, setTip] = useState({ on: null, pos: null });
   const nodeId = node.id;
-  // rAF-tracked rect of the node container — same pattern as the pick badge.
+  // rAF-tracked rect of the node container. v3.5.5 — no longer pauses on
+  // __thCanvasInteracting; the bar tracks the node through pan/zoom so it
+  // glides with the canvas instead of disappearing at gesture start and
+  // snapping back at gesture end. setRect every frame is cheap (React 18
+  // batches the render, the style object is the only thing that diffs).
   useEffect(() => {
     if (!selected) { setRect(null); return; }
     let raf = 0;
     let last = null;
     const tick = () => {
-      // v3.4.2 — Skip the rect query while the user is panning the canvas.
-      // Pan triggers a setPan on every mousemove → React re-render of every
-      // mounted bar → rAF detects new screen rect → another re-render. With
-      // many nodes that cascade shows up as a jerk. CSS also hides the bar
-      // during pan, so users don't see it lag-following — when the gesture
-      // ends, the next tick snaps it back to the correct screen rect.
-      if (!window.__thCanvasInteracting) {
-        const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
-        if (el) {
-          const r = el.getBoundingClientRect();
-          if (!last || last.top !== r.top || last.left !== r.left
-              || last.width !== r.width || last.height !== r.height) {
-            last = { top: r.top, left: r.left, width: r.width, height: r.height,
-                     right: r.right, bottom: r.bottom };
-            setRect(last);
-          }
-        } else if (last) { last = null; setRect(null); }
-      }
+      const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                   right: r.right, bottom: r.bottom };
+          setRect(last);
+        }
+      } else if (last) { last = null; setRect(null); }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -18213,29 +18209,23 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
   const [openTool, setOpenTool] = useState(null);
   const [tip, setTip] = useState({ on: null, pos: null });
   const hostNodeId = pickedElement && pickedElement.nodeId;
-  // Track the host iframe's screen rect (rAF). We anchor the bar above
-  // the iframe rather than above the picked element so the position is
-  // stable when the user pans / scrolls the iframe content. The picked
-  // element gets a red outline inside the iframe — that's the visual
-  // anchor for "what does this bar act on".
+  // Track the host iframe's screen rect. v3.5.5 — no longer pauses on
+  // __thCanvasInteracting so the bar glides with the iframe through pan/zoom.
   useEffect(() => {
     if (!hostNodeId) { setRect(null); return; }
     let raf = 0; let last = null;
     const tick = () => {
-      // v3.4.2 — Skip during canvas pan/zoom; CSS hides the bar anyway.
-      if (!window.__thCanvasInteracting) {
-        const sel = 'iframe[data-prototype-id="' + hostNodeId + '"], iframe[data-asset-id="' + hostNodeId + '"]';
-        const ifr = document.querySelector(sel);
-        if (ifr) {
-          const r = ifr.getBoundingClientRect();
-          if (!last || last.top !== r.top || last.left !== r.left
-              || last.width !== r.width || last.height !== r.height) {
-            last = { top: r.top, left: r.left, width: r.width, height: r.height,
-                     right: r.right, bottom: r.bottom };
-            setRect(last);
-          }
-        } else if (last) { last = null; setRect(null); }
-      }
+      const sel = 'iframe[data-prototype-id="' + hostNodeId + '"], iframe[data-asset-id="' + hostNodeId + '"]';
+      const ifr = document.querySelector(sel);
+      if (ifr) {
+        const r = ifr.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                   right: r.right, bottom: r.bottom };
+          setRect(last);
+        }
+      } else if (last) { last = null; setRect(null); }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -18537,14 +18527,14 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // can still commit or discard.
   const visible = selected || active || pendingCount > 0;
   // Poll the node's bounding rect each animation frame so the badge tracks
-  // pan/zoom/drag. Only run while visible so hidden badges don't churn rAF.
+  // pan/zoom/drag. v3.5.5 — no longer pauses during canvas-interacting;
+  // setRect runs every frame so the badge glides with the node instead of
+  // disappearing at gesture start and snapping back at gesture end.
   useEffect(() => {
     if (!visible) { setRect(null); return; }
     let raf = 0;
     let last = null;
     const tick = () => {
-      // v3.4.2 — Skip rect query during canvas pan/zoom (see useEndlessCanvas).
-      if (window.__thCanvasInteracting) { raf = requestAnimationFrame(tick); return; }
       // `.workflow-node` scopes the lookup to the actual node container —
       // the badge itself ALSO carries data-node-id (so canvas-level
       // closest("[data-node-id]") can resolve it back to its owning node),
@@ -18779,12 +18769,15 @@ async function runExportForNode(nodeId, nodeLabel) {
 function WorkflowNodeTopActions({ nodeId, selected, actions }) {
   const [rect, setRect] = useState(null);
   const [tipState, setTipState] = useState(null);
+  // v3.5.5 — Smooth tracking. rAF runs every frame; setRect fires when the
+  // rect changes (every frame during pan/zoom is fine — React 18 batches
+  // them and the render is cheap). No longer pauses on __thCanvasInteracting
+  // so the strip glides with the node.
   useEffect(() => {
     if (!selected) { setRect(null); return; }
     let raf = 0;
     let last = null;
     const tick = () => {
-      if (window.__thCanvasInteracting) { raf = requestAnimationFrame(tick); return; }
       const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
       if (node) {
         const r = node.getBoundingClientRect();

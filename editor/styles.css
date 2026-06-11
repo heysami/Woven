@@ -3039,21 +3039,12 @@ button {
     0 1px 3px rgba(0, 0, 0, 0.08),
     0 6px 18px rgba(0, 0, 0, 0.06);
 }
-/* v3.4.2 — While the user is panning/zooming the canvas, hide the portaled
-   chrome (asset action bar, picked-element bar, select badge, popovers).
-   The rAF loops that track each node's screen rect are paused during the
-   gesture (see useEndlessCanvas), so without this rule the bars would
-   freeze at their last position — visually pinned to a stale screen
-   coordinate while the nodes underneath them drift. Hiding entirely is
-   cleaner: the bars re-show + re-anchor in the next frame after pan ends. */
-body[data-canvas-interacting="true"] .workflow-asset-action-bar,
-body[data-canvas-interacting="true"] .workflow-asset-action-popover,
-body[data-canvas-interacting="true"] .workflow-node-select-badge,
-body[data-canvas-interacting="true"] .workflow-node-top-actions,
-body[data-canvas-interacting="true"] .th-portal-tip,
-body[data-canvas-interacting="true"] .workflow-asset-bg-popover {
-  display: none !important;
-}
+/* v3.5.5 — The CSS rule that used to hide all portaled chrome during
+   canvas pan/zoom was removed: the rAF loops in each chrome component
+   now keep running through the gesture (they imperatively update style or
+   call setRect every frame), so the bars glide with the node instead of
+   freezing + flashing back. Kept the tip + popover rules below so they
+   don't linger on top of the gesture's other UI changes. */
 /* v3.3 — Picked-element variant: subtle accent ring so the user can tell
    at a glance that the bar is scoped to the red-outlined sub-element
    inside the iframe rather than the whole asset card. */
