@@ -258,10 +258,16 @@ def readme_prototype(facts: dict) -> str:
     dsRef  = facts.get("dsRef")
     files  = facts.get("files") or []
     head = f"# {label}\n\nExported from Woven on {facts.get('exportedAt') or timestamp()}.\n\n"
+    # Immersive containers (simulation / interactive-media / narrative-experience
+    # / game / scrapbook / interactive-polish) keep their user-facing entry at
+    # `source/<branch>/<subfolder>/<assetId>/runtime.html`. Plain prototypes
+    # use the branch-root index.html. facts["entry"] is set by the dispatcher
+    # when it can resolve the assetId from the node.
+    entry_path = facts.get("entry") or f"source/{branch}/index.html"
     meta = (
         f"{_kind_line(kind)}\n"
         f"- **Branch slug:** `{branch}` — the prototype source tree lives at `source/{branch}/`.\n"
-        f"- **Entry:** open `source/{branch}/index.html` to read the page directly, or run the server (see below).\n"
+        f"- **Entry:** open `{entry_path}` to read the page directly, or run the server (see below).\n"
     )
     if dsRef:
         meta += (
@@ -465,6 +471,9 @@ _INTEGRATION_SNIPPETS = {
 }
 
 
+_INTEGRATION_SNIPPETS["vector"] = _INTEGRATION_SNIPPETS["svg"]
+
+
 def readme_single_resource(facts: dict) -> str:
     """README for any single-file asset that goes under resources/<kind>/.
     Covers asset.assetKind in {image,svg,video,audio,3d,shader,markdown,text}
@@ -567,11 +576,56 @@ _RESOURCE_BUCKET = {
     # asset.assetKind values
     "image":             "image",
     "svg":               "svg",
+    "vector":            "svg",   # editor's EXT_TO_ASSET_KIND maps .svg → "vector"
     "audio":             "audio",
     "markdown":          "markdown",
     "text":              "text",
     "html":              "html",       # only used for single-file html fallback
 }
+
+
+# Immersive-container subfolders. simulation / interactive-media /
+# narrative-experience / game-experience / scrapbook-experience /
+# interactive-polish each park their per-asset tree at
+# `source/<branch>/{subfolder}/<assetId>/`, with `runtime.html` as the
+# user-facing entry (see editor/app.js WorkflowSimOrInteractiveNode).
+# The plain `prototype` kind has no subfolder — its entry sits at
+# `source/<branch>/index.html`.
+_CONTAINER_SUBFOLDER = {
+    "simulation":            ("simulations",   "simId"),
+    "interactive-media":     ("interactives",  "imId"),
+    "narrative-experience":  ("narratives",    "nxId"),
+    "game-experience":       ("games",         "gameId"),
+    "scrapbook-experience":  ("scrapbooks",    "sbId"),
+    "interactive-polish":    ("polish",        "polishId"),
+}
+
+
+def _node_field(node: dict, *keys: str) -> "str | list | None":
+    """Read a node field that may live at the top level OR under inputs/spec.
+
+    The editor (editor/app.js) stores most node-shape fields as TOP-LEVEL
+    keys on the node — `node.assetKind`, `node.path`, `node.paths`,
+    `node.prototype`, `node.dsId`, etc. A few older / scaffolder code-
+    paths store the same fields under `node.inputs.*` or `node.spec.*`.
+    This helper checks top-level first, then `inputs`, then `spec`, and
+    returns the first non-empty match for any of the supplied keys (in
+    order). Used by every per-kind dispatch path so a freshly-built node
+    exports the same as one loaded from disk.
+    """
+    if not isinstance(node, dict):
+        return None
+    containers = [node, node.get("inputs") or {}, node.get("spec") or {}]
+    for k in keys:
+        for c in containers:
+            if not isinstance(c, dict):
+                continue
+            v = c.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+            if isinstance(v, list) and v:
+                return v
+    return None
 
 
 def _read_dsref_from_data_js(project_root: str, branch: str) -> "str | None":
@@ -627,17 +681,19 @@ def _safe_copy_tree(src_dir: str, dst_dir: str, files_out: list,
 
 
 def _resolve_branch_from_node(node: dict, project_root: str) -> "str | None":
-    """Container nodes carry their source slug as inputs.branch (most
-    kinds) or — for asset nodes — embedded in inputs.path under
-    source/<branch>/…. Several scaffold conventions also encode the
-    branch in the node id (`prototype_<branch>`) or label, so we fall
-    through to those when inputs are empty (which is common for half-
-    scaffolded placeholder nodes that haven't been run yet)."""
-    inputs = (node or {}).get("inputs") or {}
-    branch = inputs.get("branch")
+    """Container nodes carry their source slug at the TOP LEVEL as
+    `node.prototype` (canonical, see editor/app.js `nodePrototype()`),
+    with `node.branch` accepted as a legacy alias and `node.inputs.branch`
+    accepted for older scaffolder payloads. Asset-style containers may
+    also embed the slug inside `node.path` under `source/<branch>/…`.
+    Several scaffold conventions also encode the branch in the node id
+    (`prototype_<branch>`) or label, so we fall through to those when
+    none of the field reads find anything (common for half-scaffolded
+    placeholder nodes that haven't been run yet)."""
+    branch = _node_field(node, "prototype", "branch")
     if isinstance(branch, str) and branch.strip():
         return branch.strip()
-    path = inputs.get("path")
+    path = _node_field(node, "path")
     if isinstance(path, str) and path.startswith("source/"):
         parts = path.split("/", 2)
         if len(parts) >= 2 and parts[1]:
@@ -658,14 +714,14 @@ def _resolve_branch_from_node(node: dict, project_root: str) -> "str | None":
 
 
 def _resolve_file_from_node(node: dict) -> "str | None":
-    """Single-file kinds keep their file at inputs.path (asset-style) or
-    inputs.file / inputs.src (some media kinds). Returns the project-
-    relative path or None."""
-    inputs = (node or {}).get("inputs") or {}
-    for k in ("path", "file", "src", "url"):
-        v = inputs.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
+    """Single-file kinds keep their file at top-level `node.path` (the
+    editor's canonical shape — see app.js asset-node construction), with
+    `file` / `src` / `url` accepted as aliases and the same keys under
+    `node.inputs.*` accepted for older scaffolder payloads. Returns the
+    project-relative path or None."""
+    v = _node_field(node, "path", "file", "src", "url")
+    if isinstance(v, str) and v.strip():
+        return v.strip()
     return None
 
 
@@ -712,6 +768,18 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
     if kind in _PROTOTYPE_KINDS:
         branch = _resolve_branch_from_node(node, project_root) or "main"
         facts["branch"] = branch
+        # Immersive containers carry an additional per-asset id (simId /
+        # imId / nxId / gameId / sbId / polishId). Their runtime entry
+        # lives under source/<branch>/<subfolder>/<assetId>/runtime.html.
+        sub = _CONTAINER_SUBFOLDER.get(kind)
+        if sub:
+            subfolder, id_field = sub
+            asset_id = _node_field(node, id_field, "assetId")
+            if isinstance(asset_id, str) and asset_id.strip():
+                facts["assetId"] = asset_id.strip()
+                facts["entry"]   = (
+                    f"source/{branch}/{subfolder}/{asset_id.strip()}/runtime.html"
+                )
         src_dir = os.path.join(project_root, "source", branch)
         if not os.path.isdir(src_dir):
             facts["explanation"] = (
@@ -743,8 +811,23 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
 
     # ── design-system node ──────────────────────────────────────────────
     elif kind == "design-system":
-        inputs = node.get("inputs") or {}
-        ds_id = (inputs.get("id") or inputs.get("dsId") or inputs.get("path") or "").strip()
+        # design-system nodes (per editor/app.js) carry the DS id as
+        # top-level `node.dsId`. `inputs.id` / `inputs.dsId` /
+        # `inputs.path` cover legacy scaffolder payloads. NOTE: we do
+        # NOT consult top-level `node.id` here — that's the node
+        # identifier (e.g. `n1k2…`), not the design-system id.
+        ds_id = ""
+        candidates = [
+            node.get("dsId"),
+            (node.get("inputs") or {}).get("dsId"),
+            (node.get("inputs") or {}).get("id"),
+            (node.get("inputs") or {}).get("path"),
+            (node.get("spec")   or {}).get("dsId"),
+        ]
+        for c in candidates:
+            if isinstance(c, str) and c.strip():
+                ds_id = c.strip()
+                break
         # Normalise: input may be just an id or a full design-systems/<id> path.
         if ds_id.startswith("design-systems/"):
             ds_id = ds_id.split("/", 2)[1] if "/" in ds_id else ""
@@ -777,11 +860,16 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
 
     # ── asset node — dispatch on assetKind ──────────────────────────────
     elif kind == "asset":
-        inputs    = node.get("inputs") or {}
-        asset_sub = (inputs.get("assetKind") or "").strip().lower()
+        # Asset nodes (per editor/app.js) store `assetKind`, `path`, and
+        # `paths` as TOP-LEVEL keys on the node. Older scaffolder code-
+        # paths put them under `inputs.*`; _node_field() covers both.
+        asset_sub_raw = _node_field(node, "assetKind")
+        asset_sub = (asset_sub_raw or "").strip().lower() if isinstance(asset_sub_raw, str) else ""
         facts["subKind"] = asset_sub
-        path      = inputs.get("path")
-        paths     = inputs.get("paths") if isinstance(inputs.get("paths"), list) else []
+        path_raw = _node_field(node, "path")
+        path = path_raw if isinstance(path_raw, str) else None
+        paths_raw = _node_field(node, "paths")
+        paths = paths_raw if isinstance(paths_raw, list) else []
 
         # Placeholder / unwired asset node — no path AND no paths — fall
         # through to a no-artifact README instead of 400ing. Common for
@@ -790,10 +878,10 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         has_paths = any(isinstance(p, str) and p.startswith("source/") for p in paths)
         if not has_path and not has_paths:
             facts["explanation"] = (
-                "This asset node has no `inputs.path` (or `inputs.paths`) pointing at a "
-                "`source/` file yet — it's an empty placeholder waiting for an upstream "
-                "producer to write its file. Run the upstream skill/agent first, then "
-                "re-export and you'll get the bundled file with an integration README."
+                "This asset node has no `path` (or `paths`) pointing at a `source/` "
+                "file yet — it's an empty placeholder waiting for an upstream producer "
+                "to write its file. Run the upstream skill/agent first, then re-export "
+                "and you'll get the bundled file with an integration README."
             )
             readme = readme_no_artifact(facts)
 
