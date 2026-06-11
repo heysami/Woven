@@ -17555,7 +17555,9 @@ function elementCssPath(el) {
       chat-drawer (z 60) don't naturally cover it when a node sits at the
       canvas edge and the chrome anchors over a panel. Hiding when any
       pixel of the chrome would extend past `.workflow-canvas-wrap`'s
-      horizontal bounds keeps the panels visually on top.
+      bounds — left/right edges for the side panels, top edge for the
+      workflow-bar (Daemon / CLI / Runs / Settings / Zoom) — keeps the
+      surrounding UI visually on top.
    2. **Not enough room on the node itself.** When the node screen rect is
       narrow (zoomed out, or naturally small), the multiple bars would
       overlap each other. Each caller passes its own minimum-width
@@ -17563,7 +17565,9 @@ function elementCssPath(el) {
 
    `rect` is the node's screen rect, `barLeft`/`barRight` are the predicted
    screen-x range of THIS chrome bar, `minNodeWidth` is the threshold for
-   reason #2 (omit / 0 to skip). Returns true when the bar should be hidden. */
+   reason #2 (omit / 0 to skip). Bars anchor at `rect.top - 40` (32px chip
+   + 8px gap), so the vertical bleed check is `rect.top - 40 < c.top`.
+   Returns true when the bar should be hidden. */
 function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   if (!rect) return true;
   if (minNodeWidth && rect.width < minNodeWidth) return true;
@@ -17573,6 +17577,11 @@ function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   if (canvasEl) {
     const c = canvasEl.getBoundingClientRect();
     if (barLeft < c.left - SLACK || barRight > c.right + SLACK) return true;
+    // Vertical: bars sit at rect.top - 40 (32px chip + 8px gap). If that
+    // anchor would land above the canvas top edge, the bar would paint
+    // over the top nav. Hide so the workflow-bar is never overlaid.
+    const barTop = rect.top - 40;
+    if (barTop < c.top - SLACK) return true;
   }
   return false;
 }
@@ -21159,54 +21168,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     return () => { try { document.body.removeAttribute("data-pick-op-pending"); } catch {} };
   }, [pickOpState]);
 
-  // v3.4.x — React-managed-page guard for structural ops.
+  // v3.5.3 — React-managed-page guard disabled by user request.
   //
-  // Background: prototypes built with htm + React UMD render their tree from
-  // an `App` component inside a <script> block. Any DOM mutation we apply
-  // here (insertBefore for Move/Reorder/Duplicate/Paste, remove for Delete,
-  // setProperty for Nudge / Paste-style, outerHTML rewrite for Replace)
-  // technically lands and `/__html_save` happily writes it to disk — but the
-  // saved bytes are just the live-rendered tree, not the App source. As soon
-  // as the file-watcher debounce elapses and the iframe nonce-bumps to
-  // reload, React re-mounts and re-renders from the unchanged App source
-  // → the user's edit snaps back. Zoom-mode catches this with
-  // zoomDocHasReact() (see app.js:25989-25993); pick-mode used to let the
-  // edit through silently. This guard mirrors zoom-mode's per-element check
-  // and surfaces a clear error toast pointing the user at the JSX/htm source
-  // instead.
+  // Background: an earlier commit (397a34a) added a per-element guard that
+  // BLOCKED every structural op (Move / Reorder / Duplicate / Paste / Delete
+  // / Replace / Nudge / Paste-style) on React-rendered elements, with a
+  // "won't survive reload" error toast pointing at the App source instead.
+  // The user explicitly does not want this — their downstream reconciliation
+  // pipeline handles persistence into the App source, so every op should be
+  // allowed to attempt the DOM mutation as it did before 397a34a.
   //
-  // Granularity is per-element: zoomIsReactManaged() looks for __reactProps$
-  // / __reactFiber$ keys on the element itself. Every node under a React
-  // root carries those, so this correctly distinguishes a React-rendered
-  // child (always reverts) from a static-HTML body in the same project
-  // (e.g. demo-inhouse's `index.html` landing has no createRoot at all,
-  // and edits to it persist normally).
-  //
-  // Falls back to a live re-query through pickedElement.path when the cached
-  // pickedDomRef has gone stale (iframe nonce-bumped between pick and op).
-  // We can't use _resolvePickedLive here because that helper is declared
-  // later in the file — and our useCallback's dep array would TDZ.
-  const _isPickedReactManaged = useCallback((opLabel) => {
-    let el = pickedDomRef.current;
-    if (!el || (el.ownerDocument && !el.ownerDocument.contains(el))) {
-      const ifr = pickerIframeRef.current;
-      const doc = ifr && ifr.contentDocument;
-      if (doc && pickedElement && pickedElement.path) {
-        try { el = doc.querySelector(pickedElement.path); } catch { el = null; }
-      } else {
-        el = null;
-      }
-    }
-    if (!el) return false;
-    if (zoomIsReactManaged(el)) {
-      flashPickOp(
-        "error",
-        `${opLabel} won't survive reload — this element is React-rendered. Edit the App component's source (the <script> block in the page) instead.`
-      );
-      return true;
-    }
+  // The function is preserved (every caller still passes through it) but
+  // always returns false now → no block, no error toast. Callers continue
+  // to execute their op as if the element is non-React, which is exactly
+  // the pre-397a34a behaviour the user wants restored. If the React-source
+  // sync ever needs to re-engage, flipping the early-return back to the
+  // zoomIsReactManaged() check at this single call site re-enables it.
+  const _isPickedReactManaged = useCallback((/* opLabel */) => {
     return false;
-  }, [pickedElement, flashPickOp]);
+  }, []);
 
   const copyPickedElement = useCallback(() => {
     if (!pickedElement || !pickedElement.outerHTML) return 0;
@@ -33072,11 +33052,13 @@ function WorkflowPickedInspectorDock({
     setRefreshTick(t => t + 1);
   }, [picked, onMoveElement]);
 
-  const reactBanner = useMemo(() => {
-    const el = pickedDomRef.current;
-    if (!el) return false;
-    try { return zoomIsReactManaged(el); } catch { return false; }
-  }, [refreshTick, pickedElement]);
+  // v3.5.3 — React-rendered banner suppressed per user request. The
+  // downstream pipeline handles React reconciliation; the inspector should
+  // not warn that DOM edits won't survive reload, since they do (via the
+  // pipeline) and the warning was added without the user's instruction.
+  // The variable is kept (false) so the conditional render below stays
+  // structurally unchanged.
+  const reactBanner = false;
 
   const left   = (node.x || 0) + hostRectW;
   const top    = (node.y || 0);
