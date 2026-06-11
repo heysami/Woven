@@ -871,12 +871,23 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
         paths_raw = _node_field(node, "paths")
         paths = paths_raw if isinstance(paths_raw, list) else []
 
-        # Placeholder / unwired asset node — no path AND no paths — fall
-        # through to a no-artifact README instead of 400ing. Common for
-        # nodes the user just dragged in but hasn't run yet.
+        # Inline-content assets (`path` starts with `inline:`) carry their
+        # bytes/text in `node.src` rather than as a file on disk. The most
+        # common case is inline SVG harvested from a prototype iframe —
+        # path looks like `inline:svg/<hash>`, src is the `<svg>…</svg>`
+        # markup, assetKind is "svg". inline:canvas snapshots (raster
+        # canvases the prototype scanner captured) come through as a data:
+        # URI in `src`; we decode the base64 payload and write the bytes.
+        inline_src = node.get("src") if isinstance(node.get("src"), str) else None
+        is_inline = isinstance(path, str) and path.startswith("inline:") \
+                    and isinstance(inline_src, str) and inline_src.strip()
+
+        # Placeholder / unwired asset node — no path AND no paths AND no
+        # inline content — fall through to a no-artifact README instead of
+        # 400ing. Common for nodes the user just dragged in but hasn't run yet.
         has_path  = isinstance(path, str) and path.startswith("source/")
         has_paths = any(isinstance(p, str) and p.startswith("source/") for p in paths)
-        if not has_path and not has_paths:
+        if not has_path and not has_paths and not is_inline:
             facts["explanation"] = (
                 "This asset node has no `path` (or `paths`) pointing at a `source/` "
                 "file yet — it's an empty placeholder waiting for an upstream producer "
@@ -884,6 +895,62 @@ def export_node(node: dict, project_root: str, export_root: str) -> dict:
                 "and you'll get the bundled file with an integration README."
             )
             readme = readme_no_artifact(facts)
+
+        elif is_inline:
+            # Materialise the inline content as a real file under
+            # resources/<bucket>/<hash>.<ext>. Branches on inline path
+            # prefix to pick the right extension + bucket + write mode.
+            sub_hint = path.split(":", 1)[1].split("/", 1)[0] if ":" in path else asset_sub
+            hash_or_id = (node.get("svgHash")
+                          or path.rsplit("/", 1)[-1]
+                          or nodeId or "asset")
+            data_uri = re.match(r"^data:([^;,]+)?(;base64)?,(.*)$", inline_src, re.S)
+            if sub_hint == "svg" or asset_sub in ("svg", "vector"):
+                ext, bucket, payload, binary = "svg", "svg", inline_src, False
+            elif data_uri:
+                # Data URI — extract MIME + decoded payload.
+                mime = (data_uri.group(1) or "application/octet-stream").lower()
+                ext_by_mime = {
+                    "image/png": ("png", "image"),
+                    "image/jpeg": ("jpg", "image"),
+                    "image/webp": ("webp", "image"),
+                    "image/gif": ("gif", "image"),
+                    "image/svg+xml": ("svg", "svg"),
+                    "text/html": ("html", "html"),
+                    "text/plain": ("txt", "text"),
+                }
+                ext, bucket = ext_by_mime.get(mime, ("bin", "asset"))
+                if data_uri.group(2):  # ;base64
+                    import base64, binascii
+                    try:
+                        payload = base64.b64decode(data_uri.group(3))
+                        binary = True
+                    except (binascii.Error, ValueError):
+                        payload, binary = inline_src, False
+                else:
+                    import urllib.parse as _u
+                    payload, binary = _u.unquote(data_uri.group(3)), False
+            else:
+                # Generic inline text — map by assetKind.
+                ext_by_kind = {
+                    "html": ("html", "html"), "text": ("txt", "text"),
+                    "markdown": ("md", "markdown"),
+                }
+                ext, bucket = ext_by_kind.get(asset_sub, ("txt", "text"))
+                payload, binary = inline_src, False
+            fname   = f"{hash_or_id}.{ext}"
+            rel_dst = os.path.join("resources", bucket, fname)
+            abs_dst = os.path.join(bucket_dir, rel_dst)
+            os.makedirs(os.path.dirname(abs_dst), exist_ok=True)
+            if binary:
+                with open(abs_dst, "wb") as f: f.write(payload)
+            else:
+                with open(abs_dst, "w", encoding="utf-8") as f: f.write(payload)
+            files_written.append(rel_dst.replace(os.sep, "/"))
+            facts["resourceKind"] = bucket
+            facts["filename"]     = fname
+            facts["files"]        = files_written
+            readme = readme_single_resource(facts)
 
         elif asset_sub == "html-set":
             # Multi-file set. Copy every entry preserving the relative
