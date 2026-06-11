@@ -2939,6 +2939,51 @@ button {
 }
 .workflow-node-select-badge:active { transform: translateY(1px); }
 
+/* Stage pill — Save/Revert affordance docked to the right of the pick
+   badge whenever the node has staged (in-DOM but un-persisted) inspector
+   edits. Portaled to document.body alongside the badge. Stays visible
+   even after pick mode exits so the user can still commit/discard. */
+.workflow-node-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+.workflow-node-stage-btn {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.12s, color 0.12s, transform 0.08s;
+}
+.workflow-node-stage-revert {
+  background: transparent;
+  color: var(--text-muted);
+}
+.workflow-node-stage-revert:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.workflow-node-stage-save {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+}
+.workflow-node-stage-save:hover {
+  filter: brightness(1.05);
+}
+.workflow-node-stage-btn:active { transform: translateY(1px); }
+
 /* Top-of-node action chips (Show code · Zoom). Portaled to document.body
    alongside the pick badge, aligned to its left at top: rect.top - 40.
    Same 32×32 chip styling as the select badge so the row reads as one
