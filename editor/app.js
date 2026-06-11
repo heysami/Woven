@@ -6402,11 +6402,13 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
    Sibling of the editor MiniMap, but docked into the bottom of the library
    rail (a real flow child) instead of floating over the canvas bottom-left.
    Reads workflow node positions (n.x/n.y/n.w/n.h) — those default to 200×120
-   when unset, same fallback the bounds + drag code uses. Read-only; no pan-
-   on-click (matches the editor MiniMap). */
-function WorkflowMiniMap({ nodes, pan, zoom, wrapRef }) {
+   when unset, same fallback the bounds + drag code uses. Click anywhere on
+   the minimap to pan the canvas so that point lands in the viewport center;
+   mousedown + drag keeps the viewport tracking the cursor until mouseup. */
+function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan }) {
   const list = Array.isArray(nodes) ? nodes : [];
   const hostRef = useRef(null);
+  const innerRef = useRef(null);
   // Track the host's measured size so frames + viewport scale to the
   // actual library column width (which is user-resizable). ResizeObserver
   // covers library drag-resize + window resize without listener juggling.
@@ -6477,9 +6479,51 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef }) {
   const offX  = PAD + (MW - projW) / 2;
   const offY  = PAD + (MH - projH) / 2;
 
+  // Click/drag on the minimap → pan the canvas so the clicked point lands
+  // in the viewport center. Drag keeps tracking until mouseup. Same math
+  // as the th:focus-node handler in WorkflowSurface: pan = viewport-center
+  // − world-target × zoom. Guard on setPan so the read-only call sites stay
+  // read-only.
+  const panToLocal = (px, py) => {
+    if (!setPan) return;
+    const wrap = wrapRef && wrapRef.current;
+    if (!wrap) return;
+    const wx = bb.minX + (px - offX) / s;
+    const wy = bb.minY + (py - offY) / s;
+    setPan({
+      x: wrap.clientWidth  / 2 - wx * zoom,
+      y: wrap.clientHeight / 2 - wy * zoom,
+    });
+  };
+  const onMinimapMouseDown = (e) => {
+    if (!setPan) return;
+    if (e.button !== 0) return;
+    const el = innerRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = el.getBoundingClientRect();
+    panToLocal(e.clientX - r.left, e.clientY - r.top);
+    const onMove = (ev) => {
+      const rr = el.getBoundingClientRect();
+      panToLocal(ev.clientX - rr.left, ev.clientY - rr.top);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("mouseup", onUp, true);
+    };
+    window.addEventListener("mousemove", onMove, true);
+    window.addEventListener("mouseup", onUp, true);
+  };
+
   return html`
     <div className="workflow-minimap" ref=${hostRef}>
-      <div className="workflow-minimap-inner">
+      <div
+        className="workflow-minimap-inner"
+        ref=${innerRef}
+        onMouseDown=${onMinimapMouseDown}
+        data-pannable=${setPan ? "true" : "false"}
+      >
         ${list.map(n => {
           const nx = typeof n.x === "number" ? n.x : 0;
           const ny = typeof n.y === "number" ? n.y : 0;
@@ -18927,11 +18971,16 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
   const [name, setName]               = useState(defaultName);
   const [override, setOverride]       = useState(exportAllowOverridePref());
   const [exists, setExists]           = useState(false);
-  const [slug, setSlug]               = useState(slugifyBucketName(defaultName));
-  const [checking, setChecking]       = useState(false);
   const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState(null);
   const inputRef = useRef(null);
+
+  // Local-computed slug. Mirrors editor/exports.py::safe_bucket_name 1:1, so
+  // the hint / warn banner / button label can render INSTANTLY without
+  // waiting for the server probe — no stale-slug flash between keystrokes.
+  // The server probe is reserved for the existence check below.
+  const trimmedName = (name || "").trim();
+  const localSlug   = trimmedName ? slugifyBucketName(trimmedName) : "";
 
   // Select-all on mount so the user can either tweak the timestamp suffix
   // or wipe the whole thing and type a stable name.
@@ -18944,15 +18993,14 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
 
   // Debounced existence probe. Re-runs whenever the typed name settles for
   // 220ms — short enough to feel live, long enough that quick typing doesn't
-  // spam the daemon.
+  // spam the daemon. exists is cleared synchronously on every name change
+  // so the warn banner can't flash with a stale conflict from a previous
+  // probe.
   useEffect(() => {
+    setExists(false);
+    setError(null);
     const trimmed = (name || "").trim();
-    if (!trimmed) {
-      setExists(false);
-      setSlug("");
-      return;
-    }
-    setChecking(true);
+    if (!trimmed) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
@@ -18962,16 +19010,10 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
         const j = await r.json().catch(() => ({}));
         if (cancelled) return;
         setExists(Boolean(j.exists));
-        setSlug(j.slug || slugifyBucketName(trimmed));
       } catch {
-        if (cancelled) return;
-        // Probe failed — assume no conflict so the user isn't blocked by a
-        // transient daemon hiccup. The POST will still 409 if it genuinely
-        // exists.
-        setExists(false);
-        setSlug(slugifyBucketName(trimmed));
-      } finally {
-        if (!cancelled) setChecking(false);
+        // Probe failed — keep exists=false so the user isn't blocked by a
+        // transient daemon hiccup. The POST will still 409 if a collision
+        // is real.
       }
     }, 220);
     return () => { cancelled = true; clearTimeout(t); };
@@ -19054,14 +19096,14 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
               }}
               disabled=${busy}
             />
-            ${slug && (name || "").trim() && slug !== (name || "").trim() && html`
+            ${localSlug && trimmedName && localSlug !== trimmedName && html`
               <div className="export-name-hint" data-state=${inputState}>
-                Will save as <code>${slug}</code> (some characters were replaced).
+                Will save as <code>${localSlug}</code> (some characters were replaced).
               </div>
             `}
             ${exists && html`
               <div className="export-name-warn" data-overridden=${override}>
-                <strong>A folder named <code>${slug}</code> already exists.</strong>
+                <strong>A folder named <code>${localSlug}</code> already exists.</strong>
                 ${override
                   ? html` It will be replaced.`
                   : html` Turn on <em>Allow override</em> to replace it.`}
@@ -19094,9 +19136,9 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
             disabled=${!canSubmit}
             data-disabled=${!canSubmit}
           >${busy
-              ? `Exporting${slug ? ` ${slug}` : ""}…`
-              : ((slug && (name || "").trim())
-                  ? html`Export as <span className="export-submit-name">${slug}</span>`
+              ? `Exporting${localSlug ? ` ${localSlug}` : ""}…`
+              : (localSlug
+                  ? html`Export as <span className="export-submit-name">${localSlug}</span>`
                   : "Enter a name to export")}</button>
         </div>
       </div>
@@ -27253,7 +27295,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       <div className="workflow-body" data-chat-active=${chatActive ? "true" : "false"}>
         <div className="workflow-library-col">
           <${WorkflowLibrary}/>
-          <${WorkflowMiniMap} nodes=${data.nodes || []} pan=${pan} zoom=${zoom} wrapRef=${wrapRef}/>
+          <${WorkflowMiniMap} nodes=${data.nodes || []} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan}/>
         </div>
         <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
         <div

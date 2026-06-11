@@ -3715,6 +3715,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   position: absolute;
   inset: 0;
 }
+.workflow-minimap-inner[data-pannable="true"] {
+  cursor: pointer;
+}
 .workflow-minimap-frame {
   position: absolute;
   background: var(--surface-3);
