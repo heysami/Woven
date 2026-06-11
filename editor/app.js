@@ -17633,6 +17633,84 @@ function installPickOverlay(iframeEl, onPick) {
    survives the save.
 
    Mirrors zoomSerialize's clone-and-strip pattern (see app.js:26088). */
+/* v3.5.10 — Inject a tiny patch script at end-of-body so React-managed
+   prototypes don't revert the user's inspector edits on the next iframe
+   load. Inputs:
+     • html  — already-serialised HTML string (the live, post-React DOM
+       with the user's mutations).
+     • ops   — list of { type, selector, ...details } records from the
+       inspector path (style, reorder, nudge, duplicate, delete).
+   The injected script:
+     1. Defines a `__thOps` array with the saved ops.
+     2. On window.load + 100ms, walks the ops in order and re-applies each
+        against the post-React DOM.
+     3. Mounts a MutationObserver on body that re-applies on every
+        mutation burst, guarded by an `applying` flag so its own writes
+        don't re-trigger.
+   Idempotent on vanilla (non-React) prototypes — the initial parsed DOM
+   already matches the ops, so apply() is a no-op there.
+
+   Existing patch blocks are replaced (we match on the `data-th-patch`
+   attribute) so re-saves don't accumulate scripts. */
+function _injectInspectorPatch(html, ops) {
+  if (!html || !ops || !ops.length) return html;
+  let opsJson;
+  try { opsJson = JSON.stringify(ops); } catch { return html; }
+  // Build the runtime block. Kept inline so the saved file is self-contained
+  // and doesn't depend on an extra sidecar fetch.
+  const script = [
+    '<script data-th-patch="1">',
+    '(function(){',
+    'var OPS=', opsJson, ';',
+    'if(!OPS||!OPS.length)return;',
+    'var applying=false;',
+    'function $(s){try{return document.querySelector(s);}catch(_){return null;}}',
+    'function applyOne(op){',
+    '  var el=$(op.selector);if(!el)return;',
+    '  if(op.type==="style"&&op.styles){',
+    '    for(var k in op.styles){try{el.style.setProperty(k,op.styles[k]);}catch(_){}}',
+    '  } else if(op.type==="nudge"){',
+    '    if(typeof op.left==="number")el.style.left=op.left+"px";',
+    '    if(typeof op.top==="number")el.style.top=op.top+"px";',
+    '  } else if(op.type==="reorder"&&op.anchor){',
+    '    var sib=$(op.anchor);if(!sib||!sib.parentElement||sib.parentElement!==el.parentElement)return;',
+    '    if(op.position==="before")sib.parentElement.insertBefore(el,sib);',
+    '    else sib.parentElement.insertBefore(el,sib.nextSibling);',
+    '  } else if(op.type==="duplicate"){',
+    '    var sib2=el.nextElementSibling;',
+    '    var hasClone=sib2&&sib2.getAttribute("data-th-clone-of")===op.selector;',
+    '    if(!hasClone){var c=el.cloneNode(true);c.setAttribute("data-th-clone-of",op.selector);el.parentElement.insertBefore(c,sib2);}',
+    '  } else if(op.type==="delete"){',
+    '    if(el.parentElement)el.parentElement.removeChild(el);',
+    '  }',
+    '}',
+    'function applyAll(){',
+    '  if(applying)return;applying=true;',
+    '  try{for(var i=0;i<OPS.length;i++)applyOne(OPS[i]);}finally{applying=false;}',
+    '}',
+    'function arm(){',
+    '  applyAll();',
+    '  try{',
+    '    var mo=new MutationObserver(function(){if(!applying)applyAll();});',
+    '    mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:["style","class"]});',
+    '  }catch(_){}',
+    '}',
+    'if(document.readyState==="complete")setTimeout(arm,100);',
+    'else window.addEventListener("load",function(){setTimeout(arm,100);});',
+    '})();',
+    '</script>',
+  ].join("");
+  // Replace any prior patch block (so re-saves don't accumulate).
+  const stripped = html.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
+  // Inject right before the closing </body>. Fall back to before </html>,
+  // then to the end of the string for hand-edited files.
+  const bodyClose = /<\/body>/i;
+  const htmlClose = /<\/html>/i;
+  if (bodyClose.test(stripped)) return stripped.replace(bodyClose, script + "</body>");
+  if (htmlClose.test(stripped)) return stripped.replace(htmlClose, script + "</html>");
+  return stripped + script;
+}
+
 function pickSerializeClean(doc) {
   if (!doc || !doc.documentElement) return "";
   const clone = doc.documentElement.cloneNode(true);
@@ -22346,7 +22424,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       window.dispatchEvent(new CustomEvent("th:pending-inspector-edits-changed", { detail: { total, byNode } }));
     } catch {}
   }, []);
-  const stageInspectorEdit = useCallback((ifr, doc /* , label */) => {
+  // v3.5.10 — stageInspectorEdit accepts an optional `op` record describing
+  // what just changed: { type: 'style'|'reorder'|'nudge'|'duplicate'|'delete',
+  // selector: <css path>, ...op-specific fields }. The ops list rides on each
+  // pendingInspectorEdits entry and gets serialised into a tiny patch script
+  // at commit time, so React-managed prototypes keep the user's edits across
+  // an iframe reload (React re-mounts and re-renders, then the patch script
+  // re-applies via the saved selectors → the user's edit survives). Style
+  // edits without a selector still stage their doc (back-compat — applyStyle
+  // already mutates inline style on the live DOM); they just don't get
+  // post-mount replay. That's the worst-case fallback for the old code path,
+  // not a regression for callers that DO pass an op.
+  const stageInspectorEdit = useCallback((ifr, doc, op) => {
     if (!ifr || !doc) return;
     const path = _resolveIframePathFor(ifr);
     if (!path) return;
@@ -22355,7 +22444,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 || "";
     setPendingInspectorEdits(prev => {
       const next = new Map(prev);
-      next.set(path, { ifr, doc, path, nodeId });
+      const existing = next.get(path);
+      const ops = existing && Array.isArray(existing.ops) ? existing.ops.slice() : [];
+      if (op && op.type) ops.push(op);
+      next.set(path, { ifr, doc, path, nodeId, ops });
       _dispatchPendingDigest(next);
       return next;
     });
@@ -22389,7 +22481,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       try { curDoc = ifr.contentDocument; } catch {}
       if (!curDoc || curDoc !== entry.doc) continue;
       const project = activeProjectId();
-      const fullHtml = pickSerializeClean(entry.doc);
+      let fullHtml = pickSerializeClean(entry.doc);
+      // v3.5.10 — Inject a post-mount patch script so React-managed
+      // prototypes don't revert the user's edits on the next iframe load.
+      // The script:
+      //   1. Waits for window.load + a 100ms tick so React has time to
+      //      mount + render once.
+      //   2. Walks the ops list and re-applies each via querySelector
+      //      against the post-render DOM.
+      //   3. Mounts a MutationObserver on body that re-applies on every
+      //      mutation burst (guarded by a flag so its own writes don't
+      //      re-trigger). Survives subsequent React re-renders.
+      // Vanilla (non-React) prototypes get the same script — it's idempotent
+      // and a no-op on the parsed-DOM state that already matches the ops.
+      if (entry.ops && entry.ops.length > 0) {
+        fullHtml = _injectInspectorPatch(fullHtml, entry.ops);
+      }
       const apiU = apiUrl("/__html_save");
       const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
       try {
@@ -22591,10 +22698,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       for (const [prop, val] of entries) {
         try { el.style.setProperty(prop, val); } catch {}
       }
-      // v3.5.8 — Stage instead of immediate disk write (see reorder).
+      // v3.5.10 — Stage with an op record so the post-mount patch script
+      // re-applies the style on the next iframe load (survives React revert).
       try {
         const ifr = pickerIframeRef.current;
-        if (ifr) stageInspectorEdit(ifr, doc);
+        if (ifr) {
+          const styles = {};
+          for (const [prop, val] of entries) styles[prop] = val;
+          stageInspectorEdit(ifr, doc, {
+            type: "style",
+            selector: elementCssPath(el),
+            styles,
+          });
+        }
       } catch {}
       flashPickOp("done", `Pasted style from <${clip.sourceTag}> (${entries.length} props)`);
       return 1;
@@ -22626,10 +22742,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     const newTop  = readPx(el.style.top,  cs.top)  + dy;
     el.style.left = `${newLeft}px`;
     el.style.top  = `${newTop}px`;
-    // v3.5.8 — Stage instead of immediate disk write (see reorder for why).
+    // v3.5.10 — Stage with a nudge op record for post-mount replay.
     try {
       const ifr = pickerIframeRef.current;
-      if (ifr) stageInspectorEdit(ifr, doc);
+      if (ifr) stageInspectorEdit(ifr, doc, {
+        type: "nudge",
+        selector: elementCssPath(el),
+        left: newLeft,
+        top:  newTop,
+      });
     } catch {}
     flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
     return 1;
@@ -22666,25 +22787,34 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     if (allowAxis === "vertical"   &&  isHorizDir) return 0;
     // "Backward" = toward smaller source-order (Up / Left).
     const backward = (direction === "up" || direction === "left");
+    let anchor = null;
+    let position = null;
     if (backward) {
       const prev = el.previousElementSibling;
       if (!prev) return 0;
+      anchor = prev;
+      position = "before";   // place el before prev
       parent.insertBefore(el, prev);
     } else {
       const next = el.nextElementSibling;
       if (!next) return 0;
-      // Move next BEFORE el → equivalent to moving el AFTER next.
+      anchor = next;
+      position = "after";    // place el after next (after the move below, next sits before el)
       parent.insertBefore(next, el);
     }
-    // v3.5.8 — Stage the reorder instead of writing it to disk immediately.
-    // Same path the inspector's style edits go through (applyStyle →
-    // stageInspectorEdit), so a Move bumps the Save / Revert pill alongside
-    // any pending style changes on this iframe. The pill batches them all
-    // into one Save click; Revert reloads the iframe from disk and the move
-    // is undone with the same gesture the user expects for style undo.
+    // v3.5.10 — Stage with a reorder op record. selector + anchor + position
+    // let the post-mount script re-apply the move against the post-React
+    // DOM, even when React's render put the element back in its original
+    // source order. We compute the anchor selector BEFORE the local mutation
+    // would invalidate it (anchor's CSS path is stable across re-renders).
     try {
       const ifr = pickerIframeRef.current;
-      if (ifr) stageInspectorEdit(ifr, doc);
+      if (ifr) stageInspectorEdit(ifr, doc, {
+        type:     "reorder",
+        selector: elementCssPath(el),
+        anchor:   elementCssPath(anchor),
+        position,
+      });
     } catch {}
     flashPickOp("done", `Moved ${direction}`);
     return 1;
@@ -22709,10 +22839,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       elm.classList.remove("th-pick-hover");
       elm.classList.remove("th-pick-selected");
     });
-    // v3.5.8 — Stage instead of immediate disk write (see reorder for why).
+    // v3.5.10 — Stage with a duplicate op record for post-mount replay.
     try {
       const ifr = pickerIframeRef.current;
-      if (ifr) stageInspectorEdit(ifr, doc);
+      if (ifr) stageInspectorEdit(ifr, doc, {
+        type:     "duplicate",
+        selector: elementCssPath(el),
+      });
     } catch {}
     flashPickOp("done", `Duplicated <${tagSnap}>`);
     return 1;
@@ -33565,6 +33698,11 @@ function WorkflowPickedInspectorDock({
       ["boxShadow",     "box-shadow"],
       ["filter",        "filter"],
     ];
+    // v3.5.10 — Track every style change in a styles map for the post-mount
+    // patch script. Only the actually-applied props go in; "auto"/null/empty
+    // are removals that we don't replay (the original source doesn't have
+    // them so re-removal is a no-op).
+    const stylesForPatch = {};
     for (const [propJs, propCss] of cssKeys) {
       // Only touch a property if it appears in nextStyles (so toggling
       // sizing doesn't accidentally clear the user's border color).
@@ -33574,6 +33712,7 @@ function WorkflowPickedInspectorDock({
         try { el.style.removeProperty(propCss); } catch {}
       } else {
         try { el.style.setProperty(propCss, v); } catch {}
+        stylesForPatch[propCss] = v;
       }
     }
     setRefreshTick(t => t + 1);
@@ -33582,8 +33721,15 @@ function WorkflowPickedInspectorDock({
     // when no stage callback is wired (defensive — should always be wired
     // from WorkflowSurface).
     try {
-      if (typeof onStageInspectorEdit === "function") onStageInspectorEdit(ifr, doc);
-      else if (typeof onSaveIframeHtml === "function") await onSaveIframeHtml(doc, "Inspector style");
+      if (typeof onStageInspectorEdit === "function") {
+        onStageInspectorEdit(ifr, doc, {
+          type:     "style",
+          selector: elementCssPath(el),
+          styles:   stylesForPatch,
+        });
+      } else if (typeof onSaveIframeHtml === "function") {
+        await onSaveIframeHtml(doc, "Inspector style");
+      }
     } catch {}
   }, [pickerIframeRef, pickedDomRef, onSaveIframeHtml, onStageInspectorEdit, isReactManaged]);
 
