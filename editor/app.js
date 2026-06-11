@@ -913,7 +913,7 @@ function pulseInteractingFlag(ms = 140) {
   }, ms);
 }
 
-function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScroll = false, disableEmptyDragPan = false } = {}) {
+function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScroll = false, disableEmptyDragPan = false, interactive = true } = {}) {
   const wrapRef = useRef(null);
   const [pan, setPan] = useState({ x: initial.x, y: initial.y });
   const [zoom, setZoom] = useState(initial.z);
@@ -1006,6 +1006,11 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   // ONCE after the burst settles (debounced). useEffect deps drop `pan`
   // and `zoom` so the listener isn't rebound mid-burst.
   useEffect(() => {
+    // v3.5 — `interactive: false` disables the wheel pan/zoom path entirely.
+    // Used by the embedded editor (?embed=1 inside the Canvas-frames workflow
+    // node) so its surface stays static; the workflow canvas owns pan/zoom
+    // for the whole composition.
+    if (!interactive) return;
     const el = wrapRef.current; if (!el) return;
     const findCanvas = () =>
          el.querySelector(":scope > .workflow-canvas")
@@ -1112,7 +1117,7 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
         }
       }
     };
-  }, [letSelectedScroll]);
+  }, [letSelectedScroll, interactive]);
 
   // cmd/ctrl + wheel inside a child iframe (prototype, html asset) never
   // bubbles out to the wrap's wheel listener — it's confined to the
@@ -1195,6 +1200,9 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   }, []);
 
   useEffect(() => {
+    // v3.5 — skip the mouse-drag pan path entirely when interactive=false
+    // (embedded editor). Same intent as the wheel-pan early-return above.
+    if (!interactive) return;
     const el = wrapRef.current; if (!el) return;
     let dragging = false, sx = 0, sy = 0, spx = 0, spy = 0;
     // v3.4.13 — Pure imperative pan path. No React state updates during the
@@ -1272,7 +1280,7 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { el.removeEventListener("mousedown", onDown); window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [pan, spaceHeld, disableEmptyDragPan]);
+  }, [pan, spaceHeld, disableEmptyDragPan, interactive]);
 
   return { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld };
 }
@@ -5632,7 +5640,16 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
   // cloned model frames — Canvas needs the post-migration shape to render.
   const frames = model?.frames || D.frames;
   const arrows = model?.arrows || D.arrows;
-  const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas();
+  // v3.5 — Canvas-frames workflow node embeds this view with ?embed=1.
+  // The workflow canvas owns pan/zoom for the whole composition; the embed
+  // should stay locked so the user can't accidentally pan or zoom the inner
+  // surface (which would desync it from the outer workflow zoom and break
+  // the "frames at 1:1 with workflow canvas" contract).
+  const _embedNoInteract = (() => {
+    const q = _qsFromLocation();
+    return q && q.get("embed") === "1";
+  })();
+  const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas(undefined, { interactive: !_embedNoInteract });
   const { byFrame: auditByFrame } = useDsProposalIndex();
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(null);
