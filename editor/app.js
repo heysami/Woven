@@ -17905,8 +17905,27 @@ function _injectInspectorPatch(html, ops) {
     '  }',
     '  stamp();',
     '}',
+    // v3.6.3 — insert (pick-mode paste-as-sibling) + replace (Cmd+R) own
+    // their resolution: insert has an `anchor` instead of a selector, and
+    // both are idempotency-keyed via data-th-ins / data-th-rep stamps that
+    // ride INSIDE op.html (stamped on the live nodes before serialize), so
+    // a replay can tell "already applied" without positional guesswork.
+    'function applyInsert(op){',
+    '  if(op.key){try{if(document.querySelector("[data-th-ins=\\"".concat(op.key,"\\"]")))return;}catch(_){}}',
+    '  var anch=$(op.anchor);if(!anch||typeof op.html!=="string"||!op.html)return;',
+    '  try{anch.insertAdjacentHTML(op.position==="before"?"beforebegin":"afterend",op.html);}catch(_){}',
+    '}',
+    'function applyReplace(op){',
+    '  if(op.key){try{if(document.querySelector("[data-th-rep=\\"".concat(op.key,"\\"]")))return;}catch(_){}}',
+    '  var el2=$(op.selector);if(!el2||typeof op.html!=="string"||!op.html)return;',
+    '  var t=document.createElement("div");t.innerHTML=op.html;',
+    '  var ns=Array.prototype.slice.call(t.childNodes);',
+    '  if(ns.length){try{el2.replaceWith.apply(el2,ns);}catch(_){}}',
+    '}',
     'function applyOne(op){',
     '  if(op.type==="reorder"&&op.anchor){applyReorder(op);return;}',
+    '  if(op.type==="insert"){applyInsert(op);return;}',
+    '  if(op.type==="replace"){applyReplace(op);return;}',
     '  var el=$(op.selector);if(!el)return;',
     '  if(op.type==="style"&&op.styles){',
     '    for(var k in op.styles){try{el.style.setProperty(k,op.styles[k]);}catch(_){}}',
@@ -17915,10 +17934,31 @@ function _injectInspectorPatch(html, ops) {
     '  } else if(op.type==="nudge"){',
     '    if(typeof op.left==="number")el.style.left=op.left+"px";',
     '    if(typeof op.top==="number")el.style.top=op.top+"px";',
+    // v3.6.3 — duplicate idempotency is now a GLOBAL marker lookup, not an
+    // adjacency check. The old `el.nextElementSibling has the marker` test
+    // broke the moment any OTHER structural op (reorder, insert) moved
+    // something between the original and its clone — every observer burst
+    // re-cloned, runaway-multiplying the element hundreds of times. The
+    // marker value is op.key when present (new ops) or op.selector (ops
+    // persisted by older saves — their replay-time stamps used the
+    // selector as the value, so the global lookup still matches them).
+    // Editor marker attributes are stripped from the clone subtree so a
+    // clone of a stamped element can't satisfy ANOTHER op's idempotency
+    // check.
     '  } else if(op.type==="duplicate"){',
-    '    var sib2=el.nextElementSibling;',
-    '    var hasClone=sib2&&sib2.getAttribute("data-th-clone-of")===op.selector;',
-    '    if(!hasClone){var c=el.cloneNode(true);c.setAttribute("data-th-clone-of",op.selector);el.parentElement.insertBefore(c,sib2);}',
+    '    var mk=op.key||op.selector;',
+    '    var hasClone=true;',
+    '    try{hasClone=!!document.querySelector("[data-th-clone-of=\\"".concat(mk,"\\"]"));}catch(_){hasClone=true;}',
+    '    if(!hasClone){',
+    '      var c=el.cloneNode(true);',
+    '      try{',
+    '        var strip=function(n){if(!n.removeAttribute)return;n.removeAttribute("data-th-ins");n.removeAttribute("data-th-rep");n.removeAttribute("data-th-rkey-el");n.removeAttribute("data-th-rkey-sib");n.removeAttribute("data-th-clone-of");};',
+    '        strip(c);',
+    '        if(c.querySelectorAll)c.querySelectorAll("[data-th-ins],[data-th-rep],[data-th-rkey-el],[data-th-rkey-sib],[data-th-clone-of]").forEach(strip);',
+    '      }catch(_){}',
+    '      c.setAttribute("data-th-clone-of",mk);',
+    '      el.parentElement.insertBefore(c,el.nextElementSibling);',
+    '    }',
     '  } else if(op.type==="delete"){',
     '    if(el.parentElement)el.parentElement.removeChild(el);',
     '  }',
@@ -22301,6 +22341,87 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     return 1;
   }, [pickedElement, resolveIframePath, flashPickOp]);
 
+  // v3.6.3 — Hoisted above pastePickedElement / replacePickedElement /
+  // deletePickedElement: those callbacks now stage through stageInspectorEdit
+  // and reference it in their deps arrays, which are evaluated at render —
+  // declaring it below them would hit the const temporal dead zone.
+  // ─── Staged inspector edits ─────────────────────────────────────────
+  // Inspector-driven style edits (the dock's Sizing / Auto-layout / Align
+  // / Fill / Outline / etc. fields) WRITE to inline style immediately so
+  // the user sees the change, but their persistence to disk is deferred
+  // until the user explicitly clicks Save. Revert reloads the iframes
+  // back to their on-disk state — the inline edits disappear with the
+  // contentDocument refresh.
+  //
+  // Keyed by iframe path so multiple edits on the same iframe collapse
+  // into one entry. Entry holds the iframe element + doc + nodeId so the
+  // commit path can serialize+POST the right doc, and the badge can show
+  // the Save/Revert affordance anchored to the right node.
+  const [pendingInspectorEdits, setPendingInspectorEdits] = useState(() => new Map());
+  // Resolve a save path for any iframe, not just the current pickerIframeRef.
+  // Mirrors resolveIframePath but takes the iframe explicitly so per-iframe
+  // commit doesn't depend on what's currently picked.
+  const _resolveIframePathFor = useCallback((ifr) => {
+    if (!ifr) return null;
+    try {
+      const loc = ifr.contentWindow && ifr.contentWindow.location;
+      if (loc && loc.pathname) {
+        let p = loc.pathname.replace(/^\/+/, "");
+        if (p.endsWith("/")) p += "index.html";
+        if (p.startsWith("source/") && (p.endsWith(".html") || p.endsWith(".htm"))) return p;
+      }
+    } catch {}
+    const aid = ifr.getAttribute("data-asset-id");
+    if (aid) {
+      const nd = (data.nodes || []).find(n => n.id === aid);
+      if (nd && nd.path) return nd.path;
+    }
+    return null;
+  }, [data]);
+  // Dispatch a digest so badges + any toolbar pill can re-render with the
+  // current pending state. Detail carries per-node counts so each badge
+  // only shows the affordance for its own node.
+  const _dispatchPendingDigest = useCallback((map) => {
+    const byNode = {};
+    let total = 0;
+    for (const v of map.values()) {
+      total++;
+      byNode[v.nodeId || "_anon"] = (byNode[v.nodeId || "_anon"] || 0) + 1;
+    }
+    try {
+      window.__thPendingInspectorEdits = { total, byNode };
+      window.dispatchEvent(new CustomEvent("th:pending-inspector-edits-changed", { detail: { total, byNode } }));
+    } catch {}
+  }, []);
+  // v3.5.10 — stageInspectorEdit accepts an optional `op` record describing
+  // what just changed: { type: 'style'|'reorder'|'nudge'|'duplicate'|'delete',
+  // selector: <css path>, ...op-specific fields }. The ops list rides on each
+  // pendingInspectorEdits entry and gets serialised into a tiny patch script
+  // at commit time, so React-managed prototypes keep the user's edits across
+  // an iframe reload (React re-mounts and re-renders, then the patch script
+  // re-applies via the saved selectors → the user's edit survives). Style
+  // edits without a selector still stage their doc (back-compat — applyStyle
+  // already mutates inline style on the live DOM); they just don't get
+  // post-mount replay. That's the worst-case fallback for the old code path,
+  // not a regression for callers that DO pass an op.
+  const stageInspectorEdit = useCallback((ifr, doc, op) => {
+    if (!ifr || !doc) return;
+    const path = _resolveIframePathFor(ifr);
+    if (!path) return;
+    const nodeId = ifr.getAttribute("data-prototype-id")
+                || ifr.getAttribute("data-asset-id")
+                || "";
+    setPendingInspectorEdits(prev => {
+      const next = new Map(prev);
+      const existing = next.get(path);
+      const ops = existing && Array.isArray(existing.ops) ? existing.ops.slice() : [];
+      if (op && op.type) ops.push(op);
+      next.set(path, { ifr, doc, path, nodeId, ops });
+      _dispatchPendingDigest(next);
+      return next;
+    });
+  }, [_resolveIframePathFor, _dispatchPendingDigest]);
+
   const pastePickedElement = useCallback(async () => {
     const clip = nodeClipboardRef.current;
     if (!clip || clip.type !== "html-element") return 0;
@@ -22407,8 +22528,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             }
           } catch {}
         }
+        // v3.6.3 — Paste is now STAGED like every other inspector op
+        // (style / move / duplicate): mutate the live DOM, record a
+        // replayable `insert` op, and let the Save/Revert pill commit.
+        // The previous immediate POST gave the user no save affordance
+        // AND recorded no patch op — on React-managed prototypes the
+        // pasted element silently vanished on the next render ("copy
+        // paste seems to fail to save").
+        //
+        // Anchor selector captured BEFORE inserting — same-class twins
+        // inserted AFTER the target can't shift its disambiguation index.
+        const anchorSel = elementPatchSelector(targetEl);
+        const insKey = "i" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
         const tmp = doc.createElement("div");
         tmp.innerHTML = liveOuter;
+        // Stamp the idempotency key on every top-level ELEMENT before it
+        // enters the live tree, so the serialized op.html carries it and
+        // the patch replay can detect "already applied".
+        Array.from(tmp.children).forEach(n => { try { n.setAttribute("data-th-ins", insKey); } catch {} });
+        const stampedHtml = tmp.innerHTML;
         let insertedCount = 0;
         while (tmp.firstChild) {
           const n = tmp.firstChild;
@@ -22419,22 +22557,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           el.classList.remove("th-pick-hover");
           el.classList.remove("th-pick-selected");
         });
-        const path = resolveIframePath();
-        if (!path) { flashPickOp("error", "Paste failed: couldn't resolve target file"); return 0; }
-        const fullHtml = pickSerializeClean(doc);
-        const apiU = apiUrl("/__html_save");
-        const u = apiU + (apiU.includes("?") ? "&" : "?") + "_paste=" + Date.now();
-        const resp = await fetch(u, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path, html: fullHtml, project }),
+        stageInspectorEdit(ifrLive || ifr, doc, {
+          type:     "insert",
+          anchor:   anchorSel,
+          position: "after",
+          html:     stampedHtml,
+          key:      insKey,
         });
-        if (!resp.ok) {
-          const errBody = await resp.json().catch(() => ({}));
-          flashPickOp("error", "Paste failed: " + (errBody.error || `HTTP ${resp.status}`));
-          return 0;
-        }
-        flashPickOp("done", `Pasted as sibling in ${path.split("/").pop()}`);
+        flashPickOp("done", "Pasted as sibling — staged; click Save on the node pill to persist");
         return insertedCount;
       } catch (err) {
         console.error("[paste sibling]", err);
@@ -22541,7 +22671,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       pastePickedElement._inFlight = false;
     }
-  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, _isPickedReactManaged]);
+  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, _isPickedReactManaged, stageInspectorEdit]);
 
   // v3.4.20 — Cmd+R: replace the currently picked element with the clipboard's
   // content. Same shape as pastePickedElement Path A (live-source re-read,
@@ -22648,8 +22778,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         // Materialise the replacement element(s) from the markup. innerHTML
         // can produce multiple top-level nodes when the snippet has siblings;
         // replaceWith handles a variadic list of nodes so we pass them all.
+        //
+        // v3.6.3 — Replace is now STAGED (Save/Revert pill) with a
+        // replayable `replace` op instead of an immediate POST — same
+        // rationale as paste: the user gets a save affordance, and the
+        // patch script re-applies the swap after React re-renders.
+        const replaceSel = elementPatchSelector(targetEl);
+        const repKey = "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
         const tmp = doc.createElement("div");
         tmp.innerHTML = liveOuter;
+        Array.from(tmp.children).forEach(n => { try { n.setAttribute("data-th-rep", repKey); } catch {} });
+        const stampedHtml = tmp.innerHTML;
         const newNodes = Array.from(tmp.childNodes);
         if (newNodes.length === 0) {
           flashPickOp("error", "Replace failed: clipboard produced no DOM");
@@ -22662,26 +22801,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           el.classList.remove("th-pick-hover");
           el.classList.remove("th-pick-selected");
         });
-        const path = resolveIframePath();
-        if (!path) { flashPickOp("error", "Replace failed: couldn't resolve target file"); return 0; }
-        const fullHtml = pickSerializeClean(doc);
-        const apiU = apiUrl("/__html_save");
-        const u = apiU + (apiU.includes("?") ? "&" : "?") + "_replace=" + Date.now();
-        const resp = await fetch(u, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path, html: fullHtml, project }),
+        stageInspectorEdit(ifrLive || pickerIframeRef.current, doc, {
+          type:     "replace",
+          selector: replaceSel,
+          html:     stampedHtml,
+          key:      repKey,
         });
-        if (!resp.ok) {
-          const errBody = await resp.json().catch(() => ({}));
-          flashPickOp("error", "Replace failed: " + (errBody.error || `HTTP ${resp.status}`));
-          return 0;
-        }
         // Clear the picked target so the next Cmd+R requires a fresh pick
         // (the old target is gone from the DOM; the pick state is stale).
         setPickedElement(null);
         pickedDomRef.current = null;
-        flashPickOp("done", `Replaced <${pickedElement.tagName || "element"}> in ${path.split("/").pop()}`);
+        flashPickOp("done", `Replaced <${pickedElement.tagName || "element"}> — staged; click Save on the node pill to persist`);
         return newNodes.length;
       } catch (err) {
         console.error("[replace]", err);
@@ -22691,7 +22821,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     } finally {
       replacePickedElement._inFlight = false;
     }
-  }, [pickedElement, resolveIframePath, flashPickOp, _isPickedReactManaged]);
+  }, [pickedElement, resolveIframePath, flashPickOp, _isPickedReactManaged, stageInspectorEdit]);
 
   const deletePickedElement = useCallback(async () => {
     const ifr = pickerIframeRef.current;
@@ -22712,39 +22842,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     }
     if (!targetEl) return 0;
     const tagSnap = (targetEl.tagName || "").toLowerCase();
-    const project = activeProjectId();
     flashPickOp("pending", `Deleting <${tagSnap}>…`);
     try {
+      // v3.6.3 — Delete is now STAGED (Save/Revert pill) with a replayable
+      // `delete` op instead of an immediate POST — same rationale as
+      // paste/replace. Selector captured BEFORE removal (the patch replays
+      // against the fresh, pre-delete DOM).
+      const deleteSel = elementPatchSelector(targetEl);
       targetEl.remove();
       doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
         el.classList.remove("th-pick-hover");
         el.classList.remove("th-pick-selected");
       });
-      const path = resolveIframePath();
-      if (!path) { flashPickOp("error", "Delete failed: couldn't resolve target file"); return 0; }
-      const fullHtml = pickSerializeClean(doc);
-      const apiU = apiUrl("/__html_save");
-      const u = apiU + (apiU.includes("?") ? "&" : "?") + "_del=" + Date.now();
-      const resp = await fetch(u, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, html: fullHtml, project }),
-      });
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({}));
-        flashPickOp("error", "Delete failed: " + (errBody.error || `HTTP ${resp.status}`));
-        return 0;
-      }
+      stageInspectorEdit(ifr, doc, { type: "delete", selector: deleteSel });
       pickedDomRef.current = null;
       setPickedElement(null);
-      flashPickOp("done", `Deleted <${tagSnap}>`);
+      flashPickOp("done", `Deleted <${tagSnap}> — staged; click Save on the node pill to persist`);
       return 1;
     } catch (err) {
       console.error("[delete element]", err);
       flashPickOp("error", "Delete failed: " + (err.message || err));
       return 0;
     }
-  }, [resolveIframePath, flashPickOp, _isPickedReactManaged]);
+  }, [resolveIframePath, flashPickOp, _isPickedReactManaged, stageInspectorEdit, pickedElement]);
 
   // v3.4.32 — Arrow-key element movement.
   //
@@ -22781,82 +22901,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     return true;
   }, [resolveIframePath, flashPickOp]);
 
-  // ─── Staged inspector edits ─────────────────────────────────────────
-  // Inspector-driven style edits (the dock's Sizing / Auto-layout / Align
-  // / Fill / Outline / etc. fields) WRITE to inline style immediately so
-  // the user sees the change, but their persistence to disk is deferred
-  // until the user explicitly clicks Save. Revert reloads the iframes
-  // back to their on-disk state — the inline edits disappear with the
-  // contentDocument refresh.
-  //
-  // Keyed by iframe path so multiple edits on the same iframe collapse
-  // into one entry. Entry holds the iframe element + doc + nodeId so the
-  // commit path can serialize+POST the right doc, and the badge can show
-  // the Save/Revert affordance anchored to the right node.
-  const [pendingInspectorEdits, setPendingInspectorEdits] = useState(() => new Map());
-  // Resolve a save path for any iframe, not just the current pickerIframeRef.
-  // Mirrors resolveIframePath but takes the iframe explicitly so per-iframe
-  // commit doesn't depend on what's currently picked.
-  const _resolveIframePathFor = useCallback((ifr) => {
-    if (!ifr) return null;
-    try {
-      const loc = ifr.contentWindow && ifr.contentWindow.location;
-      if (loc && loc.pathname) {
-        let p = loc.pathname.replace(/^\/+/, "");
-        if (p.endsWith("/")) p += "index.html";
-        if (p.startsWith("source/") && (p.endsWith(".html") || p.endsWith(".htm"))) return p;
-      }
-    } catch {}
-    const aid = ifr.getAttribute("data-asset-id");
-    if (aid) {
-      const nd = (data.nodes || []).find(n => n.id === aid);
-      if (nd && nd.path) return nd.path;
-    }
-    return null;
-  }, [data]);
-  // Dispatch a digest so badges + any toolbar pill can re-render with the
-  // current pending state. Detail carries per-node counts so each badge
-  // only shows the affordance for its own node.
-  const _dispatchPendingDigest = useCallback((map) => {
-    const byNode = {};
-    let total = 0;
-    for (const v of map.values()) {
-      total++;
-      byNode[v.nodeId || "_anon"] = (byNode[v.nodeId || "_anon"] || 0) + 1;
-    }
-    try {
-      window.__thPendingInspectorEdits = { total, byNode };
-      window.dispatchEvent(new CustomEvent("th:pending-inspector-edits-changed", { detail: { total, byNode } }));
-    } catch {}
-  }, []);
-  // v3.5.10 — stageInspectorEdit accepts an optional `op` record describing
-  // what just changed: { type: 'style'|'reorder'|'nudge'|'duplicate'|'delete',
-  // selector: <css path>, ...op-specific fields }. The ops list rides on each
-  // pendingInspectorEdits entry and gets serialised into a tiny patch script
-  // at commit time, so React-managed prototypes keep the user's edits across
-  // an iframe reload (React re-mounts and re-renders, then the patch script
-  // re-applies via the saved selectors → the user's edit survives). Style
-  // edits without a selector still stage their doc (back-compat — applyStyle
-  // already mutates inline style on the live DOM); they just don't get
-  // post-mount replay. That's the worst-case fallback for the old code path,
-  // not a regression for callers that DO pass an op.
-  const stageInspectorEdit = useCallback((ifr, doc, op) => {
-    if (!ifr || !doc) return;
-    const path = _resolveIframePathFor(ifr);
-    if (!path) return;
-    const nodeId = ifr.getAttribute("data-prototype-id")
-                || ifr.getAttribute("data-asset-id")
-                || "";
-    setPendingInspectorEdits(prev => {
-      const next = new Map(prev);
-      const existing = next.get(path);
-      const ops = existing && Array.isArray(existing.ops) ? existing.ops.slice() : [];
-      if (op && op.type) ops.push(op);
-      next.set(path, { ifr, doc, path, nodeId, ops });
-      _dispatchPendingDigest(next);
-      return next;
-    });
-  }, [_resolveIframePathFor, _dispatchPendingDigest]);
   const commitInspectorEdits = useCallback(async () => {
     const snapshot = Array.from(pendingInspectorEdits.values());
     if (snapshot.length === 0) return;
@@ -23272,9 +23316,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     // deep clone preserves nested markup + inline styles. We strip the
     // pick-mode hover/selected classes from BOTH copies so the saved
     // HTML is clean of editor chrome.
+    //
+    // v3.6.3 — Selector captured BEFORE the clone mounts (a same-class
+    // twin after the target would shift the disambiguation index), the
+    // clone carries a unique data-th-clone-of key (the patch replay's
+    // GLOBAL idempotency marker), and any editor marker attributes the
+    // source carried are stripped from the clone so it can't satisfy
+    // another op's idempotency check.
+    const dupSel = elementPatchSelector(el);
+    const dupKey = "d" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
     const clone = el.cloneNode(true);
     clone.classList.remove("th-pick-hover");
     clone.classList.remove("th-pick-selected");
+    try {
+      const stripMarkers = (n) => {
+        if (!n.removeAttribute) return;
+        ["data-th-ins", "data-th-rep", "data-th-rkey-el", "data-th-rkey-sib", "data-th-clone-of"]
+          .forEach(a => n.removeAttribute(a));
+      };
+      stripMarkers(clone);
+      clone.querySelectorAll && clone.querySelectorAll("[data-th-ins],[data-th-rep],[data-th-rkey-el],[data-th-rkey-sib],[data-th-clone-of]").forEach(stripMarkers);
+    } catch {}
+    try { clone.setAttribute("data-th-clone-of", dupKey); } catch {}
     parent.insertBefore(clone, el.nextSibling);
     doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(elm => {
       elm.classList.remove("th-pick-hover");
@@ -23285,10 +23348,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const ifr = pickerIframeRef.current;
       if (ifr) stageInspectorEdit(ifr, doc, {
         type:     "duplicate",
-        selector: elementPatchSelector(el),
+        selector: dupSel,
+        key:      dupKey,
       });
     } catch {}
-    flashPickOp("done", `Duplicated <${tagSnap}>`);
+    flashPickOp("done", `Duplicated <${tagSnap}> — staged; click Save on the node pill to persist`);
     return 1;
   }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
 
@@ -32039,17 +32103,31 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const snap = snapshotBefore();
     // Selector captured BEFORE the clone mounts — the clone is a same-class
     // twin and would otherwise shift the disambiguating index.
+    // v3.6.3 — Clone carries a unique data-th-clone-of key (the patch
+    // replay's GLOBAL idempotency marker) and is stripped of any editor
+    // marker attributes the source carried.
     const patchSel = elementPatchSelector(el);
+    const dupKey = "d" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
     const clone = el.cloneNode(true);
     if (clone.removeAttribute) clone.removeAttribute(ZOOM_ID_ATTR);
     clone.querySelectorAll && clone.querySelectorAll("[" + ZOOM_ID_ATTR + "]").forEach(n => n.removeAttribute(ZOOM_ID_ATTR));
+    try {
+      const stripMarkers = (n) => {
+        if (!n.removeAttribute) return;
+        ["data-th-ins", "data-th-rep", "data-th-rkey-el", "data-th-rkey-sib", "data-th-clone-of"]
+          .forEach(a => n.removeAttribute(a));
+      };
+      stripMarkers(clone);
+      clone.querySelectorAll && clone.querySelectorAll("[data-th-ins],[data-th-rep],[data-th-rkey-el],[data-th-rkey-sib],[data-th-clone-of]").forEach(stripMarkers);
+      clone.setAttribute("data-th-clone-of", dupKey);
+    } catch {}
     el.insertAdjacentElement("afterend", clone);
     zoomTagAll(meta.doc || doc);
     if (meta.isNested) {
       _markNestedDirty(meta);
       showToast("Duplicated `" + label + "` in imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
-      recordOp("Duplicated `" + label + "` (unsaved)", snap, { type: "duplicate", selector: patchSel });
+      recordOp("Duplicated `" + label + "` (unsaved)", snap, { type: "duplicate", selector: patchSel, key: dupKey });
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
 
