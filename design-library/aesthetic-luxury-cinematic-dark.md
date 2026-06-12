@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-luxury-cinematic-dark-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-luxury-cinematic-dark-isolated.png
+    reason: Signature motif, isolated.
+---
 # Luxury Cinematic Dark (aesthetic)
 
 **Tag:** Theatrical luxury (Cartier Watches & Wonders 2026; Rolex film grades; Tom Ford campaign light; Nike "premium" drops; private-aviation and wealth-platform heroes)

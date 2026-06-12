@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-surreal-dream-stage-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-surreal-dream-stage-isolated.png
+    reason: Signature motif, isolated.
+---
 # Surreal Dream Stage (aesthetic)
 
 **Tag:** Magritte-grade product surrealism (Gucci Zumi stages; Apple "Shot on iPhone" surreal campaigns; Hermès window displays; motionsites "couch-clouds in a lake" wave)

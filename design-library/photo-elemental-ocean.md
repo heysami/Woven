@@ -5,6 +5,9 @@ category: cinematic
 era: current
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, recipe-warm-restraint, shell-scroll-journey-scene]
 notForUseWhen: Brief is cozy, indoor, or small-scale — open water reads vast, powerful, and slightly dangerous.
+images:
+  - src: photo-elemental-ocean.png
+    reason: Photography style sample.
 ---
 
 # Elemental ocean cinematic

@@ -6,6 +6,9 @@ category: organic-volume
 surfaceFinish: matte
 transparency: translucent
 pairsPrototypes: [aesthetic-surreal-dream-stage, aesthetic-pastoral-serene, aesthetic-angelcore, aesthetic-dreamcore, shell-scroll-journey-scene]
+images:
+  - src: material-volumetric-cloud.png
+    reason: Material fidelity sample.
 ---
 
 # Volumetric cloud / cotton

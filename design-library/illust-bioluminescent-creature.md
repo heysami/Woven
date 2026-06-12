@@ -6,6 +6,9 @@ subCategory: organic-emissive
 role: subject
 pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-defi-cosmic, aesthetic-fairycore]
 notForUseWhen: Brief is warm-domestic, budget, or daylight — the creature lives in expensive darkness.
+images:
+  - src: illust-bioluminescent-creature.png
+    reason: Illustration style sample.
 ---
 
 # Bioluminescent creature render

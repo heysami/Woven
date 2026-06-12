@@ -6,6 +6,9 @@ subCategory: ink-noir
 role: subject
 pairsPrototypes: [aesthetic-monochrome-tech-editorial, recipe-editorial-magazine, aesthetic-web-brutalism, recipe-newspaper-of-record, shell-horizontal-scroll-stage]
 notForUseWhen: Brief is cheerful, pastel, kid-friendly, or corporate-safe — noir ink carries grit.
+images:
+  - src: illust-noir-comic-ink.png
+    reason: Illustration style sample.
 ---
 
 # Noir comic ink

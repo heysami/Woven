@@ -5,6 +5,9 @@ category: cinematic
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, recipe-neo-grotesque-portfolio, recipe-ai-foundry-dark, aesthetic-rgb-gamer]
 notForUseWhen: Brief is daylight-honest, corporate-trust, or warm-domestic — the register is moody tech-noir.
+images:
+  - src: photo-amber-cyber-portrait.png
+    reason: Photography style sample.
 ---
 
 # Amber cyber portrait

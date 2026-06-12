@@ -6,6 +6,9 @@ subCategory: abstract-form
 role: subject
 pairsPrototypes: [aesthetic-sculptural-minimal, recipe-neo-grotesque-portfolio, recipe-bento-marketing, aesthetic-anti-design]
 notForUseWhen: Brief needs depicted subjects or narrative — the form is abstract and mute by design.
+images:
+  - src: illust-sculptural-3d-object.png
+    reason: Illustration style sample.
 ---
 
 # Sculptural 3D object

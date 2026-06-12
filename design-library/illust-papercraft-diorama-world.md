@@ -6,6 +6,9 @@ subCategory: paper-craft-scene
 role: hero
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-cottagecore, shell-infinite-canvas, aesthetic-curly-girly]
 notForUseWhen: Brief is premium-sleek or serious-enterprise — paper reads handmade and playful.
+images:
+  - src: illust-papercraft-diorama-world.png
+    reason: Illustration style sample.
 ---
 
 # Papercraft diorama world

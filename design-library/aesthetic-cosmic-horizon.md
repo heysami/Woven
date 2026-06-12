@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-cosmic-horizon-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-cosmic-horizon-isolated.png
+    reason: Signature motif, isolated.
+---
 # Cosmic Horizon (aesthetic)
 
 **Tag:** Orbital-frontier tech (NASA/SpaceX webcast frames; Starlink coverage maps; The Blue Marble / Earthrise photography; 2025-26 dark-SaaS "planet horizon" hero wave)

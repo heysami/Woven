@@ -6,6 +6,9 @@ subCategory: whimsical-machine
 role: subject
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-wacky-pomo, recipe-devtools-marketing, aesthetic-atompunk]
 notForUseWhen: Brief is sleek-premium or serious-enterprise — the machine is deliberately charming and clunky.
+images:
+  - src: illust-retro-contraption-3d.png
+    reason: Illustration style sample.
 ---
 
 # Retro contraption 3D

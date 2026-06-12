@@ -6,6 +6,9 @@ subCategory: neoclassical-remix
 role: subject
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, recipe-warm-restraint, aesthetic-vaporwave, aesthetic-maximalism]
 notForUseWhen: Brief is tech-minimal, futurist, or engineering-led — oil paint reads heritage and wit.
+images:
+  - src: illust-classical-painting-remix.png
+    reason: Illustration style sample.
 ---
 
 # Classical painting remix

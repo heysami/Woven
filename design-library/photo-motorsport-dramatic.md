@@ -5,6 +5,9 @@ category: cinematic
 era: current
 pairsPrototypes: [aesthetic-monochrome-pop-poster, aesthetic-luxury-cinematic-dark, aesthetic-monochrome-tech-editorial, recipe-bento-marketing]
 notForUseWhen: Brief is calm, eco, or wellness — speed-drama fights serenity registers.
+images:
+  - src: photo-motorsport-dramatic.png
+    reason: Photography style sample.
 ---
 
 # Motorsport dramatic rig

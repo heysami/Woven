@@ -6,6 +6,9 @@ category: organic-emissive
 surfaceFinish: glossy
 transparency: translucent
 pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-fairycore, aesthetic-defi-cosmic, shell-scroll-journey-scene]
+images:
+  - src: material-bioluminescent-membrane.png
+    reason: Material fidelity sample.
 ---
 
 # Bioluminescent membrane

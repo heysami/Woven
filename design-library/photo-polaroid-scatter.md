@@ -5,6 +5,9 @@ category: lifestyle
 era: instant-film revival
 pairsPrototypes: [shell-scrapbook-substrate, aesthetic-y2k-myspace, aesthetic-cottagecore, recipe-readcv]
 notForUseWhen: Brief is corporate, clinical, or future-facing — instant film reads memory and intimacy.
+images:
+  - src: photo-polaroid-scatter.png
+    reason: Photography style sample.
 ---
 
 # Polaroid scatter pile

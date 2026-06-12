@@ -5,6 +5,9 @@ category: conceptual
 era: current
 pairsPrototypes: [aesthetic-surreal-dream-stage, aesthetic-organic-overgrowth, aesthetic-bioluminescent-deep, recipe-editorial-magazine, aesthetic-avantropop]
 notForUseWhen: Brief needs documentary credibility or budget-friendly straightforwardness — staged surrealism reads art-directed and premium.
+images:
+  - src: photo-surreal-tableau.png
+    reason: Photography style sample.
 ---
 
 # Surreal staged tableau

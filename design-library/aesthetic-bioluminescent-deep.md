@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-bioluminescent-deep-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-bioluminescent-deep-isolated.png
+    reason: Signature motif, isolated.
+---
 # Bioluminescent Deep (aesthetic)
 
 **Tag:** Deep-sea glow worlds (BBC *Blue Planet II* abyss episodes; *Avatar* Pandora nights; Monterey Bay deep-sea footage; glowing-jellyfish venture sites)

@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-vintage-carnival-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-vintage-carnival-isolated.png
+    reason: Signature motif, isolated.
+---
 # Vintage Carnival (aesthetic)
 
 **Tag:** Letterpress showman register (Freakshow Wine; Son Daven; Hatch Show Print posters; penny-circus and medicine-show ephemera)

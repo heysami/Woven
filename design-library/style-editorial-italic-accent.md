@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: style-editorial-italic-accent-ui.png
+    reason: Style surface UI mockup.
+  - src: style-editorial-italic-accent-isolated.png
+    reason: Signature surface, isolated.
+---
 # Editorial italic accent (style)
 
 **Tag:** `style-editorial-italic-accent`

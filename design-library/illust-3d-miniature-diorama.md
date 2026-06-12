@@ -6,6 +6,9 @@ subCategory: scenic-miniature
 role: hero
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-positivity-kawaii, recipe-bento-marketing, aesthetic-frutiger-eco, shell-scroll-journey-scene]
 notForUseWhen: Brief needs gravitas, luxury, or enterprise seriousness — miniatures read charming.
+images:
+  - src: illust-3d-miniature-diorama.png
+    reason: Illustration style sample.
 ---
 
 # 3D miniature diorama world

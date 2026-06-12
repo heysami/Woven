@@ -6,6 +6,9 @@ subCategory: magical-environment
 role: hero
 pairsPrototypes: [aesthetic-fairycore, aesthetic-bioluminescent-deep, aesthetic-cottagegoth, shell-scroll-journey-scene]
 notForUseWhen: Brief is rational, corporate, or daylight-honest — the register is twilight wonder.
+images:
+  - src: illust-enchanted-forest-glow.png
+    reason: Illustration style sample.
 ---
 
 # Enchanted forest glow

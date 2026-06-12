@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: style-silk-chrome-flow-ui.png
+    reason: Style surface UI mockup.
+  - src: style-silk-chrome-flow-isolated.png
+    reason: Signature surface, isolated.
+---
 # Silk / Chrome Flow (style)
 
 **Tag:** `style-silk-chrome-flow`

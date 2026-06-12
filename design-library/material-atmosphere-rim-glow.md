@@ -6,6 +6,9 @@ category: emissive-edge
 surfaceFinish: matte
 transparency: opaque
 pairsPrototypes: [aesthetic-cosmic-horizon, recipe-ai-foundry-dark, aesthetic-defi-cosmic]
+images:
+  - src: material-atmosphere-rim-glow.png
+    reason: Material fidelity sample.
 ---
 
 # Atmosphere rim glow

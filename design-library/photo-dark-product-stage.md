@@ -5,6 +5,9 @@ category: product
 era: current
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, aesthetic-monochrome-pop-poster, recipe-bento-marketing, style-silk-chrome-flow, aesthetic-surreal-dream-stage]
 notForUseWhen: Brief is friendly, affordable, mass-market, or pastel — theater darkness reads exclusive.
+images:
+  - src: photo-dark-product-stage.png
+    reason: Photography style sample.
 ---
 
 # Dark product stage

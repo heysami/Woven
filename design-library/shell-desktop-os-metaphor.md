@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: shell-desktop-os-metaphor-ui.png
+    reason: Shell structure UI mockup.
+  - src: shell-desktop-os-metaphor-isolated.png
+    reason: Signature structure, isolated.
+---
 # Desktop OS metaphor shell
 
 **Tag:** `[portfolio · draggable windows · spatial clutter]`

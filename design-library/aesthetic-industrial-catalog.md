@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-industrial-catalog-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-industrial-catalog-isolated.png
+    reason: Signature motif, isolated.
+---
 # Industrial Catalog (aesthetic)
 
 **Tag:** Machine spec-sheet brutalism (Automation Machines robot-arm pages; ZettaJoule "Powering the World"; Vitsoe/USM catalogs; KUKA/FANUC product sheets)

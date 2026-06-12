@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-monochrome-pop-poster-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-monochrome-pop-poster-isolated.png
+    reason: Signature motif, isolated.
+---
 # Monochrome Pop Poster (aesthetic)
 
 **Tag:** Single-hue product poster (Nike Tier 0 retail graphics; Porsche heritage posters; Spotify Wrapped single-color years; motionsites "NEW ERA" wave)

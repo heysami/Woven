@@ -6,6 +6,9 @@ subCategory: loose-painterly
 role: hero
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, recipe-warm-restraint, aesthetic-fairycore]
 notForUseWhen: Brief is technical, minimal, or photoreal — the creature is expressive brushwork, not asset-render.
+images:
+  - src: illust-painterly-mythic-creature.png
+    reason: Illustration style sample.
 ---
 
 # Painterly mythic creature

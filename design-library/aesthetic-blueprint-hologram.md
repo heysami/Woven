@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-blueprint-hologram-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-blueprint-hologram-isolated.png
+    reason: Signature motif, isolated.
+---
 # Blueprint Hologram (aesthetic)
 
 **Tag:** Wireframe-projection tech (Razorpay Sprint 26 wireframe shoe; Hubtown holographic cube; Iron-Man HUD lineage; CAD-render product teasers)

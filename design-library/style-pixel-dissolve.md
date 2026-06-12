@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: style-pixel-dissolve-ui.png
+    reason: Style surface UI mockup.
+  - src: style-pixel-dissolve-isolated.png
+    reason: Signature surface, isolated.
+---
 # Pixel dissolve (style)
 
 **Tag:** `style-pixel-dissolve`

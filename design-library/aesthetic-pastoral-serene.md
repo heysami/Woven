@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-pastoral-serene-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-pastoral-serene-isolated.png
+    reason: Signature motif, isolated.
+---
 # Pastoral Serene (aesthetic)
 
 **Tag:** Calm-tech pastoral (Headspace landscapes; Apple "Quiet" campaigns; Studio Ghibli establishing shots; 2025-26 "meadow under the dashboard" SaaS wave)

@@ -6,6 +6,9 @@ category: metal-fabric
 surfaceFinish: glossy
 transparency: opaque
 pairsPrototypes: [style-silk-chrome-flow, aesthetic-luxury-cinematic-dark, aesthetic-cosmic-horizon, recipe-ai-foundry-dark, style-aurorism]
+images:
+  - src: material-liquid-chrome-silk.png
+    reason: Material fidelity sample.
 ---
 
 # Liquid chrome silk

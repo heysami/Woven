@@ -6,6 +6,9 @@ subCategory: particle-emergence
 role: hero
 pairsPrototypes: [aesthetic-cosmic-horizon, aesthetic-bioluminescent-deep, aesthetic-defi-cosmic, recipe-ai-foundry-dark, style-silk-chrome-flow]
 notForUseWhen: Brief is warm, organic, handcrafted, or budget — particles read high-tech and cold.
+images:
+  - src: illust-particle-figure.png
+    reason: Illustration style sample.
 ---
 
 # Particle-formed figure

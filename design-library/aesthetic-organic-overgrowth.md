@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-organic-overgrowth-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-organic-overgrowth-isolated.png
+    reason: Signature motif, isolated.
+---
 # Organic Overgrowth (aesthetic)
 
 **Tag:** Nature-reclaims-tech (The Last of Us overgrown cities; solarpunk reclamation; 2025-26 "topiary growing out of the dashboard" wave)

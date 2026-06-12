@@ -5,6 +5,9 @@ category: cinematic
 era: current
 pairsPrototypes: [aesthetic-cosmic-horizon, aesthetic-monochrome-tech-editorial, recipe-ai-foundry-dark, recipe-scientific-infra-marketing, style-silk-chrome-flow]
 notForUseWhen: Brief is warm, domestic, human-scale, or playful — orbit reads cold and vast.
+images:
+  - src: photo-orbital-space.png
+    reason: Photography style sample.
 ---
 
 # Orbital space photoreal

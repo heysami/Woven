@@ -6,6 +6,9 @@ subCategory: scenic-environment
 role: hero
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-surreal-dream-stage, aesthetic-frutiger-eco, shell-scroll-journey-scene]
 notForUseWhen: Brief needs gritty realism or hard-tech credibility — the terrain is idealized and soft.
+images:
+  - src: illust-3d-dreamscape-terrain.png
+    reason: Illustration style sample.
 ---
 
 # 3D dreamscape terrain

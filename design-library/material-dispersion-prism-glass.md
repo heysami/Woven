@@ -6,6 +6,9 @@ category: glass
 surfaceFinish: glossy
 transparency: transparent
 pairsPrototypes: [style-holographic, style-liquid-glass, aesthetic-cosmic-horizon, aesthetic-defi-cosmic, style-glassmorphism]
+images:
+  - src: material-dispersion-prism-glass.png
+    reason: Material fidelity sample.
 ---
 
 # Dispersion prism glass

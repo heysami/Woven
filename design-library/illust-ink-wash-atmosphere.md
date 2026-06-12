@@ -6,6 +6,9 @@ subCategory: ink-wash
 role: decoration
 pairsPrototypes: [aesthetic-dark-academia, recipe-warm-restraint, recipe-ai-foundry-dark, aesthetic-monochrome-tech-editorial]
 notForUseWhen: Brief is playful-bright or vector-crisp — the wash is contemplative and tonal.
+images:
+  - src: illust-ink-wash-atmosphere.png
+    reason: Illustration style sample.
 ---
 
 # Ink-wash atmosphere field

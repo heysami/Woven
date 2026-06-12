@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-dark-botanical-maximalism-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-dark-botanical-maximalism-isolated.png
+    reason: Signature motif, isolated.
+---
 # Dark Botanical Maximalism (aesthetic)
 
 **Tag:** Midnight-garden opulence (moooi *A Life Extraordinary*; Kew Gardens after dark; Dutch Golden Age flower still-lifes; House of Hackney wallpapers)

@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: style-kinetic-line-accents-ui.png
+    reason: Style surface UI mockup.
+  - src: style-kinetic-line-accents-isolated.png
+    reason: Signature surface, isolated.
+---
 # Kinetic line accents (style)
 
 **Tag:** `style-kinetic-line-accents`

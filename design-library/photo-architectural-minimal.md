@@ -5,6 +5,9 @@ category: documentary
 era: current
 pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-swiss-grid, aesthetic-swiss-modernist, recipe-warm-restraint]
 notForUseWhen: Brief is playful, maximalist, or character-driven — concrete reads austere.
+images:
+  - src: photo-architectural-minimal.png
+    reason: Photography style sample.
 ---
 
 # Architectural minimal

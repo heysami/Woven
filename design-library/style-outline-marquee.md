@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: style-outline-marquee-ui.png
+    reason: Style surface UI mockup.
+  - src: style-outline-marquee-isolated.png
+    reason: Signature surface, isolated.
+---
 # Outline marquee (style)
 
 **Tag:** `style-outline-marquee`

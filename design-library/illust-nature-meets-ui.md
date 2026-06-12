@@ -6,6 +6,9 @@ subCategory: organic-tech-composite
 role: hero
 pairsPrototypes: [aesthetic-organic-overgrowth, aesthetic-pastoral-serene, aesthetic-solarpunk, recipe-restrained-ai-marketing]
 notForUseWhen: Brief needs literal product screenshots untouched — this style ALTERS the interface with growth.
+images:
+  - src: illust-nature-meets-ui.png
+    reason: Illustration style sample.
 ---
 
 # Nature-meets-UI interpenetration

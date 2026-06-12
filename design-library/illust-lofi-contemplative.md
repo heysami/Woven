@@ -6,6 +6,9 @@ subCategory: lofi-chill
 role: hero
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-dreamcore, recipe-readcv, aesthetic-dark-academia]
 notForUseWhen: Brief is energetic, corporate, or urgency-driven — the whole register is exhale.
+images:
+  - src: illust-lofi-contemplative.png
+    reason: Illustration style sample.
 ---
 
 # Lo-fi contemplative scene

@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-monochrome-tech-editorial-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-monochrome-tech-editorial-isolated.png
+    reason: Signature motif, isolated.
+---
 # Monochrome Tech Editorial (aesthetic)
 
 **Tag:** B/W futurist editorial (NASA Apollo press kits; Kubrick *2001* stills; SpaceX mono photography; The Face tech spreads; tour-poster monochrome)

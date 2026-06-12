@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: shell-horizontal-scroll-stage-ui.png
+    reason: Shell structure UI mockup.
+  - src: shell-horizontal-scroll-stage-isolated.png
+    reason: Signature structure, isolated.
+---
 # Horizontal scroll stage shell
 
 **Tag:** `[showcase · horizontal axis · chaptered panels]`

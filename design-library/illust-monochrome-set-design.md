@@ -6,6 +6,9 @@ subCategory: set-design-stage
 role: hero
 pairsPrototypes: [aesthetic-monochrome-pop-poster, recipe-bento-marketing, aesthetic-positivity-kawaii, recipe-aurora-marketing]
 notForUseWhen: Brief needs realism or documentary trust — the staged set reads art-directed and brand-forward.
+images:
+  - src: illust-monochrome-set-design.png
+    reason: Illustration style sample.
 ---
 
 # Monochrome set-design still life

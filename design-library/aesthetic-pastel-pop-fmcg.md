@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-pastel-pop-fmcg-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-pastel-pop-fmcg-isolated.png
+    reason: Signature motif, isolated.
+---
 # Pastel Pop FMCG (aesthetic)
 
 **Tag:** Flat soda-shelf pop (Drink Cann scroll-fade pages; Bite toothpaste bits; Recess; Graza; the DTC "fun pantry" wave)

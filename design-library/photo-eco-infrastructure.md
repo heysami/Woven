@@ -5,6 +5,9 @@ category: documentary
 era: current
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-organic-overgrowth, aesthetic-solarpunk, recipe-scientific-infra-marketing, aesthetic-frutiger-eco]
 notForUseWhen: Brief is indoor, intimate, or product-macro — this style is landscape-scale.
+images:
+  - src: photo-eco-infrastructure.png
+    reason: Photography style sample.
 ---
 
 # Eco-infrastructure heroic

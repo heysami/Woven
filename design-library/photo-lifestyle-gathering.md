@@ -5,6 +5,9 @@ category: lifestyle
 era: current
 pairsPrototypes: [aesthetic-pastoral-serene, recipe-warm-restraint, recipe-readcv, aesthetic-coastal-grandmother]
 notForUseWhen: Brief is solitary-focus, enterprise, or premium-exclusive — the register is communal warmth.
+images:
+  - src: photo-lifestyle-gathering.png
+    reason: Photography style sample.
 ---
 
 # Golden-hour gathering

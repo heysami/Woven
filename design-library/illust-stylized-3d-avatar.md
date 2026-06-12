@@ -6,6 +6,9 @@ subCategory: character-avatar
 role: mascot
 pairsPrototypes: [recipe-readcv, recipe-neo-grotesque-portfolio, aesthetic-positivity-kawaii, recipe-devtools-marketing]
 notForUseWhen: Brief is corporate-formal, luxury, or anonymous-brand — a personal avatar centers an individual.
+images:
+  - src: illust-stylized-3d-avatar.png
+    reason: Illustration style sample.
 ---
 
 # Stylized 3D self-avatar

@@ -5,6 +5,9 @@ category: archival
 era: 1950s-1970s archival
 pairsPrototypes: [aesthetic-monochrome-tech-editorial, aesthetic-atompunk, recipe-newspaper-of-record, recipe-editorial-magazine]
 notForUseWhen: Brief needs current-day color credibility or consumer warmth — the archive reads historical and institutional.
+images:
+  - src: photo-nasa-archival-mono.png
+    reason: Photography style sample.
 ---
 
 # NASA archival monochrome

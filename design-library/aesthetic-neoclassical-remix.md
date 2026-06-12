@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-neoclassical-remix-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-neoclassical-remix-isolated.png
+    reason: Signature motif, isolated.
+---
 # Neoclassical Remix (aesthetic)
 
 **Tag:** Antiquity-meets-now (Squarespace "Browser History" renaissance campaign; Gucci Ignasi Monreal SS18; Daniel Arsham eroded classics; museum-merch culture)

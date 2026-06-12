@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: aesthetic-sculptural-minimal-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-sculptural-minimal-isolated.png
+    reason: Signature motif, isolated.
+---
 # Sculptural Minimal (aesthetic)
 
 **Tag:** Object-as-typography gallery (AIR's black spiral between letterspaced caps; Apple "AirPods" floating-object spreads; Kinfolk object studies; gallery-plinth web)

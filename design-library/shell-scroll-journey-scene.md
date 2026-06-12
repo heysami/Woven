@@ -1,3 +1,12 @@
+---
+# Sample-image references for the System-tab design library. Images sit
+# next to this file in design-library/ and were generated via image_gen.
+images:
+  - src: shell-scroll-journey-scene-ui.png
+    reason: Shell structure UI mockup.
+  - src: shell-scroll-journey-scene-isolated.png
+    reason: Signature structure, isolated.
+---
 # Scroll journey scene shell
 
 **Tag:** `[narrative · single continuous scene · scroll-scrubbed]`
