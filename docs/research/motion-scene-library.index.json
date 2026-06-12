@@ -1,0 +1,830 @@
+{
+  "version": "2.0",
+  "library": "motion-scene",
+  "sourceDir": "design-library/",
+  "totalEntries": 30,
+  "decisionTree": {
+    "recipe-aurora-marketing": {
+      "default": "ambient-loop-atmosphere",
+      "alternatives": [
+        "background-swap-fixed-ui",
+        "living-gradient-video",
+        "quiet-zone-headline",
+        "scene-crossfade-hold",
+        "scroll-exit-handoff",
+        "scroll-scrub-journey",
+        "scroll-speed-ramp"
+      ]
+    },
+    "recipe-warm-restraint": {
+      "default": "ambient-loop-atmosphere",
+      "alternatives": [
+        "background-swap-fixed-ui",
+        "cinemagraph-still",
+        "letterbox-stage",
+        "pointer-magnetic-subject",
+        "quiet-zone-headline",
+        "scene-crossfade-hold",
+        "scroll-pinned-transform"
+      ]
+    },
+    "style-liquid-glass": {
+      "default": "ambient-loop-atmosphere",
+      "alternatives": [
+        "scroll-exit-handoff"
+      ]
+    },
+    "aesthetic-solarpunk": {
+      "default": "ambient-loop-atmosphere",
+      "alternatives": [
+        "pointer-parallax-layers",
+        "quiet-zone-headline",
+        "scene-zoom-through",
+        "scroll-scrub-journey"
+      ]
+    },
+    "aesthetic-frutiger-aero": {
+      "default": "ambient-loop-atmosphere",
+      "alternatives": [
+        "background-swap-fixed-ui",
+        "pointer-parallax-layers",
+        "scroll-sequence-frames"
+      ]
+    },
+    "recipe-restrained-ai-marketing": {
+      "default": "background-swap-fixed-ui",
+      "alternatives": [
+        "mouse-scrub-orbit",
+        "pointer-magnetic-subject",
+        "quiet-zone-headline",
+        "scene-crossfade-hold",
+        "scroll-entrance-video",
+        "scroll-scrub-rotation"
+      ]
+    },
+    "style-glassmorphism": {
+      "default": "background-swap-fixed-ui",
+      "alternatives": [
+        "depth-drift-layers",
+        "pointer-magnetic-subject",
+        "scene-zoom-through"
+      ]
+    },
+    "recipe-editorial-magazine": {
+      "default": "cinemagraph-still",
+      "alternatives": [
+        "hover-activate-loop",
+        "letterbox-stage",
+        "match-cut-morph",
+        "mouse-scrub-look",
+        "pointer-parallax-layers",
+        "scene-stepper-wipe",
+        "scroll-exit-handoff",
+        "scroll-pinned-transform",
+        "scroll-reveal-mask",
+        "slow-push-zoom",
+        "subject-offset-ui-counterweight"
+      ]
+    },
+    "aesthetic-dark-academia": {
+      "default": "cinemagraph-still",
+      "alternatives": [
+        "letterbox-stage",
+        "pointer-spotlight-video",
+        "slow-push-zoom",
+        "subject-offset-ui-counterweight"
+      ]
+    },
+    "aesthetic-cottagecore": {
+      "default": "cinemagraph-still",
+      "alternatives": [
+        "pointer-magnetic-subject"
+      ]
+    },
+    "recipe-scientific-infra-marketing": {
+      "default": "depth-drift-layers",
+      "alternatives": [
+        "frame-hold-ui-sync",
+        "scene-zoom-through",
+        "scroll-entrance-video",
+        "scroll-scrub-journey"
+      ]
+    },
+    "aesthetic-frutiger-dark-aero": {
+      "default": "depth-drift-layers",
+      "alternatives": [
+        "pointer-spotlight-video",
+        "scroll-speed-ramp"
+      ]
+    },
+    "aesthetic-dreamcore": {
+      "default": "depth-drift-layers",
+      "alternatives": [
+        "pointer-parallax-layers",
+        "scene-crossfade-hold",
+        "scroll-reveal-mask"
+      ]
+    },
+    "aesthetic-vaporwave": {
+      "default": "depth-drift-layers",
+      "alternatives": [
+        "living-gradient-video",
+        "scroll-exit-handoff",
+        "video-text-mask"
+      ]
+    },
+    "recipe-bento-marketing": {
+      "default": "frame-hold-ui-sync",
+      "alternatives": [
+        "mouse-scrub-orbit",
+        "scene-stepper-wipe",
+        "scroll-entrance-video",
+        "scroll-pinned-transform",
+        "scroll-scrub-rotation",
+        "scroll-sequence-frames",
+        "subject-offset-ui-counterweight"
+      ]
+    },
+    "recipe-devtools-marketing": {
+      "default": "frame-hold-ui-sync",
+      "alternatives": [
+        "mouse-scrub-orbit",
+        "scene-zoom-through",
+        "scroll-entrance-video",
+        "scroll-scrub-rotation",
+        "scroll-sequence-frames"
+      ]
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "frame-hold-ui-sync",
+      "alternatives": [
+        "living-gradient-video",
+        "match-cut-morph",
+        "pointer-spotlight-video",
+        "scene-zoom-through",
+        "scroll-sequence-frames",
+        "scroll-speed-ramp"
+      ]
+    },
+    "recipe-neo-grotesque-portfolio": {
+      "default": "hover-activate-loop",
+      "alternatives": [
+        "idle-character-loop",
+        "mouse-scrub-look",
+        "scene-stepper-wipe",
+        "scroll-exit-handoff",
+        "scroll-reveal-mask",
+        "slow-push-zoom",
+        "subject-offset-ui-counterweight",
+        "video-text-mask"
+      ]
+    },
+    "recipe-brutalist-web": {
+      "default": "hover-activate-loop",
+      "alternatives": [
+        "video-text-mask"
+      ]
+    },
+    "style-oversized-neo-grotesque": {
+      "default": "hover-activate-loop",
+      "alternatives": [
+        "mouse-scrub-look",
+        "scene-stepper-wipe",
+        "scroll-pinned-transform",
+        "subject-offset-ui-counterweight",
+        "video-text-mask"
+      ]
+    },
+    "recipe-y2k-memphis-loud": {
+      "default": "idle-character-loop",
+      "alternatives": [
+        "scroll-reveal-mask"
+      ]
+    },
+    "aesthetic-y2k-futurism": {
+      "default": "idle-character-loop",
+      "alternatives": [
+        "mouse-scrub-look"
+      ]
+    },
+    "aesthetic-fairycore": {
+      "default": "idle-character-loop",
+      "alternatives": [
+        "pointer-magnetic-subject"
+      ]
+    },
+    "aesthetic-cyberpunk": {
+      "default": "idle-character-loop",
+      "alternatives": [
+        "match-cut-morph",
+        "mouse-scrub-look",
+        "pointer-spotlight-video",
+        "scroll-scrub-journey",
+        "scroll-speed-ramp"
+      ]
+    },
+    "aesthetic-dieselpunk": {
+      "default": "letterbox-stage",
+      "alternatives": [
+        "slow-push-zoom"
+      ]
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "letterbox-stage",
+      "alternatives": [
+        "mouse-scrub-orbit",
+        "scroll-scrub-rotation"
+      ]
+    },
+    "style-aurorism": {
+      "default": "living-gradient-video",
+      "alternatives": [
+        "pointer-parallax-layers",
+        "scene-crossfade-hold",
+        "scroll-scrub-journey"
+      ]
+    },
+    "style-holographic": {
+      "default": "living-gradient-video",
+      "alternatives": [
+        "scroll-speed-ramp"
+      ]
+    },
+    "style-bold-display": {
+      "default": "match-cut-morph",
+      "alternatives": [
+        "mouse-scrub-orbit",
+        "quiet-zone-headline",
+        "scene-stepper-wipe",
+        "scroll-reveal-mask",
+        "scroll-scrub-rotation",
+        "slow-push-zoom",
+        "video-text-mask"
+      ]
+    }
+  },
+  "entries": {
+    "ambient-loop-atmosphere": {
+      "name": "Ambient loop atmosphere (the page breathes under the UI)",
+      "category": "ambient",
+      "subCategory": "video",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "A seamless full-bleed atmospheric video — sky, water, smoke, fabric, dust — loops autonomously beneath the page's UI, generated with a deliberately quiet, light region where the type sits so the scene reads as a living backdrop, not a video with text on it (the aethera-hero pattern).",
+      "notForUseWhen": "The viewport is data-dense (dashboards, tables, forms — motion under inputs is hostile), the brand register is strictly flat/graphic with no photographic license, or the loop cannot be made seamless and a visible reset would interrupt long dwell times.",
+      "pairsPrototypes": [
+        "recipe-aurora-marketing",
+        "recipe-warm-restraint",
+        "style-liquid-glass",
+        "aesthetic-solarpunk",
+        "aesthetic-frutiger-aero"
+      ],
+      "sourceFile": "design-library/motion-ambient-loop-atmosphere.md"
+    },
+    "background-swap-fixed-ui": {
+      "name": "Background swap, fixed UI (the world changes around the chrome)",
+      "category": "scene-choreography",
+      "subCategory": "video",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "The UI chrome — headline rail, nav dots, CTA — is laid out ONCE and never moves; each wheel-step swaps only the full-bleed background video behind it, so continuity lives in the stable interface while change lives entirely in the world.",
+      "notForUseWhen": "Each scene needs a different layout (headline left on one, product grid on the next) — the technique's whole value is the unmoving chrome; if the UI must reflow per scene, use scene-stepper-wipe instead.",
+      "pairsPrototypes": [
+        "recipe-restrained-ai-marketing",
+        "recipe-aurora-marketing",
+        "recipe-warm-restraint",
+        "style-glassmorphism",
+        "aesthetic-frutiger-aero"
+      ],
+      "sourceFile": "design-library/motion-background-swap-fixed-ui.md"
+    },
+    "cinemagraph-still": {
+      "name": "Cinemagraph still (one thing moves, everything else is frozen)",
+      "category": "ambient",
+      "subCategory": "video",
+      "role": "section",
+      "roleAffinity": [
+        "section"
+      ],
+      "oneLine": "A photograph in which exactly ONE element moves — steam off a cup, hair in a draft, a flag, rain on glass — while every other pixel holds frozen; the uncanny stillness-with-life makes a section image feel enchanted rather than animated.",
+      "notForUseWhen": "The scene wants whole-frame life (use ambient-loop-atmosphere), the moving element can't loop seamlessly (one-way motion like a falling object), or the section is so small the single moving element drops below ~80px rendered and the effect vanishes.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-warm-restraint",
+        "aesthetic-dark-academia",
+        "aesthetic-cottagecore"
+      ],
+      "sourceFile": "design-library/motion-cinemagraph-still.md"
+    },
+    "depth-drift-layers": {
+      "name": "Depth-drift layers (ambient faux-3D, no pointer required)",
+      "category": "ambient",
+      "subCategory": "layered-raster",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Three to four generated raster layers counter-drift autonomously at depth-proportional speeds — background barely creeping, foreground gliding — producing a slow ambient parallax with no input at all; the sibling of pointer-parallax-layers with the pointer removed and time as the driver.",
+      "notForUseWhen": "The scene has no plausible depth planes (flat graphic systems), the same viewport already runs pointer-parallax-layers (they are the same stack — pick one driver), or layer-consistent generation budget (3–4 coherent images) isn't available.",
+      "pairsPrototypes": [
+        "recipe-scientific-infra-marketing",
+        "style-glassmorphism",
+        "aesthetic-frutiger-dark-aero",
+        "aesthetic-dreamcore",
+        "aesthetic-vaporwave"
+      ],
+      "sourceFile": "design-library/motion-depth-drift-layers.md"
+    },
+    "frame-hold-ui-sync": {
+      "name": "Frame-hold UI sync (pause the film, play the interface)",
+      "category": "composition",
+      "subCategory": "video",
+      "role": "product",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "The \"do something without leaving the scene\" primitive: the scene's video plays to an AUTHORED hold frame and pauses; UI elements animate in synced to that exact frame (spec list, price, hotspots); the next wheel-step resumes playback to the following hold — or, past the last hold, hands the input off to the scene choreography to advance.",
+      "notForUseWhen": "The video has no natural stopping poses (continuous abstract flow, atmosphere) — holds need distinct, stable frames worth annotating; or the scene's UI is a single static headline with nothing to reveal per beat — then a plain ambient loop does the job without the machinery.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-devtools-marketing",
+        "recipe-scientific-infra-marketing",
+        "recipe-ai-foundry-dark"
+      ],
+      "sourceFile": "design-library/motion-frame-hold-ui-sync.md"
+    },
+    "hover-activate-loop": {
+      "name": "Hover-activate loop (still wakes into its living version)",
+      "category": "pointer-driven",
+      "subCategory": "video",
+      "role": "gallery",
+      "roleAffinity": [
+        "gallery"
+      ],
+      "oneLine": "Gallery tiles and case-study cards each hold a poster still that crossfades into its own living loop on hover or keyboard focus — the grid is calm at rest, and whichever item the visitor considers wakes up under their attention.",
+      "notForUseWhen": "The grid has more than ~12 video tiles in one viewport (decode budget collapses), the tiles are smaller than ~240px wide (motion at thumbnail scale reads as noise), or hover has no meaning for the audience (touch-first) and no tap-to-play substitute is storyboarded.",
+      "pairsPrototypes": [
+        "recipe-neo-grotesque-portfolio",
+        "recipe-editorial-magazine",
+        "recipe-brutalist-web",
+        "style-oversized-neo-grotesque"
+      ],
+      "sourceFile": "design-library/motion-hover-activate-loop.md"
+    },
+    "idle-character-loop": {
+      "name": "Idle character loop (the mascot is simply there)",
+      "category": "ambient",
+      "subCategory": "video",
+      "role": "portrait",
+      "roleAffinity": [
+        "portrait"
+      ],
+      "oneLine": "A character, mascot, or portrait figure performs a seamless game-style idle loop — breathing, blinking, shifting weight — fully autonomous, asking nothing of the visitor; the brand has a being on the page who is simply, calmly there.",
+      "notForUseWhen": "The brand has no character/mascot/figure to be present (don't invent one for the technique), the character must respond to the visitor (use mouse-scrub-look or pointer-magnetic-subject), or identity consistency across the loop can't be guaranteed — a face that drifts mid-loop is worse than a static portrait.",
+      "pairsPrototypes": [
+        "recipe-y2k-memphis-loud",
+        "recipe-neo-grotesque-portfolio",
+        "aesthetic-y2k-futurism",
+        "aesthetic-fairycore",
+        "aesthetic-cyberpunk"
+      ],
+      "sourceFile": "design-library/motion-idle-character-loop.md"
+    },
+    "letterbox-stage": {
+      "name": "Letterbox stage (UI lives in the matte)",
+      "category": "composition",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "The video plays inside a 2.39:1 cinematic band centered in the viewport while the UI lives in the matte bars — kicker in the top bar, headline + CTA in the bottom bar — and the bars are page-background-coloured, so the stage reads as a deliberate proscenium rather than a cropped or letterboxed file.",
+      "notForUseWhen": "The design language is full-bleed everywhere else — one letterboxed scene in an edge-to-edge piece reads as a broken asset, not cinema; commit the whole piece or skip it. Also wrong on portrait/mobile-first viewports, where a 2.39:1 band shrinks to a sliver.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-warm-restraint",
+        "aesthetic-dieselpunk",
+        "aesthetic-cassette-futurism",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/motion-letterbox-stage.md"
+    },
+    "living-gradient-video": {
+      "name": "Living gradient video (the brand palette as weather)",
+      "category": "ambient",
+      "subCategory": "video",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "A generated abstract color-field — ink in water, aurora curtains, molten gradient, slow smoke in brand hues — loops full-bleed beneath the page content, turning the palette itself into a living material instead of a fill.",
+      "notForUseWhen": "The brand is flat/graphic with hard-edged color systems (a drifting gradient contradicts the language), the palette hexes aren't pinned down yet (the prompt needs exact colors), or CSS mesh gradients already deliver the brief — don't spend a video on what two animated radial-gradients can do.",
+      "pairsPrototypes": [
+        "recipe-aurora-marketing",
+        "recipe-ai-foundry-dark",
+        "style-aurorism",
+        "style-holographic",
+        "aesthetic-vaporwave"
+      ],
+      "sourceFile": "design-library/motion-living-gradient-video.md"
+    },
+    "match-cut-morph": {
+      "name": "Match-cut morph (the cut you never see)",
+      "category": "scene-choreography",
+      "subCategory": "video",
+      "role": "transition",
+      "roleAffinity": [
+        "transition"
+      ],
+      "oneLine": "On advance, the outgoing scene's video plays to its FINAL frame whose silhouette, position, and scale match the incoming video's FIRST frame — the two assets are generated as a composition-locked pair, so a hard cut between them reads as one object transforming into another.",
+      "notForUseWhen": "Assets are generated independently per scene with no shared composition contract — the morph lives or dies on frame-matched pairs; without paired generation this is just a hard cut. Also wrong for decks longer than ~5 scenes; authoring N-1 matched seams does not scale.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-ai-foundry-dark",
+        "aesthetic-cyberpunk",
+        "style-bold-display"
+      ],
+      "sourceFile": "design-library/motion-match-cut-morph.md"
+    },
+    "mouse-scrub-look": {
+      "name": "Mouse-scrub look (subject follows the cursor)",
+      "category": "pointer-driven",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A full-bleed video of a subject turning its head (or rotating its front) left-to-right is paused and SCRUBBED by the pointer's horizontal position — the subject appears to watch the cursor, following the visitor around the frame.",
+      "notForUseWhen": "The slot is informational (dashboard, docs, data table), the subject has no face/front (abstract texture), or touch-only audiences dominate — pointer-x has no mobile equivalent without a gyro fallback.",
+      "pairsPrototypes": [
+        "recipe-neo-grotesque-portfolio",
+        "recipe-editorial-magazine",
+        "aesthetic-cyberpunk",
+        "aesthetic-y2k-futurism",
+        "style-oversized-neo-grotesque"
+      ],
+      "sourceFile": "design-library/motion-mouse-scrub-look.md"
+    },
+    "mouse-scrub-orbit": {
+      "name": "Mouse-scrub orbit (object turns on a turntable arc)",
+      "category": "pointer-driven",
+      "subCategory": "video",
+      "role": "product",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "A full-bleed video of a product rotating ±30–45° on a turntable is paused and SCRUBBED by pointer-x — the object presents its angles to the visitor like a salesperson turning a watch under the light, the sibling of mouse-scrub-look for things instead of faces.",
+      "notForUseWhen": "The subject has a face or front that should \"look\" at the visitor (use mouse-scrub-look), the object is flat or symmetric so rotation reads as nothing, or the section is touch-dominant with no gyro fallback budgeted.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-devtools-marketing",
+        "recipe-restrained-ai-marketing",
+        "style-bold-display",
+        "aesthetic-cassette-futurism"
+      ],
+      "sourceFile": "design-library/motion-mouse-scrub-orbit.md"
+    },
+    "pointer-magnetic-subject": {
+      "name": "Pointer-magnetic subject (a lean, not a stare)",
+      "category": "pointer-driven",
+      "subCategory": "raster-sequence",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A short generated frame sequence of a subject swaying through a tiny arc is micro-scrubbed by pointer position — the subject leans and drifts a few degrees toward the cursor, ±8 frames around center, presence without the full head-turn theatre of mouse-scrub-look.",
+      "notForUseWhen": "The brief wants overt acknowledgement (use mouse-scrub-look — this technique is deliberately subliminal), the subject is rigid with no plausible sway (architecture, typography), or the frames cannot be generated with consistent identity across the sequence.",
+      "pairsPrototypes": [
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "style-glassmorphism",
+        "aesthetic-cottagecore",
+        "aesthetic-fairycore"
+      ],
+      "sourceFile": "design-library/motion-pointer-magnetic-subject.md"
+    },
+    "pointer-parallax-layers": {
+      "name": "Pointer parallax layers (faux-3D depth from stacked rasters)",
+      "category": "pointer-driven",
+      "subCategory": "layered-raster",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "Three to six generated raster layers — background, midground, foreground, atmosphere — translate at different rates as the pointer moves, so the flat hero acquires believable depth that tilts toward the visitor (the moooi a-life-extraordinary pattern).",
+      "notForUseWhen": "The scene has no natural depth planes (flat graphic, single object on void), the hero must carry real photographic continuity (layer seams betray themselves on humans mid-frame), or the page already runs a heavier pointer binding in the same viewport.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "style-aurorism",
+        "aesthetic-frutiger-aero",
+        "aesthetic-dreamcore",
+        "aesthetic-solarpunk"
+      ],
+      "sourceFile": "design-library/motion-pointer-parallax-layers.md"
+    },
+    "pointer-spotlight-video": {
+      "name": "Pointer spotlight video (cursor develops the living image)",
+      "category": "pointer-driven",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A full-bleed video plays underneath a dimmed, desaturated still of its own first frame; a soft radial mask follows the pointer and reveals the living video only inside that circle — the visitor's cursor develops the image like light on photographic paper.",
+      "notForUseWhen": "The hero must be fully legible at first paint (the technique deliberately hides most of the scene), touch-only audiences dominate (no pointer to carry the spotlight), or the video and still cannot be generated from the same frame so the reveal mismatches.",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "aesthetic-frutiger-dark-aero",
+        "aesthetic-cyberpunk",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/motion-pointer-spotlight-video.md"
+    },
+    "quiet-zone-headline": {
+      "name": "Quiet-zone headline (the asset makes room for the type)",
+      "category": "composition",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "The foundational composition contract of every motion scene: the asset is GENERATED with a deliberate low-detail, controlled-luminance region — a light sky, a fog bank, a blank wall — sized and positioned for the headline before a single frame exists, so type never fights the world it sits on (the motionsites aethera-hero pattern).",
+      "notForUseWhen": "The asset is texture-only with no subject (uniform particle field, gradient wash) — there is no busy region to be quiet AGAINST, so just set type anywhere; or the headline is short enough (≤2 words) to survive on a scrim without composition help.",
+      "pairsPrototypes": [
+        "recipe-aurora-marketing",
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "aesthetic-solarpunk",
+        "style-bold-display"
+      ],
+      "sourceFile": "design-library/motion-quiet-zone-headline.md"
+    },
+    "scene-crossfade-hold": {
+      "name": "Scene crossfade hold (worlds dissolve, each one breathes)",
+      "category": "scene-choreography",
+      "subCategory": "video",
+      "role": "transition",
+      "roleAffinity": [
+        "transition"
+      ],
+      "oneLine": "Each full-screen scene is its own ambient video loop; advancing one wheel-step crossfades the outgoing world into the incoming one over 800–1200ms — held scenes keep breathing on their internal loop, and both videos play simultaneously ONLY during the cross.",
+      "notForUseWhen": "Scenes are hard-edged or graphic (UI screenshots, type-led boards) — a dissolve between crisp rectangles reads as a rendering bug; use scene-stepper-wipe. Also wrong when scenes must feel causally connected — crossfade says \"elsewhere\", not \"therefore\".",
+      "pairsPrototypes": [
+        "recipe-aurora-marketing",
+        "recipe-warm-restraint",
+        "recipe-restrained-ai-marketing",
+        "style-aurorism",
+        "aesthetic-dreamcore"
+      ],
+      "sourceFile": "design-library/motion-scene-crossfade-hold.md"
+    },
+    "scene-stepper-wipe": {
+      "name": "Scene stepper wipe (one notch, one scene)",
+      "category": "scene-choreography",
+      "subCategory": "hybrid",
+      "role": "transition",
+      "roleAffinity": [
+        "transition"
+      ],
+      "oneLine": "Full-screen scenes advance exactly one per wheel-notch / swipe / arrow-key with a directional wipe or slide (next scene pushes in from the bottom on advance, from the top on back-step) — the piece is a strictly linear deck the visitor steps through, never a scroll.",
+      "notForUseWhen": "The piece needs free scrolling or anchor links into the middle (the stepper owns the wheel completely), or there are fewer than 3 scenes — a wipe between two states reads as a glitchy tab switch, not choreography.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-editorial-magazine",
+        "style-oversized-neo-grotesque",
+        "style-bold-display"
+      ],
+      "sourceFile": "design-library/motion-scene-stepper-wipe.md"
+    },
+    "scene-zoom-through": {
+      "name": "Scene zoom-through (dive into the detail)",
+      "category": "scene-choreography",
+      "subCategory": "hybrid",
+      "role": "transition",
+      "roleAffinity": [
+        "transition"
+      ],
+      "oneLine": "Advancing a wheel-step zooms the camera INTO an authored detail region of scene N — a window, a chip, a leaf — and that detail becomes scene N+1 full-frame; back-stepping reverses the dive, pulling out of the detail into the wide shot, so the whole piece reads as one continuous change of scale.",
+      "notForUseWhen": "Scenes are thematically parallel rather than nested (three equal product pillars) — zoom implies containment and scale; zooming between siblings lies about the structure. Also wrong when assets cannot be generated as a wide/detail pair of the same world.",
+      "pairsPrototypes": [
+        "recipe-scientific-infra-marketing",
+        "recipe-devtools-marketing",
+        "recipe-ai-foundry-dark",
+        "aesthetic-solarpunk",
+        "style-glassmorphism"
+      ],
+      "sourceFile": "design-library/motion-scene-zoom-through.md"
+    },
+    "scroll-entrance-video": {
+      "name": "Scroll-entrance video (asset arrives, then holds)",
+      "category": "scroll-driven",
+      "subCategory": "video",
+      "role": "product",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "A play-once video fires the moment the section scrolls into view: the product slides/rises/unfolds into place and SETTLES on a final hold frame — to the visitor it reads as a static asset that happened to arrive beautifully (the iPhone-17-Pro entrance pattern).",
+      "notForUseWhen": "The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival — this technique ends in a still hold frame.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-restrained-ai-marketing",
+        "recipe-devtools-marketing",
+        "recipe-scientific-infra-marketing"
+      ],
+      "sourceFile": "design-library/motion-scroll-entrance-video.md"
+    },
+    "scroll-exit-handoff": {
+      "name": "Scroll-exit handoff (one scene's exit becomes the next scene's entrance)",
+      "category": "scroll-driven",
+      "subCategory": "video",
+      "role": "transition",
+      "roleAffinity": [
+        "transition"
+      ],
+      "oneLine": "At the boundary between two full-bleed scenes, the outgoing scene's asset plays a short exit clip whose final motion — direction and velocity — is matched by the incoming scene's entrance clip, so the two scenes read as one continuous gesture instead of a cut on scroll.",
+      "notForUseWhen": "Adjacent scenes have no visual kinship to exploit (a chart section into a testimonial wall — nothing to match on), or either neighboring scene is itself scroll-scrubbed — a pinned scrub between two triggered clips breaks the velocity chain.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-aurora-marketing",
+        "style-liquid-glass",
+        "aesthetic-vaporwave"
+      ],
+      "sourceFile": "design-library/motion-scroll-exit-handoff.md"
+    },
+    "scroll-pinned-transform": {
+      "name": "Scroll-pinned transform (asset morphs while copy swaps)",
+      "category": "scroll-driven",
+      "subCategory": "hybrid",
+      "role": "product",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "A section pins while its full-bleed asset scales, pans, and crops under CSS transforms driven by scroll progress, and successive copy blocks crossfade in the quiet zone — one asset, three or four framings, each paired with its own message (the classic Apple pinned sequence).",
+      "notForUseWhen": "There's only one copy block to show (a pin with one message is a pointless scroll tax), or the asset has no detail worth zooming into — the transform must reveal something at each step.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-editorial-magazine",
+        "recipe-warm-restraint",
+        "style-oversized-neo-grotesque"
+      ],
+      "sourceFile": "design-library/motion-scroll-pinned-transform.md"
+    },
+    "scroll-reveal-mask": {
+      "name": "Scroll-reveal mask (aperture opens onto full-bleed video)",
+      "category": "scroll-driven",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "Scroll progress expands a mask — a circle, the headline's own glyphs, or a widening aperture — over an already-playing full-bleed video, until the opening swallows the viewport and the video stands edge-to-edge as the section's hero.",
+      "notForUseWhen": "The video must be legible from the first pixel (the early mask hides 95% of it), or the page background and the brief reject a hard graphic gesture — the mask IS a loud editorial move, not a neutral one.",
+      "pairsPrototypes": [
+        "recipe-neo-grotesque-portfolio",
+        "recipe-editorial-magazine",
+        "recipe-y2k-memphis-loud",
+        "style-bold-display",
+        "aesthetic-dreamcore"
+      ],
+      "sourceFile": "design-library/motion-scroll-reveal-mask.md"
+    },
+    "scroll-scrub-journey": {
+      "name": "Scroll-scrub journey (camera travels as you scroll)",
+      "category": "scroll-driven",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A full-bleed camera flythrough of an environment is paused and SCRUBBED by scroll progress: scrolling down dollies the camera forward through the space, scrolling up backs it out — the page becomes a place you travel through rather than a document you read.",
+      "notForUseWhen": "The page is short (a journey needs 300vh+ of runway to feel like travel), the content is informational (docs, dashboards), or the brief has no environment to travel through — a journey with no destination is just a long scrub.",
+      "pairsPrototypes": [
+        "recipe-aurora-marketing",
+        "recipe-scientific-infra-marketing",
+        "style-aurorism",
+        "aesthetic-solarpunk",
+        "aesthetic-cyberpunk"
+      ],
+      "sourceFile": "design-library/motion-scroll-scrub-journey.md"
+    },
+    "scroll-scrub-rotation": {
+      "name": "Scroll-scrub rotation (product turns as you scroll)",
+      "category": "scroll-driven",
+      "subCategory": "video",
+      "role": "product",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "A full-bleed turntable video of the product rotating from its back to its front is paused and SCRUBBED by scroll progress through a pinned section — scrolling down turns the object toward you, scrolling up turns it away (the iPhone-Air reveal pattern).",
+      "notForUseWhen": "The subject looks the same from every angle (spheres, flat cards, gradients — rotation reveals nothing), or the page can't afford a pinned section (short utility pages, docs), or scroll must keep its native meaning throughout.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-restrained-ai-marketing",
+        "recipe-devtools-marketing",
+        "style-bold-display",
+        "aesthetic-cassette-futurism"
+      ],
+      "sourceFile": "design-library/motion-scroll-scrub-rotation.md"
+    },
+    "scroll-sequence-frames": {
+      "name": "Scroll-sequence frames (canvas-scrubbed still sequence)",
+      "category": "scroll-driven",
+      "subCategory": "raster-sequence",
+      "role": "product",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "40–120 generated stills are preloaded and drawn to a full-bleed `<canvas>`, the frame index driven by scroll progress through a pinned section — the classic AirPods pattern, and the reliable substitute wherever video `currentTime` seeking is too janky to ship.",
+      "notForUseWhen": "The motion is continuous atmosphere (smoke, water, weather) — frame-to-frame generation can't hold fluid continuity; or the budget can't carry 40+ image generations for one section.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-devtools-marketing",
+        "recipe-ai-foundry-dark",
+        "aesthetic-frutiger-aero"
+      ],
+      "sourceFile": "design-library/motion-scroll-sequence-frames.md"
+    },
+    "scroll-speed-ramp": {
+      "name": "Scroll speed-ramp (ambient loop breathes with scroll velocity)",
+      "category": "scroll-driven",
+      "subCategory": "video",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "A full-bleed ambient video loop plays continuously behind the section, and its `playbackRate` eases with scroll VELOCITY — calm at rest, rushing while the visitor scrolls fast, always relaxing back to 1.0 — the page's atmosphere responds to how hard you push it.",
+      "notForUseWhen": "The background sits behind dense reading content (a background that reacts to reading-scroll punishes the reader), or the loop's motion is rhythmic/periodic — speed-ramping a visible beat sounds like a record skipping.",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "recipe-aurora-marketing",
+        "style-holographic",
+        "aesthetic-frutiger-dark-aero",
+        "aesthetic-cyberpunk"
+      ],
+      "sourceFile": "design-library/motion-scroll-speed-ramp.md"
+    },
+    "slow-push-zoom": {
+      "name": "Slow push zoom (Ken-Burns gravity on an oversized still)",
+      "category": "ambient",
+      "subCategory": "raster",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A single oversized generated still scales and pans almost imperceptibly — a 1.0→1.08× push over 20–40 seconds — giving a static hero cinematic gravity with zero video dependency; the cheapest \"always something in motion\" in the catalogue.",
+      "notForUseWhen": "The brief demands genuinely living imagery (a zoom on a frozen crowd reads as a haunted photograph — use video techniques), the asset can only be generated at 1080p (the push will soften it), or the section cycles many images fast (push-zoom needs dwell time to register).",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-neo-grotesque-portfolio",
+        "style-bold-display",
+        "aesthetic-dieselpunk",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/motion-slow-push-zoom.md"
+    },
+    "subject-offset-ui-counterweight": {
+      "name": "Subject offset, UI counterweight (thirds by generation)",
+      "category": "composition",
+      "subCategory": "raster",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "The subject is anchored HARD to one vertical third at generation time and the UI block occupies the opposite third as a visual counterweight — image mass and type mass balance across the frame like a scale, and the storyboard decides the side per scene, alternating for rhythm.",
+      "notForUseWhen": "The subject is inherently centered and symmetric (a mandala, a head-on product orthographic) — forcing it to a third fights the asset; use letterbox-stage or center it and push UI to the matte. Also wrong for scenes with no UI at all — a counterweight with nothing to counter is just an off-center picture.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-bento-marketing",
+        "style-oversized-neo-grotesque",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/motion-subject-offset-ui-counterweight.md"
+    },
+    "video-text-mask": {
+      "name": "Video text mask (the world lives inside the glyphs)",
+      "category": "composition",
+      "subCategory": "video",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A full-bleed video is visible ONLY through giant headline glyphs — an SVG text mask (or `mix-blend-mode` trick) over a solid page-ground — so the type becomes a window and the motion becomes texture; the video is generated FOR the glyphs: high-contrast movement, rich texture, no subject that needs to be seen whole.",
+      "notForUseWhen": "The headline is long (>3 words), set in a light weight, or in a typeface with thin strokes — video through hairlines reads as noise; the technique needs ≥800-weight glyphs at ≥18vw. Also wrong when the video's CONTENT matters — viewers must recognise the subject, and the mask destroys recognisability.",
+      "pairsPrototypes": [
+        "style-oversized-neo-grotesque",
+        "style-bold-display",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-brutalist-web",
+        "aesthetic-vaporwave"
+      ],
+      "sourceFile": "design-library/motion-video-text-mask.md"
+    }
+  }
+}

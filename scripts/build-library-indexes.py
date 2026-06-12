@@ -43,6 +43,7 @@ LIBS = [
     {"prefix": "photo",    "name": "photography",  "id_key": "styleId",    "out": "docs/research/photography-library.index.json"},
     {"prefix": "illust",   "name": "illustration", "id_key": "styleId",    "out": "docs/research/illustration-library.index.json"},
     {"prefix": "material", "name": "material",     "id_key": "materialId", "out": "docs/research/material-library.index.json"},
+    {"prefix": "motion",   "name": "motion-scene", "id_key": "techniqueId", "out": "docs/research/motion-scene-library.index.json"},
 ]
 
 

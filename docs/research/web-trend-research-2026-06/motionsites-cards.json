@@ -1,0 +1,968 @@
+[
+ {
+  "poster": "/assets/hero-prisma-poster-CH2WrOnW.png",
+  "title": "Prisma Creative Studio",
+  "tags": [
+   "Landing Page",
+   "Landing page"
+  ],
+  "file": "00.png",
+  "label": "00 Prisma Creative Studio"
+ },
+ {
+  "poster": "/assets/hero-3d-jack-portfolio-poster-BRDUXeQ8.png",
+  "title": "3D Portfolio",
+  "tags": [
+   "Portfolio"
+  ],
+  "file": "01.png",
+  "label": "01 3D Portfolio"
+ },
+ {
+  "poster": "/assets/hero-velorah-poster-mLkXfzr9.png",
+  "title": "Velorah",
+  "tags": [
+   "Agency",
+   "Landing Page"
+  ],
+  "file": "02.png",
+  "label": "02 Velorah"
+ },
+ {
+  "poster": "/assets/hero-web3-eos-poster-DF0_WdVS.png",
+  "title": "Web3 EOS Hero",
+  "tags": [
+   "Web3",
+   "Hero Section"
+  ],
+  "file": "03.png",
+  "label": "03 Web3 EOS Hero"
+ },
+ {
+  "poster": "/assets/hero-aetheris-voyage-poster-BOeMMDSw.png",
+  "title": "Aetheris Voyage",
+  "tags": [
+   "Hero Section",
+   "landing page"
+  ],
+  "file": "04.png",
+  "label": "04 Aetheris Voyage"
+ },
+ {
+  "poster": "/assets/hero-vex-ventures-poster-WLKoWe6y.png",
+  "title": "VEX Ventures",
+  "tags": [
+   "Hero Section",
+   "3D Website"
+  ],
+  "file": "05.png",
+  "label": "05 VEX Ventures"
+ },
+ {
+  "poster": "/assets/hero-skyelite-poster-GHD3VPq4.png",
+  "title": "SkyElite Private Jets",
+  "tags": [
+   "Landing Page",
+   "Landing Page"
+  ],
+  "file": "06.png",
+  "label": "06 SkyElite Private Jets"
+ },
+ {
+  "poster": "/assets/hero-urban-jungle-poster-DNnMHsAj.png",
+  "title": "Urban Jungle",
+  "tags": [
+   "Landing Page",
+   "Hero Section"
+  ],
+  "file": "07.png",
+  "label": "07 Urban Jungle"
+ },
+ {
+  "poster": "/assets/hero-aethera-poster-DB6AdF0M.png",
+  "title": "Aethera Studio",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "08.png",
+  "label": "08 Aethera Studio"
+ },
+ {
+  "poster": "/assets/hero-liquid-glass-agency-poster-BvnVaqJh.png",
+  "title": "Liquid Glass Agency",
+  "tags": [
+   "Landing Page",
+   "Hero"
+  ],
+  "file": "09.png",
+  "label": "09 Liquid Glass Agency"
+ },
+ {
+  "poster": "/assets/hero-grow-ai-poster-B-kSCKSN.png",
+  "title": "Grow AI Talent Platform",
+  "tags": [
+   "SaaS",
+   "Landing Page"
+  ],
+  "file": "10.png",
+  "label": "10 Grow AI Talent Platform"
+ },
+ {
+  "poster": "/assets/hero-glassmorphism-agency-poster-BEMcgqRb.png",
+  "title": "Glassmorphism Agency Hero",
+  "tags": [
+   "Agency",
+   "Contact us"
+  ],
+  "file": "11.png",
+  "label": "11 Glassmorphism Agency Hero"
+ },
+ {
+  "poster": "/assets/hero-asme-poster-G7m9uLxL.png",
+  "title": "Asme",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "12.png",
+  "label": "12 Asme"
+ },
+ {
+  "poster": "/assets/hero-logoisum-poster-B5ln5VHb.png",
+  "title": "Logoisum Video Agency Hero",
+  "tags": [
+   "Agency",
+   "Landing Page"
+  ],
+  "file": "13.png",
+  "label": "13 Logoisum Video Agency Hero"
+ },
+ {
+  "poster": "/assets/hero-innovation-poster-B0t6ym_m.png",
+  "title": "Innovation",
+  "tags": [
+   "Landing Page",
+   "Interactive"
+  ],
+  "file": "14.png",
+  "label": "14 Innovation"
+ },
+ {
+  "poster": "/assets/hero-synapse-ai-poster-LxdBC470.png",
+  "title": "AI Automation Hero",
+  "tags": [
+   "AI / SaaS",
+   "Hero Section"
+  ],
+  "file": "15.png",
+  "label": "15 AI Automation Hero"
+ },
+ {
+  "poster": "/assets/hero-shamoni-poster-CgFgfjoV.png",
+  "title": "Shamoni",
+  "tags": [
+   "Hero Section",
+   "Landing Page"
+  ],
+  "file": "16.png",
+  "label": "16 Shamoni"
+ },
+ {
+  "poster": "/assets/hero-orbis-nft-poster-Bfg-lWHl.png",
+  "title": "Orbis NFT",
+  "tags": [
+   "Landing Page",
+   "Fintech"
+  ],
+  "file": "17.png",
+  "label": "17 Orbis NFT"
+ },
+ {
+  "poster": "/assets/hero-synapse-poster-BWu_t7F6.png",
+  "title": "Synapse Dark Hero",
+  "tags": [
+   "SaaS",
+   "Hero"
+  ],
+  "file": "18.png",
+  "label": "18 Synapse Dark Hero"
+ },
+ {
+  "poster": "/assets/hero-portfolio-cosmic-poster-vGZ7GZt-.png",
+  "title": "Portfolio Cosmic",
+  "tags": [
+   "Portfolio",
+   "Hero"
+  ],
+  "file": "19.png",
+  "label": "19 Portfolio Cosmic"
+ },
+ {
+  "poster": "/assets/hero-hr-saas-poster-Bj2hU3_c.png",
+  "title": "HR SaaS Hero",
+  "tags": [
+   "SaaS",
+   "Waitlist"
+  ],
+  "file": "20.png",
+  "label": "20 HR SaaS Hero"
+ },
+ {
+  "poster": "/assets/hero-securify-poster-CrUPOWDv.png",
+  "title": "Securify Data Security",
+  "tags": [
+   "SaaS",
+   "Hero"
+  ],
+  "file": "21.png",
+  "label": "21 Securify Data Security"
+ },
+ {
+  "poster": "/assets/hero-new-era-poster-BIdtLrty.png",
+  "title": "New Era Bold Hero",
+  "tags": [
+   "Creative",
+   "Hero Section"
+  ],
+  "file": "22.png",
+  "label": "22 New Era Bold Hero"
+ },
+ {
+  "poster": "/assets/hero-portal-poster-CNSIA4kq.png",
+  "title": "Portal",
+  "tags": [
+   "Hero Section",
+   "Hero Section"
+  ],
+  "file": "23.png",
+  "label": "23 Portal"
+ },
+ {
+  "poster": "/assets/hero-celestia-poster-DdQh9L5K.png",
+  "title": "Celestia",
+  "tags": [
+   "Hero Section",
+   "Agency"
+  ],
+  "file": "24.png",
+  "label": "24 Celestia"
+ },
+ {
+  "poster": "/assets/hero-buzzentic-poster-7nm68cTe.png",
+  "title": "Buzzentic Agency",
+  "tags": [
+   "Agency",
+   "Hero"
+  ],
+  "file": "25.png",
+  "label": "25 Buzzentic Agency"
+ },
+ {
+  "poster": "/assets/hero-mindloop-landing-poster-BbPiPxcA.png",
+  "title": "Mindloop Landing",
+  "tags": [
+   "Landing Page",
+   "Animation"
+  ],
+  "file": "26.png",
+  "label": "26 Mindloop Landing"
+ },
+ {
+  "poster": "/assets/hero-clearinvoice-poster-D9rl57xj.png",
+  "title": "ClearInvoice SaaS Hero",
+  "tags": [
+   "SaaS",
+   "Hero"
+  ],
+  "file": "27.png",
+  "label": "27 ClearInvoice SaaS Hero"
+ },
+ {
+  "poster": "/assets/hero-rivr-poster-XRJOK5Jz.png",
+  "title": "RIVR",
+  "tags": [
+   "Hero Section",
+   "Landing Page"
+  ],
+  "file": "28.png",
+  "label": "28 RIVR"
+ },
+ {
+  "poster": "/assets/hero-wisa-space-poster-CWyENdkI.png",
+  "title": "WISA Space",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "29.png",
+  "label": "29 WISA Space"
+ },
+ {
+  "poster": "/assets/hero-vortex-studio-poster-lf3IYvUr.png",
+  "title": "AI Designer Portfolio",
+  "tags": [
+   "Landing Page"
+  ],
+  "file": "30.png",
+  "label": "30 AI Designer Portfolio"
+ },
+ {
+  "poster": "/assets/hero-targo-poster-B9vpoEb_.png",
+  "title": "Targo Logistics Hero",
+  "tags": [
+   "Automotive",
+   "Hero"
+  ],
+  "file": "31.png",
+  "label": "31 Targo Logistics Hero"
+ },
+ {
+  "poster": "/assets/hero-codenest-poster-Cq1PVGCy.png",
+  "title": "CodeNest Coding Platform",
+  "tags": [
+   "Landing Page",
+   "Website"
+  ],
+  "file": "32.png",
+  "label": "32 CodeNest Coding Platform"
+ },
+ {
+  "poster": "/assets/hero-acreage-farming-poster-DA8kFOg1.png",
+  "title": "Acreage Farming",
+  "tags": [
+   "Landing Page",
+   "SaaS"
+  ],
+  "file": "33.png",
+  "label": "33 Acreage Farming"
+ },
+ {
+  "poster": "/assets/hero-power-ai-poster-B5SetZ6G.png",
+  "title": "Power AI",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "34.png",
+  "label": "34 Power AI"
+ },
+ {
+  "poster": "/assets/hero-impressive-poster-BPadbNDX.png",
+  "title": "Impressive Hero",
+  "tags": [
+   "Hero Section"
+  ],
+  "file": "35.png",
+  "label": "35 Impressive Hero"
+ },
+ {
+  "poster": "/assets/hero-bloom-ai-poster-Bol1Pj7x.png",
+  "title": "Bloom AI",
+  "tags": [
+   "Hero Section",
+   "Landing Page"
+  ],
+  "file": "36.png",
+  "label": "36 Bloom AI"
+ },
+ {
+  "poster": "/assets/hero-flowmate-poster-DDfS_CZz.png",
+  "title": "FlowMate",
+  "tags": [
+   "Landing Page",
+   "Landing Page"
+  ],
+  "file": "37.png",
+  "label": "37 FlowMate"
+ },
+ {
+  "poster": "/assets/hero-luminex-poster-9lhDX6Fl.png",
+  "title": "Luminex",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "38.png",
+  "label": "38 Luminex"
+ },
+ {
+  "poster": "/assets/hero-nike-premium-landing-poster-Bcg5HGjQ.png",
+  "title": "Nike Premium Landing",
+  "tags": [
+   "Landing Page",
+   "Ecommerce"
+  ],
+  "file": "39.png",
+  "label": "39 Nike Premium Landing"
+ },
+ {
+  "poster": "/assets/hero-sentinel-ai-poster-B7n15kua.png",
+  "title": "Sentinel AI",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "40.png",
+  "label": "40 Sentinel AI"
+ },
+ {
+  "poster": "/assets/hero-slam-dunk-poster-Cd-dE4fD.png",
+  "title": "Slam Dunk",
+  "tags": [
+   "Hero Section",
+   "Hero Section"
+  ],
+  "file": "41.png",
+  "label": "41 Slam Dunk"
+ },
+ {
+  "poster": "/assets/hero-designpro-poster-DwA5o1A7.png",
+  "title": "DesignPro Academy",
+  "tags": [
+   "Hero Section",
+   "Agency"
+  ],
+  "file": "42.png",
+  "label": "42 DesignPro Academy"
+ },
+ {
+  "poster": "/assets/hero-crypto-wealth-poster-DzHusafH.png",
+  "title": "Crypto Wealth",
+  "tags": [
+   "Hero Section",
+   "Travel"
+  ],
+  "file": "43.png",
+  "label": "43 Crypto Wealth"
+ },
+ {
+  "poster": "/assets/hero-nexora-poster-CLY3ybj2.png",
+  "title": "Nexora Automation",
+  "tags": [
+   "SaaS",
+   "Landing Page"
+  ],
+  "file": "44.png",
+  "label": "44 Nexora Automation"
+ },
+ {
+  "poster": "/assets/hero-transform-data-poster-DfsHSPMo.png",
+  "title": "Transform Data",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "45.png",
+  "label": "45 Transform Data"
+ },
+ {
+  "poster": "/assets/hero-nexacore-poster-D8kt5SRH.png",
+  "title": "NexaCore",
+  "tags": [
+   "Landing Page",
+   "Signup"
+  ],
+  "file": "46.png",
+  "label": "46 NexaCore"
+ },
+ {
+  "poster": "/assets/hero-stellar-ai-v2-poster-D2407pz-.png",
+  "title": "Sync AI",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "47.png",
+  "label": "47 Sync AI"
+ },
+ {
+  "poster": "/assets/hero-taskly-poster-B5eMEGQS.png",
+  "title": "Taskly",
+  "tags": [
+   "Hero Section",
+   "Landing page"
+  ],
+  "file": "48.png",
+  "label": "48 Taskly"
+ },
+ {
+  "poster": "/assets/hero-xportfolio-poster-B6q-pIN8.png",
+  "title": "xPortfolio Hero",
+  "tags": [
+   "Hero Section",
+   "Hero Section"
+  ],
+  "file": "49.png",
+  "label": "49 xPortfolio Hero"
+ },
+ {
+  "poster": "/assets/hero-stellar-ai-poster-BQJztWy-.png",
+  "title": "Stellar AI",
+  "tags": [
+   "Hero Section",
+   "Hero"
+  ],
+  "file": "50.png",
+  "label": "50 Stellar AI"
+ },
+ {
+  "poster": "/assets/hero-ai-designer-agency-poster-CQqRSMUo.png",
+  "title": "AI Designer Agency",
+  "tags": [
+   "Landing Page",
+   "Hero"
+  ],
+  "file": "51.png",
+  "label": "51 AI Designer Agency"
+ },
+ {
+  "poster": "/assets/hero-datacore-booking-poster-C4umG3DT.png",
+  "title": "Datacore Booking",
+  "tags": [
+   "SaaS",
+   "AI"
+  ],
+  "file": "52.png",
+  "label": "52 Datacore Booking"
+ },
+ {
+  "poster": "/assets/hero-neovision-poster-CIjls94N.png",
+  "title": "NeoVision",
+  "tags": [
+   "Landing Page",
+   "Signup"
+  ],
+  "file": "53.png",
+  "label": "53 NeoVision"
+ },
+ {
+  "poster": "/assets/hero-guardnet-poster-BgcbWciF.png",
+  "title": "Guardnet",
+  "tags": [
+   "Landing Page",
+   "Hero"
+  ],
+  "file": "54.png",
+  "label": "54 Guardnet"
+ },
+ {
+  "poster": "/assets/hero-neuralyn-poster-BrDgI9_4.png",
+  "title": "Neuralyn",
+  "tags": [
+   "SaaS",
+   "SaaS"
+  ],
+  "file": "55.png",
+  "label": "55 Neuralyn"
+ },
+ {
+  "poster": "/assets/hero-automation-machines-poster-CRJvUPpQ.png",
+  "title": "Automation Machines",
+  "tags": [
+   "Hero Section",
+   "SaaS"
+  ],
+  "file": "56.png",
+  "label": "56 Automation Machines"
+ },
+ {
+  "poster": "/assets/hero-digitwist-poster-DbmglO1A.png",
+  "title": "Digitwist AI Builder",
+  "tags": [
+   "SaaS",
+   "Landing Page"
+  ],
+  "file": "57.png",
+  "label": "57 Digitwist AI Builder"
+ },
+ {
+  "poster": "/assets/hero-space-voyage-poster-Dti9x8oS.png",
+  "title": "Space Voyage",
+  "tags": [
+   "Landing Page",
+   "Hero Section"
+  ],
+  "file": "58.png",
+  "label": "58 Space Voyage"
+ },
+ {
+  "poster": "/assets/hero-digital-epoch-poster-Cnyom0By.png",
+  "title": "Digital Epoch",
+  "tags": [
+   "Hero Section",
+   "Hero Section"
+  ],
+  "file": "59.png",
+  "label": "59 Digital Epoch"
+ },
+ {
+  "poster": "/assets/landing-zenith-realty-poster-Pwf4HO6U.png",
+  "title": "Zenith Realty",
+  "tags": [
+   "Landing Page",
+   "Landing Page"
+  ],
+  "file": "60.png",
+  "label": "60 Zenith Realty"
+ },
+ {
+  "poster": "/assets/hero-focus-ai-poster-KA-Ezq1n.png",
+  "title": "Focus AI",
+  "tags": [
+   "Landing Page",
+   "Hero Section"
+  ],
+  "file": "61.png",
+  "label": "61 Focus AI"
+ },
+ {
+  "poster": "/assets/hero-vertex-ai-poster-DEZfbTg3.png",
+  "title": "VertexAI Hero",
+  "tags": [
+   "Hero Section",
+   "Email Marketing"
+  ],
+  "file": "62.png",
+  "label": "62 VertexAI Hero"
+ },
+ {
+  "poster": "/assets/hero-design-rocket-email-poster-CansTVuy.png",
+  "title": "Email Marketing",
+  "tags": [
+   "Email Marketing",
+   "Hero"
+  ],
+  "file": "63.png",
+  "label": "63 Email Marketing"
+ },
+ {
+  "poster": "/assets/landing-rivr-defi-poster-DCTiByUf.png",
+  "title": "RIVR DeFi",
+  "tags": [
+   "Landing Page",
+   "Hero Section"
+  ],
+  "file": "64.png",
+  "label": "64 RIVR DeFi"
+ },
+ {
+  "poster": "/assets/hero-duolingo-styleguide-poster-CPG13g3T.png",
+  "title": "Duolingo Styleguide",
+  "tags": [
+   "Hero Section",
+   "Landing Page"
+  ],
+  "file": "65.png",
+  "label": "65 Duolingo Styleguide"
+ },
+ {
+  "poster": "/assets/hero-yacht-club-poster-_Oi_fq0F.png",
+  "title": "Yacht Club",
+  "tags": [
+   "Landing Page",
+   "Hero Section"
+  ],
+  "file": "66.png",
+  "label": "66 Yacht Club"
+ },
+ {
+  "poster": "/assets/hero-ecommerce-website-poster-DUcLYbYg.png",
+  "title": "E-commerce Website",
+  "tags": [
+   "Landing Page",
+   "Hero"
+  ],
+  "file": "67.png",
+  "label": "67 E-commerce Website"
+ },
+ {
+  "poster": "/assets/hero-ecovolta-poster-C62kq2ZR.png",
+  "title": "EcoVolta",
+  "tags": [
+   "Hero Section",
+   "Agency"
+  ],
+  "file": "68.png",
+  "label": "68 EcoVolta"
+ },
+ {
+  "poster": "/assets/hero-orbit-engineers-poster-BT1ffUzn.png",
+  "title": "Orbit Engineers",
+  "tags": [
+   "Agency",
+   "SaaS"
+  ],
+  "file": "69.png",
+  "label": "69 Orbit Engineers"
+ },
+ {
+  "poster": "/assets/hero-pro-ai-deck-poster-CF077Cec.png",
+  "title": "Pro AI Deck",
+  "tags": [
+   "Presentation",
+   "SaaS"
+  ],
+  "file": "70.png",
+  "label": "70 Pro AI Deck"
+ },
+ {
+  "poster": "/assets/hero-terra-poster-BN-oVgFr.png",
+  "title": "Terra Geo Map",
+  "tags": [
+   "SaaS",
+   "Landing Page"
+  ],
+  "file": "71.png",
+  "label": "71 Terra Geo Map"
+ },
+ {
+  "poster": "/assets/hero-veloce-finance-poster-Crck1KtV.png",
+  "title": "Veloce Finance",
+  "tags": [
+   "Landing Page",
+   "Hero Section"
+  ],
+  "file": "72.png",
+  "label": "72 Veloce Finance"
+ },
+ {
+  "poster": "/assets/hero-clubx-poster-Dwv_zKz1.png",
+  "title": "ClubX Investors",
+  "tags": [
+   "Hero Section",
+   "Hero Section"
+  ],
+  "file": "73.png",
+  "label": "73 ClubX Investors"
+ },
+ {
+  "poster": "/assets/hero-railroad-ai-poster-lVI2bwI8.png",
+  "title": "Railroad.ai",
+  "tags": [
+   "Hero Section",
+   "Portfolio"
+  ],
+  "file": "74.png",
+  "label": "74 Railroadai"
+ },
+ {
+  "poster": "/assets/hero-portfolio-bold-poster-Dhes_J9u.png",
+  "title": "Bold Portfolio Hero",
+  "tags": [
+   "Portfolio",
+   "Hero Section"
+  ],
+  "file": "75.png",
+  "label": "75 Bold Portfolio Hero"
+ },
+ {
+  "poster": "/assets/hero-ecovolta-v2-poster-CuiiqzXg.png",
+  "title": "EcoVolta V2",
+  "tags": [
+   "Hero Section",
+   "Hero Section"
+  ],
+  "file": "76.png",
+  "label": "76 EcoVolta V2"
+ },
+ {
+  "poster": "/assets/hero-evr-ventures-poster-Bld4o1cl.png",
+  "title": "EVR Ventures",
+  "tags": [
+   "Hero Section",
+   "Landing Page"
+  ],
+  "file": "77.png",
+  "label": "77 EVR Ventures"
+ },
+ {
+  "poster": "/assets/hero-vitara-poster-CKA8M1gM.png",
+  "title": "Vitara",
+  "tags": [
+   "Landing Page",
+   "404"
+  ],
+  "file": "78.png",
+  "label": "78 Vitara"
+ },
+ {
+  "poster": "/assets/hero-orbit-web3-poster-CsiRb_pp.png",
+  "title": "Orbit Web3",
+  "tags": [
+   "Web3",
+   "Landing Page"
+  ],
+  "file": "79.png",
+  "label": "79 Orbit Web3"
+ },
+ {
+  "poster": "/assets/hero-akor-security-poster-Cw0Ko1yz.png",
+  "title": "AKOR Security",
+  "tags": [
+   "Landing Page",
+   "SaaS"
+  ],
+  "file": "80.png",
+  "label": "80 AKOR Security"
+ },
+ {
+  "poster": "/assets/hero-bionova-poster-CPaKbq55.png",
+  "title": "Bionova Biotech",
+  "tags": [
+   "SaaS",
+   "SaaS"
+  ],
+  "file": "81.png",
+  "label": "81 Bionova Biotech"
+ },
+ {
+  "poster": "/assets/hero-mindloop-poster-2_RhEWJd.png",
+  "title": "Mindloop",
+  "tags": [
+   "SaaS",
+   "Hero Section"
+  ],
+  "file": "82.png",
+  "label": "82 Mindloop"
+ },
+ {
+  "poster": "/assets/hero-nexus-poster-fNblRje9.png",
+  "title": "Nexus IT Solutions",
+  "tags": [
+   "Hero Section",
+   "Landing Page"
+  ],
+  "file": "83.png",
+  "label": "83 Nexus IT Solutions"
+ },
+ {
+  "poster": "/assets/hero-nova-space-poster-BNMHPfK2.png",
+  "title": "NOVA Space Systems",
+  "tags": [
+   "Landing Page",
+   "SaaS"
+  ],
+  "file": "84.png",
+  "label": "84 NOVA Space Systems"
+ },
+ {
+  "poster": "/assets/hero-nickel-poster-Co3f0jXk.png",
+  "title": "Nickel Payments",
+  "tags": [
+   "SaaS",
+   "Creative / 3D"
+  ],
+  "file": "85.png",
+  "label": "85 Nickel Payments"
+ },
+ {
+  "poster": "/assets/hero-framelix-poster-Da8_fUvr.png",
+  "title": "Framelix 3D Studios",
+  "tags": [
+   "Creative / 3D",
+   "Portfolio"
+  ],
+  "file": "86.png",
+  "label": "86 Framelix 3D Studios"
+ },
+ {
+  "poster": "/assets/hero-portfolio-dark-poster-CDlMFIzp.png",
+  "title": "Dark Portfolio Hero",
+  "tags": [
+   "Portfolio",
+   "Portfolio"
+  ],
+  "file": "87.png",
+  "label": "87 Dark Portfolio Hero"
+ },
+ {
+  "poster": "/assets/hero-viktor-portfolio-poster-S-47espj.png",
+  "title": "Viktor Portfolio",
+  "tags": [
+   "Portfolio",
+   "Presentation"
+  ],
+  "file": "88.png",
+  "label": "88 Viktor Portfolio"
+ },
+ {
+  "poster": "/assets/hero-deck-poster-yx2SqADM.png",
+  "title": "Investor Deck",
+  "tags": [
+   "Presentation",
+   "Landing Page"
+  ],
+  "file": "89.png",
+  "label": "89 Investor Deck"
+ },
+ {
+  "poster": "/assets/hero-weblex-poster-EhV1BiMD.png",
+  "title": "Weblex Dark Hero",
+  "tags": [
+   "Landing Page",
+   "Automotive"
+  ],
+  "file": "90.png",
+  "label": "90 Weblex Dark Hero"
+ },
+ {
+  "poster": "/assets/hero-new-era-auto-poster-CSiQtduG.png",
+  "title": "New Era Automotive Hero",
+  "tags": [
+   "Automotive",
+   "SaaS"
+  ],
+  "file": "91.png",
+  "label": "91 New Era Automotive Hero"
+ },
+ {
+  "poster": "/assets/hero-finlytic-poster-BKqseFhS.png",
+  "title": "Finlytic AI Agent",
+  "tags": [
+   "SaaS",
+   "SaaS"
+  ],
+  "file": "92.png",
+  "label": "92 Finlytic AI Agent"
+ },
+ {
+  "poster": "/assets/hero-taskora-poster-Cgi3qyR1.png",
+  "title": "Taskora SaaS Hero",
+  "tags": [
+   "SaaS",
+   "Fintech"
+  ],
+  "file": "93.png",
+  "label": "93 Taskora SaaS Hero"
+ },
+ {
+  "poster": "/assets/hero-wealth-poster-D9mwBQ1R.png",
+  "title": "Wealth Video Hero",
+  "tags": [
+   "Fintech",
+   "SaaS"
+  ],
+  "file": "94.png",
+  "label": "94 Wealth Video Hero"
+ },
+ {
+  "poster": "/assets/hero-apex-saas-poster-CZ6BkKIa.png",
+  "title": "Apex SaaS",
+  "tags": [
+   "SaaS",
+   "SaaS"
+  ],
+  "file": "95.png",
+  "label": "95 Apex SaaS"
+ },
+ {
+  "poster": "/assets/hero-planet-orbit-poster-CuWG70ga.png",
+  "title": "Planet Orbit",
+  "tags": [
+   "SaaS"
+  ],
+  "file": "96.png",
+  "label": "96 Planet Orbit"
+ }
+]
