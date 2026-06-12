@@ -4482,6 +4482,232 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   outline-offset: -2px;
 }
 
+/* ────────── Whiteboard layer ──────────
+   FigJam/tldraw-style annotation primitives on the workflow canvas. The
+   layer is the last child of .workflow-canvas (draws above nodes). Color
+   tokens are the full whiteboard palette; renderers fall back to raw CSS
+   colors for non-token values. */
+:root {
+  --wb-ink:    oklch(30% 0.012 60);
+  --wb-gray:   oklch(62% 0.01 70);
+  --wb-blue:   oklch(56% 0.13 245);
+  --wb-green:  oklch(58% 0.13 155);
+  --wb-yellow: oklch(86% 0.12 95);
+  --wb-pink:   oklch(72% 0.13 5);
+  --wb-purple: oklch(58% 0.14 295);
+  --wb-orange: oklch(68% 0.16 50);
+}
+/* Build mode: visible but completely inert — explicitly cover descendants
+   too, since a child with `pointer-events: auto` would otherwise punch
+   through the parent's `none`. Whiteboard mode flips the whole subtree. */
+.workflow-wb-layer,
+.workflow-wb-layer * {
+  pointer-events: none;
+}
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer,
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer * {
+  pointer-events: auto;
+}
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-ghost,
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke {
+  pointer-events: none;
+}
+.workflow-wb-layer {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.workflow-wb-item { position: absolute; }
+.workflow-wb-textbody {
+  font-family: var(--font-sans);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  width: 100%;
+  min-height: 1em;
+  line-height: 1.35;
+}
+.workflow-wb-text .workflow-wb-textbody { color: inherit; }
+.workflow-wb-textbox {
+  background: color-mix(in oklch, var(--wb-c, var(--wb-blue)) 16%, transparent);
+  border: 1.5px solid var(--wb-c, var(--wb-blue));
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  box-sizing: border-box;
+}
+.workflow-wb-sticky {
+  background: color-mix(in oklch, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 4px 12px oklch(0% 0 0 / 0.07);
+  border-radius: 2px;
+  padding: 12px;
+  box-sizing: border-box;
+  font-size: 14px;
+  overflow: hidden;
+}
+.workflow-wb-sticky .workflow-wb-textbody { font-size: 14px; }
+.workflow-wb-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* Drag-to-size ghost + selection overlay (overlay is a sibling of the
+   layer, only mounted in whiteboard mode). */
+.workflow-wb-ghost-rect {
+  position: absolute;
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  pointer-events: none;
+}
+.workflow-wb-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.workflow-wb-outline {
+  position: absolute;
+  border-style: solid;
+  border-color: color-mix(in oklch, var(--accent) 75%, transparent);
+  pointer-events: none;
+}
+.workflow-wb-handle {
+  position: absolute;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+.workflow-wb-handle-point { cursor: move; }
+/* Tool cursors — guarded so space-pan / active-pan keep their grab cursors
+   (those rules sit earlier in the file; equal specificity would lose to
+   source order here). */
+.workflow-canvas-wrap[data-wb-tool="pen"]:not([data-space="true"]):not([data-panning="true"]),
+.workflow-canvas-wrap[data-wb-tool="shape"]:not([data-space="true"]):not([data-panning="true"]),
+.workflow-canvas-wrap[data-wb-tool="textbox"]:not([data-space="true"]):not([data-panning="true"]),
+.workflow-canvas-wrap[data-wb-tool="arrow"]:not([data-space="true"]):not([data-panning="true"]) {
+  cursor: crosshair;
+}
+.workflow-canvas-wrap[data-wb-tool="text"]:not([data-space="true"]):not([data-panning="true"]),
+.workflow-canvas-wrap[data-wb-tool="sticky"]:not([data-space="true"]):not([data-panning="true"]) {
+  cursor: copy;
+}
+.workflow-canvas-wrap[data-wb-dragging="true"]:not([data-space="true"]):not([data-panning="true"]) {
+  cursor: grabbing;
+}
+
+/* Mode toggle (workflow bar) */
+.workflow-mode-toggle {
+  display: flex;
+  gap: 2px;
+  margin-left: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+}
+.workflow-mode-toggle-btn {
+  font: 600 10.5px/1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.workflow-mode-toggle-btn:hover { color: var(--text); }
+.workflow-mode-toggle-btn.is-active {
+  background: var(--accent);
+  color: oklch(99% 0.01 160);
+}
+
+/* Whiteboard tool panel — swapped in for the Library while whiteboard mode
+   is active (same .workflow-library-col slot, minimap stays below). */
+.workflow-wb-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.workflow-wb-tools-title {
+  font: 700 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.workflow-wb-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workflow-wb-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: 500 12.5px var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.workflow-wb-tool-btn:hover { background: var(--surface-2); }
+.workflow-wb-tool-btn.is-active {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  color: var(--accent-text);
+}
+.workflow-wb-tool-glyph { display: inline-flex; width: 15px; flex: none; }
+.workflow-wb-tool-label { flex: 1; }
+.workflow-wb-tool-key {
+  font: 10.5px var(--font-mono);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  background: var(--surface);
+}
+.workflow-wb-tools-section { display: flex; flex-direction: column; gap: 6px; }
+.workflow-wb-tools-sublabel {
+  font: 600 10.5px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.workflow-wb-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.workflow-wb-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid oklch(0% 0 0 / 0.14);
+  cursor: pointer;
+  padding: 0;
+}
+.workflow-wb-swatch:hover { transform: scale(1.12); }
+.workflow-wb-swatch.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1.5px;
+}
+.workflow-wb-tools-hint {
+  font: 11px/1.6 var(--font-mono);
+  color: var(--text-faint);
+  margin-top: auto;
+}
+
 .workflow-canvas-hint {
   position: absolute;
   top: 50%;

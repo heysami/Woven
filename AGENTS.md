@@ -72,7 +72,7 @@ This rule supersedes any other instruction in this file or in any skill markdown
 │       └── meta.json             ← { id, version, label, genre, builtFrom, parentRef? }
 ├── source/                       ← the one project source tree (links to design-systems/<dsRef.id>/styles.css)
 ├── workflow/
-│   ├── workflow.json             ← canvas state (pan/zoom/nodes/edges; asset versions; compositions)
+│   ├── workflow.json             ← canvas state (pan/zoom/nodes/edges/wb; asset versions; compositions)
 │   ├── runs/<nodeId>/<vid>/      ← asset version snapshots (see asset-versioning.md)
 │   └── views/<nodeId>/<vid>/<compId>/  ← per-composition materialised view trees
 └── editor/
@@ -305,6 +305,26 @@ Asset nodes on the workflow canvas (`kind: asset`) carry per-node version histor
 - **Branches create new sibling asset nodes** positioned below the source, with a deep copy of the chosen version + composition. The sibling is disconnected; rewire edges as desired.
 - **If you produce asset content from a subagent**, optionally emit a `MANIFEST.json` in your write root with `files[]` + `subAssetInputs[]` so the daemon snapshots exactly what you produced and knows where sub-assets mount inside the view tree. Without a manifest the daemon falls back to scanning the asset's declared `path`/`paths`.
 - **Lineage chips on asset cards show which upstream versions a snapshot was built against.** Warm-colored chips signal divergence from upstream's current active. The user decides whether to re-run; there's no automatic cascade.
+
+## Whiteboard layer (`wb`)
+
+The workflow canvas has a whiteboard MODE (Build / Whiteboard toggle in the bar): FigJam-style annotation primitives living in a top-level `wb: []` array in `workflow/workflow.json` — siblings of `nodes`/`edges`, **not** node kinds (no registry entry, no runStatus, no reconciler contact).
+
+| type | geometry | fields |
+|---|---|---|
+| `text` | `x,y,w,h` (h auto) | `text`, `fontSize: sm\|md\|lg\|xl`, `bold`, `italic`, `align`, `color` |
+| `textbox` | `x,y,w,h` | `text`, `color` (fill+border), `radius`, `fontSize`, `align` |
+| `sticky` | `x,y,w,h` | `text`, `color` |
+| `ink` | `x,y,w,h` + `points` (flat array, relative to x/y) | `color`, `size` |
+| `shape` | `x,y,w,h` | `shape:"rect"`, `color`, `fill: none\|token`, `radius`, `size` |
+| `arrow` | `x1,y1,x2,y2` | `color`, `size`, `arrowStart`, `arrowEnd` |
+| `image` | `x,y,w,h` | `path` (project-relative, e.g. `source/main/_attachments/…`), `naturalW/H` |
+
+Shared fields: `id` (`w…` namespace), `z` (stacking int). Colors are tokens `ink|gray|blue|green|yellow|pink|purple|orange` (raw CSS colors tolerated).
+
+**Read** wb by reading `workflow/workflow.json`. **Write ONLY via `POST /__workflow/wb?project=<id>`** with `{"add":[items],"update":[{"id":…, …patch}],"remove":[ids]}` (any subset; omit `id`/`z` on adds — the daemon assigns them). Direct file edits bypass the per-project workflow lock and race the editor's debounced save. Writes broadcast `workflow-changed` so the canvas updates live.
+
+**Context rule:** whiteboard content is injected into workflow-chat context ONLY while the user is in whiteboard mode (as a `<whiteboard>` block). In build mode it is deliberately omitted — don't go fishing for it unless the user asks.
 
 ## Don't
 

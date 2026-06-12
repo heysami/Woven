@@ -2876,6 +2876,54 @@ def _broadcast_workflow_change(project_id: str) -> None:
         try: w.push("workflow-changed", {})
         except Exception: pass
 
+# ── Whiteboard (`wb`) item sanitizer ─────────────────────────────────────
+# The workflow canvas's whiteboard layer stores its items in a top-level
+# `wb: []` array in workflow.json (siblings of nodes/edges — deliberately
+# NOT node kinds, so they skip the kind registry / runStatus / reconciler
+# machinery entirely). Shared by the editor's POST /__workflow save and
+# the agent-facing POST /__workflow/wb ops endpoint.
+_WB_ITEM_TYPES = ("text", "textbox", "sticky", "ink", "shape", "arrow", "image")
+
+def _sanitize_wb_items(items):
+    """Permissive structural sanitize, mirroring the node sanitize in
+    _workflow_save: normalize id/type/geometry to canonical types, pass
+    unknown per-item fields through so the item schema can grow without
+    a daemon round-trip."""
+    clean, seen = [], set()
+    if not isinstance(items, list):
+        return clean
+    for it in items[:2000]:  # item-count cap
+        if not isinstance(it, dict): continue
+        wid = it.get("id"); typ = it.get("type")
+        if not isinstance(wid, str) or not wid or wid in seen: continue
+        if typ not in _WB_ITEM_TYPES: continue
+        entry = dict(it)
+        entry["id"] = wid
+        entry["type"] = typ
+        ok = True
+        for f in ("x", "y", "w", "h", "x1", "y1", "x2", "y2", "z",
+                  "radius", "size", "naturalW", "naturalH"):
+            if f in entry:
+                try:
+                    entry[f] = float(entry[f])
+                except Exception:
+                    ok = False
+                    break
+        if not ok: continue
+        if isinstance(entry.get("text"), str):
+            entry["text"] = entry["text"][:20000]
+        if typ == "ink":
+            pts = entry.get("points")
+            if not isinstance(pts, list): continue
+            try:
+                entry["points"] = [float(p) for p in pts[:8000]]
+            except Exception:
+                continue
+        seen.add(wid)
+        clean.append(entry)
+    return clean
+
+
 def _broadcast_asset_change(project_id: str, paths) -> None:
     """v2.50 — notify SSE subscribers that source/<branch>/** or
     design-systems/** files changed on disk. Frontend dispatches
@@ -5311,6 +5359,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._dispatch_planner(qs)
             if parsed.path == "/__attachment":
                 return self._attachment_upload(qs)
+            if parsed.path == "/__workflow/wb":
+                return self._workflow_wb_op(qs)
             if parsed.path == "/__write_text":
                 return self._write_text(qs)
             if parsed.path == "/__html_save":
@@ -5827,6 +5877,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         data.setdefault("zoom", 1)
         data.setdefault("nodes", [])
         data.setdefault("edges", [])
+        data.setdefault("wb", [])  # whiteboard layer (legacy files lack the key)
         # v2.20 — backward-compat projection for `runId`. Older daemons (pre-
         # v2.20) wrote only `runRunId` when dispatching agent-kind nodes;
         # WorkflowAgentNode reads `node.runId`. Project the value on the wire
@@ -6123,6 +6174,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         if isinstance(raw_deleted, list):
             for x in raw_deleted:
                 if isinstance(x, str): deleted_ids.add(x)
+        # Whiteboard layer — `wb: []` is a first-class sibling of nodes/edges.
+        # Same merge model: posted items win wholesale (no daemon-owned
+        # fields on wb items), disk items the editor hasn't seen yet are
+        # preserved unless tombstoned via `deletedWbIds` (agents add wb
+        # items through POST /__workflow/wb between editor refetches).
+        clean_wb = _sanitize_wb_items(body.get("wb"))
+        deleted_wb_ids = set()
+        raw_deleted_wb = body.get("deletedWbIds")
+        if isinstance(raw_deleted_wb, list):
+            for x in raw_deleted_wb:
+                if isinstance(x, str): deleted_wb_ids.add(x)
         # v2.31 — serialize the WHOLE read-modify-write under the per-project lock
         # so concurrent /status POSTs can't write their stale snapshot AFTER our
         # write and revert the user's edit.
@@ -6150,12 +6212,27 @@ class H(http.server.SimpleHTTPRequestHandler):
             path = os.path.join(wf_dir, "workflow.json")
             preserved_nodes = []
             preserved_edges = []
+            preserved_wb = []
             try:
                 if os.path.isfile(path):
                     with open(path, "r", encoding="utf-8") as f:
                         disk = json.load(f) or {}
                     disk_nodes = disk.get("nodes") or []
                     disk_edges = disk.get("edges") or []
+                    # Whiteboard merge — keep disk wb items absent from the
+                    # POST and not tombstoned (no namespace restriction: any
+                    # writer's additions survive the editor's debounce window;
+                    # the tombstone makes editor deletes authoritative).
+                    disk_wb = disk.get("wb") or []
+                    if isinstance(disk_wb, list):
+                        posted_wb_ids = {it["id"] for it in clean_wb}
+                        for it in disk_wb:
+                            if not isinstance(it, dict): continue
+                            wid = it.get("id")
+                            if not isinstance(wid, str): continue
+                            if wid in posted_wb_ids: continue
+                            if wid in deleted_wb_ids: continue
+                            preserved_wb.append(it)
                     posted_ids = {n["id"] for n in clean_nodes if isinstance(n, dict) and "id" in n}
                     for n in disk_nodes:
                         if not isinstance(n, dict): continue
@@ -6200,8 +6277,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # editor's save flow over a malformed prior file.
                 preserved_nodes = []
                 preserved_edges = []
+                preserved_wb = []
             if preserved_nodes: clean_nodes = clean_nodes + preserved_nodes
             if preserved_edges: clean_edges = clean_edges + preserved_edges
+            if preserved_wb: clean_wb = clean_wb + preserved_wb
             # v2.17a — daemon-authoritative field guard. When the editor POSTs an
             # existing node, certain fields are owned by the DAEMON (not the
             # editor) and must NEVER be overwritten by what the editor sent:
@@ -6332,7 +6411,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                                     n["text"] = disk_text
             except Exception:
                 pass  # disk read failed — fall through; we still write what was posted.
-            out = {"pan": pan, "zoom": zoom, "nodes": clean_nodes, "edges": clean_edges}
+            out = {"pan": pan, "zoom": zoom, "nodes": clean_nodes, "edges": clean_edges,
+                   "wb": clean_wb}
             try:
                 os.makedirs(wf_dir, exist_ok=True)
             except Exception as e:
@@ -6343,7 +6423,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                                        kind="workflow-op",
                                        label="Update workflow canvas",
                                        source="workflow",
-                                       extra={"nodes": len(clean_nodes), "edges": len(clean_edges)}):
+                                       extra={"nodes": len(clean_nodes), "edges": len(clean_edges),
+                                              "wb": len(clean_wb)}):
                     with open(path, "w", encoding="utf-8") as f:
                         json.dump(out, f, indent=2)
             except Exception as e:
@@ -6352,6 +6433,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             _broadcast_workflow_change(os.path.basename(project_root.rstrip("/")))
             return self._reply(200, {"ok": True, "path": rel_path,
                                       "nodes": len(clean_nodes), "edges": len(clean_edges),
+                                      "wb": len(clean_wb),
                                       "preservedSubagentNodes": len(preserved_nodes)})
           finally:
             _lk.release()
@@ -10020,6 +10102,137 @@ class H(http.server.SimpleHTTPRequestHandler):
                                source="asset", extra={"branch": branch, "mime": mime}):
             with open(abs_path, "wb") as f: f.write(raw)
         return self._reply(200, {"ok": True, "path": rel, "size": len(raw), "mime": mime})
+
+    # ── POST /__workflow/wb?project=<id> ────────────────────────────────
+    # The AGENT-facing write path for the whiteboard layer (`wb: []` in
+    # workflow.json). Agents READ wb by reading workflow.json; they WRITE
+    # ONLY through this endpoint — direct file edits would bypass the
+    # per-project workflow lock and race the editor's debounced save.
+    # Body: { "add": [items], "update": [{id, ...patch}], "remove": [ids] }
+    # — any subset. Added items get auto ids ("w…") + top z when missing.
+    # Every write runs through _sanitize_wb_items, lands inside a history
+    # bracket (undo-able), and broadcasts workflow-changed so the editor's
+    # SSE merge picks it up live.
+    def _workflow_wb_op(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        add = body.get("add") or []
+        update = body.get("update") or []
+        remove = body.get("remove") or []
+        if not (isinstance(add, list) and isinstance(update, list) and isinstance(remove, list)):
+            return self._reply(400, {"error": "add / update / remove must be arrays"})
+        project_id = os.path.basename(project_root.rstrip("/"))
+        _sem = _request_semaphore(project_id)
+        if not _sem.acquire(timeout=5.0):
+            return self._reply(503, {"error": "project request queue full (cap=3)",
+                                      "hint": "retry in ~1s", "retryAfterMs": 1000})
+        try:
+          _lk = _workflow_lock(project_id)
+          if not _lk.acquire(timeout=2.0):
+            return self._reply(503, {"error": "workflow locked (another write in progress)",
+                                      "hint": "retry in ~1s", "retryAfterMs": 1000})
+          try:
+            wf_dir = os.path.join(project_root, "workflow")
+            path = os.path.join(wf_dir, "workflow.json")
+            workflow = {}
+            try:
+                if os.path.isfile(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        workflow = json.load(f) or {}
+            except Exception as e:
+                return self._reply(500, {"error": f"workflow.json unreadable: {e}"})
+            if not isinstance(workflow, dict):
+                workflow = {}
+            workflow.setdefault("pan", {"x": 0, "y": 0})
+            workflow.setdefault("zoom", 1)
+            workflow.setdefault("nodes", [])
+            workflow.setdefault("edges", [])
+            wb = workflow.get("wb")
+            if not isinstance(wb, list):
+                wb = []
+            existing_ids = {it.get("id") for it in wb if isinstance(it, dict)}
+            max_z = 0
+            for it in wb:
+                if isinstance(it, dict):
+                    z = it.get("z")
+                    if isinstance(z, (int, float)) and z > max_z:
+                        max_z = z
+            # add — sanitize through the same gate as editor saves;
+            # auto-assign id + top z when the agent omits them.
+            added = []
+            for it in add:
+                if not isinstance(it, dict):
+                    continue
+                if not it.get("id"):
+                    it = dict(it)
+                    it["id"] = "w%x%s" % (int(time.time() * 1000), os.urandom(3).hex())
+                cleaned = _sanitize_wb_items([it])
+                if not cleaned:
+                    continue
+                entry = cleaned[0]
+                if entry["id"] in existing_ids:
+                    continue
+                if "z" not in entry:
+                    max_z += 1
+                    entry["z"] = float(max_z)
+                wb.append(entry)
+                existing_ids.add(entry["id"])
+                added.append(entry["id"])
+            # update — shallow-merge the patch onto the matching item, then
+            # re-sanitize the merged result (a bad patch can't corrupt).
+            updated = []
+            by_id = {it.get("id"): i for i, it in enumerate(wb) if isinstance(it, dict)}
+            for patch in update:
+                if not isinstance(patch, dict):
+                    continue
+                pid = patch.get("id")
+                if pid not in by_id:
+                    continue
+                merged = dict(wb[by_id[pid]])
+                merged.update({k: v for k, v in patch.items() if k != "id"})
+                merged["id"] = pid
+                cleaned = _sanitize_wb_items([merged])
+                if not cleaned:
+                    continue
+                wb[by_id[pid]] = cleaned[0]
+                updated.append(pid)
+            # remove
+            rm = {x for x in remove if isinstance(x, str)}
+            removed = [x for x in rm if x in existing_ids]
+            if rm:
+                wb = [it for it in wb if not (isinstance(it, dict) and it.get("id") in rm)]
+            workflow["wb"] = wb
+            try:
+                os.makedirs(wf_dir, exist_ok=True)
+            except Exception as e:
+                return self._reply(500, {"error": f"could not create workflow dir: {e}"})
+            rel_path = os.path.relpath(path, project_root)
+            try:
+                with _history_bracket(project_root, [rel_path],
+                                       kind="workflow-op",
+                                       label="Whiteboard edit (agent)",
+                                       source="workflow",
+                                       extra={"wbAdded": len(added), "wbUpdated": len(updated),
+                                              "wbRemoved": len(removed)}):
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(workflow, f, indent=2)
+            except Exception as e:
+                return self._reply(500, {"error": f"could not write workflow.json: {e}"})
+            _broadcast_workflow_change(project_id)
+            return self._reply(200, {"ok": True, "added": added, "updated": updated,
+                                      "removed": removed, "count": len(wb)})
+          finally:
+            _lk.release()
+        finally:
+          _sem.release()
 
     # POST /__write_text?project=<id>
     # Body: JSON { path: "source/<branch>/<rel>", text: "..." }
