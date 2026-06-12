@@ -267,12 +267,28 @@ Clusters across all 147 samples, deduplicated against the existing libraries. Or
 4. **Calm-tech is a coherent register** (pastoral-serene + lofi-contemplative + organic-overgrowth): photo/illustration libraries should cross-link these so photography-orchestrator and illustration-orchestrator can chain them per slot role.
 5. **SOTD breakdowns confirm the recipe**: tags repeatedly pair an expressive aesthetic with restrained shells + one signature motion (GSAP scroll choreography). Polish-orchestrator's register table matches; the new aesthetics should declare their polish register explicitly (e.g. monochrome-pop-poster → theatrical; pastoral-serene → subtle).
 
-### 4g. Tally
+### 4g. New MATERIALS (5) — added in the follow-up material pass
+
+The material dimension was classified after the initial five-dimension pass. Most corpus signals map to
+existing entries (`silk`, `chrome-mirror`, `gold-leaf`, `brushed-aluminum`, `oil-on-water`, `frosted-glass`,
+`liquid-glass`, `marble`, `concrete`, `ink-wash-sumi-e` already cover the luxury / industrial / painterly reads).
+Five genuine gaps:
+
+| Proposed | Evidence | Gap rationale (nearest existing) |
+|---|---|---|
+| **liquid-chrome-silk** | ms10, ms11, ms15, ms27, ms34, ms38, ms93, ms94 (8) | The silk-chrome-flow ribbon as a MATERIAL: anisotropic fold highlights + thin-film iridescence + continuous undulation. `silk` is analog fabric; `chrome-mirror` is rigid; neither flows. |
+| **dispersion-prism-glass** | ms54, ms77, sd02 (3) | Spectral rainbow split at refraction edges + caustics. `frosted-glass`/`liquid-glass` refract without dispersion; `holographic-foil` is a film, not optics. |
+| **bioluminescent-membrane** | px07, sd11, ms70 (3) | Self-emissive translucent organic tissue (jellyfish bell, lantern flora). Nothing emissive-organic exists. |
+| **volumetric-cloud** | ms28, ms64, ms25, px05, sd? (4+) | Scattering volume with silver-lining rim — the dream-stage upholstery and pastoral sky substance. No volume material exists. |
+| **atmosphere-rim-glow** | ms29, ms36, ms90, ms95, ms96 + Linear-style card echoes (7) | Planet-limb optic as element treatment: dark matte body + one-edge scattering rim replacing drop shadow. |
+
+### 4h. Tally
 
 - **Shells:** +2 (1 watchlist)
 - **Styles:** +3 (2 watchlist)
 - **Aesthetics:** +8 (7 watchlist)
 - **Photography:** +6 (5 watchlist)
 - **Illustration:** +7 (9 watchlist)
+- **Materials:** +5
 
-= **26 promoted candidates + 24 watchlist** from 147 samples.
+= **31 promoted candidates + 24 watchlist** from 147 samples.

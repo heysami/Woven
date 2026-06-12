@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "material",
   "sourceDir": "design-library/",
-  "totalEntries": 78,
+  "totalEntries": 83,
   "decisionTree": {
     "recipe-terminal-on-web": {
       "default": "ansi-art",
@@ -96,10 +96,37 @@
         "photocopy-xerox"
       ]
     },
+    "aesthetic-cosmic-horizon": {
+      "default": "atmosphere-rim-glow",
+      "alternatives": [
+        "dispersion-prism-glass",
+        "liquid-chrome-silk"
+      ]
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "atmosphere-rim-glow",
+      "alternatives": [
+        "liquid-chrome-silk",
+        "monospace-code-grid"
+      ]
+    },
+    "aesthetic-defi-cosmic": {
+      "default": "atmosphere-rim-glow",
+      "alternatives": [
+        "bioluminescent-membrane",
+        "chrome-on-velvet",
+        "dispersion-prism-glass",
+        "gold-leaf",
+        "marble",
+        "pebbled-leather",
+        "silk"
+      ]
+    },
     "style-aurorism": {
       "default": "aurora-mesh",
       "alternatives": [
         "displacement-ripple",
+        "liquid-chrome-silk",
         "oil-on-water"
       ]
     },
@@ -180,6 +207,23 @@
       "alternatives": [
         "chromatic-aberration-lens",
         "motion-blur-streak"
+      ]
+    },
+    "aesthetic-bioluminescent-deep": {
+      "default": "bioluminescent-membrane",
+      "alternatives": []
+    },
+    "aesthetic-fairycore": {
+      "default": "bioluminescent-membrane",
+      "alternatives": [
+        "paper-with-watercolor",
+        "watercolor-wash"
+      ]
+    },
+    "shell-scroll-journey-scene": {
+      "default": "bioluminescent-membrane",
+      "alternatives": [
+        "volumetric-cloud"
       ]
     },
     "aesthetic-dieselpunk": {
@@ -312,6 +356,7 @@
       "default": "chrome-mirror",
       "alternatives": [
         "chrome-on-velvet",
+        "dispersion-prism-glass",
         "gold-leaf",
         "holographic-foil",
         "holographic-paper",
@@ -323,15 +368,6 @@
       "alternatives": [
         "chrome-on-velvet",
         "gold-leaf"
-      ]
-    },
-    "aesthetic-defi-cosmic": {
-      "default": "chrome-on-velvet",
-      "alternatives": [
-        "gold-leaf",
-        "marble",
-        "pebbled-leather",
-        "silk"
       ]
     },
     "recipe-editorial-magazine": {
@@ -418,7 +454,8 @@
       "alternatives": [
         "displacement-ripple",
         "heat-haze-shimmer",
-        "jpeg-block-corruption"
+        "jpeg-block-corruption",
+        "volumetric-cloud"
       ]
     },
     "aesthetic-weirdcore": {
@@ -440,8 +477,9 @@
       ]
     },
     "style-liquid-glass": {
-      "default": "displacement-ripple",
+      "default": "dispersion-prism-glass",
       "alternatives": [
+        "displacement-ripple",
         "frosted-glass",
         "holographic-foil",
         "liquid-glass",
@@ -449,8 +487,9 @@
       ]
     },
     "style-glassmorphism": {
-      "default": "displacement-ripple",
+      "default": "dispersion-prism-glass",
       "alternatives": [
+        "displacement-ripple",
         "frosted-glass",
         "liquid-glass",
         "thin-glass-chip"
@@ -551,6 +590,14 @@
       "default": "linen-weave",
       "alternatives": []
     },
+    "style-silk-chrome-flow": {
+      "default": "liquid-chrome-silk",
+      "alternatives": []
+    },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "liquid-chrome-silk",
+      "alternatives": []
+    },
     "aesthetic-holographic": {
       "default": "liquid-glass",
       "alternatives": []
@@ -590,10 +637,6 @@
         "schematic-pcb-trace"
       ]
     },
-    "recipe-ai-foundry-dark": {
-      "default": "monospace-code-grid",
-      "alternatives": []
-    },
     "style-dense-mono-dark": {
       "default": "monospace-code-grid",
       "alternatives": [
@@ -617,12 +660,6 @@
         "rgb-channel-split",
         "risograph",
         "vhs-distortion"
-      ]
-    },
-    "aesthetic-fairycore": {
-      "default": "paper-with-watercolor",
-      "alternatives": [
-        "watercolor-wash"
       ]
     },
     "aesthetic-defi-cosmic (achievement certificates)": {
@@ -665,6 +702,18 @@
       "default": "thin-glass-chip",
       "alternatives": []
     },
+    "aesthetic-surreal-dream-stage": {
+      "default": "volumetric-cloud",
+      "alternatives": []
+    },
+    "aesthetic-pastoral-serene": {
+      "default": "volumetric-cloud",
+      "alternatives": []
+    },
+    "aesthetic-angelcore": {
+      "default": "volumetric-cloud",
+      "alternatives": []
+    },
     "style-skeuomorphism (library-as-wood-shelf)": {
       "default": "wood-grain-walnut",
       "alternatives": []
@@ -700,6 +749,19 @@
       ],
       "sourceFile": "design-library/material-ascii-art-surface.md"
     },
+    "atmosphere-rim-glow": {
+      "name": "Atmosphere rim glow",
+      "category": "emissive-edge",
+      "family": "digital",
+      "surfaceFinish": "matte",
+      "oneLine": "A matte near-black body whose EDGE carries a thin scattering glow — the planet-limb optic applied to surfaces: dark mass, luminous rim, void beyond.",
+      "pairsPrototypes": [
+        "aesthetic-cosmic-horizon",
+        "recipe-ai-foundry-dark",
+        "aesthetic-defi-cosmic"
+      ],
+      "sourceFile": "design-library/material-atmosphere-rim-glow.md"
+    },
     "aurora-mesh": {
       "name": "Aurora Mesh Gradient (Stripe / Vercel / Linear)",
       "category": "digital-effect",
@@ -729,6 +791,20 @@
         "recipe-bento-marketing"
       ],
       "sourceFile": "design-library/material-barrel-pincushion-warp.md"
+    },
+    "bioluminescent-membrane": {
+      "name": "Bioluminescent membrane",
+      "category": "organic-emissive",
+      "family": "digital",
+      "surfaceFinish": "glossy",
+      "oneLine": "A translucent organic tissue that reacts to light: inverted — it IS the light source; subsurface glow pulses slowly from within, falling off into true black with no ambient fill.",
+      "pairsPrototypes": [
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-fairycore",
+        "aesthetic-defi-cosmic",
+        "shell-scroll-journey-scene"
+      ],
+      "sourceFile": "design-library/material-bioluminescent-membrane.md"
     },
     "brushed-aluminum": {
       "name": "Brushed Aluminum (anisotropic metal)",
@@ -927,6 +1003,21 @@
         "aesthetic-corporate-grunge"
       ],
       "sourceFile": "design-library/material-denim.md"
+    },
+    "dispersion-prism-glass": {
+      "name": "Dispersion prism glass",
+      "category": "glass",
+      "family": "digital",
+      "surfaceFinish": "glossy",
+      "oneLine": "A glossy transparent surface that reacts to light: yes — refraction SPLITS into spectral rainbow at edges and thick sections (chromatic dispersion), casting small caustic rainbows onto surfaces behind.",
+      "pairsPrototypes": [
+        "style-holographic",
+        "style-liquid-glass",
+        "aesthetic-cosmic-horizon",
+        "aesthetic-defi-cosmic",
+        "style-glassmorphism"
+      ],
+      "sourceFile": "design-library/material-dispersion-prism-glass.md"
     },
     "displacement-ripple": {
       "name": "Displacement Ripple (interactive pointer-driven warp)",
@@ -1279,6 +1370,21 @@
         "aesthetic-dark-academia"
       ],
       "sourceFile": "design-library/material-linen-weave.md"
+    },
+    "liquid-chrome-silk": {
+      "name": "Liquid chrome silk",
+      "category": "metal-fabric",
+      "family": "hybrid",
+      "surfaceFinish": "glossy",
+      "oneLine": "A metallic-anisotropic surface that reacts to light: yes — specular streaks travel along fabric folds; hue drifts across an iridescent 2-3 stop family; and deforms: yes — slow continuous undulation like silk underwater.",
+      "pairsPrototypes": [
+        "style-silk-chrome-flow",
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-cosmic-horizon",
+        "recipe-ai-foundry-dark",
+        "style-aurorism"
+      ],
+      "sourceFile": "design-library/material-liquid-chrome-silk.md"
     },
     "liquid-glass": {
       "name": "Liquid Glass (Apple WWDC25)",
@@ -1739,6 +1845,21 @@
         "aesthetic-cassette-futurism"
       ],
       "sourceFile": "design-library/material-vhs-frutiger.md"
+    },
+    "volumetric-cloud": {
+      "name": "Volumetric cloud / cotton",
+      "category": "organic-volume",
+      "family": "digital",
+      "surfaceFinish": "matte",
+      "oneLine": "A matte volumetric mass (translucent at wisps) that reacts to light: yes — silver-lining rim where lit, soft self-shadowed underbelly; and deforms: yes — billows and drifts continuously, edges never hold a fixed silhouette.",
+      "pairsPrototypes": [
+        "aesthetic-surreal-dream-stage",
+        "aesthetic-pastoral-serene",
+        "aesthetic-angelcore",
+        "aesthetic-dreamcore",
+        "shell-scroll-journey-scene"
+      ],
+      "sourceFile": "design-library/material-volumetric-cloud.md"
     },
     "watercolor-wash": {
       "name": "Watercolor Wash (wet-on-wet, granulation)",
