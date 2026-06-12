@@ -32422,11 +32422,46 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     };
     const markup = renderMarkup();
     if (!markup) { showToast("Couldn't render markup for " + payload.kind); return; }
+    // v3.6.4 — Record a replayable op so slot inserts/replaces survive a
+    // React re-render on reload (previously these baked into the DOM only
+    // and silently reverted — "zoom mode still problematic"). The markup
+    // is cleaned of zoom ids + editor markers, then stamped with this op's
+    // own idempotency key.
+    const opKey = (isReplace ? "p" : "i") + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    const stampTmp = doc.createElement("div");
+    stampTmp.innerHTML = markup;
+    try {
+      const stripAll = (n) => {
+        if (!n.removeAttribute) return;
+        [ZOOM_ID_ATTR, "data-th-ins", "data-th-rep", "data-th-rkey-el", "data-th-rkey-sib", "data-th-clone-of"]
+          .forEach(a => n.removeAttribute(a));
+      };
+      Array.from(stampTmp.querySelectorAll("*")).forEach(stripAll);
+      Array.from(stampTmp.children).forEach(n => {
+        try { n.setAttribute(isReplace ? "data-th-rep" : "data-th-ins", opKey); } catch {}
+      });
+    } catch {}
+    const stampedMarkup = stampTmp.innerHTML;
+    let op = null;
     if (isReplace) {
-      el.outerHTML = markup;
+      op = { type: "replace", selector: elementPatchSelector(el), html: stampedMarkup, key: opKey };
+      try {
+        const mIns = el.getAttribute("data-th-ins");
+        const mDup = el.getAttribute("data-th-clone-of");
+        if (mIns) op.cancelIns = mIns;
+        if (mDup) op.cancelDup = mDup;
+      } catch {}
+      el.outerHTML = stampedMarkup;
       setSelectedId(null); setSelectionRect(null); setPicked(null);
     } else {
-      el.insertAdjacentHTML(pos, markup);
+      op = {
+        type:     "insert",
+        anchor:   elementPatchSelector(el),
+        position: pos === "beforebegin" ? "before" : "after",
+        html:     stampedMarkup,
+        key:      opKey,
+      };
+      el.insertAdjacentHTML(pos, stampedMarkup);
     }
     zoomTagAll(meta.doc || doc);
     setSlotPopoverAt(null);
@@ -32434,7 +32469,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       _markNestedDirty(meta);
       showToast((isReplace ? "Replaced" : "Inserted on " + side) + " (imported, unsaved)");
     } else {
-      recordOp((isReplace ? "Replaced" : "Inserted on " + side) + " (unsaved)", snap);
+      recordOp((isReplace ? "Replaced" : "Inserted on " + side) + " (unsaved)", snap, op);
     }
   }, [selectedId, slotPopoverAt, picked, recordOp, showToast, _docMeta, _markNestedDirty]);
 
@@ -32916,6 +32951,19 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         "; border: 0; display: block;"
       );
       iframe.setAttribute("data-zoom-import", asset.path);
+      // v3.6.4 — Record a replayable replace op so the import survives a
+      // React re-render on reload. The op html is the iframe's own markup
+      // (stamped with the idempotency key), captured BEFORE replaceWith so
+      // it carries no zoom ids.
+      const impKey = "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+      iframe.setAttribute("data-th-rep", impKey);
+      const impOp = { type: "replace", selector: elementPatchSelector(el), html: iframe.outerHTML, key: impKey };
+      try {
+        const mIns = el.getAttribute("data-th-ins");
+        const mDup = el.getAttribute("data-th-clone-of");
+        if (mIns) impOp.cancelIns = mIns;
+        if (mDup) impOp.cancelDup = mDup;
+      } catch {}
       el.replaceWith(iframe);
       zoomTagAll(doc);
       // When the nested doc finishes loading, mirror the host's font
@@ -32949,7 +32997,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       // selectionRect that pointed at the deleted host element.
       setSelectedId(iframe.getAttribute(ZOOM_ID_ATTR));
       setSelectionRect(null);
-      recordOp("Imported `" + asset.name + "` — replaced selection (unsaved)", snap);
+      recordOp("Imported `" + asset.name + "` — replaced selection (unsaved)", snap, impOp);
       setImportPanel(null);
     } catch (err) {
       showToast("Import failed: " + (err.message || err));
