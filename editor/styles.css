@@ -7866,6 +7866,125 @@ a.ds-badge:hover, button.ds-badge:hover {
   min-height: 0;
   background: var(--bg);
 }
+/* ── Fonts pane — local font library manager ─────────────────────────── */
+.ds-fonts-pane {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 24px 28px;
+}
+.ds-fonts {
+  max-width: 980px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+}
+.ds-fonts.is-dragover {
+  border-color: var(--accent);
+  background: var(--accent-soft, color-mix(in oklch, var(--accent) 8%, transparent));
+}
+.ds-fonts .ds-section-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ds-fonts-upload {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ds-fonts-upload:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-text, var(--accent));
+}
+.ds-fonts-upload:disabled { opacity: 0.6; cursor: default; }
+.ds-fonts-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 6px 0 16px;
+  line-height: 1.5;
+}
+.ds-fonts-hint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+.ds-fonts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  min-height: 90px;
+}
+.ds-fonts-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ds-fonts-sample {
+  font-size: 26px;
+  line-height: 1.15;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ds-fonts-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ds-fonts-family {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ds-fonts-detail {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ds-fonts-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+}
+.ds-fonts-card:hover .ds-fonts-remove { opacity: 1; }
+.ds-fonts-remove:hover { color: var(--danger, #c33); background: var(--surface-2); }
+.ds-fonts-empty {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 22px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  text-align: center;
+}
+/* Fonts panel hosted inside the no-DS empty state card */
+.empty-view-card-fonts { margin-top: 14px; }
+.empty-view-card-fonts .ds-fonts-grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
 .ds-library-bar {
   display: flex;
   align-items: center;

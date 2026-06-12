@@ -2783,7 +2783,9 @@ function DSView({ model, setEdits }) {
   const hasPrototypeDs = hasTokens || hasPrimitives;
   const [pane, setPane] = useState(dsRefId ? "library" : "prototype");
 
-  // Universal empty state — neither library nor prototype DS present.
+  // Universal empty state — neither library nor prototype DS present. The
+  // font library is still shown: it's project-level (not DS-version-bound)
+  // and uploading fonts is often the FIRST design-system act on a project.
   if (!dsRefId && !hasPrototypeDs) {
     return html`
       <div className="empty-view">
@@ -2791,10 +2793,13 @@ function DSView({ model, setEdits }) {
           <h2>No design system yet</h2>
           <p>A design system anchors every prototype's tokens (color, type, spacing) and primitive components (buttons, cards, fields). It lives in two places, both shown here once they exist:</p>
           <ul>
-            <li><strong>Library DS</strong> — the canonical, hand-curated source of truth under <code>design-systems/&lt;id&gt;/</code>. Built by Workflow 0; referenced from <code>editor/data.js</code> via <code>meta.dsRef</code>.</li>
+            <li><strong>Library DS</strong> — the canonical, hand-curated source of truth under <code>${"design-systems/<id>/"}</code>. Built by Workflow 0; referenced from <code>editor/data.js</code> via <code>meta.dsRef</code>.</li>
             <li><strong>Prototype DS</strong> — tokens and primitives auto-extracted from the live <code>source/</code> tree. Useful for spotting drift between what the library says and what the prototype actually renders.</li>
           </ul>
-          <p>To populate this view, run <strong>Workflow 0</strong> (build a DS library) — the agent will scaffold <code>design-systems/&lt;id&gt;/</code> with tokens, gallery, and DESIGN.md, then wire <code>meta.dsRef</code> on this project.</p>
+          <p>To populate this view, run <strong>Workflow 0</strong> (build a DS library) — the agent will scaffold <code>${"design-systems/<id>/"}</code> with tokens, gallery, and DESIGN.md, then wire <code>meta.dsRef</code> on this project.</p>
+        </div>
+        <div className="empty-view-card empty-view-card-fonts">
+          <${DSFontsPanel}/>
         </div>
       </div>
     `;
@@ -2820,9 +2825,18 @@ function DSView({ model, setEdits }) {
           title="Tokens + primitives extracted from source/ — derived, may drift from the library">
           Prototype DS <span className="ds-router-tab-state">from source · may be stale</span>
         </button>
+        <button type="button"
+          className=${"ds-router-tab" + (pane === "fonts" ? " is-active" : "")}
+          data-active=${pane === "fonts"}
+          onClick=${() => setPane("fonts")}
+          title="Local font library — uploaded fonts under design-systems/<ds>/fonts/. Agents check these first when proposing typography.">
+          Fonts <span className="ds-router-tab-state">local library</span>
+        </button>
       </div>
       ${pane === "library"
         ? html`<${DSViewLibrary} dsRefId=${dsRefId}/>`
+        : pane === "fonts"
+        ? html`<div className="ds-fonts-pane"><${DSFontsPanel}/></div>`
         : html`<${DSViewPrototype} model=${model} setEdits=${setEdits} hasContent=${hasPrototypeDs}/>`}
     </div>
   `;
@@ -2849,6 +2863,128 @@ function DSViewLibrary({ dsRefId }) {
         src=${src}
         title=${"Design system library · " + dsRefId}
         sandbox="allow-scripts allow-same-origin"/>
+    </div>
+  `;
+}
+
+/* Fonts pane — the project's LOCAL FONT LIBRARY (design-systems/<ds>/fonts/).
+   Lists every uploaded face with a live sample, uploads new ones (button or
+   drag-drop), and removes faces. The same library the typography node's ⤒
+   button and the canvas font-drop feed — and the one agents check FIRST
+   when proposing typography (GET /__fonts + capabilities preamble). */
+function dsFontFamilyFromFilename(name) {
+  return name.replace(/\.[^.]+$/, "")
+    .replace(/[^A-Za-z0-9 +\-_]/g, " ")
+    .replace(/[-_ ]+(regular|italic|bold|light|medium|semibold|extrabold|extralight|thin|black|book|roman|normal|var|variable|vf)$/i, "")
+    .replace(/[-_]+/g, " ").trim() || "Uploaded Font";
+}
+function DSFontsPanel() {
+  const [fonts, setFonts] = useState(null);   // null = loading
+  const [busy, setBusy]   = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+  const reload = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__fonts"));
+      const j = await r.json();
+      setFonts(Array.isArray(j.items) ? j.items : []);
+    } catch { setFonts([]); }
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+  // Inject each library stylesheet so samples render in the actual faces.
+  // `bust=true` (after upload/delete) re-points the link with a cache-buster
+  // since _fontface.css content changed under the same URL.
+  const injectCss = useCallback((items, bust) => {
+    const bases = [...new Set((items || []).map(f => apiUrl(f.cssUrl)))];
+    bases.forEach(base => {
+      let link = document.head.querySelector(`link[data-th-font-base="${base}"]`);
+      if (link && !bust) return;
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.setAttribute("data-th-font-base", base);
+        document.head.appendChild(link);
+      }
+      link.href = bust ? base + (base.includes("?") ? "&" : "?") + "v=" + Date.now() : base;
+    });
+  }, []);
+  useEffect(() => { if (fonts && fonts.length) injectCss(fonts, false); }, [fonts, injectCss]);
+  const refresh = async (bust) => {
+    const r = await fetch(apiUrl("/__fonts")).then(x => x.json()).catch(() => ({}));
+    const items = Array.isArray(r.items) ? r.items : [];
+    setFonts(items);
+    injectCss(items, bust);
+  };
+  const uploadFiles = async (fileList) => {
+    const files = [...fileList].filter(f =>
+      /\.(woff2?|ttf|otf)$/i.test(f.name) || /^font\//.test(f.type || ""));
+    if (!files.length) return;
+    setBusy(true);
+    for (const file of files) {
+      const family = dsFontFamilyFromFilename(file.name);
+      try {
+        const r = await fetch(apiUrl(`/__upload_font?name=${encodeURIComponent(family)}`), {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      } catch (e) {
+        alert(`Font install failed for ${file.name}: ${e?.message || e}`);
+      }
+    }
+    setBusy(false);
+    await refresh(true);
+  };
+  const removeFont = async (f) => {
+    if (!confirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
+    try {
+      const r = await fetch(apiUrl(`/__delete_font?ds=${encodeURIComponent(f.ds)}&slug=${encodeURIComponent(f.slug)}`), { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    } catch (e) {
+      alert(`Remove failed: ${e?.message || e}`);
+      return;
+    }
+    await refresh(true);
+  };
+  return html`
+    <div className=${"ds-fonts" + (dragOver ? " is-dragover" : "")}
+      onDragOver=${(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave=${() => setDragOver(false)}
+      onDrop=${(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer?.files || []); }}>
+      <div className="ds-section-h">
+        <h2>Fonts · local library</h2>
+        <span className="ds-section-meta">${fonts === null ? "loading…" : fonts.length + (fonts.length === 1 ? " face" : " faces")}</span>
+        <button className="ds-fonts-upload" disabled=${busy}
+          onClick=${() => fileRef.current?.click()}
+          title="Upload .woff2 / .woff / .ttf / .otf files — they land in design-systems/<ds>/fonts/ where agents look first">
+          ${busy ? "Uploading…" : "⤒ Upload font"}
+        </button>
+        <input ref=${fileRef} type="file" multiple accept=".woff2,.woff,.ttf,.otf,font/*" style=${{ display: "none" }}
+          onChange=${(e) => { uploadFiles(e.target.files); e.target.value = ""; }}/>
+      </div>
+      <p className="ds-fonts-hint">
+        Custom fonts collected under <code>${"design-systems/<ds>/fonts/"}</code>. Agents check this library <strong>first</strong> when proposing typography — before any Google Fonts default. Drop font files here (or onto the workflow canvas) to add more.
+      </p>
+      <div className="ds-fonts-grid">
+        ${(fonts || []).map(f => html`
+          <div className="ds-fonts-card" key=${f.ds + "/" + f.slug}>
+            <div className="ds-fonts-sample" style=${{ fontFamily: `"${f.family}", system-ui, sans-serif` }}>Aa Bb Cc 123</div>
+            <div className="ds-fonts-meta">
+              <span className="ds-fonts-family" title=${f.fontPath}>${f.family}</span>
+              <span className="ds-fonts-detail">${f.format} · ds=${f.ds}</span>
+            </div>
+            <button className="ds-fonts-remove" title=${"Remove " + f.family + " from the library"} onClick=${() => removeFont(f)}>×</button>
+          </div>
+        `)}
+        ${fonts !== null && !fonts.length && html`
+          <div className="ds-fonts-empty">
+            No custom fonts yet. Click <strong>⤒ Upload font</strong> or drop a <code>.woff2</code> / <code>.ttf</code> / <code>.otf</code> file here — it becomes available to every prototype and visible to agents immediately.
+          </div>
+        `}
+      </div>
     </div>
   `;
 }

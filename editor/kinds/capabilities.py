@@ -174,6 +174,7 @@ def _daemon_endpoints() -> list:
         {"method": "GET",  "path": "/__fonts",              "purpose": "LOCAL FONT LIBRARY — every user-uploaded font under design-systems/*/fonts/ (family, cssUrl, ds)"},
         {"method": "GET",  "path": "/__resolve_font",       "purpose": "Resolve a font family: local library FIRST, then Google/Bunny/Fontsource (?name=<family>)"},
         {"method": "POST", "path": "/__upload_font",        "purpose": "Add a font to the local library (?name=<family>&ds=<id>, raw .woff2/.ttf/.otf body)"},
+        {"method": "POST", "path": "/__delete_font",        "purpose": "Remove a font from the local library (?ds=<id>&slug=<slug>)"},
         {"method": "POST", "path": "/__decision/<id>",      "purpose": "Persist a checkpoint pick (DECISION_<id>.json)"},
     ]
 
