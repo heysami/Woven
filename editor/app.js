@@ -17736,7 +17736,18 @@ const WORKFLOW_CONNECT_DEFS = {
   "design-system": {
     label: "Design system",
     provides: { out: { label: "DS reference", tags: ["design-system", "folder"] } },
-    accepts:  { in:  { label: "Direction input", tags: ["palette", "typography", "asset", "folder"] } },
+    accepts:  { in:  { label: "Direction input", tags: ["palette", "typography", "asset", "folder", "section"] } },
+  },
+  // Section's connector carries its CONTENTS: the combination of every node
+  // whose center sits inside the frame. Consumers that declare the "section"
+  // tag genuinely expand it — agent context, skill prompt walk, DS direction
+  // inputs. Image-consuming skills additionally rasterize "whatever is seen
+  // inside" via workflowCaptureSectionRaster when no contained file asset
+  // covers the asset input.
+  "section": {
+    label: "Section",
+    provides: { out: { label: "Section contents", tags: ["section"] } },
+    accepts:  {},
   },
   "skill": {
     label: "Skill",
@@ -17750,12 +17761,12 @@ const WORKFLOW_CONNECT_DEFS = {
       {
         id: "skill-llm", label: "LLM skill", payload: { skill: "llm" },
         provides: { out: { label: "Text output", tags: ["text", "text-gen", "runnable"] } },
-        accepts:  { in:  { label: "Prompt", tags: ["text"] } },
+        accepts:  { in:  { label: "Prompt", tags: ["text", "section"] } },
       },
       {
         id: "skill-image", label: "Image skill", payload: { skill: "generate-image" },
         provides: { out: { label: "Generated image", tags: ["asset-gen", "runnable"] } },
-        accepts:  { in:  { label: "Prompt / input image", tags: ["text", "asset"] } },
+        accepts:  { in:  { label: "Prompt / input image", tags: ["text", "asset", "section"] } },
       },
     ],
   },
@@ -17766,7 +17777,7 @@ const WORKFLOW_CONNECT_DEFS = {
       "folder-write": { label: "Writes folder", tags: ["folder-write"] },
     },
     accepts: {
-      "input":        { label: "Context input", tags: ["text", "asset", "palette", "typography", "design-system"] },
+      "input":        { label: "Context input", tags: ["text", "asset", "palette", "typography", "design-system", "section"] },
       "system-in":    { label: "System prompt", tags: ["text"] },
       "folder-read":  { label: "Read scope", tags: ["folder"] },
     },
@@ -18169,6 +18180,52 @@ async function workflowCaptureProtoRaster(protoId) {
   if (!canvas || !canvas.toDataURL) throw new Error("html2canvas returned no canvas");
   const dataUri = canvas.toDataURL("image/png");
   if (!dataUri || dataUri.length < 200) throw new Error("captured raster was empty");
+  return dataUri;
+}
+
+// v3.8 — Section containment. A node belongs to a section when its CENTER
+// lies inside the section's rect — the SAME rule moveSection uses for group
+// drag, so "what moves with the section" and "what flows through the
+// section's connector" never disagree. Sections don't nest.
+function workflowSectionContainedNodes(section, nodes) {
+  if (!section) return [];
+  const x0 = section.x, y0 = section.y;
+  const x1 = x0 + (section.w || 880), y1 = y0 + (section.h || 560);
+  return (nodes || []).filter(n => {
+    if (!n || n.id === section.id || n.kind === "section") return false;
+    const cx = (n.x || 0) + (n.w || 280) / 2;
+    const cy = (n.y || 0) + (n.h || 200) / 2;
+    return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+  });
+}
+
+// v3.8 — Capture "whatever is seen inside" a section as a PNG data URI.
+// html2canvas on the nodes layer (.workflow-canvas inside the workflow
+// wrap), cropped to the section's WORLD rect — valid because nodes are
+// positioned at world coords inside that layer and html2canvas ignores the
+// capture root's own pan/zoom transform. Limitation inherited from
+// html2canvas: iframe-backed cards (html assets, prototypes) paint blank;
+// <img>-backed cards (image / svg assets) paint fine.
+async function workflowCaptureSectionRaster(section) {
+  if (typeof window === "undefined" || typeof window.html2canvas !== "function") {
+    throw new Error("html2canvas-pro not loaded — can't capture section raster");
+  }
+  const layer = document.querySelector(".workflow-canvas-wrap .workflow-canvas");
+  if (!layer) throw new Error("workflow canvas layer not on screen");
+  const canvas = await window.html2canvas(layer, {
+    x: section.x,
+    y: section.y,
+    width: Math.max(40, section.w || 880),
+    height: Math.max(40, section.h || 560),
+    useCORS: true,
+    allowTaint: false,
+    backgroundColor: "#ffffff",
+    logging: false,
+    scale: 1,
+  });
+  if (!canvas || !canvas.toDataURL) throw new Error("html2canvas returned no canvas");
+  const dataUri = canvas.toDataURL("image/png");
+  if (!dataUri || dataUri.length < 200) throw new Error("captured section raster was empty");
   return dataUri;
 }
 
@@ -20867,7 +20924,9 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
     let raf = 0;
     let last = null;
     const tick = () => {
-      const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      // Sections use the .workflow-node-section root class, every other kind
+      // uses .workflow-node — track either so section ⊕ buttons work too.
+      const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"], .workflow-node-section[data-node-id="' + nodeId + '"]');
       if (el) {
         const r = el.getBoundingClientRect();
         if (!last || last.top !== r.top || last.left !== r.left
@@ -21847,15 +21906,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     try { localStorage.setItem("th-workflow-main-view", mainView); } catch {}
   }, [mainView]);
   const onRailPanel = useCallback((which) => {
-    if (mainView === "proto") {
-      // From prototype view, a panel icon returns to the canvas with that
-      // panel open (never collapses on the way back).
+    // Panel icons always land in Build mode — the whiteboard rail icon is
+    // the only way in, so Nodes/Outputs double as the way back out.
+    const wasWhiteboard = wbModeRef.current;
+    toggleWbMode(false);
+    if (mainView === "proto" || wasWhiteboard) {
+      // From the prototype view OR whiteboard mode, a panel icon returns
+      // to Build with that panel OPEN (never collapses on the way back —
+      // the user is asking for the panel, not toggling it).
       setMainView("canvas");
       setLeftPanel(which);
       return;
     }
     setLeftPanel(p => (p === which ? null : which));
-  }, [mainView]);
+  }, [mainView, toggleWbMode]);
+  // Whiteboard lives on the rail like a panel: click to enter whiteboard
+  // mode (tool strip replaces the library), click again to drop back to
+  // Build. From the prototype view it returns to the canvas first.
+  const onRailWhiteboard = useCallback(() => {
+    if (mainView === "proto") {
+      setMainView("canvas");
+      toggleWbMode(true);
+      return;
+    }
+    toggleWbMode();
+  }, [mainView, toggleWbMode]);
   const onRailProto = useCallback(() => {
     if (mainView === "proto") { setMainView("canvas"); return; }
     setProtoViewerMounted(true);
@@ -27608,6 +27683,50 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               return;
             }
           }
+        } else if (up.kind === "section") {
+          // v3.8 — Section upstream: the COMBINATION of every node inside
+          // the frame. Text-bearing nodes (prompts, skill outputs, palette /
+          // typography / DS descriptors) flatten into one context block;
+          // the first contained file-backed image asset covers an asset
+          // input; if the skill wants an asset and none is inside, capture
+          // "whatever is seen inside" the section as a PNG.
+          const contained = workflowSectionContainedNodes(up, nodes);
+          const parts = [];
+          for (const cn of contained) {
+            if (cn.kind === "prompt" && (cn.text || "").trim()) {
+              parts.push((cn.title ? cn.title + ": " : "") + cn.text.trim());
+            } else if (cn.kind === "skill" && (cn.output || "").trim()) {
+              parts.push(cn.output.trim());
+            } else if (cn.kind === "color-palette") {
+              const swatchLines = (cn.swatches || []).map(s => `${s.name}=${s.value}`).join(", ");
+              if (swatchLines) parts.push("Color palette '" + (cn.name || "Palette") + "': " + swatchLines + ".");
+            } else if (cn.kind === "typography") {
+              const levels = (cn.levels || []).map(lv => `${lv.name} ${lv.size}px/${lv.weight}`).join(", ");
+              parts.push("Typography '" + (cn.name || "Type scale") + "': sans=" + (cn.fontFamily || "") + ", mono=" + (cn.monoFamily || "") + (levels ? ". Scale: " + levels : "") + ".");
+            } else if (cn.kind === "design-system") {
+              parts.push("Design system reference: id=" + (cn.dsId || "main") + " version=" + (cn.version || "?") + ".");
+            } else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) {
+              if (!assetInputPath && !assetInputDataUri
+                  && (cn.assetKind === "image" || cn.assetKind === "svg" || !cn.assetKind)) {
+                assetInputPath = cn.path;
+              } else {
+                parts.push("Asset (" + (cn.assetKind || "file") + "): " + cn.path);
+              }
+            }
+          }
+          if (parts.length) {
+            promptTexts.push("Section '" + (up.title || "Section") + "' contents:\n" + parts.join("\n\n"));
+          }
+          if (wantsAsset && !assetInputPath && !assetInputDataUri) {
+            try {
+              assetInputDataUri = await workflowCaptureSectionRaster(up);
+            } catch (e) {
+              update(skillId, { status: "error", error:
+                "Couldn't capture the section's visible contents. "
+                + (e && e.message ? e.message : String(e)) });
+              return;
+            }
+          }
         }
       }
       if (wantsPrompt && promptTexts.length === 0) {
@@ -29873,22 +29992,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           <span>Projects</span>
         </button>
         <div className="workflow-door-title">Workflow canvas</div>
-        <div className="workflow-mode-toggle" role="group" aria-label="Canvas mode">
-          <button
-            type="button"
-            className=${"workflow-mode-toggle-btn" + (!wbMode ? " is-active" : "")}
-            aria-pressed=${!wbMode ? "true" : "false"}
-            title="Build mode — nodes, edges, runs. Whiteboard content stays visible but inert."
-            onClick=${() => toggleWbMode(false)}
-          >Build</button>
-          <button
-            type="button"
-            className=${"workflow-mode-toggle-btn" + (wbMode ? " is-active" : "")}
-            aria-pressed=${wbMode ? "true" : "false"}
-            title="Whiteboard mode — draw, annotate, paste images as free-floating items. Nodes stay visible but inert."
-            onClick=${() => toggleWbMode(true)}
-          >Whiteboard</button>
-        </div>
         <div className="workflow-bar-spacer"/>
         <${DaemonIndicator}/>
         <${CliIndicator}/>
@@ -29948,18 +30051,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
           <button
             type="button"
-            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && leftPanel === "nodes" ? " is-active" : "")}
-            aria-pressed=${mainView === "canvas" && leftPanel === "nodes" ? "true" : "false"}
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "nodes" ? " is-active" : "")}
+            aria-pressed=${mainView === "canvas" && !wbMode && leftPanel === "nodes" ? "true" : "false"}
             title="Nodes — the buildable-node library. Click again to collapse."
             onClick=${() => onRailPanel("nodes")}
           ><${Icon.Flow}/></button>
           <button
             type="button"
-            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && leftPanel === "outputs" ? " is-active" : "")}
-            aria-pressed=${mainView === "canvas" && leftPanel === "outputs" ? "true" : "false"}
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "outputs" ? " is-active" : "")}
+            aria-pressed=${mainView === "canvas" && !wbMode && leftPanel === "outputs" ? "true" : "false"}
             title="Outputs — generated prototypes, pages + visual assets. Click again to collapse."
             onClick=${() => onRailPanel("outputs")}
           ><${Icon.Image}/></button>
+          <button
+            type="button"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && wbMode ? " is-active" : "")}
+            aria-pressed=${mainView === "canvas" && wbMode ? "true" : "false"}
+            title="Whiteboard — draw, annotate, paste images as free-floating items. Click again to return to Build."
+            onClick=${onRailWhiteboard}
+          ><${Icon.Pen}/></button>
           <div className="workflow-nav-rail-sep"/>
           <button
             type="button"
@@ -30178,6 +30288,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onChange=${(patch) => updateNode(n.id, patch)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
             <${WorkflowEdgesLayer}
@@ -30599,6 +30710,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   // DS doesn't currently fan out — pick one (or add multiple
                   // reference-folder blocks later if a real use case shows up).
                   upstreamFolder = (up.path || "").trim();
+                } else if (up.kind === "section") {
+                  // v3.8 — Section wired into DS.in: expand every contained
+                  // direction-bearing node as if it were wired directly.
+                  for (const cn of workflowSectionContainedNodes(up, data.nodes || [])) {
+                    if (cn.kind === "color-palette") {
+                      upstream.push({ kind: "color-palette", label: cn.name || "Palette", swatches: cn.swatches || [] });
+                    } else if (cn.kind === "typography") {
+                      upstream.push({ kind: "typography", label: cn.name || "Type scale", fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
+                    } else if (cn.kind === "asset") {
+                      upstream.push({ kind: "asset", label: cn.path || "asset", path: cn.path, assetKind: cn.assetKind });
+                    } else if (cn.kind === "folder" && (cn.path || "").trim() && !upstreamFolder) {
+                      upstreamFolder = (cn.path || "").trim();
+                    }
+                  }
                 }
               }
               return html`
@@ -48384,7 +48509,7 @@ function formatDirectionForPrompt(d) {
      - Sections do NOT participate in edges; they have no ports.
      - Lower z-index than nodes so dragging passes through to children
        except for the title bar handle area. */
-function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd }) {
+function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const titleInputRef = useRef(null);
@@ -48486,6 +48611,13 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
         title="Drag to resize"
         onMouseDown=${onResizeDown}
       />
+      <div className="workflow-port-zone workflow-port-zone-out"
+           data-port-node=${node.id} data-port-side="out"
+           title="Section contents — wire into an Agent / Skill / Design system. Text-bearing nodes inside flow as combined context; image-consuming skills get a capture of whatever is seen inside."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+        <span className="workflow-port-label workflow-port-label-right">contents</span>
+      </div>
     </div>
   `;
 }
