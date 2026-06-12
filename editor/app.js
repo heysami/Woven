@@ -569,6 +569,9 @@ const Icon = {
   Clock:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`,
   Grid:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12"/></svg>`,
   Refresh:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 8a6 6 0 0110-4.5M14 3v3h-3M14 8a6 6 0 01-10 4.5M2 13v-3h3"/></svg>`,
+  Globe:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-1.7 1.7-2.6 3.8-2.6 6S6.3 12.3 8 14M8 2c1.7 1.7 2.6 3.8 2.6 6S9.7 12.3 8 14"/></svg>`,
+  Scissors: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4.5" r="1.8"/><circle cx="4" cy="11.5" r="1.8"/><path d="M5.5 5.7L13 13M5.5 10.3L13 3"/></svg>`,
+  External: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M7 3.5H4.5a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V9"/><path d="M9.5 2.5h4v4M13.5 2.5L8 8"/></svg>`,
   Plus:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 3v10M3 8h10"/></svg>`,
   X:        () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 3l10 10M13 3L3 13"/></svg>`,
   Branch:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="3.5" r="1.5"/><circle cx="4" cy="12.5" r="1.5"/><circle cx="12" cy="6" r="1.5"/><path d="M4 5v6M4 9c0-2 1.5-3 4-3"/></svg>`,
@@ -17374,10 +17377,13 @@ const WORKFLOW_WB_FACTORY = {
     type: "textbox", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 220, h: p.h ?? 120,
     text: p.text || "", color: p.color || "blue",
     radius: p.radius ?? 10, fontSize: p.fontSize || "md", align: p.align || "center",
+    bold: !!p.bold, italic: !!p.italic,
   }),
   "sticky": (p = {}) => ({
     type: "sticky", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 180, h: p.h ?? 180,
     text: p.text || "", color: p.color || "yellow",
+    fontSize: p.fontSize || "sm", bold: !!p.bold, italic: !!p.italic,
+    align: p.align || "left",
   }),
   "ink": (p = {}) => ({
     type: "ink", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 1, h: p.h ?? 1,
@@ -17394,6 +17400,7 @@ const WORKFLOW_WB_FACTORY = {
     type: "arrow", x1: p.x1 ?? 0, y1: p.y1 ?? 0, x2: p.x2 ?? 140, y2: p.y2 ?? 0,
     color: p.color || "ink", size: p.size ?? 3,
     arrowStart: !!p.arrowStart, arrowEnd: p.arrowEnd !== false,
+    dash: !!p.dash,
   }),
   "image": (p = {}) => ({
     type: "image", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 320, h: p.h ?? 240,
@@ -20006,7 +20013,7 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
     if (!hostNodeId) { setRect(null); return; }
     let raf = 0; let last = null;
     const tick = () => {
-      const sel = 'iframe[data-prototype-id="' + hostNodeId + '"], iframe[data-asset-id="' + hostNodeId + '"]';
+      const sel = 'iframe[data-prototype-id="' + hostNodeId + '"], iframe[data-asset-id="' + hostNodeId + '"], iframe[data-browser-id="' + hostNodeId + '"]';
       const ifr = document.querySelector(sel);
       if (ifr) {
         const r = ifr.getBoundingClientRect();
@@ -20073,15 +20080,24 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
   };
   const clearTip = () => setTip({ on: null, pos: null });
   const tagLabel = pickedElement.tagName ? `<${pickedElement.tagName}>` : "element";
+  // v3.9 — Browser-node hosts: the picked element lives on a PUBLIC WEB
+  // PAGE, not a source/ file — in-place tools (refine, upstream-prompt)
+  // have nothing to write to. Copy (⌘C) / fork / remix only READ the
+  // element + its CSS bundle, so they stay available.
+  const isBrowserHost = hostNode.kind === "browser";
   const tools = [
     { id: "refine", icon: html`<${Icon.Pen}/>`,
-      tip: `Quick refine — update this ${tagLabel} in place`,
-      enabled: true },
+      tip: isBrowserHost
+        ? "Refine-in-place isn't available on a web page — ⌘C copy, fork, or remix instead"
+        : `Quick refine — update this ${tagLabel} in place`,
+      enabled: !isBrowserHost },
     { id: "prompt", icon: html`<${Icon.ArrowUp}/>`,
-      tip: upstreamPromptNode
-        ? "Refine upstream prompt — edit the prompt that produced the host file"
-        : "No upstream prompt node found in this host's lineage",
-      enabled: !!upstreamPromptNode },
+      tip: isBrowserHost
+        ? "Web pages have no upstream prompt"
+        : upstreamPromptNode
+          ? "Refine upstream prompt — edit the prompt that produced the host file"
+          : "No upstream prompt node found in this host's lineage",
+      enabled: !!upstreamPromptNode && !isBrowserHost },
     { id: "fork",   icon: html`<${Icon.Fork}/>`,
       tip: `Quick fork — export this ${tagLabel} to a NEW HTML asset and refine the copy`,
       enabled: true },
@@ -21559,6 +21575,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   //   3. Group drag: when >1 nodes are selected, dragging any one of them
   //      moves the whole group by the same delta.
   const [selectedNodeIds, setSelectedNodeIds] = useState(() => new Set());
+  const selectedNodeIdsRef = useRef(selectedNodeIds); selectedNodeIdsRef.current = selectedNodeIds;
   // ── Whiteboard mode ──
   // Build (false, default) vs Whiteboard (true). Same canvas, same pan/zoom;
   // both node + whiteboard content stay visible in BOTH modes — the mode
@@ -21573,23 +21590,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const [selectedWbIds, setSelectedWbIds] = useState(() => new Set());
   const selectedWbIdsRef = useRef(selectedWbIds); selectedWbIdsRef.current = selectedWbIds;
   const [editingWbId, setEditingWbId] = useState(null);
+  const editingWbIdRef = useRef(null); editingWbIdRef.current = editingWbId;
   const [wbGhost, setWbGhost] = useState(null);     // drag-to-size preview (shape/textbox/arrow)
   const [wbDragging, setWbDragging] = useState(false);
   const wbLiveStrokeRef = useRef(null);             // <svg> for the imperative in-progress pen path
   const wbItems = data.wb || [];
   const wbItemsRef = useRef(wbItems); wbItemsRef.current = wbItems;
+  const dataNodesRef = useRef([]); dataNodesRef.current = data.nodes || [];
   const toggleWbMode = useCallback((on) => {
     setWbMode(prev => {
       const next = typeof on === "boolean" ? on : !prev;
       if (next === prev) return prev;
       if (next) {
-        setSelectedNodeIds(new Set());
         // selectedEdge is declared further down; by the time this callback
-        // runs the binding is live. Clearing it keeps "what does Delete do"
-        // unambiguous across the mode switch.
+        // runs the binding is live. Selections themselves survive the mode
+        // switch — both kinds are selectable in both modes.
         try { setSelectedEdge(null); } catch {}
       } else {
-        setSelectedWbIds(new Set());
+        if (commitWbEditingNowRef.current) commitWbEditingNowRef.current();
         setEditingWbId(null);
         setWbTool("select");
         setWbGhost(null);
@@ -21637,12 +21655,56 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return next;
     });
   }, [setData, deletedWbIdsRef]);
+  // Group move — arrows shift endpoints, everything else shifts x/y.
+  const shiftWbItems = useCallback((ids, dx, dy) => {
+    const set = ids instanceof Set ? ids : new Set(ids);
+    if (set.size === 0) return;
+    setData(d => ({
+      ...d,
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
+        if (!set.has(it.id)) return it;
+        if (it.type === "arrow") {
+          return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+        }
+        return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
+      }),
+    }));
+  }, [setData]);
+  // Node analog — parametrized (moveSelectedNodes reads the selection from
+  // its closure; the unified gestures need an explicit id set).
+  const shiftNodes = useCallback((ids, dx, dy) => {
+    const set = ids instanceof Set ? ids : new Set(ids);
+    if (set.size === 0) return;
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(n =>
+        set.has(n.id) ? { ...n, x: (n.x || 0) + dx, y: (n.y || 0) + dy } : n
+      ),
+    }));
+  }, [setData]);
   // Whiteboard resize/endpoint-handle drags — implemented with the rest of
   // the tool state machine below (declared early so the layer JSX can bind).
   const wbHandleDownRef = useRef(null);
   // OS-file drop intake — implemented below copySelectedNodes (it needs the
   // upload helpers); onCanvasDrop is defined earlier and calls through here.
   const wbOsDropRef = useRef(null);
+  // Commit the in-progress text edit by reading the DOM directly (blur is
+  // unreliable around mounting clicks). Returns the committed item id.
+  // Shared by: click-out on the canvas, the Esc ladder, and mode exit.
+  const commitWbEditingNow = useCallback(() => {
+    const id = editingWbIdRef.current;
+    if (!id) return null;
+    const el = document.querySelector(".workflow-wb-layer [contenteditable]");
+    if (el) {
+      const patch = { text: el.innerText.replace(/\n$/, "") };
+      const host = el.closest("[data-wb-id]");
+      if (host && host.offsetHeight) patch.h = host.offsetHeight;
+      updateWbItem(id, patch);
+    }
+    setEditingWbId(null);
+    return id;
+  }, [updateWbItem]);
+  const commitWbEditingNowRef = useRef(null); commitWbEditingNowRef.current = commitWbEditingNow;
   const wbHandleDown = useCallback((e, id, handle) => {
     if (wbHandleDownRef.current) wbHandleDownRef.current(e, id, handle);
   }, []);
@@ -21776,9 +21838,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // selected; kinds with no WORKFLOW_CONNECT_DEFS entry yield empty menus
   // and the host renders nothing (future kinds degrade gracefully).
   const connectorNode = useMemo(() => {
+    // Pure single-node selection only — a mixed selection (node + wb
+    // items) shows the group align bar instead.
     if (selectedNodeIds.size !== 1 || !selectedNodeId) return null;
+    if (selectedWbIds.size > 0) return null;
     return (data.nodes || []).find(n => n.id === selectedNodeId) || null;
-  }, [selectedNodeIds, selectedNodeId, data.nodes]);
+  }, [selectedNodeIds, selectedNodeId, selectedWbIds, data.nodes]);
   const connectorMenus = useMemo(() => {
     if (!connectorNode) return null;
     return {
@@ -21826,7 +21891,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // group align bar takes over). Body attribute because those components
     // render through createPortal and share no props with the surface.
     try {
-      document.body.setAttribute("data-wf-multi-select", selectedNodeIds.size > 1 ? "true" : "false");
+      document.body.setAttribute("data-wf-multi-select",
+        (selectedNodeIds.size + selectedWbIds.size) > 1 ? "true" : "false");
     } catch {}
   }, [selectedNodeIds, selectedWbIds, wbMode, data?.nodes, data?.wb, selectionRef, onSelectionCountChange]);
 
@@ -21936,43 +22002,32 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const onUp = () => {
       const m = marqueeRef.current;
       if (!m) { setMarquee(null); return; }
-      // Whiteboard marquee — same rect, same visuals, wb selection set.
-      if (m.wb) {
-        const wbHit = wbItemsInRect(m);
-        const wbDidDrag = Math.abs(m.x1 - m.x0) > 2 || Math.abs(m.y1 - m.y0) > 2;
-        if (wbDidDrag) {
-          if (m.additive) {
-            setSelectedWbIds(() => {
-              const next = new Set(m.prevSelection);
-              for (const id of wbHit) next.add(id);
-              return next;
-            });
-          } else {
-            setSelectedWbIds(wbHit);
-          }
-        } else if (!m.additive) {
-          setSelectedWbIds(new Set());
-        }
-        setMarquee(null);
-        return;
-      }
-      const hit = nodesInMarquee(m);
-      // Treat a marquee that didn't actually drag (x0==x1 && y0==y1) as a
-      // plain background click — clear selection, don't commit anything.
+      // Unified marquee — ONE rect selects BOTH kinds (nodes + whiteboard
+      // items), in both modes. Treat a marquee that didn't actually drag
+      // as a plain background click — clear selection, commit nothing.
       const didDrag = Math.abs(m.x1 - m.x0) > 2 || Math.abs(m.y1 - m.y0) > 2;
+      const nodeHit = nodesInMarquee(m);
+      const wbHit = wbItemsInRect(m);
       if (didDrag) {
         if (m.additive) {
-          // Union with the pre-drag selection so Shift+marquee adds to it.
-          setSelectedNodeIds(prev => {
-            const next = new Set(m.prevSelection);
-            for (const id of hit) next.add(id);
+          // Union with the pre-drag selections so Shift+marquee adds.
+          setSelectedNodeIds(() => {
+            const next = new Set(m.prevNodeSel || m.prevSelection || []);
+            for (const id of nodeHit) next.add(id);
+            return next;
+          });
+          setSelectedWbIds(() => {
+            const next = new Set(m.prevWbSel || []);
+            for (const id of wbHit) next.add(id);
             return next;
           });
         } else {
-          setSelectedNodeIds(hit);
+          setSelectedNodeIds(nodeHit);
+          setSelectedWbIds(wbHit);
         }
       } else if (!m.additive) {
         setSelectedNodeIds(new Set());
+        setSelectedWbIds(new Set());
       }
       setMarquee(null);
     };
@@ -22006,7 +22061,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } else {
       singleMover(dx, dy);
     }
-  }, [selectedNodeIds, moveSelectedNodes]);
+    // Mixed selection: selected whiteboard items ride along with the
+    // node-component drag path too.
+    if (selectedNodeIds.has(nid) && selectedWbIdsRef.current.size) {
+      shiftWbItems(selectedWbIdsRef.current, dx, dy);
+    }
+  }, [selectedNodeIds, moveSelectedNodes, shiftWbItems]);
   // Drag-start helper. Two responsibilities:
   //   1. Flip the global nodeDragging flag (CSS scope for iframe pointer-events).
   //   2. Make sure the dragged node is selected (so onMoveForNode dispatches
@@ -22320,24 +22380,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
      history entry. */
   const wbColorPickRef = useRef(null);      // last explicitly-picked color (null = per-type defaults)
   const [wbPickedColor, setWbPickedColor] = useState(null);
+  // Sticky format defaults — what the NEXT created item uses. The panel's
+  // controls write here AND patch the live selection (when there is one).
+  // null align/radius = per-type defaults.
+  const [wbFmt, setWbFmt] = useState({
+    size: 3, fontSize: "md", bold: false, italic: false, align: null,
+    radius: null, fill: "none", arrowStart: false, arrowEnd: true, dash: false,
+  });
+  const wbFmtRef = useRef(wbFmt); wbFmtRef.current = wbFmt;
   const wbCancelGestureRef = useRef(null);  // Esc cancels the in-flight gesture
   const wbSuppressMarqueeClearRef = useRef(false);
-
-  // Group move — arrows shift endpoints, everything else shifts x/y.
-  const shiftWbItems = useCallback((ids, dx, dy) => {
-    const set = ids instanceof Set ? ids : new Set(ids);
-    if (set.size === 0) return;
-    setData(d => ({
-      ...d,
-      wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
-        if (!set.has(it.id)) return it;
-        if (it.type === "arrow") {
-          return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
-        }
-        return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
-      }),
-    }));
-  }, [setData]);
 
   const wbToolColor = useCallback((type) => {
     if (wbColorPickRef.current) return wbColorPickRef.current;
@@ -22361,6 +22413,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const wbSelectPointerDown = useCallback((e, hitId) => {
     const zoomNow = () => Math.max(zoomRef.current, 0.1);
     if (e.shiftKey) {
+      // Shift adds across kinds — the node selection stays put.
       setSelectedWbIds(prev => {
         const next = new Set(prev);
         if (next.has(hitId)) next.delete(hitId); else next.add(hitId);
@@ -22369,13 +22422,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       e.preventDefault();
       return;
     }
-    // Fresh click replaces selection; click-on-selected keeps the group.
-    let moveIds;
+    // Fresh click replaces the WHOLE selection (both kinds); click on an
+    // already-selected item keeps the group — including selected nodes,
+    // which ride along in the drag (mixed group move).
+    let moveIds, nodeMoveIds;
     if (selectedWbIdsRef.current.has(hitId)) {
       moveIds = new Set(selectedWbIdsRef.current);
+      nodeMoveIds = new Set(selectedNodeIdsRef.current);
     } else {
       moveIds = new Set([hitId]);
+      nodeMoveIds = new Set();
       setSelectedWbIds(moveIds);
+      if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
     }
     e.preventDefault();
     // Drag-to-move for the whole set.
@@ -22385,41 +22443,104 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const dy = (ev.clientY - lastY) / zoomNow();
       lastX = ev.clientX; lastY = ev.clientY;
       if (dx === 0 && dy === 0) return;
-      if (!moved) { moved = true; setWbDragging(true); }
+      if (!moved) { moved = true; setWbDragging(true); setNodeDragging(nodeMoveIds.size > 0); }
       shiftWbItems(moveIds, dx, dy);
+      shiftNodes(nodeMoveIds, dx, dy);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       wbCancelGestureRef.current = null;
       setWbDragging(false);
+      setNodeDragging(false);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     wbCancelGestureRef.current = onUp;
-  }, [shiftWbItems]);
+  }, [shiftWbItems, shiftNodes]);
+
+  // Geometric node hit-test (the wb layer swallows DOM events in whiteboard
+  // mode, so node clicks there can't be resolved from e.target). Non-section
+  // nodes win over sections; later array order wins within a kind.
+  const nodeHitAt = (wx, wy) => {
+    let hit = null, hitSection = null;
+    for (const n of (dataNodesRef.current || [])) {
+      if (!n || typeof n.x !== "number" || typeof n.y !== "number") continue;
+      const w = n.w || 200, h = n.h || 120;
+      if (wx < n.x || wx > n.x + w || wy < n.y || wy > n.y + h) continue;
+      if (n.kind === "section") hitSection = n.id; else hit = n.id;
+    }
+    return hit || hitSection;
+  };
+
+  // Node click resolved geometrically (whiteboard-mode select tool). Same
+  // semantics as the wrap's DOM-based node branch, but the drag is a
+  // window-listener gesture that moves the node selection + any selected
+  // wb items (mixed group move).
+  const nodeSelectPointerDown = useCallback((e, nodeId) => {
+    const zoomNow = () => Math.max(zoomRef.current, 0.1);
+    if (e.shiftKey) {
+      setSelectedNodeIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
+        return next;
+      });
+      e.preventDefault();
+      return;
+    }
+    let nodeMoveIds, wbMoveIds;
+    if (selectedNodeIdsRef.current.has(nodeId)) {
+      nodeMoveIds = new Set(selectedNodeIdsRef.current);
+      wbMoveIds = new Set(selectedWbIdsRef.current);
+    } else {
+      nodeMoveIds = new Set([nodeId]);
+      wbMoveIds = new Set();
+      setSelectedNodeIds(nodeMoveIds);
+      if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
+    }
+    e.preventDefault();
+    let lastX = e.clientX, lastY = e.clientY, moved = false;
+    const onMove = (ev) => {
+      const dx = (ev.clientX - lastX) / zoomNow();
+      const dy = (ev.clientY - lastY) / zoomNow();
+      lastX = ev.clientX; lastY = ev.clientY;
+      if (dx === 0 && dy === 0) return;
+      if (!moved) { moved = true; setNodeDragging(true); setWbDragging(wbMoveIds.size > 0); }
+      shiftNodes(nodeMoveIds, dx, dy);
+      shiftWbItems(wbMoveIds, dx, dy);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      wbCancelGestureRef.current = null;
+      setNodeDragging(false);
+      setWbDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    wbCancelGestureRef.current = onUp;
+  }, [shiftNodes, shiftWbItems]);
 
   const wbPointerDown = useCallback((e) => {
     const tool = wbToolRef.current;
     const wp = screenToWorld(e.clientX, e.clientY);
     const zoomNow = () => Math.max(zoomRef.current, 0.1);
 
-    // ── select ──
+    // ── select ── unified: wb items first (they draw on top), then nodes,
+    // then the unified marquee that selects BOTH kinds.
     if (tool === "select") {
       const hitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoomRef.current);
-      if (!hitId) {
-        // Empty hit → wb marquee (same rect + visuals as node marquee).
-        setMarquee({
-          x0: wp.x, y0: wp.y, x1: wp.x, y1: wp.y,
-          additive: e.shiftKey,
-          prevSelection: new Set(selectedWbIdsRef.current),
-          wb: true,
-        });
-        if (!e.shiftKey) setSelectedWbIds(new Set());
-        e.preventDefault();
-        return;
-      }
-      wbSelectPointerDown(e, hitId);
+      if (hitId) { wbSelectPointerDown(e, hitId); return; }
+      const nHit = nodeHitAt(wp.x, wp.y);
+      if (nHit) { nodeSelectPointerDown(e, nHit); return; }
+      setMarquee({
+        x0: wp.x, y0: wp.y, x1: wp.x, y1: wp.y,
+        additive: e.shiftKey,
+        prevNodeSel: new Set(selectedNodeIdsRef.current),
+        prevWbSel: new Set(selectedWbIdsRef.current),
+      });
+      if (!e.shiftKey) { setSelectedWbIds(new Set()); setSelectedNodeIds(new Set()); }
+      e.preventDefault();
       return;
     }
 
@@ -22431,9 +22552,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       let raf = 0, cancelled = false;
       const pathEl = wbLiveStrokeRef.current && wbLiveStrokeRef.current.querySelector("path");
       const color = wbToolColor("pen");
+      const penSize = wbFmtRef.current.size || 3;
       if (pathEl) {
         pathEl.setAttribute("stroke", wbColorCSS(color));
-        pathEl.setAttribute("stroke-width", String(3));
+        pathEl.setAttribute("stroke-width", String(penSize));
         pathEl.setAttribute("d", "");
       }
       const paint = () => {
@@ -22475,7 +22597,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         addWbItem(wbMakeItem("ink", {
           x: minX, y: minY,
           w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY),
-          points: rel, color, size: 3,
+          points: rel, color, size: penSize,
         }));
       };
       const onUp = () => finish(true);
@@ -22488,9 +22610,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // ── sticky / text — click-to-place, edit immediately ──
     if (tool === "sticky" || tool === "text") {
       e.preventDefault();
+      const F = wbFmtRef.current;
       const item = tool === "sticky"
-        ? wbMakeItem("sticky", { x: wp.x - 90, y: wp.y - 90, color: wbToolColor("sticky") })
-        : wbMakeItem("text", { x: wp.x, y: wp.y, color: wbToolColor("text") });
+        ? wbMakeItem("sticky", {
+            x: wp.x - 90, y: wp.y - 90, color: wbToolColor("sticky"),
+            fontSize: F.fontSize === "md" ? "sm" : F.fontSize,
+            bold: F.bold, italic: F.italic, align: F.align || "left",
+          })
+        : wbMakeItem("text", {
+            x: wp.x, y: wp.y, color: wbToolColor("text"),
+            fontSize: F.fontSize, bold: F.bold, italic: F.italic,
+            align: F.align || "left",
+          });
       addWbItem(item);
       setSelectedWbIds(new Set([item.id]));
       setEditingWbId(item.id);
@@ -22507,7 +22638,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const onMove = (ev) => {
         lastWp = screenToWorld(ev.clientX, ev.clientY);
         if (tool === "arrow") {
-          setWbGhost({ type: "arrow", x1: x0, y1: y0, x2: lastWp.x, y2: lastWp.y, color, size: 3 });
+          setWbGhost({ type: "arrow", x1: x0, y1: y0, x2: lastWp.x, y2: lastWp.y, color, size: wbFmtRef.current.size || 3 });
         } else {
           setWbGhost({
             type: tool,
@@ -22522,17 +22653,26 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         wbCancelGestureRef.current = null;
         setWbGhost(null);
         const dragged = Math.hypot(lastWp.x - x0, lastWp.y - y0) >= 4;
+        const F = wbFmtRef.current;
         let item;
         if (tool === "arrow") {
+          const arrowProps = {
+            color, size: F.size || 3,
+            arrowStart: F.arrowStart, arrowEnd: F.arrowEnd, dash: F.dash,
+          };
           item = dragged
-            ? wbMakeItem("arrow", { x1: x0, y1: y0, x2: lastWp.x, y2: lastWp.y, color })
-            : wbMakeItem("arrow", { x1: x0, y1: y0, x2: x0 + 140, y2: y0, color });
+            ? wbMakeItem("arrow", { x1: x0, y1: y0, x2: lastWp.x, y2: lastWp.y, ...arrowProps })
+            : wbMakeItem("arrow", { x1: x0, y1: y0, x2: x0 + 140, y2: y0, ...arrowProps });
         } else {
           const gx = dragged ? Math.min(x0, lastWp.x) : x0;
           const gy = dragged ? Math.min(y0, lastWp.y) : y0;
           const gw = dragged ? Math.max(24, Math.abs(lastWp.x - x0)) : 200;
           const gh = dragged ? Math.max(24, Math.abs(lastWp.y - y0)) : 120;
-          item = wbMakeItem(tool, { x: gx, y: gy, w: gw, h: gh, color });
+          const extra = tool === "shape"
+            ? { radius: F.radius ?? 6, size: F.size || 2, fill: F.fill || "none" }
+            : { radius: F.radius ?? 10, fontSize: F.fontSize, align: F.align || "center",
+                bold: F.bold, italic: F.italic };
+          item = wbMakeItem(tool, { x: gx, y: gy, w: gw, h: gh, color, ...extra });
         }
         addWbItem(item);
         setSelectedWbIds(new Set([item.id]));
@@ -22549,7 +22689,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       };
       return;
     }
-  }, [screenToWorld, shiftWbItems, addWbItem, wbToolColor, wbAfterCommit, wbSelectPointerDown]);
+  }, [screenToWorld, shiftWbItems, addWbItem, wbToolColor, wbAfterCommit, wbSelectPointerDown, nodeSelectPointerDown]);
   const wbPointerDownRef = useRef(wbPointerDown); wbPointerDownRef.current = wbPointerDown;
 
   // Resize / endpoint handles (bound through the early-declared ref so the
@@ -22619,18 +22759,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // be flaky around the mounting click).
         if (wbCancelGestureRef.current) { wbCancelGestureRef.current(); return; }
         if (editingWbId) {
-          const el = document.querySelector(".workflow-wb-layer [contenteditable]");
-          if (el) {
-            const patch = { text: el.innerText.replace(/\n$/, "") };
-            const host = el.closest("[data-wb-id]");
-            if (host && host.offsetHeight) patch.h = host.offsetHeight;
-            updateWbItem(editingWbId, patch);
-          }
-          setEditingWbId(null);
+          const id = commitWbEditingNow();
+          if (id) setSelectedWbIds(new Set([id]));
           return;
         }
         if (wbToolRef.current !== "select") { setWbTool("select"); return; }
         setSelectedWbIds(new Set());
+        setSelectedNodeIds(new Set());
         return;
       }
       if (isEditingTarget(e.target)) return;
@@ -22641,7 +22776,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [wbMode, editingWbId, updateWbItem]);
+  }, [wbMode, editingWbId, commitWbEditingNow]);
 
   // Duplicate selected wb items in place (+24/+24, fresh ids, top z).
   // Clones are precomputed from the in-memory list (NOT inside the setData
@@ -22671,52 +22806,47 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Nodes patch x/y directly; wb items shift by their bbox delta so arrows
   // move both endpoints and ink keeps its relative points.
   const alignSelection = useCallback((mode) => {
-    if (selectedNodeIds.size > 1) {
-      setData(d => {
-        const sel = (d.nodes || []).filter(n => selectedNodeIds.has(n.id) && n.kind !== "section");
-        const rects = sel.map(n => ({
-          id: n.id, x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120,
-        }));
-        const patch = workflowAlignPatches(rects, mode);
-        if (!patch.size) return d;
-        return {
-          ...d,
-          nodes: (d.nodes || []).map(n => {
-            const p = patch.get(n.id);
-            if (!p) return n;
-            const next = { ...n };
-            if (p.x !== undefined) next.x = Math.round(p.x);
-            if (p.y !== undefined) next.y = Math.round(p.y);
-            return next;
-          }),
-        };
-      });
-      return;
-    }
-    if (selectedWbIdsRef.current.size > 1) {
-      setData(d => {
-        const list = Array.isArray(d.wb) ? d.wb : [];
-        const sel = list.filter(it => selectedWbIdsRef.current.has(it.id));
-        const rects = sel.map(it => ({ id: it.id, ...wbItemBBox(it) }));
-        const patch = workflowAlignPatches(rects, mode);
-        if (!patch.size) return d;
-        return {
-          ...d,
-          wb: list.map(it => {
-            const p = patch.get(it.id);
-            if (!p) return it;
-            const bb = wbItemBBox(it);
-            const dx = p.x !== undefined ? p.x - bb.x : 0;
-            const dy = p.y !== undefined ? p.y - bb.y : 0;
-            if (!dx && !dy) return it;
-            if (it.type === "arrow") {
-              return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
-            }
-            return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
-          }),
-        };
-      });
-    }
+    // ONE combined pass: nodes + wb items align against the union bbox of
+    // the whole mixed selection. Keys are prefixed to avoid id collisions
+    // across the two collections. Sections are excluded (a frame shouldn't
+    // yank around with its contents).
+    setData(d => {
+      const nodeSel = (d.nodes || []).filter(n =>
+        selectedNodeIds.has(n.id) && n.kind !== "section");
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      const wbSel = list.filter(it => selectedWbIdsRef.current.has(it.id));
+      const rects = [
+        ...nodeSel.map(n => ({
+          id: "n:" + n.id, x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120,
+        })),
+        ...wbSel.map(it => ({ id: "w:" + it.id, ...wbItemBBox(it) })),
+      ];
+      const patch = workflowAlignPatches(rects, mode);
+      if (!patch.size) return d;
+      return {
+        ...d,
+        nodes: (d.nodes || []).map(n => {
+          const p = patch.get("n:" + n.id);
+          if (!p) return n;
+          const next = { ...n };
+          if (p.x !== undefined) next.x = Math.round(p.x);
+          if (p.y !== undefined) next.y = Math.round(p.y);
+          return next;
+        }),
+        wb: list.map(it => {
+          const p = patch.get("w:" + it.id);
+          if (!p) return it;
+          const bb = wbItemBBox(it);
+          const dx = p.x !== undefined ? p.x - bb.x : 0;
+          const dy = p.y !== undefined ? p.y - bb.y : 0;
+          if (!dx && !dy) return it;
+          if (it.type === "arrow") {
+            return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+          }
+          return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
+        }),
+      };
+    });
   }, [selectedNodeIds, setData]);
 
   const onCanvasDrop = useCallback((e) => {
@@ -24042,12 +24172,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // (cross-origin, contentDocument null) — they simply won't participate
     // in pick mode this session.
     const findEligible = () => Array.from(
-      document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id]')
+      document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id], iframe[data-browser-id]')
     );
     const installOn = (ifr) => {
       if (cancelled || teardowns.has(ifr)) return;
       const owningId = ifr.getAttribute("data-prototype-id")
                     || ifr.getAttribute("data-asset-id")
+                    || ifr.getAttribute("data-browser-id")
                     || "";
       const tryInstall = () => {
         if (cancelled) return;
@@ -24146,7 +24277,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // stick at "+" inside that iframe even after pick-mode exited. This
       // sweep is idempotent and cheap (querySelectorAll over iframes).
       try {
-        document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id]').forEach((ifr) => {
+        document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id], iframe[data-browser-id]').forEach((ifr) => {
           let doc;
           try { doc = ifr.contentDocument; } catch { return; }
           if (!doc) return;
@@ -24269,7 +24400,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // iframe wins. Detached → fall through to the by-nodeId lookup.
       if (!ifr || !ifr.contentDocument || !document.body.contains(ifr)) {
         try {
-          const sel = 'iframe[data-prototype-id="' + pickedElement.nodeId + '"], iframe[data-asset-id="' + pickedElement.nodeId + '"]';
+          const sel = 'iframe[data-prototype-id="' + pickedElement.nodeId + '"], iframe[data-asset-id="' + pickedElement.nodeId + '"], iframe[data-browser-id="' + pickedElement.nodeId + '"]';
           const live = document.querySelector(sel);
           if (live) { ifr = live; pickerIframeRef.current = live; }
         } catch {}
@@ -25617,32 +25748,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const onKey = (e) => {
       if (isEditingTarget(e.target)) return;
       const cmd = e.metaKey || e.ctrlKey;
-      // ── Whiteboard selection owns Delete + Cmd+D whenever it's non-empty
-      // (wb items are selectable in BOTH modes; node + wb selections are
-      // mutually exclusive so this never shadows a node operation). Cmd+C/V
-      // ride the native copy/paste events (see the wb clipboard listeners),
-      // so no Cmd+C/V here — crucially we must NOT preventDefault Cmd+V, or
-      // the browser never emits the paste event the wb handler listens for.
-      if (wbModeRef.current || selectedWbIdsRef.current.size > 0) {
-        let handled = false;
-        if (cmd && (e.key === "d" || e.key === "D")) {
-          const n = duplicateSelectedWbItems();
-          if (n > 0) { e.preventDefault(); handled = true; }
-        } else if (e.key === "Delete" || e.key === "Backspace") {
-          if (selectedWbIdsRef.current.size > 0) {
-            removeWbItems(selectedWbIdsRef.current);
-            e.preventDefault();
-            handled = true;
-          }
+      // ── Unified selection: Delete + Cmd+D act on the WHOLE selection —
+      // nodes and whiteboard items together (mixed selections allowed in
+      // both modes). Cmd+C/V for wb items ride the native copy/paste
+      // events (see the wb clipboard listeners) — crucially we must NOT
+      // preventDefault Cmd+V, or the browser never emits the paste event.
+      if (e.key === "Delete" || e.key === "Backspace") {
+        let n = 0;
+        if (selectedWbIdsRef.current.size > 0) {
+          removeWbItems(selectedWbIdsRef.current);
+          n++;
         }
-        // Whiteboard MODE suppresses the node branches entirely; in build
-        // mode unhandled keys fall through (e.g. Cmd+V of a copied node
-        // while a sticky happens to be selected).
-        if (wbModeRef.current || handled) return;
+        n += deleteSelectedNodes() || 0;
+        if (n > 0) e.preventDefault();
+        return;
+      }
+      if (cmd && (e.key === "d" || e.key === "D")) {
+        // Pick-mode owns Cmd+D for in-iframe element duplication (see the
+        // v3.4.32 note below) — same back-off as the node-only path had.
+        if (pickModeNodeId) return;
+        const n = (duplicateSelectedWbItems() || 0) + (duplicateSelectedNodes() || 0);
+        if (n > 0) e.preventDefault();
+        return;
       }
       if (cmd && (e.key === "c" || e.key === "C")) {
         const n = copySelectedNodes();
-        if (n > 0) e.preventDefault();
+        // With wb items in the selection, skip preventDefault so the
+        // native copy event still fires and the wb listener serializes
+        // them (preventing keydown's default cancels the copy event).
+        if (n > 0 && selectedWbIdsRef.current.size === 0) e.preventDefault();
       } else if (cmd && (e.key === "v" || e.key === "V")) {
         // v3.2.2 — Two clipboard types share Cmd+V. pasteNodesFromClipboard
         // is for the {nodes,edges} payload from copySelectedNodes; html-
@@ -25663,20 +25797,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const n = pasteNodesFromClipboard();
           if (n > 0) e.preventDefault();
         }
-      } else if (cmd && (e.key === "d" || e.key === "D")) {
-        // v3.4.32 — Cmd+D duplicates the current canvas selection in-place
-        // (offset by 30/30). Pick-mode owns Cmd+D for in-iframe element
-        // duplication via its capture-phase handler — letting this fire
-        // there too would double-stamp. The browser default ("bookmark
-        // this page") is suppressed only when we actually duplicate
-        // something, so an empty-selection Cmd+D still acts normally.
-        if (pickModeNodeId) return;
-        const n = duplicateSelectedNodes();
-        if (n > 0) e.preventDefault();
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        const n = deleteSelectedNodes();
-        if (n > 0) e.preventDefault();
       }
+      // (Cmd+D / Delete are handled in the unified branch above —
+      // v3.4.32's pick-mode back-off note carries over there.)
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -30365,6 +30488,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onPatchSelection=${(patch) => patchWbItems(selectedWbIds, patch)}
               pickedColor=${wbPickedColor}
               onPickColor=${(tok) => { wbColorPickRef.current = tok; setWbPickedColor(tok); }}
+              fmt=${wbFmt}
+              onFmt=${(patch) => setWbFmt(f => ({ ...f, ...patch }))}
             />
           ` : html`
             <${WorkflowLibrary} tab=${leftPanel || "nodes"}/>
@@ -30457,6 +30582,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // bar) and resize handles own their events.
             if (wbModeRef.current) {
               if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || spaceHeld) return;
+              // Click-out of an active text edit: commit the text, select
+              // the item, and CONSUME the click (FigJam convention — the
+              // first click outside an editor never draws or marquees).
+              if (editingWbIdRef.current
+                  && !e.target.closest('[data-wb-id="' + editingWbIdRef.current + '"]')) {
+                const id = commitWbEditingNowRef.current && commitWbEditingNowRef.current();
+                if (id) setSelectedWbIds(new Set([id]));
+                e.preventDefault();
+                return;
+              }
               if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
@@ -30509,9 +30644,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // downstream calls (node.onSelect, startNodeDrag) would
               // otherwise re-collapse the multi-set.
               armSelectSuppression();
-              // Node + whiteboard selections are mutually exclusive so
-              // Delete / Cmd+D are always unambiguous.
-              if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
+              // A FRESH (non-shift) click replaces the whole selection —
+              // wb items included. Shift-clicks and group-drag clicks keep
+              // the mixed selection intact.
+              if (!e.shiftKey && !selectedNodeIds.has(id) && selectedWbIdsRef.current.size) {
+                setSelectedWbIds(new Set());
+              }
               return;
             }
             // Empty-canvas mousedown. Pan still wins for space/alt/middle —
@@ -30536,19 +30674,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // mode, so DOM targets can't tell us).
             const wbHitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom);
             if (wbHitId) {
-              if (selectedNodeIds.size) setSelectedNodeIds(new Set());
               wbSelectPointerDown(e, wbHitId);
               return;
             }
-            if (!e.shiftKey && selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
             // Stash starting coords in WORLD space. mousemove will compute
-            // the rect; mouseup will intersect with node bounds.
+            // the rect; mouseup commits BOTH kinds (unified marquee).
             setMarquee({
               x0: wp.x, y0: wp.y, x1: wp.x, y1: wp.y,
               additive: e.shiftKey,
-              prevSelection: new Set(selectedNodeIds),
+              prevNodeSel: new Set(selectedNodeIds),
+              prevWbSel: new Set(selectedWbIdsRef.current),
             });
-            if (!e.shiftKey) setSelectedNodeIds(new Set());
+            if (!e.shiftKey) {
+              setSelectedNodeIds(new Set());
+              setSelectedWbIds(new Set());
+            }
             e.preventDefault();
           }}
           data-panning=${panning ? "true" : "false"}
@@ -31410,7 +31550,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 if (typeof h === "number" && h > 0) patch.h = h;
                 updateWbItem(id, patch);
               }}
-              onEditDone=${() => setEditingWbId(null)}
+              onEditDone=${(id) => {
+                setEditingWbId(null);
+                if (id) setSelectedWbIds(new Set([id]));
+              }}
               onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               onItemDoubleClick=${(id) => { if (wbMode) setEditingWbId(id); }}
             />
@@ -31422,14 +31565,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               />
             `}
-            ${(selectedNodeIds.size > 1 || selectedWbIds.size > 1) && (() => {
-              // Group boundary around a multi-selection (nodes OR wb items).
-              // The align bar portals to body and rAF-tracks this element's
+            ${(selectedNodeIds.size + selectedWbIds.size) > 1 && (() => {
+              // Group boundary around a multi-selection — nodes and wb
+              // items COMBINED (mixed selections get one boundary). The
+              // align bar portals to body and rAF-tracks this element's
               // screen rect, so the div doubles as the bar's anchor.
-              const rects = selectedNodeIds.size > 1
-                ? (data.nodes || []).filter(n => selectedNodeIds.has(n.id))
-                    .map(n => ({ x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120 }))
-                : wbItems.filter(it => selectedWbIds.has(it.id)).map(wbItemBBox);
+              const rects = [
+                ...(data.nodes || []).filter(n => selectedNodeIds.has(n.id))
+                    .map(n => ({ x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120 })),
+                ...wbItems.filter(it => selectedWbIds.has(it.id)).map(wbItemBBox),
+              ];
               if (rects.length < 2) return null;
               let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
               for (const r of rects) {
@@ -31514,7 +31659,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onDelete=${() => { deleteSelectedNodes(); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
-      ${(selectedNodeIds.size > 1 || selectedWbIds.size > 1) && html`
+      ${(selectedNodeIds.size + selectedWbIds.size) > 1 && html`
         <${WorkflowGroupAlignBar} onAlign=${alignSelection}/>
       `}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
@@ -32214,9 +32359,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
               e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "browser", url: "" }));
             }}
-            title="Drag onto canvas — embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text — wire it into an Agent or Skill as context, or use ✂ to clip the current selection into a prompt node."
+            title="Drag onto canvas — embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text — wire it into an Agent or Skill as context, or use the clip (scissors) button to send the current selection to a prompt node."
           >
-            <span className="workflow-library-item-glyph">🌐</span>
+            <span className="workflow-library-item-glyph"><${Icon.Globe}/></span>
             <span className="workflow-library-item-label">Web browser</span>
             <span className="workflow-library-item-id">url → live page</span>
           </div>
@@ -41644,6 +41789,27 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
     clipTimerRef.current = setTimeout(() => setClipNote(null), 2600);
   };
 
+  // v3.9.1 — Element-pick support. The pick overlay (prototype/HTML nodes'
+  // select tool) needs a SAME-ORIGIN contentDocument; direct embeds are
+  // cross-origin and silently can't participate. So when pick mode turns
+  // on anywhere on the canvas, a direct-mode browser automatically reloads
+  // through the proxy — pick + ⌘C copy then work exactly like on a
+  // prototype node. (Late mount covered by reading the canonical flag.)
+  useEffect(() => {
+    const switchForPick = () => {
+      if (!hasUrl || mode !== "direct") return;
+      setMode("proxy");
+      flashClipNote("Reloaded via proxy so elements can be picked");
+    };
+    const onPickMode = (e) => {
+      if (e && e.detail && e.detail.activeNodeId) switchForPick();
+    };
+    window.addEventListener("th:pick-mode-changed", onPickMode);
+    try { if (window.__thPickModeNodeId) switchForPick(); } catch {}
+    return () => window.removeEventListener("th:pick-mode-changed", onPickMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasUrl, mode]);
+
   // Clip the page's current text selection into a prompt node wired from
   // this node's out port. Reading the selection needs a same-origin
   // document — true in proxy mode; direct embeds throw, so we hint at ⌘C.
@@ -41679,7 +41845,7 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
       onMouseDownCapture=${() => onSelect && onSelect()}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
-        <span className="workflow-node-glyph">🌐</span>
+        <span className="workflow-node-glyph"><${Icon.Globe}/></span>
         <input
           className="workflow-browser-url"
           value=${urlDraft}
@@ -41689,18 +41855,18 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
           onInput=${(e) => setUrlDraft(e.target.value)}
           onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); commitUrl(); } e.stopPropagation(); }}
         />
-        ${mode === "proxy" && html`<span className="workflow-browser-mode" title="This site refuses direct embedding — re-served through the daemon proxy (same-origin, so ✂ can read your selection).">proxied</span>`}
+        ${mode === "proxy" && html`<span className="workflow-browser-mode" title="This site refuses direct embedding — re-served through the daemon proxy (same-origin, so the clip button can read your selection).">proxied</span>`}
         <button className="workflow-node-action" title="Load / reload the page"
                 onMouseDown=${(e) => e.stopPropagation()}
-                onClick=${(e) => { e.stopPropagation(); commitUrl(); setNonce(n => n + 1); }}>⟳</button>
+                onClick=${(e) => { e.stopPropagation(); commitUrl(); setNonce(n => n + 1); }}><${Icon.Refresh}/></button>
         <button className="workflow-node-action" title="Clip the page's current text selection into a prompt node wired from this browser"
                 disabled=${!hasUrl}
                 onMouseDown=${(e) => e.stopPropagation()}
-                onClick=${(e) => { e.stopPropagation(); clipSelection(); }}>✂</button>
+                onClick=${(e) => { e.stopPropagation(); clipSelection(); }}><${Icon.Scissors}/></button>
         <button className="workflow-node-action" title="Open in a real browser tab"
                 disabled=${!hasUrl}
                 onMouseDown=${(e) => e.stopPropagation()}
-                onClick=${(e) => { e.stopPropagation(); if (hasUrl) window.open(liveUrl, "_blank", "noopener"); }}>↗</button>
+                onClick=${(e) => { e.stopPropagation(); if (hasUrl) window.open(liveUrl, "_blank", "noopener"); }}><${Icon.External}/></button>
         <span className="workflow-node-bar-spacer"/>
         <button className="workflow-node-close" onMouseDown=${(e) => e.stopPropagation()}
                 onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}>×</button>
@@ -41711,6 +41877,7 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
             key=${node.id + "-" + mode + "-" + nonce}
             ref=${iframeRef}
             className="workflow-node-iframe workflow-browser-iframe"
+            data-browser-id=${node.id}
             src=${iframeSrc}
             title=${"Browser: " + liveUrl}
             sandbox=${mode === "proxy"
@@ -41740,6 +41907,7 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
         <span className="workflow-port-label workflow-port-label-right">page text</span>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
+      <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
     </div>
   `;
 }
@@ -49799,7 +49967,12 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           "--wb-c": c,
           borderRadius: (item.radius ?? 10) + "px",
         }}>
-        ${textBody("", { fontSize: fs + "px", textAlign: item.align || "center" })}
+        ${textBody("", {
+          fontSize: fs + "px",
+          textAlign: item.align || "center",
+          fontWeight: item.bold ? 700 : 500,
+          fontStyle: item.italic ? "italic" : "normal",
+        })}
       </div>`;
   }
   if (item.type === "sticky") {
@@ -49810,7 +49983,12 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           width: item.w + "px", height: item.h + "px", zIndex: z,
           "--wb-c": c,
         }}>
-        ${textBody("", null)}
+        ${textBody("", {
+          fontSize: (WB_FONT_SIZES[item.fontSize] || 14) + "px",
+          textAlign: item.align || "left",
+          fontWeight: item.bold ? 700 : 500,
+          fontStyle: item.italic ? "italic" : "normal",
+        })}
       </div>`;
   }
   if (item.type === "ink") {
@@ -49841,7 +50019,8 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
               width=${Math.max(1, item.w - sw)} height=${Math.max(1, item.h - sw)}
               rx=${item.radius ?? 6}
               stroke=${c} strokeWidth=${sw}
-              fill=${item.fill && item.fill !== "none" ? wbColorCSS(item.fill) : "none"}
+              fill=${item.fill === "auto" ? wbColorCSS(item.color)
+                    : item.fill && item.fill !== "none" ? wbColorCSS(item.fill) : "none"}
               fillOpacity=${item.fill && item.fill !== "none" ? 0.16 : 0}/>
       </svg>`;
   }
@@ -49858,7 +50037,8 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           zIndex: z, overflow: "visible",
         }}>
         <path d=${`M ${lx1} ${ly1} L ${lx2} ${ly2}`} stroke=${c} strokeWidth=${sw}
-              fill="none" strokeLinecap="round"/>
+              fill="none" strokeLinecap="round"
+              strokeDasharray=${item.dash ? `${sw * 2.4} ${sw * 2.4}` : "none"}/>
         ${item.arrowEnd !== false && html`<path d=${wbArrowHeadD(lx2, ly2, lx1, ly1, sw)} fill=${c}/>`}
         ${item.arrowStart && html`<path d=${wbArrowHeadD(lx1, ly1, lx2, ly2, sw)} fill=${c}/>`}
       </svg>`;
@@ -49962,7 +50142,7 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghos
           selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
           editing=${editingWbId === it.id}
           onCommitText=${(t, h) => onCommitText && onCommitText(it.id, t, h)}
-          onEditDone=${onEditDone}
+          onEditDone=${() => onEditDone && onEditDone(it.id)}
         />
       `)}
       ${ghost && ghost.type === "arrow" && html`
@@ -50013,12 +50193,50 @@ const WB_TOOL_GLYPHS = {
   arrow:   html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L12 4 M12 4 H7.4 M12 4 V8.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
 };
 
-function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pickedColor, onPickColor }) {
-  // Color row: with a selection it recolors the selected items; without one
-  // it sets the "current color" the next created item uses (null = per-type
-  // defaults, marked on no swatch).
-  const hasSelection = selection && selection.some(it => it.type !== "image");
-  const colorable = hasSelection || tool !== "select";
+function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt }) {
+  // Contextual format controls. Which rows show follows the RELEVANT TYPES:
+  // the selection’s item types when something is selected, else the armed
+  // tool’s type. Every control writes the sticky defaults (next created
+  // item) AND patches the live selection.
+  const sel = selection || [];
+  const first = sel[0] || null;
+  const F = fmt || {};
+  const val = (k, fb) => {
+    if (first && first[k] !== undefined && first[k] !== null) return first[k];
+    if (F[k] !== undefined && F[k] !== null) return F[k];
+    return fb;
+  };
+  const toolType = ({ text: "text", textbox: "textbox", sticky: "sticky",
+                      pen: "ink", shape: "shape", arrow: "arrow" })[tool] || null;
+  const types = new Set(sel.length ? sel.map(i => i.type) : (toolType ? [toolType] : []));
+  const has = (...ts) => ts.some(t => types.has(t));
+  const apply = (patch) => {
+    if (onFmt) onFmt(patch);
+    if (sel.length && onPatchSelection) onPatchSelection(patch);
+  };
+  const hasColorableSel = sel.some(it => it.type !== "image");
+  const showColors = hasColorableSel || (toolType && tool !== "select");
+  const showText   = has("text", "textbox", "sticky");
+  const showCorner = has("textbox", "shape");
+  const showStroke = has("ink", "shape", "arrow");
+  const showFill   = has("shape");
+  const showArrow  = has("arrow");
+  const seg = (opts, cur, onPick) => html`
+    <div className="workflow-wb-seg">
+      ${opts.map(o => html`
+        <button key=${String(o.v)} type="button"
+          className=${"workflow-wb-seg-btn" + (cur === o.v ? " is-active" : "")}
+          title=${o.tip || String(o.v)}
+          onClick=${() => onPick(o.v)}
+        >${o.label}</button>
+      `)}
+    </div>`;
+  const alignCur = val("align", types.has("textbox") && !types.has("text") && !types.has("sticky") ? "center" : "left");
+  const ALIGN_GLYPHS = {
+    left:   html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M2.5 8h7M2.5 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+    center: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M4.5 8h7M3.2 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+    right:  html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M6.5 8h7M4 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+  };
   return html`
     <div className="workflow-wb-tools">
       <div className="workflow-wb-tools-title">Whiteboard</div>
@@ -50037,20 +50255,94 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
           </button>
         `)}
       </div>
-      ${colorable && html`
+      ${showColors && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Color</div>
           <div className="workflow-wb-swatches">
             ${WB_COLOR_TOKENS.map(tok => html`
               <button key=${tok} type="button"
-                className=${"workflow-wb-swatch" + (!hasSelection && pickedColor === tok ? " is-active" : "")}
+                className=${"workflow-wb-swatch" + (!hasColorableSel && pickedColor === tok ? " is-active" : "")}
                 title=${tok}
                 style=${{ background: `var(--wb-${tok})` }}
                 onClick=${() => {
-                  if (hasSelection && onPatchSelection) onPatchSelection({ color: tok });
+                  if (hasColorableSel && onPatchSelection) onPatchSelection({ color: tok });
                   if (onPickColor) onPickColor(tok);
                 }}/>
             `)}
+          </div>
+        </div>
+      `}
+      ${showText && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Text</div>
+          ${seg([
+            { v: "sm", label: "S",  tip: "Small (14px)" },
+            { v: "md", label: "M",  tip: "Medium (18px)" },
+            { v: "lg", label: "L",  tip: "Large (26px)" },
+            { v: "xl", label: "XL", tip: "Extra large (40px)" },
+          ], val("fontSize", "md"), (v) => apply({ fontSize: v }))}
+          <div className="workflow-wb-fmt-row">
+            <button type="button" title="Bold"
+              className=${"workflow-wb-seg-btn workflow-wb-fmt-b" + (val("bold", false) ? " is-active" : "")}
+              onClick=${() => apply({ bold: !val("bold", false) })}
+            >B</button>
+            <button type="button" title="Italic"
+              className=${"workflow-wb-seg-btn workflow-wb-fmt-i" + (val("italic", false) ? " is-active" : "")}
+              onClick=${() => apply({ italic: !val("italic", false) })}
+            >I</button>
+            ${["left", "center", "right"].map(a => html`
+              <button key=${a} type="button" title=${"Align text " + a}
+                className=${"workflow-wb-seg-btn" + (alignCur === a ? " is-active" : "")}
+                onClick=${() => apply({ align: a })}
+              >${ALIGN_GLYPHS[a]}</button>
+            `)}
+          </div>
+        </div>
+      `}
+      ${showStroke && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Stroke</div>
+          ${seg([2, 3, 5, 8].map(s => ({
+            v: s,
+            tip: s + "px",
+            label: html`<span className="workflow-wb-stroke-dot" style=${{ width: (s + 3) + "px", height: (s + 3) + "px" }}/>`,
+          })), val("size", types.has("shape") ? 2 : 3), (v) => apply({ size: v }))}
+        </div>
+      `}
+      ${showCorner && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Corner · ${val("radius", types.has("shape") ? 6 : 10)}px</div>
+          <input type="range" min="0" max="24" step="1"
+            className="workflow-wb-range"
+            value=${val("radius", types.has("shape") ? 6 : 10)}
+            onInput=${(e) => apply({ radius: +e.target.value })}/>
+        </div>
+      `}
+      ${showFill && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Fill</div>
+          ${seg([
+            { v: "none", label: "None",   tip: "Outline only" },
+            { v: "auto", label: "Filled", tip: "Soft fill in the stroke color" },
+          ], val("fill", "none"), (v) => apply({ fill: v }))}
+        </div>
+      `}
+      ${showArrow && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Arrow</div>
+          <div className="workflow-wb-fmt-row">
+            <button type="button" title="Arrowhead at start"
+              className=${"workflow-wb-seg-btn" + (val("arrowStart", false) ? " is-active" : "")}
+              onClick=${() => apply({ arrowStart: !val("arrowStart", false) })}
+            ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M13 8H5M8.5 4.5 5 8l3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" title="Arrowhead at end"
+              className=${"workflow-wb-seg-btn" + (val("arrowEnd", true) ? " is-active" : "")}
+              onClick=${() => apply({ arrowEnd: !val("arrowEnd", true) })}
+            ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M3 8h8M7.5 4.5 11 8l-3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" title="Dashed line"
+              className=${"workflow-wb-seg-btn" + (val("dash", false) ? " is-active" : "")}
+              onClick=${() => apply({ dash: !val("dash", false) })}
+            ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M2 8h2.6M6.7 8h2.6M11.4 8H14" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></button>
           </div>
         </div>
       `}

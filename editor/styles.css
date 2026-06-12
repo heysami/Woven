@@ -4700,6 +4700,44 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text-faint);
   margin-top: auto;
 }
+/* Format controls (segmented rows in the whiteboard panel) */
+.workflow-wb-seg,
+.workflow-wb-fmt-row {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.workflow-wb-seg-btn {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: 600 11px var(--font-mono);
+  cursor: pointer;
+}
+.workflow-wb-seg-btn:hover { background: var(--surface-2); color: var(--text); }
+.workflow-wb-seg-btn.is-active {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  color: var(--accent-text);
+}
+.workflow-wb-fmt-b { font-weight: 800; }
+.workflow-wb-fmt-i { font-style: italic; font-family: var(--font-sans); }
+.workflow-wb-stroke-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: currentColor;
+}
+.workflow-wb-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
 
 .workflow-canvas-hint {
   position: absolute;
