@@ -22694,6 +22694,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 // same treatment.
                 try {
                   const srcWin = sourceIfr.contentWindow;
+                  // v3.6.6 — Strip the editor's pick-mode chrome BEFORE the
+                  // computed-style read. The live source element wears
+                  // .th-pick-hover/.th-pick-selected and the body wears
+                  // .th-pick-mode at copy time, so the bake captured the
+                  // picker's blue outline, selection box-shadow,
+                  // cursor:crosshair and user-select:none as if they were
+                  // the design ("why is there a blue outline?"). Classes are
+                  // restored after the walk; outline/cursor/user-select are
+                  // also skipped outright as belt-and-suspenders.
+                  const chromeUndo = [];
+                  try {
+                    const srcBody = sourceIfr.contentDocument.body;
+                    if (srcBody.classList.contains("th-pick-mode")) {
+                      srcBody.classList.remove("th-pick-mode");
+                      chromeUndo.push(() => srcBody.classList.add("th-pick-mode"));
+                    }
+                    [liveSrcEl, ...liveSrcEl.querySelectorAll(".th-pick-hover, .th-pick-selected")].forEach(n => {
+                      if (!n.classList) return;
+                      const h = n.classList.contains("th-pick-hover");
+                      const sl = n.classList.contains("th-pick-selected");
+                      if (!h && !sl) return;
+                      n.classList.remove("th-pick-hover", "th-pick-selected");
+                      chromeUndo.push(() => { if (h) n.classList.add("th-pick-hover"); if (sl) n.classList.add("th-pick-selected"); });
+                    });
+                  } catch {}
+                  const SKIP_BAKE_PROP = /^(outline($|-)|cursor$|user-select$|-webkit-user-select$)/;
+                  try {
                   const liveTree  = [liveSrcEl, ...Array.from(liveSrcEl.querySelectorAll("*"))];
                   const cloneTree = [clean,     ...Array.from(clean.querySelectorAll("*"))];
                   const len = Math.min(liveTree.length, cloneTree.length);
@@ -22708,6 +22735,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                     let css = "";
                     for (let k = 0; k < cs.length; k++) {
                       const prop = cs[k];
+                      if (SKIP_BAKE_PROP.test(prop)) continue;
                       const val  = cs.getPropertyValue(prop);
                       if (val) css += prop + ":" + val + ";";
                     }
@@ -22716,6 +22744,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                     // ones don't get clobbered by a re-parse of cs values.
                     const existing = dst.getAttribute("style") || "";
                     dst.setAttribute("style", css + existing);
+                  }
+                  } finally {
+                    chromeUndo.forEach(fn => { try { fn(); } catch {} });
                   }
                 } catch (err) {
                   console.warn("[paste sibling] inline-style bake failed; falling back to markup-only paste", err);
@@ -22947,6 +22978,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 // pastePickedElement Path A.
                 try {
                   const srcWin = sourceIfr.contentWindow;
+                  // v3.6.6 — Strip the editor's pick-mode chrome BEFORE the
+                  // computed-style read. The live source element wears
+                  // .th-pick-hover/.th-pick-selected and the body wears
+                  // .th-pick-mode at copy time, so the bake captured the
+                  // picker's blue outline, selection box-shadow,
+                  // cursor:crosshair and user-select:none as if they were
+                  // the design ("why is there a blue outline?"). Classes are
+                  // restored after the walk; outline/cursor/user-select are
+                  // also skipped outright as belt-and-suspenders.
+                  const chromeUndo = [];
+                  try {
+                    const srcBody = sourceIfr.contentDocument.body;
+                    if (srcBody.classList.contains("th-pick-mode")) {
+                      srcBody.classList.remove("th-pick-mode");
+                      chromeUndo.push(() => srcBody.classList.add("th-pick-mode"));
+                    }
+                    [liveSrcEl, ...liveSrcEl.querySelectorAll(".th-pick-hover, .th-pick-selected")].forEach(n => {
+                      if (!n.classList) return;
+                      const h = n.classList.contains("th-pick-hover");
+                      const sl = n.classList.contains("th-pick-selected");
+                      if (!h && !sl) return;
+                      n.classList.remove("th-pick-hover", "th-pick-selected");
+                      chromeUndo.push(() => { if (h) n.classList.add("th-pick-hover"); if (sl) n.classList.add("th-pick-selected"); });
+                    });
+                  } catch {}
+                  const SKIP_BAKE_PROP = /^(outline($|-)|cursor$|user-select$|-webkit-user-select$)/;
+                  try {
                   const liveTree  = [liveSrcEl, ...Array.from(liveSrcEl.querySelectorAll("*"))];
                   const cloneTree = [clean,     ...Array.from(clean.querySelectorAll("*"))];
                   const len = Math.min(liveTree.length, cloneTree.length);
@@ -22958,11 +23016,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                     let css = "";
                     for (let k = 0; k < cs.length; k++) {
                       const prop = cs[k];
+                      if (SKIP_BAKE_PROP.test(prop)) continue;
                       const val  = cs.getPropertyValue(prop);
                       if (val) css += prop + ":" + val + ";";
                     }
                     const existing = dst.getAttribute("style") || "";
                     dst.setAttribute("style", css + existing);
+                  }
+                  } finally {
+                    chromeUndo.forEach(fn => { try { fn(); } catch {} });
                   }
                 } catch (err) {
                   console.warn("[replace] inline-style bake failed; falling back to markup-only", err);
@@ -23339,13 +23401,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
       "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
       "border-top-left-radius", "border-top-right-radius", "border-bottom-left-radius", "border-bottom-right-radius",
-      "outline-color", "outline-style", "outline-width", "outline-offset",
+      // v3.6.6 — outline-* and cursor dropped from the copy set: at copy
+      // time the picked element wears the picker's .th-pick-selected /
+      // .th-pick-hover chrome (blue outline, crosshair cursor), so copying
+      // them propagates editor chrome as if it were the design.
       "box-shadow",
       "opacity",
       "filter", "backdrop-filter", "mix-blend-mode", "isolation",
       "padding-top", "padding-right", "padding-bottom", "padding-left",
-      "cursor",
     ];
+    // v3.6.6 — Strip the picker chrome classes for the computed read (the
+    // selected ring's box-shadow would otherwise bake into the copy), then
+    // restore.
+    const hadHover = el.classList && el.classList.contains("th-pick-hover");
+    const hadSel   = el.classList && el.classList.contains("th-pick-selected");
+    try { el.classList.remove("th-pick-hover", "th-pick-selected"); } catch {}
     const computed = win.getComputedStyle(el);
     const styles = {};
     for (const p of PROPS) {
@@ -23364,6 +23434,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!explicit && (v === "normal" || v === "auto" || v === "none" || v === "0px" || v === "rgb(0, 0, 0)" || v === "rgba(0, 0, 0, 0)")) continue;
       styles[p] = v;
     }
+    // Restore the picker chrome stripped for the computed read above.
+    try {
+      if (hadHover) el.classList.add("th-pick-hover");
+      if (hadSel)   el.classList.add("th-pick-selected");
+    } catch {}
     nodeClipboardRef.current = {
       type: "html-style",
       styles,
@@ -30833,6 +30908,14 @@ function zoomExtractCss(doc, root, inlineComputed) {
   const matchTargets = [...subtreeEls, ...ancestors];
   const GLOBAL_SEL_RE = /^(?:\s*(?:html|body|:root|\*)\s*)$/i;
   for (const sheet of Array.from(doc.styleSheets)) {
+    // v3.6.6 — Skip editor-injected sheets (pick-mode chrome, zoom edit
+    // chrome). Their .th-pick-hover/.th-pick-selected rules MATCH a copied
+    // element that's wearing the class at copy time, so the blue outline /
+    // crosshair cursor shipped inside exports' CSS bundles.
+    try {
+      const on = sheet.ownerNode;
+      if (on && on.hasAttribute && (on.hasAttribute("data-th-pick-style") || on.hasAttribute("data-zoom-injected"))) continue;
+    } catch {}
     let rules;
     try { rules = sheet.cssRules; } catch { skippedSheets++; continue; }
     if (!rules) continue;
@@ -30843,6 +30926,8 @@ function zoomExtractCss(doc, root, inlineComputed) {
         continue;
       }
       if (!rule.selectorText) continue;
+      // Belt-and-suspenders: never export picker/inspector chrome rules.
+      if (/\.th-(pick|inspect)-/.test(rule.selectorText)) continue;
       let matched = false;
       const parts = rule.selectorText.split(",").map(s => s.trim()).filter(Boolean);
       for (const sel of parts) {
@@ -30872,8 +30957,11 @@ function zoomExtractCss(doc, root, inlineComputed) {
     try {
       const cs = doc.defaultView.getComputedStyle(root);
       const decls = [];
+      // v3.6.6 — outline/cursor/user-select skipped: editor pick chrome.
+      const SKIP_BAKE_PROP = /^(outline($|-)|cursor$|user-select$|-webkit-user-select$)/;
       for (let i = 0; i < cs.length; i++) {
         const k = cs[i];
+        if (SKIP_BAKE_PROP.test(k)) continue;
         decls.push(k + ": " + cs.getPropertyValue(k));
       }
       rootInlineStyle = decls.join("; ");
