@@ -8524,6 +8524,46 @@ function runIsFailed(run) {
   return true;
 }
 
+// v3.5.3 — single source of truth for the drawer's status state machine.
+// Maps (previous status, one SSE-shaped event) → next status. Used by the
+// live SSE consumer AND folded over hydrated /__chat history so a drawer
+// opened on an already-finished (or paused-between-turns) run lands on the
+// same status it would have reached had it watched the run live. Lifecycle:
+//   • Per-turn: agent emits a `result` frame (normalized to
+//     agent/status/label=done) → "done" for this turn. New text_delta /
+//     tool_use after that means a new turn started — flip back to streaming.
+//   • Process-level: `end` event fires when the subprocess exits. Carries
+//     exitCode + stopReason; non-zero exit without an intentional stop
+//     renders as "fail" so the chip matches the RunsMenu verdict.
+//   • Errors: `error` event or status.label=error. Sticky-ish, but a user
+//     reply can still resume.
+function chatStatusReducer(prev, ev) {
+  if (ev.event === "end") {
+    const d = ev.data || {};
+    const intentional = d.stopReason === "user-stop" || d.stopReason === "completed-orchestrator";
+    const failed = d.exitCode != null && d.exitCode !== 0 && !intentional;
+    return failed ? "fail" : "done";
+  }
+  if (ev.event === "error") return "error";
+  if (ev.event === "agent" && ev.data?.type === "status") {
+    if (ev.data.label === "done")  return "done";
+    if (ev.data.label === "error") return "error";
+    // status:starting on a new turn — caller (composer) usually already
+    // flipped us; this is the backstop.
+    if (ev.data.label === "starting" && prev !== "streaming") return "streaming";
+  }
+  // Real agent output means the turn is alive. If we were showing "done"
+  // from a prior turn, flip back to streaming.
+  if (ev.event === "agent" && ev.data?.type === "text_delta") return "streaming";
+  if (ev.event === "agent" && ev.data?.type === "tool_use")   return "streaming";
+  if (ev.event === "user_message" || ev.event === "tool_answer") {
+    // User just spoke — agent will respond. Keep error sticky; flip "done"
+    // or "fail" back to streaming so the user sees the next turn start.
+    return prev === "error" ? prev : "streaming";
+  }
+  return prev || "streaming";
+}
+
 function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart }) {
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("connecting");   // connecting | streaming | done | fail | error
@@ -8632,6 +8672,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     // what the SSE most recently delivered, so it's authoritative for this
     // drawer's lifetime; live SSE picks up from cached.lastSeq with no gap.
     let cacheHit = false;
+    // v3.5.3 — same runId, new sseEpoch = a post-send / post-resume reconnect
+    // (not a cold mount). The historical short-circuit below must NOT run in
+    // that case: after /resume the daemon has rehydrated the run into RUNS
+    // with done=false, but the `run` PROP still carries the stale
+    // historical:true / done:true snapshot — so the one-shot hydrate branch
+    // would fetch /__chat once and never open an SSE tail, and the agent's
+    // reply landed in the jsonl with nobody listening until a page refresh.
+    const isEpochBump = prevRunIdRef.current === run.runId;
     if (prevRunIdRef.current !== run.runId) {
       const cached = eventsCacheRef.current.get(run.runId);
       if (cached && Array.isArray(cached.events) && cached.events.length) {
@@ -8690,7 +8738,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     // picked it up. If the daemon now reports the run as live (`done` is
     // explicitly `false`), drop out of the historical branch into the normal
     // SSE flow so the agent's reply streams in.
-    if (run.historical && run.done !== false) {
+    if (run.historical && run.done !== false && !isEpochBump) {
       // v3.4.38 — Cache hit on a historical run: no need to re-fetch /__chat
       // (the cache has every event we ever rendered and historical runs never
       // get new ones). Just return the cleanup; status was already seeded above.
@@ -8795,6 +8843,19 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               }
             }
             if (Object.keys(seeded).length) setAnswers(prev => ({ ...seeded, ...prev }));
+            // v3.5.3 — replay the status state machine over the hydrated
+            // history. Not every caller passes lifecycle flags on the run
+            // object (WorkflowAgentChatDialog hands ChatDrawer a bare
+            // { runId, branch, agentId }), and the daemon's /__stream closes
+            // silently with ZERO events when the run is already done — so
+            // without this the drawer sat at "connecting" forever on a
+            // finished or paused-between-turns run: streaming dots below
+            // "finished · exit 0", composer treating the agent as mid-turn,
+            // and every reply silently parked in the send-queue instead of
+            // dispatched. Folding the SAME reducer the live SSE uses lands
+            // the drawer on exactly the status it would have reached had it
+            // watched the run live.
+            setStatus(prev => (prev === "error" ? prev : evs.reduce(chatStatusReducer, prev)));
           }
         }
         }  // end of !cacheHit branch
@@ -8860,48 +8921,24 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
                 setAnswers(prev => prev[dec.key] ? prev : ({ ...prev, [dec.key]: dec.value }));
               }
             }
-            // Status transitions. Three lifecycle layers:
-            //   • Per-turn: agent emits a `result` frame → "done" for this
-            //     turn. New text_delta / tool_use after that means a new
-            //     turn started (user replied) — flip back to "streaming".
-            //   • Process-level: SSE 'end' channel fires when subprocess
-            //     exits. Final state — stays terminal.
-            //   • Errors: 'error' SSE or status.label=error. Terminal-ish
-            //     but a user reply could still resume.
-            setStatus(prev => {
-              if (ev.event === "end") {
-                // v3.5.2 — the daemon's end event carries exitCode + stopReason
-                // (see RunState.finish + _run_resume teardown). Map non-zero
-                // exit (excluding user-stop / orchestrator stop) to "fail" so
-                // the chip matches the dropdown's verdict instead of showing
-                // a misleading green DONE.
-                const d = ev.data || {};
-                const intentional = d.stopReason === "user-stop" || d.stopReason === "completed-orchestrator";
-                const failed = d.exitCode != null && d.exitCode !== 0 && !intentional;
-                return failed ? "fail" : "done";
-              }
-              if (ev.event === "error") return "error";
-              if (ev.event === "agent" && ev.data?.type === "status") {
-                if (ev.data.label === "done")  return "done";
-                if (ev.data.label === "error") return "error";
-                // status:starting on a new turn — caller (composer) usually
-                // already flipped us; this is the backstop.
-                if (ev.data.label === "starting" && prev !== "streaming") return "streaming";
-              }
-              // Real agent output means the turn is alive. If we were
-              // showing "done" from a prior turn, flip back to streaming.
-              if (ev.event === "agent" && ev.data?.type === "text_delta") return "streaming";
-              if (ev.event === "agent" && ev.data?.type === "tool_use")   return "streaming";
-              if (ev.event === "user_message" || ev.event === "tool_answer") {
-                // User just spoke — agent will respond. Keep error sticky;
-                // flip "done" or "fail" back to streaming so the user sees
-                // the next turn start.
-                return prev === "error" ? prev : "streaming";
-              }
-              return prev || "streaming";
-            });
+            // Status transitions — see chatStatusReducer above (shared with
+            // the hydrate-from-history fold so live and replayed transcripts
+            // land on identical statuses).
+            setStatus(prev => chatStatusReducer(prev, ev));
           },
         });
+        // v3.5.3 — readSSE resolved CLEANLY. The daemon only ends /__stream
+        // when state.done is true and every event has been flushed, so a
+        // clean close while we still think we're connecting/streaming means
+        // the run is over and the terminal `end` frame either already arrived
+        // in the hydrate above or was never written (daemon killed mid-run).
+        // Without this floor, a finished run whose stream closed with zero
+        // new events (after=<lastSeq> replays nothing) left the drawer stuck
+        // on the thinking dots with the composer disabled — and Send then
+        // queued the reply forever instead of dispatching it via /resume.
+        if (!cancelled) {
+          setStatus(prev => (prev === "connecting" || prev === "streaming") ? "done" : prev);
+        }
       } catch (e) {
         if (cancelled) return;
         if (e?.name === "AbortError") return;
