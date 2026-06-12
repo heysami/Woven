@@ -3647,6 +3647,46 @@ def _chat_jsonl_path(project_root: str, branch: str = "main") -> str:
     return os.path.join(project_root, "editor", "chat.jsonl")
 
 
+# v3.12 — workspace-level SYSTEM agent threads (landing → System tab →
+# Orchestrators / Design library). Their transcripts must NOT land in
+# <root>/editor/chat.jsonl: in Layout A the install root IS the workspace
+# root, and editor/ is the mirrored install binary — polluting it with chat
+# history would leak conversations into the rsync mirror. One JSONL per
+# System-tab section under <workspace>/.system-chats/.
+
+SYSTEM_SECTION_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def _system_chats_dir() -> str:
+    return os.path.join(WORKSPACE_DIR or INSTALL_ROOT, ".system-chats")
+
+
+def _system_chat_path(section: str) -> str:
+    return os.path.join(_system_chats_dir(), f"{section}.jsonl")
+
+
+def _system_chat_candidate_files(section: str = None) -> list:
+    """[(abs_path, section)] for every system-section JSONL on disk —
+    filtered to one section when given. Mirrors the shape of
+    _chat_jsonl_candidate_files so the shared scan/rehydrate helpers work
+    on both."""
+    base = _system_chats_dir()
+    if not os.path.isdir(base):
+        return []
+    out = []
+    try:
+        for name in sorted(os.listdir(base)):
+            if not name.endswith(".jsonl"):
+                continue
+            sec = name[:-len(".jsonl")]
+            if section and sec != section:
+                continue
+            out.append((os.path.join(base, name), sec))
+    except OSError:
+        pass
+    return out
+
+
 def _chat_jsonl_lock(path: str) -> threading.Lock:
     with _CHAT_JSONL_LOCKS_GUARD:
         lk = _CHAT_JSONL_LOCKS.get(path)
@@ -3665,7 +3705,16 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
     branch = getattr(state, "branch", None) or "main"
     if not SLUG_OK.match(branch):
         return  # defensive — branch slug should always be validated upstream
-    path = _chat_jsonl_path(project_root, branch)
+    # v3.12 — system threads persist per-section under .system-chats/, never
+    # into <root>/editor/chat.jsonl (see _system_chats_dir rationale).
+    is_system = getattr(state, "scope", None) == "system"
+    if is_system:
+        section = getattr(state, "section", None) or "orchestrators"
+        if not SYSTEM_SECTION_OK.match(section):
+            return
+        path = _system_chat_path(section)
+    else:
+        path = _chat_jsonl_path(project_root, branch)
     line = {
         "runId":   state.run_id,
         "branch":  branch,
@@ -3678,6 +3727,9 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
         "data":    data,
         "ts":      time.time(),
     }
+    if is_system:
+        line["scope"] = "system"
+        line["section"] = getattr(state, "section", None) or "orchestrators"
     serialized = json.dumps(line, ensure_ascii=False)
     lk = _chat_jsonl_lock(path)
     with lk:
@@ -3721,8 +3773,26 @@ def _chat_jsonl_scan_historical(project_root: str) -> dict:
     """v3.1 — branches deprecated. Reads the single editor/chat.jsonl
     (falling back to legacy editor/branches/*.chat.jsonl files if found,
     so existing in-flight installs aren't lost on upgrade)."""
+    return _scan_chat_jsonl_records(_chat_jsonl_candidate_files(project_root))
+
+
+def _system_chat_scan(section: str = None) -> dict:
+    """v3.12 — historical system threads, runId → meta. Same row shape as
+    _chat_jsonl_scan_historical plus scope/section so /__system_runs can
+    group by System-tab home."""
+    out = _scan_chat_jsonl_records(_system_chat_candidate_files(section))
+    for meta in out.values():
+        meta["scope"] = "system"
+    return out
+
+
+def _scan_chat_jsonl_records(candidates: list) -> dict:
+    """Shared scan body for project chat history AND system-thread history.
+    candidates: [(abs_path, slug)] — slug is a branch for project files and
+    a section name for system files (recorded on the meta as `section` when
+    the line carries one)."""
     out: dict = {}
-    for path, _branch_slug in _chat_jsonl_candidate_files(project_root):
+    for path, _branch_slug in candidates:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 for raw in f:
@@ -3752,6 +3822,8 @@ def _chat_jsonl_scan_historical(project_root: str) -> dict:
                             "lastSeq":        -1,
                             "modifying":      False,
                             "historical":     True,
+                            # v3.12 — present on system-thread lines only.
+                            "section":        rec.get("section"),
                         }
                         out[rid] = meta
                     # Track lifecycle terminators
@@ -3778,7 +3850,16 @@ def _chat_jsonl_scan_historical(project_root: str) -> dict:
     return out
 
 
-def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
+def _rehydrate_system_run(run_id: str):
+    """v3.12 — rehydrate a workspace system thread after daemon restart.
+    Scans .system-chats/*.jsonl instead of a project's chat.jsonl."""
+    return _rehydrate_run_from_jsonl(
+        run_id, WORKSPACE_DIR or INSTALL_ROOT,
+        _candidates=_system_chat_candidate_files(), _scope="system")
+
+
+def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
+                              _candidates: list = None, _scope: str = None):
     """v2.29b — when an /__run/<id>/* endpoint is hit after a daemon restart
     (RUNS is in-memory only — every restart wipes it), the runId 404s even
     though the conversation is persisted on disk. This helper scans the chat
@@ -3789,8 +3870,12 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
     missing (can't resume without it).
 
     Layout knowledge lives in _chat_jsonl_candidate_files — do not duplicate
-    the flat-vs-branches scan logic here."""
-    candidates = _chat_jsonl_candidate_files(project_root)
+    the flat-vs-branches scan logic here.
+
+    v3.12 — `_candidates` / `_scope` let _rehydrate_system_run reuse this
+    body for system-thread JSONLs (candidate slug = section name there)."""
+    candidates = (_candidates if _candidates is not None
+                  else _chat_jsonl_candidate_files(project_root))
     if not candidates:
         return None
     for path, branch_slug in candidates:
@@ -3854,11 +3939,21 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
         # Construct the ghost RunState. No proc — endpoints that need a live
         # subprocess (tool-result) will still error, but /resume re-spawns
         # the CLI with --resume <session_id> so it doesn't need state.proc.
-        project_id = os.path.basename(project_root.rstrip("/"))
-        state = RunState(
-            run_id=run_id, proc=None, agent_id=agent_id, branch=branch_slug,
-            kind=kind, title=title, project_id=project_id, project_root=project_root,
-        )
+        if _scope == "system":
+            # branch_slug is the SECTION name for system candidates.
+            state = RunState(
+                run_id=run_id, proc=None, agent_id=agent_id, branch="main",
+                kind=kind, title=title, project_id="__system",
+                project_root=INSTALL_ROOT,
+            )
+            state.scope = "system"
+            state.section = branch_slug
+        else:
+            project_id = os.path.basename(project_root.rstrip("/"))
+            state = RunState(
+                run_id=run_id, proc=None, agent_id=agent_id, branch=branch_slug,
+                kind=kind, title=title, project_id=project_id, project_root=project_root,
+            )
         state.session_id = session_id
         state.started_at = started_at
         state.done = done
@@ -3873,11 +3968,9 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str):
     return None
 
 
-def _chat_jsonl_read_branch(project_root: str, branch: str) -> list:
-    """Load every event line for a single branch's chat history. Returns a
-    flat list ordered by file position (which is also chronological since we
-    only ever append)."""
-    path = _chat_jsonl_path(project_root, branch)
+def _read_jsonl_rows(path: str) -> list:
+    """Tolerant JSONL reader — skips blank/corrupt lines, returns [] on any
+    file error. Shared by project chat history and system-thread history."""
     if not os.path.isfile(path):
         return []
     out: list = []
@@ -3896,6 +3989,13 @@ def _chat_jsonl_read_branch(project_root: str, branch: str) -> list:
     return out
 
 
+def _chat_jsonl_read_branch(project_root: str, branch: str) -> list:
+    """Load every event line for a single branch's chat history. Returns a
+    flat list ordered by file position (which is also chronological since we
+    only ever append)."""
+    return _read_jsonl_rows(_chat_jsonl_path(project_root, branch))
+
+
 class RunState:
     """One spawned agent. Holds the subprocess, the append-only event log, and
     a set of `threading.Event`s waiters block on. SSE handlers register an
@@ -3912,6 +4012,14 @@ class RunState:
     __slots__ = ("run_id", "proc", "agent_id", "branch", "kind", "title",
                  "session_id", "permission_mode", "bin_path", "modifying",
                  "project_id", "project_root",
+                 # v3.12 — workspace-level system agent threads (landing →
+                 # System tab). scope="system" routes chat persistence to
+                 # <workspace>/.system-chats/<section>.jsonl and tells
+                 # /resume to rebuild the elevated spawn config instead of
+                 # the project one. section names the System-tab home
+                 # ("orchestrators" / "design-library"). Both None for
+                 # ordinary project runs.
+                 "scope", "section",
                  "started_at", "events", "lock", "waiters",
                  "done", "exit_code", "turn_done", "turns_completed",
                  # Phase 3 — undo/redo history snapshot bookkeeping. The
@@ -3967,6 +4075,9 @@ class RunState:
         # Stored so /resume can replicate the original spawn config.
         self.permission_mode = None
         self.bin_path = None
+        # v3.12 — system-thread scope (see __slots__ comment).
+        self.scope = None
+        self.section = None
         # Phase 3 history bookkeeping. Populated by _run_create immediately
         # after the RunState is constructed; consumed by _drain_stdout after
         # state.finish().
@@ -5019,27 +5130,145 @@ absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 # agent the routing policy: built-in WebFetch / WebSearch are primary; the
 # MCP servers are escalation paths. Without this guidance the agent reaches
 # for `chrome` on every web task and burns time spinning up the browser.
-MCP_ROUTING_PROMPT = """
+def _mcp_routing_prompt() -> str:
+    """v3.12 — Generated from .claude/mcp-catalog.json + the runtime
+    mcp-config.json instead of the old hardcoded chrome/figma-only constant,
+    so manually-added servers (System tab → MCP → Add server, or hand-edits
+    to the config) are described to every spawned agent automatically.
 
-## Web + design tooling
+    Only WIRED servers are listed (an unwired catalog entry has no live
+    tools this run — describing it would invite "tool not found" loops).
+    Wired servers without a catalog entry get a generic bullet built from
+    the config: the tools are self-describing once listed, the agent just
+    needs to know the prefix exists."""
+    try:
+        from kinds.capabilities import _mcp_server_inventory
+        rows = [r for r in _mcp_server_inventory() if r.get("wired")]
+    except Exception:
+        rows = []
+    if not rows:
+        return ""
+    bullets = []
+    for r in rows:
+        prefix = r.get("toolPrefix") or f"mcp__{r['id']}__"
+        bits = [f"- `{prefix}*` — {r.get('label') or r['id']}."]
+        if r.get("purpose"):
+            bits.append(str(r["purpose"]).strip())
+        if r.get("whenToUse"):
+            bits.append("When to use: " + str(r["whenToUse"]).strip())
+        if r.get("firstCallNote"):
+            bits.append("First call: " + str(r["firstCallNote"]).strip())
+        bullets.append(" ".join(bits))
+    return (
+        "\n\n## Web + design tooling (MCP)\n\n"
+        "You have built-in `WebFetch` and `WebSearch`, plus these MCP servers "
+        "exposed via `--mcp-config`:\n\n"
+        + "\n".join(bullets)
+        + "\n\nDefault to `WebFetch` for any URL — it's faster, anonymous, no "
+        "setup. Only escalate to a browser-driving MCP after `WebFetch` "
+        "actually fails on this URL, not preemptively. Surface any MCP "
+        "first-call / auth error to the user verbatim.\n"
+    )
 
-You have built-in `WebFetch` and `WebSearch`, plus two optional MCP servers \
-exposed via `--mcp-config`:
 
-- `mcp__chrome__*` — Chrome DevTools MCP. Attaches to the user's real Chrome \
-  (started with `--remote-debugging-port=9222`) and reuses their logged-in \
-  profile. Use ONLY when `WebFetch` returns 401 / 403 / a login wall, or the \
-  page is JS-rendered and the fetched HTML is empty. First call may fail with \
-  "no Chrome instance on debugging port" — surface that error to the user \
-  verbatim so they can start Chrome with the flag.
-- `mcp__figma__*` — Figma's official hosted MCP. Use when the user mentions \
-  Figma, pastes a figma.com URL, or asks to read / generate a design. First \
-  call triggers an OAuth flow in the user's browser; surface any auth error \
-  to the user verbatim.
+# v3.12 — System agent threads (landing → System tab → Orchestrators /
+# Design library). These spawns deliberately INVERT the project-agent
+# policy: cwd is the WORKSPACE/INSTALL ROOT, permissions default to full
+# bypass, and none of the project confinement (capabilities preamble,
+# orchestrator hard-rule gates, harness PreToolUse hooks, slash-command
+# lockout) is applied — because this agent's job is to EDIT those layers,
+# not to operate inside them.
+SYSTEM_AGENT_PROMPT = """
 
-Default to `WebFetch` for any URL — it's faster, anonymous, no setup. \
-Only escalate to `mcp__chrome__*` after `WebFetch` actually fails on this \
-URL, not preemptively.
+## You are the WORKSPACE SYSTEM AGENT
+
+Your cwd is the workspace root — the canonical Woven harness repo itself, not a
+user project. You were opened from the editor's landing page (System tab) to
+add or update the harness's own building blocks: orchestrators, the design
+library, subagents, skills, MCP wiring. You run with full permissions and
+WITHOUT the project-agent confinement (no orchestrator dispatch gates, no
+visual-orchestrator hook, no app-skill restrictions). With that footing comes
+the duty to keep the system layers in sync — a half-registered orchestrator is
+worse than none.
+
+**Scope warning to honour:** these embedded threads are best for FOCUSED
+additions and updates (one orchestrator, a handful of library entries, an MCP
+entry). If the user asks for a sweeping refactor — restructuring many
+orchestrators, rewriting editor internals, mass-migrating the library — tell
+them a dedicated harness (Claude Code in a terminal at the workspace root) is
+the better tool: bigger context, reviewable diffs, no daemon mid-flight. Offer
+to scope the work down instead.
+
+### The system map (what lives where)
+
+- **Orchestrators** — a pair of files under `.claude/agents/`:
+  `<id>.md` (the playbook: YAML frontmatter `name:` / `description:` /
+  `tools:`, then the full operating instructions) and `<id>.manifest.json`
+  (the registry entry the daemon + landing page read). Manifest fields: `id`,
+  `label`, `tagline`, `version`, `defaultEnabled`, `subagentName`,
+  `playbookPath`, `description`, `triggers[]` ({mode, title, rule,
+  ruleSource}), `dispatches` ({drawers[], lenses[]}), `skills[]`,
+  `nodeKinds` ({container[], agent_overrides[], trios_scaffolded[]}),
+  `documents` ({designDoc, calibration}). Manifests are auto-discovered per
+  request — no daemon restart needed.
+- **Hard-rule coupling (read carefully).** Every spawned project agent gets a
+  capabilities preamble from `editor/kinds/capabilities.py`. For the SHIPPED
+  orchestrator families, the "## … dispatch <X>-orchestrator FIRST" prose is
+  static text inside that file, and `_strip_disabled_orchestrator_blocks`
+  holds a parallel SECTIONS header list. For an EXISTING shipped orchestrator,
+  rule edits happen in BOTH places there. For a NEW orchestrator, do NOT edit
+  capabilities.py — add a `"hardRule": {"header": "...", "body": "..."}` field
+  to its manifest; the preamble injects it dynamically and the System-tab
+  enable/disable toggle works automatically. NOTE: capabilities.py edits only
+  take effect after a daemon restart (the module is imported once); manifest /
+  catalog / JSON changes are re-read per request.
+- **Subagents (drawers/lenses)** — single `.md` files under `.claude/agents/`
+  with `name:` / `description:` / `tools:` frontmatter. Auto-discovered into
+  the capabilities catalog per request.
+- **Design library** — `design-library/<prefix>-<slug>.md` at the workspace
+  root, grouped by filename prefix (`shell-`, `style-`, `aesthetic-`,
+  `recipe-`, `photo-`, `illust-`, `material-`, `motion-`), each with YAML
+  frontmatter + prose + sample images referenced alongside. Surfaced via
+  `GET /__prototype_catalog` and consumed by the `/prototype` skill AND by
+  orchestrator playbooks (photography / illustration / material / motion
+  families reference their library docs; scrapbook + creative-visual read
+  library style ids). The library is deliberately NOT hand-edited from the
+  UI because entries couple to orchestrators: when you add, rename, or remove
+  an entry, grep `.claude/agents/` and `prototype/` for references to the
+  affected slugs and update them in the same change.
+- **MCP servers** — TWO files under `.claude/`, intentionally separate:
+  `mcp-config.json` (strict Claude-Code `--mcp-config` payload: `mcpServers`
+  → {command, args}) and `mcp-catalog.json` (display metadata: label,
+  purpose, whenToUse, toolPrefix, requires, firstCallNote, source). Keep them
+  in sync — a server wired in config but missing from the catalog still works
+  but shows as an anonymous entry; a catalog entry without config is dead UI.
+  The daemon also exposes `POST /__mcp_catalog/add` / `/__mcp_catalog/remove`
+  which write both files atomically — prefer them over hand-editing.
+- **Custom skills** — `<workspace>/.harness-skills/<slug>/SKILL.md` with
+  `name:` / `description:` frontmatter. Listed in every spawn's capabilities
+  preamble (agents are told to Read the SKILL.md when the trigger matches).
+
+### Validation loop (run after every change)
+
+1. `python3 -m py_compile editor/serve.py editor/kinds/capabilities.py` if you
+   touched python; `python3 -m pytest editor/kinds -q` for kinds behaviour.
+2. `curl -s $TH_DAEMON_URL/__orchestrators | python3 -m json.tool` — your
+   manifest parses and registers (parse failures are SILENTLY skipped, so
+   absence here means broken JSON).
+3. `curl -s $TH_DAEMON_URL/__capabilities` — subagents / skills / MCP entries
+   appear; for a new orchestrator with a manifest hardRule, confirm the rule
+   text shows up in a fresh spawn's preamble (the daemon re-reads manifests
+   per spawn).
+4. `curl -s '$TH_DAEMON_URL/__prototype_catalog'` after library edits.
+
+### Boundaries
+
+- `projects/` belongs to user projects — leave it alone unless the user
+  explicitly drags a project into the conversation.
+- Editing `editor/` internals (serve.py, app.js, kinds/) is ALLOWED but is
+  exactly the "use a dedicated harness" territory — warn first, keep diffs
+  surgical, and remember daemon-side python changes need a restart to bite.
+- Don't git-commit unless the user asks; they merge work per-feature.
 """
 
 
@@ -5461,6 +5690,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._cc_skills_upload()
             if parsed.path == "/__cc_skills/delete":
                 return self._cc_skills_delete()
+            if parsed.path == "/__mcp_catalog/add":
+                return self._mcp_catalog_add()
+            if parsed.path == "/__mcp_catalog/remove":
+                return self._mcp_catalog_remove()
             if parsed.path == "/__media_config":
                 return self._media_config_set()
             if parsed.path == "/__media_config/test":
@@ -5679,6 +5912,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._projects_list()
         if url_path == "/__runs":
             return self._runs_list(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__system_runs":
+            return self._system_runs_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__chat":
             return self._chat_history(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__doc":
@@ -6684,7 +6919,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if WORKSPACE_DIR and project_root != INSTALL_ROOT:
             sys_prompt += WORKSPACE_LAYOUT_PROMPT
         if _mcp_config_spawn_args():
-            sys_prompt += MCP_ROUTING_PROMPT
+            sys_prompt += _mcp_routing_prompt()
         # v2.50 — bake the capabilities catalog into the preamble so the
         # spawned subagent knows what the app supports (image providers,
         # subagent drawers, endpoints, node kinds). Without this, agents
@@ -9822,7 +10057,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if WORKSPACE_DIR and project_root != INSTALL_ROOT:
                 sys_prompt_parts.append(WORKSPACE_LAYOUT_PROMPT)
             if _mcp_config_spawn_args():
-                sys_prompt_parts.append(MCP_ROUTING_PROMPT)
+                sys_prompt_parts.append(_mcp_routing_prompt())
             sys_prompt = "\n\n".join(p.strip() for p in sys_prompt_parts if p and p.strip())
             spawn_args = [
                 "--print",
@@ -13113,12 +13348,27 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
 
         out_servers = []
+        seen_ids = set()
         for s in (catalog.get("servers") or []):
             if not isinstance(s, dict):
                 continue
             entry = dict(s)
             entry["wired"] = entry.get("id") in wired_ids
+            seen_ids.add(entry.get("id"))
             out_servers.append(entry)
+        # v3.12 — servers wired into the runtime config WITHOUT a catalog
+        # entry (hand-edits) still surface, as minimal synthesized rows —
+        # consistent with kinds.capabilities._mcp_server_inventory.
+        for sid in sorted(wired_ids - seen_ids):
+            out_servers.append({
+                "id": sid,
+                "label": sid,
+                "icon": "◇",
+                "purpose": "(manually wired in mcp-config.json — no catalog entry)",
+                "toolPrefix": f"mcp__{sid}__",
+                "wired": True,
+                "source": "config-only",
+            })
 
         return self._reply(200, {
             "servers":         out_servers,
@@ -13128,6 +13378,142 @@ class H(http.server.SimpleHTTPRequestHandler):
             "catalogPath":     catalog_path,
             "note":            catalog.get("_note"),
         })
+
+    # ── v3.12 — manually-added MCP servers ───────────────────────────────
+    # POST /__mcp_catalog/add    — body {id, command, label?, purpose?,
+    #   whenToUse?, toolPrefix?, transport?, requires?[], firstCallNote?, icon?}
+    #   Writes BOTH files: the runtime entry into mcp-config.json (so the
+    #   next spawn's --mcp-config picks it up) and a display entry into
+    #   mcp-catalog.json tagged source:"user" (so the System tab + the
+    #   capabilities preamble can describe it). If the id already exists in
+    #   the catalog (a shipped server the user is re-wiring), only the
+    #   runtime entry is written.
+    # POST /__mcp_catalog/remove — body {id}. Unwires from mcp-config.json;
+    #   deletes the catalog entry only when it was user-added.
+    _MCP_ID_OK = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+    def _mcp_catalog_path(self):
+        return os.path.join(INSTALL_ROOT, ".claude", "mcp-catalog.json")
+
+    def _mcp_read_json(self, path, fallback):
+        if not os.path.isfile(path):
+            return fallback
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f) or fallback
+        except Exception:
+            return fallback
+
+    def _mcp_write_json(self, path, data):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, path)
+
+    def _mcp_catalog_add(self):
+        body = self._read_json_body()
+        sid = (body.get("id") or "").strip().lower()
+        if not self._MCP_ID_OK.match(sid):
+            return self._reply(400, {"error": "invalid server id — use [a-z0-9_-], starting with a letter or digit"})
+        command_line = (body.get("command") or "").strip()
+        if not command_line:
+            return self._reply(400, {"error": "command is required (full command line, e.g. `npx -y some-mcp@latest`)"})
+        try:
+            import shlex
+            parts = shlex.split(command_line)
+        except ValueError as e:
+            return self._reply(400, {"error": f"could not parse command line: {e}"})
+        if not parts:
+            return self._reply(400, {"error": "command is required"})
+
+        if not AGENT_MCP_CONFIG:
+            return self._reply(500, {"error": "no mcp-config path resolved on this install"})
+        cfg = self._mcp_read_json(AGENT_MCP_CONFIG, {"mcpServers": {}})
+        if not isinstance(cfg.get("mcpServers"), dict):
+            cfg["mcpServers"] = {}
+        if sid in cfg["mcpServers"] and not body.get("overwrite"):
+            return self._reply(409, {"error": f"server '{sid}' is already wired",
+                                      "hint": "pass overwrite:true to replace its runtime entry"})
+        cfg["mcpServers"][sid] = {"command": parts[0], "args": parts[1:]}
+        try:
+            self._mcp_write_json(AGENT_MCP_CONFIG, cfg)
+        except OSError as e:
+            return self._reply(500, {"error": f"mcp-config write failed: {e}"})
+
+        # Display entry — only created when the catalog doesn't already
+        # describe this id (shipped entries keep their curated metadata).
+        catalog_path = self._mcp_catalog_path()
+        catalog = self._mcp_read_json(catalog_path, {"servers": []})
+        if not isinstance(catalog.get("servers"), list):
+            catalog["servers"] = []
+        existing = next((s for s in catalog["servers"]
+                         if isinstance(s, dict) and s.get("id") == sid), None)
+        if existing is None:
+            requires = body.get("requires")
+            if isinstance(requires, str):
+                requires = [ln.strip() for ln in requires.splitlines() if ln.strip()]
+            entry = {
+                "id":            sid,
+                "label":         (body.get("label") or sid).strip(),
+                "icon":          (body.get("icon") or "◇").strip(),
+                "purpose":       (body.get("purpose") or "").strip(),
+                "whenToUse":     (body.get("whenToUse") or "").strip(),
+                "package":       command_line,
+                "transport":     (body.get("transport") or "stdio").strip(),
+                "command":       command_line,
+                "toolPrefix":    (body.get("toolPrefix") or f"mcp__{sid}__").strip(),
+                "requires":      requires if isinstance(requires, list) else [],
+                "firstCallNote": (body.get("firstCallNote") or "").strip(),
+                "source":        "user",
+            }
+            catalog["servers"].append(entry)
+            try:
+                self._mcp_write_json(catalog_path, catalog)
+            except OSError as e:
+                return self._reply(500, {"error": f"mcp-catalog write failed (runtime entry WAS written): {e}"})
+        return self._reply(200, {"ok": True, "id": sid, "wired": True,
+                                  "catalogEntryCreated": existing is None})
+
+    def _mcp_catalog_remove(self):
+        body = self._read_json_body()
+        sid = (body.get("id") or "").strip().lower()
+        if not sid:
+            return self._reply(400, {"error": "id is required"})
+        removed_config = False
+        if AGENT_MCP_CONFIG and os.path.isfile(AGENT_MCP_CONFIG):
+            cfg = self._mcp_read_json(AGENT_MCP_CONFIG, {"mcpServers": {}})
+            servers = cfg.get("mcpServers")
+            if isinstance(servers, dict) and sid in servers:
+                del servers[sid]
+                try:
+                    self._mcp_write_json(AGENT_MCP_CONFIG, cfg)
+                    removed_config = True
+                except OSError as e:
+                    return self._reply(500, {"error": f"mcp-config write failed: {e}"})
+        removed_catalog = False
+        catalog_path = self._mcp_catalog_path()
+        catalog = self._mcp_read_json(catalog_path, {"servers": []})
+        servers = catalog.get("servers")
+        if isinstance(servers, list):
+            keep = []
+            for s in servers:
+                if isinstance(s, dict) and s.get("id") == sid and s.get("source") == "user":
+                    removed_catalog = True
+                    continue
+                keep.append(s)
+            if removed_catalog:
+                catalog["servers"] = keep
+                try:
+                    self._mcp_write_json(catalog_path, catalog)
+                except OSError as e:
+                    return self._reply(500, {"error": f"mcp-catalog write failed: {e}"})
+        if not removed_config and not removed_catalog:
+            return self._reply(404, {"error": f"server '{sid}' not found in config or user catalog entries"})
+        return self._reply(200, {"ok": True, "id": sid,
+                                  "unwired": removed_config,
+                                  "catalogEntryRemoved": removed_catalog})
 
     def _cc_skills_upload(self):
         """POST /__cc_skills/upload — multipart body. Each part is either a
@@ -13551,6 +13937,31 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   `runId` is provided, the result is filtered to that one run; otherwise
     #   every event for every run on the branch is returned in file order.
     def _chat_history(self, qs):
+        # v3.12 — system threads first: their transcripts live under
+        # .system-chats/, not in any project, and the landing page calls
+        # this endpoint with no ?project= param. Match by runId against the
+        # live registry, then the on-disk section files.
+        run_filter_early = (_qs_get(qs, "runId") or "").strip()
+        if run_filter_early:
+            with RUNS_LOCK:
+                st = RUNS.get(run_filter_early)
+            is_system = bool(st and getattr(st, "scope", None) == "system")
+            sys_rows = None
+            if is_system:
+                sec = getattr(st, "section", None) or "orchestrators"
+                if SYSTEM_SECTION_OK.match(sec):
+                    sys_rows = [r for r in _read_jsonl_rows(_system_chat_path(sec))
+                                if r.get("runId") == run_filter_early]
+            elif st is None:
+                for path, _sec in _system_chat_candidate_files():
+                    rows = [r for r in _read_jsonl_rows(path)
+                            if r.get("runId") == run_filter_early]
+                    if rows:
+                        sys_rows = rows
+                        break
+            if sys_rows is not None:
+                return self._reply(200, {"branch": "main", "scope": "system",
+                                          "events": sys_rows})
         try:
             project_root = resolve_project_root(qs)
         except ValueError as e:
@@ -14122,8 +14533,162 @@ class H(http.server.SimpleHTTPRequestHandler):
             raise ValueError(f"invalid JSON body: {e}")
 
     # POST /__run  body: { branch, agentId?, kind?, prompt?, title?, meta? }
+    def _run_create_system(self, body):
+        """v3.12 — POST /__run with body {scope:"system", section, prompt,
+        title?, permissionMode?}. Spawns the WORKSPACE SYSTEM AGENT: a
+        claude run whose cwd is the install/workspace root, with elevated
+        permissions and NONE of the project confinement. See
+        SYSTEM_AGENT_PROMPT for the policy inversion rationale. Transcripts
+        land in <workspace>/.system-chats/<section>.jsonl."""
+        agent_id = (body.get("agentId") or "claude").strip().lower()
+        if agent_id != "claude":
+            return self._reply(400, {"error": "system threads are claude-only",
+                                      "hint": "the elevated spawn config (append-system-prompt, --resume) is Claude-CLI-specific"})
+        bin_path = detect_agent_bin("claude")
+        if not bin_path:
+            return self._reply(400, {"error": "agent 'claude' is not on PATH"})
+        section = (body.get("section") or "orchestrators").strip().lower()
+        if not SYSTEM_SECTION_OK.match(section):
+            return self._reply(400, {"error": f"invalid section: {section!r}"})
+        user_prompt = (body.get("prompt") or "").strip()
+        if not user_prompt:
+            return self._reply(400, {"error": "system thread requires a prompt"})
+        title = (body.get("title") or f"System · {section}").strip()
+        # Full bypass by default — this agent edits the harness itself; the
+        # accept-edits middle ground just generates permission-wall stalls
+        # in -p stream-json mode. The UI can still pass a stricter mode.
+        permission_mode = (body.get("permissionMode") or "bypassPermissions").strip()
+
+        defs = AGENT_DEFS["claude"]
+        spawn_args = list(defs["args"])
+        if permission_mode == "bypassPermissions":
+            spawn_args += [
+                "--allow-dangerously-skip-permissions",
+                "--dangerously-skip-permissions",
+            ]
+        elif defs.get("permission_flag") and permission_mode:
+            spawn_args += [defs["permission_flag"], permission_mode]
+        # Deliberately NOT applied (vs the project spawn path):
+        #   --disable-slash-commands  — user-level skills are fair game here
+        #   --settings settings-harness.json — no PreToolUse visual-orchestrator
+        #     gate; this agent writes playbooks/manifests, not project HTML
+        #   capabilities_preamble() — the agent edits that layer; feeding it
+        #     the project confinement prose would re-confine it
+        spawn_args += _mcp_config_spawn_args()
+        sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
+        if _mcp_config_spawn_args():
+            sys_prompt = sys_prompt + _mcp_routing_prompt()
+        spawn_args += ["--append-system-prompt", sys_prompt]
+        root = INSTALL_ROOT
+        spawn_args += ["--add-dir", root]
+
+        run_id = uuid.uuid4().hex[:16]
+        env = _build_child_env("claude", run_id,
+                               project_root=root, project_id="__system")
+        try:
+            proc = subprocess.Popen(
+                [bin_path, *spawn_args],
+                cwd=root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                bufsize=1,
+            )
+        except FileNotFoundError:
+            return self._reply(500, {"error": f"{bin_path}: not executable"})
+        except Exception as e:
+            return self._reply(500, {"error": f"spawn failed: {type(e).__name__}: {e}"})
+
+        state = RunState(run_id, proc, "claude", "main", "freeform", title,
+                         project_id="__system", project_root=root)
+        state.scope = "system"
+        state.section = section
+        state.bin_path = bin_path
+        state.permission_mode = permission_mode or None
+        # No undo/redo history snapshot — it would inventory the whole
+        # workspace repo, and System changes are git-reviewable anyway.
+        state.append("status", {
+            "label": "spawned",
+            "agentId": "claude",
+            "binPath": bin_path,
+            "branch": "main",
+            "kind": "freeform",
+            "scope": "system",
+            "section": section,
+            "permissionMode": permission_mode or None,
+            "promptPreview": user_prompt[:240],
+        })
+        state.append("user_message", {"text": user_prompt})
+        with RUNS_LOCK:
+            RUNS[run_id] = state
+        try:
+            proc.stdin.write(_claude_user_frame(user_prompt))
+            proc.stdin.flush()
+        except Exception as e:
+            state.append("error", {"message": f"failed to write prompt to stdin: {e}"})
+        threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
+                         name=f"run-{run_id}-stdout").start()
+        threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
+                         name=f"run-{run_id}-stderr").start()
+        return self._reply(200, {
+            "runId": run_id,
+            "agentId": "claude",
+            "branch": "main",
+            "kind": "freeform",
+            "scope": "system",
+            "section": section,
+            "title": title,
+        })
+
+    # GET /__system_runs[?section=<id>] — system-thread registry for the
+    # landing System tab: live runs (scope=system) + historical threads
+    # from .system-chats/*.jsonl. Same row shape as /__runs.
+    def _system_runs_list(self, qs):
+        section = (_qs_get(qs, "section") or "").strip().lower() or None
+        live = []
+        live_ids: set = set()
+        with RUNS_LOCK:
+            states = [s for s in RUNS.values()
+                      if getattr(s, "scope", None) == "system"]
+        for s in states:
+            if section and (s.section or "orchestrators") != section:
+                continue
+            with s.lock:
+                last_seq = s.events[-1]["seq"] if s.events else -1
+            live_ids.add(s.run_id)
+            live.append({
+                "runId": s.run_id,
+                "agentId": s.agent_id,
+                "branch": s.branch,
+                "kind": s.kind,
+                "title": s.title,
+                "startedAt": s.started_at,
+                "done": s.done,
+                "turnDone": s.turn_done,
+                "turnsCompleted": s.turns_completed,
+                "exitCode": s.exit_code,
+                "stopReason": s.stop_reason,
+                "lastSeq": last_seq,
+                "modifying": s.modifying,
+                "scope": "system",
+                "section": s.section or "orchestrators",
+                "historical": False,
+            })
+        for rid, meta in _system_chat_scan(section).items():
+            if rid in live_ids:
+                continue
+            meta["done"] = True   # not in RUNS → process can't be alive
+            live.append(meta)
+        live.sort(key=lambda r: r.get("startedAt") or 0, reverse=True)
+        return self._reply(200, {"runs": live, "section": section})
+
     def _run_create(self, qs):
         body = self._read_json_body()
+        # v3.12 — workspace system threads bypass project resolution entirely
+        # (there is no project; cwd is the workspace root).
+        if (body.get("scope") or "").strip().lower() == "system":
+            return self._run_create_system(body)
         # v3.8 — resolve project from EITHER qs (editor UI puts it there via
         # apiUrl()) OR body (legacy ad-hoc curl callers). Earlier this only
         # read from body, which worked when resolve_project_root had a silent
@@ -14269,7 +14834,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
             if _mcp_config_spawn_args():
-                sys_prompt = sys_prompt + MCP_ROUTING_PROMPT
+                sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
         elif agent_id == "codex":
             # v3.5 — Codex chats get the SAME capabilities preamble as Claude
@@ -14819,6 +15384,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 state = _rehydrate_run_from_jsonl(run_id, project_root)
             except Exception:
                 state = None
+            # v3.12 — system threads carry no ?project= (the landing page
+            # has none); scan the .system-chats section files instead.
+            if not state:
+                try:
+                    state = _rehydrate_system_run(run_id)
+                except Exception:
+                    state = None
             if not state:
                 return self._reply(404, {"error": "unknown runId", "runId": run_id,
                                           "hint": "tried to rehydrate from JSONL but the run wasn't found in any branch under the project"})
@@ -14866,22 +15438,33 @@ class H(http.server.SimpleHTTPRequestHandler):
             ]
         elif defs.get("permission_flag") and state.permission_mode:
             spawn_args += [defs["permission_flag"], state.permission_mode]
-        # v3.1 — match the freeform / node-agent paths: hide user slash commands.
-        spawn_args += ["--disable-slash-commands"]
-        # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
-        _harness_settings = _ensure_harness_settings()
-        if _harness_settings:
-            spawn_args += ["--settings", _harness_settings]
-        sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
-        if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
-            sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
-        # v2.50 — resumed agents also get the capabilities catalog.
-        try:
-            from kinds.capabilities import capabilities_preamble
-            sys_prompt = sys_prompt + "\n\n" + capabilities_preamble()
-        except Exception:
-            pass
-        spawn_args += ["--append-system-prompt", sys_prompt]
+        # v3.12 — system threads resume with the SAME elevated config they
+        # were spawned with: no slash-command lockout, no harness hook
+        # settings, no capabilities confinement — the system prompt is
+        # SYSTEM_AGENT_PROMPT (see _run_create_system for the rationale).
+        if getattr(state, "scope", None) == "system":
+            sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
+            if _mcp_config_spawn_args():
+                spawn_args += _mcp_config_spawn_args()
+                sys_prompt = sys_prompt + _mcp_routing_prompt()
+            spawn_args += ["--append-system-prompt", sys_prompt]
+        else:
+            # v3.1 — match the freeform / node-agent paths: hide user slash commands.
+            spawn_args += ["--disable-slash-commands"]
+            # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
+            _harness_settings = _ensure_harness_settings()
+            if _harness_settings:
+                spawn_args += ["--settings", _harness_settings]
+            sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
+            if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
+                sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
+            # v2.50 — resumed agents also get the capabilities catalog.
+            try:
+                from kinds.capabilities import capabilities_preamble
+                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble()
+            except Exception:
+                pass
+            spawn_args += ["--append-system-prompt", sys_prompt]
         spawn_args += ["--resume", state.session_id]
         # The agent's workspace is the PROJECT only — INSTALL_ROOT is NOT
         # added to --add-dir on resume either, mirroring the policy applied

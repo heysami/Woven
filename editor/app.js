@@ -14590,6 +14590,133 @@ function ModelInstallDialog({ onClose, onRefresh }) {
 // Each subview renders differently. Skills + Subagents + Node kinds are
 // read-only reference; Orchestrators has its toggle. State lives here; sidebar
 // items show counts so the user knows the size of each surface before clicking.
+// ─── SystemThreadsPanel ───────────────────────────────────────────────────
+// v3.12 — Workspace SYSTEM AGENT threads, embedded in the landing System
+// tab's Orchestrators + Design library sections. Each thread is a normal
+// ChatDrawer conversation, but the run is spawned with scope:"system":
+// cwd = the workspace root itself, full permission bypass, and NONE of the
+// project-agent confinement (no capabilities preamble, no orchestrator
+// gates, no harness hooks) — because this agent's job is to EDIT those
+// layers (add/update orchestrators, design-library entries, skills, MCP
+// wiring). Transcripts persist per-section to .system-chats/<section>.jsonl
+// via the daemon; /__system_runs lists live + historical threads.
+function SystemThreadsPanel({ section, blurb }) {
+  const [runs, setRuns] = useState(null);
+  const [chatRun, setChatRun] = useState(null);
+  const [permissionMode, setPermissionMode] = useState("bypassPermissions");
+
+  const refetch = useCallback(() => {
+    fetch(`/__system_runs?section=${encodeURIComponent(section)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => setRuns(j ? (j.runs || []) : []))
+      .catch(() => setRuns([]));
+  }, [section]);
+  useEffect(() => { refetch(); }, [refetch]);
+
+  const openNewThread = useCallback(() => {
+    setChatRun({
+      runId: null,
+      isNew: true,
+      title: `System · ${section}`,
+      kind: "freeform",
+      branch: "main",
+      agentId: "claude",
+      scope: "system",
+      section,
+    });
+  }, [section]);
+
+  const spawnSystemThread = useCallback(async (text) => {
+    const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    const res = await fetch("/__run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scope: "system", section, prompt: text, title,
+        agentId: "claude", kind: "freeform", permissionMode,
+      }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    if (!res.ok) throw new Error((body && (body.error || body.hint)) || `HTTP ${res.status}`);
+    setChatRun(body);
+    refetch();
+    return body;
+  }, [section, permissionMode, refetch]);
+
+  const onRunComplete = useCallback(({ didModifyFiles }) => {
+    refetch();
+    // System changes feed live registries (orchestrators / catalog / skills /
+    // MCP) — tell the landing page to re-pull its section data.
+    if (didModifyFiles) {
+      try { window.dispatchEvent(new CustomEvent("th:system-changed")); } catch {}
+    }
+  }, [refetch]);
+
+  const fmtWhen = (t) => {
+    if (!t) return "";
+    try {
+      const d = new Date(t * 1000);
+      const sameDay = d.toDateString() === new Date().toDateString();
+      return sameDay
+        ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : d.toLocaleDateString([], { month: "short", day: "numeric" }) +
+          " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  };
+  const statusOf = (r) => {
+    if (!r.done && !r.historical) return r.turnDone ? "waiting" : "live";
+    if (r.stopReason === "user-stop") return "stopped";
+    return (r.exitCode === 0 || r.exitCode == null) ? "done" : "failed";
+  };
+
+  return html`
+    <section className="system-threads">
+      <div className="system-threads-head">
+        <div className="system-threads-headings">
+          <div className="system-threads-title">Agent threads</div>
+          <div className="system-threads-sub">${blurb}</div>
+        </div>
+        <button className="system-threads-new" onClick=${openNewThread}>+ New thread</button>
+      </div>
+      <div className="system-threads-warning">
+        <span className="system-threads-warning-icon">⚠</span>
+        <span>
+          These threads run a <strong>workspace system agent</strong> with elevated access —
+          cwd is the harness repo itself, permissions are bypassed, and the usual app-skill /
+          orchestrator confinement is off. Best for focused additions and updates; for sweeping
+          refactors prefer a dedicated harness (Claude Code in a terminal at the workspace root).
+        </span>
+      </div>
+      ${runs === null && html`<div className="system-threads-empty">Loading threads…</div>`}
+      ${runs !== null && runs.length === 0 && html`<div className="system-threads-empty">No threads yet — start one to add or update entries here.</div>`}
+      ${runs !== null && runs.length > 0 && html`
+        <div className="system-threads-list">
+          ${runs.map(r => html`
+            <button key=${r.runId} className="system-threads-row" onClick=${() => setChatRun(r)}>
+              <span className=${"system-threads-dot is-" + statusOf(r)}></span>
+              <span className="system-threads-row-title">${r.title || r.runId}</span>
+              <span className="system-threads-row-meta">${statusOf(r)} · ${fmtWhen(r.startedAt)}</span>
+            </button>
+          `)}
+        </div>
+      `}
+      ${chatRun && createPortal(html`<${ChatDrawer}
+        run=${chatRun}
+        variant="system"
+        onClose=${() => { setChatRun(null); refetch(); }}
+        onStop=${() => {}}
+        onRunComplete=${onRunComplete}
+        onStatusChange=${() => {}}
+        permissionMode=${permissionMode}
+        onPermissionModeChange=${setPermissionMode}
+        onStartNewChat=${spawnSystemThread}
+      />`, document.body)}
+    </section>
+  `;
+}
+
+
 function SystemLanding() {
   const [activeSection, setActiveSection] = useState("prototype");
 
@@ -14616,6 +14743,18 @@ function SystemLanding() {
     const refetch = () => fetch(apiUrl("/__fonts?scope=global")).then(r => r.ok ? r.json() : null).then(setGlobalFonts).catch(() => {});
     window.addEventListener("th:fonts-changed", refetch);
     return () => window.removeEventListener("th:fonts-changed", refetch);
+  }, []);
+  // v3.12 — a system agent thread modified the harness (orchestrators /
+  // library / skills / MCP). Re-pull every registry this tab renders.
+  useEffect(() => {
+    const refetch = () => {
+      fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
+      fetch(apiUrl("/__orchestrators")).then(r => r.ok ? r.json() : null).then(setOrchestratorsData).catch(() => {});
+      fetch(apiUrl("/__prototype_catalog")).then(r => r.ok ? r.json() : null).then(setProtoCatalog).catch(() => {});
+      fetch(apiUrl("/__mcp_catalog")).then(r => r.ok ? r.json() : null).then(setMcpCatalog).catch(() => {});
+    };
+    window.addEventListener("th:system-changed", refetch);
+    return () => window.removeEventListener("th:system-changed", refetch);
   }, []);
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
@@ -14656,10 +14795,16 @@ function SystemLanding() {
         `)}
       </nav>
       <div className="system-content">
-        ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace"/>`}
+        ${activeSection === "orchestrators"   && html`
+          <${SystemThreadsPanel} key="threads-orchestrators" section="orchestrators"
+            blurb="Add or update orchestrators by chatting — the agent writes the manifest + playbook pair and keeps the capability rules in sync."/>
+          <${OrchestratorsLanding} key="orchestrators-list" scopeLabel="workspace"/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
         ${activeSection === "fonts"      && html`<div className="system-fonts"><${DSFontsPanel} scope="global"/></div>`}
-        ${activeSection === "prototype"  && html`<${PrototypeCatalogLanding} data=${protoCatalog}/>`}
+        ${activeSection === "prototype"  && html`
+          <${SystemThreadsPanel} key="threads-design-library" section="design-library"
+            blurb="The library couples to orchestrators — update it through a thread so playbook references stay in sync (hand-edits are easy to orphan)."/>
+          <${PrototypeCatalogLanding} key="proto-catalog" data=${protoCatalog}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
         ${activeSection === "mcp"        && html`<${McpLanding}/>`}
@@ -15337,9 +15482,52 @@ function SubagentsLanding({ caps }) {
 function McpLanding() {
   const [data, setData] = useState(null);
   const [openId, setOpenId] = useState(null);
-  useEffect(() => {
+  // v3.12 — manual add/remove. The form POSTs /__mcp_catalog/add which
+  // writes BOTH files (runtime config + display catalog, source:"user");
+  // remove unwires + drops user-added catalog entries.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ id: "", label: "", command: "", purpose: "", whenToUse: "", requires: "" });
+  const [addBusy, setAddBusy] = useState(false);
+  const [addErr, setAddErr] = useState(null);
+  const refetch = useCallback(() => {
     fetch(apiUrl("/__mcp_catalog")).then(r => r.ok ? r.json() : null).then(setData).catch(() => {});
   }, []);
+  useEffect(() => { refetch(); }, [refetch]);
+  useEffect(() => {
+    window.addEventListener("th:system-changed", refetch);
+    return () => window.removeEventListener("th:system-changed", refetch);
+  }, [refetch]);
+  const setF = (k) => (e) => setAddForm(p => ({ ...p, [k]: e.target.value }));
+  const submitAdd = async () => {
+    setAddBusy(true); setAddErr(null);
+    try {
+      const res = await fetch("/__mcp_catalog/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addForm),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((j && (j.error || j.hint)) || `HTTP ${res.status}`);
+      setAddForm({ id: "", label: "", command: "", purpose: "", whenToUse: "", requires: "" });
+      setAddOpen(false);
+      refetch();
+    } catch (e) {
+      setAddErr(e.message || String(e));
+    } finally {
+      setAddBusy(false);
+    }
+  };
+  const removeServer = async (sid) => {
+    if (!window.confirm(`Remove MCP server '${sid}'? It will be unwired from the runtime config.`)) return;
+    try {
+      const res = await fetch("/__mcp_catalog/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sid }),
+      });
+      if (res.ok) refetch();
+    } catch {}
+  };
   if (!data) {
     return html`<div className="ref-root"><div className="ref-header"><div className="ref-header-title">Loading MCP catalog…</div></div></div>`;
   }
@@ -15356,6 +15544,49 @@ function McpLanding() {
           (Chrome for logged-in pages, Figma for design files). Runtime config:
           <code>${data.configPath}</code>${data.configured ? "" : " (not present — flag will be skipped at spawn-time)"}.
         </div>
+      </div>
+
+      <div className="mcp-add">
+        <button className="mcp-add-toggle" onClick=${() => setAddOpen(o => !o)} aria-expanded=${addOpen}>
+          ${addOpen ? "× Cancel" : "+ Add server"}
+        </button>
+        ${addOpen && html`
+          <div className="mcp-add-form">
+            <div className="mcp-add-row">
+              <label className="mcp-add-field">
+                <span>id</span>
+                <input value=${addForm.id} onInput=${setF("id")} placeholder="my-server" spellCheck=${false}/>
+              </label>
+              <label className="mcp-add-field">
+                <span>label</span>
+                <input value=${addForm.label} onInput=${setF("label")} placeholder="My Server"/>
+              </label>
+            </div>
+            <label className="mcp-add-field">
+              <span>command (full command line the daemon spawns)</span>
+              <input value=${addForm.command} onInput=${setF("command")} placeholder="npx -y some-mcp@latest" spellCheck=${false}/>
+            </label>
+            <label className="mcp-add-field">
+              <span>purpose</span>
+              <input value=${addForm.purpose} onInput=${setF("purpose")} placeholder="What this server does — shown to agents in the capabilities preamble"/>
+            </label>
+            <label className="mcp-add-field">
+              <span>when to use (optional)</span>
+              <input value=${addForm.whenToUse} onInput=${setF("whenToUse")} placeholder="When should an agent reach for it?"/>
+            </label>
+            <label className="mcp-add-field">
+              <span>requires (optional, one per line)</span>
+              <textarea rows="2" value=${addForm.requires} onInput=${setF("requires")} placeholder="Node.js / npx on PATH"></textarea>
+            </label>
+            ${addErr && html`<div className="mcp-add-error">${addErr}</div>`}
+            <div className="mcp-add-actions">
+              <button className="mcp-add-submit" disabled=${addBusy || !addForm.id.trim() || !addForm.command.trim()} onClick=${submitAdd}>
+                ${addBusy ? "Adding…" : "Add + wire server"}
+              </button>
+              <span className="mcp-add-hint">Writes both the runtime config and the catalog entry. Tools become <code>mcp__${addForm.id.trim() || "<id>"}__*</code> on the next spawn — agents see it in their capabilities automatically.</span>
+            </div>
+          </div>
+        `}
       </div>
 
       <div className="subagent-list">
@@ -15417,6 +15648,11 @@ function McpLanding() {
                     <code className="ref-chip">${s.transport}</code>
                   </div>
                 `}
+                ${s.source === "user" && html`
+                  <div className="subagent-section">
+                    <button className="mcp-remove" onClick=${() => removeServer(s.id)}>Remove server</button>
+                  </div>
+                `}
               </div>
             `}
           </div>
@@ -15425,11 +15661,13 @@ function McpLanding() {
 
       <div className="ref-header" style=${{ marginTop: "1.5em" }}>
         <div className="ref-header-meta">
-          To add or remove servers, edit
-          <code>${data.catalogPath}</code> (display metadata) and
+          "+ Add server" above writes both files for you. Hand-editing also
+          works: <code>${data.catalogPath}</code> (display metadata) and
           <code>${data.configPath}</code> (the Claude-Code runtime config).
           Both files are mirrored between <code>Woven/</code> and
-          <code>Woven IN USE/</code>.
+          <code>Woven IN USE/</code>. Manually wired servers missing a
+          catalog entry still surface to agents (and here) as anonymous
+          entries.
         </div>
       </div>
     </div>

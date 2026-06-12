@@ -200,6 +200,165 @@ def _node_kinds() -> list:
     return out
 
 
+# ── 5. Harness-local custom skills ── <workspace>/.harness-skills/<slug>/SKILL.md ──
+# v3.12 — Skills the user uploaded via landing → System → Custom skills.
+# These are workspace-level docs, NOT loaded by the Claude CLI's own skill
+# loader (spawned agents run with cwd = project root, away from the skills
+# dir) — so the way an agent "has" one of these skills is by Reading its
+# SKILL.md when the trigger matches. The preamble lists them with absolute
+# paths for exactly that reason.
+
+def _harness_skills_root() -> str:
+    """Mirror serve.py's _cc_skills_root_user resolution: WORKSPACE_DIR if
+    set (TH_WORKSPACE_DIR env), else the install root."""
+    ws = (os.environ.get("TH_WORKSPACE_DIR") or "").strip()
+    base = os.path.abspath(os.path.expanduser(ws)) if ws else _PROTOCOL_ROOT
+    if not os.path.isdir(base):
+        base = _PROTOCOL_ROOT
+    return os.path.join(base, ".harness-skills")
+
+
+def _scan_harness_skills() -> list:
+    """Walk .harness-skills/*/SKILL.md, extract frontmatter name/description.
+    Same tolerant YAML-ish parse as serve.py's _parse_skill_md_frontmatter."""
+    out = []
+    root = _harness_skills_root()
+    if not os.path.isdir(root):
+        return out
+    for slug in sorted(os.listdir(root)):
+        md = os.path.join(root, slug, "SKILL.md")
+        if not os.path.isfile(md):
+            continue
+        try:
+            with open(md, "r", encoding="utf-8") as f:
+                head = f.read(8192)
+        except OSError:
+            continue
+        name, desc = slug, ""
+        if head.startswith("---"):
+            end = head.find("\n---", 3)
+            if end > 0:
+                for line in head[3:end].splitlines():
+                    line = line.strip()
+                    if ":" not in line or line.startswith("#"):
+                        continue
+                    k, _, v = line.partition(":")
+                    k = k.strip().lower()
+                    v = v.strip().strip('"').strip("'")
+                    if k == "name" and v:
+                        name = v
+                    elif k == "description" and v:
+                        desc = v
+        out.append({"slug": slug, "name": name, "description": desc[:300],
+                    "path": md, "source": "user"})
+    return out
+
+
+# ── 6. MCP servers ── .claude/mcp-catalog.json (display) ∪ mcp-config.json (runtime) ──
+# v3.12 — Surfaces BOTH catalog-described servers and servers the user wired
+# manually into mcp-config.json without a catalog entry (those get a minimal
+# synthesized row so they're never invisible to agents).
+
+def _mcp_config_path() -> str:
+    return (os.environ.get("TH_MCP_CONFIG") or "").strip() or \
+        os.path.join(_PROTOCOL_ROOT, ".claude", "mcp-config.json")
+
+
+def _mcp_server_inventory() -> list:
+    catalog_path = os.path.join(_PROTOCOL_ROOT, ".claude", "mcp-catalog.json")
+    entries: list = []
+    by_id: dict = {}
+    if os.path.isfile(catalog_path):
+        try:
+            with open(catalog_path, "r", encoding="utf-8") as f:
+                cat = json.load(f) or {}
+            for s in (cat.get("servers") or []):
+                if isinstance(s, dict) and s.get("id"):
+                    row = dict(s)
+                    row["wired"] = False
+                    entries.append(row)
+                    by_id[row["id"]] = row
+        except Exception:
+            pass
+    cfg_path = _mcp_config_path()
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f) or {}
+            for sid, spec in (cfg.get("mcpServers") or {}).items():
+                if sid in by_id:
+                    by_id[sid]["wired"] = True
+                    continue
+                # Config-only server (manually wired, no catalog entry).
+                cmd = ""
+                if isinstance(spec, dict):
+                    cmd = " ".join([spec.get("command", "")] + list(spec.get("args") or [])).strip()
+                entries.append({
+                    "id": sid,
+                    "label": sid,
+                    "purpose": "(manually wired — no catalog entry; tools are self-describing once listed)",
+                    "whenToUse": "",
+                    "command": cmd,
+                    "toolPrefix": f"mcp__{sid}__",
+                    "wired": True,
+                    "source": "config-only",
+                })
+        except Exception:
+            pass
+    return entries
+
+
+# ── 7. Dynamic orchestrator hard-rules ── manifest `hardRule` injection ──
+# v3.12 — The per-orchestrator "## … dispatch <X> FIRST" prose for the
+# SHIPPED families is static text inside capabilities_preamble (and the
+# SECTIONS list in _strip_disabled_orchestrator_blocks knows their headers).
+# Orchestrators added AFTER ship time (e.g. by a System-tab agent thread)
+# carry their own rule in the manifest instead:
+#     "hardRule": { "header": "Foo pieces: dispatch foo-orchestrator FIRST",
+#                   "body":   "<markdown body>" }
+# Those are appended to the preamble here — only when enabled for the
+# project — so a new orchestrator surfaces in every spawn's capabilities
+# without editing this file.
+
+_STATIC_HARD_RULE_IDS = {
+    "visual-orchestrator", "photography-orchestrator", "illustration-orchestrator",
+    "creative-visual-orchestrator", "material-orchestrator", "simulation-orchestrator",
+    "interactive-media-orchestrator", "narrative-experience-orchestrator",
+    "game-experience-orchestrator", "scrapbook-experience-orchestrator",
+    "motion-studio-orchestrator", "interactive-polish-orchestrator",
+}
+
+
+def _dynamic_hard_rule_sections(enabled_ids: Optional[set]) -> str:
+    """Markdown for every enabled orchestrator whose manifest carries a
+    `hardRule` and whose id is NOT covered by the static preamble prose.
+    enabled_ids=None means "all enabled" (no project context)."""
+    try:
+        import sys
+        if _EDITOR_DIR not in sys.path:
+            sys.path.insert(0, _EDITOR_DIR)
+        import orchestrators as _pl
+        manifests = _pl._scan_manifests()
+    except Exception:
+        return ""
+    chunks = []
+    for m in manifests:
+        oid = m.get("id")
+        if not oid or oid in _STATIC_HARD_RULE_IDS:
+            continue
+        if enabled_ids is not None and oid not in enabled_ids:
+            continue
+        rule = m.get("hardRule")
+        if not isinstance(rule, dict):
+            continue
+        header = (rule.get("header") or "").strip()
+        body = (rule.get("body") or "").strip()
+        if not header or not body:
+            continue
+        chunks.append(f"## {header}\n\n{body}")
+    return ("\n\n" + "\n\n".join(chunks)) if chunks else ""
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 def get_capabilities() -> dict:
@@ -220,6 +379,11 @@ def get_capabilities() -> dict:
         "subagents":       _scan_subagents(),
         "endpoints":       _daemon_endpoints(),
         "kinds":           _node_kinds(),
+        # v3.12 — workspace-level custom skills + MCP inventory. Both are
+        # user-mutable from the landing System tab (skill upload / MCP add),
+        # re-scanned per call so additions surface without a daemon restart.
+        "harnessSkills":   _scan_harness_skills(),
+        "mcpServers":      _mcp_server_inventory(),
         # v3.5 — live state. Re-probed on every call (no caching).
         "providerAvailability": _live_provider_availability(),
         "localTools":           _local_tool_availability(),
@@ -498,6 +662,42 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     except Exception:
         pass
 
+    # v3.12 — workspace custom skills (uploaded via landing → System → Custom
+    # skills). These are NOT auto-loaded by the CLI's skill loader (cwd is the
+    # project root, not the workspace), so the contract is: when a request
+    # matches a skill's description, Read its SKILL.md and follow it.
+    _hskills = _scan_harness_skills()
+    if _hskills:
+        _hsk_lines = "\n".join(
+            f"  • {s['name']} — {s['description'] or '(no description)'}\n    SKILL.md: {s['path']}"
+            for s in _hskills[:40]
+        )
+        custom_skills_block = f"""
+
+**Workspace custom skills** ({len(_hskills)}, user-installed under .harness-skills/): these are instruction documents, not CLI-loaded slash commands. When the user's request matches one of these descriptions, READ the skill's SKILL.md (absolute path below) and follow its instructions for that task:
+{_hsk_lines}
+"""
+    else:
+        custom_skills_block = ""
+
+    # v3.12 — MCP server inventory (catalog + manually wired config entries).
+    # The detailed when-to-use routing lives in the MCP routing prompt the
+    # daemon appends when a config exists; this block is the capabilities-level
+    # truth so "do you have <X> MCP?" is answerable even mid-session.
+    _mcp_rows = _mcp_server_inventory()
+    if _mcp_rows:
+        _mcp_lines = "\n".join(
+            f"  • {r.get('label') or r['id']:20s} {'✓ WIRED' if r.get('wired') else '⚠ NOT WIRED'}  tools: {r.get('toolPrefix') or ('mcp__' + r['id'] + '__')}*  — {(r.get('purpose') or '')[:140]}"
+            for r in _mcp_rows[:30]
+        )
+        mcp_inventory_block = f"""
+
+**MCP servers** ({len(_mcp_rows)} known; "WIRED" = present in the runtime --mcp-config so its tools are live this run):
+{_mcp_lines}
+"""
+    else:
+        mcp_inventory_block = ""
+
     _preamble = f"""## App capabilities — read this before saying "I don't have <X>"
 
 If the user asks for a feature, model, provider, subagent, or endpoint and you don't recognize the name, **check this catalog (or `GET $TH_DAEMON_URL/__capabilities`) before answering**. The app catalog is authoritative; your training-data knowledge is not.
@@ -541,6 +741,7 @@ If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → bac
 > **WORKSPACE MODE — every daemon URL needs `?project=$TH_PROJECT_ID`.** The daemon hosts many projects under one process. Your shell already has `TH_PROJECT_ID` set (your project's id) and `TH_DAEMON_URL` set (the daemon root). When you `curl` an endpoint, append `?project=$TH_PROJECT_ID` (or `&project=$TH_PROJECT_ID` if the URL already has a query). Forgetting it returns `400 workspace mode with N projects requires explicit ?project=<id>` — that's the daemon telling you to fix the URL, not asking what to do. Always use `$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID` (and same shape for every other endpoint), never the bare `$TH_DAEMON_URL/__workflow`. Bug history: the musem chat got back the install's brand-landing workflow (27 unrelated nodes) because of this.
 
 **Node kinds** ({len(caps['kinds'])}): {', '.join(k['kind'] for k in caps['kinds'])}. See `GET /__kinds/registry` for full per-kind contracts.
+{custom_skills_block}{mcp_inventory_block}
 
 ## Local font library — check it BEFORE proposing typography
 
@@ -1567,4 +1768,8 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # is None — see the import-failure fallback above).
     if enabled_orchestrators is not None:
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
+    # v3.12 — append manifest-carried hard rules for orchestrators added after
+    # ship time (not covered by the static prose above). Appended AFTER the
+    # strip pass — _dynamic_hard_rule_sections self-filters on enabled ids.
+    _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
     return _preamble
