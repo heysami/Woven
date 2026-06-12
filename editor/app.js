@@ -17835,7 +17835,15 @@ function _mergePatchOps(prior, fresh) {
     if (!op || !op.type) continue;
     if (op.type === "style" && op.selector) {
       const existing = styleBySel.get(op.selector);
-      if (existing) { existing.styles = Object.assign({}, existing.styles, op.styles || {}); continue; }
+      if (existing) {
+        existing.styles = Object.assign({}, existing.styles, op.styles || {});
+        // Newer identity meta wins — a later edit saw the element's
+        // current fingerprint / creator marker.
+        if (op.fp) existing.fp = op.fp;
+        if (op.parent) existing.parent = op.parent;
+        if (op.m) existing.m = op.m;
+        continue;
+      }
       const copy = { ...op, styles: { ...(op.styles || {}) } };
       styleBySel.set(op.selector, copy);
       merged.push(copy);
@@ -18010,26 +18018,41 @@ function _injectInspectorPatch(html, ops, priorOps) {
     // the generic `$(op.selector) || return` below would bail before the
     // fingerprint fallback ever ran — and a MISSING selector is exactly
     // the case the fallback exists for.
-    'function applyDelete(op){',
-    '  var victim=$(op.selector);',
-    '  if(op.fp){',
-    '    var fpText=function(n){return (n.textContent||"").replace(/[\\d%.,]+/g," ").replace(/\\s+/g," ").trim().slice(0,64);};',
-    '    var fpOk=function(n){',
-    '      if(!n||!n.tagName)return false;',
-    '      if(op.fp.tag&&n.tagName.toLowerCase()!==op.fp.tag)return false;',
-    '      if(op.fp.cls){var cl=(typeof n.className==="string"?n.className:"").trim().split(/\\s+/).filter(function(c){return c&&c.indexOf("th-pick-")!==0;}).sort().join(" ");if(cl!==op.fp.cls)return false;}',
-    '      if(op.fp.text&&fpText(n)!==op.fp.text)return false;',
-    '      return true;',
-    '    };',
-    '    if(!fpOk(victim)){',
-    '      victim=null;',
-    '      var scope=(op.parent?$(op.parent):null)||document;',
-    '      if(scope.querySelectorAll){',
-    '        var cands=scope.querySelectorAll(op.fp.tag||"*");',
-    '        for(var ci=0;ci<cands.length;ci++){if(fpOk(cands[ci])){victim=cands[ci];break;}}',
-    '      }',
+    // v3.6.6 — Shared identity-aware target resolution, used by delete,
+    // style, and text. Resolution order:
+    //   1. op.m {a,v} — a creator-op idempotency marker the target carried
+    //      at edit time (data-th-ins / data-th-clone-of / data-th-rep).
+    //      Most robust: the creator op re-stamps it on every fresh replay.
+    //   2. op.selector, VERIFIED against op.fp (tag + sorted stable classes
+    //      + digit-stripped text snippet).
+    //   3. fingerprint scan of op.parent (falling back to document).
+    // Ops persisted before fingerprints existed have neither m nor fp and
+    // keep plain selector behaviour.
+    'function fpText(n){return (n.textContent||"").replace(/[\\d%.,]+/g," ").replace(/\\s+/g," ").trim().slice(0,64);}',
+    'function fpOk(n,fp){',
+    '  if(!n||!n.tagName)return false;',
+    '  if(fp.tag&&n.tagName.toLowerCase()!==fp.tag)return false;',
+    '  if(fp.cls){var cl=(typeof n.className==="string"?n.className:"").trim().split(/\\s+/).filter(function(c){return c&&c.indexOf("th-pick-")!==0;}).sort().join(" ");if(cl!==fp.cls)return false;}',
+    '  if(fp.text&&fpText(n)!==fp.text)return false;',
+    '  return true;',
+    '}',
+    'function resolveTarget(op){',
+    '  if(op.m&&op.m.a&&op.m.v){',
+    '    try{var byM=document.querySelector("["+op.m.a+"=\\""+op.m.v+"\\"]");if(byM)return byM;}catch(_){}',
+    '  }',
+    '  var el=$(op.selector);',
+    '  if(op.fp&&!fpOk(el,op.fp)){',
+    '    el=null;',
+    '    var scope=(op.parent?$(op.parent):null)||document;',
+    '    if(scope.querySelectorAll){',
+    '      var cands=scope.querySelectorAll(op.fp.tag||"*");',
+    '      for(var ci=0;ci<cands.length;ci++){if(fpOk(cands[ci],op.fp)){el=cands[ci];break;}}',
     '    }',
     '  }',
+    '  return el;',
+    '}',
+    'function applyDelete(op){',
+    '  var victim=resolveTarget(op);',
     '  if(victim&&victim.parentElement)victim.parentElement.removeChild(victim);',
     '}',
     'function applyOne(op){',
@@ -18037,12 +18060,22 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  if(op.type==="insert"){applyInsert(op);return;}',
     '  if(op.type==="replace"){applyReplace(op);return;}',
     '  if(op.type==="delete"){applyDelete(op);return;}',
-    '  var el=$(op.selector);if(!el)return;',
+    // style + text route through the identity-aware resolver too — the
+    // user's "style update is a mixed bag" was style ops landing on
+    // whatever NOW occupies the recorded :nth-child position after other
+    // ops shifted the indexes.
     '  if(op.type==="style"&&op.styles){',
-    '    for(var k in op.styles){try{el.style.setProperty(k,op.styles[k]);}catch(_){}}',
-    '  } else if(op.type==="text"){',
-    '    if(typeof op.text==="string"&&el.textContent!==op.text)el.textContent=op.text;',
-    '  } else if(op.type==="nudge"){',
+    '    var st=resolveTarget(op);',
+    '    if(st){for(var k in op.styles){try{st.style.setProperty(k,op.styles[k]);}catch(_){}}}',
+    '    return;',
+    '  }',
+    '  if(op.type==="text"){',
+    '    var tt=resolveTarget(op);',
+    '    if(tt&&typeof op.text==="string"&&tt.textContent!==op.text)tt.textContent=op.text;',
+    '    return;',
+    '  }',
+    '  var el=$(op.selector);if(!el)return;',
+    '  if(op.type==="nudge"){',
     '    if(typeof op.left==="number")el.style.left=op.left+"px";',
     '    if(typeof op.top==="number")el.style.top=op.top+"px";',
     // v3.6.3 — duplicate idempotency is now a GLOBAL marker lookup, not an
@@ -18196,6 +18229,29 @@ function _elementDeleteFingerprint(el) {
     if (text) fp.text = text;
     return fp;
   } catch { return null; }
+}
+
+/* v3.6.6 — Identity meta for a patch op's target: fingerprint + parent
+   selector + (when the element was created by another op) the creator's
+   idempotency marker. The replay's resolveTarget prefers the marker, then
+   the fingerprint-verified selector, then a fingerprint scan — so style /
+   text / delete ops stay aimed at the element the user actually touched
+   even when other ops shift every :nth-child index. */
+function _patchTargetMeta(el) {
+  const out = {};
+  try {
+    const fp = _elementDeleteFingerprint(el);
+    if (fp) out.fp = fp;
+    if (el.parentElement) {
+      const p = elementPatchSelector(el.parentElement);
+      if (p) out.parent = p;
+    }
+    for (const a of ["data-th-ins", "data-th-clone-of", "data-th-rep"]) {
+      const v = el.getAttribute && el.getAttribute(a);
+      if (v) { out.m = { a, v }; break; }
+    }
+  } catch {}
+  return out;
 }
 
 /* v3.6.2 — Patch-grade selector for the post-mount patch script.
@@ -23342,11 +23398,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         if (ifr) {
           const styles = {};
           for (const [prop, val] of entries) styles[prop] = val;
-          stageInspectorEdit(ifr, doc, {
+          stageInspectorEdit(ifr, doc, Object.assign({
             type: "style",
             selector: elementPatchSelector(el),
             styles,
-          });
+          }, _patchTargetMeta(el)));
         }
       } catch {}
       flashPickOp("done", `Pasted style from <${clip.sourceTag}> (${entries.length} props)`);
@@ -32001,16 +32057,21 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
           if (zoomIsReactManaged(el)) { showToast("Can't edit text on a React-managed node — DOM mutation would be reverted on next render"); return; }
           const meta = _docMeta(el);
           const editSnap = snapshotBefore();
+          // v3.6.6 — Identity meta captured BEFORE the edit: the replay
+          // resolves against the fresh (pre-edit) DOM, so the fingerprint
+          // must describe the element as it looks before the text changes.
+          const preEditMeta = _patchTargetMeta(el);
+          const preEditSelector = elementPatchSelector(el);
           zoomBeginInlineEdit(el, () => {
             if (meta.isNested) {
               _markNestedDirty(meta);
               showToast("Updated text in `" + label + "` (imported `" + (meta.path || "asset") + "`, unsaved)");
             } else {
-              recordOp("Updated text in `" + label + "` (unsaved)", editSnap, {
+              recordOp("Updated text in `" + label + "` (unsaved)", editSnap, Object.assign({
                 type:     "text",
-                selector: elementPatchSelector(el),
+                selector: preEditSelector,
                 text:     el.textContent || "",
-              });
+              }, preEditMeta));
             }
           });
         } else if (tool === "comment") {
@@ -32369,7 +32430,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     } else {
       recordOp("Styled `" + label + "` " + (recapTail || "") + " (unsaved)", snap,
         Object.keys(stylesForPatch).length
-          ? { type: "style", selector: elementPatchSelector(el), styles: stylesForPatch }
+          ? Object.assign({ type: "style", selector: elementPatchSelector(el), styles: stylesForPatch }, _patchTargetMeta(el))
           : null);
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
@@ -32429,7 +32490,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     } else {
       recordOp("Inspector style applied (unsaved)", snap,
         Object.keys(stylesForPatch).length
-          ? { type: "style", selector: elementPatchSelector(el), styles: stylesForPatch }
+          ? Object.assign({ type: "style", selector: elementPatchSelector(el), styles: stylesForPatch }, _patchTargetMeta(el))
           : null);
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty, _capturePicked]);
@@ -33267,11 +33328,11 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
                   const doc2 = docRef.current;
                   const el2 = doc2 && doc2.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
                   recordOp("Resized selected element (unsaved)", snap,
-                    el2 ? {
+                    el2 ? Object.assign({
                       type:     "style",
                       selector: elementPatchSelector(el2),
                       styles:   { width: el2.style.width, height: el2.style.height },
-                    } : null);
+                    }, _patchTargetMeta(el2)) : null);
                 };
                 window.addEventListener("mousemove", onMv);
                 window.addEventListener("mouseup", onUp);
@@ -34905,11 +34966,11 @@ function WorkflowPickedInspectorDock({
     // from WorkflowSurface).
     try {
       if (typeof onStageInspectorEdit === "function") {
-        onStageInspectorEdit(ifr, doc, {
+        onStageInspectorEdit(ifr, doc, Object.assign({
           type:     "style",
           selector: elementPatchSelector(el),
           styles:   stylesForPatch,
-        });
+        }, _patchTargetMeta(el)));
       } else if (typeof onSaveIframeHtml === "function") {
         await onSaveIframeHtml(doc, "Inspector style");
       }
