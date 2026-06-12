@@ -31851,7 +31851,21 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // v3.6.5 — ALSO attach to the zoom iframe's document (and any nested
+    // imported docs). Clicking an element inside the iframe moves keyboard
+    // focus INTO the iframe, and key events don't cross frame boundaries —
+    // so the window listener alone left every shortcut (⌫ delete, ⌘D
+    // duplicate, ⌘Z undo, ⌘S save, Esc) dead the moment the user selected
+    // something. The isEditableTarget guard still protects typing inside
+    // the prototype's own inputs / the text tool's contenteditable.
+    const attachedDocs = [];
+    try { if (docRef.current) attachedDocs.push(docRef.current); } catch {}
+    try { for (const d of nestedDocsRef.current) attachedDocs.push(d); } catch {}
+    for (const d of attachedDocs) { try { d.addEventListener("keydown", onKey); } catch {} }
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      for (const d of attachedDocs) { try { d.removeEventListener("keydown", onKey); } catch {} }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // Note: `saveToDisk` + `closeWithConfirm` are intentionally OMITTED
     // from the dep array — they're declared later in this component body
@@ -31859,7 +31873,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     // at render time. The effect already re-runs on `dirty` changes (which
     // is what makes saveToDisk's identity change via useCallback), so the
     // closure picks up the freshest reference on the next re-attach.
-  }, [pendingComment, exportPanel, importPanel, slotPopoverAt, selectedId, tool, dirty, onClose]);
+    // v3.6.5 — `ready` + `nestedDocBust` re-attach the in-iframe listeners
+    // after the iframe (re)loads and when imported nested docs register.
+  }, [pendingComment, exportPanel, importPanel, slotPopoverAt, selectedId, tool, dirty, onClose, ready, nestedDocBust]);
 
   // ─── Close with unsaved-changes confirm ──────────────────────────────
   // Routed by Esc, the toolbar × button, and the backdrop click. If the
