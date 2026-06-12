@@ -18006,10 +18006,37 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  var ns=Array.prototype.slice.call(t.childNodes);',
     '  if(ns.length){try{el2.replaceWith.apply(el2,ns);}catch(_){}}',
     '}',
+    // v3.6.5 — delete owns its resolution (like reorder/insert/replace):
+    // the generic `$(op.selector) || return` below would bail before the
+    // fingerprint fallback ever ran — and a MISSING selector is exactly
+    // the case the fallback exists for.
+    'function applyDelete(op){',
+    '  var victim=$(op.selector);',
+    '  if(op.fp){',
+    '    var fpText=function(n){return (n.textContent||"").replace(/[\\d%.,]+/g," ").replace(/\\s+/g," ").trim().slice(0,64);};',
+    '    var fpOk=function(n){',
+    '      if(!n||!n.tagName)return false;',
+    '      if(op.fp.tag&&n.tagName.toLowerCase()!==op.fp.tag)return false;',
+    '      if(op.fp.cls){var cl=(typeof n.className==="string"?n.className:"").trim().split(/\\s+/).filter(function(c){return c&&c.indexOf("th-pick-")!==0;}).sort().join(" ");if(cl!==op.fp.cls)return false;}',
+    '      if(op.fp.text&&fpText(n)!==op.fp.text)return false;',
+    '      return true;',
+    '    };',
+    '    if(!fpOk(victim)){',
+    '      victim=null;',
+    '      var scope=(op.parent?$(op.parent):null)||document;',
+    '      if(scope.querySelectorAll){',
+    '        var cands=scope.querySelectorAll(op.fp.tag||"*");',
+    '        for(var ci=0;ci<cands.length;ci++){if(fpOk(cands[ci])){victim=cands[ci];break;}}',
+    '      }',
+    '    }',
+    '  }',
+    '  if(victim&&victim.parentElement)victim.parentElement.removeChild(victim);',
+    '}',
     'function applyOne(op){',
     '  if(op.type==="reorder"&&op.anchor){applyReorder(op);return;}',
     '  if(op.type==="insert"){applyInsert(op);return;}',
     '  if(op.type==="replace"){applyReplace(op);return;}',
+    '  if(op.type==="delete"){applyDelete(op);return;}',
     '  var el=$(op.selector);if(!el)return;',
     '  if(op.type==="style"&&op.styles){',
     '    for(var k in op.styles){try{el.style.setProperty(k,op.styles[k]);}catch(_){}}',
@@ -18043,8 +18070,6 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '      c.setAttribute("data-th-clone-of",mk);',
     '      el.parentElement.insertBefore(c,el.nextElementSibling);',
     '    }',
-    '  } else if(op.type==="delete"){',
-    '    if(el.parentElement)el.parentElement.removeChild(el);',
     '  }',
     '}',
     // applying guards against synchronous re-entry, but MutationObserver
@@ -18148,6 +18173,29 @@ function elementCssPath(el) {
     depth++;
   }
   return parts.join(" > ");
+}
+
+/* v3.6.5 — Content fingerprint for delete ops: tag + sorted stable classes
+   + normalized text snippet. The patch replay verifies the positional
+   selector resolves to an element matching this, falling back to a
+   fingerprint search in the recorded parent — so a delete stays aimed at
+   the element the user actually removed even when surrounding ops shift
+   every :nth-child index. */
+function _elementDeleteFingerprint(el) {
+  if (!el || !el.tagName) return null;
+  try {
+    const cls = (typeof el.className === "string" ? el.className : "")
+      .trim().split(/\s+/)
+      .filter(c => c && !c.startsWith("th-pick-"))
+      .sort().join(" ");
+    // Digits stripped: counters/percentages in prototypes animate or
+    // randomize per load — the alphabetic label is the stable identity.
+    const text = (el.textContent || "").replace(/[\d%.,]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 64);
+    const fp = { tag: el.tagName.toLowerCase() };
+    if (cls) fp.cls = cls;
+    if (text) fp.text = text;
+    return fp;
+  } catch { return null; }
 }
 
 /* v3.6.2 — Patch-grade selector for the post-mount patch script.
@@ -22957,12 +23005,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const cancelIns = targetEl.getAttribute && targetEl.getAttribute("data-th-ins");
       const cancelDup = targetEl.getAttribute && targetEl.getAttribute("data-th-clone-of");
       const cancelRep = targetEl.getAttribute && targetEl.getAttribute("data-th-rep");
+      // v3.6.5 — Content fingerprint + parent selector, captured BEFORE
+      // removal. The replay verifies the positional selector against this
+      // and falls back to a fingerprint search — positional :nth-child
+      // breaks when surrounding ops change (cancelled duplicate, reorder),
+      // which made persisted deletes silently resurrect.
+      const delFp = _elementDeleteFingerprint(targetEl);
+      const delParent = targetEl.parentElement ? elementPatchSelector(targetEl.parentElement) : "";
       targetEl.remove();
       doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
         el.classList.remove("th-pick-hover");
         el.classList.remove("th-pick-selected");
       });
       const delOp = { type: "delete", selector: deleteSel };
+      if (delFp) delOp.fp = delFp;
+      if (delParent) delOp.parent = delParent;
       if (cancelIns) delOp.cancelIns = cancelIns;
       if (cancelDup) delOp.cancelDup = cancelDup;
       if (cancelRep) delOp.cancelRep = cancelRep;
@@ -32222,6 +32279,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       if (mIns) delOp.cancelIns = mIns;
       if (mDup) delOp.cancelDup = mDup;
       if (mRep) delOp.cancelRep = mRep;
+      const fp = _elementDeleteFingerprint(el);
+      const par = el.parentElement ? elementPatchSelector(el.parentElement) : "";
+      if (fp) delOp.fp = fp;
+      if (par) delOp.parent = par;
     } catch {}
     el.remove();
     setSelectedId(null); setSelectionRect(null);
