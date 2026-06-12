@@ -5,7 +5,9 @@
     {
       "name": "editor-harness",
       "runtimeExecutable": "/opt/homebrew/bin/python3",
-      "runtimeArgs": ["/Users/sami/Documents/Woven/editor/serve.py"],
+      "runtimeArgs": [
+        "/Users/sami/Documents/Woven/editor/serve.py"
+      ],
       "cwd": ".",
       "port": 5733,
       "env": {

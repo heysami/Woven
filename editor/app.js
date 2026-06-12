@@ -17289,6 +17289,7 @@ function workflowPortFlavor(node, side) {
     return null;
   }
   if (kind === "folder") return "folder";   // both sides — out feeds folder-read / source-read
+  if (kind === "browser") return "text";    // out carries extracted page text
   return null;
 }
 
@@ -17514,6 +17515,10 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "folder", w: 320, h: 130,
     path: p.path || "", title: p.title || "",
   }),
+  "browser": (p) => ({
+    kind: "browser", w: 720, h: 540,
+    url: p.url || "",
+  }),
   "skill": (p) => {
     const node = { kind: "skill", w: 280, h: 160, skill: p.skill || "generate-image" };
     if (p.model)    node.model    = p.model;
@@ -17718,6 +17723,14 @@ const WORKFLOW_CONNECT_DEFS = {
   "folder": {
     label: "Folder",
     provides: { out: { label: "Folder scope", tags: ["folder"] } },
+    accepts:  {},
+  },
+  // Browser node: embeds a public website; its out port carries the page's
+  // readable text (extracted daemon-side via /__web_text), so it slots in
+  // anywhere a prompt's text would — agent context, skill prompts.
+  "browser": {
+    label: "Web browser",
+    provides: { out: { label: "Page text", tags: ["text"] } },
     accepts:  {},
   },
   "asset": {
@@ -27885,6 +27898,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const up = nodeById[f.node];
         if (!up) continue;
         if (up.kind === "prompt") promptTexts.push(up.text || "");
+        else if (up.kind === "browser" && /^https?:\/\//i.test(up.url || "")) {
+          // v3.9 — web-browser node: pull the page's readable text through
+          // the daemon's extractor and feed it as prompt context.
+          try {
+            const r = await fetch(apiUrl("/__web_text?url=" + encodeURIComponent(up.url.trim())));
+            const j = await r.json().catch(() => ({}));
+            if (r.ok && (j.text || "").trim()) {
+              promptTexts.push("Web page '" + (j.title || up.url) + "' (" + up.url + "):\n" + j.text.trim());
+            } else {
+              promptTexts.push("Web page " + up.url + " (unreadable: " + (j.error || ("HTTP " + r.status)) + ")");
+            }
+          } catch (e) {
+            promptTexts.push("Web page " + up.url + " (unreachable: " + String(e && e.message || e) + ")");
+          }
+        }
         else if (up.kind === "color-palette") {
           // Typed input — flatten palette into a "Design context" sentence
           // appended to the skill's prompt so the model has the swatches
@@ -31207,6 +31235,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "browser").map(n => html`
+              <${WorkflowBrowserNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSpawnOutput=${spawnDefaultOutput}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "mermaid").map(n => html`
               <${WorkflowMermaidNode}
                 key=${n.id}
@@ -32160,6 +32205,20 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Folder}/></span>
             <span className="workflow-library-item-label">Folder</span>
             <span className="workflow-library-item-id">path → read scope</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "browser", url: "" }));
+            }}
+            title="Drag onto canvas — embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text — wire it into an Agent or Skill as context, or use ✂ to clip the current selection into a prompt node."
+          >
+            <span className="workflow-library-item-glyph">🌐</span>
+            <span className="workflow-library-item-label">Web browser</span>
+            <span className="workflow-library-item-id">url → live page</span>
           </div>
           <div
             className="workflow-library-item"
@@ -41524,6 +41583,167 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
    This lets one folder pointer feed multiple downstream nodes (e.g. one
    moodboard folder used as reference by both the DS generator and the
    Prototype generator) without retyping the path on each node. */
+/* v3.9 — Web-browser node. Embeds a PUBLIC website on the canvas.
+   - URL bar commits on Enter / Go; scheme defaults to https://.
+   - Embedding strategy is probed via /__web_probe: sites that send
+     X-Frame-Options / CSP frame-ancestors are re-served through the
+     daemon's /__web_proxy (frame-blocking headers gone, <base href>
+     injected) — that ALSO makes the iframe same-origin, which is what
+     lets the ✂ clip button read the page's text selection.
+   - Like prototype nodes, the iframe only receives pointer events while
+     the node is SELECTED — so an unselected browser never swallows canvas
+     panning. When selected: scroll, click, select text, ⌘C natively.
+   - ✂ clips the current in-page selection into a prompt node wired from
+     this node's out port (via the shared spawnDefaultOutput helper).
+   - The out port carries the page's READABLE TEXT (daemon-extracted):
+     wiring it into an Agent or Skill feeds the page content as context.
+   - sandbox WITHOUT allow-top-navigation: an embedded page must never
+     hijack the editor tab (we've seen reference pages do exactly that). */
+function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSpawnOutput }) {
+  const w = node.w || 720;
+  const h = node.h || 540;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const iframeRef = useRef(null);
+  const [urlDraft, setUrlDraft] = useState(node.url || "");
+  // mode: null (no url) | "probing" | "direct" | "proxy"
+  const [mode, setMode] = useState(null);
+  const [nonce, setNonce] = useState(0);
+  const [clipNote, setClipNote] = useState(null);
+  const clipTimerRef = useRef(0);
+
+  const liveUrl = (node.url || "").trim();
+  const hasUrl = /^https?:\/\//i.test(liveUrl);
+
+  // Probe embeddability whenever the committed URL changes; sites that
+  // refuse framing automatically fall back to the daemon proxy.
+  useEffect(() => {
+    setUrlDraft(liveUrl);
+    if (!hasUrl) { setMode(null); return; }
+    let dead = false;
+    setMode("probing");
+    fetch(apiUrl("/__web_probe?url=" + encodeURIComponent(liveUrl)))
+      .then(r => r.json())
+      .then(j => { if (!dead) setMode(j && j.ok && j.embeddable ? "direct" : "proxy"); })
+      .catch(() => { if (!dead) setMode("direct"); });
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveUrl]);
+
+  const commitUrl = () => {
+    let u = (urlDraft || "").trim();
+    if (!u) { onChange && onChange({ url: "" }); return; }
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+    if (u === liveUrl) { setNonce(n => n + 1); return; }   // same url → reload
+    onChange && onChange({ url: u });
+  };
+
+  const flashClipNote = (msg) => {
+    setClipNote(msg);
+    clearTimeout(clipTimerRef.current);
+    clipTimerRef.current = setTimeout(() => setClipNote(null), 2600);
+  };
+
+  // Clip the page's current text selection into a prompt node wired from
+  // this node's out port. Reading the selection needs a same-origin
+  // document — true in proxy mode; direct embeds throw, so we hint at ⌘C.
+  const clipSelection = () => {
+    let text = "";
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      text = String((win && win.getSelection && win.getSelection()) || "").trim();
+    } catch { /* cross-origin direct embed */ }
+    if (!text) {
+      flashClipNote(mode === "proxy"
+        ? "Select some text in the page first"
+        : "Direct embeds hide their selection — ⌘C still works, or reload via proxy");
+      return;
+    }
+    const newId = onSpawnOutput && onSpawnOutput(node.id, "prompt", {
+      fromPort: "out", toPort: "in",
+      title: "Web clip",
+      text: text + "\n\n— clipped from " + liveUrl,
+    });
+    if (newId) flashClipNote("Clipped → prompt node");
+  };
+
+  const iframeSrc = !hasUrl ? null
+    : mode === "proxy" ? apiUrl("/__web_proxy?url=" + encodeURIComponent(liveUrl))
+    : liveUrl;
+
+  return html`
+    <div
+      className="workflow-node workflow-node-browser"
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">🌐</span>
+        <input
+          className="workflow-browser-url"
+          value=${urlDraft}
+          placeholder="https://…"
+          spellCheck=${false}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onInput=${(e) => setUrlDraft(e.target.value)}
+          onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); commitUrl(); } e.stopPropagation(); }}
+        />
+        ${mode === "proxy" && html`<span className="workflow-browser-mode" title="This site refuses direct embedding — re-served through the daemon proxy (same-origin, so ✂ can read your selection).">proxied</span>`}
+        <button className="workflow-node-action" title="Load / reload the page"
+                onMouseDown=${(e) => e.stopPropagation()}
+                onClick=${(e) => { e.stopPropagation(); commitUrl(); setNonce(n => n + 1); }}>⟳</button>
+        <button className="workflow-node-action" title="Clip the page's current text selection into a prompt node wired from this browser"
+                disabled=${!hasUrl}
+                onMouseDown=${(e) => e.stopPropagation()}
+                onClick=${(e) => { e.stopPropagation(); clipSelection(); }}>✂</button>
+        <button className="workflow-node-action" title="Open in a real browser tab"
+                disabled=${!hasUrl}
+                onMouseDown=${(e) => e.stopPropagation()}
+                onClick=${(e) => { e.stopPropagation(); if (hasUrl) window.open(liveUrl, "_blank", "noopener"); }}>↗</button>
+        <span className="workflow-node-bar-spacer"/>
+        <button className="workflow-node-close" onMouseDown=${(e) => e.stopPropagation()}
+                onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}>×</button>
+      </div>
+      <div className="workflow-browser-body">
+        ${iframeSrc ? html`
+          <iframe
+            key=${node.id + "-" + mode + "-" + nonce}
+            ref=${iframeRef}
+            className="workflow-node-iframe workflow-browser-iframe"
+            src=${iframeSrc}
+            title=${"Browser: " + liveUrl}
+            sandbox=${mode === "proxy"
+              /* Proxied pages are SAME-ORIGIN with the editor — their
+                 scripts could reach window.parent and hijack the app (seen
+                 live with github.com). So proxy mode renders SCRIPT-LESS:
+                 static reader-style page, selection still readable by ✂.
+                 Direct embeds are cross-origin-isolated, so scripts are
+                 safe there; top-navigation stays blocked in both modes. */
+              ? "allow-same-origin allow-forms"
+              : "allow-scripts allow-same-origin allow-forms allow-popups"}
+            referrerPolicy="no-referrer"
+            style=${{ pointerEvents: selected ? "auto" : "none" }}
+          />
+        ` : html`
+          <div className="workflow-browser-empty">
+            ${mode === "probing" ? "Probing…" : "Enter a URL above — the page renders live inside this node. Select the node to scroll / click / copy from it."}
+          </div>
+        `}
+        ${clipNote && html`<div className="workflow-browser-clipnote">${clipNote}</div>`}
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out"
+           data-port-node=${node.id} data-port-side="out"
+           title="Page text — the daemon extracts this page's readable text; wire into an Agent's input or a Skill as context."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+        <span className="workflow-port-label workflow-port-label-right">page text</span>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
+    </div>
+  `;
+}
+
 function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);

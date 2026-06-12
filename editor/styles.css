@@ -6143,6 +6143,80 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section .workflow-port-zone-out {
   width: 24px;
 }
+
+/* v3.9 — Web-browser node. URL bar lives in the title bar; the body is the
+   embedded page. The iframe gets pointer events ONLY while the node is
+   selected (inline style) — same interaction contract as prototype nodes. */
+.workflow-node-browser {
+  display: grid;
+  grid-template-rows: 32px 1fr;
+}
+.workflow-browser-url {
+  flex: 1;
+  min-width: 60px;
+  height: 22px;
+  margin: 0 4px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+.workflow-browser-url:focus { border-color: var(--accent); }
+.workflow-browser-mode {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.workflow-browser-body {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0 0 10px 10px;
+  background: #fff;
+}
+.workflow-browser-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.workflow-browser-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+.workflow-browser-clipnote {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  white-space: nowrap;
+}
 .workflow-proto-port:hover .workflow-port-label {
   background: var(--accent-soft);
   border-color: var(--accent);

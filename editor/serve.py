@@ -5535,6 +5535,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._agents_list()
         if url_path == "/__healthz":
             return self._healthz()
+        # v3.9 — web-browser node endpoints (probe / proxy / text-extract).
+        if url_path == "/__web_probe":
+            return self._web_probe(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__web_proxy":
+            return self._web_proxy(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__web_text":
+            return self._web_text(urllib.parse.parse_qs(parsed.query))
         # v2.50 — D3/D5 endpoints: registry as JSON + on-demand drift scan.
         if url_path == "/__kinds/registry":
             return self._kinds_registry()
@@ -6714,6 +6721,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # Pull whatever the node stored as output, if anything.
                 txt = (up.get("output") or up.get("text") or "").strip() if isinstance(up.get("output"), str) else (up.get("text") or "").strip()
                 if txt: upstream_chunks.append(f"### {label} ({kind})\n{txt}")
+            elif kind == "browser":
+                # v3.9 — web-browser node: fetch the page and contribute its
+                # readable text as context. Failures degrade to a note rather
+                # than blocking the run (the site may be down / offline).
+                web_url = str(up.get("url") or "").strip()
+                if re.match(r"^https?://", web_url, re.I):
+                    try:
+                        page = self._web_fetch(web_url)
+                        title, text = self._web_extract_text(page["body"], cap=16000)
+                        head = f"### {label} (web page: {web_url}" + (f" — {title}" if title else "") + ")"
+                        upstream_chunks.append(head + "\n" + (text or "(no readable text)"))
+                    except Exception as e:
+                        upstream_chunks.append(f"### {label} (web page: {web_url})\n(unreachable: {e})")
             elif kind == "section":
                 # v3.8 — section upstream: the COMBINATION of every node whose
                 # center sits inside the section frame (same containment rule
@@ -12161,6 +12181,125 @@ class H(http.server.SimpleHTTPRequestHandler):
 
 
     # ── Liveness ─────────────────────────────────────────────────────────
+
+    # ── v3.9 — Web-browser node endpoints ────────────────────────────────
+    # The `browser` canvas node embeds a public website. Three endpoints:
+    #   /__web_probe?url=  → can the site be iframed directly? (XFO / CSP)
+    #   /__web_proxy?url=  → re-serve the page from OUR origin with the
+    #                        frame-blocking headers gone + <base href> so
+    #                        relative assets resolve against the real site.
+    #                        Same-origin embedding is also what lets the
+    #                        node's "selection → prompt" affordance read the
+    #                        iframe's selection.
+    #   /__web_text?url=   → crude readable-text extraction; consumed by the
+    #                        upstream walk (agent context) and runSkill.
+    # http(s) only; this is a local personal daemon, not a public service.
+    _WEB_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+               "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+    def _web_fetch(self, url, max_bytes=2_500_000, timeout=12):
+        req = urllib.request.Request(url, headers={
+            "User-Agent": self._WEB_UA,
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.8",
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            final_url = resp.geturl()
+            ctype = resp.headers.get("Content-Type", "") or ""
+            xfo   = resp.headers.get("X-Frame-Options", "") or ""
+            csp   = resp.headers.get("Content-Security-Policy", "") or ""
+            raw   = resp.read(max_bytes)
+        charset = "utf-8"
+        m = re.search(r"charset=([A-Za-z0-9_-]+)", ctype)
+        if m:
+            charset = m.group(1)
+        try:
+            body = raw.decode(charset, errors="replace")
+        except LookupError:
+            body = raw.decode("utf-8", errors="replace")
+        return {"finalUrl": final_url, "contentType": ctype, "body": body,
+                "xfo": xfo, "csp": csp}
+
+    @staticmethod
+    def _web_url_from_qs(qs):
+        url = (qs.get("url") or [""])[0].strip()
+        if not url or not re.match(r"^https?://", url, re.I):
+            return None
+        return url
+
+    def _web_extract_text(self, html_body, cap=24000):
+        import html as _html
+        t = re.sub(r"(?is)<(script|style|noscript|svg|template)[^>]*>.*?</\1>", " ", html_body)
+        t = re.sub(r"(?s)<!--.*?-->", " ", t)
+        title = ""
+        m = re.search(r"(?is)<title[^>]*>(.*?)</title>", t)
+        if m:
+            title = _html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
+        t = re.sub(r"(?i)</(p|div|li|h[1-6]|tr|br|section|article)>", "\n", t)
+        t = re.sub(r"(?s)<[^>]+>", " ", t)
+        t = _html.unescape(t)
+        t = re.sub(r"[ \t\r\f]+", " ", t)
+        t = re.sub(r"\n\s*\n+", "\n\n", t).strip()
+        return title, t[:cap]
+
+    def _web_probe(self, qs):
+        url = self._web_url_from_qs(qs)
+        if not url:
+            return self._reply(400, {"error": "url query param required (http/https)"})
+        try:
+            page = self._web_fetch(url, max_bytes=65536)
+        except Exception as e:
+            return self._reply(200, {"ok": False, "embeddable": False, "error": str(e)})
+        embeddable = (not page["xfo"]) and ("frame-ancestors" not in page["csp"].lower())
+        return self._reply(200, {"ok": True, "embeddable": embeddable,
+                                 "finalUrl": page["finalUrl"]})
+
+    def _web_proxy(self, qs):
+        url = self._web_url_from_qs(qs)
+        if not url:
+            return self._reply(400, {"error": "url query param required (http/https)"})
+        try:
+            page = self._web_fetch(url)
+        except Exception as e:
+            body = ("<!doctype html><meta charset='utf-8'><body style='font:13px system-ui;"
+                    "padding:24px;color:#444'><b>Couldn't load page</b><br>"
+                    + _dt.datetime.now().strftime("%H:%M:%S") + " — " + str(e))
+            data = body.encode("utf-8")
+            self.send_response(502)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        body = page["body"]
+        # Inject <base href> so the page's relative assets / links resolve
+        # against the REAL origin (sub-resources load directly from the site;
+        # only the document itself is re-served from our origin).
+        base_tag = '<base href="%s">' % page["finalUrl"].replace('"', "%22")
+        m = re.search(r"(?is)<head[^>]*>", body)
+        if m:
+            body = body[:m.end()] + base_tag + body[m.end():]
+        else:
+            body = base_tag + body
+        data = body.encode("utf-8", errors="replace")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _web_text(self, qs):
+        url = self._web_url_from_qs(qs)
+        if not url:
+            return self._reply(400, {"error": "url query param required (http/https)"})
+        try:
+            page = self._web_fetch(url)
+        except Exception as e:
+            return self._reply(502, {"ok": False, "error": str(e)})
+        title, text = self._web_extract_text(page["body"])
+        return self._reply(200, {"ok": True, "title": title, "text": text,
+                                 "finalUrl": page["finalUrl"]})
 
     def _healthz(self):
         """v2.50 — Dedicated daemon-liveness probe. Touches NO locks
