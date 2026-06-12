@@ -915,6 +915,192 @@ KINDS = {
                     "Drop-site / Accept-override. Direct clone of cp_sim_gate_."
                 ),
             },
+
+            # ──────────────────────────────────────────────────────────────────
+            # MOTION-STUDIO orchestrator (library-backed — cinematic full-bleed
+            # video/raster + UI choreographed as LINEAR full-screen scenes; the
+            # Apple-product-page / motionsites register). Library:
+            # docs/research/motion-scene-library.index.json → per-technique
+            # entries at design-library/motion-<techniqueId>.md. Node-id
+            # convention: ms_<component>_<msId>, e.g. ms_storyboard_hero_reveal.
+            # Unique trigger shape: mode=brainstorm runs BEFORE the shell exists
+            # (claims surfaces, returns ms-mount slot tags); mode=build is the
+            # standard enumerate + scaffold pass. See motion-studio-orchestrator.md.
+            # ──────────────────────────────────────────────────────────────────
+
+            # ── Motion-studio component drawers (wildcard prefixes) ───────────
+            "ms_research_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/research.md",
+                "completion": {"requires": [
+                    "files: research.md exists, non-empty",
+                ]},
+                "notes": (
+                    "Single tech + choreography researcher. Commits binding "
+                    "(self vs host-scroll) + assetPolicy (video-first vs "
+                    "raster-first, validated against live provider "
+                    "availability) + scene count (2-6) + per-scene technique "
+                    "candidates from the motion-scene library index + "
+                    "transition register + the opt-in multiDraftRecommendation."
+                ),
+            },
+            "ms_storyboard_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/storyboard.json",
+                "completion": {"requires": [
+                    "files: storyboard.json exists, non-empty",
+                    "files: storyboard.md exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "THE canonical scene-plan contract every downstream drawer "
+                    "reads: linear scenes[] with techniqueId + asset spec "
+                    "(medium, subjectAnchor, quietZone, interactionClause, "
+                    "holdFrames) + ui placement + holdBeats + transitions. "
+                    "§8.7 crux — 3-draft remix on the scene-split axis when "
+                    "research recommends. Lens-gated on concept + aesthetic."
+                ),
+            },
+            "ms_concept_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/concept/concept.json",
+                "completion": {"requires": [
+                    "files: concept/concept.json exists, non-empty",
+                    "files: one concept/<sceneId>.png plate per storyboard scene, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "CONCEPT PLATES — the cheap-stills-before-expensive-video "
+                    "planning gate. Per scene, ONE hi-res (1920x1080) generated "
+                    "design plate of the full composed frame (asset + UI drawn "
+                    "together, real copy) via visual-orchestrator co-dispatch, "
+                    "then visually inspected to extract concept.json (observed "
+                    "subject/UI positions, verified quiet zone, palette, type "
+                    "tone, scrim needs, assetPromptNotes + uiBuildNotes). The "
+                    "caller MUST surface the plates to the user (approve / "
+                    "steer / re-draft) BEFORE dispatching ms_scenes_ — video "
+                    "budget is only spent on approved plates, which become the "
+                    "composition contract (and the i2v image reference where "
+                    "the provider supports one). §8.7 crux — 3-draft remix on "
+                    "the layout axis (counterweight / monumental-center / "
+                    "cinema-band). Lens-gated on aesthetic + concept; craft "
+                    "light. Plates are PLANS — production text ships as DOM, "
+                    "never as pixels."
+                ),
+            },
+            "ms_scenes_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/scenes.html",
+                "completion": {"requires": [
+                    "files: scenes.html exists, non-empty",
+                    "files: scenes.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Commissions every storyboard asset via visual-orchestrator "
+                    "co-dispatch AGAINST the user-approved concept plates "
+                    "(assetPromptNotes reproduced in every prompt; plate passed "
+                    "as i2v reference where supported; UI styled from "
+                    "uiBuildNotes) (hi-res >=1920x1080 edge-to-edge; "
+                    "subjectAnchor + quietZone + interactionClause INTO the "
+                    "generation prompt; degradation ladder video -> raster-"
+                    "sequence -> raster+CSS motion -> Hyperframes motion "
+                    "LAST and only when research committed hyperframesEligible "
+                    "(vector-native register; photoreal/immersive registers "
+                    "stop at raster+CSS)), then "
+                    "assembles full-bleed scene sections with UI in each "
+                    "asset's quiet zone. All 3 lenses gate."
+                ),
+            },
+            "ms_motion_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/motion.js",
+                "completion": {"requires": [
+                    "files: motion.js exists, non-empty",
+                    "files: motion.css exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "The scene engine: linear back-and-forth stepper, "
+                    "per-technique transitions, within-scene hold beats "
+                    "(video pauses on authored frames while UI animates in), "
+                    "entrance choreography, always-in-motion ambient duty, "
+                    "reduced-motion branch. §8.7 crux — 3-draft remix on the "
+                    "transition-register axis (seamless-cinematic / "
+                    "staged-theatrical / kinetic-snap). All 3 lenses gate."
+                ),
+            },
+            "ms_interactions_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/interactions.js",
+                "completion": {"requires": [
+                    "files: interactions.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "The input layer: pointer-x/xy scrub (eased pursuit), "
+                    "wheel-step/swipe navigation events, host-scroll "
+                    "postMessage bridge when binding=host-scroll (never traps "
+                    "scroll), gyro/autonomous fallbacks. Emits events "
+                    "__msMotion consumes; owns no scene state. Lens-gated on "
+                    "craft only (<=50ms latency, passive listeners, debounce, "
+                    "pointer-capture hygiene)."
+                ),
+            },
+            "ms_runtime_": {
+                "outputsRoot": "source/{prototype}/motionscenes/{msId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Composed runtime — wires scenes + motion + interactions, "
+                    "implements the preload strategy (poster-first paint, "
+                    "current+next preload, off-screen pause), reduced-motion + "
+                    "failed-video fallbacks, and the §12.3 devtools harness "
+                    "(window.__ms). §8.7 crux — remix on the pacing axis. "
+                    "Full lens trio — this IS the user-facing artefact."
+                ),
+            },
+
+            # ── Multi-draft pick checkpoints ──────────────────────────────────
+            "cp_ms_storyboard_pick_": {
+                "outputsRoot": "DECISION_cp_ms_storyboard_pick_{msId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_ms_storyboard_pick_{msId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 storyboard drafts (scene-split axis).",
+            },
+            "cp_ms_concept_pick_": {
+                "outputsRoot": "DECISION_cp_ms_concept_pick_{msId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_ms_concept_pick_{msId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 concept-plate sets (layout axis), or approves/steers the single set at the mandatory plate-review gate.",
+            },
+            "cp_ms_motion_pick_": {
+                "outputsRoot": "DECISION_cp_ms_motion_pick_{msId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_ms_motion_pick_{msId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 motion drafts (transition-register axis).",
+            },
+            "cp_ms_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_ms_runtime_pick_{msId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_ms_runtime_pick_{msId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 runtime drafts (pacing axis).",
+            },
+
+            # ── Family release gate ───────────────────────────────────────────
+            "cp_ms_gate_": {
+                "outputsRoot": "DECISION_cp_ms_gate_{msId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_ms_gate_{msId}.json exists with non-empty values",
+                ]},
+                "notes": (
+                    "Reads QUALITY_REPORT.json. If all lens verdicts for this "
+                    "msId are pass, commits value='clear' and releases the "
+                    "motion-studio container. On any block-fail at iteration "
+                    "5, emits <decision-request> with Retry / Patch / "
+                    "Accept-override. Direct clone of cp_sim_gate_ semantics."
+                ),
+            },
         },
     },
 
@@ -1768,6 +1954,250 @@ KINDS = {
             "the orchestrator system; the other six containers (prototype, "
             "simulation, interactive-media, narrative-experience, game-"
             "experience, scrapbook-experience) are primary build artefacts."
+        ),
+    },
+
+    # ── motion-studio (library-backed — cinematic linear-scene presentation) ──
+    # Presentation-first sections/pages: full-bleed generated video (or motion
+    # raster) + UI choreographed as a LINEAR sequence of full-screen scenes
+    # with within-scene hold beats. Library: docs/research/motion-scene-
+    # library.index.json → design-library/motion-<techniqueId>.md. Unique
+    # trigger shape: mode=brainstorm runs BEFORE the shell exists. See
+    # `motion-studio-orchestrator.md`.
+    "motion-studio": {
+        "title":        "Motion studio (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "msId":              {"type": "text",   "userEditable": False, "required": True},
+            "binding":           {"type": "enum",
+                                   "values": ["self", "host-scroll"],
+                                   "userEditable": False,
+                                   "doc": "self: the iframe owns wheel/swipe scene stepping (full-page pieces). host-scroll: the host forwards scroll progress via postMessage; the iframe never traps scroll (sections inside a scrolling page)."},
+            "assetPolicy":       {"type": "enum",
+                                   "values": ["video-first", "raster-first"],
+                                   "userEditable": False,
+                                   "doc": "Committed by research against live provider availability. Degradation ladder: video → raster-sequence → raster + CSS motion → Hyperframes motion (LAST, genre-gated: only vector-native registers; photoreal/immersive registers stop at raster + CSS)."},
+            "sceneCount":        {"type": "number", "userEditable": False,
+                                   "doc": "Linear full-screen scenes (2–6, presentation-first)."},
+            "transitionRegister": {"type": "enum",
+                                    "values": ["seamless-cinematic",
+                                               "staged-theatrical",
+                                               "kinetic-snap"],
+                                    "userEditable": False,
+                                    "doc": "Picked at the §8.7 motion crux when research recommends; otherwise from research."},
+            "assetCount":        {"type": "number", "userEditable": False,
+                                   "doc": "Total generated assets (videos + stills + sequence frames + parallax layers) commissioned via visual-orchestrator co-dispatch."},
+            "exposedAssets":     {"type": "array",  "userEditable": False},
+            "lockedState":       {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/storyboard/concept/scenes/motion/interactions/runtime) + N visual-orchestrator-co-dispatched plate + asset trios",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of a cinematic linear-scene presentation piece — "
+            "the Apple-product-page / motionsites register. The aesthetic "
+            "payload is tightly choreographed full-bleed video/raster + UI; "
+            "the piece MUST NOT be complex (no app features, no data, no "
+            "branching) — linear back-and-forth scene stepping only, with "
+            "within-scene hold beats (video pauses on an authored frame, UI "
+            "animates in, next input releases). Hard composition law: assets "
+            "generate hi-res (>=1920x1080) edge-to-edge with subjectAnchor + "
+            "quietZone + interactionClause IN the generation prompt, and UI "
+            "placement follows the asset's composition (subject right → UI "
+            "left). Always >=1 living layer per scene at rest; all video "
+            "muted+playsinline; no audio, no permission gates. Per scene, a "
+            "hi-res CONCEPT PLATE (full composed frame, UI included) is "
+            "generated and user-approved BEFORE any video budget is spent; "
+            "the approved plate is the composition contract asset generation "
+            "+ UI build + Step-8 QA obey. Scene assets are then commissioned "
+            "via visual-orchestrator co-dispatch per storyboard entry."
+        ),
+    },
+
+    # ── photography-enrichment (container) ───────────────────────────────
+    # The user-facing artefact container for one photography art-direction
+    # pass. Committed by photography-orchestrator AFTER every pe_photo_<slotId>
+    # enrichment node is done. visual-orchestrator finds enrichments by id
+    # pattern, not by edges — this container is the audit surface, not a
+    # dependency hub. See `photography-orchestrator.md §4`.
+    "photography-enrichment": {
+        "title":        "Photography enrichments",
+        "category":     "container",
+        "inputs": {
+            "projectId":   {"type": "text",   "userEditable": False, "required": True},
+            "totalSlots":  {"type": "number", "userEditable": False,
+                             "doc": "Photographic slots enriched (one pe_photo_<slotId> node each)."},
+            "stylesUsed":  {"type": "array",  "userEditable": False,
+                             "doc": "Library styleIds picked across slots (one or two per project for coherence)."},
+            "boundTo":     {"type": "object", "userEditable": False,
+                             "doc": "{documentSetId: <branch>} — which source branch the enrichments target."},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "pe_photo_<slotId> enrichment nodes (one per photographic slot)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.enrichmentNodes non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Art-direction pre-pass container — committed BEFORE "
+            "visual-orchestrator's per-medium dispatch. Each pe_photo_<slotId> "
+            "child carries a paste-ready promptForRasterPhoto + negativePrompt "
+            "+ film/lens/lighting/mood hints sourced from the photography "
+            "library's per-entry file (design-library/photo-<styleId>.md). "
+            "visual-orchestrator Step 0a reads the children by id pattern; no "
+            "edges connect the two orchestrators. Degrade-gracefully: when "
+            "this container is absent, raster-photo drawers proceed with "
+            "default prompts."
+        ),
+    },
+
+    # ── illustration-enrichment (container) ──────────────────────────────
+    # Sibling of photography-enrichment — same shape, illustration library.
+    # See `illustration-orchestrator.md §3`.
+    "illustration-enrichment": {
+        "title":        "Illustration enrichments",
+        "category":     "container",
+        "inputs": {
+            "projectId":      {"type": "text",   "userEditable": False, "required": True},
+            "totalSlots":     {"type": "number", "userEditable": False,
+                                "doc": "Illustrative slots enriched (one pe_illust_<slotId> node each)."},
+            "stylesUsed":     {"type": "array",  "userEditable": False,
+                                "doc": "Library styleIds picked across slots."},
+            "categoriesUsed": {"type": "array",  "userEditable": False,
+                                "doc": "Library categories in play (3D / flat-vector / hand-drawn / anime / ...)."},
+            "boundTo":        {"type": "object", "userEditable": False,
+                                "doc": "{documentSetId: <branch>}."},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "pe_illust_<slotId> enrichment nodes (one per illustrative slot)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.enrichmentNodes non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Art-direction pre-pass container — committed BEFORE "
+            "visual-orchestrator's per-medium dispatch. Each pe_illust_<slotId> "
+            "child carries promptForRasterForeground + negativePrompt + "
+            "material/line/color/role hints from the illustration library's "
+            "per-entry file (design-library/illust-<styleId>.md). "
+            "visual-orchestrator Step 0a reads the children by id pattern when "
+            "dispatching raster-foreground / depictive vector-mark. May coexist "
+            "with photography-enrichment on the same project (different slots)."
+        ),
+    },
+
+    # ── creative-visual-promotion (container) ────────────────────────────
+    # Post-pass container — flat <img> slots promoted into creative
+    # compositions (text-as-mask, asset-bleed, clip-path, drop-cap, bullets,
+    # cut-into-letters). Editorial-loud aesthetics only.
+    # See `creative-visual-orchestrator.md §5`.
+    "creative-visual-promotion": {
+        "title":        "Creative visual promotions",
+        "category":     "container",
+        "inputs": {
+            "projectId":                  {"type": "text",   "userEditable": False, "required": True},
+            "promotionCount":             {"type": "number", "userEditable": False},
+            "promotionsApplied":          {"type": "array",  "userEditable": False,
+                                            "doc": "Promotion types applied: text-as-mask / asset-bleed-into-paragraph / irregular-clip-path / asset-as-drop-cap / asset-as-bullet / asset-cut-into-letters."},
+            "supplementalAssetsGenerated":{"type": "number", "userEditable": False,
+                                            "doc": "Masking-geometry / replacement assets co-dispatched through visual-orchestrator."},
+            "stylesReplaced":             {"type": "number", "userEditable": False,
+                                            "doc": "Slots whose photo/illust style was re-picked to fit the promoted composition."},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "cv_<slotId> promotion nodes + optional visual-orchestrator-co-dispatched supplemental asset trios",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.promotionNodes non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Post-pass promotion container — runs AFTER visual-orchestrator "
+            "completes, BEFORE material-orchestrator and interactive-polish. "
+            "Gated on editorial-loud / typography-driven aesthetics (or "
+            "explicit user request). Each cv_<slotId> child rewrites the host "
+            "HTML (SVG mask / clip-path / pseudo-element composition) and "
+            "appends supplemental CSS; outputs.hostHTMLChanges records each "
+            "file touched with a diff summary."
+        ),
+    },
+
+    # ── material-fidelity (container) ─────────────────────────────────────
+    # Late-pass container — material aesthetics (glass / clay / chrome /
+    # holographic / paper / grain / glitch / ...) implemented per element with
+    # reactive behaviours, within the committed reactiveBudget.
+    # See `material-orchestrator.md §4`.
+    "material-fidelity": {
+        "title":        "Material fidelity pass",
+        "category":     "container",
+        "inputs": {
+            "projectId":        {"type": "text",   "userEditable": False, "required": True},
+            "materialCount":    {"type": "number", "userEditable": False,
+                                  "doc": "Elements that received a material assignment (one mat_<elementHash> node each)."},
+            "materialsUsed":    {"type": "array",  "userEditable": False,
+                                  "doc": "Library materialIds assigned across elements."},
+            "reactiveBudget":   {"type": "enum",
+                                  "values": ["subtle", "rich", "theatrical"],
+                                  "userEditable": False,
+                                  "doc": "Committed via decision-request: how much input-driven reactivity (pointer / scroll / gyro)."},
+            "permissionGates":  {"type": "array",  "userEditable": False,
+                                  "doc": "Permissions the reactive layer requests behind a user gesture (e.g. gyro)."},
+            "additionalAssets": {"type": "number", "userEditable": False,
+                                  "doc": "Textures / shaders / videos co-commissioned via visual-orchestrator for materials."},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "mat_<elementHash> implementation nodes + optional visual-orchestrator-co-dispatched texture/shader trios",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.materialNodes non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Late material pass — runs AFTER visual-orchestrator + "
+            "creative-visual-orchestrator (if any), BEFORE interactive-polish "
+            "and Step-8 QA. Implementation files live in "
+            "source/<branch>/_material/<elementHash>.{css,svg,glsl,js}, "
+            "concatenated into composite.css + composite.js per page "
+            "(outputs.compositeCSSPath / compositeJSPath). Honours "
+            "prefers-reduced-motion and keeps every reactive behaviour inside "
+            "the committed reactiveBudget."
         ),
     },
 

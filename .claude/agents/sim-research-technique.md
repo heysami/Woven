@@ -100,6 +100,12 @@ At the declared entity count, which rendering primitive holds 60 fps?
 
 For 3D: `three.js` is the default; below 1000 entities single meshes work; above use `InstancedMesh` or `BatchedMesh`.
 
+**3D render sources, textures, effects — read `editor/kinds/3D_CAPABILITIES.md` when paradigm=`3d-environment`.** Beyond plain three.js you may commit:
+- `renderSource: spline` — the Spline runtime (`@splinetool/runtime`) when the brief calls for a DESIGNED 3D register AND a scene source exists (user-provided `.splinecode` URL / export, or a Spline-exported glTF loaded via three.js). Hard gate: agents cannot synthesize `.splinecode`; if the user wants Spline-grade 3D with no scene source, surface a `<decision-request>` for one.
+- `renderSource: three.js+gltf` — Meshy text-to-3D hero meshes when `TH_MESHY_API_KEY` is wired (`GET /__capabilities`).
+- `texturePolicy` — if the style permits, 3D objects get textures (generated tileable maps via visual-orchestrator co-dispatch, matcaps, or procedural CanvasTexture). Pick from the §2 table: `none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres`.
+- `effectsBudget` — particle effects / water / cloth / strand-hair / fur per the §3 catalog, tiered `none | ambient | rich | showcase`. Name which effects, anchored in the brief's style register.
+
 ### 2.2 Tick rate (paradigm × scale)
 
 | paradigm | entityScale | TICK_HZ default |
@@ -155,6 +161,11 @@ Why: {1-2 sentences, anchored in the intent's spatial/temporal/relational shape 
 **{library + primitive — concrete: e.g. "MapLibre GL JS + deck.gl ScatterplotLayer", or "three.js InstancedMesh", or "canvas2D dirty-rect"}**
 Why: {1-2 sentences. If real-world target named in intent, this is one of the §2.0 mandated candidates — name it.}
 
+## Committed 3D extras (paradigm=3d-environment only — delete this section otherwise)
+- renderSource:  **{three.js | spline | three.js+gltf | hybrid}** {+ scene URL / model list if not pure three.js}
+- texturePolicy: **{none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres}** — {1 line: which style register earns it}
+- effectsBudget: **{none | ambient | rich | showcase}** — {named §3 effects from editor/kinds/3D_CAPABILITIES.md, e.g. "gerstner water plane + ≤2k dust motes"}
+
 ## Committed tick rate
 **TICK_HZ = {N}**
 Fixed-step accumulator pattern (Glenn Fiedler "Fix Your Timestep!").
@@ -179,7 +190,7 @@ Why: {1 line}
 ## Component briefing — what each downstream drawer reads from this
 
 - **sim_entities_{simId}**: entity schema appropriate for paradigm `{paradigm}`. Entity count target: {entityScale}.
-- **sim_scene_{simId}**: render strategy `{render strategy}`. Paradigm `{paradigm}` implies camera/composition: `<top-down|isometric|free|first-person>`.
+- **sim_scene_{simId}**: render strategy `{render strategy}`. Paradigm `{paradigm}` implies camera/composition: `<top-down|isometric|free|first-person>`. {If 3d-environment: + the Committed 3D extras block (renderSource / texturePolicy / effectsBudget) per editor/kinds/3D_CAPABILITIES.md.}
 - **sim_loop_{simId}**: TICK_HZ = {N}; fixed-step accumulator; honour determinism.
 - **sim_controls_{simId}**: interaction primitive `{primitive}`.
 - **sim_overlay_{simId}**: legend / chrome / HUD per paradigm conventions.
@@ -202,6 +213,9 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sim_research_<simId>/commit?pr
       "renderStrategy": "<committed>",
       "tickHz":         <N>,
       "interaction":    "<committed>",
+      "renderSource":   "<committed — 3d-environment only, omit otherwise>",
+      "texturePolicy":  "<committed — 3d-environment only, omit otherwise>",
+      "effectsBudget":  "<committed — 3d-environment only, omit otherwise>",
       "multiDraftCruxes": [/* "sim_scene_<simId>" only if §4 said Yes, "sim_loop_<simId>" only if §4 said Yes */]
     },
     "files":   [{"relPath": "research.md", "content": "<note from §4>"}],

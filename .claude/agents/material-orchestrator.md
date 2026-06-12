@@ -13,7 +13,7 @@ You are OPT-IN by aesthetic. Standard polish handles microanimation; you handle 
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/material-orchestrator.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/material-orchestrator.md"
-# Index is the runtime read (~56KB JSON, scanned from prototype/ files).
+# Index is the runtime read (~56KB JSON, scanned from design-library/ files).
 cat "$TH_PROTOCOL_ROOT/docs/research/material-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/material-library.index.json"
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
@@ -94,8 +94,8 @@ For each enumerated element:
    - Image overlay / texture layer → secondary
    - Border / divider → letterpress / plotter-pen-line / hand-architect-sketch
    - Body type → letterpress-emboss / monospace-code / ink-bleed
-4. **Anti-pattern cross-check from index.entries[materialId].antiPatternKeywords** (first 3 of `killsTheIllusion[]`). For each candidate, check if the element's surroundings (parent class names, sibling materials already assigned) match an anti-pattern. Drop conflicts; reach for next alternative. Loop until clear.
-5. **Compose the implementation — ONLY NOW slice the library entry.** `sed -n '<start>,<end>p' docs/research/material-library.md` using `lineRange` returns ~50-150 lines of YAML for that material (CSS snippet, SVG filter primitives, GLSL shader, raster/video specs, all reactive behaviours, anti-patterns). Pass to `material-fidelity-author` drawer.
+4. **Anti-pattern cross-check against the entry's `killsTheIllusion[]`.** The index carries no anti-pattern fields — when disambiguating, read the candidate's `sourceFile` frontmatter (`design-library/material-<materialId>.md`, ~1-5 KB) and check whether the element's surroundings (parent class names, sibling materials already assigned) match any `killsTheIllusion[]` entry. Drop conflicts; reach for next alternative. Loop until clear. (The drawer re-checks the full list at compose time.)
+5. **Compose the implementation — ONLY NOW read the entry's source file.** `cat design-library/material-<materialId>.md` (path in `index.entries[<materialId>].sourceFile`) returns ~1-5 KB for that material (CSS snippet, SVG filter primitives, GLSL shader, raster/video specs, all reactive behaviours, anti-patterns). Pass to `material-fidelity-author` drawer. If the sourceFile is missing → `runStatus: error`; re-run `scripts/build-library-indexes.py`.
 
 ### Per-element assignment shape (written to workflow.json)
 

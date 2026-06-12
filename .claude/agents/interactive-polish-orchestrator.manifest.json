@@ -54,7 +54,7 @@
     ]
   },
   "documents": {
-    "designDoc": "docs/features/interactive-polish-orchestrator.md",
-    "calibration": ".claude/lens-calibration/fixtures/polish-*"
+    "designDoc": null,
+    "calibration": null
   }
 }

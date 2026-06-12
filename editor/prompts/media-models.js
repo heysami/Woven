@@ -425,6 +425,9 @@
         "4. Full-window <canvas>, resize handling, pixelRatio capped at 2.\n" +
         "5. A tiny help line bottom-center: 'drag to orbit · scroll to zoom'.\n" +
         "6. No bundlers, no TypeScript. Plain ES modules via <script type=\"module\">.\n" +
+        "7. Textures when the style permits: never ship a default-gray hero. Use a provided texture/model file if the prompt names one, otherwise a procedural CanvasTexture (noise / gradient / stripes) toned to the brief's palette. Pixel/retro briefs: low-res textures + NearestFilter.\n" +
+        "8. Advanced effects only when the brief earns them (see editor/kinds/3D_CAPABILITIES.md): GPU particles via THREE.Points + ShaderMaterial (pre-allocated, no rAF allocation), water as a Gerstner vertex-shader plane, cloth/strands via small verlet grids, fog first for atmosphere. Honour prefers-reduced-motion by damping, not freezing.\n" +
+        "9. If the prompt provides a Spline scene URL (.splinecode), you may use @splinetool/runtime to load and drive it instead of hand-building geometry — never fabricate a .splinecode URL.\n" +
         "Output the file with Write to the path the user specifies. Do not print code in chat; just write the file.",
     },
     {

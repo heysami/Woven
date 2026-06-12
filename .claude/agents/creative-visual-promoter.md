@@ -16,7 +16,7 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/creative-visual-promoter.md" \
 # Only if the orchestrator's envelope says styleReplaceDecision.shouldReplace == true:
 cat "$TH_PROJECT_ROOT/docs/research/photography-library.index.json" 2>/dev/null
 cat "$TH_PROJECT_ROOT/docs/research/illustration-library.index.json" 2>/dev/null
-# Per-entry library slices via sed + index.lineRange when actually re-prompting.
+# Per-entry detail via index.entries[<styleId>].sourceFile (design-library/<prefix>-<styleId>.md) when actually re-prompting.
 ```
 
 ## 1. Input envelope

@@ -12,7 +12,7 @@
       "mode": "chat",
       "title": "Photo art-direction pass (BEFORE visual-orchestrator)",
       "rule": "After source HTML is scaffolded (by /prototype skill or top-level Claude), BEFORE visual-orchestrator's per-medium dispatch fires, chat-Claude dispatches photography-orchestrator IF (a) at least one slot in the source will resolve to raster-photo medium (explicit data-medium attribute OR surrounding aesthetic demands photography per the library decision tree — recipe-editorial-magazine, recipe-lookbook, recipe-warm-restraint, recipe-bento-marketing, aesthetic-coastal-grandmother, aesthetic-dark-academia, aesthetic-cottagecore with photo, aesthetic-y2k-futurism, style-cream-humanist, style-serif-warm-paper, etc.) AND (b) an image-generation model is wired into the project (a working image-gen skill registered via /__capabilities). Also fires on explicit user request naming a photographer / magazine / photo style (\"Helmut Newton flash\" / \"Chrome Hearts editorial\" / \"GenZ flash\" / \"Wolfgang Tillmans candid\" / \"golden hour cinematic\" / \"Y2K halftone\"). One consistent flow. If conditions fail, returns runStatus:error and visual-orchestrator proceeds with default prompts.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator when raster-photo slots present AND image-gen wired'"
+      "ruleSource": "editor/kinds/capabilities.py — 'Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator'"
     }
   ],
   "dispatches": {
@@ -26,8 +26,7 @@
     "lenses": []
   },
   "skills": [
-    "generate-image",
-    "raster-photo"
+    "generate-image"
   ],
   "nodeKinds": {
     "container": [

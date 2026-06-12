@@ -18,7 +18,7 @@ cat "$TH_PROTOCOL_ROOT/docs/research/illustration-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/illustration-library.index.json"
 ```
 
-Same pattern as `photography-style-enricher.md §0`. Index = discovery + filter; full library = `sed`-slice per entry via `lineRange`. NEVER invent a styleId.
+Same pattern as `photography-style-enricher.md §0`. Index = discovery + filter; per-entry detail = read `index.entries[<styleId>].sourceFile` (`design-library/illust-<styleId>.md`, ~1-5 KB). The primer `docs/research/illustration-library.md` carries no per-entry data. NEVER invent a styleId.
 
 ## 1. Input envelope
 

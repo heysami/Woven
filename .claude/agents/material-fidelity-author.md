@@ -18,7 +18,7 @@ cat "$TH_PROTOCOL_ROOT/docs/research/material-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/material-library.index.json"
 ```
 
-Same pattern as `photography-style-enricher.md §0`. Index = discovery + filter. Full library `material-library.md` = `sed`-slice the targeted entry's `lineRange` for the actual implementation snippets (CSS / SVG filter / GLSL / raster spec / video spec / reactive behaviours + `killsTheIllusion` anti-patterns to cross-check against).
+Same pattern as `photography-style-enricher.md §0`. Index = discovery + filter. Per-entry detail = read `index.entries[<materialId>].sourceFile` (`design-library/material-<materialId>.md`, ~1-5 KB) for the actual implementation snippets (CSS / SVG filter / GLSL / raster spec / video spec / reactive behaviours + `killsTheIllusion` anti-patterns to cross-check against). The primer `docs/research/material-library.md` carries no per-entry data.
 
 ## 1. Input envelope
 

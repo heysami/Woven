@@ -13,7 +13,7 @@ You are OPT-IN by trigger. When chat-Claude dispatches you, it has already verif
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/illustration-orchestrator.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/illustration-orchestrator.md"
-# Index is the runtime read (~80KB JSON, scanned from prototype/ files).
+# Index is the runtime read (~80KB JSON, scanned from design-library/ files).
 cat "$TH_PROTOCOL_ROOT/docs/research/illustration-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/illustration-library.index.json"
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
@@ -72,13 +72,13 @@ If `imageGenSkills` is empty → `runStatus: error` per §1 abort rule.
 
 For each enumerated illustrative slot — same algorithm as `photography-orchestrator.md §2`:
 
-1. **Look up candidates from `index.decisionTree[committedAesthetic]`** — returns `{default, alternatives[], decoration}`. Pure JSON lookup. If the slug has no row, prefix-match against the closest parent.
+1. **Look up candidates from `index.decisionTree[committedAesthetic]`** — returns `{default, alternatives[]}`. Pure JSON lookup. If the slug has no row, prefix-match against the closest parent.
 2. **Honour `explicitStylePicks[slotId]`** if set (validate against `index.entries`).
 3. **Filter on JSON fields only**:
-   - **Role fit**: `index.entries[styleId].roleAffinity` if present, OR if the slot is `decoration`-role, use the decisionTree row's `decoration` field directly.
-   - **antiPatterns**: drop candidates whose `antiPatternKeywords` overlap the envelope's `antiPatterns[]` or whose `notForUseWhen` conflicts with `sensoryTargets`.
+   - **Role fit**: `index.entries[styleId].roleAffinity` if present; for `decoration`-role slots prefer candidates whose `index.entries[styleId].role` is `decoration`.
+   - **antiPatterns**: drop candidates whose `notForUseWhen` conflicts with the envelope's `antiPatterns[]` / `sensoryTargets`. (The entry's full avoid-keyword list lives in its `sourceFile`; the drawer cross-checks it at compose time.)
    - First survivor → `primaryStyleId`. Optional `secondaryStyleId` from alternatives (for register-chaining like flat-vector mascot in watercolor scene).
-4. **Compose the prompt — ONLY NOW read the library entry's slice.** `sed -n '<start>,<end>p' docs/research/illustration-library.md` using the index's `lineRange` returns ~30 lines of YAML for that entry. Pass to `illustration-style-enricher` drawer, or compose inline.
+4. **Compose the prompt — ONLY NOW read the entry's source file.** `cat design-library/illust-<styleId>.md` (path in `index.entries[<styleId>].sourceFile`) returns ~1-5 KB of frontmatter + markdown for that entry. Pass to `illustration-style-enricher` drawer, or compose inline. If the sourceFile is missing → `runStatus: error`; re-run `scripts/build-library-indexes.py`.
 
 ### Per-slot enrichment shape (written to workflow.json)
 

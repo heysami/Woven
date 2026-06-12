@@ -13,7 +13,7 @@ You are OPT-IN by trigger. When chat-Claude dispatches you, it has already verif
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/photography-orchestrator.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/photography-orchestrator.md"
-# The index is the runtime read (~33KB JSON, scanned from prototype/ files).
+# The index is the runtime read (~33KB JSON, scanned from design-library/ files).
 cat "$TH_PROTOCOL_ROOT/docs/research/photography-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/photography-library.index.json"
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
@@ -21,19 +21,18 @@ curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 
 **The library file is now a primer only.** `docs/research/photography-library.md` carries the prose principles (§1 prompting fundamentals, §3 decision-tree prose, §4 universal negatives, §5 implementation notes) — ~2K words, no per-entry data. **Per-entry source files live at `design-library/photo-<styleId>.md`** — that's where each style is hand-edited. The drawer reads the per-entry file directly at dispatch; you (the orchestrator) only need the index to pick which entry.
 
-**The index is structured for orchestrator consumption.** Schema (declared in the index's `version: "1.0"`):
+**The index is structured for orchestrator consumption.** Schema (declared in the index's `version: "2.0"`):
 
 ```jsonc
 {
-  "version": "1.0",
-  "source":  "docs/research/photography-library.md",
+  "version": "2.0",
   "library": "photography",
+  "sourceDir": "design-library/",
   "totalEntries": 42,
   "decisionTree": {
     "<prototypeSlug>": {                                   // e.g. "recipe-editorial-magazine"
       "default":      "<styleId>",                         // primary pick
-      "alternatives": ["<styleId>", ...],                   // for variety / antiPattern swaps
-      "notes":        "<advisory prose, optional>"
+      "alternatives": ["<styleId>", ...]                    // for variety / antiPattern swaps
     }
   },
   "entries": {
@@ -44,15 +43,14 @@ curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
       "oneLine":        "<one-sentence visual summary>",
       "roleAffinity":   ["hero", "section", ...],           // which slot roles fit
       "notForUseWhen":  "<one line — when this style is wrong>",
-      "antiPatternKeywords": ["<keyword>", ...],
       "pairsPrototypes": ["<prototypeSlug>", ...],
-      "lineRange":      [105, 134]                         // exact line range in the full .md
+      "sourceFile":     "design-library/photo-<styleId>.md" // the entry's source of truth
     }
   }
 }
 ```
 
-**Read the FULL library file (.md) only when you need to compose a prompt** for a specific styleId — and even then, only the entry's slice via `sed -n '<start>,<end>p'` using the index's `lineRange`. NEVER read the whole 13K-word library on dispatch.
+**Read a per-entry source file only when you need to compose a prompt** for a specific styleId — `index.entries[<styleId>].sourceFile` points at `design-library/photo-<styleId>.md` (~1-5 KB: frontmatter + prompt keywords + example prompt template + avoid list). NEVER read the whole primer `.md` on dispatch — it carries no per-entry data anymore.
 
 If the index file is missing, return `runStatus: error` with `runError: "photography-library.index.json not found — orchestrator cannot operate without its curated index. Run scripts/build-library-indexes.py to regenerate."` and stop.
 
@@ -106,13 +104,13 @@ For each enumerated photographic slot:
 2. **If user supplied an `explicitStylePicks[slotId]`**, honour it verbatim. Validate the styleId exists in `index.entries`; if not, fall through to step 3 with a warning.
 3. **Filter the candidate set on JSON-only fields** (no library prose read needed):
    - **Role fit**: `index.entries[styleId].roleAffinity` must include the slot's role (e.g. `hero`, `section`, `product`, `food`). Drop candidates that don't match.
-   - **antiPatterns**: for each remaining candidate, check if any string in `sensoryTargets`/`antiPatterns` (envelope) appears in `index.entries[styleId].antiPatternKeywords` OR if `notForUseWhen` overlaps semantically. Drop conflicts. Loop until a candidate clears.
+   - **antiPatterns**: for each remaining candidate, check if any string in `sensoryTargets`/`antiPatterns` (envelope) overlaps semantically with `index.entries[styleId].notForUseWhen`. Drop conflicts. Loop until a candidate clears. (The entry's full avoid-keyword list lives in its `sourceFile`; the drawer cross-checks it at compose time.)
    - First survivor becomes `primaryStyleId`. Optional `secondaryStyleId` from the alternatives for chaining.
-4. **Compose the prompt — ONLY NOW read the library entry's slice.** Use `index.entries[<styleId>].lineRange` to sed-slice the entry from the full library file:
+4. **Compose the prompt — ONLY NOW read the entry's source file.** `index.entries[<styleId>].sourceFile` points at the entry's source of truth:
    ```bash
-   sed -n '<start>,<end>p' "$TH_PROJECT_ROOT/docs/research/photography-library.md"
+   cat "$TH_PROJECT_ROOT/design-library/photo-<styleId>.md"
    ```
-   This returns ~30 lines (the YAML for that ONE entry) — including `examplePromptTemplate`, `promptKeywords`, `avoidKeywords` you couldn't fit in the index without bloating it. Pass these to the photography-style-enricher drawer (or compose inline if dispatching by hand).
+   This returns ~1-5 KB (frontmatter + markdown for that ONE entry) — including the example prompt template, prompt keywords, and avoid keywords you couldn't fit in the index without bloating it. Pass these to the photography-style-enricher drawer (or compose inline if dispatching by hand). If the sourceFile is missing → `runStatus: error`; re-run `scripts/build-library-indexes.py` after adding the entry file.
 
 5. **Append the universal positive-baseline (load-bearing — never skip).** Every composed `promptForRasterPhoto` MUST end with the `color graded` token per the library's §1 Universal positive-baseline. The phrase is calibrated to the brief register:
    - Restrained / minimal briefs (cream-humanist, restrained-AI-marketing, warm-restraint) → `subtly color graded`

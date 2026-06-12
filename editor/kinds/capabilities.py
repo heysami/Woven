@@ -234,11 +234,16 @@ def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
     filter's known headers and the actual prose surfaces as a no-op."""
     SECTIONS = [
         ("## Image creation: dispatch visual-orchestrator FIRST",                      "visual-orchestrator"),
+        ("## Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator", "photography-orchestrator"),
+        ("## Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator", "illustration-orchestrator"),
+        ("## Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator", "creative-visual-orchestrator"),
+        ("## Material fidelity: dispatch material-orchestrator AFTER visual + creative-visual, BEFORE polish", "material-orchestrator"),
         ("## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST", "simulation-orchestrator"),
         ("## Interactive piece: dispatch interactive-media-orchestrator FIRST",        "interactive-media-orchestrator"),
         ("## Immersive narrative: dispatch narrative-experience-orchestrator FIRST",   "narrative-experience-orchestrator"),
         ("## Game-like immersive piece: dispatch game-experience-orchestrator FIRST",  "game-experience-orchestrator"),
         ("## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST", "scrapbook-experience-orchestrator"),
+        ("## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST", "motion-studio-orchestrator"),
         ("## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA)", "interactive-polish-orchestrator"),
     ]
     for header_marker, orchestrator_id in SECTIONS:
@@ -434,11 +439,15 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
         f"  • ImageMagick    {'✓ INSTALLED' if tools.get('imagemagick') else '⚠ NOT INSTALLED'}\n"
         f"  • ffmpeg         {'✓ INSTALLED' if tools.get('ffmpeg') else '⚠ NOT INSTALLED'}"
     )
+    # v3.9 — cap bumped from 60 to 100: the agent catalogue crossed 60 with the
+    # motion-studio family (7) + the photography / illustration / creative-visual /
+    # material families; at 60 the alphabetical tail (sim-*, vector-*, video,
+    # visual-orchestrator) was silently dropped from the preamble.
     # v3.3 — cap bumped from 30 to 60 to fit the simulation + interactive-media
     # orchestrator families (14 sim + 11 im + 3 lenses + the pre-existing visual
     # family + housekeeping = ~42 today, leaving headroom).
     subagent_lines = "\n".join(
-        f"  • {sa['name']} — {sa['description'][:140]}" for sa in caps["subagents"][:60]
+        f"  • {sa['name']} — {sa['description'][:140]}" for sa in caps["subagents"][:100]
     )
     endpoint_lines = "\n".join(
         f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
@@ -571,6 +580,7 @@ The orchestrator family (the per-family hard-rule sections below describe each i
 - **narrative-experience-orchestrator** — walk-into-this-place piece (poetic, emotional, scripted depth)
 - **game-experience-orchestrator** — interactive scene with CHASED OBJECTIVE + visible feedback loop (score / progress / streak / care-game grow / win-condition)
 - **scrapbook-experience-orchestrator** — aesthetic that CSS CANNOT REACH (lives in the imagery itself: vaporwave / cottagecore / Y2K / zine / etc.)
+- **motion-studio-orchestrator** — CINEMATIC PRESENTATION: full-bleed generated video/raster + UI choreographed as LINEAR full-screen scenes (Apple-product-page / motionsites register) — **UNIQUE ORDER: its `mode=brainstorm` dispatch runs BEFORE you write any HTML** (it claims the motion surfaces + returns exact slot tags; you build only the hygienic remainder, then dispatch `mode=build` once)
 - **interactive-polish-orchestrator** — POST-PASS, fires LAST after any other primary orchestrator returns (microanimations / pointer / hover / shader overlay matching the genre) — **GATED**: skipped when `meta.dsRef` is set OR genre is in the restrained register (Linear / Swiss / Bloomberg / warm-restraint / Bauhaus / etc.). See § "Interactive polish: dispatch interactive-polish-orchestrator LAST" for the full trigger table.
 
 If this list ever feels short, scroll down — every `## … dispatch <X>-orchestrator FIRST` heading below is another orchestrator. Test EVERY hard-rule predicate against the brief, not just the ones in this intro list.
@@ -598,6 +608,7 @@ The rule:
 | A real-world system needs to be made intuitive (functional, readable) | `simulation-orchestrator` |
 | The user's body/device DRIVES generative output (input → mapping → output, no objective) | `interactive-media-orchestrator` |
 | The user walks into a place and leaves changed (poetic, scripted, felt) | `narrative-experience-orchestrator` |
+| The payload is a cinematic PRESENTATION — full-bleed video/imagery + UI choreographed scene-by-scene, linear, no features (Apple-product-page / motionsites register) | `motion-studio-orchestrator` — **`mode=brainstorm` BEFORE writing any HTML** |
 | One or more images / icons / illustrations / ambient motion in an otherwise-CSS app | `visual-orchestrator` |
 
 A brief can pass MULTIPLE predicates — dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-orchestrator AND visual-orchestrator. The game-orchestrator builds the playable surface inside a `game-mount` iframe; visual-orchestrator fills the surrounding `<img>` slots.
@@ -610,6 +621,7 @@ Per-slot drawer cardinality varies by family:
 - **narrative-experience** — seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
 - **game-experience** — eight-to-nine drawers per slot (`game_research_<gameId>`, `game_objective_<gameId>`, `game_world_<gameId>`, `game_physics_<gameId>`, one or more `game_input_<gameId>_<modality>`, `game_feedback_<gameId>`, `game_loop_<gameId>`, `game_overlay_<gameId>`, `game_runtime_<gameId>`).
 - **scrapbook-experience** — six drawers per slot (`sb_research_<sbId>`, `sb_composition_<sbId>`, `sb_typography_<sbId>`, `sb_motion_<sbId>`, `sb_interactions_<sbId>`, `sb_runtime_<sbId>`) PLUS N visual-orchestrator sub-dispatches per inventory entry (typically 15–45 per slot) — the most visual-orchestrator-heavy orchestrator in the system.
+- **motion-studio** — seven drawers per slot (`ms_research_<msId>`, `ms_storyboard_<msId>`, `ms_concept_<msId>`, `ms_scenes_<msId>`, `ms_motion_<msId>`, `ms_interactions_<msId>`, `ms_runtime_<msId>`) PLUS ~2 visual-orchestrator sub-dispatches per scene (1 concept plate + 1 production asset; more for raster sequences / parallax layers; typically 6–16 per slot). The concept plates are a MANDATORY user-review gate: cheap hi-res stills of each composed frame (UI included) get approved BEFORE any video generation fires.
 - **interactive-polish** — POST-PASS orchestrator (different shape). Up to six drawers per project (`polish_research_<polishId>`, `polish_microanimation_<polishId>`, `polish_pointer_<polishId>`, `polish_hover_<polishId>`, `polish_shader_<polishId>`, `polish_runtime_<polishId>`). Drawers may be SKIPPED if their opportunity type has zero sites. No slot tag — operates on the whole project. Optionally co-dispatches visual-orchestrator's shader skill for one procedural overlay.
 
 ### Two contracts the orchestrator subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
@@ -657,8 +669,9 @@ Each slot the agent writes in its HTML is the orchestrator's enumeration anchor:
 - **nx slot** → `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" src="narratives/<nxId>/runtime.html" ...></iframe>`.
 - **game slot** → `<iframe class="game-mount" data-game="<gameId>" data-paradigm-hint="<hint>" data-objective="<one-line>" data-inputs="<csv>" data-juice="<register>" src="games/<gameId>/runtime.html" allow="gyroscope; accelerometer" ...></iframe>`.
 - **scrapbook slot** → `<iframe class="scrapbook-mount" data-scrapbook="<sbId>" data-core="<vaporwave|cottagecore|dreamcore|Y2K|lo-fi|mixtape|zine|mood-board|lookbook|hybrid>" data-density="<sparse|medium|dense>" data-motion="<still-with-twitches|drifting-ambient|aggressive-vaporwave>" src="scrapbooks/<sbId>/runtime.html" ...></iframe>`.
+- **motion-studio slot** → `<iframe class="ms-mount" data-ms="<msId>" data-scenes="<n>" data-binding="<self|host-scroll>" data-asset-policy="<video-first|raster-first>" data-success-feel="<one-line>" src="motionscenes/<msId>/runtime.html" ...></iframe>`. **Don't author this tag yourself** — the `mode=brainstorm` dispatch returns the exact tag per claimed section; you paste it.
 
-The agent writes these tags into the HTML in step 3 (before any orchestrator dispatch). The orchestrator reads them in step 5.
+The agent writes these tags into the HTML in step 3 (before any orchestrator dispatch). The orchestrator reads them in step 5. (Exception: motion-studio's tags come out of its `mode=brainstorm` envelope, which runs BEFORE step 3 — see its hard-rule section.)
 
 ### Cost calibration
 
@@ -707,6 +720,92 @@ visual-orchestrator's job is to pick from the classifier (raster-foreground / ra
 Also: when the orchestrator returns, verify `workflow/visual-plan.json.qa` exists with non-empty `checked[]`. If it's missing or empty, the orchestrator skipped Step 8 — dispatch it again with `RUN QA STEP 8 ONLY — the prior run skipped it` in the brief, or do the QA pass yourself using the same checklist.
 
 **Emulating visual-orchestrator from your own knowledge is the bug.** Dispatch the real thing — and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" — relay that to the user, don't silently override.
+
+## Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator (v1.0 hard rule)
+
+GATED — fires only when BOTH gates pass; check them before dispatching:
+
+- **Gate A — photographic slots exist.** At least one slot in the scaffolded source will resolve to raster-photo medium: explicit `data-medium="raster-photo"`, OR the committed aesthetic demands a real-photo register per the photography library decision tree (recipe-editorial-magazine, recipe-lookbook, recipe-warm-restraint, recipe-bento-marketing, aesthetic-coastal-grandmother, aesthetic-dark-academia, style-cream-humanist, style-serif-warm-paper, …).
+- **Gate B — an image generator is wired.** `GET /__capabilities` lists a working image-gen skill. Enrichment prompts with no generator downstream are dead weight.
+
+Explicit user requests naming a photographer / magazine / photo style ("Helmut Newton flash" / "Tillmans candid" / "GenZ flash" / "golden hour cinematic" / "Y2K halftone") always count as Gate A passing.
+
+When the gates pass, dispatch BETWEEN the source scaffold and visual-orchestrator's per-medium dispatch:
+
+```
+Task(subagent_type: "photography-orchestrator",
+     description: "Pick photo styles per raster-photo slot",
+     prompt: "<envelope per photography-orchestrator.md §1.1 — projectId, branch, committedAesthetic, imageGenSkills, explicitStylePicks, sensoryTargets, antiPatterns>")
+```
+
+It picks styles from the photography library index and commits one `pe_photo_<slotId>` enrichment node per photographic slot; visual-orchestrator Step 0a reads those nodes and hands the enriched prompt to the raster-photo drawer verbatim.
+
+### Do NOT:
+- ❌ Skip it when both gates pass and let visual-orchestrator invent photo prompts — default prompts are the flat-stock-photo bug.
+- ❌ Dispatch it when no slot is photographic or no image-gen is wired — it returns `runStatus: error` by design; don't burn the dispatch.
+- ❌ Pick photo styles yourself in chat — the library decision tree owns the pick.
+- ❌ Dispatch it AFTER visual-orchestrator — the enrichment nodes would never be read.
+
+### Decision rule:
+| Situation | Your move |
+|---|---|
+| Photo-register aesthetic + image-gen wired | `Task(photography-orchestrator, …)` then `Task(visual-orchestrator, …)` |
+| User names a photographer / photo style | `Task(photography-orchestrator, …)` with `explicitStylePicks` filled |
+| No raster-photo slots, or no image-gen skill | Skip — visual-orchestrator proceeds with default prompts |
+
+## Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator (v1.0 hard rule)
+
+The illustration sibling of the photography rule above — same two gates, illustrative register instead:
+
+- **Gate A — illustrative slots exist.** At least one slot resolves to raster-foreground with a depictive role (mascot / character / spot / hero illustration), or to a depictive vector-mark (multi-figure scene, character mark), or the committed aesthetic demands illustration NOT photography (claymorphism, neumorphism, corporate-memphis, positivity-kawaii, doodle-ui, pixel-*, aesthetic-curly-girly, aesthetic-vector-*, …). Explicit style-name requests ("3D clay mascots" / "watercolor anime" / "Risograph" / "Lisa Frank") always count.
+- **Gate B — an image generator is wired** (`GET /__capabilities`).
+
+```
+Task(subagent_type: "illustration-orchestrator",
+     description: "Pick illustration styles per illustrative slot",
+     prompt: "<envelope per illustration-orchestrator.md §1.1 — projectId, branch, committedAesthetic, imageGenSkills, explicitStylePicks, sensoryTargets, antiPatterns>")
+```
+
+It commits one `pe_illust_<slotId>` enrichment node per illustrative slot; visual-orchestrator Step 0a reads them when dispatching raster-foreground / vector-mark. Photography + illustration may BOTH run on the same project (different slots); they are siblings, not alternatives.
+
+### Do NOT:
+- ❌ Route logo / icon vector-marks through it — those go straight to the vector drawers.
+- ❌ Dispatch it AFTER visual-orchestrator — too late, the drawers already fired.
+- ❌ Pick illustration styles yourself in chat — the library decision tree owns the pick.
+
+## Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator (v1.0 hard rule)
+
+GATED post-pass — fires only when visual-orchestrator's per-medium dispatch has COMPLETED, AND the committed aesthetic is editorial-loud / typography-driven (recipe-editorial-magazine, recipe-swiss-grid-with-twist, recipe-y2k-memphis-loud, aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-web-brutalism, aesthetic-wacky-pomo, aesthetic-corporate-grunge, aesthetic-anti-design, aesthetic-constructivism, aesthetic-de-stijl, style-oversized-neo-grotesque), OR the user explicitly asks for creative composition ("make the photos bleed into the type" / "cut the asset into letters" / "editorial spread feel" / "the images should mask through text").
+
+```
+Task(subagent_type: "creative-visual-orchestrator",
+     description: "Promote flat img slots into creative compositions",
+     prompt: "<envelope per creative-visual-orchestrator.md §1 — projectId, branch, committedAesthetic, visualPlanPath, sensoryTargets, antiPatterns>")
+```
+
+It walks source, identifies promotion-eligible flat `<img>` slots (text-as-mask, asset-bleed-into-paragraph, irregular-clip-path, asset-as-drop-cap, asset-as-bullet, asset-cut-into-letters), surfaces a decision-request, then commits `cv_<slotId>` promotion nodes. Runs BEFORE material-orchestrator and BEFORE interactive-polish-orchestrator.
+
+### Do NOT:
+- ❌ Dispatch it for restrained / minimal aesthetics — promotion reads as broken layout there; the gate exists for a reason.
+- ❌ Hand-write SVG masks / clip-paths in chat to fake the promotion — the promoter drawer owns the structural rewrite.
+- ❌ Dispatch it before visual-orchestrator finishes — it promotes committed assets, not placeholders.
+
+## Material fidelity: dispatch material-orchestrator AFTER visual + creative-visual, BEFORE polish (v1.0 hard rule)
+
+GATED late pass — fires only when visual-orchestrator (and creative-visual-orchestrator, if it ran) has committed, AND the committed prototype style/aesthetic is material-bearing per `docs/research/material-library.md` §7 decision tree (style-glassmorphism, style-liquid-glass, style-claymorphism, style-neumorphism, style-holographic, style-skeuomorphism, style-neubrutalism, style-material-m3, style-aurorism, style-raster-cutout, aesthetic-frutiger-*, aesthetic-vaporwave, aesthetic-cyberpunk, aesthetic-cassette-futurism, aesthetic-dark-academia, aesthetic-pixel-*, …), OR the user names a material property ("make the glass feel real" / "add reactive light" / "the clay needs depth on press" / "VHS distortion on the hero" / "make it feel like riso").
+
+```
+Task(subagent_type: "material-orchestrator",
+     description: "Material-fidelity pass over committed source",
+     prompt: "<envelope per material-orchestrator.md §1.1 — projectId, branch, committedAesthetic, visualPlanPath, sensoryTargets, antiPatterns, explicitMaterialAssignments, reactiveBudget>")
+```
+
+It assigns materials per element from the material library index, surfaces a decision-request with the reactive-budget choice (subtle / rich / theatrical), and commits `mat_<elementHash>` implementation nodes + a composite.css/composite.js per page. It MUST run BEFORE interactive-polish-orchestrator and BEFORE Step-8 QA — polish layers on top of material, never under it.
+
+### Do NOT:
+- ❌ Hand-write glassmorphism / clay / grain CSS in chat when the gate passes — the library's per-entry implementation snippets own that.
+- ❌ Dispatch it for non-material aesthetics with no user request — it returns `runStatus: error` by design.
+- ❌ Run it after polish — polish's composites assume material is already in place.
 
 ## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST (v3.8 hard rule)
 
@@ -930,6 +1029,7 @@ Task(subagent_type: "interactive-media-orchestrator",
 | An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-orchestrator` |
 | Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-orchestrator` |
 | An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-orchestrator` |
+| A cinematic PRESENTATION — full-bleed video/imagery + UI as linear scenes, no features | `motion-studio-orchestrator` (brainstorm BEFORE the shell) |
 
 A "warehouse dashboard" with a static stock chart → visual-orchestrator (chart is an image).
 A "warehouse dashboard" where bins fill/empty over time → **simulation-orchestrator**.
@@ -937,6 +1037,7 @@ A "voice-painter on the warehouse data" → **interactive-media-orchestrator**.
 A "memorial that the user walks into and feels held" → **narrative-experience-orchestrator**.
 A "throw paper planes for points" / "feed Pip, watch it grow" → **game-experience-orchestrator** (objective + feedback loop).
 A "1995 GeoCities portfolio" / "chrome-lettered vaporwave hero" → **scrapbook-experience-orchestrator** (CSS cannot reach this aesthetic).
+An "Apple-style product page where the phone rises in as you scroll" / "hero where the figure follows your mouse" → **motion-studio-orchestrator** (cinematic presentation; linear scenes; brainstorm-first).
 
 The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic — museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
 
@@ -1037,6 +1138,7 @@ Task(subagent_type: "narrative-experience-orchestrator",
 | An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-orchestrator` |
 | Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-orchestrator` |
 | An aesthetic that CSS CANNOT REACH — lives in the imagery itself | `scrapbook-experience-orchestrator` |
+| A cinematic PRESENTATION — full-bleed video/imagery + UI as linear scenes, no features | `motion-studio-orchestrator` (brainstorm BEFORE the shell) |
 
 A "warehouse dashboard" with a static stock chart → visual-orchestrator.
 A "warehouse dashboard" where bins fill/empty over time → simulation-orchestrator.
@@ -1055,6 +1157,8 @@ A "soft-body cloth toy with no objective — just drag and watch it react" → `
 - **Immersive 3D system simulation** (e.g., a "walkable" warehouse where you're inside watching pickers move) → if the goal is to UNDERSTAND the system, `simulation-orchestrator` with a 3D scene-builder. If the goal is to FEEL the place's atmosphere/history, `narrative-experience-orchestrator`. If the goal is to SCORE / PROGRESS / WIN inside the warehouse, `game-experience-orchestrator`.
 - **Toy / soft-body / particle piece with no objective** (Powder, Soda Constructor, Cloth Toy) → `interactive-media-orchestrator` with the `iconographic` paradigm. Drop into `game-experience-orchestrator` ONLY if there's a score / progress / win-condition.
 - **The brief mentions "game" but objective is unclear** → push back via `<question-form>` BEFORE dispatching. Game-experience without a committed objective is the wrong orchestrator.
+- **Immersive scene vs cinematic presentation** → if the user has freedom of attention inside a PLACE (linger, look around, discover), it's `narrative-experience-orchestrator`. If the piece is an authored PRESENTATION — linear scenes the visitor steps through back and forth, full-bleed asset + UI choreography, no free navigation — it's `motion-studio-orchestrator`. A score on top of either → game.
+- **One animated hero asset vs a choreographed section** → a single `motion` (Hyperframes) or `video` slot inside an otherwise-normal page is `visual-orchestrator`'s lane. The moment UI placement depends on the asset's composition, the asset reacts to scroll/pointer, or the section splits into scenes — `motion-studio-orchestrator`.
 
 ## Game-like immersive piece: dispatch game-experience-orchestrator FIRST (v3.3 hard rule)
 
@@ -1223,6 +1327,57 @@ The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster
 - Handcrafted typography (the signature of scrapbook) is raster — commissioned per word as a visual-orchestrator.
 
 **Emulating scrapbook-experience-orchestrator from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
+
+## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST — brainstorm BEFORE the shell (v1.0 hard rule)
+
+When the user's brief is a **presentation-first piece where full-bleed generated video (or motion raster) and UI are tightly choreographed** — an Apple-product-page-style section (product rises in as you scroll, rotates from back to front scrubbed by scroll), a motionsites-style hero (figure tracks your mouse; headline sits in the asset's generated quiet zone), a moooi-style layered faux-3D parallax, a video-led brand page — your **FIRST action is a Task call to `motion-studio-orchestrator` with `mode=brainstorm`**. BEFORE you write any HTML. BEFORE you plan the app shell. This is the ONE family whose planning pass precedes the scaffold.
+
+### Why the inverted order (unique to this family)
+
+Every other primary family follows: you write the HTML slots → orchestrator fills them. Here, WHICH surfaces become motion scenes changes what you build at all — the motion piece IS the page's payload, and the rest of the app is the "hygienic" remainder around it. So the orchestrator brainstorms first and CLAIMS sections; you build only what it did not claim:
+
+1. `Task(motion-studio-orchestrator, mode=brainstorm)` with the user's brief **verbatim**. It reads the motion-scene library index (30 techniques: scroll-entrance / scroll-scrub rotation / mouse-scrub look / pointer parallax layers / quiet-zone composition / frame-hold beats / …) and returns `sectionClaims[]` — per claimed surface: msId, purpose, scene-count estimate, binding (self | host-scroll), candidate techniques, a proposed success-feel, and the **exact ms-mount iframe tag to paste** — plus `hygienicScope[]` (everything you build normally: nav, footer, forms, secondary pages) and `scopeQuestions[]` (surface these to the user BEFORE building if non-empty).
+2. YOU scaffold `source/<prototype>/index.html` + siblings, pasting the returned slot tags where they belong, and build the hygienic scope with your normal craft (DS, tokens, /prototype skill). The orchestrator never touches HTML — in either mode.
+3. `Task(motion-studio-orchestrator, mode=build)` ONCE. It enumerates every ms-mount iframe, runs `ms-research-technique` per slot, scaffolds the per-slot drawer set (research / storyboard / concept-plates / scenes / motion / interactions / runtime + container), and returns the hand-off envelope. You drive the build phase per the standard harness (§8.3 lens trios, opt-in §8.7 cruxes at storyboard / concept / motion / runtime, container commit, Step-8 QA + Phase F). **The concept-plate gate is mandatory**: after `ms_concept_<msId>` commits, surface its generated design plates (full composed frame per scene — asset + UI drawn together) to the user via `<decision-request>` (approve / steer / re-draft) BEFORE dispatching `ms_scenes_<msId>`. Video budget is only spent on approved plates; the approved plate is the composition contract the production assets, the UI build, and Step-8 QA are all checked against.
+
+### The trigger
+
+**TIGHT CHOREOGRAPHY between a full-bleed visual and the UI placed on/around it.** Signals (predicate, not vocabulary):
+
+- The visual must be generated WITH the UI in mind — light sky so the headline can sit there; subject anchored right so copy lives left (composition IS layout).
+- The visual reacts to the visitor — scrubbed by scroll (rotation, dolly), tracking the pointer (gaze, orbit, parallax), entering on scroll-into-view then holding.
+- The piece reads as SCENES — a linear sequence of full-screen beats, each pausing to "do something" (video stops on an authored frame, spec list animates in) without navigating away.
+- "There is always something in motion" — the brief wants the page alive at rest.
+- Reference vocabulary: Apple product page, motionsites, cinematic hero, video hero, launch film as a page, "the product should arrive".
+
+### Do NOT do any of these:
+
+- ❌ **Write the app shell first and dispatch motion-studio after.** Wrong order for this family — you'd guess which sections are motion scenes and build hygienic chrome where the payload should be. Brainstorm first; the claims drive the shell.
+- ❌ Hand-roll a `<video autoplay>` hero with CSS overlays → the composition/interaction contract (quiet zones, scrub bindings, hold beats, preload strategy, reduced-motion) is the orchestrator's territory. Dispatch.
+- ❌ Treat it as `visual-orchestrator`'s `video`/`motion` medium → those fill ONE slot with ONE asset. The moment UI placement depends on the asset's composition or the asset binds to scroll/pointer or the section splits into scenes, it's motion-studio.
+- ❌ Treat it as `narrative-experience-orchestrator` because it's immersive → narrative gives a PLACE with freedom of attention; motion-studio gives a PRESENTATION with an authored linear order and zero free navigation.
+- ❌ Treat it as `interactive-media-orchestrator` because the pointer drives the video → im is generative input→mapping→output; motion-studio's interactivity is scripted choreography (the video was GENERATED for that exact binding).
+- ❌ Let it claim feature surfaces → pricing tables, docs, dashboards, forms are hygienic scope. If the orchestrator claims one, push back — motion scenes MUST NOT be complex; presentation only.
+- ❌ Dispatch `ms_scenes_<msId>` before the user approved the concept plates → the plate review is the cheap correction point; skipping it re-creates the "expensive video nobody asked for" failure. Surface the plates, wait for approve/steer, then build.
+- ❌ Accept "make it cinematic" as the success-feel → the build needs concrete felt-state prose per slot ("the product arrives like it was always going to land there"). Push back via `<question-form>` if the brief has none.
+- ❌ Skip the cost surface → each claimed slot ≈ 7 drawers + ~1 asset generation per scene (more for raster sequences / parallax layers) + lens runs. Relay the brainstorm envelope's costEstimate + scopeQuestions to the user before mode=build.
+
+### Decision rule:
+
+| User said… | Your first move |
+|---|---|
+| "Apple-style product page" / "the phone rises in when I scroll" / "rotates as I scroll" | `Task(motion-studio-orchestrator, mode=brainstorm)` BEFORE any HTML |
+| "hero where the person follows your mouse" / "video that reacts to the cursor" | `Task(motion-studio-orchestrator, mode=brainstorm)` |
+| "cinematic landing page" / "launch-film-as-a-page" / "video-led brand site" | `Task(motion-studio-orchestrator, mode=brainstorm)` |
+| "layered parallax that feels 3D" (moooi register) | `Task(motion-studio-orchestrator, mode=brainstorm)` |
+| ONE looping video / animated hero in an otherwise-normal page, no choreography | `visual-orchestrator` (video or motion medium) — NOT motion-studio |
+| Immersive place to wander, felt-state, free attention | `narrative-experience-orchestrator` |
+
+### After mode=build returns
+
+Read the hand-off envelope. Apply `hostPageGuidance` to the host page — for `binding=self`: bounded iframe + scroll-past affordance + the ms-wheel postMessage receiver; for `binding=host-scroll`: the sticky-viewport wrapper + the ms-scroll forwarder snippet (the iframe never traps scroll). Then drive the standard build phase and run Step-8 QA (family additions: frame-sampled text-over-motion contrast ≥ 4.5:1 in every scene's quiet zone; matches-the-approved-concept-plate check — shipped scene vs concept/<sceneId>.png on subject position / UI zone / palette / type register; composition-honoured check — subject at its storyboard anchor, UI in the quiet zone; always-in-motion screenshot diff at rest; off-screen scenes paused; reduced-motion poster fallback) + Phase F.
+
+**Emulating motion-studio-orchestrator with a hand-rolled video hero is the bug.** Dispatch the real thing — brainstorm first, build second.
 
 ## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA) (v3.7 — now gated, was v3.3 hard rule)
 

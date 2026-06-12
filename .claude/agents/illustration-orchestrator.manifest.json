@@ -12,7 +12,7 @@
       "mode": "chat",
       "title": "Illustration art-direction pass (BEFORE visual-orchestrator)",
       "rule": "After source HTML is scaffolded (by /prototype skill or top-level Claude), BEFORE visual-orchestrator's per-medium dispatch fires, chat-Claude dispatches illustration-orchestrator IF (a) at least one slot in the source will resolve to raster-foreground with depictive role (mascot / character / spot illustration / hero illustration), OR to depictive vector-mark (multi-figure scene, character mark), AND the surrounding aesthetic demands illustration NOT photography (claymorphism, neumorphism, corporate-memphis, positivity-kawaii, doodle-ui, pixel-*, cottagecore-illustration, dreamcore-illustration, scrapbook-handlettering, aesthetic-curly-girly, aesthetic-vector-neovectorheart, aesthetic-vector-vectorbloom, etc.) AND (b) an image-generation model is wired into the project. Also fires on explicit user request naming an illustration style (\"3D clay models\" / \"fluffy 3D\" / \"watercolor anime\" / \"Pixar render\" / \"Risograph\" / \"Saul Bass\" / \"Lisa Frank\" / \"Hilma af Klint\" / \"Naoshi Komi\" / \"Studio Ghibli backgrounds\"). One consistent flow. If conditions fail, returns runStatus:error and visual-orchestrator proceeds with default prompts.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator when illustrative slots present AND image-gen wired'"
+      "ruleSource": "editor/kinds/capabilities.py — 'Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator'"
     }
   ],
   "dispatches": {
@@ -26,8 +26,7 @@
     "lenses": []
   },
   "skills": [
-    "generate-image",
-    "raster-foreground"
+    "generate-image"
   ],
   "nodeKinds": {
     "container": [

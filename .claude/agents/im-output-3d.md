@@ -86,6 +86,13 @@ Most interactive 3D pieces drive camera position/rotation from mapping output, n
 
 `prefers-reduced-motion: reduce` → render one frame, skip rAF.
 
+### 3.8 Render source, textures, advanced effects
+
+Read `editor/kinds/3D_CAPABILITIES.md` and obey research.md's committed 3D extras when present:
+- **`renderSource: spline`** — load the committed `.splinecode` via `@splinetool/runtime` and let MAPPING OUTPUT drive the scene through the runtime API (`findObjectByName(...).rotation.y = mapping[0] * π`, `setVariable('energy', mapping[1])`). The §3.0 visibly-changes-within-50ms contract applies to Spline objects exactly as to meshes. Missing scene source → `runStatus: error`.
+- **`texturePolicy`** — if the style permits, textured materials per the doc §2 (generated tileable maps via visual-orchestrator co-dispatch, matcap for clay registers, procedural `CanvasTexture` fallback). Untextured gray defaults when the policy demands texture = aesthetic block.
+- **`effectsBudget`** — water / cloth / strand / fur / atmosphere per the doc §3, capped at the committed tier; mapping output is allowed (encouraged) to drive effect intensity (e.g. mapping[2] → wind force on the cloth, mic level → wave amplitude).
+
 ## 4. Internal refinement loop
 
 3 iterations. Self-test:

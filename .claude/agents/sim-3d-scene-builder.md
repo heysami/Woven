@@ -56,6 +56,28 @@ Cap `devicePixelRatio` at 2. Use `PerspectiveCamera` with fov ~50° (closer to n
 
 3D scene's animation params (camera default angle, light positions) are deterministic per simulation seed. Camera changes from user input are NOT part of sim state — they live in scene-local state.
 
+### 1.5 Render source (from research.md "Committed 3D extras")
+
+Read `editor/kinds/3D_CAPABILITIES.md §1` and obey the committed `renderSource`:
+
+- **`three.js`** (default) — everything in this playbook as written.
+- **`spline`** — load the committed `.splinecode` scene via `@splinetool/runtime` (`Application.load(<url>)`) and drive it from `onFrame(state, alpha)` through the runtime API (`findObjectByName(...).rotation`, `setVariable(...)`, `emitEvent(...)`). ONE Spline scene per page; the loop owns time — no second animation clock. The §1.0 "3D must feel 3D" self-checks run unchanged against the Spline canvas. If the committed scene source is missing at build time → `runStatus: error` naming the missing file/URL; do NOT substitute a fake.
+- **`three.js+gltf`** — hero meshes arrive as Meshy-generated `.glb` (commissioned per the doc §1.3); load with `GLTFLoader`, ≤30k tris per hero, instance for fields of them.
+
+### 1.6 Textures (from research.md `texturePolicy`)
+
+If `texturePolicy != none-flat`, untextured default-gray materials on key objects are an **aesthetic-lens block**. Implement the committed policy per `editor/kinds/3D_CAPABILITIES.md §2`: generated tileable maps via visual-orchestrator co-dispatch (seamless / flat-lit / no-vignette / power-of-two contract), matcaps for clay registers, `NearestFilter` low-res for pixel registers, procedural `CanvasTexture` fallback when no image generator is wired. Texture loading contract: `SRGBColorSpace` on albedo, `RepeatWrapping`, anisotropy ≤8.
+
+```
+Task(subagent_type: "visual-orchestrator",
+     description: "Tileable texture for sim:<simId>",
+     prompt: "Seamless tileable texture: <material>. Inherit styleCue verbatim: <styleCue>. FLAT top-down, even diffuse lighting, no shadows, no vignette, exact square. Output: source/<branch>/simulations/<simId>/textures/<name>.png")
+```
+
+### 1.7 Advanced effects (from research.md `effectsBudget`)
+
+Implement ONLY what the committed budget tier permits — `none | ambient | rich | showcase` per `editor/kinds/3D_CAPABILITIES.md §3–§4`: GPU particles (`THREE.Points` + shader, pre-allocated ring buffers, zero rAF allocation), water (Gerstner vertex-shader plane by default; `Water2`/`Reflector` only at `rich`+ and never on mobile), strand/cloth dynamics (verlet chains ≤300 strands / one ≤32×32 cloth grid), shell fur, fog-first atmosphere. Honour `prefers-reduced-motion` (halve intensity, quarter particle counts — never zero out the scene's life). Effects must wear the committed style — stylized brief + photoreal water is an aesthetic block.
+
 ## 2. Camera divergence (multi-draft mode)
 
 ### `orbit`

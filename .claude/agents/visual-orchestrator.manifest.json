@@ -12,7 +12,7 @@
       "mode": "chat",
       "title": "build an app/page\" with visual slots",
       "rule": "After source HTML is scaffolded (by /prototype skill or top-level Claude), dispatch visual-orchestrator against the source tree for HTML-enumeration. The orchestrator enumerates <img> / background-image / canvas / inline-svg slots and dispatches one per-medium drawer per slot.",
-      "ruleSource": "editor/kinds/capabilities.py \u2014 visual-orchestrator FIRST hard-rule"
+      "ruleSource": "editor/kinds/capabilities.py — 'Image creation: dispatch visual-orchestrator FIRST, narrate after'"
     }
   ],
   "dispatches": {

@@ -161,6 +161,13 @@ Then every visual choice in the file MUST be auditable against those lines. Pick
 - `3d-environment`: OrbitControls (or first-person) `.update()`-d each rAF. **Non-static camera, non-`MeshBasicMaterial`.** Static + flat-lit 3D = re-classify as 2d-side / 2d-topdown.
 - `iconographic-physics`: locked framing or fluid bounds following the active bodies. No camera dolly unless the system itself moves spatially.
 
+### 3.5b 3D extras obeyed (3d-environment only — block on aesthetic)
+
+research.md's "3D extras" block is your contract — read `editor/kinds/3D_CAPABILITIES.md` and implement it:
+- **renderSource** — `three.js` default; `spline` = load the committed `.splinecode` via `@splinetool/runtime` and drive objects from `onFrame(state, alpha)` through the runtime API (missing scene source → `runStatus: error`, never a fake); `three.js+gltf` = Meshy-generated hero `.glb` via `GLTFLoader` (≤30k tris).
+- **texturePolicy** — if the style permits, world objects get textures (doc §2). Untextured default-gray materials when `texturePolicy != none-flat` is an aesthetic block. Generated tileable maps come through the §4 visual-orchestrator co-dispatch; procedural `CanvasTexture` is the no-image-gen fallback.
+- **effectsBudget** — environmental effects (water, cloth, strand-grass/fur, atmospheric particles) per doc §3, capped at the committed tier. These share the performance budget with the feedback drawer's juice particles — your world effects must leave headroom for them at peak.
+
 ### 3.6 prefers-reduced-motion honoured (warn → block at second offense)
 
 `window.matchMedia('(prefers-reduced-motion: reduce)')` — if matched, dampen ambient motion intensity 50% + disable camera micro-jitter + lengthen parallax periods 2×. The world still LIVES, just calmer. Don't go flat-still.
@@ -182,6 +189,8 @@ Task(subagent_type: "visual-orchestrator",
      description: "Sprite sheet for game:<gameId>",
      prompt: "<one-line intent inheriting styleCue verbatim>. Output: source/<branch>/games/<gameId>/plates/<assetId>.png")
 ```
+
+For 3D surface textures, use the tileable contract from `editor/kinds/3D_CAPABILITIES.md §2.1` ("Seamless tileable texture … FLAT top-down, even diffuse lighting, no shadows, no vignette, exact square" → `source/<branch>/games/<gameId>/textures/<name>.png`). For Meshy hero meshes (when wired), commission the `meshy` skill the same way with output `models/<name>.glb`.
 
 Wait for each. If the dispatch fails, ship the world with procedural fallbacks and note in `// Known issues:`.
 

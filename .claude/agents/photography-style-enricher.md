@@ -13,12 +13,12 @@ You do NOT generate images. You decide WHAT prompt the downstream raster-photo a
 ```bash
 cat "$TH_PROTOCOL_ROOT/.claude/agents/photography-style-enricher.md" \
   || cat "$TH_PROJECT_ROOT/.claude/agents/photography-style-enricher.md"
-# Read the SMALL index (≈32KB) to know what styleIds exist + their lineRange.
+# Read the SMALL index (≈32KB) to know what styleIds exist + their sourceFile.
 cat "$TH_PROTOCOL_ROOT/docs/research/photography-library.index.json" \
   || cat "$TH_PROJECT_ROOT/docs/research/photography-library.index.json"
 ```
 
-The index is your discovery layer. The FULL library file is read **only via `sed -n '<start>,<end>p' docs/research/photography-library.md`** using the `lineRange` from `index.entries[<styleId>].lineRange` — never the whole 13K-word .md file. NEVER invent a styleId that doesn't appear in `index.entries`.
+The index is your discovery layer. Per-entry detail is read **only via `index.entries[<styleId>].sourceFile`** (`design-library/photo-<styleId>.md`, ~1-5 KB — see §3) — never the primer `docs/research/photography-library.md`, which carries no per-entry data. NEVER invent a styleId that doesn't appear in `index.entries`.
 
 ## 1. Input envelope
 
@@ -43,10 +43,10 @@ antiPatterns:      ["<verbatim>"]
 Honour it verbatim. Validate it exists in the library §2; if not, fall through to §2.2 + record the override-attempt-failure in the output.
 
 ### 2.2 Look up candidates from `index.decisionTree[committedAesthetic]`
-Pure JSON read — returns `{default, alternatives[], notes}`. If the slug has no row, prefix-match to the closest parent.
+Pure JSON read — returns `{default, alternatives[]}`. If the slug has no row, prefix-match to the closest parent.
 
 ### 2.3 antiPattern check on JSON-only fields
-For each candidate, read `index.entries[styleId].antiPatternKeywords` + `notForUseWhen` from the **index**. No library file read needed yet. Drop candidates whose anti-keywords overlap envelope's `antiPatterns[]`. Loop through alternatives until clear.
+For each candidate, read `index.entries[styleId].notForUseWhen` from the **index**. No entry file read needed yet. Drop candidates whose `notForUseWhen` conflicts with the envelope's `antiPatterns[]` / `sensoryTargets`. Loop through alternatives until clear. (The entry's full avoid-keyword list is cross-checked in §3 when you read its sourceFile.)
 
 ### 2.4 Slot-role fit
 Filter remaining candidates by `index.entries[styleId].roleAffinity` — must include the slot's `slotRole`. `hero` role gets the strongest anchor (e.g. for `recipe-editorial-magazine` → `helmut-newton-flash` since `roleAffinity` includes "hero"). `bg` role demotes to something less foregrounded.

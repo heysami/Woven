@@ -12,7 +12,7 @@
       "mode": "chat",
       "title": "Creative-visual promotion pass (POST visual-orchestrator)",
       "rule": "After visual-orchestrator's standard per-medium dispatch completes AND the committed prototype aesthetic is editorial-loud / typography-driven (recipe-editorial-magazine, recipe-swiss-grid with twist, aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-web-brutalism, aesthetic-wacky-pomo, style-oversized-neo-grotesque, aesthetic-corporate-grunge, aesthetic-anti-design, aesthetic-constructivism, aesthetic-de-stijl, recipe-y2k-memphis-loud, aesthetic-bauhaus-with-display-type), BEFORE material-orchestrator and BEFORE interactive-polish-orchestrator, chat-Claude dispatches creative-visual-orchestrator. The orchestrator walks the source, identifies promotion-eligible flat slots, plans the SVG mask / clip-path / pseudo-element rewrite + any supplemental asset re-generations needed, surfaces a decision-request to the user, then commits the structural rewrites. Also fires on explicit user request ('make the photos bleed into the type' / 'cut the asset into letters' / 'creative composition' / 'editorial spread feel' / 'type-driven layout' / 'Wolfgang Weingart style' / 'Ed Fella style' / 'make it feel more like a fashion magazine' / 'the images should mask through text'). One consistent flow.",
-      "ruleSource": "editor/kinds/capabilities.py — 'Creative-visual promotion: dispatch creative-visual-orchestrator POST visual-orchestrator when editorial-loud aesthetic OR user request'"
+      "ruleSource": "editor/kinds/capabilities.py — 'Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator'"
     }
   ],
   "dispatches": {

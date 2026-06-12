@@ -60,7 +60,7 @@
     ]
   },
   "documents": {
-    "designDoc": "docs/features/game-experience-orchestrator.md",
-    "calibration": ".claude/lens-calibration/fixtures/game-*"
+    "designDoc": null,
+    "calibration": null
   }
 }

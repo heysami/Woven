@@ -56,6 +56,11 @@ No precedent essays. No mental-model bullets. No accessibility deep-dives. The �
 | `iconographic-physics` | canvas2D + physics engine driving everything (no separate scene) / regl for shader-toy-grade | locked or fluidly-framing |
 | `hybrid` | composition (e.g. PixiJS overlay over three.js room) | per-region |
 
+**For `3d-environment`, also read `editor/kinds/3D_CAPABILITIES.md` and commit the three 3D-extras fields** (the world drawer does not improvise them):
+- `renderSource` — `three.js` (default) / `spline` (the Spline runtime, ONLY when a `.splinecode` scene source exists — user-provided URL or export; agents cannot synthesize one) / `three.js+gltf` (Meshy text-to-3D hero meshes when `TH_MESHY_API_KEY` is wired).
+- `texturePolicy` — if the style permits, 3D objects get textures: `none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres` per the doc's §2 table.
+- `effectsBudget` — particles / water / cloth / strand-hair / fur per the doc's §3 catalog: `none | ambient | rich | showcase`, with the named effects. Cross-check against the juice register — feedback-drawer particles (screen juice) and world-drawer effects (environmental) share the performance budget.
+
 ### 2.2 — Physics engine table
 
 | Engine | Best for | Notes |
@@ -149,6 +154,11 @@ The orchestrator reads this and only flags drawers as multi-draft when you said 
 - Library: <e.g. PixiJS 7.x with @pixi/filter-bloom>
 - Canvas mount: <how the world attaches in world.html>
 - Layer model: <if relevant — background / midground / foreground / particles / overlay>
+
+## 3D extras (3d-environment only — delete this section otherwise)
+- renderSource:  <three.js | spline | three.js+gltf | hybrid> <+ scene URL / model list if not pure three.js>
+- texturePolicy: <none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres>
+- effectsBudget: <none | ambient | rich | showcase> — <named effects from editor/kinds/3D_CAPABILITIES.md §3>
 
 ## Physics engine
 - **<engine>** — <one sentence rationale>
