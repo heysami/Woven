@@ -9009,8 +9009,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not re.match(r"^[A-Za-z0-9 +\-_]+$", name):
             return self._reply(400, {"error": "invalid characters in font name"})
         length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0 or length > 5 * 1024 * 1024:
-            return self._reply(413, {"error": "font file required; max 5MB", "bytes": length})
+        # 20MB — single-weight woff2 is usually <100KB, but variable fonts
+        # and CJK-coverage TTFs routinely cross 5MB.
+        if length <= 0 or length > 20 * 1024 * 1024:
+            return self._reply(413, {"error": "font file required; max 20MB", "bytes": length})
         # Content-Type header tells us the extension. Accept the common ones;
         # fall back to ".woff2" since that's by far the most common modern
         # font format users will paste in.

@@ -17716,6 +17716,12 @@ const WORKFLOW_NODE_FACTORY = {
     fontCdn:    p.fontCdn    || "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
     monoFamily: p.monoFamily || "JetBrains Mono",
     monoCdn:    p.monoCdn    || "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
+    // Local-library passthroughs — set when the node is spawned from a
+    // dropped/uploaded font file so the chip + stylesheet injection reflect
+    // the local face immediately (the resolver then confirms source=local).
+    ...(p.fontSource     ? { fontSource:     p.fontSource }     : {}),
+    ...(p.monoSource     ? { monoSource:     p.monoSource }     : {}),
+    ...(p.uploadedCssUrl ? { uploadedCssUrl: p.uploadedCssUrl } : {}),
     levels: p.levels || [
       { name: "Display",  size: 36, weight: 600, lineHeight: 1.1,  sample: "Refuse the median" },
       { name: "H1",       size: 28, weight: 600, lineHeight: 1.15, sample: "Operating standard" },
@@ -22996,8 +23002,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const raw = e.dataTransfer.getData("application/x-th-workflow");
     if (!raw) {
       // No internal library payload → OS file drop. Routed by file type:
-      // .txt/.md → prompt node; image/svg → wb image (whiteboard mode) or
-      // asset node (build mode); html/video/audio/3d → asset node.
+      // .txt/.md → prompt node; font (.woff2/.ttf/.otf) → installed into the
+      // local font library + typography node; image/svg → wb image
+      // (whiteboard mode) or asset node (build mode); html/video/audio/3d →
+      // asset node.
       if (wbOsDropRef.current) wbOsDropRef.current(e);
       return;
     }
@@ -23495,6 +23503,47 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               ...d,
               nodes: [...(d.nodes || []), { id, ...body, x: Math.round(wx), y: Math.round(wy) }],
             }));
+            return;
+          }
+          const isFont = ["woff2", "woff", "ttf", "otf"].includes(ext)
+            || /^font\//.test(file.type || "");
+          if (isFont) {
+            // Font drop (BOTH modes) → install into the local font library
+            // (design-systems/<ds>/fonts/ — same path as the typography
+            // node's ⤒ upload), then spawn a typography node with the face
+            // selected. Family name derives from the filename with common
+            // weight/style suffixes stripped ("Inter-Variable.woff2" →
+            // "Inter"); the user can rename it in the node afterwards.
+            const family = file.name.replace(/\.[^.]+$/, "")
+              .replace(/[^A-Za-z0-9 +\-_]/g, " ")
+              .replace(/[-_ ]+(regular|italic|bold|light|medium|semibold|extrabold|extralight|thin|black|book|roman|normal|var|variable|vf)$/i, "")
+              .replace(/[-_]+/g, " ").trim() || "Uploaded Font";
+            try {
+              const r = await fetch(apiUrl(`/__upload_font?name=${encodeURIComponent(family)}`), {
+                method: "POST",
+                headers: { "Content-Type": file.type || "application/octet-stream" },
+                body: file,
+              });
+              const j = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+              const body = workflowMakeNodeOfKind("typography", {
+                name:           j.family || family,
+                fontFamily:     j.family || family,
+                fontCdn:        apiUrl(j.cssUrl),
+                fontSource:     "uploaded",
+                uploadedCssUrl: apiUrl(j.cssUrl),
+              });
+              if (!body) return;
+              const id = workflowNewNodeId();
+              setData(d => ({
+                ...d,
+                nodes: [...(d.nodes || []), { id, ...body, x: Math.round(wx), y: Math.round(wy) }],
+              }));
+            } catch (err) {
+              // Surface font failures like the node's ⤒ upload does — a
+              // silent console line reads as "the drop did nothing".
+              alert(`Font install failed for ${file.name}: ${err?.message || err}`);
+            }
             return;
           }
           const isImage = /^image\//.test(file.type || "")
