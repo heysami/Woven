@@ -16532,21 +16532,18 @@ function WorkflowCanvas() {
   const [chatPermissionMode, setChatPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
   // Resizable panels: library (left) + chat (right). Minimums baked in:
   // 240px for the library, 644px for the chat (~70% of the old floating
-  // drawer max width). Widths persist to localStorage so the layout
-  // sticks across reloads. Refs mirror the latest values for the
-  // mouseup-time persist write (avoids stale-closure capture).
+  // drawer max width). The CHAT width persists to localStorage so the
+  // layout sticks across reloads; the LIBRARY always OPENS at min width
+  // (per user request) — dragging it wider lasts for the session only.
+  // Refs mirror the latest values for the mouseup-time persist write
+  // (avoids stale-closure capture).
   const LIB_MIN      = 240;
   const CHAT_DEFAULT = 644;
   // Drag floor — 2/3 of the old 500px floor, per user request: the chat
   // header/composer/footer now truncate gracefully (title first), so a
   // genuinely narrow chat column is usable. First-load default still 644px.
   const CHAT_MIN     = 333;
-  const [libWidth, setLibWidth] = useState(() => {
-    try {
-      const v = parseInt(localStorage.getItem("th-workflow-lib-width") || "0", 10);
-      return v >= LIB_MIN ? v : LIB_MIN;
-    } catch { return LIB_MIN; }
-  });
+  const [libWidth, setLibWidth] = useState(LIB_MIN);
   const [chatWidth, setChatWidth] = useState(() => {
     try {
       const v = parseInt(localStorage.getItem("th-workflow-chat-width") || "0", 10);
@@ -16575,7 +16572,7 @@ function WorkflowCanvas() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       try { document.body.removeAttribute("data-panel-resizing"); } catch {}
-      try { localStorage.setItem("th-workflow-lib-width", String(libWidthRef.current)); } catch {}
+      // No persist: the library deliberately re-opens at LIB_MIN next load.
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
