@@ -2,11 +2,12 @@
   "version": "2.0",
   "library": "photography",
   "sourceDir": "design-library/",
-  "totalEntries": 49,
+  "totalEntries": 55,
   "decisionTree": {
     "recipe-warm-restraint": {
       "default": "aesop-apothecary",
       "alternatives": [
+        "architectural-minimal",
         "cereal-lifestyle",
         "golden-hour-indoor-warm",
         "grand-budapest-symmetrical-pastel",
@@ -55,10 +56,12 @@
       "default": "apple-clean-studio",
       "alternatives": [
         "clean-tech-lifestyle",
+        "dark-product-stage",
         "florida-project-candy-anamorphic",
         "her-warm-pastel-future",
         "high-key-beauty",
-        "leibovitz-key-light"
+        "leibovitz-key-light",
+        "motorsport-dramatic"
       ]
     },
     "recipe-ios-system": {
@@ -81,6 +84,20 @@
       "alternatives": [
         "frutiger-aero-product",
         "high-key-beauty"
+      ]
+    },
+    "recipe-neo-grotesque-portfolio": {
+      "default": "architectural-minimal",
+      "alternatives": []
+    },
+    "recipe-swiss-grid": {
+      "default": "architectural-minimal",
+      "alternatives": []
+    },
+    "aesthetic-swiss-modernist": {
+      "default": "architectural-minimal",
+      "alternatives": [
+        "helmut-newton-flash"
       ]
     },
     "recipe-terminal-on-web": {
@@ -159,7 +176,8 @@
       "alternatives": [
         "cinematic-street-anamorphic",
         "face-id-dot-projector",
-        "night-flash-noir"
+        "night-flash-noir",
+        "orbital-space"
       ]
     },
     "aesthetic-cyberpunk": {
@@ -178,7 +196,10 @@
     },
     "recipe-scientific-infra-marketing": {
       "default": "blade-runner-2049-monochrome-sections",
-      "alternatives": []
+      "alternatives": [
+        "eco-infrastructure",
+        "orbital-space"
+      ]
     },
     "aesthetic-defi-cosmic": {
       "default": "blade-runner-2049-monochrome-sections",
@@ -226,6 +247,7 @@
         "moonlight-miami-pastel-neon",
         "salgado-contrast",
         "shore-color",
+        "surreal-tableau",
         "tillmans-candid",
         "vivian-maier-square",
         "weingart-staged"
@@ -266,6 +288,30 @@
         "helmut-newton-flash"
       ]
     },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "dark-product-stage",
+      "alternatives": [
+        "motorsport-dramatic"
+      ]
+    },
+    "aesthetic-monochrome-pop-poster": {
+      "default": "dark-product-stage",
+      "alternatives": [
+        "motorsport-dramatic"
+      ]
+    },
+    "style-silk-chrome-flow": {
+      "default": "dark-product-stage",
+      "alternatives": [
+        "orbital-space"
+      ]
+    },
+    "aesthetic-surreal-dream-stage": {
+      "default": "dark-product-stage",
+      "alternatives": [
+        "surreal-tableau"
+      ]
+    },
     "recipe-brutalist-web": {
       "default": "databend-jpeg-corrupt",
       "alternatives": [
@@ -301,6 +347,26 @@
         "florida-project-candy-anamorphic",
         "moonlight-miami-pastel-neon"
       ]
+    },
+    "aesthetic-pastoral-serene": {
+      "default": "eco-infrastructure",
+      "alternatives": []
+    },
+    "aesthetic-organic-overgrowth": {
+      "default": "eco-infrastructure",
+      "alternatives": [
+        "surreal-tableau"
+      ]
+    },
+    "aesthetic-solarpunk": {
+      "default": "eco-infrastructure",
+      "alternatives": [
+        "fantasy-glow"
+      ]
+    },
+    "aesthetic-frutiger-eco": {
+      "default": "eco-infrastructure",
+      "alternatives": []
     },
     "aesthetic-urbling": {
       "default": "eighties-cocaine-glam",
@@ -351,10 +417,6 @@
         "tillmans-candid",
         "warm-minimal-daylight"
       ]
-    },
-    "aesthetic-solarpunk": {
-      "default": "fantasy-glow",
-      "alternatives": []
     },
     "aesthetic-cluttercore": {
       "default": "florida-project-candy-anamorphic",
@@ -410,10 +472,6 @@
         "goldin-diary"
       ]
     },
-    "aesthetic-swiss-modernist": {
-      "default": "helmut-newton-flash",
-      "alternatives": []
-    },
     "recipe-aurora-marketing": {
       "default": "la-la-land-musical-magic",
       "alternatives": []
@@ -436,11 +494,29 @@
         "vivian-maier-square"
       ]
     },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "motorsport-dramatic",
+      "alternatives": [
+        "orbital-space"
+      ]
+    },
+    "aesthetic-cosmic-horizon": {
+      "default": "orbital-space",
+      "alternatives": []
+    },
     "recipe-readcv": {
       "default": "shore-color",
       "alternatives": [
         "tillmans-candid"
       ]
+    },
+    "aesthetic-bioluminescent-deep": {
+      "default": "surreal-tableau",
+      "alternatives": []
+    },
+    "aesthetic-avantropop": {
+      "default": "surreal-tableau",
+      "alternatives": []
     },
     "aesthetic-anti-design": {
       "default": "weingart-staged",
@@ -486,6 +562,25 @@
         "style-liquid-glass"
       ],
       "sourceFile": "design-library/photo-apple-clean-studio.md"
+    },
+    "architectural-minimal": {
+      "name": "Architectural minimal",
+      "category": "documentary",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "Concrete and glass interiors/exteriors in soft natural light, greenery as the single organic counterpoint.",
+      "notForUseWhen": "Brief is playful, maximalist, or character-driven — concrete reads austere.",
+      "pairsPrototypes": [
+        "recipe-neo-grotesque-portfolio",
+        "recipe-swiss-grid",
+        "aesthetic-swiss-modernist",
+        "recipe-warm-restraint"
+      ],
+      "sourceFile": "design-library/photo-architectural-minimal.md"
     },
     "ascii-art-portrait": {
       "name": "ASCII-art portrait (text-as-image)",
@@ -675,6 +770,24 @@
       ],
       "sourceFile": "design-library/photo-cos-lookbook.md"
     },
+    "dark-product-stage": {
+      "name": "Dark product stage",
+      "category": "product",
+      "era": "current",
+      "roleAffinity": [
+        "product"
+      ],
+      "oneLine": "Single product spot-lit on dark organic staging — rocks, slate, velvet black — falloff into theater darkness.",
+      "notForUseWhen": "Brief is friendly, affordable, mass-market, or pastel — theater darkness reads exclusive.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-monochrome-pop-poster",
+        "recipe-bento-marketing",
+        "style-silk-chrome-flow",
+        "aesthetic-surreal-dream-stage"
+      ],
+      "sourceFile": "design-library/photo-dark-product-stage.md"
+    },
     "databend-jpeg-corrupt": {
       "name": "Databend / JPEG-corruption glitch",
       "category": "conceptual",
@@ -711,6 +824,26 @@
         "aesthetic-positivity-kawaii"
       ],
       "sourceFile": "design-library/photo-dreamy-haze.md"
+    },
+    "eco-infrastructure": {
+      "name": "Eco-infrastructure heroic",
+      "category": "documentary",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "Clean-energy hardware in living landscapes — wind turbines over meadows, solar fields at golden hour, terraced farms from the air.",
+      "notForUseWhen": "Brief is indoor, intimate, or product-macro — this style is landscape-scale.",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "aesthetic-organic-overgrowth",
+        "aesthetic-solarpunk",
+        "recipe-scientific-infra-marketing",
+        "aesthetic-frutiger-eco"
+      ],
+      "sourceFile": "design-library/photo-eco-infrastructure.md"
     },
     "eighties-cocaine-glam": {
       "name": "1980s cocaine-glam editorial",
@@ -1083,6 +1216,24 @@
       ],
       "sourceFile": "design-library/photo-moonlight-miami-pastel-neon.md"
     },
+    "motorsport-dramatic": {
+      "name": "Motorsport dramatic rig",
+      "category": "cinematic",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Vehicle as sculpture under dramatic studio or track light — rig-shot motion, wet asphalt reflections, dust kicks.",
+      "notForUseWhen": "Brief is calm, eco, or wellness — speed-drama fights serenity registers.",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-monochrome-tech-editorial",
+        "recipe-bento-marketing"
+      ],
+      "sourceFile": "design-library/photo-motorsport-dramatic.md"
+    },
     "night-flash-noir": {
       "name": "Night flash neon-noir portrait",
       "category": "street",
@@ -1100,6 +1251,25 @@
         "recipe-ai-foundry-dark"
       ],
       "sourceFile": "design-library/photo-night-flash-noir.md"
+    },
+    "orbital-space": {
+      "name": "Orbital space photoreal",
+      "category": "cinematic",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Planet limb with thin atmosphere rim-glow against true-black space, photographed from orbit.",
+      "notForUseWhen": "Brief is warm, domestic, human-scale, or playful — orbit reads cold and vast.",
+      "pairsPrototypes": [
+        "aesthetic-cosmic-horizon",
+        "aesthetic-monochrome-tech-editorial",
+        "recipe-ai-foundry-dark",
+        "recipe-scientific-infra-marketing",
+        "style-silk-chrome-flow"
+      ],
+      "sourceFile": "design-library/photo-orbital-space.md"
     },
     "pixel-stretch-time-displacement": {
       "name": "Pixel-stretch / time-displacement photo effect",
@@ -1230,6 +1400,25 @@
         "aesthetic-coastal-grandmother"
       ],
       "sourceFile": "design-library/photo-sorrenti-grain.md"
+    },
+    "surreal-tableau": {
+      "name": "Surreal staged tableau",
+      "category": "conceptual",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "One impossible thing photographed with documentary realism — cloud-furniture on a lake, a doorway of light in a desert, a figure seated in a flooded field of flowers.",
+      "notForUseWhen": "Brief needs documentary credibility or budget-friendly straightforwardness — staged surrealism reads art-directed and premium.",
+      "pairsPrototypes": [
+        "aesthetic-surreal-dream-stage",
+        "aesthetic-organic-overgrowth",
+        "aesthetic-bioluminescent-deep",
+        "recipe-editorial-magazine",
+        "aesthetic-avantropop"
+      ],
+      "sourceFile": "design-library/photo-surreal-tableau.md"
     },
     "tillmans-candid": {
       "name": "Wolfgang Tillmans degree-zero candid",

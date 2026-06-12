@@ -2,17 +2,19 @@
   "version": "2.0",
   "library": "illustration",
   "sourceDir": "design-library/",
-  "totalEntries": 108,
+  "totalEntries": 115,
   "decisionTree": {
     "aesthetic-dark-academia": {
       "default": "3d-arsham-eroded",
       "alternatives": [
         "beatrix-potter-watercolor",
         "charcoal-loose",
+        "classical-painting-remix",
         "drawkit-wooden-icons",
         "gouache-storybook",
         "hand-drawn-pencil-sketch",
         "humanities-marginalia",
+        "lofi-contemplative",
         "typo-art-nouveau-ornament",
         "typo-blackletter-neo-gothic"
       ]
@@ -22,7 +24,8 @@
       "alternatives": [
         "3d-crypto-gold-chrome",
         "3d-tron-emissive-glow",
-        "blush-moneyverse"
+        "blush-moneyverse",
+        "particle-figure"
       ]
     },
     "recipe-warm-restraint": {
@@ -37,6 +40,7 @@
         "blush-little-things",
         "blush-stuck-at-home",
         "charley-harper-minimal-realism",
+        "classical-painting-remix",
         "clay-3d-soft-sculpt",
         "drawkit-wooden-icons",
         "ghibli-watercolor-bg",
@@ -57,6 +61,7 @@
       "default": "3d-arsham-eroded",
       "alternatives": [
         "3d-ps1-low-poly",
+        "classical-painting-remix",
         "dreamcore-liminal",
         "typo-vector-musica",
         "typo-y2k-chrome-3d"
@@ -105,6 +110,7 @@
       "alternatives": [
         "3d-inflatable-balloon",
         "3d-knit-yarn-character",
+        "3d-miniature-diorama",
         "blush-cool-kids",
         "blush-corporate-memphis-energetic",
         "blush-corporate-memphis-scenes",
@@ -125,13 +131,15 @@
         "kawaii-mascot",
         "keith-haring-radiant",
         "mary-blair-stylized",
+        "monochrome-set-design",
         "overwatch-stylized-pbr",
         "pixar-coco-folk-vibrant",
         "pixar-inside-out-emotion-volumetric",
         "plasticine-3d-rougher",
         "scribbbles-funky-vector",
         "shoujo-soft-line-anime",
-        "spectrums-complex-flower"
+        "spectrums-complex-flower",
+        "stylized-3d-avatar"
       ]
     },
     "aesthetic-cottagecore": {
@@ -160,6 +168,7 @@
       "default": "3d-fur-rendered-mascot",
       "alternatives": [
         "3d-knit-yarn-character",
+        "3d-miniature-diorama",
         "blush-go-green",
         "blush-hyperspace"
       ]
@@ -196,6 +205,7 @@
     "recipe-bento-marketing": {
       "default": "3d-inflatable-balloon",
       "alternatives": [
+        "3d-miniature-diorama",
         "3d-premium-product-hero",
         "blush-cityscapes",
         "blush-corporate-memphis-energetic",
@@ -213,6 +223,7 @@
         "drawkit-isometric-stickers",
         "handyarrows-illustration",
         "isometric-tech-saas",
+        "monochrome-set-design",
         "overwatch-stylized-pbr",
         "scribbbles-funky-vector",
         "shapes-gallery-michalczyk",
@@ -233,6 +244,16 @@
         "shinkai-hyperreal-anime",
         "typo-house-industries-revival"
       ]
+    },
+    "aesthetic-pastoral-serene": {
+      "default": "3d-miniature-diorama",
+      "alternatives": [
+        "lofi-contemplative"
+      ]
+    },
+    "shell-scroll-journey-scene": {
+      "default": "3d-miniature-diorama",
+      "alternatives": []
     },
     "recipe-restrained-ai-marketing": {
       "default": "3d-premium-product-hero",
@@ -305,6 +326,7 @@
         "3d-technical-exploded-precision",
         "doodle-ui-handdrawn",
         "isometric-tech-saas",
+        "stylized-3d-avatar",
         "typo-vectorheart-industrial-futurist"
       ]
     },
@@ -312,6 +334,7 @@
       "default": "3d-spline-bubbly-product",
       "alternatives": [
         "aurorism-mesh-gradient",
+        "monochrome-set-design",
         "pixar-elemental-translucent",
         "spectrums-organic-blob"
       ]
@@ -323,6 +346,7 @@
         "3d-tron-emissive-glow",
         "aurorism-mesh-gradient",
         "blush-transhumans",
+        "particle-figure",
         "typo-vectorheart-industrial-futurist",
         "wireframe-3d"
       ]
@@ -383,6 +407,7 @@
       "alternatives": [
         "blush-open-peeps",
         "charcoal-loose",
+        "classical-painting-remix",
         "editorial-thick-brush",
         "gouache-storybook",
         "halftone-shape",
@@ -392,6 +417,7 @@
         "jean-jullien-thick-line",
         "mary-blair-stylized",
         "mc-escher-paradox",
+        "noir-comic-ink",
         "pixar-coco-folk-vibrant",
         "raster-cutout-collage",
         "risograph-illustration",
@@ -464,6 +490,7 @@
         "blush-power-moves",
         "blush-tutto-ricco",
         "blush-we-are-women",
+        "classical-painting-remix",
         "frida-folk-surreal",
         "keith-haring-radiant",
         "pixar-coco-folk-vibrant"
@@ -536,8 +563,10 @@
         "handyarrows-illustration",
         "humanities-marginalia",
         "jean-jullien-thick-line",
+        "lofi-contemplative",
         "risograph-illustration",
         "shapes-gallery-michalczyk",
+        "stylized-3d-avatar",
         "typo-hand-lettered-editorial"
       ]
     },
@@ -595,13 +624,15 @@
     "aesthetic-dreamcore": {
       "default": "dreamcore-liminal",
       "alternatives": [
-        "hilma-af-klint-symbolist"
+        "hilma-af-klint-symbolist",
+        "lofi-contemplative"
       ]
     },
     "recipe-newspaper-of-record": {
       "default": "editorial-thick-brush",
       "alternatives": [
-        "humanities-marginalia"
+        "humanities-marginalia",
+        "noir-comic-ink"
       ]
     },
     "style-agate-broadsheet": {
@@ -648,8 +679,40 @@
       "default": "mc-escher-paradox",
       "alternatives": []
     },
+    "aesthetic-monochrome-pop-poster": {
+      "default": "monochrome-set-design",
+      "alternatives": []
+    },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "noir-comic-ink",
+      "alternatives": []
+    },
+    "aesthetic-web-brutalism": {
+      "default": "noir-comic-ink",
+      "alternatives": [
+        "thick-border-cartoon",
+        "typo-fella-anti-design",
+        "typo-weingart-deconstructed"
+      ]
+    },
+    "shell-horizontal-scroll-stage": {
+      "default": "noir-comic-ink",
+      "alternatives": []
+    },
     "style-outline-wireframe": {
       "default": "outline-wireframe-illustration",
+      "alternatives": []
+    },
+    "aesthetic-cosmic-horizon": {
+      "default": "particle-figure",
+      "alternatives": []
+    },
+    "aesthetic-bioluminescent-deep": {
+      "default": "particle-figure",
+      "alternatives": []
+    },
+    "style-silk-chrome-flow": {
+      "default": "particle-figure",
       "alternatives": []
     },
     "aesthetic-pixel-nes-mario": {
@@ -686,7 +749,9 @@
     },
     "recipe-neo-grotesque-portfolio": {
       "default": "shapes-gallery-michalczyk",
-      "alternatives": []
+      "alternatives": [
+        "stylized-3d-avatar"
+      ]
     },
     "style-bold-display": {
       "default": "shapes-gallery-michalczyk",
@@ -717,13 +782,6 @@
       "alternatives": []
     },
     "recipe-brutalist-web": {
-      "default": "thick-border-cartoon",
-      "alternatives": [
-        "typo-fella-anti-design",
-        "typo-weingart-deconstructed"
-      ]
-    },
-    "aesthetic-web-brutalism": {
       "default": "thick-border-cartoon",
       "alternatives": [
         "typo-fella-anti-design",
@@ -857,6 +915,25 @@
         "aesthetic-frutiger-eco"
       ],
       "sourceFile": "design-library/illust-3d-knit-yarn-character.md"
+    },
+    "3d-miniature-diorama": {
+      "name": "3D miniature diorama world",
+      "category": "3D",
+      "subCategory": "scenic-miniature",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A tiny self-contained world — floating island, zen garden, micro-village — rendered in soft 3D with toy-scale charm.",
+      "notForUseWhen": "Brief needs gravitas, luxury, or enterprise seriousness — miniatures read charming.",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "aesthetic-positivity-kawaii",
+        "recipe-bento-marketing",
+        "aesthetic-frutiger-eco",
+        "shell-scroll-journey-scene"
+      ],
+      "sourceFile": "design-library/illust-3d-miniature-diorama.md"
     },
     "3d-premium-product-hero": {
       "name": "Premium product hero 3D (Apple / Ledger-Stax-grade)",
@@ -1499,6 +1576,25 @@
       ],
       "sourceFile": "design-library/illust-charley-harper-minimal-realism.md"
     },
+    "classical-painting-remix": {
+      "name": "Classical painting remix",
+      "category": "Mid-century / vintage",
+      "subCategory": "neoclassical-remix",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "Renaissance/Baroque-style painted figures interacting with modern products and gestures — the Gucci campaign move.",
+      "notForUseWhen": "Brief is tech-minimal, futurist, or engineering-led — oil paint reads heritage and wit.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "aesthetic-dark-academia",
+        "recipe-warm-restraint",
+        "aesthetic-vaporwave",
+        "aesthetic-maximalism"
+      ],
+      "sourceFile": "design-library/illust-classical-painting-remix.md"
+    },
     "clay-3d-soft-sculpt": {
       "name": "3D Clay / Soft Sculpt",
       "category": "3D",
@@ -1977,6 +2073,24 @@
       ],
       "sourceFile": "design-library/illust-liquid-glass-3d.md"
     },
+    "lofi-contemplative": {
+      "name": "Lo-fi contemplative scene",
+      "category": "Anime / manga",
+      "subCategory": "lofi-chill",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A solitary figure at rest in a vast quiet scene — dusk meadow, rooftop, window desk — rendered in the lo-fi-beats illustration tradition.",
+      "notForUseWhen": "Brief is energetic, corporate, or urgency-driven — the whole register is exhale.",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "aesthetic-dreamcore",
+        "recipe-readcv",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/illust-lofi-contemplative.md"
+    },
     "low-poly-paper-3d": {
       "name": "Low-Poly Paper Craft 3D",
       "category": "3D",
@@ -2027,6 +2141,43 @@
         "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-mc-escher-paradox.md"
+    },
+    "monochrome-set-design": {
+      "name": "Monochrome set-design still life",
+      "category": "3D",
+      "subCategory": "set-design-stage",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A single-hue 3D prop stage — pink room with pink objects, blue world of blue toys — physical-set-design energy in render form.",
+      "notForUseWhen": "Brief needs realism or documentary trust — the staged set reads art-directed and brand-forward.",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "recipe-bento-marketing",
+        "aesthetic-positivity-kawaii",
+        "recipe-aurora-marketing"
+      ],
+      "sourceFile": "design-library/illust-monochrome-set-design.md"
+    },
+    "noir-comic-ink": {
+      "name": "Noir comic ink",
+      "category": "Hand-drawn / sketch",
+      "subCategory": "ink-noir",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "High-contrast black-and-white ink illustration — brush splatter, dramatic spot blacks, hard-boiled narrative panels.",
+      "notForUseWhen": "Brief is cheerful, pastel, kid-friendly, or corporate-safe — noir ink carries grit.",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-tech-editorial",
+        "recipe-editorial-magazine",
+        "aesthetic-web-brutalism",
+        "recipe-newspaper-of-record",
+        "shell-horizontal-scroll-stage"
+      ],
+      "sourceFile": "design-library/illust-noir-comic-ink.md"
     },
     "origami-paper-3d": {
       "name": "Origami / Folded Paper 3D",
@@ -2082,6 +2233,25 @@
         "style-claymorphism"
       ],
       "sourceFile": "design-library/illust-overwatch-stylized-pbr.md"
+    },
+    "particle-figure": {
+      "name": "Particle-formed figure",
+      "category": "Abstract / decoration",
+      "subCategory": "particle-emergence",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A creature, object, or figure materializing from thousands of glowing particles — half-dissolved between dust and form.",
+      "notForUseWhen": "Brief is warm, organic, handcrafted, or budget — particles read high-tech and cold.",
+      "pairsPrototypes": [
+        "aesthetic-cosmic-horizon",
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-defi-cosmic",
+        "recipe-ai-foundry-dark",
+        "style-silk-chrome-flow"
+      ],
+      "sourceFile": "design-library/illust-particle-figure.md"
     },
     "pixar-coco-folk-vibrant": {
       "name": "Pixar Coco folk-vibrant Land of the Dead",
@@ -2426,6 +2596,24 @@
         "recipe-bento-marketing"
       ],
       "sourceFile": "design-library/illust-sticker-cutout-puffy.md"
+    },
+    "stylized-3d-avatar": {
+      "name": "Stylized 3D self-avatar",
+      "category": "3D",
+      "subCategory": "character-avatar",
+      "role": "mascot",
+      "roleAffinity": [
+        "mascot"
+      ],
+      "oneLine": "A Pixar-grade stylized 3D character portrait of a REAL person — the designer/founder as their own hero asset.",
+      "notForUseWhen": "Brief is corporate-formal, luxury, or anonymous-brand — a personal avatar centers an individual.",
+      "pairsPrototypes": [
+        "recipe-readcv",
+        "recipe-neo-grotesque-portfolio",
+        "aesthetic-positivity-kawaii",
+        "recipe-devtools-marketing"
+      ],
+      "sourceFile": "design-library/illust-stylized-3d-avatar.md"
     },
     "thick-border-cartoon": {
       "name": "Thick-border cartoon (neubrutalism vector)",

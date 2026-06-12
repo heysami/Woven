@@ -346,6 +346,8 @@ The shell is page composition: layout, navigation pattern, density class, what k
 - **scrapbook-substrate** `[any-aesthetic · raster-cutouts · layered z-order]` — paper / corkboard / fabric base hosting PNG cutouts with rotation + tape decorations. → [`shell-scrapbook-substrate.md`](./design-library/shell-scrapbook-substrate.md)
 - **editorial-broken-grid** `[art-directed · asymmetric · per-spread]` — magazine features with deliberate art-direction per spread. → [`shell-editorial-broken-grid.md`](./design-library/shell-editorial-broken-grid.md)
 - **infinite-canvas** `[node-graph / whiteboard · pannable · z-zoom]` — workflow / canvas / mind-map tools. → [`shell-infinite-canvas.md`](./design-library/shell-infinite-canvas.md)
+- **horizontal-scroll-stage** `[showcase · horizontal axis · chaptered panels]` — full-bleed horizontal track of chapter panels; wheel maps to X-travel; portfolios, lookbooks, timelines, heritage tours. → [`shell-horizontal-scroll-stage.md`](./design-library/shell-horizontal-scroll-stage.md)
+- **scroll-journey-scene** `[narrative · single continuous scene · scroll-scrubbed]` — ONE scene (illustrated/photo/3D) the scroll travels through; stations instead of sections; product reveals, dives, brand journeys. → [`shell-scroll-journey-scene.md`](./design-library/shell-scroll-journey-scene.md)
 
 ## Visual styles index — surface treatment (pick exactly 1)
 
@@ -356,11 +358,13 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 - **flat-design** `[cool · no-depth · 2013-17]` — iOS 7 / Windows 8 Metro pure flat; zero gradients/shadows, Helvetica Neue Light. → [`style-flat-design.md`](./design-library/style-flat-design.md)
 - **outline-wireframe** `[lo-fi · sketchy · timeless]` — outlined shapes, no fills, hairline strokes, on warm paper. → [`style-outline-wireframe.md`](./design-library/style-outline-wireframe.md)
 - **doodle-handdrawn** `[lo-fi/children · sketchy · timeless]` — Excalidraw-style sketchy outlines with hand-drawn icons. → [`style-doodle.md`](./design-library/style-doodle.md)
+- **kinetic-line-accents** `[corporate-swiss · animated strokes · 2025+]` — Swiss grid energized by stroke lines that draw on scroll; ONE accent hue confined to line work; the licensed way to animate a restrained register. → [`style-kinetic-line-accents.md`](./design-library/style-kinetic-line-accents.md)
 
 **Glass / refractive / transparent:**
 - **glassmorphism** `[cool · backdrop-blur · 2020+ · needs-substrate]` — frosted glass with `backdrop-filter` over saturated photographic substrate. → [`style-glassmorphism.md`](./design-library/style-glassmorphism.md)
 - **liquid-glass** `[apple-system · refractive · 2025+ · visionOS]` — Apple's dynamic glass; light-bending refraction over busy content. → [`style-liquid-glass.md`](./design-library/style-liquid-glass.md)
 - **aurorism-mesh-gradient** `[product-marketing · soft-glow · 2020+]` — aurora mesh-gradient backdrop behind sans-serif content. → [`style-aurorism.md`](./design-library/style-aurorism.md)
+- **silk-chrome-flow** `[dark-SaaS hero · rendered ribbon · 2025+ · needs-raster/shader]` — ONE iridescent silk/chrome ribbon flowing across near-black; visible folds + specular flow (a 3D material, not a blurred gradient — that's aurorism). → [`style-silk-chrome-flow.md`](./design-library/style-silk-chrome-flow.md)
 
 **Tactile / 3D / soft:**
 - **skeuomorphism** `[warm-tactile · real-textures · 2003-13 or retro · needs-raster]` — leather/wood/felt textures under one committed metaphor. → [`style-skeuomorphism.md`](./design-library/style-skeuomorphism.md)
@@ -388,6 +392,7 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 - **serif-warm-paper-editorial** `[longform · narrative · warm-paper]` — serif body on warm paper with drop caps + dingbats. → [`style-serif-warm-paper.md`](./design-library/style-serif-warm-paper.md)
 - **agate-numeric-broadsheet** `[news/finance · dense · numeric-tables]` — optical-size serif + dedicated agate numeric face for market tables. → [`style-agate-broadsheet.md`](./design-library/style-agate-broadsheet.md)
 - **cream-humanist-serif** `[wellness/skincare · warm · adult-premium]` — cream + warm-grey humanist serif (Aesop/Headspace direction). → [`style-cream-humanist.md`](./design-library/style-cream-humanist.md)
+- **editorial-italic-accent** `[typography layer · one italic-serif word · 2025+]` — grotesque headline with EXACTLY ONE word swapped to italic serif (the feeling-payload); layers onto a host style; the most repeated move in the 2025-26 showcase corpus. → [`style-editorial-italic-accent.md`](./design-library/style-editorial-italic-accent.md)
 
 **Raster / pixel / collage:**
 - **raster-cutout-collage** `[scrapbook-shell · raster-images · any-aesthetic · needs-raster]` — PNG cutouts with paper-edge shadow + rotation + tape/staple decorations. → [`style-raster-cutout.md`](./design-library/style-raster-cutout.md)
@@ -440,6 +445,16 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **solarpunk** `[eco-tech · warm-optimistic · 2010s+]` — biomimicry, plants integrated with tech. → [`aesthetic-solarpunk.md`](./design-library/aesthetic-solarpunk.md)
 - **steampunk** `[fantasy-game · brass-victorian · niche]` — Bioshock Infinite brass + gears + Victorian. → [`aesthetic-steampunk.md`](./design-library/aesthetic-steampunk.md)
 - **dieselpunk-decopunk** `[retro-industrial · oxblood-bronze · interwar-revival]` — Bioshock 1-2, Sky Captain interwar. → [`aesthetic-dieselpunk.md`](./design-library/aesthetic-dieselpunk.md)
+
+**Cinematic / photoreal registers (2025-26 showcase wave — most need raster):**
+- **cosmic-horizon** `[orbital-frontier tech · planet-limb glow · 2024+ · needs-raster]` — photoreal planet horizon + satellites under clean dark UI; NASA-operational, not crypto-mystic (that's defi-cosmic). → [`aesthetic-cosmic-horizon.md`](./design-library/aesthetic-cosmic-horizon.md)
+- **pastoral-serene** `[calm-tech · landscape-under-UI · 2024+ · needs-raster]` — meadows / valleys / zen gardens as calm ground beneath light SaaS; photoreal-pastoral, not glossy eco-gradient (that's frutiger-eco). → [`aesthetic-pastoral-serene.md`](./design-library/aesthetic-pastoral-serene.md)
+- **organic-overgrowth** `[surreal eco-tech · nature THROUGH the UI · 2024+ · needs-raster]` — plants interpenetrating interface and hardware; occlusion is the tell (foliage passes in FRONT of UI). → [`aesthetic-organic-overgrowth.md`](./design-library/aesthetic-organic-overgrowth.md)
+- **monochrome-pop-poster** `[product-drop · single-hue flood · drop-culture]` — one saturated hue floods the viewport + one hero object + condensed caps; loud via commitment, not plurality (that's y2k-memphis-loud). → [`aesthetic-monochrome-pop-poster.md`](./design-library/aesthetic-monochrome-pop-poster.md)
+- **surreal-dream-stage** `[luxury-conceptual · one impossible thing · needs-raster]` — Magritte-grade product surrealism photographed plainly; cloud-couch in a lake, portal in a monolith. → [`aesthetic-surreal-dream-stage.md`](./design-library/aesthetic-surreal-dream-stage.md)
+- **luxury-cinematic-dark** `[wealth/maison · theater darkness + gold serif · needs-raster]` — one spot-lit precious object, warm black, italic serif, slow reveals; patience IS the brand message. → [`aesthetic-luxury-cinematic-dark.md`](./design-library/aesthetic-luxury-cinematic-dark.md)
+- **monochrome-tech-editorial** `[aerospace/industrial · b/w archive · needs-raster]` — tech as declassified dossier: b/w hardware photography + condensed caps + FIG-number captions. → [`aesthetic-monochrome-tech-editorial.md`](./design-library/aesthetic-monochrome-tech-editorial.md)
+- **bioluminescent-deep** `[deep-tech/bio · glowing organisms in void · needs-raster]` — life as the only light source; jellyfish/lantern-flora, physical falloff to true black; organic, not neon-electric (that's cyberpunk). → [`aesthetic-bioluminescent-deep.md`](./design-library/aesthetic-bioluminescent-deep.md)
 
 **Pixel-art eras (each suggests style: pixel-grid-bitmap):**
 - **pixel-arcade-1978-85** `[arcade-history · 8x8-monochrome · 1978-85]` — Space Invaders, Pac-Man, Donkey Kong. → [`aesthetic-pixel-arcade.md`](./design-library/aesthetic-pixel-arcade.md)
