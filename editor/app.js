@@ -9201,6 +9201,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
 //   invocation   visible token shown in the menu (e.g. "/foo", "@bar", "#baz")
 //   insertText   what we paste into the composer when the user picks the item.
 //                Falls back to `invocation + " "` if absent.
+//   image        optional preview path for the detail pane — library entries
+//                carry their design-library sample PNG, orchestrators their
+//                anthropomorphised portrait (editor/orchestrator-art/<id>.svg).
+//                Skills have no image; the detail pane falls back to their
+//                line icon rendered large.
 let __slashSkillCache = null;
 async function __loadSlashSkills() {
   if (__slashSkillCache) return __slashSkillCache;
@@ -9256,6 +9261,9 @@ async function __loadSlashSkills() {
           description: o.tagline || "",
           invocation:  tok,
           insertText:  tok + " ",
+          // Anthropomorphised portrait, by id-convention. The detail pane's
+          // <img onError> hides it if an orchestrator ships without art.
+          image:       "/editor/orchestrator-art/" + o.id + ".svg",
         });
       }
     }
@@ -9269,6 +9277,9 @@ async function __loadSlashSkills() {
       for (const g of (j.groups || [])) {
         for (const it of (g.items || [])) {
           const tok = "#" + it.slug;
+          // First on-disk sample image (catalog order — the -ui.png mock
+          // leads by convention) becomes the detail-pane preview.
+          const img = (it.images || []).find(im => im && im.src && im.exists !== false);
           items.push({
             kind:        "library",
             slug:        it.slug,
@@ -9277,6 +9288,7 @@ async function __loadSlashSkills() {
             invocation:  tok,
             insertText:  (it.path || ("design-library/" + it.file)) + " — ",
             libraryGroup: g.key,
+            image:       img ? img.src : null,
           });
         }
       }
@@ -9979,6 +9991,28 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                     <span className="chat-slash-detail-name">${activeItem.name}</span>
                     <span className=${"chat-slash-detail-badge chat-slash-detail-badge-" + activeItem.kind}>${kindLabelFor(activeItem)}</span>
                   </div>
+                  ${(() => {
+                    // Visual preview: library entries show their design-library
+                    // sample PNG, orchestrators their anthropomorphised vector
+                    // portrait. Skills (media + cc) fall back to their line
+                    // icon rendered large in a kind-tinted tile. key= forces a
+                    // remount per src so an onError-hidden img doesn't stay
+                    // hidden when the user arrows to the next item.
+                    if (activeItem.image) return html`<img
+                      key=${activeItem.image}
+                      className="chat-slash-detail-img"
+                      data-kind=${activeItem.kind}
+                      src=${apiUrl(activeItem.image)}
+                      alt=${activeItem.name}
+                      loading="lazy"
+                      onError=${(e) => { e.target.style.display = "none"; }}
+                    />`;
+                    if (activeItem.kind === "media" || activeItem.kind === "cc") {
+                      const I = SKILL_ICON[activeItem.slug] || (activeItem.kind === "cc" ? Icon.NotesDoc : Icon.Spark);
+                      return html`<div className=${"chat-slash-detail-glyph chat-slash-detail-glyph-" + activeItem.kind}><${I}/></div>`;
+                    }
+                    return null;
+                  })()}
                   <code className=${"chat-slash-detail-cmd chat-slash-item-kind-" + activeItem.kind}>${activeItem.invocation}</code>
                   ${activeItem.description && html`<p className="chat-slash-detail-desc">${activeItem.description}</p>`}
                 ` : html`<div className="chat-slash-detail-empty">Highlight an item to see details.</div>`}
@@ -20255,11 +20289,39 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   }, [mainView]);
 
   // Zoom overlay state — set to { filePath, branch, nodeId } when the user
-  // clicks 🔍 on a Workflow prototype node or HTML asset card. Null otherwise.
-  // The overlay portals to document.body and reads the file's iframe at 1:1,
-  // exposing five tools (select, text, comment, sketch, export).
+  // clicks 🔍 on a Workflow prototype node or HTML asset card, or "Edit" on
+  // a prototype-viewer tab. Null otherwise. The overlay portals to
+  // document.body and reads the file's iframe at 1:1, exposing the edit
+  // tools (select, text, comment, sketch, export, import).
   // See docs/features/zoom-mode-plan.md.
   const [zoomTarget, setZoomTarget] = useState(null);
+  // v3.6 — Zoom mode is HOMED in the prototype viewer (rail icon 3). Every
+  // zoom entry point routes through here: switch the main view to the
+  // prototype viewer, open/activate a tab for the target file (so closing
+  // the overlay lands the user on the same page in the viewer, where the
+  // tab auto-reloads any saved edits), clear canvas-anchored chrome, THEN
+  // mount the overlay. One shared ZoomOverlay component serves both the
+  // node 🔍 buttons and the viewer's per-tab Edit button.
+  const openZoomAt = useCallback((filePath, branch, nodeId) => {
+    setProtoViewerMounted(true);
+    setMainView("proto");
+    try {
+      // Stash + dispatch: if the viewer is already mounted its listener
+      // handles the event (and clears the stash); on FIRST activation the
+      // viewer doesn't exist yet when this fires, so it drains the stash
+      // from its mount effect instead.
+      window.__thProtoPendingTab = { path: filePath, label: null };
+      window.dispatchEvent(new CustomEvent("th:proto-open-tab", {
+        detail: { path: filePath, label: null },
+      }));
+    } catch {}
+    setSelectedNodeIds(new Set());
+    setSelectedEdge(null);
+    setCtxMenu(null);
+    setPickedElement(null);
+    setCodePanelNodeId(null);
+    setZoomTarget({ filePath, branch, nodeId: nodeId || null });
+  }, []);
   const openZoomForPrototype = useCallback((node) => {
     // Prototype nodes load `source/<slug>/` (the index of the prototype). If
     // a lockedState pinned them to a sub-path, honour it for the zoom file too.
@@ -20269,8 +20331,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     let rel = pathname.startsWith("/") ? pathname.slice(1) : pathname;
     // If the path ends with a slash, Zoom on the implicit index.html.
     if (rel.endsWith("/")) rel = rel + "index.html";
-    setZoomTarget({ filePath: rel, branch, nodeId: node.id });
-  }, []);
+    openZoomAt(rel, branch, node.id);
+  }, [openZoomAt]);
+  // Viewer-tab → zoom. Derives branch from the path; binds the matching
+  // prototype node when one exists on the canvas (gives the overlay its
+  // send-to-agent wiring + DS ref), else opens unbound — every sourceNode
+  // consumer in ZoomOverlay is null-guarded.
+  const openZoomForViewerTab = useCallback((tab) => {
+    if (!tab || !tab.path) return;
+    const m = (tab.path || "").match(/^source\/([^/]+)\//);
+    const branch = (m && m[1]) || "main";
+    const protoNode = (data.nodes || []).find(n =>
+      n.kind === "prototype" && nodePrototype(n) === branch);
+    openZoomAt(tab.path, branch, protoNode ? protoNode.id : null);
+  }, [openZoomAt, data.nodes]);
 
   // Canvas-frames: spawn a `frames` node on the workflow canvas showing
   // the editor's Canvas tab (frames + arrows) for this prototype. If the
@@ -20381,8 +20455,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const m = (node.path || "").match(/^source\/([^/]+)\//);
       return (m && m[1]) || "main";
     })();
-    setZoomTarget({ filePath: node.path, branch, nodeId: node.id });
-  }, []);
+    openZoomAt(node.path, branch, node.id);
+  }, [openZoomAt]);
 
   const screenToWorld = useCallback((clientX, clientY) => {
     const el = wrapRef.current;
@@ -28708,7 +28782,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             />
           `}
         </div>
-        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"}/>`}
+        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} onEditTab=${openZoomForViewerTab}/>`}
       </div>
       ${zoomTarget && html`
         <${ZoomOverlay}
@@ -28719,7 +28793,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           data=${data}
           setData=${setData}
           onClose=${() => setZoomTarget(null)}
-          onSwitchTarget=${(filePath, branch) => setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || "main" }))}
+          onSwitchTarget=${(filePath, branch) => {
+            // Drill-into-component keeps the viewer in sync: the new target
+            // opens as a tab too, so closing the overlay lands on it.
+            try {
+              window.dispatchEvent(new CustomEvent("th:proto-open-tab", { detail: { path: filePath, label: null } }));
+            } catch {}
+            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || "main" }));
+          }}
         />
       `}
       ${ctxMenu && html`<${CanvasContextMenu}
@@ -28810,7 +28891,7 @@ function WorkflowLibraryHoverLottie({ fileUrl, alt }) {
    mounted afterwards — `active` only toggles CSS visibility — so tab
    iframes keep their state when the user hops back to the canvas.
    Open tabs persist to localStorage per project. */
-function WorkflowProtoViewer({ active }) {
+function WorkflowProtoViewer({ active, onEditTab }) {
   const lsKey = "th-proto-viewer:" + (activeProjectId() || "default");
   const [state, setState] = useState(() => {
     try {
@@ -28878,6 +28959,30 @@ function WorkflowProtoViewer({ active }) {
       return { tabs: nextTabs, activeId: nextActive };
     });
   }, []);
+  // v3.6 — zoom-mode integration. Every zoom entry point (node 🔍 buttons,
+  // viewer Edit button) routes through WorkflowSurface.openZoomAt, which
+  // dispatches this event so the target file is open + active as a viewer
+  // tab. Closing the overlay then lands the user on that tab, where the
+  // th:asset-refresh listener above auto-reloads any saved edits.
+  useEffect(() => {
+    const onOpenTab = (e) => {
+      const d = (e && e.detail) || {};
+      if (!d.path || typeof d.path !== "string") return;
+      try { delete window.__thProtoPendingTab; } catch {}
+      addTab(d.path, d.label || null);
+    };
+    window.addEventListener("th:proto-open-tab", onOpenTab);
+    // Drain a pending open that fired before this viewer mounted (first
+    // activation via a node 🔍 button — openZoomAt stashes it).
+    try {
+      const pending = window.__thProtoPendingTab;
+      if (pending && pending.path) {
+        delete window.__thProtoPendingTab;
+        addTab(pending.path, pending.label || null);
+      }
+    } catch {}
+    return () => window.removeEventListener("th:proto-open-tab", onOpenTab);
+  }, [addTab]);
   // "+" picker — fetches the same lists the library's Outputs tab shows.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickList, setPickList] = useState(null);   // null = loading
@@ -28949,6 +29054,15 @@ function WorkflowProtoViewer({ active }) {
           onClick=${openPicker}
         ><${Icon.Plus}/></button>
         <div className="workflow-proto-tabstrip-spacer"/>
+        ${activeTab && onEditTab && html`
+          <button
+            type="button"
+            className="workflow-proto-tool workflow-proto-tool-edit"
+            title="Edit this page — opens the zoom editing tools (select / text / comment / sketch / export / import)"
+            aria-label="Edit this page"
+            onClick=${() => onEditTab(activeTab)}
+          ><${Icon.Pen}/></button>
+        `}
         ${activeTab && html`
           <button
             type="button"
@@ -32414,6 +32528,11 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
   overlayChildren.push(html`
     <div key="bg" className="zoom-overlay-bg" onClick=${closeWithConfirm}/>
   `);
+  // v3.6 — Icon-only left rail (matches the workflow nav rail's design
+  // language): 34px ghost buttons, accent-tinted active state, hover
+  // tooltips to the right via the shared tab-tip primitive. Labels moved
+  // into the tooltips; the save button carries its unsaved-op count as a
+  // corner badge instead of inline text.
   overlayChildren.push(html`
     <aside key="rail" className="zoom-toolbar" data-busy=${busy ? "true" : "false"}>
       <button className="zoom-toolbar-close" title="Close (Esc) — prompts to discard if there are unsaved edits" onClick=${closeWithConfirm}>×</button>
@@ -32429,11 +32548,12 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
           key=${t.id}
           className="zoom-tool"
           data-active=${tool === t.id ? "true" : "false"}
-          title=${t.title}
+          data-tip-host="true"
+          aria-label=${t.id}
           onClick=${() => setTool(t.id)}
         >
           <span className="zoom-tool-glyph">${t.glyph}</span>
-          <span className="zoom-tool-label">${t.id}</span>
+          <span className="tab-tip tab-tip-right">${t.title}</span>
         </button>
       `)}
       <div className="zoom-toolbar-spacer"/>
@@ -32441,29 +32561,37 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         className="zoom-tool zoom-tool-save"
         data-dirty=${dirty ? "true" : "false"}
         data-disabled=${!dirty ? "true" : "false"}
-        title=${dirty
-          ? "Save " + opHistory.length + " change" + (opHistory.length === 1 ? "" : "s") + " to disk (⌘S)"
-          : "No unsaved changes"}
+        data-tip-host="true"
+        aria-label="Save"
         onClick=${() => dirty && saveToDisk()}
-      ><span className="zoom-tool-glyph"><${Icon.Save}/></span><span className="zoom-tool-label">${dirty ? "save·" + opHistory.length : "saved"}</span></button>
+      >
+        <span className="zoom-tool-glyph"><${Icon.Save}/></span>
+        ${dirty && html`<span className="zoom-tool-badge">${opHistory.length}</span>`}
+        <span className="tab-tip tab-tip-right">${dirty
+          ? "Save " + opHistory.length + " change" + (opHistory.length === 1 ? "" : "s") + " to disk (⌘S)"
+          : "No unsaved changes"}</span>
+      </button>
       <button
         className="zoom-tool"
         data-disabled=${!dirty ? "true" : "false"}
-        title="Discard unsaved changes — revert the iframe to the on-disk version"
+        data-tip-host="true"
+        aria-label="Discard"
         onClick=${() => dirty && discardChanges()}
-      ><span className="zoom-tool-glyph"><${Icon.Trash}/></span><span className="zoom-tool-label">discard</span></button>
+      ><span className="zoom-tool-glyph"><${Icon.Trash}/></span><span className="tab-tip tab-tip-right">Discard unsaved changes — revert to the on-disk version</span></button>
       <button
         className="zoom-tool"
         data-disabled=${!canUndo ? "true" : "false"}
-        title="Undo (⌘Z) — in-memory; remember to Save when satisfied"
+        data-tip-host="true"
+        aria-label="Undo"
         onClick=${() => canUndo && undo()}
-      ><span className="zoom-tool-glyph">↶</span><span className="zoom-tool-label">undo</span></button>
+      ><span className="zoom-tool-glyph">↶</span><span className="tab-tip tab-tip-right">Undo (⌘Z) — in-memory; remember to Save when satisfied</span></button>
       <button
         className="zoom-tool"
         data-disabled=${!canRedo ? "true" : "false"}
-        title="Redo (⌘⇧Z) — in-memory; remember to Save when satisfied"
+        data-tip-host="true"
+        aria-label="Redo"
         onClick=${() => canRedo && redo()}
-      ><span className="zoom-tool-glyph">↷</span><span className="zoom-tool-label">redo</span></button>
+      ><span className="zoom-tool-glyph">↷</span><span className="tab-tip tab-tip-right">Redo (⌘⇧Z) — in-memory; remember to Save when satisfied</span></button>
     </aside>
   `);
 

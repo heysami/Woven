@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Game experience orchestrator — a gamepad character with a joystick antenna">
+  <!-- joystick antenna -->
+  <path d="M80 50v-12"/>
+  <circle cx="80" cy="34" r="4" fill="oklch(94% 0.05 140)"/>
+  <!-- body -->
+  <rect x="40" y="50" width="80" height="40" rx="20" fill="#fff"/>
+  <!-- d-pad -->
+  <path d="M58 62v16M50 70h16" stroke-width="5.5"/>
+  <!-- buttons -->
+  <circle cx="102" cy="64" r="3.5" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <circle cx="110" cy="74" r="3.5" fill="oklch(70% 0.10 230)" stroke="none"/>
+  <!-- face -->
+  <circle cx="76" cy="64" r="2.2" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="86" cy="64" r="2.2" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M77 70q4 3.5 8 0"/>
+  <ellipse cx="71" cy="69" rx="2.6" ry="1.6" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="91" cy="69" rx="2.6" ry="1.6" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- legs -->
+  <path d="M66 90v8M66 98h6M94 90v8M94 98h6"/>
+  <!-- score spark -->
+  <path d="M128 32l2 5.2 5.2 2 -5.2 2 -2 5.2 -2 -5.2 -5.2 -2 5.2 -2z" fill="oklch(72% 0.13 60)" stroke="none"/>
+</svg>

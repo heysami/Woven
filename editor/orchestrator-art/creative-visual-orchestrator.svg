@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Creative visual orchestrator — a capital letter A character with scissors, mid-cut">
+  <!-- scissors -->
+  <circle cx="32" cy="48" r="3.6"/>
+  <circle cx="32" cy="64" r="3.6"/>
+  <path d="M35 50.4L50 64M35 61.6L50 48"/>
+  <!-- letter-A body -->
+  <path d="M58 96L80 34L102 96Z" fill="#fff"/>
+  <path d="M67 72h26"/>
+  <!-- face -->
+  <circle cx="74" cy="60" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="86" cy="60" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M76 66q4 3.5 8 0"/>
+  <ellipse cx="68" cy="65" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="92" cy="65" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- feet -->
+  <path d="M54 96h10M96 96h10"/>
+  <!-- raised arm toward the scissors -->
+  <path d="M64 82q-10 -2 -14 -12"/>
+  <!-- dashed cut line -->
+  <path d="M106 48q16 6 12 26" stroke-dasharray="4 5" stroke="oklch(72% 0.13 60)" stroke-width="2.5"/>
+  <!-- sticker spark -->
+  <path d="M124 80l2 5.2 5.2 2 -5.2 2 -2 5.2 -2 -5.2 -5.2 -2 5.2 -2z" fill="oklch(72% 0.13 60)" stroke="none"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Illustration orchestrator — a cheerful pencil drawing a squiggle">
+  <!-- eraser -->
+  <rect x="70" y="16" width="20" height="10" rx="5" fill="oklch(88% 0.07 25)"/>
+  <!-- barrel -->
+  <rect x="66" y="26" width="28" height="48" rx="6" fill="#fff"/>
+  <path d="M66 38h28"/>
+  <!-- face -->
+  <circle cx="74" cy="55" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="86" cy="55" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M76 62q4 3.5 8 0"/>
+  <ellipse cx="70" cy="61" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="90" cy="61" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- arms -->
+  <path d="M66 62q-8 2 -10 8M94 62q8 2 10 8"/>
+  <!-- tip -->
+  <path d="M66 74L80 97L94 74" fill="#fff"/>
+  <path d="M76 90L80 97L84 90z" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <!-- drawn squiggle -->
+  <path d="M78 102q-10 8 -22 3t-22 -3" stroke="oklch(72% 0.13 60)" stroke-width="2.5"/>
+  <!-- spark -->
+  <path d="M122 36v8M118 40h8" stroke-width="2.5" stroke="oklch(72% 0.13 60)"/>
+</svg>

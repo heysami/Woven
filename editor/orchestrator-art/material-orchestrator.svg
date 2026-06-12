@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Material orchestrator — a glossy droplet character with a refraction highlight">
+  <!-- droplet body -->
+  <path d="M80 22C94 40 106 54 106 72a26 26 0 0 1 -52 0C54 54 66 40 80 22Z" fill="#fff"/>
+  <!-- refraction highlight -->
+  <path d="M64 64q-3 10 5 17" stroke="oklch(70% 0.10 230)" stroke-width="2.5"/>
+  <!-- face -->
+  <circle cx="72" cy="68" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="88" cy="68" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M74 76q6 5 12 0"/>
+  <ellipse cx="64" cy="75" rx="3.5" ry="2" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="96" cy="75" rx="3.5" ry="2" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- little arms -->
+  <path d="M54 76q-8 0 -10 -6M106 76q8 0 10 -6"/>
+  <!-- sparkles -->
+  <path d="M118 30l2.2 5.8 5.8 2.2 -5.8 2.2 -2.2 5.8 -2.2 -5.8 -5.8 -2.2 5.8 -2.2z" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <circle cx="38" cy="50" r="2" fill="oklch(70% 0.10 230)" stroke="none"/>
+  <circle cx="124" cy="74" r="2" fill="oklch(70% 0.10 230)" stroke="none"/>
+</svg>

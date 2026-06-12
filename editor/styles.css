@@ -6695,6 +6695,41 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Visual preview in the detail pane. Library entries show their
+   design-library sample PNG (cover-cropped UI mock); orchestrators show
+   their anthropomorphised vector portrait (editor/orchestrator-art/<id>.svg,
+   contained on a soft green tile); skills show their line icon rendered
+   large in a kind-tinted tile. */
+.chat-slash-detail-img {
+  width: 100%;
+  height: 124px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.chat-slash-detail-img[data-kind="orchestrator"] {
+  object-fit: contain;
+  padding: 8px;
+  background: oklch(97% 0.025 140);
+  border-color: oklch(90% 0.05 140);
+}
+.chat-slash-detail-glyph {
+  width: 100%;
+  height: 124px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.chat-slash-detail-glyph svg { width: 38px; height: 38px; }
+.chat-slash-detail-glyph-media { background: oklch(97% 0.02 295); border-color: oklch(91% 0.04 295); color: oklch(44% 0.17 295); }
+.chat-slash-detail-glyph-cc    { background: oklch(97% 0.02 200); border-color: oklch(91% 0.04 200); color: oklch(42% 0.14 200); }
 .chat-slash-detail-desc {
   margin: 0;
   font-size: 12px;
@@ -10506,6 +10541,19 @@ a.ds-badge:hover, button.ds-badge:hover {
    set it here so the chip positions correctly without per-button CSS. */
 [data-tip-host] {
   position: relative;
+}
+/* v3.6 — right-flying variant for vertical icon rails (zoom toolbar,
+   anything docked to the left edge). Flies out to the right of the anchor,
+   vertically centered, arrow on its left edge. */
+.tab-tip.tab-tip-right {
+  top: 50%;
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+.tab-tip.tab-tip-right::before {
+  top: 50%;
+  left: -3px;
+  transform: translateY(-50%) rotate(45deg);
 }
 .tab-tip kbd {
   display: inline-block;
@@ -15941,29 +15989,30 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   font: 13px/1.4 var(--font-sans);
   color: var(--text);
 }
+/* v3.6 — Flat light workspace, matching the rest of the editor's design
+   system. The old dark blurred scrim read as "dark shapes between
+   containers"; zoom mode now sits on the same opaque surface the workflow
+   canvas uses, with flush panels separated by 1px borders. */
 .zoom-overlay-bg {
   position: absolute;
   inset: 0;
-  background: rgba(8, 12, 16, 0.78);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--surface-2);
 }
 
-/* Left rail — five tools + close + undo/redo. Fixed width, fills viewport
-   height with the close button at top and history controls at bottom. */
+/* Left rail — icon-only (same design language as .workflow-nav-rail):
+   48px flush full-height column, 34px ghost buttons, tooltips fly right.
+   Tools at top, save/discard/undo/redo docked at the bottom. */
 .zoom-toolbar {
   position: absolute;
-  left: 14px; top: 14px; bottom: 14px;
-  width: 76px;
+  left: 0; top: 0; bottom: 0;
+  width: 48px;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   gap: 6px;
-  padding: 10px 8px 12px;
+  padding: 10px 0 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.18));
+  border-right: 1px solid var(--border);
   z-index: 2;
 }
 .zoom-toolbar[data-busy="true"] {
@@ -15973,21 +16022,21 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
 .zoom-toolbar-close {
   appearance: none;
   position: fixed;
-  top: 14px;
-  right: 14px;
-  width: 36px;
-  height: 36px;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font: 600 16px/1 var(--font-sans);
+  font: 600 15px/1 var(--font-sans);
   cursor: pointer;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.18));
+  box-shadow: var(--shadow-sm);
   z-index: 3;
 }
 .zoom-toolbar-close:hover {
@@ -15999,79 +16048,95 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
 .zoom-canvas-pct {
   appearance: none;
   position: fixed;
-  top: 14px;
-  right: 60px;        /* 36 (close) + 14 (close margin) + 10 (gap) */
-  height: 36px;
-  min-width: 56px;
+  top: 8px;
+  right: 48px;        /* 32 (close) + 8 (close margin) + 8 (gap) */
+  height: 32px;
+  min-width: 52px;
   padding: 0 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font: 500 12px/1 var(--font-mono);
+  font: 500 11.5px/1 var(--font-mono);
   letter-spacing: 0.02em;
   cursor: pointer;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.18));
+  box-shadow: var(--shadow-sm);
   z-index: 3;
 }
 .zoom-canvas-pct:hover {
   background: var(--surface-2);
   color: var(--text);
 }
+/* Icon-only ghost button — mirrors .workflow-nav-rail-btn. The tooltip
+   (tab-tip-right) carries the label + shortcut. */
 .zoom-tool {
   appearance: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 0 6px;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   cursor: pointer;
-  color: var(--text);
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  color: var(--text-muted);
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
 }
-.zoom-tool:hover { background: var(--surface-2); }
+.zoom-tool:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
 .zoom-tool[data-active="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-text);
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  color: var(--text);
 }
 .zoom-tool[data-disabled="true"] {
   opacity: 0.35;
   cursor: not-allowed;
 }
 /* Save button — pulses when dirty so the unsaved-state is impossible to
-   miss. The label flips to "save·N" (N = unsaved op count) so the user
-   sees how many changes will commit. */
+   miss; the corner badge carries the unsaved-op count. */
 .zoom-tool-save[data-dirty="true"] {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   animation: zoom-save-pulse 1.6s ease-in-out infinite;
 }
-.zoom-tool-save[data-dirty="true"] .zoom-tool-label {
-  color: #fff;
-}
 .zoom-tool-save[data-dirty="true"]:hover { filter: brightness(1.08); }
 @keyframes zoom-save-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(96, 130, 255, 0.0); }
   50%      { box-shadow: 0 0 0 4px rgba(96, 130, 255, 0.25); }
 }
+.zoom-tool-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--surface);
+  font: 600 9px/13px var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .zoom-tool-glyph {
-  font: 600 18px/1 var(--font-sans);
+  font: 600 15px/1 var(--font-sans);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.zoom-tool-label {
-  font: 500 10px/1 var(--font-mono);
-  text-transform: lowercase;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-}
-.zoom-tool[data-active="true"] .zoom-tool-label { color: var(--accent-text); }
+.zoom-tool-glyph svg { width: 16px; height: 16px; }
 .zoom-toolbar-spacer { flex: 1 1 auto; }
 
 /* Iframe host — scrollable container so a 1920×1440 prototype can be
@@ -16079,14 +16144,12 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
    pinned. Flex-centers small prototypes; falls back to top-left for big. */
 .zoom-iframe-host {
   position: absolute;
-  left: 100px;
-  right: 14px;
-  top: 14px;
-  bottom: 80px;
+  left: 48px;
+  right: 0;
+  top: 0;
+  bottom: 48px;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: #fff;
+  background: var(--surface-2);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -16745,19 +16808,17 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
 /* Footer — file path, react banner, pen swatches, send-to-agent button. */
 .zoom-footer {
   position: absolute;
-  left: 100px;
-  right: 14px;
-  bottom: 14px;
-  height: 56px;
+  left: 48px;
+  right: 0;
+  bottom: 0;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 14px;
+  padding: 0 14px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  border-top: 1px solid var(--border);
   z-index: 2;
 }
 .zoom-footer-meta {

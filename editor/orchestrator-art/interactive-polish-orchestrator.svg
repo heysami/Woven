@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Interactive polish orchestrator — a four-point sparkle character surrounded by tiny stars">
+  <!-- sparkle body -->
+  <path d="M80 20C83 46 90 53 114 58C90 63 83 70 80 94C77 70 70 63 46 58C70 53 77 46 80 20Z" fill="#fff"/>
+  <!-- face -->
+  <circle cx="74" cy="56" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="86" cy="56" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M76 63q4 3.5 8 0"/>
+  <ellipse cx="68" cy="62" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="92" cy="62" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- polish sweep -->
+  <path d="M112 86a42 42 0 0 0 16 -30" stroke-dasharray="3 6" stroke="oklch(72% 0.13 60)" stroke-width="2.5"/>
+  <!-- companion stars -->
+  <path d="M120 26l1.8 4.7 4.7 1.8 -4.7 1.8 -1.8 4.7 -1.8 -4.7 -4.7 -1.8 4.7 -1.8z" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <path d="M40 84l1.8 4.7 4.7 1.8 -4.7 1.8 -1.8 4.7 -1.8 -4.7 -4.7 -1.8 4.7 -1.8z" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <circle cx="36" cy="36" r="2" fill="oklch(70% 0.10 230)" stroke="none"/>
+  <circle cx="118" cy="98" r="2" fill="oklch(70% 0.10 230)" stroke="none"/>
+</svg>

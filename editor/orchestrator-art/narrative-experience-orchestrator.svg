@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Narrative experience orchestrator — a walking open book carrying a glowing lantern">
+  <!-- story dust -->
+  <circle cx="40" cy="30" r="1.8" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <circle cx="52" cy="24" r="1.8" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <circle cx="64" cy="29" r="1.8" fill="oklch(70% 0.10 230)" stroke="none"/>
+  <!-- open book body -->
+  <path d="M80 48q-16 -10 -34 -6v40q18 -4 34 6z" fill="#fff"/>
+  <path d="M80 48q16 -10 34 -6v40q-18 -4 -34 6z" fill="#fff"/>
+  <path d="M80 48v40"/>
+  <!-- text lines on the right page -->
+  <path d="M88 58q10 -4 18 -3M88 66q10 -4 18 -3" stroke-width="2.5"/>
+  <!-- face on the left page -->
+  <circle cx="60" cy="61" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="72" cy="61" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M62 68q5 4 10 0"/>
+  <ellipse cx="55" cy="67" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- legs -->
+  <path d="M68 90v8M68 98h6M92 90v8M92 98h6"/>
+  <!-- lantern -->
+  <path d="M114 70q8 2 10 8"/>
+  <path d="M120 80q6 -8 12 0"/>
+  <rect x="120" y="80" width="12" height="13" rx="3" fill="oklch(90% 0.08 90)"/>
+  <path d="M140 78l4 -4M141 86h5M140 94l4 4" stroke="oklch(72% 0.13 60)" stroke-width="2.5"/>
+</svg>

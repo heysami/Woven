@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Interactive media orchestrator — a blob wearing headphones with a broadcasting antenna">
+  <!-- antenna -->
+  <path d="M80 42v-12"/>
+  <circle cx="80" cy="27" r="3" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <path d="M88 20a10 10 0 0 1 0 14M72 20a10 10 0 0 0 0 14" stroke="oklch(72% 0.13 60)" stroke-width="2.5"/>
+  <!-- headband -->
+  <path d="M52 60a28 28 0 0 1 56 0"/>
+  <!-- body -->
+  <rect x="56" y="42" width="48" height="46" rx="21" fill="#fff"/>
+  <!-- ear cups -->
+  <rect x="44" y="56" width="12" height="18" rx="5" fill="oklch(94% 0.05 140)"/>
+  <rect x="104" y="56" width="12" height="18" rx="5" fill="oklch(94% 0.05 140)"/>
+  <!-- face -->
+  <circle cx="70" cy="64" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="90" cy="64" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M74 71q6 4.5 12 0"/>
+  <ellipse cx="64" cy="70" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="96" cy="70" rx="3" ry="1.8" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- legs -->
+  <path d="M70 88v8M70 96h6M90 88v8M90 96h6"/>
+  <!-- waves -->
+  <path d="M30 76q3 -6 6 0t6 0" stroke="oklch(70% 0.10 230)" stroke-width="2.5"/>
+  <path d="M118 76q3 -6 6 0t6 0" stroke="oklch(70% 0.10 230)" stroke-width="2.5"/>
+</svg>
