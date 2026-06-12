@@ -7994,6 +7994,16 @@ a.ds-badge:hover, button.ds-badge:hover {
 .empty-view-card-fonts .ds-fonts-grid {
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
+/* Fonts panel hosted in the landing page's System tab ("Custom fonts") */
+.system-fonts .ds-fonts {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 20px 22px;
+  max-width: none;
+}
+.system-fonts .ds-fonts.is-dragover { border-color: var(--accent); border-style: dashed; }
+.system-fonts .ds-fonts-card { background: var(--bg); }
 .ds-library-bar {
   display: flex;
   align-items: center;

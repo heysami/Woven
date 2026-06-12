@@ -1422,38 +1422,66 @@ def _rebuild_fontface_css(fonts_dir, manifest):
         f.write("\n".join(css_chunks))
 
 
-def _list_local_fonts(project_root):
-    """Enumerate every uploaded font under design-systems/*/fonts/.
+def _scan_fonts_dir(fonts_dir, ds_label, font_path_prefix, css_url):
+    """Shared scanner for one fonts dir → list of font entries. `family`
+    comes from the fonts.json manifest when present (exact user casing),
+    else de-slugged from the filename."""
+    out = []
+    if not os.path.isdir(fonts_dir):
+        return out
+    manifest = _read_fonts_manifest(fonts_dir)
+    for fname in sorted(os.listdir(fonts_dir)):
+        if not fname.lower().endswith(FONT_EXTS):
+            continue
+        slug, ext = fname.rsplit(".", 1)
+        entry = manifest.get(slug) if isinstance(manifest.get(slug), dict) else {}
+        family = ((entry or {}).get("family") or "").strip() \
+                 or " ".join(p.capitalize() for p in slug.split("-"))
+        out.append({
+            "family":   family,
+            "slug":     slug,
+            "ds":       ds_label,
+            "file":     fname,
+            "fontPath": font_path_prefix + fname,
+            "cssUrl":   css_url,
+            "format":   ext.lower(),
+        })
+    return out
 
-    Returns [{family, slug, ds, file, fontPath, cssUrl, format}] sorted by
-    ds then filename. `family` comes from the fonts.json manifest when
-    present (exact user casing), else de-slugged from the filename.
+
+def _global_fonts_dir():
+    """The WORKSPACE-LEVEL font collection — the 'Custom fonts' section of
+    the landing page's System tab. Shared across every project (the landing
+    has no project context). Single-project mode falls back to a fonts/
+    folder beside the project."""
+    return os.path.join(WORKSPACE_DIR or DEFAULT_PROJECT_ROOT, "fonts")
+
+
+def _list_global_fonts():
+    """Enumerate the workspace-level collection. Entries carry ds='global'
+    and are served via the /__global_fonts/<file> route (they live outside
+    any project root, so the normal static mapping can't reach them)."""
+    return _scan_fonts_dir(_global_fonts_dir(), "global", "fonts/",
+                           "/__global_fonts/_fontface.css")
+
+
+def _list_local_fonts(project_root):
+    """Enumerate every font visible to a project: uploads under its
+    design-systems/*/fonts/ PLUS the workspace-level 'global' collection.
+
+    Returns [{family, slug, ds, file, fontPath, cssUrl, format}]. Project
+    faces first, then global — a project face shadows a same-named global
+    one for /__resolve_font (first match wins).
     """
     out = []
     ds_root = os.path.join(project_root, "design-systems")
-    if not os.path.isdir(ds_root):
-        return out
-    for ds_id in sorted(os.listdir(ds_root)):
-        fonts_dir = os.path.join(ds_root, ds_id, "fonts")
-        if not os.path.isdir(fonts_dir):
-            continue
-        manifest = _read_fonts_manifest(fonts_dir)
-        for fname in sorted(os.listdir(fonts_dir)):
-            if not fname.lower().endswith(FONT_EXTS):
-                continue
-            slug, ext = fname.rsplit(".", 1)
-            entry = manifest.get(slug) if isinstance(manifest.get(slug), dict) else {}
-            family = ((entry or {}).get("family") or "").strip() \
-                     or " ".join(p.capitalize() for p in slug.split("-"))
-            out.append({
-                "family":   family,
-                "slug":     slug,
-                "ds":       ds_id,
-                "file":     fname,
-                "fontPath": f"design-systems/{ds_id}/fonts/{fname}",
-                "cssUrl":   f"/design-systems/{ds_id}/fonts/_fontface.css",
-                "format":   ext.lower(),
-            })
+    if os.path.isdir(ds_root):
+        for ds_id in sorted(os.listdir(ds_root)):
+            out.extend(_scan_fonts_dir(
+                os.path.join(ds_root, ds_id, "fonts"), ds_id,
+                f"design-systems/{ds_id}/fonts/",
+                f"/design-systems/{ds_id}/fonts/_fontface.css"))
+    out.extend(_list_global_fonts())
     return out
 
 
@@ -5671,6 +5699,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._resolve_font_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__fonts":
             return self._fonts_list_get(urllib.parse.parse_qs(parsed.query))
+        m_gfont = re.match(r"^/__global_fonts/([A-Za-z0-9._+\-]{1,120})$", url_path)
+        if m_gfont:
+            return self._global_font_file(m_gfont.group(1))
         if url_path == "/__media_config":
             return self._media_config_get()
         if url_path == "/__export_config":
@@ -9019,16 +9050,25 @@ class H(http.server.SimpleHTTPRequestHandler):
             "hint":            "Font not in the local library (design-systems/*/fonts/) nor on Google Fonts / Bunny Fonts / Fontsource. Upload a .woff2 / .ttf manually via POST /__upload_font?name=<family>.",
         })
 
-    # ── POST /__upload_font?ds=<id>&name=<family> ────────────────────────
+    # ── POST /__upload_font?ds=<id>&name=<family>[&scope=global] ─────────
     # Accepts a raw font file (woff2 / woff / ttf / otf), writes it to
     # design-systems/<dsId>/fonts/<slug>.<ext>, and returns the relative URL
     # the editor can <link> via an auto-generated @font-face stylesheet
     # sibling. The fallback when /__resolve_font returns ok=false.
+    #
+    # scope=global → writes to the WORKSPACE-LEVEL collection instead
+    # (<workspace>/fonts/, served via /__global_fonts/). Used by the landing
+    # page's System tab, which has no project context. Global faces are
+    # merged into every project's /__fonts listing.
     def _upload_font_post(self, qs):
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
+        scope = (qs.get("scope") or [""])[0].strip().lower()
+        if scope == "global":
+            project_root = None
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
         ds_id = (qs.get("ds") or [""])[0].strip().lower() or "main"
         name  = (qs.get("name") or [""])[0].strip()
         if not name:
@@ -9059,8 +9099,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         }.get(ctype, "woff2")
         body = self.rfile.read(length)
         slug = _font_slug(name)
-        # Write under design-systems/<dsId>/fonts/. Auto-create dirs.
-        fonts_dir = os.path.join(project_root, "design-systems", ds_id, "fonts")
+        # Target dir: workspace-level collection (scope=global) or the
+        # project's design-systems/<dsId>/fonts/. Auto-create dirs.
+        fonts_dir = _global_fonts_dir() if scope == "global" \
+                    else os.path.join(project_root, "design-systems", ds_id, "fonts")
         try:
             os.makedirs(fonts_dir, exist_ok=True)
         except Exception as e:
@@ -9086,33 +9128,41 @@ class H(http.server.SimpleHTTPRequestHandler):
             _rebuild_fontface_css(fonts_dir, manifest)
         except Exception as e:
             return self._reply(500, {"error": f"could not write _fontface.css: {e}"})
-        css_url = "/design-systems/" + ds_id + "/fonts/_fontface.css"
+        css_url = "/__global_fonts/_fontface.css" if scope == "global" \
+                  else "/design-systems/" + ds_id + "/fonts/_fontface.css"
         return self._reply(200, {
             "ok":     True,
             "family": name,
-            "fontPath": os.path.relpath(font_path, project_root),
+            "fontPath": (("fonts/" + slug + "." + ext) if scope == "global"
+                         else os.path.relpath(font_path, project_root)),
             "cssUrl":  css_url,
+            "scope":   scope or "project",
             "source":  "uploaded",
         })
 
-    # ── POST /__delete_font?ds=<id>&slug=<slug> ──────────────────────────
+    # ── POST /__delete_font?ds=<id>&slug=<slug>[&scope=global] ───────────
     # Remove one face from the local font library: deletes the font file,
     # drops its manifest row, and rebuilds _fontface.css (which therefore
     # stops declaring the face). The inverse of /__upload_font.
+    # scope=global targets the workspace-level collection.
     def _delete_font_post(self, qs):
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
+        scope = (qs.get("scope") or [""])[0].strip().lower()
         ds_id = (qs.get("ds") or [""])[0].strip().lower() or "main"
         slug  = (qs.get("slug") or [""])[0].strip().lower()
         if not SLUG_OK.match(ds_id):
             return self._reply(400, {"error": "invalid ds id", "id": ds_id})
         if not slug or not re.match(r"^[a-z0-9+\-_]+$", slug):
             return self._reply(400, {"error": "invalid or missing slug", "slug": slug})
-        fonts_dir = os.path.join(project_root, "design-systems", ds_id, "fonts")
+        if scope == "global":
+            fonts_dir = _global_fonts_dir()
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+            fonts_dir = os.path.join(project_root, "design-systems", ds_id, "fonts")
         if not os.path.isdir(fonts_dir):
-            return self._reply(404, {"error": "no fonts dir for ds", "ds": ds_id})
+            return self._reply(404, {"error": "no fonts dir", "ds": ds_id, "scope": scope or "project"})
         removed = []
         for ext in FONT_EXTS:
             p = os.path.join(fonts_dir, slug + ext)
@@ -9134,18 +9184,24 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"could not update font metadata: {e}"})
         return self._reply(200, {"ok": True, "removed": removed, "ds": ds_id})
 
-    # ── GET /__fonts ─────────────────────────────────────────────────────
-    # Enumerate the LOCAL FONT LIBRARY: every uploaded font file under
-    # design-systems/*/fonts/ across the project. This is the discovery
-    # endpoint agents hit before proposing typography — local (user-
-    # uploaded) faces take priority over CDN families because they're the
-    # ones the user deliberately collected.
+    # ── GET /__fonts[?scope=global] ──────────────────────────────────────
+    # Enumerate the LOCAL FONT LIBRARY: every uploaded font file under the
+    # project's design-systems/*/fonts/ PLUS the workspace-level 'global'
+    # collection (ds="global"). This is the discovery endpoint agents hit
+    # before proposing typography — local (user-uploaded) faces take
+    # priority over CDN families because they're the ones the user
+    # deliberately collected. scope=global → only the workspace collection
+    # (no project context needed; used by the landing page's System tab).
     def _fonts_list_get(self, qs):
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-        items = _list_local_fonts(project_root)
+        scope = (qs.get("scope") or [""])[0].strip().lower()
+        if scope == "global":
+            items = _list_global_fonts()
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+            items = _list_local_fonts(project_root)
         return self._reply(200, {
             "items": items,
             "count": len(items),
@@ -9155,6 +9211,40 @@ class H(http.server.SimpleHTTPRequestHandler):
                       "Resolve any name (local first, then Google/Bunny/Fontsource) "
                       "via GET /__resolve_font?name=<family>."),
         })
+
+    # ── GET /__global_fonts/<file> ───────────────────────────────────────
+    # Serves the workspace-level font collection (<workspace>/fonts/) —
+    # it lives OUTSIDE every project root, so translate_path's per-project
+    # static mapping can't reach it. Serves the font binaries and the
+    # auto-generated _fontface.css (whose url('./x.woff2') sources resolve
+    # right back to this route).
+    def _global_font_file(self, name):
+        if ".." in name or "/" in name:
+            return self._reply(400, {"error": "bad file name"})
+        path = os.path.join(_global_fonts_dir(), name)
+        if not os.path.isfile(path):
+            return self._reply(404, {"error": "not found", "file": name})
+        ext = name.rsplit(".", 1)[-1].lower()
+        ctype = {
+            "css":   "text/css; charset=utf-8",
+            "woff2": "font/woff2",
+            "woff":  "font/woff",
+            "ttf":   "font/ttf",
+            "otf":   "font/otf",
+            "json":  "application/json",
+        }.get(ext, "application/octet-stream")
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except Exception as e:
+            return self._reply(500, {"error": f"read failed: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        # no-cache: _fontface.css mutates in place on upload/delete.
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
 
     # ── Phase 4a — BYOK media config + asset generation ──────────────────
     # GET  /__media_config            → masked config status (has_key/last_test_*)

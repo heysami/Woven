@@ -2872,7 +2872,12 @@ function DSViewLibrary({ dsRefId }) {
   `;
 }
 
-/* Fonts pane — the project's LOCAL FONT LIBRARY (design-systems/<ds>/fonts/).
+/* Fonts pane — the LOCAL FONT LIBRARY. Two scopes share this component:
+   - scope="global"  → the WORKSPACE collection (<workspace>/fonts/, served
+     via /__global_fonts/). Hosted in the landing page's System tab sidebar
+     ("Custom fonts") — no project context needed. Shared across projects.
+   - default (project) → the project view: its design-systems/<ds>/fonts/
+     faces MERGED with the global collection (ds=global rows).
    Lists every uploaded face with a live sample, uploads new ones (button or
    drag-drop), and removes faces. The same library the typography node's ⤒
    button and the canvas font-drop feed — and the one agents check FIRST
@@ -2883,18 +2888,20 @@ function dsFontFamilyFromFilename(name) {
     .replace(/[-_ ]+(regular|italic|bold|light|medium|semibold|extrabold|extralight|thin|black|book|roman|normal|var|variable|vf)$/i, "")
     .replace(/[-_]+/g, " ").trim() || "Uploaded Font";
 }
-function DSFontsPanel() {
+function DSFontsPanel({ scope }) {
+  const isGlobal = scope === "global";
+  const listUrl = "/__fonts" + (isGlobal ? "?scope=global" : "");
   const [fonts, setFonts] = useState(null);   // null = loading
   const [busy, setBusy]   = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
   const reload = useCallback(async () => {
     try {
-      const r = await fetch(apiUrl("/__fonts"));
+      const r = await fetch(apiUrl(listUrl));
       const j = await r.json();
       setFonts(Array.isArray(j.items) ? j.items : []);
     } catch { setFonts([]); }
-  }, []);
+  }, [listUrl]);
   useEffect(() => { reload(); }, [reload]);
   // Inject each library stylesheet so samples render in the actual faces.
   // `bust=true` (after upload/delete) re-points the link with a cache-buster
@@ -2915,10 +2922,12 @@ function DSFontsPanel() {
   }, []);
   useEffect(() => { if (fonts && fonts.length) injectCss(fonts, false); }, [fonts, injectCss]);
   const refresh = async (bust) => {
-    const r = await fetch(apiUrl("/__fonts")).then(x => x.json()).catch(() => ({}));
+    const r = await fetch(apiUrl(listUrl)).then(x => x.json()).catch(() => ({}));
     const items = Array.isArray(r.items) ? r.items : [];
     setFonts(items);
     injectCss(items, bust);
+    // Let count-displaying hosts (System sidebar) re-poll.
+    try { window.dispatchEvent(new CustomEvent("th:fonts-changed")); } catch {}
   };
   const uploadFiles = async (fileList) => {
     const files = [...fileList].filter(f =>
@@ -2928,7 +2937,7 @@ function DSFontsPanel() {
     for (const file of files) {
       const family = dsFontFamilyFromFilename(file.name);
       try {
-        const r = await fetch(apiUrl(`/__upload_font?name=${encodeURIComponent(family)}`), {
+        const r = await fetch(apiUrl(`/__upload_font?name=${encodeURIComponent(family)}${isGlobal ? "&scope=global" : ""}`), {
           method: "POST",
           headers: { "Content-Type": file.type || "application/octet-stream" },
           body: file,
@@ -2945,7 +2954,12 @@ function DSFontsPanel() {
   const removeFont = async (f) => {
     if (!confirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
     try {
-      const r = await fetch(apiUrl(`/__delete_font?ds=${encodeURIComponent(f.ds)}&slug=${encodeURIComponent(f.slug)}`), { method: "POST" });
+      // Global faces (ds="global") delete via scope=global no matter which
+      // panel they're shown in — they live in the workspace collection.
+      const url = f.ds === "global"
+        ? `/__delete_font?scope=global&slug=${encodeURIComponent(f.slug)}`
+        : `/__delete_font?ds=${encodeURIComponent(f.ds)}&slug=${encodeURIComponent(f.slug)}`;
+      const r = await fetch(apiUrl(url), { method: "POST" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     } catch (e) {
@@ -2960,18 +2974,22 @@ function DSFontsPanel() {
       onDragLeave=${() => setDragOver(false)}
       onDrop=${(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer?.files || []); }}>
       <div className="ds-section-h">
-        <h2>Fonts · local library</h2>
+        <h2>${isGlobal ? "Custom fonts" : "Fonts · local library"}</h2>
         <span className="ds-section-meta">${fonts === null ? "loading…" : fonts.length + (fonts.length === 1 ? " face" : " faces")}</span>
         <button className="ds-fonts-upload" disabled=${busy}
           onClick=${() => fileRef.current?.click()}
-          title="Upload .woff2 / .woff / .ttf / .otf files — they land in design-systems/<ds>/fonts/ where agents look first">
+          title=${isGlobal
+            ? "Upload .woff2 / .woff / .ttf / .otf files — they land in the workspace fonts/ collection, shared across every project"
+            : "Upload .woff2 / .woff / .ttf / .otf files — they land in design-systems/<ds>/fonts/ where agents look first"}>
           ${busy ? "Uploading…" : "⤒ Upload font"}
         </button>
         <input ref=${fileRef} type="file" multiple accept=".woff2,.woff,.ttf,.otf,font/*" style=${{ display: "none" }}
           onChange=${(e) => { uploadFiles(e.target.files); e.target.value = ""; }}/>
       </div>
       <p className="ds-fonts-hint">
-        Custom fonts collected under <code>${"design-systems/<ds>/fonts/"}</code>. Agents check this library <strong>first</strong> when proposing typography — before any Google Fonts default. Drop font files here (or onto the workflow canvas) to add more.
+        ${isGlobal
+          ? html`Your font collection — shared across <strong>every project</strong> in this workspace (stored in <code>${"fonts/"}</code> at the workspace root). Agents check these <strong>first</strong> when proposing typography, before any Google Fonts default. Drop font files here to add more.`
+          : html`Custom fonts visible to this project — its own <code>${"design-systems/<ds>/fonts/"}</code> faces plus the workspace collection (<code>ds=global</code>, managed under System → Custom fonts on the landing page). Agents check this library <strong>first</strong> when proposing typography. Drop font files here (or onto the workflow canvas) to add more.`}
       </p>
       <div className="ds-fonts-grid">
         ${(fonts || []).map(f => html`
@@ -2979,7 +2997,7 @@ function DSFontsPanel() {
             <div className="ds-fonts-sample" style=${{ fontFamily: `"${f.family}", system-ui, sans-serif` }}>Aa Bb Cc 123</div>
             <div className="ds-fonts-meta">
               <span className="ds-fonts-family" title=${f.fontPath}>${f.family}</span>
-              <span className="ds-fonts-detail">${f.format} · ds=${f.ds}</span>
+              <span className="ds-fonts-detail">${f.format} · ${f.ds === "global" ? "workspace" : "ds=" + f.ds}</span>
             </div>
             <button className="ds-fonts-remove" title=${"Remove " + f.family + " from the library"} onClick=${() => removeFont(f)}>×</button>
           </div>
@@ -8377,6 +8395,78 @@ function PermissionModePicker({ value, onChange, compact, openUp }) {
           <div className="perm-menu-foot">
             Changes apply to the next run. The current run keeps the mode it was spawned with.
           </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* v3.11 — Chat view mode: how much of the agent's working activity (tool
+   cards, agent grids, thinking blocks) stays visible in the transcript.
+   - "auto" (default): activity streams normally while the agent is reading /
+     writing, then collapses into a compact "n steps" row once the turn
+     finishes. Each row re-expands on click.
+   - "always": every activity block stays expanded forever.
+   Persisted in localStorage — it's a sticky user preference, not per-thread
+   state. */
+const CHAT_VIEW_MODE_OPTIONS = [
+  { value: "auto",   label: "Hide finished steps", short: "Steps: auto", hint: "Tool activity shows while the agent is working, then collapses to a compact \"n steps\" row when the turn finishes. Click a row to expand it." },
+  { value: "always", label: "Always show steps",   short: "Steps: all",  hint: "Keep every tool card and thinking block visible after the turn finishes." },
+];
+const CHAT_VIEW_MODE_KEY = "th-chat-view-mode";
+function chatViewModeOption(value) {
+  return CHAT_VIEW_MODE_OPTIONS.find(o => o.value === value) || CHAT_VIEW_MODE_OPTIONS[0];
+}
+function loadChatViewMode() {
+  try {
+    const v = localStorage.getItem(CHAT_VIEW_MODE_KEY);
+    if (CHAT_VIEW_MODE_OPTIONS.some(o => o.value === v)) return v;
+  } catch {}
+  return "auto";
+}
+
+/* Same skeleton as PermissionModePicker — reuses the perm-* CSS family so
+   the two footer dropdowns read as siblings. */
+function ChatViewModePicker({ value, onChange, openUp }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", off);
+    return () => document.removeEventListener("mousedown", off);
+  }, [open]);
+  const cur = chatViewModeOption(value);
+  return html`
+    <div className="perm-picker view-picker" ref=${ref} data-up=${!!openUp}>
+      <button
+        className="perm-trigger"
+        data-open=${open}
+        title=${cur.hint}
+        onClick=${() => setOpen(o => !o)}
+      >
+        <span className="perm-mark view-mark" data-view=${cur.value}/>
+        <span className="perm-trigger-label">${cur.short}</span>
+        <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
+      </button>
+      ${open && html`
+        <div className="perm-menu">
+          <div className="perm-menu-head">Chat view</div>
+          ${CHAT_VIEW_MODE_OPTIONS.map(opt => html`
+            <button
+              key=${opt.value}
+              className="perm-item"
+              data-active=${opt.value === value}
+              title=${opt.hint}
+              onClick=${() => { onChange(opt.value); setOpen(false); }}
+            >
+              <span className="perm-mark view-mark" data-view=${opt.value}/>
+              <span className="perm-item-body">
+                <span className="perm-item-label">${opt.label}</span>
+                <span className="perm-item-hint">${opt.hint}</span>
+              </span>
+            </button>
+          `)}
         </div>
       `}
     </div>
@@ -14403,17 +14493,27 @@ function SystemLanding() {
   // sources from design-library/, not from the prototype/ skill-detail folder.)
   const [protoCatalog, setProtoCatalog] = useState(null);
   const [mcpCatalog, setMcpCatalog] = useState(null);
+  const [globalFonts, setGlobalFonts] = useState(null);
   useEffect(() => {
     fetch(apiUrl("/__capabilities")).then(r => r.ok ? r.json() : null).then(setCaps).catch(() => {});
     fetch(apiUrl("/__orchestrators")).then(r => r.ok ? r.json() : null).then(setOrchestratorsData).catch(() => {});
     fetch(apiUrl("/__prototype_catalog")).then(r => r.ok ? r.json() : null).then(setProtoCatalog).catch(() => {});
     fetch(apiUrl("/__mcp_catalog")).then(r => r.ok ? r.json() : null).then(setMcpCatalog).catch(() => {});
+    fetch(apiUrl("/__fonts?scope=global")).then(r => r.ok ? r.json() : null).then(setGlobalFonts).catch(() => {});
+  }, []);
+  // Keep the "Custom fonts" sidebar count live while the panel uploads/removes.
+  useEffect(() => {
+    const refetch = () => fetch(apiUrl("/__fonts?scope=global")).then(r => r.ok ? r.json() : null).then(setGlobalFonts).catch(() => {});
+    window.addEventListener("th:fonts-changed", refetch);
+    return () => window.removeEventListener("th:fonts-changed", refetch);
   }, []);
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
     { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
+    { id: "fonts",      label: "Custom fonts",   count: globalFonts ? globalFonts.count : 0,
+      hint: "Your uploaded font collection — shared across every project; agents check these first when proposing typography" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "skills",     label: "Skills",     count: skills.length,
@@ -14448,6 +14548,7 @@ function SystemLanding() {
       <div className="system-content">
         ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace"/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
+        ${activeSection === "fonts"      && html`<div className="system-fonts"><${DSFontsPanel} scope="global"/></div>`}
         ${activeSection === "prototype"  && html`<${PrototypeCatalogLanding} data=${protoCatalog}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}

@@ -544,7 +544,7 @@ If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → bac
 
 ## Local font library — check it BEFORE proposing typography
 
-The user collects custom fonts under `design-systems/<dsId>/fonts/` (one file per face + an auto-generated `_fontface.css` + a `fonts.json` manifest with exact family casing). These are deliberate picks — licensed faces, brand fonts, faces the CDNs don't carry. **When proposing a design or choosing typography, look through this library FIRST and prefer a local face that fits the brief over a Google Fonts default.** Only fall back to CDN families when nothing local fits (and say so).
+The user collects custom fonts in two tiers, both returned by `GET /__fonts`: the WORKSPACE collection (`ds=global` — uploaded via the landing page's System → Custom fonts section, shared across every project, stylesheet at `/__global_fonts/_fontface.css`) and per-project faces under `design-systems/<dsId>/fonts/` (one file per face + an auto-generated `_fontface.css` + a `fonts.json` manifest with exact family casing). These are deliberate picks — licensed faces, brand fonts, faces the CDNs don't carry. **When proposing a design or choosing typography, look through this library FIRST and prefer a local face that fits the brief over a Google Fonts default.** Only fall back to CDN families when nothing local fits (and say so).
 
 **Local fonts in THIS project right now:**
 {font_lines}
