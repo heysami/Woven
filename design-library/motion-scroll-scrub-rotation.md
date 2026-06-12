@@ -8,6 +8,11 @@ binding: scroll-progress
 medium: video
 pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, recipe-devtools-marketing, style-bold-display, aesthetic-cassette-futurism]
 notForUseWhen: The subject looks the same from every angle (spheres, flat cards, gradients — rotation reveals nothing), or the page can't afford a pinned section (short utility pages, docs), or scroll must keep its native meaning throughout.
+images:
+  - src: motion-scroll-scrub-rotation-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-scrub-rotation-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-scrub rotation (product turns as you scroll)

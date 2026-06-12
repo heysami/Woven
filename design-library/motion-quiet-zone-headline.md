@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [recipe-aurora-marketing, recipe-warm-restraint, recipe-restrained-ai-marketing, aesthetic-solarpunk, style-bold-display]
 notForUseWhen: The asset is texture-only with no subject (uniform particle field, gradient wash) — there is no busy region to be quiet AGAINST, so just set type anywhere; or the headline is short enough (≤2 words) to survive on a scrim without composition help.
+images:
+  - src: motion-quiet-zone-headline-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-quiet-zone-headline-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Quiet-zone headline (the asset makes room for the type)

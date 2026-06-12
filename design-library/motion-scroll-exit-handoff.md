@@ -8,6 +8,11 @@ binding: scroll-trigger
 medium: video
 pairsPrototypes: [recipe-editorial-magazine, recipe-neo-grotesque-portfolio, recipe-aurora-marketing, style-liquid-glass, aesthetic-vaporwave]
 notForUseWhen: Adjacent scenes have no visual kinship to exploit (a chart section into a testimonial wall — nothing to match on), or either neighboring scene is itself scroll-scrubbed — a pinned scrub between two triggered clips breaks the velocity chain.
+images:
+  - src: motion-scroll-exit-handoff-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-exit-handoff-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-exit handoff (one scene's exit becomes the next scene's entrance)

@@ -8,6 +8,11 @@ binding: scroll-trigger
 medium: video
 pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, recipe-devtools-marketing, recipe-scientific-infra-marketing]
 notForUseWhen: The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival — this technique ends in a still hold frame.
+images:
+  - src: motion-scroll-entrance-video-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-entrance-video-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-entrance video (asset arrives, then holds)

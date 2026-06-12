@@ -8,6 +8,11 @@ binding: wheel-step
 medium: hybrid
 pairsPrototypes: [recipe-bento-marketing, recipe-neo-grotesque-portfolio, recipe-editorial-magazine, style-oversized-neo-grotesque, style-bold-display]
 notForUseWhen: The piece needs free scrolling or anchor links into the middle (the stepper owns the wheel completely), or there are fewer than 3 scenes — a wipe between two states reads as a glitchy tab switch, not choreography.
+images:
+  - src: motion-scene-stepper-wipe-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scene-stepper-wipe-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scene stepper wipe (one notch, one scene)

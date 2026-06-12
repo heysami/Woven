@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [recipe-y2k-memphis-loud, recipe-neo-grotesque-portfolio, aesthetic-y2k-futurism, aesthetic-fairycore, aesthetic-cyberpunk]
 notForUseWhen: The brand has no character/mascot/figure to be present (don't invent one for the technique), the character must respond to the visitor (use mouse-scrub-look or pointer-magnetic-subject), or identity consistency across the loop can't be guaranteed — a face that drifts mid-loop is worse than a static portrait.
+images:
+  - src: motion-idle-character-loop-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-idle-character-loop-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Idle character loop (the mascot is simply there)

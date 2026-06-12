@@ -8,6 +8,11 @@ binding: wheel-step
 medium: video
 pairsPrototypes: [recipe-bento-marketing, recipe-devtools-marketing, recipe-scientific-infra-marketing, recipe-ai-foundry-dark]
 notForUseWhen: The video has no natural stopping poses (continuous abstract flow, atmosphere) — holds need distinct, stable frames worth annotating; or the scene's UI is a single static headline with nothing to reveal per beat — then a plain ambient loop does the job without the machinery.
+images:
+  - src: motion-frame-hold-ui-sync-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-frame-hold-ui-sync-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Frame-hold UI sync (pause the film, play the interface)

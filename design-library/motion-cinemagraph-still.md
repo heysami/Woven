@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, aesthetic-dark-academia, aesthetic-cottagecore]
 notForUseWhen: The scene wants whole-frame life (use ambient-loop-atmosphere), the moving element can't loop seamlessly (one-way motion like a falling object), or the section is so small the single moving element drops below ~80px rendered and the effect vanishes.
+images:
+  - src: motion-cinemagraph-still-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-cinemagraph-still-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Cinemagraph still (one thing moves, everything else is frozen)

@@ -8,6 +8,11 @@ binding: pointer-xy
 medium: video
 pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-frutiger-dark-aero, aesthetic-cyberpunk, aesthetic-dark-academia]
 notForUseWhen: The hero must be fully legible at first paint (the technique deliberately hides most of the scene), touch-only audiences dominate (no pointer to carry the spotlight), or the video and still cannot be generated from the same frame so the reveal mismatches.
+images:
+  - src: motion-pointer-spotlight-video-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-pointer-spotlight-video-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Pointer spotlight video (cursor develops the living image)

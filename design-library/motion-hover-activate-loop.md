@@ -8,6 +8,11 @@ binding: hover
 medium: video
 pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-editorial-magazine, recipe-brutalist-web, style-oversized-neo-grotesque]
 notForUseWhen: The grid has more than ~12 video tiles in one viewport (decode budget collapses), the tiles are smaller than ~240px wide (motion at thumbnail scale reads as noise), or hover has no meaning for the audience (touch-first) and no tap-to-play substitute is storyboarded.
+images:
+  - src: motion-hover-activate-loop-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-hover-activate-loop-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Hover-activate loop (still wakes into its living version)

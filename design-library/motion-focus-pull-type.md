@@ -9,8 +9,10 @@ medium: dom-filter
 pairsPrototypes: [aesthetic-monochrome-tech-editorial, style-oversized-neo-grotesque, recipe-readcv, style-restrained-hairline, aesthetic-sculptural-minimal]
 notForUseWhen: Long-form reading surfaces (blur on prose you intend people to read is hostile), low-end-device audiences (filter: blur on large type is paint-expensive), or pages where every section must be skimmable at speed.
 images:
-  - src: motion-focus-pull-type.png
-    reason: Representative technique still.
+  - src: motion-focus-pull-type-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-focus-pull-type-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Focus pull (rack-focus blur between sections / type planes)

@@ -8,6 +8,11 @@ binding: wheel-step
 medium: hybrid
 pairsPrototypes: [recipe-scientific-infra-marketing, recipe-devtools-marketing, recipe-ai-foundry-dark, aesthetic-solarpunk, style-glassmorphism]
 notForUseWhen: Scenes are thematically parallel rather than nested (three equal product pillars) — zoom implies containment and scale; zooming between siblings lies about the structure. Also wrong when assets cannot be generated as a wide/detail pair of the same world.
+images:
+  - src: motion-scene-zoom-through-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scene-zoom-through-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scene zoom-through (dive into the detail)

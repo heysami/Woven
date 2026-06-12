@@ -8,6 +8,11 @@ binding: wheel-step
 medium: video
 pairsPrototypes: [recipe-editorial-magazine, recipe-ai-foundry-dark, aesthetic-cyberpunk, style-bold-display]
 notForUseWhen: Assets are generated independently per scene with no shared composition contract — the morph lives or dies on frame-matched pairs; without paired generation this is just a hard cut. Also wrong for decks longer than ~5 scenes; authoring N-1 matched seams does not scale.
+images:
+  - src: motion-match-cut-morph-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-match-cut-morph-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Match-cut morph (the cut you never see)

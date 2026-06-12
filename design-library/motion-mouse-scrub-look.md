@@ -8,6 +8,11 @@ binding: pointer-x
 medium: video
 pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-editorial-magazine, aesthetic-cyberpunk, aesthetic-y2k-futurism, style-oversized-neo-grotesque]
 notForUseWhen: The slot is informational (dashboard, docs, data table), the subject has no face/front (abstract texture), or touch-only audiences dominate — pointer-x has no mobile equivalent without a gyro fallback.
+images:
+  - src: motion-mouse-scrub-look-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-mouse-scrub-look-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Mouse-scrub look (subject follows the cursor)

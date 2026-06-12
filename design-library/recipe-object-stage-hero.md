@@ -4,6 +4,8 @@
 images:
   - src: recipe-object-stage-hero-ui.png
     reason: Full recipe UI mockup.
+  - src: recipe-object-stage-hero-isolated.png
+    reason: Signature scene, isolated.
 ---
 # Object stage hero (Spline-grade 3D scene + UI in the quiet zone)
 

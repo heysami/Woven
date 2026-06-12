@@ -8,6 +8,11 @@ binding: scroll-progress
 medium: hybrid
 pairsPrototypes: [recipe-bento-marketing, recipe-editorial-magazine, recipe-warm-restraint, style-oversized-neo-grotesque]
 notForUseWhen: There's only one copy block to show (a pin with one message is a pointless scroll tax), or the asset has no detail worth zooming into — the transform must reveal something at each step.
+images:
+  - src: motion-scroll-pinned-transform-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-pinned-transform-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-pinned transform (asset morphs while copy swaps)

@@ -8,6 +8,11 @@ binding: scroll-progress
 medium: video
 pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-editorial-magazine, recipe-y2k-memphis-loud, style-bold-display, aesthetic-dreamcore]
 notForUseWhen: The video must be legible from the first pixel (the early mask hides 95% of it), or the page background and the brief reject a hard graphic gesture — the mask IS a loud editorial move, not a neutral one.
+images:
+  - src: motion-scroll-reveal-mask-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-reveal-mask-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-reveal mask (aperture opens onto full-bleed video)

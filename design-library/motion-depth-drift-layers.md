@@ -8,6 +8,11 @@ binding: none
 medium: layered-raster
 pairsPrototypes: [recipe-scientific-infra-marketing, style-glassmorphism, aesthetic-frutiger-dark-aero, aesthetic-dreamcore, aesthetic-vaporwave]
 notForUseWhen: The scene has no plausible depth planes (flat graphic systems), the same viewport already runs pointer-parallax-layers (they are the same stack — pick one driver), or layer-consistent generation budget (3–4 coherent images) isn't available.
+images:
+  - src: motion-depth-drift-layers-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-depth-drift-layers-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Depth-drift layers (ambient faux-3D, no pointer required)

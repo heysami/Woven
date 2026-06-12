@@ -8,6 +8,11 @@ binding: none
 medium: raster
 pairsPrototypes: [recipe-editorial-magazine, recipe-neo-grotesque-portfolio, recipe-bento-marketing, style-oversized-neo-grotesque, aesthetic-dark-academia]
 notForUseWhen: The subject is inherently centered and symmetric (a mandala, a head-on product orthographic) — forcing it to a third fights the asset; use letterbox-stage or center it and push UI to the matte. Also wrong for scenes with no UI at all — a counterweight with nothing to counter is just an off-center picture.
+images:
+  - src: motion-subject-offset-ui-counterweight-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-subject-offset-ui-counterweight-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Subject offset, UI counterweight (thirds by generation)

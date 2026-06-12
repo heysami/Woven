@@ -8,6 +8,11 @@ binding: scroll-progress
 medium: raster-sequence
 pairsPrototypes: [recipe-bento-marketing, recipe-devtools-marketing, recipe-ai-foundry-dark, aesthetic-frutiger-aero]
 notForUseWhen: The motion is continuous atmosphere (smoke, water, weather) — frame-to-frame generation can't hold fluid continuity; or the budget can't carry 40+ image generations for one section.
+images:
+  - src: motion-scroll-sequence-frames-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-sequence-frames-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-sequence frames (canvas-scrubbed still sequence)

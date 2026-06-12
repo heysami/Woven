@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [recipe-aurora-marketing, recipe-warm-restraint, style-liquid-glass, aesthetic-solarpunk, aesthetic-frutiger-aero]
 notForUseWhen: The viewport is data-dense (dashboards, tables, forms — motion under inputs is hostile), the brand register is strictly flat/graphic with no photographic license, or the loop cannot be made seamless and a visible reset would interrupt long dwell times.
+images:
+  - src: motion-ambient-loop-atmosphere-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-ambient-loop-atmosphere-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Ambient loop atmosphere (the page breathes under the UI)

@@ -9,8 +9,10 @@ medium: dom-duplicated-layer
 pairsPrototypes: [style-oversized-neo-grotesque, aesthetic-monochrome-tech-editorial, recipe-neo-grotesque-portfolio, style-restrained-hairline, aesthetic-anti-design]
 notForUseWhen: Touch-dominant audiences (no hover = no lens without a fallback budget), content that must be readable at all times (legal, pricing, forms), or pages already running a cursor-spotlight effect — two pointer-portals compete.
 images:
-  - src: motion-lens-magnifier-reveal.png
-    reason: Representative technique still.
+  - src: motion-lens-magnifier-reveal-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-lens-magnifier-reveal-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Lens magnifier reveal (pointer-tracked circle of clarity)

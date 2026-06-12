@@ -8,6 +8,11 @@ binding: pointer-xy
 medium: layered-raster
 pairsPrototypes: [recipe-editorial-magazine, style-aurorism, aesthetic-frutiger-aero, aesthetic-dreamcore, aesthetic-solarpunk]
 notForUseWhen: The scene has no natural depth planes (flat graphic, single object on void), the hero must carry real photographic continuity (layer seams betray themselves on humans mid-frame), or the page already runs a heavier pointer binding in the same viewport.
+images:
+  - src: motion-pointer-parallax-layers-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-pointer-parallax-layers-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Pointer parallax layers (faux-3D depth from stacked rasters)

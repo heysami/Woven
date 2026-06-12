@@ -8,6 +8,11 @@ binding: scroll-velocity
 medium: video
 pairsPrototypes: [recipe-ai-foundry-dark, recipe-aurora-marketing, style-holographic, aesthetic-frutiger-dark-aero, aesthetic-cyberpunk]
 notForUseWhen: The background sits behind dense reading content (a background that reacts to reading-scroll punishes the reader), or the loop's motion is rhythmic/periodic — speed-ramping a visible beat sounds like a record skipping.
+images:
+  - src: motion-scroll-speed-ramp-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-speed-ramp-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll speed-ramp (ambient loop breathes with scroll velocity)

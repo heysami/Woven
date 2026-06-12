@@ -8,6 +8,11 @@ binding: none
 medium: raster
 pairsPrototypes: [recipe-editorial-magazine, recipe-neo-grotesque-portfolio, style-bold-display, aesthetic-dieselpunk, aesthetic-dark-academia]
 notForUseWhen: The brief demands genuinely living imagery (a zoom on a frozen crowd reads as a haunted photograph — use video techniques), the asset can only be generated at 1080p (the push will soften it), or the section cycles many images fast (push-zoom needs dwell time to register).
+images:
+  - src: motion-slow-push-zoom-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-slow-push-zoom-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Slow push zoom (Ken-Burns gravity on an oversized still)

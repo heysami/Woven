@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, aesthetic-dieselpunk, aesthetic-cassette-futurism, aesthetic-dark-academia]
 notForUseWhen: The design language is full-bleed everywhere else — one letterboxed scene in an edge-to-edge piece reads as a broken asset, not cinema; commit the whole piece or skip it. Also wrong on portrait/mobile-first viewports, where a 2.39:1 band shrinks to a sliver.
+images:
+  - src: motion-letterbox-stage-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-letterbox-stage-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Letterbox stage (UI lives in the matte)

@@ -8,6 +8,11 @@ binding: pointer-x
 medium: video
 pairsPrototypes: [recipe-bento-marketing, recipe-devtools-marketing, recipe-restrained-ai-marketing, style-bold-display, aesthetic-cassette-futurism]
 notForUseWhen: The subject has a face or front that should "look" at the visitor (use mouse-scrub-look), the object is flat or symmetric so rotation reads as nothing, or the section is touch-dominant with no gyro fallback budgeted.
+images:
+  - src: motion-mouse-scrub-orbit-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-mouse-scrub-orbit-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Mouse-scrub orbit (object turns on a turntable arc)

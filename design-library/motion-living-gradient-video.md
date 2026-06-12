@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [recipe-aurora-marketing, recipe-ai-foundry-dark, style-aurorism, style-holographic, aesthetic-vaporwave]
 notForUseWhen: The brand is flat/graphic with hard-edged color systems (a drifting gradient contradicts the language), the palette hexes aren't pinned down yet (the prompt needs exact colors), or CSS mesh gradients already deliver the brief — don't spend a video on what two animated radial-gradients can do.
+images:
+  - src: motion-living-gradient-video-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-living-gradient-video-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Living gradient video (the brand palette as weather)

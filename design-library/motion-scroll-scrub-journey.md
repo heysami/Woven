@@ -8,6 +8,11 @@ binding: scroll-progress
 medium: video
 pairsPrototypes: [recipe-aurora-marketing, recipe-scientific-infra-marketing, style-aurorism, aesthetic-solarpunk, aesthetic-cyberpunk]
 notForUseWhen: The page is short (a journey needs 300vh+ of runway to feel like travel), the content is informational (docs, dashboards), or the brief has no environment to travel through — a journey with no destination is just a long scrub.
+images:
+  - src: motion-scroll-scrub-journey-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-scroll-scrub-journey-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Scroll-scrub journey (camera travels as you scroll)

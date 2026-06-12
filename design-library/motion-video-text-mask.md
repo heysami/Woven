@@ -8,6 +8,11 @@ binding: none
 medium: video
 pairsPrototypes: [style-oversized-neo-grotesque, style-bold-display, recipe-neo-grotesque-portfolio, recipe-brutalist-web, aesthetic-vaporwave]
 notForUseWhen: The headline is long (>3 words), set in a light weight, or in a typeface with thin strokes — video through hairlines reads as noise; the technique needs ≥800-weight glyphs at ≥18vw. Also wrong when the video's CONTENT matters — viewers must recognise the subject, and the mask destroys recognisability.
+images:
+  - src: motion-video-text-mask-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-video-text-mask-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Video text mask (the world lives inside the glyphs)
