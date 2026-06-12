@@ -16537,8 +16537,10 @@ function WorkflowCanvas() {
   // mouseup-time persist write (avoids stale-closure capture).
   const LIB_MIN      = 240;
   const CHAT_DEFAULT = 644;
-  // Drag floor = 500px; first-load default still 644px.
-  const CHAT_MIN     = 500;
+  // Drag floor — 2/3 of the old 500px floor, per user request: the chat
+  // header/composer/footer now truncate gracefully (title first), so a
+  // genuinely narrow chat column is usable. First-load default still 644px.
+  const CHAT_MIN     = 333;
   const [libWidth, setLibWidth] = useState(() => {
     try {
       const v = parseInt(localStorage.getItem("th-workflow-lib-width") || "0", 10);

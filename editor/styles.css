@@ -2677,11 +2677,13 @@ button {
 /* Reserve space on the right for the fixed chat panel when active so the
    canvas doesn't render under it. */
 .workflow-body[data-chat-active="true"] .workflow-canvas-wrap {
-  margin-right: var(--workflow-chat-width, 644px);
+  /* min(…, 100vw) mirrors the .chat-drawer width clamp — the reserved
+     margin must match the drawer's VISUAL width, not the raw var. */
+  margin-right: min(var(--workflow-chat-width, 644px), 100vw);
   transition: margin-right 0.12s ease;
 }
 .workflow-body[data-chat-active="true"] .workflow-proto-viewer {
-  margin-right: var(--workflow-chat-width, 644px);
+  margin-right: min(var(--workflow-chat-width, 644px), 100vw);
   transition: margin-right 0.12s ease;
 }
 
@@ -15015,12 +15017,18 @@ a.ds-badge:hover, button.ds-badge:hover {
    rather than a foreign chat widget. */
 .chat-drawer {
   /* Right-side sticky panel. Width comes from --workflow-chat-width on
-     :root (644px default minimum). Left-edge resize handle inside. */
+     :root (644px default). Left-edge resize handle inside.
+     min(…, 100vw): the var is a user-dragged value persisted across
+     sessions — it can exceed the CURRENT window (saved on a big screen,
+     reopened on a small one, or the browser window shrunk while open).
+     Without the clamp the drawer lays out wider than the viewport and
+     its right-edge chrome (close ×, Send) lands off-screen. */
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  width: var(--workflow-chat-width, 644px);
+  width: min(var(--workflow-chat-width, 644px), 100vw);
+  max-width: 100vw;
   display: grid;
   grid-template-rows: auto 1fr auto auto;   /* header · body · composer · footer */
   background: var(--surface);
@@ -15032,6 +15040,17 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .chat-drawer[data-collapsed="true"] {
   grid-template-rows: auto auto auto;   /* header · composer · footer */
+}
+/* CRITICAL responsiveness rule: the drawer is a grid and grid items
+   default to min-width:auto — a long run title / unbreakable code line
+   makes a row's min-content width EXCEED the drawer, and since the
+   drawer is overflow:visible the row sticks out past the viewport's
+   right edge (close × and Send rendered off-screen). min-width:0 forces
+   every row to obey the drawer width so the inner truncation rules
+   (title ellipsis, text wrapping) actually engage. */
+.chat-drawer > * {
+  min-width: 0;
+  max-width: 100%;
 }
 /* Chat panel's left-edge resize handle. 6px hit area, only ~1px visually
    so it doesn't read like a border. Hidden in fullscreen. */
@@ -15118,11 +15137,18 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   border-top: 1px solid var(--border);
   background: var(--surface-2);
   position: relative;   /* anchor for perm-picker's upward menu */
+  min-width: 0;
 }
 .chat-footer-model {
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.01em;
+  /* Shrinkable on narrow drawers — the model id ellipsizes rather than
+     pushing the perm picker / footer chrome out of the drawer. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
   padding: 2px 6px;
   border: 1px solid var(--border);
@@ -15297,8 +15323,13 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
+/* Shrink order when the drawer gets narrow: the TITLE truncates first
+   (flex 1 1 + min-width 0 → it absorbs all the squeeze), then the status
+   chip's text ellipsizes, and the action buttons (⤢ / ×) NEVER shrink or
+   crop — they're the controls the user reaches for at any width. */
 .chat-title-group {
   display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  flex: 1 1 auto;
 }
 .chat-title {
   font-weight: 600;
@@ -15312,11 +15343,19 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat-status-group {
   display: flex; align-items: center; gap: 6px;
+  /* NEVER shrinks — flex shrinkage is proportional to basis, so any
+     shrink factor here lets the huge-basis title squeeze the buttons out
+     of their own box. The title-group (flex 1 1, min-width 0) absorbs
+     ALL the squeeze; chip + ⤢ + × stay whole at any drawer width. */
   flex: 0 0 auto;
 }
+.chat-status-group .chat-action { flex: 0 0 auto; }
 
 .chat-chip {
   display: inline-flex;
@@ -15329,6 +15368,12 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   letter-spacing: 0.02em;
   text-transform: uppercase;
   border: 1px solid transparent;
+  /* Second in the shrink order (after the title): the chip's TEXT may
+     ellipsize on very narrow drawers; the pulse dot + buttons stay. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chip-done       { background: var(--success-soft); color: var(--success); border-color: color-mix(in oklch, var(--success) 30%, transparent); }
 .chip-fail       { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklch, var(--danger)  30%, transparent); }
