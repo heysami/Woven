@@ -4604,6 +4604,24 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   cursor: grabbing;
 }
 
+/* Multi-select group boundary + align bar */
+.workflow-group-bbox {
+  position: absolute;
+  border-style: solid;
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--accent) 3%, transparent);
+  pointer-events: none;
+  z-index: 99998;
+}
+.workflow-align-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-strong);
+  margin: 0 4px;
+  align-self: center;
+}
+
 /* Whiteboard tool panel — swapped in for the Library while whiteboard mode
    is active (same .workflow-library-col slot, minimap stays below). */
 .workflow-wb-tools {

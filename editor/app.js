@@ -19337,6 +19337,11 @@ function elementPatchSelector(el) {
    Returns true when the bar should be hidden. */
 function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   if (!rect) return true;
+  // Multi-select: ALL per-node floating chrome (top-action strips, asset
+  // action bars, select badges) yields to the group boundary + align bar.
+  // The flag is mirrored onto <body> by WorkflowSurface's selection effect
+  // so portaled components can read it without prop plumbing.
+  if (document.body.getAttribute("data-wf-multi-select") === "true") return true;
   if (minNodeWidth && rect.width < minNodeWidth) return true;
   // v3.5.4 — Only hide when the bar would be COMPLETELY off the canvas
   // viewport. The previous "any-pixel-of-bleed hides" rule killed the pick
@@ -20906,6 +20911,164 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
   `, document.body);
 }
 
+/* ────────── Multi-select group align ──────────
+   When MORE THAN ONE item is selected (nodes or whiteboard items), the
+   per-node floating chrome hides (see shouldHideNodeChrome) and a single
+   group boundary + icon-only align bar take over. Pure geometry: the
+   patch map is computed from item rects, then applied by the caller
+   (nodes patch x/y; wb items shift by bbox delta so arrows move their
+   endpoints). */
+
+// rects: [{ id, x, y, w, h }] → Map(id → { x?, y? }) of new positions.
+function workflowAlignPatches(rects, mode, gap = 40) {
+  const patch = new Map();
+  if (!Array.isArray(rects) || rects.length < 2) return patch;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rects) {
+    if (r.x < minX) minX = r.x;
+    if (r.y < minY) minY = r.y;
+    if (r.x + r.w > maxX) maxX = r.x + r.w;
+    if (r.y + r.h > maxY) maxY = r.y + r.h;
+  }
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const set = (id, p) => patch.set(id, { ...(patch.get(id) || {}), ...p });
+  if (mode === "left")    for (const r of rects) set(r.id, { x: minX });
+  if (mode === "centerH") for (const r of rects) set(r.id, { x: cx - r.w / 2 });
+  if (mode === "right")   for (const r of rects) set(r.id, { x: maxX - r.w });
+  if (mode === "top")     for (const r of rects) set(r.id, { y: minY });
+  if (mode === "middleV") for (const r of rects) set(r.id, { y: cy - r.h / 2 });
+  if (mode === "bottom")  for (const r of rects) set(r.id, { y: maxY - r.h });
+  if (mode === "grid") {
+    // Smart align: row-major grid anchored at the group's top-left.
+    // Column widths / row heights follow the largest member so nothing
+    // overlaps; reading order (top-to-bottom, left-to-right) is preserved.
+    const sorted = rects.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const cols = Math.ceil(Math.sqrt(sorted.length));
+    const colW = [], rowH = [];
+    sorted.forEach((r, i) => {
+      const c = i % cols, row = (i / cols) | 0;
+      colW[c]   = Math.max(colW[c]   || 0, r.w);
+      rowH[row] = Math.max(rowH[row] || 0, r.h);
+    });
+    const colX = [], rowY = [];
+    let ax = minX;
+    for (let c = 0; c < colW.length; c++) { colX[c] = ax; ax += colW[c] + gap; }
+    let ay = minY;
+    for (let r = 0; r < rowH.length; r++) { rowY[r] = ay; ay += rowH[r] + gap; }
+    sorted.forEach((r, i) => set(r.id, { x: colX[i % cols], y: rowY[(i / cols) | 0] }));
+  }
+  return patch;
+}
+
+// Icon-only align actions. 16-grid stroke/fill glyphs matching the Icon set.
+const WORKFLOW_ALIGN_ACTIONS = [
+  { key: "left", mode: "left", tip: "Align left", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 2v12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="4.8" y="3.2" width="8.7" height="3.1" rx="0.8" fill="currentColor"/><rect x="4.8" y="9.7" width="5.4" height="3.1" rx="0.8" fill="currentColor"/></svg>` },
+  { key: "centerH", mode: "centerH", tip: "Align horizontal centers", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 2v12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2.9" y="3.2" width="10.2" height="3.1" rx="0.8" fill="currentColor"/><rect x="4.9" y="9.7" width="6.2" height="3.1" rx="0.8" fill="currentColor"/></svg>` },
+  { key: "right", mode: "right", tip: "Align right", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M13 2v12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2.5" y="3.2" width="8.7" height="3.1" rx="0.8" fill="currentColor"/><rect x="5.8" y="9.7" width="5.4" height="3.1" rx="0.8" fill="currentColor"/></svg>` },
+  { key: "sep1", separator: true },
+  { key: "top", mode: "top", tip: "Align top", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M2 3h12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="3.2" y="4.8" width="3.1" height="8.7" rx="0.8" fill="currentColor"/><rect x="9.7" y="4.8" width="3.1" height="5.4" rx="0.8" fill="currentColor"/></svg>` },
+  { key: "middleV", mode: "middleV", tip: "Align vertical centers", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M2 8h12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="3.2" y="2.9" width="3.1" height="10.2" rx="0.8" fill="currentColor"/><rect x="9.7" y="4.9" width="3.1" height="6.2" rx="0.8" fill="currentColor"/></svg>` },
+  { key: "bottom", mode: "bottom", tip: "Align bottom", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M2 13h12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="3.2" y="2.5" width="3.1" height="8.7" rx="0.8" fill="currentColor"/><rect x="9.7" y="5.8" width="3.1" height="5.4" rx="0.8" fill="currentColor"/></svg>` },
+  { key: "sep2", separator: true },
+  { key: "grid", mode: "grid", tip: "Smart align — arrange in a grid", icon: html`
+    <svg viewBox="0 0 16 16" width="14" height="14"><rect x="2.5" y="2.5" width="4.8" height="4.8" rx="1" fill="currentColor"/><rect x="8.7" y="2.5" width="4.8" height="4.8" rx="1" fill="currentColor"/><rect x="2.5" y="8.7" width="4.8" height="4.8" rx="1" fill="currentColor"/><rect x="8.7" y="8.7" width="4.8" height="4.8" rx="1" fill="currentColor"/></svg>` },
+];
+
+// Floating align bar — portaled to body, rAF-tracks the .workflow-group-bbox
+// element's screen rect (the bbox lives in world space inside the canvas
+// transform, so reading its DOM rect each frame keeps the strip glued
+// through pan/zoom — same pattern as WorkflowNodeTopActions). Icon-only
+// buttons with the shared portal-tip tooltip.
+function WorkflowGroupAlignBar({ onAlign }) {
+  const [rect, setRect] = useState(null);
+  const [tipState, setTipState] = useState(null);
+  useEffect(() => {
+    let raf = 0;
+    let last = null;
+    const tick = () => {
+      const el = document.querySelector(".workflow-group-bbox");
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height };
+          setRect(last);
+        }
+      } else if (last) {
+        last = null;
+        setRect(null);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  if (!rect) return null;
+  const BTN = 32, GAP = 4, SEP_W = 9; // separator: 1px line + margins
+  const btnCount = WORKFLOW_ALIGN_ACTIONS.filter(a => !a.separator).length;
+  const sepCount = WORKFLOW_ALIGN_ACTIONS.filter(a => a.separator).length;
+  const totalW = btnCount * BTN + (btnCount + sepCount - 1) * GAP + sepCount * SEP_W;
+  let left = rect.left + rect.width / 2 - totalW / 2;
+  let top = rect.top - 40;
+  // Keep the strip on-canvas: clamp horizontally; flip inside the boundary
+  // when the group touches the top of the viewport.
+  const canvasEl = document.querySelector(".workflow-canvas-wrap");
+  if (canvasEl) {
+    const c = canvasEl.getBoundingClientRect();
+    left = Math.max(c.left + 8, Math.min(left, c.right - totalW - 8));
+    if (top < c.top + 4) top = rect.top + 8;
+  }
+  const showTip = (key, el, text) => {
+    if (!el || !text) { setTipState(null); return; }
+    const r = el.getBoundingClientRect();
+    setTipState({ key, left: r.left + r.width / 2, top: r.top - 6, text });
+  };
+  const clearTip = () => setTipState(null);
+  return createPortal(html`
+    <${React.Fragment}>
+      <div
+        className="workflow-node-top-actions workflow-group-align-bar"
+        style=${{ position: "fixed", top: top + "px", left: left + "px", height: BTN + "px", zIndex: 40 }}
+        onMouseDown=${(e) => e.stopPropagation()}
+      >
+        ${WORKFLOW_ALIGN_ACTIONS.map(a => a.separator
+          ? html`<div key=${a.key} className="workflow-align-sep"/>`
+          : html`
+            <button
+              key=${a.key}
+              className="workflow-node-top-action"
+              onMouseDown=${(e) => e.stopPropagation()}
+              onClick=${(e) => { e.stopPropagation(); onAlign(a.mode); }}
+              onMouseEnter=${(e) => showTip(a.key, e.currentTarget, a.tip)}
+              onMouseLeave=${clearTip}
+              onFocus=${(e) => showTip(a.key, e.currentTarget, a.tip)}
+              onBlur=${clearTip}
+              aria-label=${a.tip}
+            >${a.icon}</button>
+          `)}
+      </div>
+      ${tipState ? html`
+        <div
+          className="th-portal-tip th-portal-tip-above"
+          style=${{
+            position: "fixed",
+            left: tipState.left + "px",
+            top:  tipState.top + "px",
+            transform: "translate(-50%, -100%)",
+            zIndex: 50,
+            pointerEvents: "none",
+          }}>${tipState.text}</div>
+      ` : null}
+    <//>
+  `, document.body);
+}
+
 /* v3.8 — Connector-spawn chrome. When EXACTLY ONE node is selected and its
    kind has a WORKFLOW_CONNECT_DEFS entry, render a floating ⊕ button at the
    vertical middle of each side that has menu content (left = upstream
@@ -21645,6 +21808,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // v2.9b — push the reactive count up so the parent can show UI hints
     // (Send-button badge etc.). Cheap setState — only fires on change.
     if (onSelectionCountChange) onSelectionCountChange(selectedNodeIds.size);
+    // Multi-select flag for body-portaled per-node chrome (top-action
+    // strips / asset bars / badges hide via shouldHideNodeChrome and the
+    // group align bar takes over). Body attribute because those components
+    // render through createPortal and share no props with the surface.
+    try {
+      document.body.setAttribute("data-wf-multi-select", selectedNodeIds.size > 1 ? "true" : "false");
+    } catch {}
   }, [selectedNodeIds, selectedWbIds, wbMode, data?.nodes, data?.wb, selectionRef, onSelectionCountChange]);
 
   // v2.4b — same imperative pattern for data-selected. Most node kinds set
@@ -22482,6 +22652,59 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setSelectedWbIds(new Set(clones.map(c => c.id)));
     return clones.length;
   }, [setData]);
+
+  // ── Group alignment (multi-select align bar) ── operates on whichever
+  // selection is multi (node + wb selections are mutually exclusive).
+  // Nodes patch x/y directly; wb items shift by their bbox delta so arrows
+  // move both endpoints and ink keeps its relative points.
+  const alignSelection = useCallback((mode) => {
+    if (selectedNodeIds.size > 1) {
+      setData(d => {
+        const sel = (d.nodes || []).filter(n => selectedNodeIds.has(n.id) && n.kind !== "section");
+        const rects = sel.map(n => ({
+          id: n.id, x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120,
+        }));
+        const patch = workflowAlignPatches(rects, mode);
+        if (!patch.size) return d;
+        return {
+          ...d,
+          nodes: (d.nodes || []).map(n => {
+            const p = patch.get(n.id);
+            if (!p) return n;
+            const next = { ...n };
+            if (p.x !== undefined) next.x = Math.round(p.x);
+            if (p.y !== undefined) next.y = Math.round(p.y);
+            return next;
+          }),
+        };
+      });
+      return;
+    }
+    if (selectedWbIdsRef.current.size > 1) {
+      setData(d => {
+        const list = Array.isArray(d.wb) ? d.wb : [];
+        const sel = list.filter(it => selectedWbIdsRef.current.has(it.id));
+        const rects = sel.map(it => ({ id: it.id, ...wbItemBBox(it) }));
+        const patch = workflowAlignPatches(rects, mode);
+        if (!patch.size) return d;
+        return {
+          ...d,
+          wb: list.map(it => {
+            const p = patch.get(it.id);
+            if (!p) return it;
+            const bb = wbItemBBox(it);
+            const dx = p.x !== undefined ? p.x - bb.x : 0;
+            const dy = p.y !== undefined ? p.y - bb.y : 0;
+            if (!dx && !dy) return it;
+            if (it.type === "arrow") {
+              return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+            }
+            return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
+          }),
+        };
+      });
+    }
+  }, [selectedNodeIds, setData]);
 
   const onCanvasDrop = useCallback((e) => {
     e.preventDefault();
@@ -27729,7 +27952,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             } else if (cn.kind === "design-system") {
               parts.push("Design system reference: id=" + (cn.dsId || "main") + " version=" + (cn.version || "?") + ".");
             } else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) {
-              if (!assetInputPath && !assetInputDataUri
+              // Only claim the asset as the skill's image input when the
+              // skill actually WANTS one; text-only skills get it described
+              // in the contents block instead.
+              if (wantsAsset && !assetInputPath && !assetInputDataUri
                   && (cn.assetKind === "image" || cn.assetKind === "svg" || !cn.assetKind)) {
                 assetInputPath = cn.path;
               } else {
@@ -31151,6 +31377,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               />
             `}
+            ${(selectedNodeIds.size > 1 || selectedWbIds.size > 1) && (() => {
+              // Group boundary around a multi-selection (nodes OR wb items).
+              // The align bar portals to body and rAF-tracks this element's
+              // screen rect, so the div doubles as the bar's anchor.
+              const rects = selectedNodeIds.size > 1
+                ? (data.nodes || []).filter(n => selectedNodeIds.has(n.id))
+                    .map(n => ({ x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120 }))
+                : wbItems.filter(it => selectedWbIds.has(it.id)).map(wbItemBBox);
+              if (rects.length < 2) return null;
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              for (const r of rects) {
+                if (r.x < minX) minX = r.x;
+                if (r.y < minY) minY = r.y;
+                if (r.x + r.w > maxX) maxX = r.x + r.w;
+                if (r.y + r.h > maxY) maxY = r.y + r.h;
+              }
+              const PAD = 8;
+              return html`
+                <div className="workflow-group-bbox"
+                  style=${{
+                    left: (minX - PAD) + "px", top: (minY - PAD) + "px",
+                    width: (maxX - minX + PAD * 2) + "px",
+                    height: (maxY - minY + PAD * 2) + "px",
+                    borderWidth: (1.5 / Math.max(zoom, 0.1)) + "px",
+                  }}/>
+              `;
+            })()}
           </div>
           ${empty && !chatActive && !wbMode && html`
             <${WorkflowEmptyComposer}
@@ -31216,6 +31469,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onDelete=${() => { deleteSelectedNodes(); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
+      ${(selectedNodeIds.size > 1 || selectedWbIds.size > 1) && html`
+        <${WorkflowGroupAlignBar} onAlign=${alignSelection}/>
+      `}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
       ${connectorNode && connectorMenus && html`<${WorkflowConnectorSpawn}
         node=${connectorNode}
