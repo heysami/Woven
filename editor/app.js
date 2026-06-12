@@ -22918,9 +22918,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       _dispatchPendingDigest(next);
       return next;
     });
-    // Safety: clear the suppression markers after a 6s window even if no
+    // Safety: clear the suppression markers after a window even if no
     // asset-refresh ever arrived (e.g. watcher quiet) — prevents a stale
     // marker from swallowing the next legitimate refresh on the same path.
+    //
+    // v3.6.3 — Window widened 6s → 45s. The daemon's watcher echo is NOT
+    // fast: each scan walks every project's full tree (including the
+    // ever-growing workflow/runs snapshot copies), so the echo for a save
+    // lands 5–10+ seconds later on real workspaces. With a 6s cap the
+    // marker expired BEFORE the echo arrived, the echo hit the node iframe
+    // unsuppressed, and the reload wiped the user's in-progress pick-mode
+    // session — "while editing, it refreshes before I save". The marker is
+    // still consumed on first match, so 45s only governs the no-echo case.
     try {
       const paths = snapshot.map(e => e.path).filter(Boolean);
       setTimeout(() => {
@@ -22929,7 +22938,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           if (!set) return;
           for (const p of paths) set.delete(p);
         } catch {}
-      }, 6000);
+      }, 45000);
     } catch {}
     flashPickOp(okCount === snapshot.length ? "done" : "error",
       okCount === snapshot.length
@@ -31863,7 +31872,26 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       showToast(refreshedPaths.length === 1
         ? ("Saved · " + filePath)
         : ("Saved · " + filePath + " + " + (refreshedPaths.length - 1) + " imported asset" + (refreshedPaths.length === 2 ? "" : "s")));
+      // Intentional immediate refresh: other surfaces rendering this file
+      // (viewer tab, canvas node iframe) pick up the saved bytes NOW —
+      // harmless while the zoom overlay covers them.
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: refreshedPaths } }));
+      // v3.6.3 — AFTER the synchronous dispatch above, mark the saved paths
+      // as self-saved so the daemon watcher's echo (which can land 5–10+
+      // seconds later) doesn't reload those iframes a SECOND time — by then
+      // the user may have closed the overlay and be mid-edit in pick mode,
+      // and the unsuppressed echo wiped their session. Mirrors the staged-
+      // commit path's suppression, with the same 45s no-echo safety clear.
+      try {
+        if (!window.__thInspectorSelfSavedPaths) window.__thInspectorSelfSavedPaths = new Set();
+        for (const p of refreshedPaths) window.__thInspectorSelfSavedPaths.add(p);
+        setTimeout(() => {
+          try {
+            const set = window.__thInspectorSelfSavedPaths;
+            if (set) for (const p of refreshedPaths) set.delete(p);
+          } catch {}
+        }, 45000);
+      } catch {}
     } catch (err) {
       showToast("Save failed: " + (err.message || err));
     } finally { setBusy(false); }
@@ -35303,7 +35331,23 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         if (exposedPaths.includes(p)) return true;
         return false;
       });
-      if (hit) setNonce(n => n + 1);
+      if (!hit) return;
+      // v3.6.3 — Never yank the document out from under an ACTIVE editing
+      // session. If pick-mode is on for this node, or the user has staged
+      // inspector edits pending on it, a reload would wipe their in-memory
+      // work ("while editing, it refreshes before I save"). Skip the bump;
+      // the user's own Save re-syncs the file, and Revert explicitly
+      // reloads. An agent write that lands DURING an edit session loses to
+      // the user's in-flight work by design — protecting unsaved user
+      // edits beats eager freshness.
+      try {
+        if (window.__thPickModeNodeId === node.id) return;
+        const pendingForNode = (window.__thPendingInspectorEdits
+          && window.__thPendingInspectorEdits.byNode
+          && window.__thPendingInspectorEdits.byNode[node.id]) || 0;
+        if (pendingForNode > 0) return;
+      } catch {}
+      setNonce(n => n + 1);
     };
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);
@@ -37916,7 +37960,18 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           return;
         }
       } catch {}
-      if (paths.includes(node.path)) setBust(b => b + 1);
+      if (!paths.includes(node.path)) return;
+      // v3.6.3 — Same active-editing guard as the prototype-node handler:
+      // never reload an iframe the user is editing in pick mode or that
+      // has staged inspector edits pending — the reload wipes their work.
+      try {
+        if (window.__thPickModeNodeId === node.id) return;
+        const pendingForNode = (window.__thPendingInspectorEdits
+          && window.__thPendingInspectorEdits.byNode
+          && window.__thPendingInspectorEdits.byNode[node.id]) || 0;
+        if (pendingForNode > 0) return;
+      } catch {}
+      setBust(b => b + 1);
     };
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);

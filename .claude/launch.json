@@ -9,7 +9,7 @@
       "cwd": ".",
       "port": 5733,
       "env": {
-        "TH_WORKSPACE_DIR": "/Users/sami/Documents/Woven IN USE/projects"
+        "TH_WORKSPACE_DIR": "/Users/sami/Documents/Woven IN USE"
       },
       "url": "/editor/?project=demo-inhouse"
     }
