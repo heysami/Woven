@@ -397,6 +397,9 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 - **agate-numeric-broadsheet** `[news/finance · dense · numeric-tables]` — optical-size serif + dedicated agate numeric face for market tables. → [`style-agate-broadsheet.md`](./design-library/style-agate-broadsheet.md)
 - **cream-humanist-serif** `[wellness/skincare · warm · adult-premium]` — cream + warm-grey humanist serif (Aesop/Headspace direction). → [`style-cream-humanist.md`](./design-library/style-cream-humanist.md)
 - **editorial-italic-accent** `[typography layer · one italic-serif word · 2025+]` — grotesque headline with EXACTLY ONE word swapped to italic serif (the feeling-payload); layers onto a host style; the most repeated move in the 2025-26 showcase corpus. → [`style-editorial-italic-accent.md`](./design-library/style-editorial-italic-accent.md)
+- **ransom-glyph-mix** `[exhibition/culture · per-character font mixing · glyph-level]` — headlines set character-by-character across 4-6 clashing faces (ultra-bold/outline/pixel/calligraphic/hand-drawn) over a hairline chassis; optional roulette settle. → [`style-ransom-glyph-mix.md`](./design-library/style-ransom-glyph-mix.md)
+- **micro-text-frame** `[chrome layer · animated micro-type as border · ambient]` — caption-size text circulating card borders via textPath + ribbon loops at section seams; the edges become typography while content stays still. → [`style-micro-text-frame.md`](./design-library/style-micro-text-frame.md)
+- **two-register-heading** `[heading system · condensed eyebrow + display pair · systematized]` — every section heading is a typed pair (small condensed label register over large main heading) plus rotated corner micro-labels; the JP bilingual canon abstracted to any script pair. → [`style-two-register-heading.md`](./design-library/style-two-register-heading.md)
 
 **Raster / pixel / collage:**
 - **raster-cutout-collage** `[scrapbook-shell · raster-images · any-aesthetic · needs-raster]` — PNG cutouts with paper-edge shadow + rotation + tape/staple decorations. → [`style-raster-cutout.md`](./design-library/style-raster-cutout.md)
@@ -470,6 +473,12 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **sculptural-minimal** `[gallery-plinth · one abstract object · needs-3D]` — vast white field + letterspaced caps + ONE sculptural form holding the optical center; the page is the plinth. → [`aesthetic-sculptural-minimal.md`](./design-library/aesthetic-sculptural-minimal.md)
 - **industrial-catalog** `[machine spec-sheet · photoreal hardware + real tables · needs-raster]` — robot/turbine glamour shot beside rigorous spec apparatus; you could ORDER the machine from this page. → [`aesthetic-industrial-catalog.md`](./design-library/aesthetic-industrial-catalog.md)
 
+**Japanese contemporary web (language-agnostic — compositional canons, not script requirements):**
+- **japanese-poster-layout** `[editorial-photo · poster composition canon · needs-raster]` — strategic photographic hierarchy: one dominant photo cropped to bleed, Mincho × condensed-sans, vertical-horizontal type interplay, asymmetric negative space, ONE accent; explicitly anti-cliché (no sakura, no brush strokes). → [`aesthetic-japanese-poster-layout.md`](./design-library/aesthetic-japanese-poster-layout.md)
+- **jp-recruit-pop** `[corporate/recruiting · white-pop two-accent system · needs-raster]` — the JP hiring-site vernacular: token-disciplined pop, bilingual eyebrow headings, stats band, interview carousels, marquee slogans, pill geometry. → [`aesthetic-jp-recruit-pop.md`](./design-library/aesthetic-jp-recruit-pop.md)
+- **craft-sketchbook** `[architecture/atelier · hand-drawn chrome on woven paper · needs-raster]` — the page as a professional's working sketchbook: every graphic element hand-drawn and self-drawing in, cream paper substrate, one vivid printed accent. → [`aesthetic-craft-sketchbook.md`](./design-library/aesthetic-craft-sketchbook.md)
+- **zine-type-wall** `[archive/culture · colliding-type hero · enumeration-dense]` — type-dominant maximal editorial: full-viewport wall of orthogonally colliding text blocks at 20:1 scale contrast, one-off marker frames per item, candy solids on a strict ink field. → [`aesthetic-zine-type-wall.md`](./design-library/aesthetic-zine-type-wall.md)
+
 **Pixel-art eras (each suggests style: pixel-grid-bitmap):**
 - **pixel-arcade-1978-85** `[arcade-history · 8x8-monochrome · 1978-85]` — Space Invaders, Pac-Man, Donkey Kong. → [`aesthetic-pixel-arcade.md`](./design-library/aesthetic-pixel-arcade.md)
 - **pixel-nes-mario-1985-93** `[NES · 4-color-sprite · 1985-93]` — Super Mario Bros, Mega Man 2 era. → [`aesthetic-pixel-nes-mario.md`](./design-library/aesthetic-pixel-nes-mario.md)
@@ -527,6 +536,8 @@ When the brief matches a familiar shipped-product type, pick one of these recipe
 - **recipe-material-3** `[mobile-app · warm-dynamic · paper-stack]` = mobile-app + material-dynamic-m3 + (no aesthetic) → [`recipe-material-3.md`](./design-library/recipe-material-3.md)
 - **recipe-terminal-on-web** `[dev-tools/CLI · monospace · dark]` = terminal-frame + mono-box-drawing-terminal + (no aesthetic) → [`recipe-terminal-on-web.md`](./design-library/recipe-terminal-on-web.md)
 - **recipe-warm-restraint-apothecary** `[wellness/skincare · warm · adult-premium]` = centered-narrow-column + cream-humanist-serif + (no aesthetic) + gentle-imperative voice → [`recipe-warm-restraint.md`](./design-library/recipe-warm-restraint.md)
+- **recipe-jp-corporate-recruit** `[recruiting/employer-brand · white-pop · systematized]` = hero-stack + flat-design + two-register-heading + aesthetic-jp-recruit-pop + aspirational-declarative voice → [`recipe-jp-corporate-recruit.md`](./design-library/recipe-jp-corporate-recruit.md)
+- **recipe-brand-story-journey** `[VI/anniversary explainer · scroll film · scene-led]` = scroll-journey-scene + restrained-hairline + paper-construction (or brief-dictated hero material) + curatorial narration-in-scene voice → [`recipe-brand-story-journey.md`](./design-library/recipe-brand-story-journey.md)
 
 ## Scene-based addendum — when drawing must become rendering
 

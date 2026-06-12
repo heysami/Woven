@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "material",
   "sourceDir": "design-library/",
-  "totalEntries": 90,
+  "totalEntries": 92,
   "decisionTree": {
     "aesthetic-cyberpunk": {
       "default": "anodized-chainmail",
@@ -250,6 +250,7 @@
     "shell-scroll-journey-scene": {
       "default": "bioluminescent-membrane",
       "alternatives": [
+        "paper-construction",
         "volumetric-cloud"
       ]
     },
@@ -425,13 +426,15 @@
         "holographic-paper",
         "letterpress-emboss",
         "marble",
+        "marker-stroke-frame",
         "scanned-glass"
       ]
     },
     "aesthetic-y2k-memphis-loud": {
       "default": "coated-glossy-paper",
       "alternatives": [
-        "halftone-cmyk"
+        "halftone-cmyk",
+        "marker-stroke-frame"
       ]
     },
     "aesthetic-coastal-grandmother": {
@@ -577,8 +580,10 @@
     "aesthetic-positivity-kawaii": {
       "default": "frosted-glass",
       "alternatives": [
+        "marker-stroke-frame",
         "material-tonal-surface",
         "matte-clay",
+        "paper-construction",
         "soft-ui-foam"
       ]
     },
@@ -616,6 +621,7 @@
     "style-doodle": {
       "default": "ink-bleed-on-paper",
       "alternatives": [
+        "marker-stroke-frame",
         "pencil-graphite",
         "watercolor-wash"
       ]
@@ -652,6 +658,10 @@
     },
     "aesthetic-vaporwave (the marble bust!)": {
       "default": "marble",
+      "alternatives": []
+    },
+    "aesthetic-zine-type-wall": {
+      "default": "marker-stroke-frame",
       "alternatives": []
     },
     "style-material-m3": {
@@ -704,6 +714,22 @@
         "vhs-distortion"
       ]
     },
+    "aesthetic-sculptural-minimal": {
+      "default": "paper-construction",
+      "alternatives": [
+        "volumetric-light-shaft"
+      ]
+    },
+    "recipe-brand-story-journey": {
+      "default": "paper-construction",
+      "alternatives": []
+    },
+    "aesthetic-pastel-pop-fmcg": {
+      "default": "paper-construction",
+      "alternatives": [
+        "reeded-fluted-glass"
+      ]
+    },
     "aesthetic-defi-cosmic (achievement certificates)": {
       "default": "parchment",
       "alternatives": []
@@ -726,10 +752,6 @@
     },
     "recipe-readcv": {
       "default": "polaroid-instant",
-      "alternatives": []
-    },
-    "aesthetic-pastel-pop-fmcg": {
-      "default": "reeded-fluted-glass",
       "alternatives": []
     },
     "aesthetic-monochrome-pop-poster": {
@@ -772,10 +794,6 @@
     },
     "aesthetic-angelcore": {
       "default": "volumetric-cloud",
-      "alternatives": []
-    },
-    "aesthetic-sculptural-minimal": {
-      "default": "volumetric-light-shaft",
       "alternatives": []
     },
     "style-skeuomorphism (library-as-wood-shelf)": {
@@ -1540,6 +1558,21 @@
       ],
       "sourceFile": "design-library/material-marble.md"
     },
+    "marker-stroke-frame": {
+      "name": "Marker stroke frame (hand-drawn containment outlines)",
+      "category": "ink",
+      "family": "analog",
+      "surfaceFinish": "matte",
+      "oneLine": "Thick, imperfect marker/crayon strokes used as CONTAINMENT — each item in a",
+      "pairsPrototypes": [
+        "style-doodle",
+        "aesthetic-zine-type-wall",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-positivity-kawaii",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/material-marker-stroke-frame.md"
+    },
     "material-tonal-surface": {
       "name": "Material 3 Tonal Surface (dynamic-color elevation)",
       "category": "digital-effect",
@@ -1628,6 +1661,21 @@
         "aesthetic-cyberpunk"
       ],
       "sourceFile": "design-library/material-oil-on-water.md"
+    },
+    "paper-construction": {
+      "name": "Paper construction (die-cut strata / pop-up volume)",
+      "category": "paper",
+      "family": "hybrid",
+      "surfaceFinish": "matte",
+      "oneLine": "Paper as BUILT VOLUME, not surface texture: stacked sheets of colored stock",
+      "pairsPrototypes": [
+        "aesthetic-sculptural-minimal",
+        "aesthetic-positivity-kawaii",
+        "recipe-brand-story-journey",
+        "shell-scroll-journey-scene",
+        "aesthetic-pastel-pop-fmcg"
+      ],
+      "sourceFile": "design-library/material-paper-construction.md"
     },
     "paper-with-watercolor": {
       "name": "Paper with Watercolor (botanical illustration substrate)",

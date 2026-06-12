@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "motion-scene",
   "sourceDir": "design-library/",
-  "totalEntries": 34,
+  "totalEntries": 37,
   "decisionTree": {
     "recipe-aurora-marketing": {
       "default": "ambient-loop-atmosphere",
@@ -86,7 +86,8 @@
         "scroll-pinned-transform",
         "scroll-reveal-mask",
         "slow-push-zoom",
-        "subject-offset-ui-counterweight"
+        "subject-offset-ui-counterweight",
+        "svg-self-draw"
       ]
     },
     "aesthetic-dark-academia": {
@@ -101,7 +102,41 @@
     "aesthetic-cottagecore": {
       "default": "cinemagraph-still",
       "alternatives": [
-        "pointer-magnetic-subject"
+        "pointer-magnetic-subject",
+        "svg-self-draw"
+      ]
+    },
+    "aesthetic-positivity-kawaii": {
+      "default": "cursor-character",
+      "alternatives": []
+    },
+    "aesthetic-y2k-memphis-loud": {
+      "default": "cursor-character",
+      "alternatives": []
+    },
+    "style-doodle": {
+      "default": "cursor-character",
+      "alternatives": [
+        "svg-self-draw"
+      ]
+    },
+    "aesthetic-zine-type-wall": {
+      "default": "cursor-character",
+      "alternatives": []
+    },
+    "recipe-neo-grotesque-portfolio": {
+      "default": "cursor-character",
+      "alternatives": [
+        "hover-activate-loop",
+        "idle-character-loop",
+        "lens-magnifier-reveal",
+        "mouse-scrub-look",
+        "scene-stepper-wipe",
+        "scroll-exit-handoff",
+        "scroll-reveal-mask",
+        "slow-push-zoom",
+        "subject-offset-ui-counterweight",
+        "video-text-mask"
       ]
     },
     "recipe-scientific-infra-marketing": {
@@ -190,7 +225,9 @@
     },
     "aesthetic-sculptural-minimal": {
       "default": "focus-pull-type",
-      "alternatives": []
+      "alternatives": [
+        "threshold-ritual"
+      ]
     },
     "recipe-ai-foundry-dark": {
       "default": "frame-hold-ui-sync",
@@ -201,20 +238,6 @@
         "scene-zoom-through",
         "scroll-sequence-frames",
         "scroll-speed-ramp"
-      ]
-    },
-    "recipe-neo-grotesque-portfolio": {
-      "default": "hover-activate-loop",
-      "alternatives": [
-        "idle-character-loop",
-        "lens-magnifier-reveal",
-        "mouse-scrub-look",
-        "scene-stepper-wipe",
-        "scroll-exit-handoff",
-        "scroll-reveal-mask",
-        "slow-push-zoom",
-        "subject-offset-ui-counterweight",
-        "video-text-mask"
       ]
     },
     "recipe-brutalist-web": {
@@ -317,6 +340,34 @@
     "style-pixel-dissolve": {
       "default": "stylize-shader-pass",
       "alternatives": []
+    },
+    "style-outline-wireframe": {
+      "default": "svg-self-draw",
+      "alternatives": []
+    },
+    "style-kinetic-line-accents": {
+      "default": "svg-self-draw",
+      "alternatives": []
+    },
+    "aesthetic-craft-sketchbook": {
+      "default": "svg-self-draw",
+      "alternatives": []
+    },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "threshold-ritual",
+      "alternatives": []
+    },
+    "recipe-brand-story-journey": {
+      "default": "threshold-ritual",
+      "alternatives": []
+    },
+    "shell-scroll-journey-scene": {
+      "default": "threshold-ritual",
+      "alternatives": []
+    },
+    "aesthetic-japanese-poster-layout": {
+      "default": "threshold-ritual",
+      "alternatives": []
     }
   },
   "entries": {
@@ -375,6 +426,25 @@
         "aesthetic-cottagecore"
       ],
       "sourceFile": "design-library/motion-cinemagraph-still.md"
+    },
+    "cursor-character": {
+      "name": "Cursor as character (velocity-deforming, identity-swapping pointer)",
+      "category": "pointer-driven",
+      "subCategory": "dom",
+      "role": "chrome",
+      "roleAffinity": [
+        "chrome"
+      ],
+      "oneLine": "The pointer stops being an arrow and becomes a SUBJECT: it squashes and",
+      "notForUseWhen": "Touch-primary audiences (no cursor exists — the entire device evaporates on mobile), data-dense or form-heavy surfaces (precision pointing beats personality), or restrained registers where an expressive cursor is the loudest thing on the page.",
+      "pairsPrototypes": [
+        "aesthetic-positivity-kawaii",
+        "aesthetic-y2k-memphis-loud",
+        "style-doodle",
+        "aesthetic-zine-type-wall",
+        "recipe-neo-grotesque-portfolio"
+      ],
+      "sourceFile": "design-library/motion-cursor-character.md"
     },
     "depth-drift-layers": {
       "name": "Depth-drift layers (ambient faux-3D, no pointer required)",
@@ -939,6 +1009,45 @@
         "aesthetic-dark-academia"
       ],
       "sourceFile": "design-library/motion-subject-offset-ui-counterweight.md"
+    },
+    "svg-self-draw": {
+      "name": "SVG self-draw (hand-made marks draw themselves in on scroll)",
+      "category": "scroll-driven",
+      "subCategory": "dom",
+      "role": "entrance | chrome",
+      "roleAffinity": [
+        "entrance | chrome"
+      ],
+      "oneLine": "Every hand-made SVG on the page — lettered headlines, nav labels, full scene",
+      "notForUseWhen": "The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth — kinetic-line-accents is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).",
+      "pairsPrototypes": [
+        "style-doodle",
+        "style-outline-wireframe",
+        "style-kinetic-line-accents",
+        "aesthetic-cottagecore",
+        "aesthetic-craft-sketchbook",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/motion-svg-self-draw.md"
+    },
+    "threshold-ritual": {
+      "name": "Threshold ritual (entry gate as a designed moment)",
+      "category": "scene-choreography",
+      "subCategory": "dom-or-canvas",
+      "role": "entrance",
+      "roleAffinity": [
+        "entrance"
+      ],
+      "oneLine": "The site withholds itself until the visitor makes a choice or watches an",
+      "notForUseWhen": "Conversion-critical or utility surfaces (anything a user visits to DO something — dashboards, docs, checkout, support), repeat-visit products (the ritual delights once and obstructs forever), or briefs where nothing behind the gate justifies the withholding.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-sculptural-minimal",
+        "recipe-brand-story-journey",
+        "shell-scroll-journey-scene",
+        "aesthetic-japanese-poster-layout"
+      ],
+      "sourceFile": "design-library/motion-threshold-ritual.md"
     },
     "video-text-mask": {
       "name": "Video text mask (the world lives inside the glyphs)",

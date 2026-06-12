@@ -342,7 +342,7 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `style-neubrutalism` | (no material — flat) | (anti-pattern: don't apply material) |
 | `style-pixel-bitmap` | pixel-bitmap, crt-phosphor (overlay) | dithered-1bit |
 | `style-terminal-mono` | ascii-art-surface, crt-phosphor | dithered-1bit |
-| `style-doodle` | uncoated-paper, ink-bleed-on-paper, pencil-graphite | watercolor-wash |
+| `style-doodle` | uncoated-paper, ink-bleed-on-paper, pencil-graphite | watercolor-wash, marker-stroke-frame |
 | `style-cream-humanist` | uncoated-paper, vellum-translucency | foxing-stain |
 | `style-restrained-hairline` | (no material — restraint is the brief) | (single subtle paper grain at <2%) |
 | `style-oversized-neo-grotesque` | (no material on type) | film-grain-tri-x (optional), smoked-obsidian-glass (hero object OVER the type) |
@@ -411,6 +411,10 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `aesthetic-vector-*` | (no material — vector is the brief) | (anti-pattern) |
 | `aesthetic-op-art` | (no material) | (anti-pattern) |
 | `aesthetic-8-bit-generic` | pixel-bitmap | (single) |
+| `aesthetic-japanese-poster-layout` | (no material baseline — photo carries) | uncoated-paper at most; film-grain-portra-400 in photos |
+| `aesthetic-jp-recruit-pop` | (no material — flat pop is the brief) | (anti-pattern: pill/token system stays flat) |
+| `aesthetic-craft-sketchbook` | uncoated-paper, linen-weave, pencil-graphite | marker-stroke-frame, ink-bleed-on-paper; media multiplied into the paper substrate |
+| `aesthetic-zine-type-wall` | marker-stroke-frame | risograph / silkscreen on thumbnails; field stays flat ink |
 | `recipe-editorial-magazine` | uncoated-paper, coated-glossy-paper, halftone-cmyk, film-grain-portra-400 | letterpress-emboss, foxing-stain |
 | `recipe-newspaper-of-record` | uncoated-paper, halftone-cmyk | (newsprint substrate) |
 | `recipe-aurora-marketing` | aurora-mesh | (single) |
@@ -429,6 +433,8 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `recipe-neo-grotesque-portfolio` | (no material) | film-grain-tri-x in photos |
 | `recipe-readcv` | polaroid-instant, uncoated-paper | torn-edge |
 | `recipe-warm-restraint` | uncoated-paper, vellum-translucency | (single) |
+| `recipe-brand-story-journey` | paper-construction | film grain at 3–5% over dark chapters |
+| `recipe-jp-corporate-recruit` | (no material — flat token system) | (anti-pattern) |
 | `recipe-y2k-memphis-loud` | coated-glossy-paper, halftone-cmyk | risograph |
 | `shell-scrapbook-substrate` | uncoated-paper, kraft-paper, polaroid-instant, torn-edge, dust-scratches | (the substrate is the material) |
 | `shell-terminal-frame` | crt-phosphor, ascii-art-surface | (single) |
