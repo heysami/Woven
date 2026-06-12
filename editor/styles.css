@@ -4116,6 +4116,90 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   pointer-events: none;
 }
 
+/* v3.9 — Sections jump bar. Docks directly above the minimap at the bottom
+   of the library column. Collapsed: one 28px row. Open: a popover anchored
+   to the bar's top edge listing every section node; clicking an entry
+   zoom-to-fits that section. Hidden entirely when the canvas has no
+   sections (the component returns null). */
+.workflow-sections-bar {
+  position: relative;
+  flex: 0 0 auto;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.workflow-sections-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.workflow-sections-toggle:hover { background: var(--surface-2); color: var(--text); }
+.workflow-sections-toggle-glyph { font-size: 11px; opacity: 0.75; }
+.workflow-sections-count {
+  margin-left: auto;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+.workflow-sections-caret { font-size: 8px; opacity: 0.6; }
+.workflow-sections-pop {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 24px oklch(22% 0.008 60 / 0.10);
+  padding: 4px;
+  z-index: 40;
+}
+.workflow-sections-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.workflow-sections-item:hover { background: var(--accent-soft); color: var(--accent-text); }
+.workflow-sections-item-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1.5px dashed var(--border-strong);
+}
+.workflow-sections-item:hover .workflow-sections-item-swatch { border-color: var(--accent); }
+.workflow-sections-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* v3.4.27 — Sub-tabs under Outputs (Prototypes & components / Visual assets).
    Compacter than the top-level tabs so the hierarchy reads as parent/child:
    slightly smaller font, narrower padding, secondary underline colour. */
@@ -4532,12 +4616,30 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-wb-text .workflow-wb-textbody { color: inherit; }
 .workflow-wb-textbox {
+  /* background + border-color come inline from the item's fill / stroke /
+     fillOpacity fields (legacy items fall back to `color` there). */
   background: color-mix(in oklch, var(--wb-c, var(--wb-blue)) 16%, transparent);
   border: 1.5px solid var(--wb-c, var(--wb-blue));
   display: flex;
   align-items: center;
   padding: 10px 12px;
   box-sizing: border-box;
+}
+.workflow-wb-num {
+  width: 64px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: 600 11.5px var(--font-mono);
+}
+.workflow-wb-num:focus { outline: 2px solid color-mix(in oklch, var(--accent) 45%, transparent); }
+.workflow-wb-swatch-none {
+  background:
+    linear-gradient(to top right, transparent 44%, var(--danger) 46%, var(--danger) 54%, transparent 56%),
+    var(--surface) !important;
 }
 .workflow-wb-sticky {
   background: color-mix(in oklch, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
@@ -5124,6 +5226,73 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: auto; height: auto;
 }
 
+/* ─── v3.9 — Canvas LOD: progressive loading + zoom-out placeholders ───
+   Heavy embeds hide via display:none when their node is "cold" (never
+   loaded), "off" (live but far outside the viewport) or "far" (live but
+   below the zoom floor). display (not visibility) is deliberate — a
+   non-rendered iframe stops painting/compositing and the browser
+   throttles its rAF loops, which is the whole perf win. The iframe
+   element STAYS in the DOM so its document keeps every bit of state. */
+.workflow-node-iframe-scale[data-lod="cold"] > .workflow-node-iframe,
+.workflow-node-iframe-scale[data-lod="off"]  > .workflow-node-iframe,
+.workflow-node-iframe-scale[data-lod="far"]  > .workflow-node-iframe,
+.workflow-node-frames-body[data-lod="cold"]  > .workflow-node-iframe,
+.workflow-node-frames-body[data-lod="off"]   > .workflow-node-iframe,
+.workflow-node-frames-body[data-lod="far"]   > .workflow-node-iframe,
+.workflow-node-asset[data-lod="off"] .workflow-node-asset-iframe,
+.workflow-node-asset[data-lod="far"] .workflow-node-asset-iframe,
+.workflow-node-browser[data-lod="off"] .workflow-browser-iframe,
+.workflow-node-browser[data-lod="far"] .workflow-browser-iframe {
+  display: none;
+}
+
+/* The veil that paints where the content would be. Flat surface + glyph
+   + mono label; the inner block inverse-scales with zoom (inline style)
+   so the label stays legible from far out. pointer-events: none — clicks
+   fall through to the node's own selection/drag handling. */
+.workflow-node-lod-veil {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 3;
+}
+.workflow-node-lod-veil.is-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  top: 32px;   /* below the node title bar */
+}
+.workflow-node-lod-veil.is-body {
+  position: absolute;
+  inset: 0;
+}
+.workflow-node-lod-veil.is-inline {
+  position: static;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  align-self: stretch;
+}
+.workflow-node-lod-veil-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+}
+.workflow-node-lod-glyph { font-size: 18px; opacity: 0.75; }
+.workflow-node-lod-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ─── Canvas-frames body-drag overlay ─────────────────────────────────
    When the frames node is NOT selected, this layer floats above the
    pointer-events:none iframe and absorbs body clicks. It both lets the
@@ -5413,6 +5582,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   white-space: nowrap;
 }
 .workflow-node-asset-body {
+  /* v3.9 — positioned so the canvas-LOD veil (mode="body", inset: 0) can
+     overlay a hidden-but-live iframe without escaping to the node root. */
+  position: relative;
   background:
     repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 50% / 12px 12px;
   display: flex;

@@ -2902,7 +2902,7 @@ def _sanitize_wb_items(items):
         entry["type"] = typ
         ok = True
         for f in ("x", "y", "w", "h", "x1", "y1", "x2", "y2", "z",
-                  "radius", "size", "naturalW", "naturalH"):
+                  "radius", "size", "naturalW", "naturalH", "fillOpacity"):
             if f in entry:
                 try:
                     entry[f] = float(entry[f])

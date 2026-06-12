@@ -312,11 +312,11 @@ The workflow canvas has a whiteboard MODE (Build / Whiteboard toggle in the bar)
 
 | type | geometry | fields |
 |---|---|---|
-| `text` | `x,y,w,h` (h auto) | `text`, `fontSize: sm\|md\|lg\|xl`, `bold`, `italic`, `align`, `color` |
-| `textbox` | `x,y,w,h` | `text`, `color` (fill+border), `radius`, `fontSize`, `align`, `bold`, `italic` |
-| `sticky` | `x,y,w,h` | `text`, `color`, `fontSize`, `bold`, `italic`, `align` |
+| `text` | `x,y,w,h` (h auto) | `text`, `fontSize: sm\|md\|lg\|xl\|<px number>`, `bold`, `italic`, `align`, `color` |
+| `textbox` | `x,y,w,h` | `text`, `color` (legacy fill+border fallback), `fill: token\|none`, `stroke: token\|none` (outline), `textColor: token`, `fillOpacity: 0–1`, `radius` (px, unbounded), `fontSize` (token or px), `align`, `bold`, `italic` |
+| `sticky` | `x,y,w,h` | `text`, `color`, `fontSize` (token or px), `bold`, `italic`, `align` |
 | `ink` | `x,y,w,h` + `points` (flat array, relative to x/y) | `color`, `size` |
-| `shape` | `x,y,w,h` | `shape:"rect"`, `color`, `fill: none\|auto\|token` (`auto` = soft fill in the stroke color), `radius`, `size` |
+| `shape` | `x,y,w,h` | `shape:"rect"`, `color` (legacy stroke fallback), `stroke: token\|none`, `fill: none\|auto\|token`, `fillOpacity: 0–1`, `radius` (px, unbounded), `size` |
 | `arrow` | `x1,y1,x2,y2` | `color`, `size`, `arrowStart`, `arrowEnd`, `dash` |
 | `image` | `x,y,w,h` | `path` (project-relative, e.g. `source/main/_attachments/…`), `naturalW/H` |
 

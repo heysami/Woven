@@ -6592,6 +6592,93 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan, extraBounds }) {
   `;
 }
 
+/* ────────── Workflow sections bar ──────────
+   Docked directly ABOVE the minimap at the bottom of the library column.
+   Collapsed: a one-line "Sections · N" toggle. Open: a popover listing
+   every section node (kind: "section") in reading order (top→bottom,
+   left→right); clicking an entry pans + zooms the canvas so that section
+   fits the viewport (zoom-to-fit, capped at 100%) and selects it.
+   Renders nothing when the canvas has no sections — the bar earns its
+   row only when there's something to jump to. */
+function WorkflowSectionsBar({ sections, wrapRef, setPan, setZoom, onPick }) {
+  const [open, setOpen] = useState(false);
+  const hostRef = useRef(null);
+  // Close on click-out / Esc — popover discipline matching the other
+  // floating menus (model chip, connector menus).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (hostRef.current && hostRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+  const list = (Array.isArray(sections) ? sections : [])
+    .slice()
+    .sort((a, b) => ((a.y || 0) - (b.y || 0)) || ((a.x || 0) - (b.x || 0)));
+  if (!list.length) return null;
+  const jump = (sec) => {
+    const wrap = wrapRef && wrapRef.current;
+    if (!wrap || !setPan || !setZoom) return;
+    const w = Math.max(1, sec.w || 880);
+    const h = Math.max(1, sec.h || 560);
+    const pad = 60;   // screen px breathing room around the fitted section
+    const fit = Math.min(
+      (wrap.clientWidth  - pad * 2) / w,
+      (wrap.clientHeight - pad * 2) / h,
+    );
+    // Cap at 100% — a tiny section shouldn't blow up past natural scale;
+    // floor mirrors the wheel handler's 0.08 zoom clamp.
+    const z = Math.max(0.08, Math.min(1, fit));
+    setZoom(z);
+    setPan({
+      x: wrap.clientWidth  / 2 - ((sec.x || 0) + w / 2) * z,
+      y: wrap.clientHeight / 2 - ((sec.y || 0) + h / 2) * z,
+    });
+    setOpen(false);
+    onPick && onPick(sec.id);
+  };
+  return html`
+    <div className="workflow-sections-bar" ref=${hostRef}>
+      ${open && html`
+        <div className="workflow-sections-pop" role="menu" aria-label="Jump to section">
+          ${list.map(s => html`
+            <button
+              key=${s.id}
+              type="button"
+              className="workflow-sections-item"
+              role="menuitem"
+              title=${"Jump to “" + (s.title || "Section") + "”"}
+              onClick=${() => jump(s)}
+            >
+              <span className="workflow-sections-item-swatch" aria-hidden="true"/>
+              <span className="workflow-sections-item-label">${s.title || "Section"}</span>
+            </button>
+          `)}
+        </div>
+      `}
+      <button
+        type="button"
+        className="workflow-sections-toggle"
+        aria-expanded=${open ? "true" : "false"}
+        title="Sections on this canvas — click to jump to one"
+        onClick=${() => setOpen(o => !o)}
+      >
+        <span className="workflow-sections-toggle-glyph" aria-hidden="true">▦</span>
+        <span>Sections</span>
+        <span className="workflow-sections-count">${list.length}</span>
+        <span className="workflow-sections-caret" aria-hidden="true">${open ? "▾" : "▴"}</span>
+      </button>
+    </div>
+  `;
+}
+
 /* ────────── Diff helpers — what differs from main on this branch ─
    A branch is a scope + prompt, not a copy. These helpers answer "is this thing
    considered changed from main?" — either because it's in the exploration scope
@@ -17363,6 +17450,12 @@ function wbColorCSS(color) {
 
 const WB_FONT_SIZES = { sm: 14, md: 18, lg: 26, xl: 40 };
 
+// fontSize is a preset token OR a raw px number (panel override).
+function wbFontPx(v, fallback = 18) {
+  if (typeof v === "number" && v > 0) return v;
+  return WB_FONT_SIZES[v] || fallback;
+}
+
 // type → (payload) => item body (no id / z — the caller assigns those).
 // Single source of truth for the tool gestures, paste, drop, AND the
 // agent-facing preamble docs — keep them in lockstep.
@@ -22385,7 +22478,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // null align/radius = per-type defaults.
   const [wbFmt, setWbFmt] = useState({
     size: 3, fontSize: "md", bold: false, italic: false, align: null,
-    radius: null, fill: "none", arrowStart: false, arrowEnd: true, dash: false,
+    radius: null, fill: null, stroke: null, textColor: null, fillOpacity: null,
+    arrowStart: false, arrowEnd: true, dash: false,
   });
   const wbFmtRef = useRef(wbFmt); wbFmtRef.current = wbFmt;
   const wbCancelGestureRef = useRef(null);  // Esc cancels the in-flight gesture
@@ -22668,11 +22762,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const gy = dragged ? Math.min(y0, lastWp.y) : y0;
           const gw = dragged ? Math.max(24, Math.abs(lastWp.x - x0)) : 200;
           const gh = dragged ? Math.max(24, Math.abs(lastWp.y - y0)) : 120;
+          const boxColors = {
+            ...(F.stroke ? { stroke: F.stroke } : {}),
+            ...(F.fillOpacity != null ? { fillOpacity: F.fillOpacity } : {}),
+          };
           const extra = tool === "shape"
-            ? { radius: F.radius ?? 6, size: F.size || 2, fill: F.fill || "none" }
+            ? { radius: F.radius ?? 6, size: F.size || 2, fill: F.fill ?? "none", ...boxColors }
             : { radius: F.radius ?? 10, fontSize: F.fontSize, align: F.align || "center",
-                bold: F.bold, italic: F.italic };
+                bold: F.bold, italic: F.italic,
+                ...(F.fill ? { fill: F.fill } : {}),
+                ...(F.textColor ? { textColor: F.textColor } : {}),
+                ...boxColors };
           item = wbMakeItem(tool, { x: gx, y: gy, w: gw, h: gh, color, ...extra });
+          // factory whitelists its own fields — re-apply the optional
+          // box-color extras it doesn't know about
+          Object.assign(item, tool === "shape" ? boxColors : {
+            ...(F.fill ? { fill: F.fill } : {}),
+            ...(F.textColor ? { textColor: F.textColor } : {}),
+            ...boxColors,
+          });
         }
         addWbItem(item);
         setSelectedWbIds(new Set([item.id]));
@@ -30384,6 +30492,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
   const empty = !data.nodes || data.nodes.length === 0;
 
+  // ── Canvas LOD (v3.9) — progressive loading + zoom-out placeholders ──
+  // World-space viewport rect, expanded by WORKFLOW_LOD_MARGIN_PX screen
+  // px on every side. Heavy node components receive `lodVisible` and only
+  // start loading their content (iframe src / <img> / <video> bytes) when
+  // it's true; see useWorkflowLod. Recomputed per committed pan/zoom —
+  // during an imperative wheel burst this lags until the debounced commit,
+  // which is exactly the cadence we want (no mid-gesture load churn).
+  const lodRect = (() => {
+    const wrap = wrapRef.current;
+    const vw = wrap ? wrap.clientWidth : 1600;
+    const vh = wrap ? wrap.clientHeight : 1000;
+    const z = Math.max(zoom, 0.01);
+    const m = WORKFLOW_LOD_MARGIN_PX / z;
+    return {
+      minX: -pan.x / z - m,
+      minY: -pan.y / z - m,
+      maxX: (-pan.x + vw) / z + m,
+      maxY: (-pan.y + vh) / z + m,
+    };
+  })();
+  const lodVisibleFor = (n) => {
+    const x = typeof n.x === "number" ? n.x : 0;
+    const y = typeof n.y === "number" ? n.y : 0;
+    const nw = n.w || 320;
+    const nh = n.h || 240;
+    return x + nw >= lodRect.minX && x <= lodRect.maxX
+        && y + nh >= lodRect.minY && y <= lodRect.maxY;
+  };
+
   return html`
     <div className="workflow-root" data-fullscreen=${fullscreen ? "true" : "false"}>
       <div className="workflow-bar">
@@ -30494,6 +30631,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ` : html`
             <${WorkflowLibrary} tab=${leftPanel || "nodes"}/>
           `}
+          <${WorkflowSectionsBar}
+            sections=${(data.nodes || []).filter(n => n.kind === "section")}
+            wrapRef=${wrapRef}
+            setPan=${setPan}
+            setZoom=${setZoom}
+            onPick=${(id) => setSelectedNodeIds(new Set([id]))}
+          />
           <${WorkflowMiniMap} nodes=${data.nodes || []} extraBounds=${wbItems.map(wbItemBBox)} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan}/>
         </div>
         <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
@@ -30751,6 +30895,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30777,6 +30922,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -30793,6 +30939,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 family="simulation"
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30811,6 +30958,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 family="interactive"
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30829,6 +30977,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 family="narrative"
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30847,6 +30996,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 family="game"
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30865,6 +31015,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 family="scrapbook"
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30883,6 +31034,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 family="polish"
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -30900,6 +31052,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.boundTo?.node]}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
@@ -31380,6 +31533,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -37515,6 +37669,76 @@ function WorkflowPickedInspectorDock({
   `;
 }
 
+// ─── Canvas LOD — progressive loading + zoom-out placeholders ─────────────
+// v3.9 — Two complementary perf gates for heavy node content (iframes,
+// rasters, videos) on the workflow canvas:
+//
+//   1. PROGRESSIVE LOADING — a node's heavy content only starts loading
+//      when the node comes within WORKFLOW_LOD_MARGIN_PX (screen px) of
+//      the visible viewport. WorkflowSurface computes the expanded world
+//      rect once per committed pan/zoom and passes `lodVisible` to each
+//      heavy node component. A canvas with 200 prototypes/rasters no
+//      longer fetches them all on mount — only what's near the user.
+//
+//   2. ZOOM-OUT PLACEHOLDERS — below a zoom floor the content is replaced
+//      by a flat veil (glyph + label). Interactive embeds (prototype /
+//      html / motion / sim / browser iframes) use WORKFLOW_LOD_EMBED_ZOOM;
+//      rasters + videos use the lower WORKFLOW_LOD_MEDIA_ZOOM (an image
+//      grid still reads nicely further out than a live iframe does).
+//
+// Stickiness: once content has loaded ("live"), it is NEVER unmounted by
+// the LOD — iframes keep their navigation / WebGL / scroll state. Far or
+// offscreen live iframes are hidden via `display: none` (the browser
+// stops rendering + throttles their rAF loops, which is where the perf
+// win is) and the veil paints on top. Rasters/videos, once live, stay
+// painted at every zoom — swapping an already-decoded image for a veil
+// saves nothing.
+//
+// `lod` values map to the iframe's `data-lod` attribute + CSS:
+//   "cold" — never loaded; no src, veil instead.   (hidden via CSS)
+//   "off"  — live but outside the load margin.     (hidden via CSS)
+//   "far"  — live but below the zoom floor.        (hidden via CSS)
+//   "full" — live and shown normally.
+const WORKFLOW_LOD_MARGIN_PX  = 400;
+const WORKFLOW_LOD_EMBED_ZOOM = 0.25;
+const WORKFLOW_LOD_MEDIA_ZOOM = 0.12;
+
+function useWorkflowLod(lodVisible, far) {
+  // `lodVisible === undefined` → caller didn't wire the prop (zoom-mode
+  // standalone renders, tests) — degrade to always-live.
+  const wired = typeof lodVisible === "boolean";
+  const wantLive = !wired || (lodVisible && !far);
+  const [live, setLive] = useState(wantLive);
+  useEffect(() => {
+    if (wantLive && !live) setLive(true);
+  }, [wantLive, live]);
+  const lod = !live ? "cold"
+            : far ? "far"
+            : (wired && !lodVisible) ? "off"
+            : "full";
+  return { live, lod };
+}
+
+// The placeholder painted where heavy content would be. `mode`:
+//   "fill" — absolute, fills the node body below the 32px title bar
+//            (prototype / sim / frames / browser nodes).
+//   "body" — absolute, fills its positioned parent (asset-card body,
+//            overlaying a hidden-but-live iframe).
+//   "inline" — static, used AS the asset card's body content when cold.
+// Label scales inversely with zoom (clamped) so it stays legible when
+// the canvas is far out — same trick as the section title bar.
+function WorkflowLodVeil({ zoom, glyph, label, mode = "fill" }) {
+  const inv = Math.max(1, Math.min(4, 1 / (zoom || 1)));
+  return html`
+    <div className=${"workflow-node-lod-veil is-" + mode} aria-hidden="true">
+      <div className="workflow-node-lod-veil-inner" style=${{ transform: `scale(${inv})` }}>
+        <span className="workflow-node-lod-glyph">${glyph || "▦"}</span>
+        ${label ? html`<span className="workflow-node-lod-label">${label}</span>` : null}
+      </div>
+    </div>
+  `;
+}
+
 // ─── WorkflowSimOrInteractiveNode ─────────────────────────────────────────
 // v3.3 — Container renderer for the `simulation` + `interactive-media` kinds.
 // Slim companion to WorkflowPrototypeNode: an iframe pointing at the
@@ -37539,10 +37763,11 @@ function WorkflowPickedInspectorDock({
 //     the user edits per-component nodes (sim_loop_*, im_mapping_*, …).
 //   • Lock / orphan banners — the container's lifecycle is orchestrator-driven;
 //     it doesn't have a "user navigated away" failure mode.
-function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const [devtools, setDevtools] = useState(false);
   const iframeRef = useRef(null);
+  const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
 
   const branch  = nodePrototype(node);
   // v3.3 — narrative-experience containers (`nxId`, `source/{slug}/narratives/{nxId}/`)
@@ -37739,14 +37964,14 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
         </div>
       `}
 
-      <div className="workflow-node-iframe-scale">
+      <div className="workflow-node-iframe-scale" data-lod=${lod}>
         <iframe
           key=${node.id + "-" + nonce}
           ref=${iframeRef}
           className="workflow-node-iframe"
           data-container-id=${node.id}
           data-family=${family}
-          src=${iframeSrc}
+          src=${lodLive ? iframeSrc : undefined}
           title=${familyLabel + ":" + (assetId || "")}
           allow=${family === "interactive" ? "microphone; camera; gyroscope; accelerometer; midi" : ""}
           style=${{
@@ -37757,6 +37982,11 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
           }}
         />
       </div>
+      ${lod !== "full" && html`<${WorkflowLodVeil}
+        zoom=${zoom}
+        glyph=${family === "simulation" ? "◎" : family === "narrative" ? "❧" : "✦"}
+        label=${familyLabel + ":" + (assetId || "")}
+      />`}
 
       <div
         className="workflow-node-resize-corner"
@@ -37804,11 +38034,12 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
 // pulls a fresh editor/data.js from disk, no agent), Close.
 // Body: scale-to-fit iframe rendered at 1920×1200 native viewport. Resize
 // corner at bottom-right.
-function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd, onRegenerate }) {
+function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
   const protoSlug = nodePrototype(node);
+  const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
 
   // Iframe URL: hits editor/index.html with embed=1 (skip toolbar/chat/
   // edits panel) + view=canvas (lock first tab) + prototype=<slug> (point
@@ -37954,12 +38185,12 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           onMouseDown=${(e) => e.stopPropagation()}
         >×<//>
       </div>
-      <div className="workflow-node-frames-body">
+      <div className="workflow-node-frames-body" data-lod=${lod}>
         <iframe
           key=${node.id + "-" + nonce}
           ref=${iframeRef}
           className="workflow-node-iframe"
-          src=${iframeSrc}
+          src=${lodLive ? iframeSrc : undefined}
           title=${"Canvas frames: " + protoSlug}
           style=${{
             /* v3.5 — render the embedded editor at native pixel size, no
@@ -37991,6 +38222,11 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           />
         `}
       </div>
+      ${lod !== "full" && html`<${WorkflowLodVeil}
+        zoom=${zoom}
+        glyph="▦"
+        label=${"Canvas frames · " + protoSlug}
+      />`}
       <div
         className="workflow-node-resize-corner"
         onMouseDown=${onResizeDown}
@@ -38000,10 +38236,15 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   `;
 }
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = nodePrototype(node);
+  // Canvas LOD — the iframe element stays mounted at all times (the nav-
+  // history effect binds its `load` listener to the element once), but its
+  // `src` is withheld until the node first qualifies as live. about:blank
+  // is already skipped by the nav tracker's snapshotState.
+  const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
   // DS audit state — `auditing` = pipeline in flight; `auditResult` = the
   // aggregate { filesAudited, totalFixes, totalViolations, perFile[] }
   // produced by the audit. Stored locally (not on the node) since it's a
@@ -38920,13 +39161,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         const bodyH = Math.max(1, (node.h || 480) - 32);
         const scale = Math.min(bodyW / vw, bodyH / vh);
         return html`
-          <div className="workflow-node-iframe-scale">
+          <div className="workflow-node-iframe-scale" data-lod=${lod}>
             <iframe
               key=${node.id + "-" + nonce}
               ref=${iframeRef}
               className="workflow-node-iframe"
               data-prototype-id=${node.id}
-              src=${iframeSrc}
+              src=${lodLive ? iframeSrc : undefined}
               title=${"Prototype: " + branch}
               style=${{
                 width:  vw + "px",
@@ -38936,6 +39177,11 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
               }}
             />
           </div>
+          ${lod !== "full" && html`<${WorkflowLodVeil}
+            zoom=${zoom}
+            glyph="▶"
+            label=${"source/" + branch + "/"}
+          />`}
         `;
       })()}
       ${/* Orphan banner removed — every navigation that didn't end at the
@@ -40104,8 +40350,17 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   `;
 }
 
-function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges }) {
+function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible }) {
   const [dragging, setDragging] = useState(false);
+  // Canvas LOD — embed kinds (live iframes) gate at the embed floor and get
+  // hidden+veiled when far; raster/video kinds gate INITIAL load only (at
+  // the lower media floor) and stay painted once decoded.
+  const lodKind = node.assetKind || "image";
+  const lodIsEmbed = lodKind === "html" || lodKind === "html-set" || lodKind === "lottie";
+  const { live: lodLive, lod } = useWorkflowLod(
+    lodVisible,
+    zoom < (lodIsEmbed ? WORKFLOW_LOD_EMBED_ZOOM : WORKFLOW_LOD_MEDIA_ZOOM),
+  );
   // Prompt inspector — opens via the 📜 chip when node.promptDebug is set
   // (i.e. the asset was the output of a remix / repeater / blend run).
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -41068,6 +41323,14 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         <div className="workflow-node-asset-icon-kind">re-expose</div>
       </div>
     `;
+  } else if (!lodLive && (kind === "image" || kind === "svg" || kind === "vector"
+                       || kind === "lottie" || kind === "video"
+                       || kind === "html" || kind === "html-set")) {
+    // Canvas LOD — heavy asset that has never qualified as live (offscreen
+    // beyond the load margin, or below the zoom floor since mount): paint
+    // the veil and fetch NOTHING. Flips to the real branch the first time
+    // the node scrolls/zooms into range.
+    bodyContent = html`<${WorkflowLodVeil} zoom=${zoom} glyph=${glyph} label=${basename} mode="inline"/>`;
   } else if (kind === "image" || kind === "svg" || kind === "vector") {
     // v3.4 — `vector` covers SVG files produced by svg-gen + Quiver. The
     // browser renders SVG natively in <img>, same code path as image/svg.
@@ -41182,6 +41445,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       data-orphan=${orphaned ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
       data-kind=${kind}
+      data-lod=${lod}
       data-animated=${node.animated ? "true" : "false"}
       data-run-status=${node.runStatus || ""}
       onMouseDownCapture=${() => onSelect && onSelect()}
@@ -41308,6 +41572,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         style=${node.bgColor ? { background: node.bgColor } : undefined}
       >
         ${bodyContent}
+        ${lodIsEmbed && lodLive && lod !== "full" && html`
+          <${WorkflowLodVeil} zoom=${zoom} glyph=${glyph} label=${basename} mode="body"/>
+        `}
       </div>
       ${(node.versions && node.versions.length > 0) && html`
         <div
@@ -41744,9 +42011,10 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
      wiring it into an Agent or Skill feeds the page content as context.
    - sandbox WITHOUT allow-top-navigation: an embedded page must never
      hijack the editor tab (we've seen reference pages do exactly that). */
-function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSpawnOutput }) {
+function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSpawnOutput, lodVisible }) {
   const w = node.w || 720;
   const h = node.h || 540;
+  const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const iframeRef = useRef(null);
@@ -41761,10 +42029,13 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
   const hasUrl = /^https?:\/\//i.test(liveUrl);
 
   // Probe embeddability whenever the committed URL changes; sites that
-  // refuse framing automatically fall back to the daemon proxy.
+  // refuse framing automatically fall back to the daemon proxy. Canvas LOD
+  // defers the probe (and therefore the page load) until the node first
+  // qualifies as live, so a saved canvas full of browser nodes doesn't
+  // hit N external sites on mount.
   useEffect(() => {
     setUrlDraft(liveUrl);
-    if (!hasUrl) { setMode(null); return; }
+    if (!hasUrl || !lodLive) { setMode(null); return; }
     let dead = false;
     setMode("probing");
     fetch(apiUrl("/__web_probe?url=" + encodeURIComponent(liveUrl)))
@@ -41773,7 +42044,7 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
       .catch(() => { if (!dead) setMode("direct"); });
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveUrl]);
+  }, [liveUrl, lodLive]);
 
   const commitUrl = () => {
     let u = (urlDraft || "").trim();
@@ -41841,6 +42112,7 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
     <div
       className="workflow-node workflow-node-browser"
       data-node-id=${node.id}
+      data-lod=${lod}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
       onMouseDownCapture=${() => onSelect && onSelect()}
     >
@@ -41872,7 +42144,9 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
                 onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}>×</button>
       </div>
       <div className="workflow-browser-body">
-        ${iframeSrc ? html`
+        ${(hasUrl && !lodLive) ? html`
+          <${WorkflowLodVeil} zoom=${zoom} glyph="🌐" label=${liveUrl} mode="body"/>
+        ` : iframeSrc ? html`
           <iframe
             key=${node.id + "-" + mode + "-" + nonce}
             ref=${iframeRef}
@@ -41896,6 +42170,9 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
           <div className="workflow-browser-empty">
             ${mode === "probing" ? "Probing…" : "Enter a URL above — the page renders live inside this node. Select the node to scroll / click / copy from it."}
           </div>
+        `}
+        ${lodLive && lod !== "full" && hasUrl && html`
+          <${WorkflowLodVeil} zoom=${zoom} glyph="🌐" label=${liveUrl} mode="body"/>
         `}
         ${clipNote && html`<div className="workflow-browser-clipnote">${clipNote}</div>`}
       </div>
@@ -49944,7 +50221,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
     : html`<div className=${"workflow-wb-textbody " + (extraClass || "")} style=${textStyle}>${item.text || ""}</div>`;
 
   if (item.type === "text") {
-    const fs = WB_FONT_SIZES[item.fontSize] || WB_FONT_SIZES.md;
+    const fs = wbFontPx(item.fontSize, WB_FONT_SIZES.md);
     return html`
       <div className="workflow-wb-item workflow-wb-text" data-wb-id=${item.id} data-selected=${sel}
         style=${{ left: item.x + "px", top: item.y + "px", width: item.w + "px", zIndex: z }}>
@@ -49958,20 +50235,34 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
       </div>`;
   }
   if (item.type === "textbox") {
-    const fs = WB_FONT_SIZES[item.fontSize] || WB_FONT_SIZES.md;
+    const fs = wbFontPx(item.fontSize, WB_FONT_SIZES.md);
+    // Independent box colors — all optional, falling back to the legacy
+    // single `color` so existing items render unchanged:
+    //   fill  → box background ("none" = transparent), at fillOpacity
+    //   stroke → outline color ("none" = no outline)
+    //   textColor → the text itself
+    const fillC   = item.fill === "none" ? "transparent"
+                  : wbColorCSS(item.fill || item.color);
+    const strokeC = item.stroke === "none" ? "transparent"
+                  : wbColorCSS(item.stroke || item.color);
+    const fillPct = Math.round(Math.max(0, Math.min(1, item.fillOpacity ?? 0.16)) * 100);
     return html`
       <div className="workflow-wb-item workflow-wb-textbox" data-wb-id=${item.id} data-selected=${sel}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
           "--wb-c": c,
-          borderRadius: (item.radius ?? 10) + "px",
+          background: item.fill === "none" ? "transparent"
+            : `color-mix(in oklch, ${fillC} ${fillPct}%, transparent)`,
+          borderColor: strokeC,
+          borderRadius: Math.max(0, item.radius ?? 10) + "px",
         }}>
         ${textBody("", {
           fontSize: fs + "px",
           textAlign: item.align || "center",
           fontWeight: item.bold ? 700 : 500,
           fontStyle: item.italic ? "italic" : "normal",
+          ...(item.textColor ? { color: wbColorCSS(item.textColor) } : {}),
         })}
       </div>`;
   }
@@ -49984,7 +50275,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           "--wb-c": c,
         }}>
         ${textBody("", {
-          fontSize: (WB_FONT_SIZES[item.fontSize] || 14) + "px",
+          fontSize: wbFontPx(item.fontSize, 14) + "px",
           textAlign: item.align || "left",
           fontWeight: item.bold ? 700 : 500,
           fontStyle: item.italic ? "italic" : "normal",
@@ -50008,6 +50299,9 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
   }
   if (item.type === "shape") {
     const sw = item.size || 2;
+    const strokeC = item.stroke === "none" ? "none" : wbColorCSS(item.stroke || item.color);
+    const fillC = item.fill === "auto" ? wbColorCSS(item.color)
+                : item.fill && item.fill !== "none" ? wbColorCSS(item.fill) : "none";
     return html`
       <svg className="workflow-wb-item workflow-wb-shape" data-wb-id=${item.id} data-selected=${sel}
         style=${{
@@ -50017,11 +50311,11 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
         }}>
         <rect x=${sw / 2} y=${sw / 2}
               width=${Math.max(1, item.w - sw)} height=${Math.max(1, item.h - sw)}
-              rx=${item.radius ?? 6}
-              stroke=${c} strokeWidth=${sw}
-              fill=${item.fill === "auto" ? wbColorCSS(item.color)
-                    : item.fill && item.fill !== "none" ? wbColorCSS(item.fill) : "none"}
-              fillOpacity=${item.fill && item.fill !== "none" ? 0.16 : 0}/>
+              rx=${Math.max(0, item.radius ?? 6)}
+              stroke=${strokeC} strokeWidth=${sw}
+              fill=${fillC}
+              fillOpacity=${fillC === "none" ? 0
+                : Math.max(0, Math.min(1, item.fillOpacity ?? 0.16))}/>
       </svg>`;
   }
   if (item.type === "arrow") {
@@ -50219,8 +50513,28 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
   const showText   = has("text", "textbox", "sticky");
   const showCorner = has("textbox", "shape");
   const showStroke = has("ink", "shape", "arrow");
-  const showFill   = has("shape");
   const showArrow  = has("arrow");
+  // Box types get TARGETED color rows (text / fill / outline + opacity);
+  // the generic Color row stays only for the other colorable kinds.
+  const hasBox = has("textbox", "shape");
+  const hasOtherColorable = ["text", "sticky", "ink", "arrow"].some(t => types.has(t));
+  const showGenericColors = showColors && (!hasBox || hasOtherColorable);
+  const swatchRow = (cur, onPick, allowNone) => html`
+    <div className="workflow-wb-swatches">
+      ${allowNone && html`
+        <button type="button"
+          className=${"workflow-wb-swatch workflow-wb-swatch-none" + (cur === "none" ? " is-active" : "")}
+          title="None"
+          onClick=${() => onPick("none")}/>
+      `}
+      ${WB_COLOR_TOKENS.map(tok => html`
+        <button key=${tok} type="button"
+          className=${"workflow-wb-swatch" + (cur === tok ? " is-active" : "")}
+          title=${tok}
+          style=${{ background: `var(--wb-${tok})` }}
+          onClick=${() => onPick(tok)}/>
+      `)}
+    </div>`;
   const seg = (opts, cur, onPick) => html`
     <div className="workflow-wb-seg">
       ${opts.map(o => html`
@@ -50255,7 +50569,7 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
           </button>
         `)}
       </div>
-      ${showColors && html`
+      ${showGenericColors && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Color</div>
           <div className="workflow-wb-swatches">
@@ -50275,12 +50589,22 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
       ${showText && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Text</div>
-          ${seg([
-            { v: "sm", label: "S",  tip: "Small (14px)" },
-            { v: "md", label: "M",  tip: "Medium (18px)" },
-            { v: "lg", label: "L",  tip: "Large (26px)" },
-            { v: "xl", label: "XL", tip: "Extra large (40px)" },
-          ], val("fontSize", "md"), (v) => apply({ fontSize: v }))}
+          <div className="workflow-wb-fmt-row">
+            ${seg([
+              { v: "sm", label: "S",  tip: "Small (14px)" },
+              { v: "md", label: "M",  tip: "Medium (18px)" },
+              { v: "lg", label: "L",  tip: "Large (26px)" },
+              { v: "xl", label: "XL", tip: "Extra large (40px)" },
+            ], val("fontSize", "md"), (v) => apply({ fontSize: v }))}
+            <input type="number" min="1" step="1"
+              className="workflow-wb-num"
+              title="Custom size (px)"
+              value=${wbFontPx(val("fontSize", "md"), 18)}
+              onChange=${(e) => {
+                const v = Math.max(1, Math.round(+e.target.value || 0));
+                if (v) apply({ fontSize: v });
+              }}/>
+          </div>
           <div className="workflow-wb-fmt-row">
             <button type="button" title="Bold"
               className=${"workflow-wb-seg-btn workflow-wb-fmt-b" + (val("bold", false) ? " is-active" : "")}
@@ -50311,20 +50635,49 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
       `}
       ${showCorner && html`
         <div className="workflow-wb-tools-section">
-          <div className="workflow-wb-tools-sublabel">Corner · ${val("radius", types.has("shape") ? 6 : 10)}px</div>
-          <input type="range" min="0" max="24" step="1"
-            className="workflow-wb-range"
+          <div className="workflow-wb-tools-sublabel">Corner radius</div>
+          <input type="number" min="0" step="1"
+            className="workflow-wb-num"
+            title="Corner radius (px) — any value"
             value=${val("radius", types.has("shape") ? 6 : 10)}
-            onInput=${(e) => apply({ radius: +e.target.value })}/>
+            onChange=${(e) => apply({ radius: Math.max(0, Math.round(+e.target.value || 0)) })}/>
         </div>
       `}
-      ${showFill && html`
+      ${hasBox && has("textbox") && html`
         <div className="workflow-wb-tools-section">
-          <div className="workflow-wb-tools-sublabel">Fill</div>
-          ${seg([
-            { v: "none", label: "None",   tip: "Outline only" },
-            { v: "auto", label: "Filled", tip: "Soft fill in the stroke color" },
-          ], val("fill", "none"), (v) => apply({ fill: v }))}
+          <div className="workflow-wb-tools-sublabel">Text color</div>
+          ${swatchRow(
+            (first && first.textColor) || F.textColor || null,
+            (v) => apply({ textColor: v }),
+            false)}
+        </div>
+      `}
+      ${hasBox && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Box fill</div>
+          ${swatchRow(
+            (first && (first.fill ?? first.color)) || F.fill || (types.has("shape") ? "none" : null),
+            (v) => apply({ fill: v }),
+            true)}
+        </div>
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Outline</div>
+          ${swatchRow(
+            (first && (first.stroke ?? first.color)) || F.stroke || null,
+            (v) => apply({ stroke: v }),
+            true)}
+        </div>
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Fill opacity · %</div>
+          <input type="number" min="0" max="100" step="5"
+            className="workflow-wb-num"
+            title="Fill opacity (0–100%)"
+            value=${Math.round(((first && first.fillOpacity != null ? first.fillOpacity
+                               : F.fillOpacity != null ? F.fillOpacity : 0.16)) * 100)}
+            onChange=${(e) => {
+              const v = Math.max(0, Math.min(100, Math.round(+e.target.value || 0)));
+              apply({ fillOpacity: v / 100 });
+            }}/>
         </div>
       `}
       ${showArrow && html`
