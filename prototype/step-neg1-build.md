@@ -1,13 +1,13 @@
 ---
 name: step-neg1-build
-description: Step -1 post-pick build pipeline — Phases A through F. Loaded ONLY after the user picks an option (numbered pick, "you pick", "lock it", "build", etc.). Locks the picked option's exact typography + palette into the build and restores the existing orchestrator-dispatch chain.
+description: Step -1 post-pick build pipeline — Phases A through F, including the MANDATORY Phase A.5 orchestrator plan gate (multi-select decision card, proposed roster pre-checked, user edits + approves before any dispatch). Loaded ONLY after the user picks an option (numbered pick, "you pick", "lock it", "build", etc.). Locks the picked option's exact typography + palette into the build and runs the orchestrator-dispatch chain on the approved roster.
 ---
 
 # Step -1 — After the user picks (Phases A → F)
 
 Reached when the user has committed an option (clicked a button, said "option N", said "you pick" / "lock it" / "build", or named a fresh direction that's now coherent). This file is the COMPLETE post-pick build contract.
 
-**Critical structural rule:** Step -1's stop-and-ask is the FIRST stage of the existing Woven build pipeline, not a self-contained mini-protocol that ends in "write some files." After the pick, the agent MUST execute Phases A → F below in order, integrating with the existing orchestrator fan-out documented in `AGENTS.md` and `docs/agents/subagents/`. Skipping Phase E or improvising inside Phase C is what produced studio's "picked Space Grotesk + JetBrains Mono, built Anton + Space Mono, skipped photography-orchestrator despite picking acid-design (raster-heavy)" failure.
+**Critical structural rule:** Step -1's stop-and-ask is the FIRST stage of the existing Woven build pipeline, not a self-contained mini-protocol that ends in "write some files." After the pick, the agent MUST execute Phases A → F below in order — **including the Phase A.5 orchestrator plan gate, the flow's second and last stop-and-ask** — integrating with the existing orchestrator fan-out documented in `AGENTS.md` and `docs/agents/subagents/`. Skipping Phase E or improvising inside Phase C is what produced studio's "picked Space Grotesk + JetBrains Mono, built Anton + Space Mono, skipped photography-orchestrator despite picking acid-design (raster-heavy)" failure.
 
 ## Phase A — Lock the contract from the picked `<opt>` (IMMUTABLE through build)
 
@@ -31,6 +31,39 @@ The picked option's child tags are the **immutable contract** for everything dow
 NOT `"Anton"`, NOT `"Inter"`, NOT "whatever the agent thinks fits the genre better." The user picked Space Grotesk; the build ships Space Grotesk.
 
 Same for the palette: every hex in `<palette>` becomes a `:root` var. Don't substitute "warmer slate" for `#161616`. If you derive a hover state, do it via `oklch(from var(--accent) calc(l - 0.1) c h)` — anchored to the locked token.
+
+## Phase A.5 — Orchestrator plan gate (MANDATORY stop-and-ask, second and last gate of the flow)
+
+Which orchestrator passes run on this build is a taste + budget decision, and — exactly like the direction pick — it belongs to the user. After locking the Phase A contract, **compose the orchestrator roster proposal from the locked axes + the brief's surfaces, emit it as a multi-select `<decision-request>` card, END YOUR TURN, and wait.** Phases B → F run only after the user's reply. Do NOT silently dispatch the Phase E chain; do NOT bury the roster in prose and proceed.
+
+**Carve-outs that skip this gate (and only these):**
+
+1. **The user delegated this turn** — the pick message (or an earlier message in this turn-chain) says "just build", "you pick", "no questions", or an obvious equivalent. Use your proposed roster, name it in the Phase F report.
+2. **The pick message already settled the roster** — it explicitly names which orchestrator passes to run or skip with nothing left ambiguous ("option 2, photos + material, no polish"). Honor it verbatim.
+3. **The current message IS the reply to this gate** (a `[decision:orchestrator-plan]` message or a prose roster edit). Apply it and proceed to Phase B.
+
+**Composing the proposal:**
+
+1. Candidates come from the locked axes + the Phase E chain: `photography-orchestrator`, `illustration-orchestrator`, `creative-visual-orchestrator`, `visual-orchestrator`, `material-orchestrator`, `interactive-polish-orchestrator` — plus any experience-family orchestrator the brief's predicates match (`simulation` / `interactive-media` / `narrative-experience` / `game-experience` / `scrapbook-experience` / `motion-studio`; see the capabilities preamble's predicate table).
+2. Each option's label is a one-line PLAN, not a category name: which pages / sections / slots it will fill, with what, and WHY the locked direction earns it ("photography-orchestrator — hero + 3 feature photos in Y2K-halftone register; acid-design is raster-heavy"). Rough volume where it drives cost ("≈ 14 slots"). The user must be able to veto from the label alone.
+3. Pre-tick recommended orchestrators with the bare `checked` attribute. List plausible-but-not-recommended candidates UNchecked with a plan line saying what opting in would add — proposing an orchestrator as N/A-by-default is a valid shape. `visual-orchestrator` is pre-ticked whenever the source will carry any visual slot (it almost always will). Always include a `none` option last.
+4. Emit at the end of the turn:
+
+```
+<decision-request id="orchestrator-plan" multiSelect="true" minPicks="1" prompt="Direction locked. Here's the orchestrator plan I propose — untick anything you don't want, tick anything extra, then Send. I'll build with exactly that roster.">
+  <option value="photography-orchestrator" checked>photography-orchestrator — hero + 3 feature photos, Y2K-halftone register; acid-design is raster-heavy</option>
+  <option value="illustration-orchestrator" checked>illustration-orchestrator — 6 sticker-style spot illustrations on the pricing + about sections; distorted-chrome rave register</option>
+  <option value="creative-visual-orchestrator" checked>creative-visual-orchestrator — promotes the hero img into asset-cut-into-letters; acid-design is editorial-loud, this is its signature move</option>
+  <option value="visual-orchestrator" checked>visual-orchestrator — enumerates all ~14 visual slots, classifies media, fans out the per-asset drawers (reads the photo/illust enrichments above)</option>
+  <option value="material-orchestrator">material-orchestrator — optional: reactive chrome/holographic sheen on cards; adds tilt-tracked light (off by default, the style reads fine flat)</option>
+  <option value="interactive-polish-orchestrator">interactive-polish-orchestrator — optional post-pass: hover surprises + pointer-tinted background; loud register allows it</option>
+  <option value="none">None — skip every orchestrator pass; CSS/SVG-only build</option>
+</decision-request>
+```
+
+**Reply handling:** picked set (minus `none`) = the APPROVED roster. `none` → Phase E becomes a no-op and the Phase F report says the build is CSS/SVG-only. A prose reply ("skip material, add motion-studio") is just as valid — apply the edits and continue without re-asking. If an experience-family orchestrator with a pre-build phase was approved (`motion-studio-orchestrator` `mode=brainstorm`), its brainstorm dispatch runs BEFORE Phase C so the returned slot tags land in the source write. Approval covers this build pass; a later "regenerate" ask re-fires the gate.
+
+**The approved roster is a filter, not a forced march:** Phase E dispatches ONLY approved orchestrators, and each still self-gates via its manifest (an approved photography-orchestrator with zero photo slots returns a clean no-op). Unapproved orchestrators are skipped even when their manifest gate would fire.
 
 ## Phase B — Read the detail files for genre vocabulary
 
@@ -64,7 +97,7 @@ Standard: every authored HTML opens and renders without console errors, navigati
 
 **Phase E is reachable ONLY after Phases A → B → C → D complete in this turn.** Orchestrators enumerate slots in *already-written source HTML*; they do not exist for pre-commit previews, +draft mockups, "show me an image" requests, or any other pre-build flow. If `source/<branch>/` has no files in it AND no Phase A lock has been written, every orchestrator listed below is **forbidden**. The agent in studio2 broke this by dispatching `visual-orchestrator` from inside the +draft loop — that's a Phase E rule violation and a category error.
 
-After source is written and render-verified, the agent MUST walk the existing orchestrator dispatch chain — each orchestrator's gate is defined in its own manifest under `.claude/agents/<name>.manifest.json`, so the agent's job is sequencing, not gate-evaluation. Dispatch each via the `Task` tool with `subagent_type` matching the manifest's `subagentName`. Walk in this order:
+After source is written and render-verified, the agent MUST walk the orchestrator dispatch chain — **restricted to the roster the user approved at the Phase A.5 plan gate**. Each orchestrator's gate is defined in its own manifest under `.claude/agents/<name>.manifest.json`, so the agent's job is sequencing, not gate-evaluation. Dispatch each APPROVED orchestrator via the `Task` tool with `subagent_type` matching the manifest's `subagentName`; skip unapproved ones even when their manifest gate would fire (the user said no). If the user picked `none`, Phase E is a no-op — go straight to Phase F and say so. Walk in this order:
 
 1. **`photography-orchestrator`** — its manifest trigger: "fires when (a) at least one slot will resolve to raster-photo AND (b) an image-generation model is wired into the project". For the acid-design / scrapbook / editorial-warm-restraint family this almost always fires. The orchestrator picks a photo style from `docs/research/photography-library.md`, writes a `pe_photo_<slotId>` enrichment node per photographic slot. Visual-orchestrator reads these later.
 2. **`illustration-orchestrator`** — same shape, for raster-foreground (illustrated subjects with transparency, mascots, vector-with-character). Fires for acid-design, corporate-memphis, kawaii, Y2K-memphis-loud, etc. Picks an illustration style from `docs/research/illustration-library.md`.
@@ -73,12 +106,12 @@ After source is written and render-verified, the agent MUST walk the existing or
 5. **`material-orchestrator`** — fires when the committed style is material-bearing per `docs/research/material-library.md` decision tree (skeuomorphism, glassmorphism, claymorphism, holographic-iridescent, neumorphism, frutiger-aero, brushed-metal, paper-grain, etc.). Adds reactive material fidelity (refraction on tilt, parallax on scroll, ripple on hover).
 6. **`interactive-polish-orchestrator`** — fires when (a) a DS is present AND (b) the genre is in the restrained-register allow-list per its gate. Adds microanimations, pointer-driven effects, scroll-driven reveals, hover surprises, shader overlays.
 
-For each orchestrator, the agent **does NOT pre-evaluate the trigger** — that's the orchestrator's own job per its manifest. The agent dispatches with the standard envelope (project slug, sourceRoot, projectRoot, genre commit line); the orchestrator reads its manifest's gate against the source and either runs or returns `runStatus:error` if its conditions don't match. The agent moves to the next orchestrator regardless.
+For each APPROVED orchestrator, the agent **does NOT pre-evaluate the trigger** — that's the orchestrator's own job per its manifest. The agent dispatches with the standard envelope (project slug, sourceRoot, projectRoot, genre commit line); the orchestrator reads its manifest's gate against the source and either runs or returns `runStatus:error` if its conditions don't match. The agent moves to the next approved orchestrator regardless.
 
-The acid-design studio case would hit steps 1, 2, 3, 4, and likely 6 — that's the orchestrator routing that worked before Step -1 was added, and what Phase E now re-establishes.
+The acid-design studio case would propose steps 1, 2, 3, 4 pre-ticked (and likely offer 6 unticked) at the Phase A.5 gate — that's the orchestrator routing that worked before Step -1 was added, now run with the user's sign-off instead of silently.
 
 ## Phase F — Report done
 
-After Phases A–E complete, summarise to the user: what was locked from the pick (palette + fonts + axes), which orchestrators ran (with their reported outcomes — `kept N slots, dropped M`), and what's next (typically: "click Run on the workflow canvas to generate the per-asset bitmaps", or "the polish layer is live — refresh to see microanimations").
+After Phases A–E complete, summarise to the user: what was locked from the pick (palette + fonts + axes), the approved roster from the Phase A.5 gate, which orchestrators actually ran (with their reported outcomes — `kept N slots, dropped M`) and which self-gated to a no-op, and what's next (typically: "click Run on the workflow canvas to generate the per-asset bitmaps", or "the polish layer is live — refresh to see microanimations"). If the user picked `none`, say the build shipped CSS/SVG-only and which passes remain available on ask.
 
 If any phase failed (Phase B detail-file missing, Phase C render error, Phase E orchestrator dispatch error), report it explicitly — don't claim "done" when the pipeline broke partway.

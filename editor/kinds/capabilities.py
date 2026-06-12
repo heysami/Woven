@@ -591,11 +591,12 @@ The rule:
 |---|---|---|
 | 1 | Agent (chat) | Read the brief. Sketch the app's pages + sections. |
 | 2 | Agent | For each surface, decide which family fills it. Test each predicate: objective + feedback loop → game; CSS can't reach the aesthetic → scrapbook; system viz → sim; input→mapping→output → im; walk-into-a-place → nx; otherwise visual. |
-| 3 | Agent | Write `source/<prototype>/index.html` + sibling pages with one slot per surface. Slots = `<img>` tags for visual, `<iframe>` tags for sim / im / nx / game / scrapbook (with the canonical `src` path). |
-| 4 | Agent | Dispatch each primary orchestrator family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL that match (e.g. an illustrated game = `visual-orchestrator` + `game-experience-orchestrator`). |
-| 5 | Orchestrator | Walks every `source/<prototype>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
-| 6 | Drawer(s) | Produce the content at the canonical path. |
-| 7 | Agent | After ALL primary orchestrators return, **run the polish gate** (DS check + restrained-register check + explicit-user-ask check — see § "Interactive polish: dispatch interactive-polish-orchestrator LAST"). If the gate allows, dispatch `interactive-polish-orchestrator` ONCE with project-wide scope before Step-8 QA. If the gate skips, surface the one-line "Skipped interactive polish — …" notice to the user verbatim. |
+| 3 | Agent + User | **MANDATORY orchestrator plan gate.** Emit a `<decision-request id="orchestrator-plan" multiSelect="true">` card carrying your proposed roster — one option per candidate orchestrator with a one-line plan (which content it fills, with what, why), recommended ones pre-ticked via the `checked` attribute, plus a `none` option. STOP and WAIT for the user's reply. The reply's picked set is the APPROVED roster for the rest of this table. See § "Orchestrator plan gate" below for the exact card shape, carve-outs, and reply handling. |
+| 4 | Agent | Write `source/<prototype>/index.html` + sibling pages with one slot per surface — slots only for APPROVED families. (If `motion-studio-orchestrator` was approved, its `mode=brainstorm` dispatch runs BEFORE this step.) Slots = `<img>` tags for visual, `<iframe>` tags for sim / im / nx / game / scrapbook (with the canonical `src` path). |
+| 5 | Agent | Dispatch each APPROVED primary orchestrator family ONCE if its slots exist. A brief commonly hits more than one family — dispatch ALL approved matches (e.g. an illustrated game = `visual-orchestrator` + `game-experience-orchestrator`). |
+| 6 | Orchestrator | Walks every `source/<prototype>/*.html` and sibling page, enumerates the slots of its family (by class / data attribute / src convention). For each slot, scaffolds the per-slot drawer set and dispatches it. |
+| 7 | Drawer(s) | Produce the content at the canonical path. |
+| 8 | Agent | After ALL primary orchestrators return, **run the polish gate** (DS check + restrained-register check + explicit-user-ask check — see § "Interactive polish: dispatch interactive-polish-orchestrator LAST") — but ONLY if `interactive-polish-orchestrator` was approved (or explicitly added) at step 3. If both allow, dispatch `interactive-polish-orchestrator` ONCE with project-wide scope before Step-8 QA. If either skips, surface the one-line "Skipped interactive polish — …" notice to the user verbatim. |
 
 **One dispatch per family, not one per slot. The orchestrator does the per-slot fan-out, not the agent.**
 
@@ -675,11 +676,45 @@ The agent writes these tags into the HTML in step 3 (before any orchestrator dis
 
 ### Cost calibration
 
-A visual-orchestrator dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx orchestrator dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations — significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards."
+A visual-orchestrator dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx orchestrator dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations — significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards." The orchestrator-plan gate below is where this cost surfaces by default — the per-option plan lines carry the slot counts, so the user approves the budget along with the roster.
+
+## Orchestrator plan gate — MANDATORY stop-and-ask BEFORE any orchestrator dispatch (v1.0 hard rule)
+
+Which orchestrator passes run is a taste + budget decision, and it belongs to the user — the same discipline as the /prototype Step -1 direction pick. **Before dispatching ANY orchestrator (including motion-studio's `mode=brainstorm`), surface your proposed roster as a multi-select decision card and WAIT for the user's reply.** A silently-dispatched chain is a hard-rule violation even when every predicate clearly matches.
+
+**Precedence note:** every `## … dispatch <X>-orchestrator FIRST` rule below is subordinate to this gate. "FIRST" means first among your build/narration actions once the roster is approved — never before the gate has been answered.
+
+**When the gate fires:** any turn whose plan includes one or more orchestrator dispatches — a new prototype build, a "regenerate the visuals" ask, an "add a game / motion scene / sim to this page" ask.
+
+**When it does NOT fire (and only these):**
+1. The user explicitly delegated in the current turn ("just build", "you pick", "no questions, go") — use your proposed roster without asking, and say which roster you used.
+2. The user's current message IS the reply to this gate (a `[decision:orchestrator-plan]` message or a prose edit of the roster you proposed).
+3. The user's ask already names the exact single orchestrator pass ("run interactive polish", "dispatch the material orchestrator on the hero") — the choice is already made.
+4. The turn dispatches zero orchestrators (pure CSS/copy edit, question, +draft preview).
+
+**How to compose the proposal:**
+
+1. Run the predicate table above against the brief — that yields the candidate roster.
+2. For each candidate write a one-line PLAN, not a category name: which pages / sections / slots it will fill, with what, and WHY it earns its place ("photography-orchestrator — hero + 3 testimonial portraits, golden-hour editorial register; the warm-restraint pick is photo-led"). Include rough volume where it drives cost ("8 narrative scenes ≈ 56 drawers"). The user must be able to veto from the label alone.
+3. Pre-tick the orchestrators you actually recommend with the bare `checked` attribute. Also list 1–3 plausible-but-not-recommended candidates UNchecked when they exist (with the plan line saying what opting in would add), so the user can opt in — N/A-by-default is a valid proposal shape. Always include a `none` option last.
+4. Emit the card at the END of your turn and stop. Example (Totoro feed-the-forest brief):
+
+```
+<decision-request id="orchestrator-plan" multiSelect="true" minPicks="1" prompt="Here's the orchestrator plan I propose for this build — untick anything you don't want, tick anything extra, then Send. I'll build with exactly that roster.">
+  <option value="visual-orchestrator" checked>visual-orchestrator — 12 illustrated slots (Totoro, foods, friends, icons, backgrounds) across index + den pages; every slot inherits the watercolor-Ghibli cue</option>
+  <option value="game-experience-orchestrator" checked>game-experience-orchestrator — the feed-the-forest loop as one game-mount iframe on index (~8-9 drawers); the objective + feedback loop is the heart of the brief</option>
+  <option value="interactive-polish-orchestrator">interactive-polish-orchestrator — optional post-pass: hover wobbles + pointer trails matching the playful register (off by default; the expressive genre would allow it)</option>
+  <option value="none">None — skip every orchestrator pass; CSS/SVG-only build</option>
+</decision-request>
+```
+
+**Reply handling:** the reply arrives as `[decision:orchestrator-plan] v1,v2 — label1; label2`. The picked set (minus `none`) is the APPROVED roster — dispatch exactly those families, in the canonical order the hard-rule sections define (motion-studio brainstorm / photography / illustration / experience families FIRST → visual → creative-visual → material → polish LAST), letting each orchestrator still self-gate via its manifest. `none` picked → zero dispatches; the build stays CSS/SVG-only and your report says so. A prose reply ("skip material, add motion-studio instead") is just as valid — apply the edits to the roster and continue without re-asking. Approval covers THIS build pass only; a later "regenerate" ask re-fires the gate.
+
+**What this gate does NOT change:** the per-family hard rules below still decide the proposal content and the dispatch order; orchestrator manifests still self-gate; one-dispatch-per-family still holds; Step-8 QA still runs. The gate adds exactly one thing — the user sees the plan, with reasoning, and edits it BEFORE the first Task call fires.
 
 ## Image creation: dispatch visual-orchestrator FIRST, narrate after (v3.2 hard rule)
 
-When the user's message mentions ANY visual content — an image, illustration, mascot, character, photo, icon, vector mark, logo, shader, particle effect, 3D scene, lottie animation, or video — your **FIRST action is a Task call to `visual-orchestrator`**. Not your second action. Not after asking. Not after offering options. Not after planning. The Task call IS the start of your response.
+When the user's message mentions ANY visual content — an image, illustration, mascot, character, photo, icon, vector mark, logo, shader, particle effect, 3D scene, lottie animation, or video — your **FIRST action is a Task call to `visual-orchestrator`**. Not your second action. Not after offering style options. Not after planning prose. The Task call IS the start of your response. (One exception, and only one: the § "Orchestrator plan gate" above — if the roster hasn't been approved yet this turn-chain, the gate card comes first; once approved, this rule applies verbatim.)
 
 ```
 Task(subagent_type: "visual-orchestrator",

@@ -11566,6 +11566,20 @@ function parseQuestionForms(text) {
         if (!ovM) continue;
         const pM   = new RegExp(`preview\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
         const gM   = new RegExp(`group\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
+        // v2.3 — `checked` (bare or ="true") pre-ticks the option in
+        // multi-select mode, so the agent can emit a recommended-by-default
+        // proposal (e.g. the orchestrator-plan gate) the user edits + Sends.
+        // Tokenise the attr string (name or name="value") so the literal word
+        // "checked" inside another attribute's quoted value can't false-match.
+        let checked = false;
+        const attrTokRe = /([a-zA-Z][\w-]*)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+        let at;
+        while ((at = attrTokRe.exec(oattrs)) !== null) {
+          if (at[1].toLowerCase() !== "checked") continue;
+          const v = at[2] ? at[2].replace(/^["']|["']$/g, "").toLowerCase() : "";
+          checked = v === "" || v === "true" || v === "checked" || v === "1";
+          break;
+        }
         const lbl  = (om[2] || "").replace(/\s+/g, " ").trim();
         if (!lbl) continue;
         opts.push({
@@ -11573,6 +11587,7 @@ function parseQuestionForms(text) {
           label:   lbl,
           preview: pM ? pM[1] : null,  // optional: path or inline HTML
           group:   gM ? gM[1] : null,  // optional: required when groupBy is set
+          checked,                     // optional: pre-ticked in multi-select
         });
       }
       if (id && opts.length > 0) {
@@ -11894,6 +11909,10 @@ function DecisionOptionPreview({ preview, label }) {
 //   • grouped multi-pick (groupBy="..." + per-option group="..."): one row
 //     per group, radio within row, picksPerGroup enforced (default 1).
 // All modes can carry per-option `preview` (HTML path / inline / image).
+// v2.3 — multi-select options may carry a bare `checked` attribute: the card
+// renders with those pre-ticked (the agent's recommended proposal), the user
+// edits the set and hits Send. Used by the mandatory orchestrator-plan gate
+// (<decision-request id="orchestrator-plan" multiSelect="true">).
 // Documented in docs/features/onboarding-orchestration-v2-plan.md §v2.2.
 function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnded }) {
   const [busy, setBusy] = useState(false);
@@ -11908,7 +11927,13 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
 
   // Local pick state — single value or array of values depending on mode.
   // Initialise from answered so a reload-rehydrated card shows the prior pick.
-  const [localPicks, setLocalPicks] = useState(() => answeredArr);
+  // v2.3 — unanswered multi-select cards start with the agent's `checked`
+  // proposal pre-ticked (orchestrator-plan gate UX: edit the roster, Send).
+  const [localPicks, setLocalPicks] = useState(() => {
+    if (answeredArr.length > 0) return answeredArr;
+    if (isMulti) return decision.options.filter(o => o.checked).map(o => o.value);
+    return [];
+  });
 
   // Group options for grouped multi-pick render. When no groupBy, all options
   // sit in a single implicit group "_all".
