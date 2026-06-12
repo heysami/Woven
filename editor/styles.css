@@ -4470,9 +4470,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-space="true"] .workflow-node-iframe,
 .workflow-canvas-wrap[data-panning="true"] .workflow-node-iframe,
 .workflow-canvas-wrap[data-node-dragging="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-wb-dragging="true"] .workflow-node-iframe,
 .workflow-canvas-wrap[data-space="true"] .workflow-node[data-selected="true"] .workflow-node-iframe,
 .workflow-canvas-wrap[data-panning="true"] .workflow-node[data-selected="true"] .workflow-node-iframe,
-.workflow-canvas-wrap[data-node-dragging="true"] .workflow-node[data-selected="true"] .workflow-node-iframe {
+.workflow-canvas-wrap[data-node-dragging="true"] .workflow-node[data-selected="true"] .workflow-node-iframe,
+.workflow-canvas-wrap[data-wb-dragging="true"] .workflow-node[data-selected="true"] .workflow-node-iframe {
   pointer-events: none !important;
 }
 /* Selected-state outline — subtle accent ring so the user can see which
@@ -6105,12 +6107,23 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    selection effect clears + re-flags data-selected on every re-render,
    which would restart a transition from 0 each time and pin the label
    invisible while the canvas is busy re-rendering. */
-.workflow-node .workflow-port-label {
+.workflow-node .workflow-port-label,
+.workflow-node-section .workflow-port-label {
   opacity: 0;
 }
 .workflow-node[data-selected="true"] .workflow-port-label,
+.workflow-node-section[data-selected="true"] .workflow-port-label,
 .workflow-port-zone:hover .workflow-port-label {
   opacity: 1;
+}
+
+/* v3.8 — Section out-port ("contents"). The section root is pointer-events:
+   none (clicks pass through to contained nodes); the port dot relies on
+   .workflow-port-dot's own pointer-events: auto. Keep the zone narrow — a
+   50%-wide zone over a big section frame is a huge crosshair-cursor region
+   even though it doesn't catch clicks. */
+.workflow-node-section .workflow-port-zone-out {
+  width: 24px;
 }
 .workflow-proto-port:hover .workflow-port-label {
   background: var(--accent-soft);

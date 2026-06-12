@@ -21663,21 +21663,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (el) el.setAttribute("data-selected", "true");
   }, [selectedNodeId]);
 
-  // Esc deselects every node. Skipped when the focus is inside an editable
-  // element (textarea/input/contenteditable) so the user can press Esc to
-  // leave a field without also wiping the selection.
+  // Esc deselects every node (and any build-mode whiteboard selection).
+  // Skipped when the focus is inside an editable element (textarea/input/
+  // contenteditable) so the user can press Esc to leave a field without
+  // also wiping the selection. Whiteboard MODE has its own Esc ladder.
   useEffect(() => {
-    if (selectedNodeIds.size === 0) return;
+    if (selectedNodeIds.size === 0 && selectedWbIds.size === 0) return;
+    if (wbMode) return;  // the wb keydown effect owns Esc in whiteboard mode
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       const t = e.target;
       const tag = t && t.tagName ? t.tagName.toUpperCase() : "";
       if (tag === "INPUT" || tag === "TEXTAREA" || (t && t.isContentEditable)) return;
       setSelectedNodeIds(new Set());
+      setSelectedWbIds(new Set());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedNodeIds]);
+  }, [selectedNodeIds, selectedWbIds, wbMode]);
 
   // Marquee selection state. `marquee` holds the in-progress rect in WORLD
   // coordinates (so pan/zoom can compose with it cleanly when rendering).
@@ -22166,6 +22169,51 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setWbTool("select");
   }, []);
 
+  // Select-tool hit handling — shift-toggle / keep-group / replace, then a
+  // window-listener drag that moves the whole selected set. Shared by the
+  // whiteboard-mode select tool AND the build-mode direct grab (wb items
+  // stay selectable + movable without entering whiteboard mode).
+  const wbSelectPointerDown = useCallback((e, hitId) => {
+    const zoomNow = () => Math.max(zoomRef.current, 0.1);
+    if (e.shiftKey) {
+      setSelectedWbIds(prev => {
+        const next = new Set(prev);
+        if (next.has(hitId)) next.delete(hitId); else next.add(hitId);
+        return next;
+      });
+      e.preventDefault();
+      return;
+    }
+    // Fresh click replaces selection; click-on-selected keeps the group.
+    let moveIds;
+    if (selectedWbIdsRef.current.has(hitId)) {
+      moveIds = new Set(selectedWbIdsRef.current);
+    } else {
+      moveIds = new Set([hitId]);
+      setSelectedWbIds(moveIds);
+    }
+    e.preventDefault();
+    // Drag-to-move for the whole set.
+    let lastX = e.clientX, lastY = e.clientY, moved = false;
+    const onMove = (ev) => {
+      const dx = (ev.clientX - lastX) / zoomNow();
+      const dy = (ev.clientY - lastY) / zoomNow();
+      lastX = ev.clientX; lastY = ev.clientY;
+      if (dx === 0 && dy === 0) return;
+      if (!moved) { moved = true; setWbDragging(true); }
+      shiftWbItems(moveIds, dx, dy);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      wbCancelGestureRef.current = null;
+      setWbDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    wbCancelGestureRef.current = onUp;
+  }, [shiftWbItems]);
+
   const wbPointerDown = useCallback((e) => {
     const tool = wbToolRef.current;
     const wp = screenToWorld(e.clientX, e.clientY);
@@ -22186,43 +22234,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         e.preventDefault();
         return;
       }
-      if (e.shiftKey) {
-        setSelectedWbIds(prev => {
-          const next = new Set(prev);
-          if (next.has(hitId)) next.delete(hitId); else next.add(hitId);
-          return next;
-        });
-        e.preventDefault();
-        return;
-      }
-      // Fresh click replaces selection; click-on-selected keeps the group.
-      let moveIds;
-      if (selectedWbIdsRef.current.has(hitId)) {
-        moveIds = new Set(selectedWbIdsRef.current);
-      } else {
-        moveIds = new Set([hitId]);
-        setSelectedWbIds(moveIds);
-      }
-      e.preventDefault();
-      // Drag-to-move for the whole set.
-      let lastX = e.clientX, lastY = e.clientY, moved = false;
-      const onMove = (ev) => {
-        const dx = (ev.clientX - lastX) / zoomNow();
-        const dy = (ev.clientY - lastY) / zoomNow();
-        lastX = ev.clientX; lastY = ev.clientY;
-        if (dx === 0 && dy === 0) return;
-        if (!moved) { moved = true; setWbDragging(true); }
-        shiftWbItems(moveIds, dx, dy);
-      };
-      const onUp = () => {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-        wbCancelGestureRef.current = null;
-        setWbDragging(false);
-      };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-      wbCancelGestureRef.current = onUp;
+      wbSelectPointerDown(e, hitId);
       return;
     }
 
@@ -22352,7 +22364,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       };
       return;
     }
-  }, [screenToWorld, shiftWbItems, addWbItem, wbToolColor, wbAfterCommit]);
+  }, [screenToWorld, shiftWbItems, addWbItem, wbToolColor, wbAfterCommit, wbSelectPointerDown]);
   const wbPointerDownRef = useRef(wbPointerDown); wbPointerDownRef.current = wbPointerDown;
 
   // Resize / endpoint handles (bound through the early-declared ref so the
@@ -22848,7 +22860,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       t.closest(".chat-drawer, .workflow-empty-composer"));
 
     const onCopy = (e) => {
-      if (!wbModeRef.current) return;
+      // wb items are selectable in both modes — copy follows the selection,
+      // not the mode. With no wb selection this no-ops and the node Cmd+C
+      // keydown path proceeds as before.
+      if (!wbModeRef.current && !selectedWbIdsRef.current.size) return;
       if (isEditingTarget(e.target) || ownsItsPaste(e.target)) return;
       const sel = selectedWbIdsRef.current;
       if (!sel.size || !e.clipboardData) return;
@@ -22862,7 +22877,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       e.preventDefault();
     };
     const onCut = (e) => {
-      if (!wbModeRef.current) return;
+      if (!wbModeRef.current && !selectedWbIdsRef.current.size) return;
       if (isEditingTarget(e.target) || ownsItsPaste(e.target)) return;
       const sel = selectedWbIdsRef.current;
       if (!sel.size) return;
@@ -22874,10 +22889,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const cd = e.clipboardData;
       if (!cd) return;
       const cur = lastCanvasCursorRef.current || { x: 200, y: 200 };
-      // ① Internal wb payload — whiteboard mode only (wb content pastes
-      // where it can be edited).
+      // ① Internal wb payload — both modes (wb items are selectable +
+      // movable in build mode too, so pasting them there is coherent).
       const rawWb = cd.getData("application/x-th-wb");
-      if (rawWb && wbModeRef.current) {
+      if (rawWb) {
         try {
           const parsed = JSON.parse(rawWb);
           if (pasteWbClipboardAt(parsed.items, cur.x, cur.y) > 0) {
@@ -25364,22 +25379,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const onKey = (e) => {
       if (isEditingTarget(e.target)) return;
       const cmd = e.metaKey || e.ctrlKey;
-      // ── Whiteboard mode — wb selection owns Delete + Cmd+D; the node
-      // branches below never fire. Cmd+C/V ride the native copy/paste
-      // events (see the wb clipboard listeners), so no Cmd+C/V here —
-      // crucially we must NOT preventDefault Cmd+V, or the browser never
-      // emits the paste event the wb handler listens for.
-      if (wbModeRef.current) {
+      // ── Whiteboard selection owns Delete + Cmd+D whenever it's non-empty
+      // (wb items are selectable in BOTH modes; node + wb selections are
+      // mutually exclusive so this never shadows a node operation). Cmd+C/V
+      // ride the native copy/paste events (see the wb clipboard listeners),
+      // so no Cmd+C/V here — crucially we must NOT preventDefault Cmd+V, or
+      // the browser never emits the paste event the wb handler listens for.
+      if (wbModeRef.current || selectedWbIdsRef.current.size > 0) {
+        let handled = false;
         if (cmd && (e.key === "d" || e.key === "D")) {
           const n = duplicateSelectedWbItems();
-          if (n > 0) e.preventDefault();
+          if (n > 0) { e.preventDefault(); handled = true; }
         } else if (e.key === "Delete" || e.key === "Backspace") {
           if (selectedWbIdsRef.current.size > 0) {
             removeWbItems(selectedWbIdsRef.current);
             e.preventDefault();
+            handled = true;
           }
         }
-        return;
+        // Whiteboard MODE suppresses the node branches entirely; in build
+        // mode unhandled keys fall through (e.g. Cmd+V of a copied node
+        // while a sticky happens to be selected).
+        if (wbModeRef.current || handled) return;
       }
       if (cmd && (e.key === "c" || e.key === "C")) {
         const n = copySelectedNodes();
@@ -30135,6 +30156,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             if (nodeEl) {
               const id = nodeEl.getAttribute("data-node-id");
               if (id && !selectedNodeIds.has(id)) selectNodeId(id);
+            } else {
+              // Build mode, no node under the click → wb items are still
+              // right-clickable (they're selectable in both modes).
+              const wbHitId = wbHitTest(wbItems, worldX, worldY, zoom);
+              if (wbHitId) {
+                if (!selectedWbIds.has(wbHitId)) setSelectedWbIds(new Set([wbHitId]));
+                if (selectedNodeIds.size) setSelectedNodeIds(new Set());
+                setCtxMenu({ vpX: e.clientX, vpY: e.clientY, worldX, worldY, onNode: false, wb: true });
+                return;
+              }
             }
             setCtxMenu({
               vpX: e.clientX,
@@ -30160,6 +30191,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             //      (alt / middle-click / space) fall through to the
             //      useEndlessCanvas pan handler instead.
             if (!e.target || !e.target.closest) return;
+            // Whiteboard resize/endpoint handles own their events in BOTH
+            // modes (they're visible whenever a wb item is selected).
+            if (e.target.closest(".workflow-wb-handle")) return;
             // ── Whiteboard mode — route to the active wb tool and NEVER run
             // the node selection/marquee logic. Pan still wins for space /
             // alt / middle / meta exactly like the node-mode rule below.
@@ -30219,6 +30253,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // downstream calls (node.onSelect, startNodeDrag) would
               // otherwise re-collapse the multi-set.
               armSelectSuppression();
+              // Node + whiteboard selections are mutually exclusive so
+              // Delete / Cmd+D are always unambiguous.
+              if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
               return;
             }
             // Empty-canvas mousedown. Pan still wins for space/alt/middle —
@@ -30235,6 +30272,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               ".workflow-empty-composer, input, textarea, select, [contenteditable=\"true\"], button"
             )) return;
             const wp = screenToWorld(e.clientX, e.clientY);
+            // Build-mode whiteboard grab — wb items stay selectable +
+            // movable without entering whiteboard mode. Nodes keep
+            // priority (the [data-node-id] branch above already returned),
+            // so this only fires on canvas that has no node under it.
+            // Geometric hit (the wb layer is pointer-events:none in build
+            // mode, so DOM targets can't tell us).
+            const wbHitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom);
+            if (wbHitId) {
+              if (selectedNodeIds.size) setSelectedNodeIds(new Set());
+              wbSelectPointerDown(e, wbHitId);
+              return;
+            }
+            if (!e.shiftKey && selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
             // Stash starting coords in WORLD space. mousemove will compute
             // the rect; mouseup will intersect with node bounds.
             setMarquee({
@@ -31091,7 +31141,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               onItemDoubleClick=${(id) => { if (wbMode) setEditingWbId(id); }}
             />
-            ${wbMode && html`
+            ${(wbMode || selectedWbIds.size > 0) && html`
               <${WorkflowWbSelectionOverlay}
                 items=${wbItems}
                 selectedWbIds=${selectedWbIds}
