@@ -40,6 +40,8 @@ Materials flex. Paper bends, wrinkles, tears. Clay deforms on press. Fabric drap
 
 - **Translucent (vellum, frosted glass, rice paper, tracing paper):** light passes through but is scattered. CSS: `backdrop-filter: blur()`. The substrate beneath MUST be saturated/photographic — translucent material over flat white reads as fogged plastic.
 - **Refraction (real glass, lens, water droplet):** light bends. The 2025 Apple Liquid Glass material uses `<feDisplacementMap scale="20">` driven by a chromatic-noise turbulence source, applied ONLY to chrome shapes (not text — text refraction = unreadable).
+- **Structured refraction (reeded/fluted glass, smoked glass solids):** the refractor has GEOMETRY that decides what survives — vertical ribs slice the subject behind into displaced strips (reeded-fluted-glass), a dark solid smears typography through its body (smoked-obsidian-glass). Hero-register: WebGL transmission through real surface curvature (see `docs/research/prism-glass-reference/prism-hero.html`); DOM-register: per-rib `feDisplacementMap` sawtooth maps. Never refract live text — duplicate/rasterize first.
+- **Light AS material (volumetric-light-shaft, edge-lit-acrylic):** the luminance gradient in air or inside a translucent volume IS the surface. Shafts need a near-black field and one committed origin corner; edge-lit slabs must out-glow at the edges and SPILL onto neighbors — glow without spill floats in a different scene.
 - **Dichroic (some films, oil slicks):** colour depends on transmission angle. Layer two `conic-gradient` at different rotations with `mix-blend-mode: difference`.
 - **Layered ink (risograph, screenprint, watercolour):** each ink layer is partially transparent; overlap creates new hues via `mix-blend-mode: multiply`.
 
@@ -327,8 +329,8 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 
 | Prototype slug | Primary material(s) | Secondary material(s) |
 |---|---|---|
-| `style-glassmorphism` | frosted-glass, thin-glass-chip | aurora-mesh (substrate) |
-| `style-liquid-glass` | liquid-glass | aurora-mesh, oil-on-water (substrate) |
+| `style-glassmorphism` | frosted-glass, thin-glass-chip | aurora-mesh (substrate), reeded-fluted-glass (hero panel) |
+| `style-liquid-glass` | liquid-glass, reeded-fluted-glass | aurora-mesh, oil-on-water (substrate) |
 | `style-claymorphism` | matte-clay | aurora-mesh (background) |
 | `style-neumorphism` | soft-ui-foam | (single-material genre) |
 | `style-holographic` | holographic-foil, oil-on-water | dust-scratches |
@@ -343,7 +345,8 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `style-doodle` | uncoated-paper, ink-bleed-on-paper, pencil-graphite | watercolor-wash |
 | `style-cream-humanist` | uncoated-paper, vellum-translucency | foxing-stain |
 | `style-restrained-hairline` | (no material — restraint is the brief) | (single subtle paper grain at <2%) |
-| `style-oversized-neo-grotesque` | (no material) | film-grain-tri-x (optional) |
+| `style-oversized-neo-grotesque` | (no material on type) | film-grain-tri-x (optional), smoked-obsidian-glass (hero object OVER the type) |
+| `style-silk-chrome-flow` | liquid-chrome-silk, filament-strand-ribbon | (dark substrate mandatory) |
 | `style-bold-display` | aurora-mesh (optional) | film-grain-portra-400 (optional) |
 | `style-dense-mono-dark` | crt-phosphor (subtle), ascii-art-surface | (mostly material-less) |
 | `style-flat-design` | (no material — flat is the brief) | (anti-pattern: don't apply material) |
@@ -364,8 +367,8 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `aesthetic-y2k-myspace` | photocopy-xerox, polaroid-instant, dust-scratches | torn-edge |
 | `aesthetic-y2k-memphis-loud` | coated-glossy-paper, halftone-cmyk | (single) |
 | `aesthetic-vaporwave` | marble, vhs-distortion, polaroid-instant, film-grain-cinestill-800t | dust-scratches |
-| `aesthetic-cyberpunk` | crt-phosphor, vhs-distortion, film-grain-cinestill-800t | chrome-mirror |
-| `aesthetic-cassette-futurism` | brushed-aluminum, crt-phosphor, vhs-distortion | film-grain-tri-x |
+| `aesthetic-cyberpunk` | anodized-chainmail (full-bleed substrate), crt-phosphor, vhs-distortion, film-grain-cinestill-800t | chrome-mirror |
+| `aesthetic-cassette-futurism` | brushed-aluminum, crt-phosphor, vhs-distortion | film-grain-tri-x, edge-lit-acrylic (glowing hardware) |
 | `aesthetic-atompunk` | brushed-aluminum, crt-phosphor | (Frutiger-Aero-era plastics) |
 | `aesthetic-dieselpunk` | brushed-aluminum, weathered-leather, copper-patina | concrete |
 | `aesthetic-steampunk` | walnut-grain, copper-patina, gold-leaf, weathered-leather, parchment | brushed-aluminum |
@@ -393,12 +396,15 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `aesthetic-de-stijl` | (no material — flat) | (anti-pattern) |
 | `aesthetic-swiss-modernist` | (no material) | (single subtle uncoated paper at most) |
 | `aesthetic-defi-cosmic` | holographic-foil, gold-leaf, chrome-mirror, marble | aurora-mesh |
-| `aesthetic-depin-hardware` | brushed-aluminum, concrete | crt-phosphor |
+| `aesthetic-depin-hardware` | brushed-aluminum, edge-lit-acrylic, concrete | crt-phosphor |
 | `aesthetic-crypto-degen` | chrome-mirror, holographic-foil | crt-phosphor |
 | `aesthetic-rgb-gamer` | crt-phosphor, holographic-foil | (single) |
 | `aesthetic-cluttercore` | (every analog material in the library) | (intentional pile) |
 | `aesthetic-maximalism` | (every material — considered abundance) | (curated pile) |
-| `aesthetic-urbling` | chrome-mirror, gold-leaf, chrome-on-velvet | holographic-foil |
+| `aesthetic-urbling` | chrome-mirror, gold-leaf, chrome-on-velvet, chrome-extruded-type (masthead) | holographic-foil |
+| `aesthetic-luxury-cinematic-dark` | volumetric-light-shaft, chrome-extruded-type (one headline), smoked-obsidian-glass | film-grain-tri-x |
+| `aesthetic-sculptural-minimal` | volumetric-light-shaft (dark variant) | (white variant: no material — the plinth is the brief) |
+| `aesthetic-monochrome-pop-poster` | smoked-obsidian-glass (object over type), reeded-fluted-glass | film grain at 3–5% |
 | `aesthetic-wacky-pomo` | glossy-plastic-aqua, halftone-cmyk | (Nickelodeon plastics) |
 | `aesthetic-pixel-*` | pixel-bitmap, crt-phosphor, dithered-1bit | (genre-locked) |
 | `aesthetic-pc-98` | pixel-bitmap, crt-phosphor | (single) |
@@ -408,10 +414,10 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `recipe-editorial-magazine` | uncoated-paper, coated-glossy-paper, halftone-cmyk, film-grain-portra-400 | letterpress-emboss, foxing-stain |
 | `recipe-newspaper-of-record` | uncoated-paper, halftone-cmyk | (newsprint substrate) |
 | `recipe-aurora-marketing` | aurora-mesh | (single) |
-| `recipe-restrained-ai-marketing` | (no material — restraint) | (subtle paper grain at most) |
+| `recipe-restrained-ai-marketing` | (no material — restraint) | (subtle paper grain at most; reeded-fluted-glass or filament-strand-ribbon allowed as the ONE hero gesture) |
 | `recipe-scientific-infra-marketing` | (no material) | (subtle aurora-mesh) |
 | `recipe-bento-marketing` | (no material baseline) | aurora-mesh in hero |
-| `recipe-ai-foundry-dark` | aurora-mesh (dark), crt-phosphor (subtle) | (single) |
+| `recipe-ai-foundry-dark` | aurora-mesh (dark), crt-phosphor (subtle) | anodized-chainmail / filament-strand-ribbon / edge-lit-acrylic / volumetric-light-shaft (ONE hero substrate, pick one) |
 | `recipe-devtools-marketing` | aurora-mesh | (single) |
 | `recipe-bloomberg-dashboard` | (no material — dense) | (anti-pattern) |
 | `recipe-linear-product-ui` | (no material — product) | aurora-mesh in marketing hero only |

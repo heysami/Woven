@@ -178,6 +178,16 @@ each entry's `pairsPrototypes`. How to read it against a storyboard:
 - One **composition** technique (quiet-zone-headline or
   subject-offset-ui-counterweight) applies to EVERY scene regardless of the
   motion technique picked — composition is a layer, not an alternative.
+- **Code-rendered techniques (no generated asset)**: four entries are
+  implemented in code rather than commissioned as video/raster —
+  `stylize-shader-pass` (live dither/halftone/ASCII over media; the efecto
+  register — see `docs/research/efecto-effect-engine-study.md`),
+  `lens-magnifier-reveal` + `focus-pull-type` (camera-optics play on DOM
+  type), and `drag-physics-cluster` (grabbable 3D object swarm; WebGL).
+  These route to the shader / polish / hero-3d build paths, NOT to the
+  asset-generation pipeline; the §3 negative-keyword list does not apply.
+  stylize-shader-pass COMPOSES with media techniques: any video this
+  library generates can be run through the pass for print-process registers.
 
 ## 3. Universal negative-keyword list
 

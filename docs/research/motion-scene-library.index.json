@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "motion-scene",
   "sourceDir": "design-library/",
-  "totalEntries": 30,
+  "totalEntries": 34,
   "decisionTree": {
     "recipe-aurora-marketing": {
       "default": "ambient-loop-atmosphere",
@@ -47,6 +47,7 @@
       "default": "ambient-loop-atmosphere",
       "alternatives": [
         "background-swap-fixed-ui",
+        "drag-physics-cluster",
         "pointer-parallax-layers",
         "scroll-sequence-frames"
       ]
@@ -54,6 +55,7 @@
     "recipe-restrained-ai-marketing": {
       "default": "background-swap-fixed-ui",
       "alternatives": [
+        "drag-physics-cluster",
         "mouse-scrub-orbit",
         "pointer-magnetic-subject",
         "quiet-zone-headline",
@@ -66,6 +68,7 @@
       "default": "background-swap-fixed-ui",
       "alternatives": [
         "depth-drift-layers",
+        "drag-physics-cluster",
         "pointer-magnetic-subject",
         "scene-zoom-through"
       ]
@@ -134,8 +137,9 @@
       ]
     },
     "recipe-bento-marketing": {
-      "default": "frame-hold-ui-sync",
+      "default": "drag-physics-cluster",
       "alternatives": [
+        "frame-hold-ui-sync",
         "mouse-scrub-orbit",
         "scene-stepper-wipe",
         "scroll-entrance-video",
@@ -146,14 +150,47 @@
       ]
     },
     "recipe-devtools-marketing": {
-      "default": "frame-hold-ui-sync",
+      "default": "drag-physics-cluster",
       "alternatives": [
+        "frame-hold-ui-sync",
         "mouse-scrub-orbit",
         "scene-zoom-through",
         "scroll-entrance-video",
         "scroll-scrub-rotation",
         "scroll-sequence-frames"
       ]
+    },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "focus-pull-type",
+      "alternatives": [
+        "lens-magnifier-reveal"
+      ]
+    },
+    "style-oversized-neo-grotesque": {
+      "default": "focus-pull-type",
+      "alternatives": [
+        "hover-activate-loop",
+        "lens-magnifier-reveal",
+        "mouse-scrub-look",
+        "scene-stepper-wipe",
+        "scroll-pinned-transform",
+        "subject-offset-ui-counterweight",
+        "video-text-mask"
+      ]
+    },
+    "recipe-readcv": {
+      "default": "focus-pull-type",
+      "alternatives": []
+    },
+    "style-restrained-hairline": {
+      "default": "focus-pull-type",
+      "alternatives": [
+        "lens-magnifier-reveal"
+      ]
+    },
+    "aesthetic-sculptural-minimal": {
+      "default": "focus-pull-type",
+      "alternatives": []
     },
     "recipe-ai-foundry-dark": {
       "default": "frame-hold-ui-sync",
@@ -170,6 +207,7 @@
       "default": "hover-activate-loop",
       "alternatives": [
         "idle-character-loop",
+        "lens-magnifier-reveal",
         "mouse-scrub-look",
         "scene-stepper-wipe",
         "scroll-exit-handoff",
@@ -182,16 +220,6 @@
     "recipe-brutalist-web": {
       "default": "hover-activate-loop",
       "alternatives": [
-        "video-text-mask"
-      ]
-    },
-    "style-oversized-neo-grotesque": {
-      "default": "hover-activate-loop",
-      "alternatives": [
-        "mouse-scrub-look",
-        "scene-stepper-wipe",
-        "scroll-pinned-transform",
-        "subject-offset-ui-counterweight",
         "video-text-mask"
       ]
     },
@@ -222,6 +250,10 @@
         "scroll-scrub-journey",
         "scroll-speed-ramp"
       ]
+    },
+    "aesthetic-anti-design": {
+      "default": "lens-magnifier-reveal",
+      "alternatives": []
     },
     "aesthetic-dieselpunk": {
       "default": "letterbox-stage",
@@ -261,6 +293,30 @@
         "slow-push-zoom",
         "video-text-mask"
       ]
+    },
+    "style-terminal-mono": {
+      "default": "stylize-shader-pass",
+      "alternatives": []
+    },
+    "style-pixel-bitmap": {
+      "default": "stylize-shader-pass",
+      "alternatives": []
+    },
+    "aesthetic-web-brutalism": {
+      "default": "stylize-shader-pass",
+      "alternatives": []
+    },
+    "style-brutalist-raw": {
+      "default": "stylize-shader-pass",
+      "alternatives": []
+    },
+    "aesthetic-corporate-grunge": {
+      "default": "stylize-shader-pass",
+      "alternatives": []
+    },
+    "style-pixel-dissolve": {
+      "default": "stylize-shader-pass",
+      "alternatives": []
     }
   },
   "entries": {
@@ -339,6 +395,44 @@
       ],
       "sourceFile": "design-library/motion-depth-drift-layers.md"
     },
+    "drag-physics-cluster": {
+      "name": "Drag physics cluster (grabbable floating object swarm)",
+      "category": "pointer-driven",
+      "subCategory": "webgl-physics",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A loose cluster of 8–30 identical 3D primitives — glass cubes, spheres,",
+      "notForUseWhen": "The hero must communicate a SPECIFIC product image (the toy abstracts it away), touch-scroll-critical mobile heroes (drag fights scroll), or pages with another physics/simulation surface already running.",
+      "pairsPrototypes": [
+        "recipe-restrained-ai-marketing",
+        "style-glassmorphism",
+        "recipe-bento-marketing",
+        "aesthetic-frutiger-aero",
+        "recipe-devtools-marketing"
+      ],
+      "sourceFile": "design-library/motion-drag-physics-cluster.md"
+    },
+    "focus-pull-type": {
+      "name": "Focus pull (rack-focus blur between sections / type planes)",
+      "category": "scroll-driven",
+      "subCategory": "dom",
+      "role": "editorial | transition",
+      "roleAffinity": [
+        "editorial | transition"
+      ],
+      "oneLine": "The camera language of rack focus translated to scroll: the section (or type",
+      "notForUseWhen": "Long-form reading surfaces (blur on prose you intend people to read is hostile), low-end-device audiences (filter: blur on large type is paint-expensive), or pages where every section must be skimmable at speed.",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-tech-editorial",
+        "style-oversized-neo-grotesque",
+        "recipe-readcv",
+        "style-restrained-hairline",
+        "aesthetic-sculptural-minimal"
+      ],
+      "sourceFile": "design-library/motion-focus-pull-type.md"
+    },
     "frame-hold-ui-sync": {
       "name": "Frame-hold UI sync (pause the film, play the interface)",
       "category": "composition",
@@ -393,6 +487,25 @@
         "aesthetic-cyberpunk"
       ],
       "sourceFile": "design-library/motion-idle-character-loop.md"
+    },
+    "lens-magnifier-reveal": {
+      "name": "Lens magnifier reveal (pointer-tracked circle of clarity)",
+      "category": "pointer-driven",
+      "subCategory": "dom-or-canvas",
+      "role": "hero | editorial",
+      "roleAffinity": [
+        "hero | editorial"
+      ],
+      "oneLine": "A circular lens rides the pointer across a deliberately degraded field —",
+      "notForUseWhen": "Touch-dominant audiences (no hover = no lens without a fallback budget), content that must be readable at all times (legal, pricing, forms), or pages already running a cursor-spotlight effect — two pointer-portals compete.",
+      "pairsPrototypes": [
+        "style-oversized-neo-grotesque",
+        "aesthetic-monochrome-tech-editorial",
+        "recipe-neo-grotesque-portfolio",
+        "style-restrained-hairline",
+        "aesthetic-anti-design"
+      ],
+      "sourceFile": "design-library/motion-lens-magnifier-reveal.md"
     },
     "letterbox-stage": {
       "name": "Letterbox stage (UI lives in the matte)",
@@ -787,6 +900,26 @@
         "aesthetic-dark-academia"
       ],
       "sourceFile": "design-library/motion-slow-push-zoom.md"
+    },
+    "stylize-shader-pass": {
+      "name": "Stylize shader pass (live dither / halftone / ASCII over media)",
+      "category": "shader-driven",
+      "subCategory": "post-process",
+      "role": "hero | texture",
+      "roleAffinity": [
+        "hero | texture"
+      ],
+      "oneLine": "A video or image is sampled as a texture and re-rendered every frame through a",
+      "notForUseWhen": "The media's fine detail IS the content (product close-ups, faces that must stay personable), the page already runs another fullscreen shader, or the register is luxe/minimal where lo-fi sampling reads as damage.",
+      "pairsPrototypes": [
+        "style-terminal-mono",
+        "style-pixel-bitmap",
+        "aesthetic-web-brutalism",
+        "style-brutalist-raw",
+        "aesthetic-corporate-grunge",
+        "style-pixel-dissolve"
+      ],
+      "sourceFile": "design-library/motion-stylize-shader-pass.md"
     },
     "subject-offset-ui-counterweight": {
       "name": "Subject offset, UI counterweight (thirds by generation)",

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reeded glass prism hero — reference implementation</title>
+<!--
+  REFERENCE IMPLEMENTATION — "true prism" / reeded liquid glass hero
+  (design-library/material-reeded-fluted-glass.md, study R2)
+
+  What makes this the "proper" version, vs the usual approximations:
+  1. REAL GEOMETRY — the panel is an actual fluted surface (half-cylinder
+     ribs as displaced vertices + computed normals), not a normal-map fake.
+     Transmission refracts through the true surface curvature, so each rib
+     slices the sphere behind it exactly the way physical reeded glass does.
+  2. PHYSICAL TRANSMISSION + DISPERSION — MeshPhysicalMaterial with
+     transmission:1, ior, thickness, and `dispersion` (three r163+), so the
+     spectral fringing lives at rib boundaries, where prisms actually put it.
+  3. STUDIO LIGHT DISCIPLINE — one env (RoomEnvironment), one key light,
+     ACES tone mapping. The monochrome scene rule from the study: field,
+     object, and light share one hue family.
+  4. DAMPED EVERYTHING — pointer drives a parallax camera with critically-
+     damped pursuit (cur += (t-cur)*k). Nothing snaps. The smoothness IS the
+     quality signal.
+  5. UI IN THE QUIET ZONE — headline + CTA are real DOM laid into the flat
+     left field; the canvas is full-bleed behind. Type never refracts.
+  6. BUDGET HYGIENE — DPR cap 2, paused off-tab, prefers-reduced-motion
+     freezes the drift but keeps the composition.
+-->
+<style>
+  :root {
+    --field:  #b6f09c;   /* mint field */
+    --field-2:#a8e88e;
+    --ink:    #0d2b12;   /* deep green ink */
+    --accent: #123c1a;
+  }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Inter", "SF Pro Display", system-ui, sans-serif;
+    background: var(--field);
+    color: var(--ink);
+    overflow: hidden;
+  }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; }
+
+  /* ── UI layer — the quiet zone ─────────────────────────────── */
+  .ui {
+    position: fixed; inset: 0;
+    display: grid;
+    grid-template-columns: minmax(320px, 42%) 1fr;
+    align-items: center;
+    padding: 0 6vw;
+    pointer-events: none;
+  }
+  .copy { pointer-events: auto; max-width: 30rem; }
+  .brand {
+    display: flex; align-items: center; gap: .5rem;
+    position: fixed; top: 2rem; left: 6vw;
+    font-weight: 650; font-size: .95rem; letter-spacing: .01em;
+  }
+  .brand .dot {
+    width: 1.05rem; height: 1.05rem; border-radius: 35%;
+    background: var(--ink);
+  }
+  h1 {
+    font-size: clamp(2.2rem, 4.6vw, 4rem);
+    line-height: 1.04; letter-spacing: -0.025em; font-weight: 640;
+    margin-bottom: 1.1rem;
+  }
+  .sub {
+    font-size: clamp(.95rem, 1.1vw, 1.05rem);
+    line-height: 1.5; opacity: .78; max-width: 26rem;
+    margin-bottom: 2rem;
+  }
+  .cta {
+    pointer-events: auto;
+    display: inline-flex; align-items: center; gap: .6rem;
+    background: var(--ink); color: var(--field);
+    border: 0; border-radius: 999px;
+    padding: .85rem 1.5rem;
+    font: inherit; font-size: .92rem; font-weight: 560;
+    cursor: pointer;
+    transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s;
+    box-shadow: 0 14px 34px -14px rgba(13,43,18,.5);
+  }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 20px 44px -16px rgba(13,43,18,.55); }
+  .cta .arrow {
+    width: 1.35rem; height: 1.35rem; border-radius: 50%;
+    background: var(--field); color: var(--ink);
+    display: grid; place-items: center; font-size: .8rem;
+  }
+
+  /* film grain — breaks gradient banding, ties render to page */
+  .grain {
+    position: fixed; inset: -50%;
+    pointer-events: none; z-index: 5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    animation: grain 8s steps(10) infinite;
+  }
+  @keyframes grain {
+    0%,100% { transform: translate(0,0) } 10% { transform: translate(-2%,-3%) }
+    20% { transform: translate(3%,1%) } 30% { transform: translate(-1%,3%) }
+    40% { transform: translate(2%,-2%) } 50% { transform: translate(-3%,1%) }
+    60% { transform: translate(1%,2%) } 70% { transform: translate(-2%,-1%) }
+    80% { transform: translate(3%,3%) } 90% { transform: translate(-1%,-2%) }
+  }
+  @media (prefers-reduced-motion: reduce) { .grain { animation: none; } }
+
+  @media (max-width: 760px) {
+    .ui { grid-template-columns: 1fr; align-items: end; padding-bottom: 14vh; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="brand"><span class="dot"></span> prism</div>
+<div class="ui">
+  <div class="copy">
+    <h1>Immerse yourself in the refracted elegance.</h1>
+    <p class="sub">Elevate your vision with 3D magic. Unlock a world of brilliance —
+    the sphere lives behind the glass, and the glass decides what you see.</p>
+    <button class="cta">Explore technology <span class="arrow">→</span></button>
+  </div>
+</div>
+<div class="grain"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const stage = document.getElementById('stage');
+
+/* ── renderer / scene / camera ─────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));        // DPR cap
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#b6f09c');                // the mint field
+
+const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.1, 50);
+camera.position.set(0, 0, 9);
+
+/* studio environment — chrome/glass need SOMETHING to refract/reflect */
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+/* one key light, top-left — §1.2 light-direction discipline */
+const key = new THREE.DirectionalLight('#ffffff', 1.6);
+key.position.set(-4, 6, 6);
+scene.add(key);
+scene.add(new THREE.AmbientLight('#cdf5bb', 0.5));
+
+/* ── the world behind the glass — monochrome scene discipline ──── */
+const world = new THREE.Group();                              // everything that gets sliced
+scene.add(world);
+
+/* hero sphere — glossy green, clearcoated like the reference */
+const sphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.5, 96, 96),
+  new THREE.MeshPhysicalMaterial({
+    color: '#1ec832', roughness: 0.18, metalness: 0,
+    clearcoat: 1, clearcoatRoughness: 0.12,
+  })
+);
+sphere.position.set(2.55, 0.1, -1.8);                         // centered behind the panel
+world.add(sphere);
+
+/* satellite chips — small floating accents, same hue family */
+const chipMat = new THREE.MeshPhysicalMaterial({
+  color: '#36e04e', roughness: 0.25, clearcoat: 0.8, clearcoatRoughness: 0.2,
+});
+const chips = [];
+for (const [x, y, z, r] of [[0.6, 1.9, -2.6, .18], [4.4, -1.5, -2.2, .26], [1.2, -2.0, -1.2, .13]]) {
+  const c = new THREE.Mesh(new THREE.SphereGeometry(r, 48, 48), chipMat);
+  c.position.set(x, y, z);
+  c.userData.home = c.position.clone();
+  chips.push(c); world.add(c);
+}
+
+/* ── the reeded glass panel — REAL fluted geometry ─────────────── */
+function reededPanelGeometry(w, h, ribs, depth, segsPerRib = 24) {
+  // front surface: columns of half-cylinders (the flutes), z = profile(x)
+  const segX = ribs * segsPerRib;
+  const geo = new THREE.PlaneGeometry(w, h, segX, 1);
+  const pos = geo.attributes.position;
+  const pitch = w / ribs;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + w / 2;                 // 0..w
+    const u = ((x % pitch) + pitch) % pitch;       // 0..pitch inside one rib
+    const t = (u / pitch) * 2 - 1;                 // -1..1 across the rib
+    const z = Math.sqrt(Math.max(0, 1 - t * t)) * depth;  // half-circle profile
+    pos.setZ(i, z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const RIBS = 14;
+const glass = new THREE.Mesh(
+  reededPanelGeometry(2.9, 5.8, RIBS, 0.2),   // height bleeds past the viewport — architectural
+  new THREE.MeshPhysicalMaterial({
+    transmission: 1,              // physical refraction of the scene behind
+    thickness: 1.1,               // refraction depth — the slicing strength
+    ior: 1.52,                    // crown glass
+    dispersion: 4.5,              // spectral fringing at rib boundaries (r163+)
+    roughness: 0.06,              // optically pure — frost kills the slicing
+    metalness: 0,
+    clearcoat: 1, clearcoatRoughness: 0.06,
+    color: '#eaffe2',             // barely-there tint, same hue family
+    side: THREE.FrontSide,
+  })
+);
+glass.position.set(2.55, 0, 0.4);                  // right third, in front of sphere
+scene.add(glass);
+// NOTE: no opaque backing/frame behind the panel — transmission samples the
+// scene behind it; anything opaque back there blacks the glass out.
+
+/* ── damped pointer choreography — nothing snaps ───────────────── */
+const target = { x: 0, y: 0 };
+const cur    = { x: 0, y: 0 };
+addEventListener('pointermove', (e) => {
+  target.x = (e.clientX / innerWidth)  * 2 - 1;
+  target.y = (e.clientY / innerHeight) * 2 - 1;
+}, { passive: true });
+
+let playing = true;
+document.addEventListener('visibilitychange', () => { playing = !document.hidden; });
+
+const clock = new THREE.Clock();
+function frame_() {
+  requestAnimationFrame(frame_);
+  if (!playing) return;
+  const t = clock.getElapsedTime();
+
+  // damped pursuit — ~0.06 ≈ 250ms settle at 60fps
+  cur.x += (target.x - cur.x) * 0.06;
+  cur.y += (target.y - cur.y) * 0.06;
+
+  // camera parallax: the visitor shifting their head, not the scene moving
+  camera.position.x = cur.x * 0.45;
+  camera.position.y = -cur.y * 0.3;
+  camera.lookAt(1.4, 0, -0.5);
+
+  if (!REDUCED) {
+    // the signature motion: the sphere DRIFTS so the ribs re-slice it
+    sphere.position.x = 2.55 + Math.sin(t * 0.21) * 0.5;
+    sphere.position.y = 0.1 + Math.sin(t * 0.34 + 1.7) * 0.22;
+    sphere.rotation.y = t * 0.1;
+    // chips idle-float, slower, phase-offset
+    chips.forEach((c, i) => {
+      c.position.y = c.userData.home.y + Math.sin(t * 0.4 + i * 2.1) * 0.12;
+    });
+  }
+  renderer.render(scene, camera);
+}
+frame_();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

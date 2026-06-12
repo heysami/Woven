@@ -2,8 +2,56 @@
   "version": "2.0",
   "library": "material",
   "sourceDir": "design-library/",
-  "totalEntries": 83,
+  "totalEntries": 90,
   "decisionTree": {
+    "aesthetic-cyberpunk": {
+      "default": "anodized-chainmail",
+      "alternatives": [
+        "ansi-art",
+        "barrel-pincushion-warp",
+        "chromatic-aberration-lens",
+        "chrome-mirror",
+        "crt-phosphor",
+        "datamosh-compression-smear",
+        "film-grain-cinestill-800t",
+        "jpeg-block-corruption",
+        "motion-blur-streak",
+        "nes-rom-corruption",
+        "oil-on-water",
+        "rgb-channel-split",
+        "schematic-pcb-trace",
+        "signal-interference",
+        "vhs-distortion",
+        "wireframe-3d-line"
+      ]
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "anodized-chainmail",
+      "alternatives": [
+        "atmosphere-rim-glow",
+        "edge-lit-acrylic",
+        "filament-strand-ribbon",
+        "liquid-chrome-silk",
+        "monospace-code-grid",
+        "volumetric-light-shaft"
+      ]
+    },
+    "aesthetic-crypto-degen": {
+      "default": "anodized-chainmail",
+      "alternatives": []
+    },
+    "style-dense-mono-dark": {
+      "default": "anodized-chainmail",
+      "alternatives": [
+        "edge-lit-acrylic",
+        "monospace-code-grid",
+        "signal-interference"
+      ]
+    },
+    "aesthetic-rgb-gamer": {
+      "default": "anodized-chainmail",
+      "alternatives": []
+    },
     "recipe-terminal-on-web": {
       "default": "ansi-art",
       "alternatives": [
@@ -23,32 +71,13 @@
         "wireframe-3d-line"
       ]
     },
-    "aesthetic-cyberpunk": {
-      "default": "ansi-art",
-      "alternatives": [
-        "barrel-pincushion-warp",
-        "chromatic-aberration-lens",
-        "chrome-mirror",
-        "crt-phosphor",
-        "datamosh-compression-smear",
-        "film-grain-cinestill-800t",
-        "jpeg-block-corruption",
-        "motion-blur-streak",
-        "nes-rom-corruption",
-        "oil-on-water",
-        "rgb-channel-split",
-        "schematic-pcb-trace",
-        "signal-interference",
-        "vhs-distortion",
-        "wireframe-3d-line"
-      ]
-    },
     "aesthetic-cassette-futurism": {
       "default": "ansi-art",
       "alternatives": [
         "brushed-aluminum",
         "concrete",
         "crt-phosphor",
+        "edge-lit-acrylic",
         "film-grain-cinestill-800t",
         "iso-line-drawing",
         "motion-blur-streak",
@@ -100,14 +129,9 @@
       "default": "atmosphere-rim-glow",
       "alternatives": [
         "dispersion-prism-glass",
-        "liquid-chrome-silk"
-      ]
-    },
-    "recipe-ai-foundry-dark": {
-      "default": "atmosphere-rim-glow",
-      "alternatives": [
+        "filament-strand-ribbon",
         "liquid-chrome-silk",
-        "monospace-code-grid"
+        "volumetric-light-shaft"
       ]
     },
     "aesthetic-defi-cosmic": {
@@ -116,6 +140,7 @@
         "bioluminescent-membrane",
         "chrome-on-velvet",
         "dispersion-prism-glass",
+        "filament-strand-ribbon",
         "gold-leaf",
         "marble",
         "pebbled-leather",
@@ -155,6 +180,7 @@
       "default": "aurora-mesh",
       "alternatives": [
         "chromatic-aberration-lens",
+        "edge-lit-acrylic",
         "frosted-glass",
         "liquid-glass"
       ]
@@ -183,6 +209,7 @@
     "aesthetic-y2k-futurism": {
       "default": "barrel-pincushion-warp",
       "alternatives": [
+        "chrome-extruded-type",
         "chrome-mirror",
         "chrome-on-velvet",
         "datamosh-compression-smear",
@@ -309,6 +336,7 @@
         "smooth-leather",
         "uncoated-paper",
         "vellum-translucency",
+        "volumetric-light-shaft",
         "weathered-leather",
         "wood-grain-walnut"
       ]
@@ -341,12 +369,35 @@
     "recipe-restrained-ai-marketing": {
       "default": "chromatic-aberration-lens",
       "alternatives": [
-        "monospace-code-grid"
+        "filament-strand-ribbon",
+        "monospace-code-grid",
+        "reeded-fluted-glass"
       ]
     },
-    "aesthetic-frutiger-chromecore": {
-      "default": "chrome-mirror",
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "chrome-extruded-type",
       "alternatives": [
+        "liquid-chrome-silk",
+        "smoked-obsidian-glass",
+        "volumetric-light-shaft"
+      ]
+    },
+    "aesthetic-urbling": {
+      "default": "chrome-extruded-type",
+      "alternatives": [
+        "chrome-mirror",
+        "chrome-on-velvet",
+        "gold-leaf"
+      ]
+    },
+    "style-bold-display": {
+      "default": "chrome-extruded-type",
+      "alternatives": []
+    },
+    "aesthetic-frutiger-chromecore": {
+      "default": "chrome-extruded-type",
+      "alternatives": [
+        "chrome-mirror",
         "frosted-glass",
         "glossy-plastic-aqua",
         "holographic-foil"
@@ -361,13 +412,6 @@
         "holographic-foil",
         "holographic-paper",
         "oil-on-water"
-      ]
-    },
-    "aesthetic-urbling": {
-      "default": "chrome-mirror",
-      "alternatives": [
-        "chrome-on-velvet",
-        "gold-leaf"
       ]
     },
     "recipe-editorial-magazine": {
@@ -483,6 +527,7 @@
         "frosted-glass",
         "holographic-foil",
         "liquid-glass",
+        "reeded-fluted-glass",
         "thin-glass-chip"
       ]
     },
@@ -492,6 +537,7 @@
         "displacement-ripple",
         "frosted-glass",
         "liquid-glass",
+        "reeded-fluted-glass",
         "thin-glass-chip"
       ]
     },
@@ -501,6 +547,10 @@
         "pixel-bitmap"
       ]
     },
+    "aesthetic-depin-hardware": {
+      "default": "edge-lit-acrylic",
+      "alternatives": []
+    },
     "style-skeuomorphism (poker felt": {
       "default": "felt",
       "alternatives": []
@@ -508,6 +558,12 @@
     "billiards)": {
       "default": "felt",
       "alternatives": []
+    },
+    "style-silk-chrome-flow": {
+      "default": "filament-strand-ribbon",
+      "alternatives": [
+        "liquid-chrome-silk"
+      ]
     },
     "style-serif-warm-paper": {
       "default": "foxing-stain",
@@ -590,14 +646,6 @@
       "default": "linen-weave",
       "alternatives": []
     },
-    "style-silk-chrome-flow": {
-      "default": "liquid-chrome-silk",
-      "alternatives": []
-    },
-    "aesthetic-luxury-cinematic-dark": {
-      "default": "liquid-chrome-silk",
-      "alternatives": []
-    },
     "aesthetic-holographic": {
       "default": "liquid-glass",
       "alternatives": []
@@ -635,12 +683,6 @@
       "default": "monospace-code-grid",
       "alternatives": [
         "schematic-pcb-trace"
-      ]
-    },
-    "style-dense-mono-dark": {
-      "default": "monospace-code-grid",
-      "alternatives": [
-        "signal-interference"
       ]
     },
     "aesthetic-pixel-nes-mario": {
@@ -686,8 +728,26 @@
       "default": "polaroid-instant",
       "alternatives": []
     },
+    "aesthetic-pastel-pop-fmcg": {
+      "default": "reeded-fluted-glass",
+      "alternatives": []
+    },
+    "aesthetic-monochrome-pop-poster": {
+      "default": "reeded-fluted-glass",
+      "alternatives": [
+        "smoked-obsidian-glass"
+      ]
+    },
     "aesthetic-constructivism": {
       "default": "silkscreen",
+      "alternatives": []
+    },
+    "style-oversized-neo-grotesque": {
+      "default": "smoked-obsidian-glass",
+      "alternatives": []
+    },
+    "recipe-neo-grotesque-portfolio": {
+      "default": "smoked-obsidian-glass",
       "alternatives": []
     },
     "style-neumorphism": {
@@ -714,12 +774,31 @@
       "default": "volumetric-cloud",
       "alternatives": []
     },
+    "aesthetic-sculptural-minimal": {
+      "default": "volumetric-light-shaft",
+      "alternatives": []
+    },
     "style-skeuomorphism (library-as-wood-shelf)": {
       "default": "wood-grain-walnut",
       "alternatives": []
     }
   },
   "entries": {
+    "anodized-chainmail": {
+      "name": "Anodized chainmail (instanced interlocked metal mesh)",
+      "category": "metal",
+      "family": "digital",
+      "surfaceFinish": "metallic-iridescent",
+      "oneLine": "A full-bleed substrate woven from interlocked chrome rings with an anodized",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "recipe-ai-foundry-dark",
+        "aesthetic-crypto-degen",
+        "style-dense-mono-dark",
+        "aesthetic-rgb-gamer"
+      ],
+      "sourceFile": "design-library/material-anodized-chainmail.md"
+    },
     "ansi-art": {
       "name": "ANSI Art (16-color extended-box character art)",
       "category": "digital-effect",
@@ -876,6 +955,21 @@
         "recipe-restrained-ai-marketing"
       ],
       "sourceFile": "design-library/material-chromatic-aberration-lens.md"
+    },
+    "chrome-extruded-type": {
+      "name": "Chrome extruded type (typography as mirrored object)",
+      "category": "metal-typography",
+      "family": "digital",
+      "surfaceFinish": "metallic",
+      "oneLine": "Display typography built as a 3D object: extruded letterforms with mirror-chrome",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-urbling",
+        "style-bold-display",
+        "aesthetic-y2k-futurism",
+        "aesthetic-frutiger-chromecore"
+      ],
+      "sourceFile": "design-library/material-chrome-extruded-type.md"
     },
     "chrome-mirror": {
       "name": "Chrome Mirror (Y2K chromecore / cyber-sigil)",
@@ -1064,6 +1158,21 @@
       ],
       "sourceFile": "design-library/material-dust-scratches.md"
     },
+    "edge-lit-acrylic": {
+      "name": "Edge-lit acrylic (frosted slab glowing from within)",
+      "category": "glass-emissive",
+      "family": "digital",
+      "surfaceFinish": "satin-frosted",
+      "oneLine": "A frosted acrylic card or slab that carries light INSIDE its volume — edges",
+      "pairsPrototypes": [
+        "aesthetic-depin-hardware",
+        "aesthetic-cassette-futurism",
+        "recipe-ai-foundry-dark",
+        "style-dense-mono-dark",
+        "aesthetic-frutiger-dark-aero"
+      ],
+      "sourceFile": "design-library/material-edge-lit-acrylic.md"
+    },
     "felt": {
       "name": "Felt (matted wool, fuzzy)",
       "category": "fabric",
@@ -1077,6 +1186,21 @@
         "aesthetic-cottagegoth"
       ],
       "sourceFile": "design-library/material-felt.md"
+    },
+    "filament-strand-ribbon": {
+      "name": "Filament strand ribbon (fiber-optic hairlines in flow)",
+      "category": "emissive-fiber",
+      "family": "digital",
+      "surfaceFinish": "glossy",
+      "oneLine": "Hundreds-to-thousands of 1px luminous strands traveling together as one silk",
+      "pairsPrototypes": [
+        "style-silk-chrome-flow",
+        "aesthetic-cosmic-horizon",
+        "recipe-restrained-ai-marketing",
+        "aesthetic-defi-cosmic",
+        "recipe-ai-foundry-dark"
+      ],
+      "sourceFile": "design-library/material-filament-strand-ribbon.md"
     },
     "film-grain-cinestill-800t": {
       "name": "Film Grain — CineStill 800T (tungsten, halation, neon glow)",
@@ -1619,6 +1743,21 @@
       ],
       "sourceFile": "design-library/material-polaroid-instant.md"
     },
+    "reeded-fluted-glass": {
+      "name": "Reeded / fluted glass (vertical-slat refraction)",
+      "category": "glass",
+      "family": "digital",
+      "surfaceFinish": "glossy",
+      "oneLine": "A glossy transparent panel of vertical half-cylinder ribs — each rib acts as a",
+      "pairsPrototypes": [
+        "style-liquid-glass",
+        "style-glassmorphism",
+        "recipe-restrained-ai-marketing",
+        "aesthetic-pastel-pop-fmcg",
+        "aesthetic-monochrome-pop-poster"
+      ],
+      "sourceFile": "design-library/material-reeded-fluted-glass.md"
+    },
     "rgb-channel-split": {
       "name": "RGB Channel Split (intentional large-displacement chromatic split)",
       "category": "digital-effect",
@@ -1735,6 +1874,20 @@
         "aesthetic-corporate-grunge"
       ],
       "sourceFile": "design-library/material-silkscreen.md"
+    },
+    "smoked-obsidian-glass": {
+      "name": "Smoked obsidian glass (dark refractor over typography)",
+      "category": "glass",
+      "family": "digital",
+      "surfaceFinish": "glossy",
+      "oneLine": "A dark, smoky, glossy glass solid — cube, shard, blob — whose whole job is to",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "style-oversized-neo-grotesque",
+        "aesthetic-luxury-cinematic-dark",
+        "recipe-neo-grotesque-portfolio"
+      ],
+      "sourceFile": "design-library/material-smoked-obsidian-glass.md"
     },
     "smooth-leather": {
       "name": "Smooth Leather (full-grain, polished)",
@@ -1860,6 +2013,21 @@
         "shell-scroll-journey-scene"
       ],
       "sourceFile": "design-library/material-volumetric-cloud.md"
+    },
+    "volumetric-light-shaft": {
+      "name": "Volumetric light shaft (god rays raking a dark stage)",
+      "category": "light-volume",
+      "family": "digital",
+      "surfaceFinish": "n/a (light, not surface)",
+      "oneLine": "Light treated as a MATERIAL occupying air: soft parallel shafts entering a",
+      "pairsPrototypes": [
+        "aesthetic-sculptural-minimal",
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-dark-academia",
+        "recipe-ai-foundry-dark",
+        "aesthetic-cosmic-horizon"
+      ],
+      "sourceFile": "design-library/material-volumetric-light-shaft.md"
     },
     "watercolor-wash": {
       "name": "Watercolor Wash (wet-on-wet, granulation)",
