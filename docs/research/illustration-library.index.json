@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "illustration",
   "sourceDir": "design-library/",
-  "totalEntries": 115,
+  "totalEntries": 124,
   "decisionTree": {
     "aesthetic-dark-academia": {
       "default": "3d-arsham-eroded",
@@ -14,7 +14,9 @@
         "gouache-storybook",
         "hand-drawn-pencil-sketch",
         "humanities-marginalia",
+        "ink-wash-atmosphere",
         "lofi-contemplative",
+        "painterly-mythic-creature",
         "typo-art-nouveau-ornament",
         "typo-blackletter-neo-gothic"
       ]
@@ -24,6 +26,7 @@
       "alternatives": [
         "3d-crypto-gold-chrome",
         "3d-tron-emissive-glow",
+        "bioluminescent-creature",
         "blush-moneyverse",
         "particle-figure"
       ]
@@ -46,7 +49,9 @@
         "ghibli-watercolor-bg",
         "gouache-storybook",
         "hand-drawn-pencil-sketch",
+        "ink-wash-atmosphere",
         "origami-paper-3d",
+        "painterly-mythic-creature",
         "pixar-inside-out-emotion-volumetric",
         "pixar-soul-great-before-pastel",
         "shinkai-hyperreal-anime",
@@ -105,6 +110,35 @@
         "typo-chromeheart-gothic-luxury"
       ]
     },
+    "aesthetic-pastoral-serene": {
+      "default": "3d-dreamscape-terrain",
+      "alternatives": [
+        "3d-miniature-diorama",
+        "lofi-contemplative",
+        "nature-meets-ui"
+      ]
+    },
+    "aesthetic-surreal-dream-stage": {
+      "default": "3d-dreamscape-terrain",
+      "alternatives": []
+    },
+    "aesthetic-frutiger-eco": {
+      "default": "3d-dreamscape-terrain",
+      "alternatives": [
+        "3d-fur-rendered-mascot",
+        "3d-knit-yarn-character",
+        "3d-miniature-diorama",
+        "blush-go-green",
+        "blush-hyperspace"
+      ]
+    },
+    "shell-scroll-journey-scene": {
+      "default": "3d-dreamscape-terrain",
+      "alternatives": [
+        "3d-miniature-diorama",
+        "enchanted-forest-glow"
+      ]
+    },
     "aesthetic-positivity-kawaii": {
       "default": "3d-fur-rendered-mascot",
       "alternatives": [
@@ -133,6 +167,7 @@
         "mary-blair-stylized",
         "monochrome-set-design",
         "overwatch-stylized-pbr",
+        "papercraft-diorama-world",
         "pixar-coco-folk-vibrant",
         "pixar-inside-out-emotion-volumetric",
         "plasticine-3d-rougher",
@@ -159,18 +194,10 @@
         "frida-folk-surreal",
         "ghibli-watercolor-bg",
         "gouache-storybook",
+        "papercraft-diorama-world",
         "shinkai-hyperreal-anime",
         "typo-art-nouveau-ornament",
         "typo-wood-type-letterpress"
-      ]
-    },
-    "aesthetic-frutiger-eco": {
-      "default": "3d-fur-rendered-mascot",
-      "alternatives": [
-        "3d-knit-yarn-character",
-        "3d-miniature-diorama",
-        "blush-go-green",
-        "blush-hyperspace"
       ]
     },
     "style-claymorphism": {
@@ -226,6 +253,7 @@
         "monochrome-set-design",
         "overwatch-stylized-pbr",
         "scribbbles-funky-vector",
+        "sculptural-3d-object",
         "shapes-gallery-michalczyk",
         "sticker-cutout-puffy"
       ]
@@ -245,16 +273,6 @@
         "typo-house-industries-revival"
       ]
     },
-    "aesthetic-pastoral-serene": {
-      "default": "3d-miniature-diorama",
-      "alternatives": [
-        "lofi-contemplative"
-      ]
-    },
-    "shell-scroll-journey-scene": {
-      "default": "3d-miniature-diorama",
-      "alternatives": []
-    },
     "recipe-restrained-ai-marketing": {
       "default": "3d-premium-product-hero",
       "alternatives": [
@@ -266,6 +284,7 @@
         "drawkit-bubbly-tech-ui",
         "drawkit-hands-3d",
         "drawkit-jelly-3d",
+        "nature-meets-ui",
         "outline-wireframe-illustration",
         "pixar-soul-great-before-pastel"
       ]
@@ -303,6 +322,7 @@
         "3d-technical-exploded-precision",
         "blush-hyperspace",
         "blush-transhumans",
+        "retro-contraption-3d",
         "saul-bass-cutout",
         "typo-house-industries-revival",
         "wireframe-3d"
@@ -326,6 +346,7 @@
         "3d-technical-exploded-precision",
         "doodle-ui-handdrawn",
         "isometric-tech-saas",
+        "retro-contraption-3d",
         "stylized-3d-avatar",
         "typo-vectorheart-industrial-futurist"
       ]
@@ -346,6 +367,7 @@
         "3d-tron-emissive-glow",
         "aurorism-mesh-gradient",
         "blush-transhumans",
+        "ink-wash-atmosphere",
         "particle-figure",
         "typo-vectorheart-industrial-futurist",
         "wireframe-3d"
@@ -418,6 +440,7 @@
         "mary-blair-stylized",
         "mc-escher-paradox",
         "noir-comic-ink",
+        "painterly-mythic-creature",
         "pixar-coco-folk-vibrant",
         "raster-cutout-collage",
         "risograph-illustration",
@@ -463,7 +486,28 @@
       "default": "beatrix-potter-watercolor",
       "alternatives": [
         "dreamcore-liminal",
+        "enchanted-forest-glow",
         "typo-blackletter-neo-gothic"
+      ]
+    },
+    "aesthetic-bioluminescent-deep": {
+      "default": "bioluminescent-creature",
+      "alternatives": [
+        "enchanted-forest-glow",
+        "particle-figure"
+      ]
+    },
+    "aesthetic-fairycore": {
+      "default": "bioluminescent-creature",
+      "alternatives": [
+        "enchanted-forest-glow",
+        "fluffy-plush-3d",
+        "ghibli-watercolor-bg",
+        "hilma-af-klint-symbolist",
+        "mary-blair-stylized",
+        "painterly-mythic-creature",
+        "pixar-coco-folk-vibrant",
+        "typo-art-nouveau-ornament"
       ]
     },
     "aesthetic-corporate-memphis": {
@@ -527,6 +571,7 @@
         "charley-harper-minimal-realism",
         "drawkit-wooden-icons",
         "ghibli-watercolor-bg",
+        "nature-meets-ui",
         "origami-paper-3d"
       ]
     },
@@ -551,6 +596,7 @@
     "aesthetic-atompunk": {
       "default": "blush-hyperspace",
       "alternatives": [
+        "retro-contraption-3d",
         "saul-bass-cutout"
       ]
     },
@@ -593,6 +639,7 @@
         "fluffy-plush-3d",
         "handyarrows-illustration",
         "kawaii-mascot",
+        "papercraft-diorama-world",
         "shoujo-soft-line-anime",
         "spectrums-complex-flower"
       ]
@@ -601,7 +648,8 @@
       "default": "claymation-stop-motion",
       "alternatives": [
         "crayon-wax-children",
-        "plasticine-3d-rougher"
+        "plasticine-3d-rougher",
+        "retro-contraption-3d"
       ]
     },
     "style-neumorphism": {
@@ -646,22 +694,13 @@
         "risograph-illustration"
       ]
     },
-    "aesthetic-fairycore": {
-      "default": "fluffy-plush-3d",
-      "alternatives": [
-        "ghibli-watercolor-bg",
-        "hilma-af-klint-symbolist",
-        "mary-blair-stylized",
-        "pixar-coco-folk-vibrant",
-        "typo-art-nouveau-ornament"
-      ]
-    },
     "aesthetic-anti-design": {
       "default": "halftone-shape",
       "alternatives": [
         "keith-haring-radiant",
         "raster-cutout-collage",
         "risograph-illustration",
+        "sculptural-3d-object",
         "typo-fella-anti-design"
       ]
     },
@@ -675,6 +714,12 @@
         "typo-hand-lettered-editorial"
       ]
     },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "ink-wash-atmosphere",
+      "alternatives": [
+        "noir-comic-ink"
+      ]
+    },
     "aesthetic-op-art": {
       "default": "mc-escher-paradox",
       "alternatives": []
@@ -683,8 +728,8 @@
       "default": "monochrome-set-design",
       "alternatives": []
     },
-    "aesthetic-monochrome-tech-editorial": {
-      "default": "noir-comic-ink",
+    "aesthetic-organic-overgrowth": {
+      "default": "nature-meets-ui",
       "alternatives": []
     },
     "aesthetic-web-brutalism": {
@@ -703,11 +748,11 @@
       "default": "outline-wireframe-illustration",
       "alternatives": []
     },
-    "aesthetic-cosmic-horizon": {
-      "default": "particle-figure",
+    "shell-infinite-canvas": {
+      "default": "papercraft-diorama-world",
       "alternatives": []
     },
-    "aesthetic-bioluminescent-deep": {
+    "aesthetic-cosmic-horizon": {
       "default": "particle-figure",
       "alternatives": []
     },
@@ -747,9 +792,14 @@
         "spiderverse-comic-halftone"
       ]
     },
+    "aesthetic-sculptural-minimal": {
+      "default": "sculptural-3d-object",
+      "alternatives": []
+    },
     "recipe-neo-grotesque-portfolio": {
-      "default": "shapes-gallery-michalczyk",
+      "default": "sculptural-3d-object",
       "alternatives": [
+        "shapes-gallery-michalczyk",
         "stylized-3d-avatar"
       ]
     },
@@ -858,6 +908,24 @@
         "style-holographic"
       ],
       "sourceFile": "design-library/illust-3d-crypto-gold-chrome.md"
+    },
+    "3d-dreamscape-terrain": {
+      "name": "3D dreamscape terrain",
+      "category": "3D",
+      "subCategory": "scenic-environment",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "Idealized rolling landscape rendered soft — velvet hills, cotton clouds, glassy water — a Windows-Bliss world rebuilt in gentle 3D.",
+      "notForUseWhen": "Brief needs gritty realism or hard-tech credibility — the terrain is idealized and soft.",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "aesthetic-surreal-dream-stage",
+        "aesthetic-frutiger-eco",
+        "shell-scroll-journey-scene"
+      ],
+      "sourceFile": "design-library/illust-3d-dreamscape-terrain.md"
     },
     "3d-fur-rendered-mascot": {
       "name": "Fur-rendered mascot 3D (Pixar Sully-grade)",
@@ -1109,6 +1177,23 @@
         "aesthetic-dark-academia"
       ],
       "sourceFile": "design-library/illust-beatrix-potter-watercolor.md"
+    },
+    "bioluminescent-creature": {
+      "name": "Bioluminescent creature render",
+      "category": "3D",
+      "subCategory": "organic-emissive",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "A translucent deep-sea or fantastical organism — jellyfish, medusa, glowing totem-being — self-lit against true black, tendrils trailing.",
+      "notForUseWhen": "Brief is warm-domestic, budget, or daylight — the creature lives in expensive darkness.",
+      "pairsPrototypes": [
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-defi-cosmic",
+        "aesthetic-fairycore"
+      ],
+      "sourceFile": "design-library/illust-bioluminescent-creature.md"
     },
     "blush-cityscapes": {
       "name": "Cityscapes",
@@ -1805,6 +1890,24 @@
       ],
       "sourceFile": "design-library/illust-editorial-thick-brush.md"
     },
+    "enchanted-forest-glow": {
+      "name": "Enchanted forest glow",
+      "category": "3D",
+      "subCategory": "magical-environment",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "Twilight woodland lit from within — lanterns, fireflies, glowing flora — deep teal darkness held back by pools of warm magical light.",
+      "notForUseWhen": "Brief is rational, corporate, or daylight-honest — the register is twilight wonder.",
+      "pairsPrototypes": [
+        "aesthetic-fairycore",
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-cottagegoth",
+        "shell-scroll-journey-scene"
+      ],
+      "sourceFile": "design-library/illust-enchanted-forest-glow.md"
+    },
     "eric-carle-tissue-collage": {
       "name": "Eric Carle tissue-paper collage",
       "category": "Children's book / storybook",
@@ -1987,6 +2090,24 @@
       ],
       "sourceFile": "design-library/illust-humanities-marginalia.md"
     },
+    "ink-wash-atmosphere": {
+      "name": "Ink-wash atmosphere field",
+      "category": "Abstract / decoration",
+      "subCategory": "ink-wash",
+      "role": "decoration",
+      "roleAffinity": [
+        "decoration"
+      ],
+      "oneLine": "Monochrome sumi-e cloud and sky fields — billowing ink masses, graded washes, paper breathing through — as hero atmosphere rather than subject.",
+      "notForUseWhen": "Brief is playful-bright or vector-crisp — the wash is contemplative and tonal.",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "recipe-warm-restraint",
+        "recipe-ai-foundry-dark",
+        "aesthetic-monochrome-tech-editorial"
+      ],
+      "sourceFile": "design-library/illust-ink-wash-atmosphere.md"
+    },
     "isometric-tech-saas": {
       "name": "Isometric tech SaaS scene",
       "category": "3D",
@@ -2160,6 +2281,24 @@
       ],
       "sourceFile": "design-library/illust-monochrome-set-design.md"
     },
+    "nature-meets-ui": {
+      "name": "Nature-meets-UI interpenetration",
+      "category": "3D",
+      "subCategory": "organic-tech-composite",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "Interface elements physically hosting plant life — topiary growing out of stat cards, vines threading through a dashboard, moss on a button.",
+      "notForUseWhen": "Brief needs literal product screenshots untouched — this style ALTERS the interface with growth.",
+      "pairsPrototypes": [
+        "aesthetic-organic-overgrowth",
+        "aesthetic-pastoral-serene",
+        "aesthetic-solarpunk",
+        "recipe-restrained-ai-marketing"
+      ],
+      "sourceFile": "design-library/illust-nature-meets-ui.md"
+    },
     "noir-comic-ink": {
       "name": "Noir comic ink",
       "category": "Hand-drawn / sketch",
@@ -2233,6 +2372,42 @@
         "style-claymorphism"
       ],
       "sourceFile": "design-library/illust-overwatch-stylized-pbr.md"
+    },
+    "painterly-mythic-creature": {
+      "name": "Painterly mythic creature",
+      "category": "Hand-drawn / sketch",
+      "subCategory": "loose-painterly",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork — gesture over anatomy, drama in the strokes.",
+      "notForUseWhen": "Brief is technical, minimal, or photoreal — the creature is expressive brushwork, not asset-render.",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "aesthetic-dark-academia",
+        "recipe-warm-restraint",
+        "aesthetic-fairycore"
+      ],
+      "sourceFile": "design-library/illust-painterly-mythic-creature.md"
+    },
+    "papercraft-diorama-world": {
+      "name": "Papercraft diorama world",
+      "category": "3D",
+      "subCategory": "paper-craft-scene",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "A whole navigable scene built from visible cut paper — layered card hills, folded houses, tab-and-slot trees — craft-table charm at world scale.",
+      "notForUseWhen": "Brief is premium-sleek or serious-enterprise — paper reads handmade and playful.",
+      "pairsPrototypes": [
+        "aesthetic-positivity-kawaii",
+        "aesthetic-cottagecore",
+        "shell-infinite-canvas",
+        "aesthetic-curly-girly"
+      ],
+      "sourceFile": "design-library/illust-papercraft-diorama-world.md"
     },
     "particle-figure": {
       "name": "Particle-formed figure",
@@ -2385,6 +2560,24 @@
       ],
       "sourceFile": "design-library/illust-raster-cutout-collage.md"
     },
+    "retro-contraption-3d": {
+      "name": "Retro contraption 3D",
+      "category": "3D",
+      "subCategory": "whimsical-machine",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "A whimsical invented machine — part typewriter, part computer, part appliance — rendered in friendly 3D with knobs, tubes, and personality.",
+      "notForUseWhen": "Brief is sleek-premium or serious-enterprise — the machine is deliberately charming and clunky.",
+      "pairsPrototypes": [
+        "aesthetic-cassette-futurism",
+        "aesthetic-wacky-pomo",
+        "recipe-devtools-marketing",
+        "aesthetic-atompunk"
+      ],
+      "sourceFile": "design-library/illust-retro-contraption-3d.md"
+    },
     "risograph-illustration": {
       "name": "Risograph 2-color illustration",
       "category": "Hand-drawn / sketch",
@@ -2438,6 +2631,24 @@
         "aesthetic-positivity-kawaii"
       ],
       "sourceFile": "design-library/illust-scribbbles-funky-vector.md"
+    },
+    "sculptural-3d-object": {
+      "name": "Sculptural 3D object",
+      "category": "3D",
+      "subCategory": "abstract-form",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "One abstract gallery-grade form — a twisted ribbon, stacked discs, eroded stone, a perfect knot — single material, studio-lit, plinth-ready.",
+      "notForUseWhen": "Brief needs depicted subjects or narrative — the form is abstract and mute by design.",
+      "pairsPrototypes": [
+        "aesthetic-sculptural-minimal",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-bento-marketing",
+        "aesthetic-anti-design"
+      ],
+      "sourceFile": "design-library/illust-sculptural-3d-object.md"
     },
     "shapes-gallery-michalczyk": {
       "name": "Shapes.gallery — Monika Michalczyk shapes",

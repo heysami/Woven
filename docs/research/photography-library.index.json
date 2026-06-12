@@ -2,18 +2,20 @@
   "version": "2.0",
   "library": "photography",
   "sourceDir": "design-library/",
-  "totalEntries": 55,
+  "totalEntries": 60,
   "decisionTree": {
     "recipe-warm-restraint": {
       "default": "aesop-apothecary",
       "alternatives": [
         "architectural-minimal",
         "cereal-lifestyle",
+        "elemental-ocean",
         "golden-hour-indoor-warm",
         "grand-budapest-symmetrical-pastel",
         "helmut-newton-flash",
         "her-warm-pastel-future",
         "la-la-land-musical-magic",
+        "lifestyle-gathering",
         "seventies-soft-grain",
         "shore-color",
         "sorrenti-grain",
@@ -52,6 +54,43 @@
         "warm-minimal-daylight"
       ]
     },
+    "aesthetic-cyberpunk": {
+      "default": "amber-cyber-portrait",
+      "alternatives": [
+        "blade-runner-2049-monochrome-sections",
+        "chrome-hearts-editorial",
+        "cinematic-street-anamorphic",
+        "circuit-bent-glitch",
+        "databend-jpeg-corrupt",
+        "face-id-dot-projector",
+        "fallen-angels-wide-angle-neon",
+        "night-flash-noir",
+        "pixel-stretch-time-displacement",
+        "rgb-chromatic-split"
+      ]
+    },
+    "recipe-neo-grotesque-portfolio": {
+      "default": "amber-cyber-portrait",
+      "alternatives": [
+        "architectural-minimal"
+      ]
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "amber-cyber-portrait",
+      "alternatives": [
+        "blade-runner-2049-monochrome-sections",
+        "cinematic-street-anamorphic",
+        "face-id-dot-projector",
+        "night-flash-noir",
+        "orbital-space"
+      ]
+    },
+    "aesthetic-rgb-gamer": {
+      "default": "amber-cyber-portrait",
+      "alternatives": [
+        "genz-flash-disposable"
+      ]
+    },
     "recipe-bento-marketing": {
       "default": "apple-clean-studio",
       "alternatives": [
@@ -85,10 +124,6 @@
         "frutiger-aero-product",
         "high-key-beauty"
       ]
-    },
-    "recipe-neo-grotesque-portfolio": {
-      "default": "architectural-minimal",
-      "alternatives": []
     },
     "recipe-swiss-grid": {
       "default": "architectural-minimal",
@@ -169,29 +204,8 @@
     },
     "aesthetic-y2k-myspace": {
       "default": "bayer-dither-retro",
-      "alternatives": []
-    },
-    "recipe-ai-foundry-dark": {
-      "default": "blade-runner-2049-monochrome-sections",
       "alternatives": [
-        "cinematic-street-anamorphic",
-        "face-id-dot-projector",
-        "night-flash-noir",
-        "orbital-space"
-      ]
-    },
-    "aesthetic-cyberpunk": {
-      "default": "blade-runner-2049-monochrome-sections",
-      "alternatives": [
-        "chrome-hearts-editorial",
-        "cinematic-street-anamorphic",
-        "circuit-bent-glitch",
-        "databend-jpeg-corrupt",
-        "face-id-dot-projector",
-        "fallen-angels-wide-angle-neon",
-        "night-flash-noir",
-        "pixel-stretch-time-displacement",
-        "rgb-chromatic-split"
+        "polaroid-scatter"
       ]
     },
     "recipe-scientific-infra-marketing": {
@@ -245,6 +259,7 @@
         "leibovitz-key-light",
         "magnum-monochrome",
         "moonlight-miami-pastel-neon",
+        "nasa-archival-mono",
         "salgado-contrast",
         "shore-color",
         "surreal-tableau",
@@ -291,6 +306,7 @@
     "aesthetic-luxury-cinematic-dark": {
       "default": "dark-product-stage",
       "alternatives": [
+        "elemental-ocean",
         "motorsport-dramatic"
       ]
     },
@@ -350,7 +366,9 @@
     },
     "aesthetic-pastoral-serene": {
       "default": "eco-infrastructure",
-      "alternatives": []
+      "alternatives": [
+        "lifestyle-gathering"
+      ]
     },
     "aesthetic-organic-overgrowth": {
       "default": "eco-infrastructure",
@@ -385,6 +403,10 @@
       "default": "eighties-cocaine-glam",
       "alternatives": []
     },
+    "shell-scroll-journey-scene": {
+      "default": "elemental-ocean",
+      "alternatives": []
+    },
     "aesthetic-curly-girly": {
       "default": "euphoria-glitter-neon",
       "alternatives": [
@@ -413,6 +435,7 @@
         "grand-budapest-symmetrical-pastel",
         "her-warm-pastel-future",
         "la-la-land-musical-magic",
+        "polaroid-scatter",
         "seventies-soft-grain",
         "tillmans-candid",
         "warm-minimal-daylight"
@@ -441,10 +464,6 @@
       "default": "frutiger-aero-product",
       "alternatives": []
     },
-    "aesthetic-rgb-gamer": {
-      "default": "genz-flash-disposable",
-      "alternatives": []
-    },
     "aesthetic-neubrutalism": {
       "default": "gilden-flash-street",
       "alternatives": []
@@ -453,6 +472,7 @@
       "default": "gilden-flash-street",
       "alternatives": [
         "magnum-monochrome",
+        "nasa-archival-mono",
         "salgado-contrast",
         "vivian-maier-square"
       ]
@@ -461,6 +481,7 @@
       "default": "golden-hour-indoor-warm",
       "alternatives": [
         "grand-budapest-symmetrical-pastel",
+        "lifestyle-gathering",
         "seventies-soft-grain",
         "sorrenti-grain",
         "warm-minimal-daylight"
@@ -483,6 +504,14 @@
         "weingart-staged"
       ]
     },
+    "recipe-readcv": {
+      "default": "lifestyle-gathering",
+      "alternatives": [
+        "polaroid-scatter",
+        "shore-color",
+        "tillmans-candid"
+      ]
+    },
     "style-claymorphism": {
       "default": "magic-glow",
       "alternatives": []
@@ -497,18 +526,21 @@
     "aesthetic-monochrome-tech-editorial": {
       "default": "motorsport-dramatic",
       "alternatives": [
+        "nasa-archival-mono",
         "orbital-space"
       ]
+    },
+    "aesthetic-atompunk": {
+      "default": "nasa-archival-mono",
+      "alternatives": []
     },
     "aesthetic-cosmic-horizon": {
       "default": "orbital-space",
       "alternatives": []
     },
-    "recipe-readcv": {
-      "default": "shore-color",
-      "alternatives": [
-        "tillmans-candid"
-      ]
+    "shell-scrapbook-substrate": {
+      "default": "polaroid-scatter",
+      "alternatives": []
     },
     "aesthetic-bioluminescent-deep": {
       "default": "surreal-tableau",
@@ -544,6 +576,24 @@
         "style-restrained-hairline"
       ],
       "sourceFile": "design-library/photo-aesop-apothecary.md"
+    },
+    "amber-cyber-portrait": {
+      "name": "Amber cyber portrait",
+      "category": "cinematic",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "A figure in amber/tungsten low light wearing tech (AR glasses, headset, visor), face half-lit, near-black surround — the \"modern architect of the future\" portrait.",
+      "notForUseWhen": "Brief is daylight-honest, corporate-trust, or warm-domestic — the register is moody tech-noir.",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-ai-foundry-dark",
+        "aesthetic-rgb-gamer"
+      ],
+      "sourceFile": "design-library/photo-amber-cyber-portrait.md"
     },
     "apple-clean-studio": {
       "name": "Apple-clean studio product",
@@ -863,6 +913,23 @@
       ],
       "sourceFile": "design-library/photo-eighties-cocaine-glam.md"
     },
+    "elemental-ocean": {
+      "name": "Elemental ocean cinematic",
+      "category": "cinematic",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Open water as raw power — towering swell faces, storm texture, spray frozen mid-air — graded dark and reverent.",
+      "notForUseWhen": "Brief is cozy, indoor, or small-scale — open water reads vast, powerful, and slightly dangerous.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "recipe-warm-restraint",
+        "shell-scroll-journey-scene"
+      ],
+      "sourceFile": "design-library/photo-elemental-ocean.md"
+    },
     "euphoria-glitter-neon": {
       "name": "Euphoria glitter-neon emotional-realism (Rév)",
       "category": "cinematic",
@@ -1161,6 +1228,25 @@
       ],
       "sourceFile": "design-library/photo-leibovitz-key-light.md"
     },
+    "lifestyle-gathering": {
+      "name": "Golden-hour gathering",
+      "category": "lifestyle",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "A real-feeling group at ease outdoors — lakeside picnic, rooftop dinner, courtyard party — golden light, candid middle-distance framing.",
+      "notForUseWhen": "Brief is solitary-focus, enterprise, or premium-exclusive — the register is communal warmth.",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "recipe-warm-restraint",
+        "recipe-readcv",
+        "aesthetic-coastal-grandmother"
+      ],
+      "sourceFile": "design-library/photo-lifestyle-gathering.md"
+    },
     "magic-glow": {
       "name": "Magic glow product or beauty",
       "category": "beauty",
@@ -1234,6 +1320,24 @@
       ],
       "sourceFile": "design-library/photo-motorsport-dramatic.md"
     },
+    "nasa-archival-mono": {
+      "name": "NASA archival monochrome",
+      "category": "archival",
+      "era": "1950s-1970s archival",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Silver-gelatin space-program photography — rockets on pads, suited figures, mission control — with period grain and documentary framing.",
+      "notForUseWhen": "Brief needs current-day color credibility or consumer warmth — the archive reads historical and institutional.",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-tech-editorial",
+        "aesthetic-atompunk",
+        "recipe-newspaper-of-record",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/photo-nasa-archival-mono.md"
+    },
     "night-flash-noir": {
       "name": "Night flash neon-noir portrait",
       "category": "street",
@@ -1289,6 +1393,25 @@
         "aesthetic-y2k-futurism"
       ],
       "sourceFile": "design-library/photo-pixel-stretch-time-displacement.md"
+    },
+    "polaroid-scatter": {
+      "name": "Polaroid scatter pile",
+      "category": "lifestyle",
+      "era": "instant-film revival",
+      "roleAffinity": [
+        "hero",
+        "section",
+        "portrait"
+      ],
+      "oneLine": "Instant-film prints scattered as physical objects — white frames, casual snapshots, overlapping at loose angles on a surface.",
+      "notForUseWhen": "Brief is corporate, clinical, or future-facing — instant film reads memory and intimacy.",
+      "pairsPrototypes": [
+        "shell-scrapbook-substrate",
+        "aesthetic-y2k-myspace",
+        "aesthetic-cottagecore",
+        "recipe-readcv"
+      ],
+      "sourceFile": "design-library/photo-polaroid-scatter.md"
     },
     "rgb-chromatic-split": {
       "name": "RGB chromatic-split / channel-shift",

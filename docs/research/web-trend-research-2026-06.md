@@ -284,11 +284,12 @@ Five genuine gaps:
 
 ### 4h. Tally
 
-- **Shells:** +2 (1 watchlist)
-- **Styles:** +3 (2 watchlist)
-- **Aesthetics:** +8 (7 watchlist)
-- **Photography:** +6 (5 watchlist)
-- **Illustration:** +7 (9 watchlist)
+- **Shells:** +2, then watchlist promoted +1 (`desktop-os-metaphor`) = **+3**
+- **Styles:** +3, then watchlist promoted +2 (`outline-marquee`, `pixel-dissolve`) = **+5**
+- **Aesthetics:** +8, then watchlist promoted +7 (`neoclassical-remix`, `dark-botanical-maximalism`, `vintage-carnival`, `blueprint-hologram`, `pastel-pop-fmcg`, `sculptural-minimal`, `industrial-catalog`) = **+15**
+- **Photography:** +6, then watchlist promoted +5 (`polaroid-scatter`, `nasa-archival-mono`, `amber-cyber-portrait`, `elemental-ocean`, `lifestyle-gathering`) = **+11**
+- **Illustration:** +7, then watchlist promoted +9 (`3d-dreamscape-terrain`, `enchanted-forest-glow`, `bioluminescent-creature`, `retro-contraption-3d`, `nature-meets-ui`, `painterly-mythic-creature`, `ink-wash-atmosphere`, `sculptural-3d-object`, `papercraft-diorama-world`) = **+16**
 - **Materials:** +5
 
-= **31 promoted candidates + 24 watchlist** from 147 samples.
+= **55 library entries** from 147 samples. The full watchlist was promoted on user instruction (2026-06-12);
+the per-entry "hold until recurrence" notes in §4a-4f are retained above as the original evidence record.

@@ -348,6 +348,7 @@ The shell is page composition: layout, navigation pattern, density class, what k
 - **infinite-canvas** `[node-graph / whiteboard · pannable · z-zoom]` — workflow / canvas / mind-map tools. → [`shell-infinite-canvas.md`](./design-library/shell-infinite-canvas.md)
 - **horizontal-scroll-stage** `[showcase · horizontal axis · chaptered panels]` — full-bleed horizontal track of chapter panels; wheel maps to X-travel; portfolios, lookbooks, timelines, heritage tours. → [`shell-horizontal-scroll-stage.md`](./design-library/shell-horizontal-scroll-stage.md)
 - **scroll-journey-scene** `[narrative · single continuous scene · scroll-scrubbed]` — ONE scene (illustrated/photo/3D) the scroll travels through; stations instead of sections; product reveals, dives, brand journeys. → [`shell-scroll-journey-scene.md`](./design-library/shell-scroll-journey-scene.md)
+- **desktop-os-metaphor** `[portfolio · draggable windows · spatial clutter]` — the page IS a desktop: wallpaper ground + draggable windows/file icons/sticky notes; dock or menu bar anchors nav. → [`shell-desktop-os-metaphor.md`](./design-library/shell-desktop-os-metaphor.md)
 
 ## Visual styles index — surface treatment (pick exactly 1)
 
@@ -386,6 +387,7 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 **Bold / display / marketing:**
 - **bold-display-marketing** `[marketing · oversized-type · low-density]` — Apple product-page hero with bold marketing copy + large display sizes. → [`style-bold-display.md`](./design-library/style-bold-display.md)
 - **oversized-neo-grotesque** `[design-studio/fashion · monochrome · large-display]` — Bureau Borsche-style oversized neo-grotesque + monochrome chrome. → [`style-oversized-neo-grotesque.md`](./design-library/style-oversized-neo-grotesque.md)
+- **outline-marquee** `[gallery/fashion · drifting outline type rows · ambient]` — display-size outline type in slow marquee rows as texture + nav; the hovered word fills solid. → [`style-outline-marquee.md`](./design-library/style-outline-marquee.md)
 - **neubrutalism-saturated** `[product-launch/dev-tools · saturated-flat · 2021+]` — saturated flat colors + thick black borders + hard offset drop shadows. → [`style-neubrutalism.md`](./design-library/style-neubrutalism.md)
 
 **Editorial / typographic:**
@@ -397,6 +399,7 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 **Raster / pixel / collage:**
 - **raster-cutout-collage** `[scrapbook-shell · raster-images · any-aesthetic · needs-raster]` — PNG cutouts with paper-edge shadow + rotation + tape/staple decorations. → [`style-raster-cutout.md`](./design-library/style-raster-cutout.md)
 - **pixel-grid-bitmap** `[gaming · pixel-perfect · era-parameterized · needs-raster]` — pixel-perfect bitmap sprites; era determines palette + grid size. → [`style-pixel-bitmap.md`](./design-library/style-pixel-bitmap.md)
+- **pixel-dissolve** `[modern-SaaS detail · edge crumble · 2025+]` — surfaces/gradients dissolve into stepped pixel blocks at ONE or two edges per page; clean modern UI everywhere else. → [`style-pixel-dissolve.md`](./design-library/style-pixel-dissolve.md)
 
 **Raw / statement:**
 - **brutalist-raw-web** `[statement · edgy · 1990s-revival]` — raw markup, Times/Helvetica only, intentional ugliness, no shadows, underlined links. → [`style-brutalist-raw.md`](./design-library/style-brutalist-raw.md)
@@ -455,6 +458,15 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **luxury-cinematic-dark** `[wealth/maison · theater darkness + gold serif · needs-raster]` — one spot-lit precious object, warm black, italic serif, slow reveals; patience IS the brand message. → [`aesthetic-luxury-cinematic-dark.md`](./design-library/aesthetic-luxury-cinematic-dark.md)
 - **monochrome-tech-editorial** `[aerospace/industrial · b/w archive · needs-raster]` — tech as declassified dossier: b/w hardware photography + condensed caps + FIG-number captions. → [`aesthetic-monochrome-tech-editorial.md`](./design-library/aesthetic-monochrome-tech-editorial.md)
 - **bioluminescent-deep** `[deep-tech/bio · glowing organisms in void · needs-raster]` — life as the only light source; jellyfish/lantern-flora, physical falloff to true black; organic, not neon-electric (that's cyberpunk). → [`aesthetic-bioluminescent-deep.md`](./design-library/aesthetic-bioluminescent-deep.md)
+
+**Heritage / conceptual / poster registers:**
+- **neoclassical-remix** `[heritage-conceptual · antiquity + one anachronism · needs-raster]` — full-fidelity statue/painting + ONE modern intrusion, museum plaque captions; sincere, not vaporwave-ironic. → [`aesthetic-neoclassical-remix.md`](./design-library/aesthetic-neoclassical-remix.md)
+- **dark-botanical-maximalism** `[luxury-botanical · bloom-from-black · needs-raster]` — Golden-Age florals on near-black, serif display weaving BEHIND stems; opulence held together by darkness. → [`aesthetic-dark-botanical-maximalism.md`](./design-library/aesthetic-dark-botanical-maximalism.md)
+- **vintage-carnival** `[showman-letterpress · stacked wood-type · needs-raster]` — Hatch-Show-Print showbill stacks, woodcut art, ≤3 inks + paper, barker voice; the ONE register where many typefaces is the discipline. → [`aesthetic-vintage-carnival.md`](./design-library/aesthetic-vintage-carnival.md)
+- **blueprint-hologram** `[pre-launch tech · annotated wireframe projection]` — one glowing mesh hero + dimension lines/datum callouts in mono; drafting-table futurism, not neon noir. → [`aesthetic-blueprint-hologram.md`](./design-library/aesthetic-blueprint-hologram.md)
+- **pastel-pop-fmcg** `[DTC pantry · flat pastel per SKU · product-forward]` — flavor-colored flat grounds, oversized friendly display, scroll color-fade between SKUs; soft pop, not sticker-dense. → [`aesthetic-pastel-pop-fmcg.md`](./design-library/aesthetic-pastel-pop-fmcg.md)
+- **sculptural-minimal** `[gallery-plinth · one abstract object · needs-3D]` — vast white field + letterspaced caps + ONE sculptural form holding the optical center; the page is the plinth. → [`aesthetic-sculptural-minimal.md`](./design-library/aesthetic-sculptural-minimal.md)
+- **industrial-catalog** `[machine spec-sheet · photoreal hardware + real tables · needs-raster]` — robot/turbine glamour shot beside rigorous spec apparatus; you could ORDER the machine from this page. → [`aesthetic-industrial-catalog.md`](./design-library/aesthetic-industrial-catalog.md)
 
 **Pixel-art eras (each suggests style: pixel-grid-bitmap):**
 - **pixel-arcade-1978-85** `[arcade-history · 8x8-monochrome · 1978-85]` — Space Invaders, Pac-Man, Donkey Kong. → [`aesthetic-pixel-arcade.md`](./design-library/aesthetic-pixel-arcade.md)
