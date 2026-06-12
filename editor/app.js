@@ -17602,6 +17602,13 @@ function installPickOverlay(iframeEl, onPick) {
   `;
   doc.head.appendChild(style);
   doc.body.classList.add("th-pick-mode");
+  // v3.6.2 — Pause the saved patch script's MutationObserver while the
+  // editor owns this doc. The initial apply already ran at load (the saved
+  // state is visible); without the pause, every live edit to a property
+  // that's also in the saved OPS gets re-overwritten on the next mutation
+  // burst. One-way for the session — a reload (which every save triggers
+  // for OTHER paths, and Revert triggers for this one) starts fresh.
+  try { doc.defaultView.__TH_PATCH_PAUSE = true; } catch {}
   let currentHover = null;
   let cmdHeld = false;
   const inspectOverlays = [];
@@ -17802,12 +17809,62 @@ function installPickOverlay(iframeEl, onPick) {
 
    Existing patch blocks are replaced (we match on the `data-th-patch`
    attribute) so re-saves don't accumulate scripts. */
+/* v3.6.2 — Pull the OPS array back out of an existing patch block so a
+   re-save can MERGE instead of replace. Before this, every save wiped the
+   prior block and wrote only the current session's ops — any edit persisted
+   in an earlier save reverted on the next reload after an unrelated save. */
+function _extractPatchOps(html) {
+  if (!html) return [];
+  const m = html.match(/<script\s+data-th-patch="1">\(function\(\)\{var OPS=(\[[\s\S]*?\]);if\(!OPS/i);
+  if (!m) return [];
+  try {
+    const arr = JSON.parse(m[1]);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+/* Merge prior (already-persisted) ops with this session's fresh ops.
+   Style ops on the same selector collapse into one (later props win);
+   text ops on the same selector replace; everything else dedupes on
+   exact JSON identity. Capped so a long-lived file can't grow unbounded. */
+function _mergePatchOps(prior, fresh) {
+  const merged = [];
+  const styleBySel = new Map();
+  const seen = new Set();
+  for (const op of [...(prior || []), ...(fresh || [])]) {
+    if (!op || !op.type) continue;
+    if (op.type === "style" && op.selector) {
+      const existing = styleBySel.get(op.selector);
+      if (existing) { existing.styles = Object.assign({}, existing.styles, op.styles || {}); continue; }
+      const copy = { ...op, styles: { ...(op.styles || {}) } };
+      styleBySel.set(op.selector, copy);
+      merged.push(copy);
+      continue;
+    }
+    if (op.type === "text" && op.selector) {
+      const i = merged.findIndex(o => o.type === "text" && o.selector === op.selector);
+      if (i >= 0) { merged[i] = op; continue; }
+      merged.push(op);
+      continue;
+    }
+    let key;
+    try { key = JSON.stringify(op); } catch { continue; }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(op);
+  }
+  return merged.slice(-300);
+}
+
 function _injectInspectorPatch(html, ops) {
   if (!html) return html;
   // Always strip any prior patch block first — otherwise a save with no
   // pending ops leaves a stale (and possibly buggy, see commit history)
   // script in place. Strip is unconditional; re-inject is conditional.
   const stripPrior = (s) => s.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
+  // v3.6.2 — Merge with ops already persisted in the file so a save never
+  // forgets edits committed by an earlier save.
+  try { ops = _mergePatchOps(_extractPatchOps(html), ops); } catch {}
   if (!ops || !ops.length) return stripPrior(html);
   let opsJson;
   try { opsJson = JSON.stringify(ops); } catch { return stripPrior(html); }
@@ -17853,6 +17910,8 @@ function _injectInspectorPatch(html, ops) {
     '  var el=$(op.selector);if(!el)return;',
     '  if(op.type==="style"&&op.styles){',
     '    for(var k in op.styles){try{el.style.setProperty(k,op.styles[k]);}catch(_){}}',
+    '  } else if(op.type==="text"){',
+    '    if(typeof op.text==="string"&&el.textContent!==op.text)el.textContent=op.text;',
     '  } else if(op.type==="nudge"){',
     '    if(typeof op.left==="number")el.style.left=op.left+"px";',
     '    if(typeof op.top==="number")el.style.top=op.top+"px";',
@@ -17876,8 +17935,15 @@ function _injectInspectorPatch(html, ops) {
     'function arm(){',
     // Construct observer BEFORE first applyAll so the initial apply's
     // mutations also get drained.
+    //
+    // v3.6.2 — `__TH_PATCH_PAUSE` is the editor's off-switch, checked ONLY
+    // on observer re-fires (the initial arm() apply always runs so the
+    // saved state stays visible). The pick-mode overlay + zoom overlay set
+    // it on docs they edit; without it, the observer re-applies saved ops
+    // over the user's NEW edit to the same property the instant they make
+    // it — "I edit it and it snaps right back".
     '  try{',
-    '    mo=new MutationObserver(function(){if(!applying)applyAll();});',
+    '    mo=new MutationObserver(function(){if(!applying&&!window.__TH_PATCH_PAUSE)applyAll();});',
     '    mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:["style","class"]});',
     '  }catch(_){}',
     '  applyAll();',
@@ -17953,6 +18019,58 @@ function elementCssPath(el) {
       }
     }
     if (cur.id) part = `#${cur.id}`;
+    parts.unshift(part);
+    cur = cur.parentElement;
+    depth++;
+  }
+  return parts.join(" > ");
+}
+
+/* v3.6.2 — Patch-grade selector for the post-mount patch script.
+   elementCssPath's bare `tag:nth-of-type(N)` chains are positional ONLY —
+   recorded against the live React DOM at edit time, they stop matching the
+   moment the app re-renders with a different sibling composition (view
+   state, conditional banners, data-driven cards). That's exactly the DOM
+   the patch script replays against, so persisted ops silently no-oped and
+   the user saw their saved edits "revert after refresh".
+
+   This variant anchors on the nearest id, qualifies every step with the
+   element's stable classes (editor chrome classes filtered out), and only
+   disambiguates with `:nth-child(N of tag.cls)` — counting among SAME
+   tag+class siblings, so unrelated conditional siblings can't shift the
+   index. Used for op records (patch persistence) only; the live-session
+   re-resolution path keeps elementCssPath. */
+function elementPatchSelector(el) {
+  if (!el || !el.tagName) return "";
+  const esc = (s) => {
+    try { return CSS.escape(s); } catch { return s.replace(/[^a-zA-Z0-9_-]/g, "\\$&"); }
+  };
+  const stableClasses = (n) => (typeof n.className === "string" ? n.className : "")
+    .trim().split(/\s+/)
+    .filter(c => c && !c.startsWith("th-pick-") && !c.startsWith("zoom-"))
+    .slice(0, 3);
+  const parts = [];
+  let cur = el;
+  let depth = 0;
+  while (cur && cur.nodeType === 1 && cur.tagName && depth < 10) {
+    const tag = cur.tagName.toLowerCase();
+    if (tag === "body" || tag === "html") break;
+    if (cur.id) { parts.unshift("#" + esc(cur.id)); return parts.join(" > "); }
+    const cls = stableClasses(cur);
+    const compound = tag + cls.map(c => "." + esc(c)).join("");
+    let part = compound;
+    const parent = cur.parentElement;
+    if (parent) {
+      const twins = Array.from(parent.children).filter(sib =>
+        sib.tagName === cur.tagName
+        && cls.every(c => sib.classList && sib.classList.contains(c)));
+      if (twins.length > 1) {
+        // `:nth-child(N of S)` counts among S-matching children only —
+        // supported by every Chromium the editor runs in; the patch
+        // script's $() try/catches for anything older.
+        part = ":nth-child(" + (twins.indexOf(cur) + 1) + " of " + compound + ")";
+      }
+    }
     parts.unshift(part);
     cur = cur.parentElement;
     depth++;
@@ -22994,7 +23112,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           for (const [prop, val] of entries) styles[prop] = val;
           stageInspectorEdit(ifr, doc, {
             type: "style",
-            selector: elementCssPath(el),
+            selector: elementPatchSelector(el),
             styles,
           });
         }
@@ -23034,7 +23152,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const ifr = pickerIframeRef.current;
       if (ifr) stageInspectorEdit(ifr, doc, {
         type: "nudge",
-        selector: elementCssPath(el),
+        selector: elementPatchSelector(el),
         left: newLeft,
         top:  newTop,
       });
@@ -23081,7 +23199,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     // index (forward path moves the anchor under el's old position). Capture
     // first; on reload the replay script runs against pre-move React DOM, so
     // it MUST find el + anchor at their pre-move positions.
-    const elSelectorPre     = elementCssPath(el);
+    const elSelectorPre     = elementPatchSelector(el);
     let   anchorSelectorPre = "";
     // v3.5.12 — Selectors alone aren't identity-stable for reorder. After the
     // first replay applies the move, the elements occupy each other's pre-move
@@ -23104,7 +23222,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!prev) return 0;
       anchor = prev;
       position = "before";   // place el before prev
-      anchorSelectorPre = elementCssPath(prev);
+      anchorSelectorPre = elementPatchSelector(prev);
       try { prev.setAttribute("data-th-rkey-sib", opKey); } catch {}
       parent.insertBefore(el, prev);
     } else {
@@ -23112,7 +23230,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!next) return 0;
       anchor = next;
       position = "after";    // place el after next (after the move below, next sits before el)
-      anchorSelectorPre = elementCssPath(next);
+      anchorSelectorPre = elementPatchSelector(next);
       try { next.setAttribute("data-th-rkey-sib", opKey); } catch {}
       parent.insertBefore(next, el);
     }
@@ -23158,7 +23276,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       const ifr = pickerIframeRef.current;
       if (ifr) stageInspectorEdit(ifr, doc, {
         type:     "duplicate",
-        selector: elementCssPath(el),
+        selector: elementPatchSelector(el),
       });
     } catch {}
     flashPickOp("done", `Duplicated <${tagSnap}>`);
@@ -30209,8 +30327,18 @@ function zoomSerialize(doc) {
   return dt + clone.outerHTML;
 }
 
-async function zoomSaveDoc(filePath, doc) {
-  const html = zoomSerialize(doc);
+async function zoomSaveDoc(filePath, doc, ops) {
+  let html = zoomSerialize(doc);
+  // v3.6.2 — Persist replayable op records as a post-mount patch script,
+  // exactly like the workflow pick-mode staging path. Without this, zoom
+  // saves on React-managed prototypes baked the rendered DOM into the file
+  // but the app's own render wiped it on the next load — every zoom edit
+  // looked like it "didn't work". zoomSerialize keeps any prior
+  // <script data-th-patch> block in the html, so _injectInspectorPatch's
+  // merge preserves edits persisted by earlier saves.
+  if (ops && ops.length) {
+    try { html = _injectInspectorPatch(html, ops); } catch {}
+  }
   const r = await fetch(apiUrl("/__html_save"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -31352,6 +31480,11 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       const commit = () => {
         if (cancelled) return;
         docRef.current = doc;
+        // v3.6.2 — Pause the saved patch script's MutationObserver while
+        // zoom owns this doc (re-fires only; the initial arm() apply still
+        // runs so the saved state is visible). Without this, editing a
+        // property that's also in the saved OPS snaps right back.
+        try { doc.defaultView.__TH_PATCH_PAUSE = true; } catch {}
         zoomTagAll(doc);
         // Capture the on-disk state at load time. Discard reverts to this
         // exact serialization; opHistory's snapshots compose on top of it.
@@ -31598,7 +31731,11 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
               _markNestedDirty(meta);
               showToast("Updated text in `" + label + "` (imported `" + (meta.path || "asset") + "`, unsaved)");
             } else {
-              recordOp("Updated text in `" + label + "` (unsaved)", editSnap);
+              recordOp("Updated text in `" + label + "` (unsaved)", editSnap, {
+                type:     "text",
+                selector: elementPatchSelector(el),
+                text:     el.textContent || "",
+              });
             }
           });
         } else if (tool === "comment") {
@@ -31636,13 +31773,21 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
   // commits the current serialization, and dispatches a refresh event so
   // any other iframe rendering the same source file picks up the change
   // immediately (no browser refresh needed).
-  const recordOp = useCallback((recap, snapshotBefore) => {
+  // v3.6.2 — Optional third arg `op`: a replayable patch-op record
+  // ({ type: 'style'|'text'|'reorder'|'duplicate'|'delete', selector, … })
+  // that rides on the history entry. saveToDisk collects the ops of every
+  // APPLIED entry (0..historyIdx — so undo naturally excludes them) and
+  // injects them as the post-mount patch script, which is what makes zoom
+  // edits survive React re-render on the next load. Ops that can't be
+  // replayed (slot inserts, imports) simply pass no op — they persist only
+  // via the baked DOM, as before.
+  const recordOp = useCallback((recap, snapshotBefore, op) => {
     const doc = docRef.current; if (!doc) return;
     const after = zoomSerialize(doc);
     if (snapshotBefore) {
       setOpHistory(h => {
         const trimmed = h.slice(0, historyIdx + 1);
-        return [...trimmed, { before: snapshotBefore, after, recap: recap || "" }];
+        return [...trimmed, { before: snapshotBefore, after, recap: recap || "", op: op || null }];
       });
       setHistoryIdx(i => i + 1);
     }
@@ -31689,8 +31834,11 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const doc = docRef.current; if (!doc) return;
     setBusy(true);
     try {
-      // Flush the host prototype file.
-      await zoomSaveDoc(filePath, doc);
+      // Flush the host prototype file. Applied history entries (0..historyIdx)
+      // contribute their patch-op records so the edits survive a React
+      // re-render on the next load; undone entries are naturally excluded.
+      const appliedOps = opHistory.slice(0, historyIdx + 1).map(e => e && e.op).filter(Boolean);
+      await zoomSaveDoc(filePath, doc, appliedOps);
       savedHtmlRef.current = zoomSerialize(doc);
       const refreshedPaths = [filePath];
       // Flush every nested imported-asset file that the user edited.
@@ -31719,7 +31867,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     } catch (err) {
       showToast("Save failed: " + (err.message || err));
     } finally { setBusy(false); }
-  }, [dirty, filePath, showToast]);
+  }, [dirty, filePath, showToast, opHistory, historyIdx]);
 
   // ─── Discard (revert in-memory mutations back to disk state) ─────────
   const discardChanges = useCallback(() => {
@@ -31839,13 +31987,16 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const meta = _docMeta(el);
     const label = zoomElementLabel(el);
     const snap = snapshotBefore();
+    // Selector must be captured BEFORE removal — the patch script replays
+    // it against the fresh (pre-delete) DOM on the next load.
+    const patchSel = elementPatchSelector(el);
     el.remove();
     setSelectedId(null); setSelectionRect(null);
     if (meta.isNested) {
       _markNestedDirty(meta);
       showToast("Removed `" + label + "` from imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
-      recordOp("Removed `" + label + "` (unsaved)", snap);
+      recordOp("Removed `" + label + "` (unsaved)", snap, { type: "delete", selector: patchSel });
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
 
@@ -31858,6 +32009,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const meta = _docMeta(el);
     const label = zoomElementLabel(el);
     const snap = snapshotBefore();
+    // Selector captured BEFORE the clone mounts — the clone is a same-class
+    // twin and would otherwise shift the disambiguating index.
+    const patchSel = elementPatchSelector(el);
     const clone = el.cloneNode(true);
     if (clone.removeAttribute) clone.removeAttribute(ZOOM_ID_ATTR);
     clone.querySelectorAll && clone.querySelectorAll("[" + ZOOM_ID_ATTR + "]").forEach(n => n.removeAttribute(ZOOM_ID_ATTR));
@@ -31867,7 +32021,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       _markNestedDirty(meta);
       showToast("Duplicated `" + label + "` in imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
-      recordOp("Duplicated `" + label + "` (unsaved)", snap);
+      recordOp("Duplicated `" + label + "` (unsaved)", snap, { type: "duplicate", selector: patchSel });
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
 
@@ -31880,12 +32034,19 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const meta = _docMeta(el);
     const label = zoomElementLabel(el);
     const snap = snapshotBefore();
-    Object.entries(patch).forEach(([k, v]) => { try { el.style[k] = v; } catch {} });
+    const stylesForPatch = {};
+    Object.entries(patch).forEach(([k, v]) => {
+      try { el.style[k] = v; } catch {}
+      if (v != null && v !== "") stylesForPatch[k.replace(/[A-Z]/g, m => "-" + m.toLowerCase())] = v;
+    });
     if (meta.isNested) {
       _markNestedDirty(meta);
       showToast("Styled `" + label + "` " + (recapTail || "") + " in imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
-      recordOp("Styled `" + label + "` " + (recapTail || "") + " (unsaved)", snap);
+      recordOp("Styled `" + label + "` " + (recapTail || "") + " (unsaved)", snap,
+        Object.keys(stylesForPatch).length
+          ? { type: "style", selector: elementPatchSelector(el), styles: stylesForPatch }
+          : null);
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
 
@@ -31924,6 +32085,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       ["boxShadow",     "box-shadow"],
       ["filter",        "filter"],
     ];
+    const stylesForPatch = {};
     for (const [propJs, propCss] of cssKeys) {
       if (!(propJs in nextStyles)) continue;
       const v = nextStyles[propJs];
@@ -31931,6 +32093,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         try { el.style.removeProperty(propCss); } catch {}
       } else {
         try { el.style.setProperty(propCss, v); } catch {}
+        stylesForPatch[propCss] = v;
       }
     }
     setPickedStyles(s => ({ ...s, [selectedId]: nextStyles }));
@@ -31940,7 +32103,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     if (meta.isNested) {
       _markNestedDirty(meta);
     } else {
-      recordOp("Inspector style applied (unsaved)", snap);
+      recordOp("Inspector style applied (unsaved)", snap,
+        Object.keys(stylesForPatch).length
+          ? { type: "style", selector: elementPatchSelector(el), styles: stylesForPatch }
+          : null);
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty, _capturePicked]);
 
@@ -31954,6 +32120,13 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const snap = snapshotBefore();
     const sib = direction === "prev" ? el.previousElementSibling : el.nextElementSibling;
     if (!sib) { showToast("No sibling in that direction"); return; }
+    // Capture selectors BEFORE the move (the replay runs against the
+    // pre-move React DOM) + stamp identity keys, mirroring the workflow
+    // reorder op's stability scheme.
+    const elSelPre  = elementPatchSelector(el);
+    const sibSelPre = elementPatchSelector(sib);
+    const opKey = "r" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    try { el.setAttribute("data-th-rkey-el", opKey); sib.setAttribute("data-th-rkey-sib", opKey); } catch {}
     if (direction === "prev") sib.before(el); else sib.after(el);
     const info = _capturePicked(el);
     if (info) { setPicked(info); setSelectionRect(info.rect); }
@@ -31961,7 +32134,13 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
       _markNestedDirty(meta);
       showToast("Moved (imported, unsaved)");
     } else {
-      recordOp("Moved element (unsaved)", snap);
+      recordOp("Moved element (unsaved)", snap, {
+        type:     "reorder",
+        selector: elSelPre,
+        anchor:   sibSelPre,
+        position: direction === "prev" ? "before" : "after",
+        key:      opKey,
+      });
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty, _capturePicked]);
 
@@ -32713,7 +32892,14 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
                 const onUp = () => {
                   window.removeEventListener("mousemove", onMv);
                   window.removeEventListener("mouseup", onUp);
-                  recordOp("Resized selected element (unsaved)", snap);
+                  const doc2 = docRef.current;
+                  const el2 = doc2 && doc2.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
+                  recordOp("Resized selected element (unsaved)", snap,
+                    el2 ? {
+                      type:     "style",
+                      selector: elementPatchSelector(el2),
+                      styles:   { width: el2.style.width, height: el2.style.height },
+                    } : null);
                 };
                 window.addEventListener("mousemove", onMv);
                 window.addEventListener("mouseup", onUp);
@@ -34349,7 +34535,7 @@ function WorkflowPickedInspectorDock({
       if (typeof onStageInspectorEdit === "function") {
         onStageInspectorEdit(ifr, doc, {
           type:     "style",
-          selector: elementCssPath(el),
+          selector: elementPatchSelector(el),
           styles:   stylesForPatch,
         });
       } else if (typeof onSaveIframeHtml === "function") {
