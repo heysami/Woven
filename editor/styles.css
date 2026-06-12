@@ -2572,10 +2572,73 @@ button {
 }
 .workflow-body {
   display: grid;
-  /* Library column · 4px drag handle · canvas. Library width is driven by
-     --workflow-lib-width set on :root (240px default). */
-  grid-template-columns: var(--workflow-lib-width, 240px) 4px 1fr;
+  /* v3.6 — Icon nav rail · library column · 4px drag handle · canvas.
+     Library width is driven by --workflow-lib-width set on :root (240px
+     default). The rail is always visible (except fullscreen); the library
+     column collapses to 0 when no rail panel is active. */
+  grid-template-columns: 48px var(--workflow-lib-width, 240px) 4px 1fr;
   min-height: 0;
+}
+/* Collapsed library (rail icon toggled off, or prototype view active).
+   IMPORTANT: same technique as the fullscreen rules below — keep the
+   library + handle in DOM flow (visibility:hidden + zero size) instead of
+   display:none, which would remove them from grid auto-placement and slide
+   the canvas into the wrong column. */
+.workflow-body[data-left-panel="none"] {
+  grid-template-columns: 48px 0 0 1fr;
+}
+.workflow-body[data-left-panel="none"] .workflow-library-col,
+.workflow-body[data-left-panel="none"] .workflow-resize-handle-lib {
+  visibility: hidden;
+  width: 0;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* v3.6 — Left icon nav rail: Nodes / Outputs / Prototype viewer. */
+.workflow-nav-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+.workflow-nav-rail-btn {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.workflow-nav-rail-btn svg { width: 16px; height: 16px; }
+.workflow-nav-rail-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.workflow-nav-rail-btn.is-active {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  color: var(--text);
+}
+.workflow-nav-rail-sep {
+  width: 22px;
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+  flex: 0 0 auto;
 }
 /* Drag handles — left edge of canvas + left edge of chat panel. Subtle
    neutral idle, accent-tinted on hover so the affordance is discoverable. */
@@ -2595,6 +2658,237 @@ button {
 .workflow-body[data-chat-active="true"] .workflow-canvas-wrap {
   margin-right: var(--workflow-chat-width, 644px);
   transition: margin-right 0.12s ease;
+}
+.workflow-body[data-chat-active="true"] .workflow-proto-viewer {
+  margin-right: var(--workflow-chat-width, 644px);
+  transition: margin-right 0.12s ease;
+}
+
+/* v3.6 — Prototype viewer (rail icon 3). Occupies the SAME grid cell as the
+   canvas wrap (column 4); the canvas stays mounted underneath (so node
+   iframes don't reload) but is visibility-hidden while the viewer is up.
+   IMPORTANT: the canvas wrap needs EXPLICIT placement in that cell too —
+   grid auto-placement skips cells occupied by explicitly-placed items, so
+   without this the wrap slides into an implicit 0-height row 2 the moment
+   the viewer mounts (manifesting as "canvas suddenly empty"). */
+.workflow-body > .workflow-canvas-wrap {
+  grid-column: 4;
+  grid-row: 1;
+}
+.workflow-proto-viewer {
+  grid-column: 4;
+  grid-row: 1;
+  display: grid;
+  grid-template-rows: 37px 1fr;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  background: var(--surface-2);
+  visibility: hidden;
+}
+.workflow-body[data-view="proto"] .workflow-proto-viewer { visibility: visible; }
+.workflow-body[data-view="proto"] .workflow-canvas-wrap { visibility: hidden; }
+/* Body-portal'd canvas chrome (stage pill, pick toast) anchors against
+   .workflow-canvas-wrap rects, which stay valid under visibility:hidden —
+   hide them while the prototype viewer is up so they can't float over it. */
+body:has(.workflow-body[data-view="proto"]) .workflow-node-stage-pill,
+body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
+  display: none !important;
+}
+
+/* Pseudo-browser tab strip. */
+.workflow-proto-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  min-width: 0;
+}
+.workflow-proto-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  min-width: 0;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.workflow-proto-tab:hover { background: var(--surface-2); color: var(--text); }
+.workflow-proto-tab.is-active {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 10%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  color: var(--text);
+}
+.workflow-proto-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.workflow-proto-tab-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.workflow-proto-tab-close:hover {
+  background: oklch(60% 0.18 25 / 0.15);
+  color: oklch(55% 0.18 25);
+}
+.workflow-proto-tab-add,
+.workflow-proto-tool {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.workflow-proto-tab-add:hover,
+.workflow-proto-tool:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.workflow-proto-tabstrip-spacer { margin-left: auto; }
+
+/* Stage — one absolutely-positioned iframe per open tab; only the active
+   one is displayed (display toggling does NOT reload iframes). */
+.workflow-proto-stage {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.workflow-proto-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  display: none;
+}
+.workflow-proto-frame[data-active="true"] { display: block; }
+.workflow-proto-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.workflow-proto-empty-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.workflow-proto-empty-btn:hover {
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+  background: var(--surface-2);
+}
+
+/* "+" picker — dropdown panel listing prototypes + generated pages. */
+.workflow-proto-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  background: transparent;
+}
+.workflow-proto-picker {
+  position: absolute;
+  top: 42px;
+  left: 12px;
+  width: 400px;
+  max-width: calc(100% - 24px);
+  max-height: min(480px, 70%);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px oklch(0% 0 0 / 0.18);
+  z-index: 30;
+  padding: 6px 0 8px;
+}
+.workflow-proto-picker-head {
+  padding: 8px 14px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.workflow-proto-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 0;
+}
+.workflow-proto-picker-item:hover { background: var(--surface-2); }
+.workflow-proto-picker-item-glyph { color: var(--text-muted); flex: 0 0 auto; display: inline-flex; }
+.workflow-proto-picker-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.workflow-proto-picker-item-path {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+  flex: 0 1 auto;
+}
+.workflow-proto-picker-empty {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 /* Fullscreen canvas mode — collapse the entire chrome (top bar + library
@@ -2628,8 +2922,9 @@ button {
    zero width — so even though the items still "exist" they take no
    space. */
 .workflow-root[data-fullscreen="true"] .workflow-body {
-  grid-template-columns: 0 0 1fr;
+  grid-template-columns: 0 0 0 1fr;
 }
+.workflow-root[data-fullscreen="true"] .workflow-nav-rail,
 .workflow-root[data-fullscreen="true"] .workflow-library,
 .workflow-root[data-fullscreen="true"] .workflow-resize-handle-lib {
   visibility: hidden;
@@ -2645,7 +2940,9 @@ button {
    Bumped specificity with !important because the chat-margin rule lives
    on .workflow-body and would otherwise compete. */
 .workflow-root[data-fullscreen="true"] .workflow-body[data-chat-active="true"] .workflow-canvas-wrap,
-.workflow-root[data-fullscreen="true"] .workflow-body .workflow-canvas-wrap {
+.workflow-root[data-fullscreen="true"] .workflow-body .workflow-canvas-wrap,
+.workflow-root[data-fullscreen="true"] .workflow-body[data-chat-active="true"] .workflow-proto-viewer,
+.workflow-root[data-fullscreen="true"] .workflow-body .workflow-proto-viewer {
   margin-right: 0 !important;
 }
 /* The Enter-fullscreen button in the top bar — quiet icon glyph. */
@@ -2748,6 +3045,11 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
+  /* v3.6 — the head doubles as the panel title for the nav-rail-driven
+     library ("Nodes" / "Outputs"), with an optional count badge inline. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .workflow-library-section {
   display: flex;
@@ -13934,6 +14236,18 @@ a.ds-badge:hover, button.ds-badge:hover {
 .chat-action-fullscreen { font-family: var(--font-mono); font-size: 12px; }
 .chat-drawer > .chat-header { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
 .chat-drawer > .chat-footer { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
+/* v3.6 — workflow-mode dock variant. The chat panel sits BELOW the 44px
+   workflow bar, flush to the right of the canvas / prototype viewer (a true
+   side column, not a floating overlay). The drawer stays position:fixed —
+   the canvas already reserves its width via margin-right — it just no
+   longer covers the top bar or casts a floating shadow. Chat fullscreen
+   ([data-fullscreen]) keeps top:0 via its higher-specificity rule above;
+   canvas fullscreen (workflow-root[data-fullscreen]) hides the bar, so the
+   dock snaps back to top:0 via the :has() rule. */
+.chat-drawer-dock { top: 44px; box-shadow: none; }
+.chat-drawer-dock > .chat-header { border-top-left-radius: 0; border-top-right-radius: 0; }
+.chat-drawer-dock > .chat-footer { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
 /* Body needs its own overflow clip since the drawer itself can't clip
    (overflow:visible above so the perm-menu can escape upward). */
 .chat-drawer > .chat-body { overflow-y: auto; }

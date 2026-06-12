@@ -8564,7 +8564,10 @@ function chatStatusReducer(prev, ev) {
   return prev || "streaming";
 }
 
-function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart }) {
+// `variant` (optional) adds a `chat-drawer-<variant>` class to the root for
+// surface-specific layout. Workflow mode passes "dock" so the panel docks
+// BELOW the workflow bar instead of overlaying the full viewport height.
+function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart, variant }) {
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("connecting");   // connecting | streaming | done | fail | error
   const [error, setError] = useState(null);
@@ -9079,7 +9082,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   };
 
   return html`
-    <div className="chat-drawer" data-collapsed=${collapsed} data-fullscreen=${fullscreen}>
+    <div className=${"chat-drawer" + (variant ? " chat-drawer-" + variant : "")} data-collapsed=${collapsed} data-fullscreen=${fullscreen}>
       <div className="chat-drawer-resize-handle" onMouseDown=${onResizeStart}/>
       <div className="chat-header">
         <div className="chat-title-group">
@@ -16861,6 +16864,7 @@ function WorkflowCanvas() {
       onStartNewChat=${spawnWorkflowChat}
       selectionCount=${selectionCount}
       onResizeStart=${startChatResize}
+      variant="dock"
     />
   `;
 }
@@ -20197,6 +20201,58 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
+
+  // v3.6 — Left icon nav rail. Three icon-only entries:
+  //   1. Nodes   — the buildable-node library panel (drag palette)
+  //   2. Outputs — the generated-files library panel
+  //   3. Prototype viewer — replaces the canvas with a pseudo-browser
+  // `leftPanel` is which library panel is open ("nodes" | "outputs" | null =
+  // collapsed; clicking the active icon again collapses). `mainView` is what
+  // fills the main cell ("canvas" | "proto"). Both persist to localStorage so
+  // the layout sticks across reloads (same convention as the panel widths).
+  const [leftPanel, setLeftPanel] = useState(() => {
+    try {
+      const v = localStorage.getItem("th-workflow-left-panel");
+      if (v === "none") return null;
+      return v === "outputs" ? "outputs" : "nodes";
+    } catch { return "nodes"; }
+  });
+  const [mainView, setMainView] = useState(() => {
+    try { return localStorage.getItem("th-workflow-main-view") === "proto" ? "proto" : "canvas"; } catch { return "canvas"; }
+  });
+  // The viewer mounts lazily on first activation and then STAYS mounted
+  // (hidden via CSS) so its tab iframes keep their state when the user
+  // hops back to the canvas — like real browser tabs.
+  const [protoViewerMounted, setProtoViewerMounted] = useState(() => mainView === "proto");
+  useEffect(() => {
+    try { localStorage.setItem("th-workflow-left-panel", leftPanel || "none"); } catch {}
+  }, [leftPanel]);
+  useEffect(() => {
+    try { localStorage.setItem("th-workflow-main-view", mainView); } catch {}
+  }, [mainView]);
+  const onRailPanel = useCallback((which) => {
+    if (mainView === "proto") {
+      // From prototype view, a panel icon returns to the canvas with that
+      // panel open (never collapses on the way back).
+      setMainView("canvas");
+      setLeftPanel(which);
+      return;
+    }
+    setLeftPanel(p => (p === which ? null : which));
+  }, [mainView]);
+  const onRailProto = useCallback(() => {
+    if (mainView === "proto") { setMainView("canvas"); return; }
+    setProtoViewerMounted(true);
+    setMainView("proto");
+    // Clear canvas-anchored transient UI. The selection action bars / pick
+    // inspector / context menu portal to document.body and would otherwise
+    // float over the prototype viewer (the hidden canvas keeps valid rects).
+    setSelectedNodeIds(new Set());
+    setSelectedEdge(null);
+    setCtxMenu(null);
+    setPickedElement(null);
+    setCodePanelNodeId(null);
+  }, [mainView]);
 
   // Zoom overlay state — set to { filePath, branch, nodeId } when the user
   // clicks 🔍 on a Workflow prototype node or HTML asset card. Null otherwise.
@@ -27669,9 +27725,38 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           replaceExposedAssetWithFile(id, file);
         }}
       />`}
-      <div className="workflow-body" data-chat-active=${chatActive ? "true" : "false"}>
+      <div
+        className="workflow-body"
+        data-chat-active=${chatActive ? "true" : "false"}
+        data-view=${mainView}
+        data-left-panel=${mainView === "canvas" && leftPanel ? leftPanel : "none"}
+      >
+        <nav className="workflow-nav-rail" aria-label="Workflow panels">
+          <button
+            type="button"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && leftPanel === "nodes" ? " is-active" : "")}
+            aria-pressed=${mainView === "canvas" && leftPanel === "nodes" ? "true" : "false"}
+            title="Nodes — the buildable-node library. Click again to collapse."
+            onClick=${() => onRailPanel("nodes")}
+          ><${Icon.Flow}/></button>
+          <button
+            type="button"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && leftPanel === "outputs" ? " is-active" : "")}
+            aria-pressed=${mainView === "canvas" && leftPanel === "outputs" ? "true" : "false"}
+            title="Outputs — generated prototypes, pages + visual assets. Click again to collapse."
+            onClick=${() => onRailPanel("outputs")}
+          ><${Icon.Image}/></button>
+          <div className="workflow-nav-rail-sep"/>
+          <button
+            type="button"
+            className=${"workflow-nav-rail-btn" + (mainView === "proto" ? " is-active" : "")}
+            aria-pressed=${mainView === "proto" ? "true" : "false"}
+            title="Prototype viewer — browse prototypes in browser-style tabs. Click again to return to the canvas."
+            onClick=${onRailProto}
+          ><${Icon.Canvas}/></button>
+        </nav>
         <div className="workflow-library-col">
-          <${WorkflowLibrary}/>
+          <${WorkflowLibrary} tab=${leftPanel || "nodes"}/>
           <${WorkflowMiniMap} nodes=${data.nodes || []} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan}/>
         </div>
         <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
@@ -28623,6 +28708,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
             />
           `}
         </div>
+        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"}/>`}
       </div>
       ${zoomTarget && html`
         <${ZoomOverlay}
@@ -28717,7 +28803,221 @@ function WorkflowLibraryHoverLottie({ fileUrl, alt }) {
   `;
 }
 
-function WorkflowLibrary() {
+/* ────────── Prototype viewer (workflow nav rail, icon 3) ──────────
+   A pseudo-browser that takes over the workflow canvas cell: browser-style
+   tabs (add via a picker of prototypes + generated pages, close, reload,
+   open in a real browser tab). Mounts lazily on first activation and stays
+   mounted afterwards — `active` only toggles CSS visibility — so tab
+   iframes keep their state when the user hops back to the canvas.
+   Open tabs persist to localStorage per project. */
+function WorkflowProtoViewer({ active }) {
+  const lsKey = "th-proto-viewer:" + (activeProjectId() || "default");
+  const [state, setState] = useState(() => {
+    try {
+      const j = JSON.parse(localStorage.getItem(lsKey) || "null");
+      if (j && Array.isArray(j.tabs)) {
+        const tabs = j.tabs.filter(t => t && t.id && typeof t.path === "string");
+        const activeId = tabs.some(t => t.id === j.activeId) ? j.activeId : (tabs[0] && tabs[0].id) || null;
+        return { tabs, activeId };
+      }
+    } catch {}
+    return { tabs: [], activeId: null };
+  });
+  const { tabs, activeId } = state;
+  useEffect(() => {
+    try { localStorage.setItem(lsKey, JSON.stringify(state)); } catch {}
+  }, [state, lsKey]);
+  // Per-tab reload nonce. Bumping remounts that tab's iframe (key change),
+  // which is the only reliable cross-origin-safe way to force a reload.
+  const [nonces, setNonces] = useState({});
+  const bumpNonce = useCallback((id) => {
+    setNonces(n => ({ ...n, [id]: (n[id] || 0) + 1 }));
+  }, []);
+  // Auto-reload tabs whose backing file (or anything in its folder) changed
+  // on disk — same SSE-driven freshness the canvas prototype nodes have.
+  useEffect(() => {
+    const onAsset = (e) => {
+      const paths = (e && e.detail && e.detail.paths) || [];
+      if (!paths.length || tabs.length === 0) return;
+      const hit = [];
+      for (const t of tabs) {
+        const dir = t.path.includes("/") ? t.path.slice(0, t.path.lastIndexOf("/") + 1) : "";
+        if (paths.some(p => typeof p === "string" && (p === t.path || (dir && p.startsWith(dir))))) hit.push(t.id);
+      }
+      if (hit.length) {
+        setNonces(n => {
+          const next = { ...n };
+          for (const id of hit) next[id] = (next[id] || 0) + 1;
+          return next;
+        });
+      }
+    };
+    window.addEventListener("th:asset-refresh", onAsset);
+    return () => window.removeEventListener("th:asset-refresh", onAsset);
+  }, [tabs]);
+  const addTab = useCallback((path, label) => {
+    setState(s => {
+      const existing = s.tabs.find(t => t.path === path);
+      if (existing) return { ...s, activeId: existing.id };
+      const id = "pt" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const fallback = path.split("/").filter(Boolean).slice(-2).join("/");
+      return { tabs: [...s.tabs, { id, path, label: label || fallback }], activeId: id };
+    });
+    setPickerOpen(false);
+  }, []);
+  const closeTab = useCallback((id) => {
+    setState(s => {
+      const idx = s.tabs.findIndex(t => t.id === id);
+      if (idx < 0) return s;
+      const nextTabs = s.tabs.filter(t => t.id !== id);
+      let nextActive = s.activeId;
+      if (nextActive === id) {
+        const neighbor = nextTabs[idx] || nextTabs[idx - 1] || nextTabs[0];
+        nextActive = (neighbor && neighbor.id) || null;
+      }
+      return { tabs: nextTabs, activeId: nextActive };
+    });
+  }, []);
+  // "+" picker — fetches the same lists the library's Outputs tab shows.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickList, setPickList] = useState(null);   // null = loading
+  const openPicker = useCallback(async () => {
+    setPickerOpen(true);
+    setPickList(null);
+    try {
+      const [pr, hp] = await Promise.all([
+        fetch(apiUrl("/__source_prototypes")).then(r => r.ok ? r.json() : { prototypes: [] }).catch(() => ({ prototypes: [] })),
+        fetch(apiUrl("/__source_htmls")).then(r => r.ok ? r.json() : { htmls: [] }).catch(() => ({ htmls: [] })),
+      ]);
+      setPickList({
+        protos: (pr && pr.prototypes) || [],
+        htmls:  (hp && hp.htmls) || [],
+      });
+    } catch {
+      setPickList({ protos: [], htmls: [] });
+    }
+  }, []);
+  // First activation with no saved tabs: auto-open the main prototype so
+  // the view never lands on a blank stage when there's something to show.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!active || tabs.length > 0 || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__source_prototypes"));
+        const j = r.ok ? await r.json() : null;
+        const protos = (j && j.prototypes) || [];
+        if (cancelled || !protos.length) return;
+        const main = protos.find(p => p.id === "main") || protos[0];
+        addTab(main.path, main.label || main.id);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [active, tabs.length, addTab]);
+  const activeTab = tabs.find(t => t.id === activeId) || null;
+  const srcFor = (t) => apiUrl("/" + t.path);
+  return html`
+    <div className="workflow-proto-viewer" data-active=${active ? "true" : "false"}>
+      <div className="workflow-proto-tabstrip" role="tablist" aria-label="Open prototypes">
+        ${tabs.map(t => html`
+          <div
+            key=${t.id}
+            role="tab"
+            aria-selected=${t.id === activeId ? "true" : "false"}
+            className=${"workflow-proto-tab" + (t.id === activeId ? " is-active" : "")}
+            title=${t.path}
+            onClick=${() => setState(s => ({ ...s, activeId: t.id }))}
+            onAuxClick=${(e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } }}
+          >
+            <span className="workflow-proto-tab-label">${t.label}</span>
+            <button
+              type="button"
+              className="workflow-proto-tab-close"
+              title="Close tab"
+              aria-label=${"Close " + t.label}
+              onClick=${(e) => { e.stopPropagation(); closeTab(t.id); }}
+            >×</button>
+          </div>
+        `)}
+        <button
+          type="button"
+          className="workflow-proto-tab-add"
+          title="Open a prototype or generated page in a new tab"
+          aria-label="New tab"
+          onClick=${openPicker}
+        ><${Icon.Plus}/></button>
+        <div className="workflow-proto-tabstrip-spacer"/>
+        ${activeTab && html`
+          <button
+            type="button"
+            className="workflow-proto-tool"
+            title="Reload this tab"
+            aria-label="Reload tab"
+            onClick=${() => bumpNonce(activeTab.id)}
+          ><${Icon.Refresh}/></button>
+          <button
+            type="button"
+            className="workflow-proto-tool"
+            title=${"Open " + activeTab.path + " in a real browser tab"}
+            aria-label="Open in browser tab"
+            onClick=${() => { try { window.open(srcFor(activeTab), "_blank"); } catch {} }}
+          ><${Icon.OpenExt}/></button>
+        `}
+      </div>
+      <div className="workflow-proto-stage">
+        ${tabs.length === 0 && html`
+          <div className="workflow-proto-empty">
+            <div>No tabs open.</div>
+            <button type="button" className="workflow-proto-empty-btn" onClick=${openPicker}>+ Open a prototype</button>
+          </div>
+        `}
+        ${tabs.map(t => html`
+          <iframe
+            key=${t.id + ":" + (nonces[t.id] || 0)}
+            className="workflow-proto-frame"
+            data-active=${t.id === activeId ? "true" : "false"}
+            src=${srcFor(t)}
+            title=${t.label}
+          />
+        `)}
+      </div>
+      ${pickerOpen && html`
+        <div className="workflow-proto-picker-backdrop" onClick=${() => setPickerOpen(false)}/>
+        <div className="workflow-proto-picker" role="menu">
+          ${pickList === null && html`<div className="workflow-proto-picker-empty">Loading…</div>`}
+          ${pickList !== null && html`
+            <div className="workflow-proto-picker-head">Prototypes</div>
+            ${pickList.protos.length === 0 && html`<div className="workflow-proto-picker-empty">No prototypes under source/ yet.</div>`}
+            ${pickList.protos.map(p => html`
+              <div key=${"proto:" + p.id} className="workflow-proto-picker-item" role="menuitem" onClick=${() => addTab(p.path, p.label || p.id)}>
+                <span className="workflow-proto-picker-item-glyph"><${Icon.Play}/></span>
+                <span className="workflow-proto-picker-item-label">${p.label || p.id}</span>
+                <span className="workflow-proto-picker-item-path">${p.path}</span>
+              </div>
+            `)}
+            ${pickList.htmls.length > 0 && html`
+              <div className="workflow-proto-picker-head">Generated pages</div>
+              ${pickList.htmls.map(p => html`
+                <div key=${"html:" + p.path} className="workflow-proto-picker-item" role="menuitem" onClick=${() => addTab(p.path, p.label || p.path.split("/").pop())}>
+                  <span className="workflow-proto-picker-item-glyph"><${Icon.Canvas}/></span>
+                  <span className="workflow-proto-picker-item-label">${p.label || p.path.split("/").pop()}</span>
+                  <span className="workflow-proto-picker-item-path">${p.path}</span>
+                </div>
+              `)}
+            `}
+          `}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// v3.6 — `tab` is controlled by the workflow nav rail ("nodes" | "outputs");
+// the library no longer renders its own tab strip. Defaults to "nodes" so a
+// bare <WorkflowLibrary/> still renders the palette.
+function WorkflowLibrary({ tab = "nodes" }) {
   const [assets, setAssets] = useState([]);
   const [savedPrompts, setSavedPrompts] = useState([]);
   // Discovered prototype folders — any `source/<dir>/index.html` (or one
@@ -28743,13 +29043,11 @@ function WorkflowLibrary() {
     if (p && typeof p.path === "string" && p.path.startsWith("design-systems/")) return false;
     return true;
   }), [htmlPagesRaw]);
-  // Library is split into two tabs:
+  // Library is split into two tabs (driven by the `tab` prop / nav rail):
   //   - "nodes": buildable node templates (Prototypes, DS, Iterator,
-  //     Direction, Text, Tools) — defaults to this so the first thing the
-  //     user sees is the palette they'd drag from.
+  //     Direction, Text, Tools).
   //   - "outputs": generated files (HTML pages + visual Assets). Has a
   //     list/grid view toggle, list is default.
-  const [tab, setTab] = useState("nodes");
   // v3.1 — default to thumbnail grid. Asset cards lean on visual recognition
   // (image / svg / shader thumbs), so the user usually wants to scan the
   // grid first; the list view is the secondary, name-driven mode.
@@ -29053,21 +29351,9 @@ function WorkflowLibrary() {
 
   return html`
     <aside className="workflow-library">
-      <div className="workflow-library-head">Library</div>
-      <div className="workflow-library-tabs" role="tablist">
-        <button
-          role="tab"
-          className=${"workflow-library-tab" + (tab === "nodes" ? " is-active" : "")}
-          aria-selected=${tab === "nodes" ? "true" : "false"}
-          onClick=${() => setTab("nodes")}
-        >Nodes</button>
-        <button
-          role="tab"
-          className=${"workflow-library-tab" + (tab === "outputs" ? " is-active" : "")}
-          aria-selected=${tab === "outputs" ? "true" : "false"}
-          onClick=${() => setTab("outputs")}
-          title="Generated files — HTML pages + visual assets"
-        >Outputs<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length + assets.length}</span></button>
+      <div className="workflow-library-head">
+        ${tab === "outputs" ? "Outputs" : "Nodes"}
+        ${tab === "outputs" && html`<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length + assets.length}</span>`}
       </div>
       ${tab === "nodes" ? html`
       <div className="workflow-library-section">
