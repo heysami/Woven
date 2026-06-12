@@ -117,6 +117,35 @@ function nodePrototype(node) {
   if (!node) return "main";
   return node.prototype || node.branch || "main";
 }
+
+// Workflow-1 frames-only regen prompt. Shared by two call sites: the
+// auto-dispatch in `openCanvasFrames` (fires when no frames exist yet) and
+// the manual Regenerate button on the canvas-frames node title bar (fires
+// when the user wants to re-derive frames after a structural prototype
+// change). Both want exactly the same scope — frames + arrows only, leaving
+// primitives / entities / state-machines / timelines / grids untouched —
+// so the prompt is hoisted here instead of being inlined twice.
+function buildFramesRegenPrompt(branch) {
+  return [
+    "Workflow 1 — regenerate ONLY canvas frames + arrows for source/" + branch + "/.",
+    "",
+    "Source root: source/" + branch + "/",
+    "Target data file: editor/data.js (window.EDITOR_DATA)",
+    "",
+    "SCOPE — produce ONLY:",
+    "  • frames[]   — one per HTML page under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry",
+    "  • arrows[]   — connections between frames (from/to/action) derived from in-source navigation (links, programmatic routing, hash changes)",
+    "",
+    "DO NOT regenerate / DO NOT touch:",
+    "  • primitives[] · entities[] · stateMachines · timelines · grids · links · lanes",
+    "  • design-systems/ · meta.dsRef",
+    "  • any source/ file — this is a one-way derivation from source → editor/data.js",
+    "",
+    "Read docs/agents/workflows/1-regenerate.md (frames + arrows subagents only) for the playbook. Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written editor/data.js, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
+    "",
+    "Gate check: meta.dsRef should already be set (this is a frames-only regen, not a fresh project bootstrap). If it isn't, ignore and proceed — frames don't depend on DS.",
+  ].join("\n");
+}
 // Apply the layout sidecar (if loaded by data.js) BEFORE the editor reads
 // frame positions or grid meta. EDITOR_LAYOUT shapes:
 //   new:    { positions: { [frameId]: { col, row } }, meta: { defaultFrame: {w,h}, canvasGap } }
@@ -20216,34 +20245,42 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     // workflow-mode chat surface via onStartChatWithPrompt — same path
     // the quick-refine / quick-fork buttons use, so permissions /
     // attribution / streaming are consistent with the rest of workflow
-    // mode. The prompt explicitly tells the agent to constrain output
-    // to frames + arrows.
-    const prompt = [
-      "Workflow 1 — regenerate ONLY canvas frames + arrows for source/" + branch + "/.",
-      "",
-      "Source root: source/" + branch + "/",
-      "Target data file: editor/data.js (window.EDITOR_DATA)",
-      "",
-      "SCOPE — produce ONLY:",
-      "  • frames[]   — one per HTML page under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry",
-      "  • arrows[]   — connections between frames (from/to/action) derived from in-source navigation (links, programmatic routing, hash changes)",
-      "",
-      "DO NOT regenerate / DO NOT touch:",
-      "  • primitives[] · entities[] · stateMachines · timelines · grids · links · lanes",
-      "  • design-systems/ · meta.dsRef",
-      "  • any source/ file — this is a one-way derivation from source → editor/data.js",
-      "",
-      "Read docs/agents/workflows/1-regenerate.md (frames + arrows subagents only) for the playbook. Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written editor/data.js, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
-      "",
-      "Gate check: meta.dsRef should already be set (this is a frames-only regen, not a fresh project bootstrap). If it isn't, ignore and proceed — frames don't depend on DS.",
-    ].join("\n");
-
+    // mode. The prompt itself is hoisted to `buildFramesRegenPrompt`
+    // (module-level) so the manual Regenerate button on the canvas-frames
+    // node fires the exact same scope.
     try {
-      onStartChatWithPrompt && onStartChatWithPrompt(prompt);
+      onStartChatWithPrompt && onStartChatWithPrompt(buildFramesRegenPrompt(branch));
     } catch (err) {
       console.error("[open-canvas-frames]", err);
     }
   }, [setData, onStartChatWithPrompt]);
+
+  // Manually re-dispatch the frames-only regen for an already-spawned
+  // canvas-frames node. The Refresh button on that node is intentionally
+  // passive (iframe remount only — no agent runs); this is the separate
+  // path for "the prototype changed structurally, rewrite frames + arrows
+  // from source." Same prompt as the auto-dispatch in openCanvasFrames,
+  // just gated behind an explicit confirm so the user can't trigger it
+  // accidentally.
+  const regenerateCanvasFrames = useCallback((branch) => {
+    if (!branch) return;
+    const ok = confirm(
+      "Regenerate canvas frames for source/" + branch + "/?\n\n" +
+      "This re-runs the Workflow 1 frames + arrows agent: it rescans every " +
+      "HTML page under the prototype, rebuilds frames[] + arrows[] in " +
+      "editor/data.js, and streams progress in the chat drawer. Existing " +
+      "primitives / entities / state-machines / timelines / grids are not " +
+      "touched. Frame layout (positions saved in <slug>.layout.js) is " +
+      "preserved where ids still match.\n\n" +
+      "Continue?"
+    );
+    if (!ok) return;
+    try {
+      onStartChatWithPrompt && onStartChatWithPrompt(buildFramesRegenPrompt(branch));
+    } catch (err) {
+      console.error("[regenerate-canvas-frames]", err);
+    }
+  }, [onStartChatWithPrompt]);
   const openZoomForAsset = useCallback((node) => {
     if (!node || node.assetKind !== "html") return;
     if (!node.path || node.path.startsWith("inline:")) return;
@@ -27821,6 +27858,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
                 onRemove=${() => removeNode(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
+                onRegenerate=${() => regenerateCanvasFrames(nodePrototype(n))}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "simulation").map(n => html`
@@ -34213,11 +34251,13 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
 // versioning. The frames + arrows the user sees are the same `model.frames`
 // / `model.arrows` the editor-mode Canvas tab reads ([app.js: CanvasView]).
 //
-// Title bar: drag handle, label `Canvas frames · <prototype>`, refresh
-// (nonce bump → remount iframe), close.
+// Title bar (left → right): drag handle, label `Canvas frames · <prototype>`,
+// Open-in-editor, Regenerate (dispatches the frames + arrows agent — the
+// prototype may have changed structurally), Refresh (passive iframe reload —
+// pulls a fresh editor/data.js from disk, no agent), Close.
 // Body: scale-to-fit iframe rendered at 1920×1200 native viewport. Resize
 // corner at bottom-right.
-function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd }) {
+function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd, onRegenerate }) {
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
@@ -34343,10 +34383,19 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.OpenExt}/><//>
+        ${onRegenerate && html`
+          <${HoverTip}
+            className="workflow-node-action"
+            tip="Run agent"
+            ariaLabel="Regenerate canvas frames"
+            onClick=${(e) => { e.stopPropagation(); onRegenerate(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Spark}/><//>
+        `}
         <${HoverTip}
           className="workflow-node-action"
-          tip="Refresh — reload editor/data.js and remount the canvas iframe."
-          ariaLabel="Refresh canvas frames"
+          tip="Reload data"
+          ariaLabel="Reload canvas frames from disk"
           onClick=${(e) => { e.stopPropagation(); setNonce(n => n + 1); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Refresh}/><//>

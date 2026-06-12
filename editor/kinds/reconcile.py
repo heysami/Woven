@@ -719,9 +719,10 @@ _PROTOTYPE_FOLDER_SKIP_NAMES = {
 def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     """For every `source/<slug>/index.html` (or `index.htm`) on disk where
     `<slug>` doesn't start with `_` and isn't a known scratch directory,
-    check whether the workflow already has a `kind: "prototype"` node with
-    `branch === slug`. If not, emit an auto-class ORPHAN_PROTOTYPE_FOLDER
-    drift so the autoheal can mount one.
+    check whether the workflow already has a `kind: "prototype"` node whose
+    canonical slug (`prototype`, falling back to legacy `branch`) equals
+    `slug`. If not, emit an auto-class ORPHAN_PROTOTYPE_FOLDER drift so the
+    autoheal can mount one.
 
     This makes the per-prototype subfolder convention (v3.2) feel
     automatic: the agent writes `source/<slug>/...`, the user sees a
@@ -730,11 +731,20 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     if not os.path.isdir(source_dir):
         return
     nodes = workflow.get("nodes") or []
-    existing_branches = {
-        (n.get("branch") or "").strip()
-        for n in nodes
-        if isinstance(n, dict) and n.get("kind") == "prototype"
-    }
+    # v3.7 made `prototype` the canonical slug field (`branch` kept as fallback
+    # for legacy nodes — see app.js prototypeSlugForNode / line 110). A node
+    # carrying only `prototype` covers the slug just as fully as one carrying
+    # only `branch`; reading only `branch` here causes the autoheal to spawn
+    # duplicate prototype_<slug> siblings every reconcile tick, and worse, to
+    # respawn one immediately after the user deletes it (the canonical-field
+    # node still exists, so the slug stays "orphaned" in this detector's eyes).
+    existing_branches = set()
+    for n in nodes:
+        if not isinstance(n, dict) or n.get("kind") != "prototype":
+            continue
+        slug = (n.get("prototype") or n.get("branch") or "").strip()
+        if slug:
+            existing_branches.add(slug)
     try:
         entries = sorted(os.scandir(source_dir), key=lambda e: e.name)
     except OSError:
@@ -764,7 +774,7 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
             "slug":     slug,
             "indexPath": index_path,
             "summary":  f"`source/{slug}/index.html` exists but no Prototype node "
-                        f"references branch={slug!r}; mounting one.",
+                        f"covers slug={slug!r}; mounting one.",
         })
 
 
@@ -778,10 +788,14 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
     slug = (drift.get("slug") or "").strip()
     if not slug: return False
     nodes = workflow.get("nodes") or []
-    # Idempotency.
+    # Idempotency. Same canonical-field rule as the detector — a node carrying
+    # `prototype: <slug>` covers the slug just as fully as one carrying
+    # `branch: <slug>`.
     for n in nodes:
-        if isinstance(n, dict) and n.get("kind") == "prototype" \
-                and (n.get("branch") or "").strip() == slug:
+        if not isinstance(n, dict) or n.get("kind") != "prototype":
+            continue
+        existing_slug = (n.get("prototype") or n.get("branch") or "").strip()
+        if existing_slug == slug:
             return False
     # Placement: stack vertically below existing prototype siblings to keep
     # multi-prototype canvases tidy. If none yet, anchor at a comfortable
