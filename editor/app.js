@@ -8962,6 +8962,15 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
+  // v3.11 — Chat view mode: "auto" collapses finished turns' tool/thinking
+  // activity into a compact "n steps" row; "always" keeps everything
+  // expanded. Sticky across sessions via localStorage (user preference,
+  // not thread state).
+  const [viewMode, setViewMode] = useState(loadChatViewMode);
+  const changeViewMode = (v) => {
+    setViewMode(v);
+    try { localStorage.setItem(CHAT_VIEW_MODE_KEY, v); } catch {}
+  };
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // Phase 4 / v2.2 onboarding — a clicked DecisionRequestCard sends a
   // user-message shaped `[decision:<id>] <v1>[,v2,…] — <label1>[; label2;…]`.
@@ -9400,6 +9409,43 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // tool_use ↔ tool_result by id, groups parallel-Agent dispatches.
   const blocks = useMemo(() => buildBlocks(events), [events]);
 
+  // v3.11 — Apply the chat view mode. In "auto", activity blocks (tool
+  // cards, agent grids, thinking) that belong to a FINISHED turn collapse
+  // into one "collapsed_steps" pseudo-block per contiguous run; the
+  // in-flight turn's activity stays live so the user can watch the agent
+  // read / write as it happens. A turn counts as finished once a turn
+  // delimiter (the turn-final status frame, a user message, or process
+  // end) appears after it — or once the run itself stops streaming.
+  // AskUserQuestion stays visible regardless: it's conversation (an
+  // interactive answer card), not activity.
+  const displayBlocks = useMemo(() => {
+    if (viewMode === "always") return blocks;
+    const HIDEABLE = new Set(["tool", "agent_grid", "thinking"]);
+    const DELIM = new Set(["status", "user_message", "tool_answer", "end", "error"]);
+    const runDone = status === "done" || status === "fail" || processEnded;
+    let lastDelim = -1;
+    for (let i = 0; i < blocks.length; i++) if (DELIM.has(blocks[i].kind)) lastDelim = i;
+    const out = [];
+    let group = null;
+    const closeGroup = () => { if (group) { out.push(group); group = null; } };
+    for (let i = 0; i < blocks.length; i++) {
+      const bl = blocks[i];
+      const finished = runDone || i < lastDelim;
+      const interactive = bl.kind === "tool" && bl.toolUse?.name === "AskUserQuestion";
+      if (finished && !interactive && HIDEABLE.has(bl.kind)) {
+        // Key by the FIRST member so the group identity (and its expanded
+        // state in CollapsedStepsRow) is stable as later blocks join.
+        if (!group) group = { kind: "collapsed_steps", items: [], key: `cs-${bl.key}` };
+        group.items.push(bl);
+        continue;
+      }
+      closeGroup();
+      out.push(bl);
+    }
+    closeGroup();
+    return out;
+  }, [blocks, viewMode, status, processEnded]);
+
   // Did the agent modify files this run? Drives the auto-reload-on-done
   // decision in App. We only check WRITE-flavoured tools (Write/Edit/
   // MultiEdit/NotebookEdit) — Read/Glob/Grep are read-only, Bash is opaque
@@ -9487,14 +9533,23 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             </div>
           `}
           ${!isNew && events.length === 0 && status === "connecting" && html`<div className="chat-empty">Loading conversation…</div>`}
-          ${blocks.map((bl) => html`<${ChatBlock}
-            key=${bl.key}
-            block=${bl}
-            runId=${run?.runId}
-            answers=${answers}
-            onAnswered=${(id, payload) => setAnswers(prev => ({ ...prev, [id]: payload }))}
-            processEnded=${processEnded}
-          />`)}
+          ${displayBlocks.map((bl) => bl.kind === "collapsed_steps"
+            ? html`<${CollapsedStepsRow}
+                key=${bl.key}
+                items=${bl.items}
+                runId=${run?.runId}
+                answers=${answers}
+                onAnswered=${(id, payload) => setAnswers(prev => ({ ...prev, [id]: payload }))}
+                processEnded=${processEnded}
+              />`
+            : html`<${ChatBlock}
+                key=${bl.key}
+                block=${bl}
+                runId=${run?.runId}
+                answers=${answers}
+                onAnswered=${(id, payload) => setAnswers(prev => ({ ...prev, [id]: payload }))}
+                processEnded=${processEnded}
+              />`)}
           ${(status === "streaming" || status === "connecting") && html`
             <div className="chat-streaming-dots" aria-label="Agent is thinking">
               <span/><span/><span/>
@@ -9545,6 +9600,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           value=${permissionMode}
           onChange=${onPermissionModeChange}
           compact=${false}
+          openUp=${true}
+        />
+        <${ChatViewModePicker}
+          value=${viewMode}
+          onChange=${changeViewMode}
           openUp=${true}
         />
         ${runModel && html`
@@ -12844,6 +12904,56 @@ function fmtTokens(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000)     return (n / 1_000    ).toFixed(1) + "k";
   return String(n);
+}
+
+/* v3.11 — Collapsed activity row for the "auto" chat view mode. Stands in
+   for a contiguous run of FINISHED tool / agent-grid / thinking blocks.
+   Click to expand the original blocks inline; the expanded flag lives in
+   component state, so it survives re-renders (the group key is stable —
+   it's derived from the first member's key) and resets naturally when the
+   chat switches threads. */
+function CollapsedStepsRow({ items, runId, answers, onAnswered, processEnded }) {
+  const [openSteps, setOpenSteps] = useState(false);
+  const n = items.length;
+  // Scannable summary of what's inside — "Bash ×3 · Write · thinking" —
+  // so the row carries information without needing a click.
+  const label = useMemo(() => {
+    const counts = new Map();
+    for (const bl of items) {
+      const name = bl.kind === "thinking"   ? "thinking"
+                 : bl.kind === "agent_grid" ? `Agent ×${(bl.calls || []).length}`
+                 : (bl.toolUse?.name || "tool");
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([k, c]) => (c > 1 ? `${k} ×${c}` : k))
+      .join(" · ");
+  }, [items]);
+  return html`
+    <div className="chat-row chat-assistant chat-collapsed-steps" data-open=${openSteps}>
+      <button
+        className="chat-collapsed-steps-toggle"
+        onClick=${() => setOpenSteps(o => !o)}
+        title=${openSteps ? "Hide steps" : `Show ${n} step${n === 1 ? "" : "s"}`}
+      >
+        <span className="chat-collapsed-steps-chev">${openSteps ? "▾" : "▸"}</span>
+        <span className="chat-collapsed-steps-count">${n} step${n === 1 ? "" : "s"}</span>
+        ${!openSteps && html`<span className="chat-collapsed-steps-names">${label}</span>`}
+      </button>
+      ${openSteps && html`
+        <div className="chat-collapsed-steps-body">
+          ${items.map(bl => html`<${ChatBlock}
+            key=${bl.key}
+            block=${bl}
+            runId=${runId}
+            answers=${answers}
+            onAnswered=${onAnswered}
+            processEnded=${processEnded}
+          />`)}
+        </div>
+      `}
+    </div>
+  `;
 }
 
 /* Final block dispatcher — replaces ChatEventRow for rendering. ChatEventRow

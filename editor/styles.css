@@ -15554,6 +15554,53 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   overflow: auto;
 }
 .chat-status { color: var(--text-muted); font-size: 11.5px; }
+/* v3.11 — Collapsed activity row ("auto" chat view mode). One compact line
+   stands in for a finished turn's tool/thinking blocks; clicking re-expands
+   the original cards inline. Deliberately quieter than a tool card — it's
+   the "this already happened" register. */
+.chat-collapsed-steps { margin: 2px 0; }
+.chat-collapsed-steps-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  text-align: left;
+}
+.chat-collapsed-steps-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+.chat-collapsed-steps-chev { font-size: 9px; flex: none; }
+.chat-collapsed-steps-count { flex: none; letter-spacing: 0.02em; }
+.chat-collapsed-steps-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+.chat-collapsed-steps-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+/* v3.11 — Chat view-mode picker (footer, sibling of the permission picker).
+   Reuses the perm-* skeleton; only the mark color differs per mode. */
+.view-mark[data-view="auto"]   { background: var(--text-faint); }
+.view-mark[data-view="always"] { background: var(--accent); }
 .chat-usage  { color: var(--text-faint); font-size: 11px; font-family: var(--font-mono); }
 .chat-stderr { color: var(--warning); font-family: var(--font-mono); font-size: 11px; }
 .chat-end    { color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 6px; margin-top: 4px; font-size: 11.5px; }
