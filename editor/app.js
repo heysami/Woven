@@ -6671,7 +6671,7 @@ function WorkflowSectionsBar({ sections, wrapRef, setPan, setZoom, onPick }) {
         onClick=${() => setOpen(o => !o)}
       >
         <span className="workflow-sections-toggle-glyph" aria-hidden="true">▦</span>
-        <span>Sections</span>
+        <span>Go to section</span>
         <span className="workflow-sections-count">${list.length}</span>
         <span className="workflow-sections-caret" aria-hidden="true">${open ? "▾" : "▴"}</span>
       </button>
@@ -17862,7 +17862,10 @@ const WORKFLOW_CONNECT_DEFS = {
   "section": {
     label: "Section",
     provides: { out: { label: "Section contents", tags: ["section"] } },
-    accepts:  {},
+    // Generators wire INTO a section to mean "create your outputs as nodes
+    // INSIDE this frame" — the daemon's downstream walk hands the agent the
+    // frame rect + the addNodes layout instruction.
+    accepts:  { in: { label: "Generate into section", tags: ["text-gen", "asset-gen"] } },
   },
   "skill": {
     label: "Skill",
@@ -22916,30 +22919,61 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const alignSelection = useCallback((mode) => {
     // ONE combined pass: nodes + wb items align against the union bbox of
     // the whole mixed selection. Keys are prefixed to avoid id collisions
-    // across the two collections. Sections are excluded (a frame shouldn't
-    // yank around with its contents).
+    // across the two collections. Sections align as first-class rects and
+    // CARRY their contents: every non-section node whose center sits inside
+    // the section's original frame shifts by the same delta (same
+    // containment rule as moveSection) — unless that node is itself in the
+    // selection, in which case its own alignment patch wins.
     setData(d => {
-      const nodeSel = (d.nodes || []).filter(n =>
-        selectedNodeIds.has(n.id) && n.kind !== "section");
+      const nodeSel = (d.nodes || []).filter(n => selectedNodeIds.has(n.id));
       const list = Array.isArray(d.wb) ? d.wb : [];
       const wbSel = list.filter(it => selectedWbIdsRef.current.has(it.id));
       const rects = [
         ...nodeSel.map(n => ({
-          id: "n:" + n.id, x: n.x || 0, y: n.y || 0, w: n.w || 200, h: n.h || 120,
+          id: "n:" + n.id, x: n.x || 0, y: n.y || 0,
+          w: n.w || (n.kind === "section" ? 880 : 200),
+          h: n.h || (n.kind === "section" ? 560 : 120),
         })),
         ...wbSel.map(it => ({ id: "w:" + it.id, ...wbItemBBox(it) })),
       ];
       const patch = workflowAlignPatches(rects, mode);
       if (!patch.size) return d;
+      // Original frames + deltas of every selected section the patch moves.
+      const sectionShifts = [];
+      for (const n of nodeSel) {
+        if (n.kind !== "section") continue;
+        const p = patch.get("n:" + n.id);
+        if (!p) continue;
+        const dx = p.x !== undefined ? Math.round(p.x) - (n.x || 0) : 0;
+        const dy = p.y !== undefined ? Math.round(p.y) - (n.y || 0) : 0;
+        if (!dx && !dy) continue;
+        sectionShifts.push({
+          x0: n.x || 0, y0: n.y || 0,
+          x1: (n.x || 0) + (n.w || 880), y1: (n.y || 0) + (n.h || 560),
+          dx, dy,
+        });
+      }
       return {
         ...d,
         nodes: (d.nodes || []).map(n => {
           const p = patch.get("n:" + n.id);
-          if (!p) return n;
-          const next = { ...n };
-          if (p.x !== undefined) next.x = Math.round(p.x);
-          if (p.y !== undefined) next.y = Math.round(p.y);
-          return next;
+          if (p) {
+            const next = { ...n };
+            if (p.x !== undefined) next.x = Math.round(p.x);
+            if (p.y !== undefined) next.y = Math.round(p.y);
+            return next;
+          }
+          // Unselected non-section node riding along with a moved section.
+          if (n.kind !== "section" && sectionShifts.length) {
+            const cx = (n.x || 0) + (n.w || 200) / 2;
+            const cy = (n.y || 0) + (n.h || 120) / 2;
+            for (const s of sectionShifts) {
+              if (cx >= s.x0 && cx <= s.x1 && cy >= s.y0 && cy <= s.y1) {
+                return { ...n, x: (n.x || 0) + s.dx, y: (n.y || 0) + s.dy };
+              }
+            }
+          }
+          return n;
         }),
         wb: list.map(it => {
           const p = patch.get("w:" + it.id);
@@ -37700,8 +37734,11 @@ function WorkflowPickedInspectorDock({
 //   "far"  — live but below the zoom floor.        (hidden via CSS)
 //   "full" — live and shown normally.
 const WORKFLOW_LOD_MARGIN_PX  = 400;
-const WORKFLOW_LOD_EMBED_ZOOM = 0.25;
-const WORKFLOW_LOD_MEDIA_ZOOM = 0.12;
+// Zoom floors sit just above the wheel handler's 0.08 minimum — the veil
+// only takes over at the far end of the zoom range (user: "trigger the
+// placeholder 3x further than current one", v3.9.1; was 0.25 / 0.12).
+const WORKFLOW_LOD_EMBED_ZOOM = 0.085;
+const WORKFLOW_LOD_MEDIA_ZOOM = 0.04;
 
 function useWorkflowLod(lodVisible, far) {
   // `lodVisible === undefined` → caller didn't wire the prop (zoom-mode
@@ -39161,7 +39198,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         const bodyH = Math.max(1, (node.h || 480) - 32);
         const scale = Math.min(bodyW / vw, bodyH / vh);
         return html`
-          <div className="workflow-node-iframe-scale" data-lod=${lod}>
+          <div key="iframe-scale" className="workflow-node-iframe-scale" data-lod=${lod}>
             <iframe
               key=${node.id + "-" + nonce}
               ref=${iframeRef}
@@ -39178,6 +39215,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             />
           </div>
           ${lod !== "full" && html`<${WorkflowLodVeil}
+            key="lod-veil"
             zoom=${zoom}
             glyph="▶"
             label=${"source/" + branch + "/"}
@@ -42503,7 +42541,10 @@ function useFontResolver(name, onResolved) {
         if (aborted) return;
         if (j.ok) {
           setStatus({ phase: "found", source: j.source, error: null });
-          onResolved && onResolved({ url: j.url, source: j.source });
+          // Local-library hits return a project-relative cssUrl
+          // (/design-systems/<ds>/fonts/_fontface.css) — append ?project= so
+          // the <link> resolves in workspace mode, same as the upload path.
+          onResolved && onResolved({ url: j.source === "local" ? apiUrl(j.url) : j.url, source: j.source });
         } else {
           setStatus({ phase: "missing", source: null, error: j.hint || "Not found", providersTried: j.providers_tried });
           onResolved && onResolved({ url: "", source: "missing" });
@@ -42529,8 +42570,8 @@ function typoResolverChip(status, label, currentSource, onUpload, currentUrl) {
   }
   if (status.phase === "found") {
     const src = status.source || currentSource || "?";
-    const sourceLabel = ({ google: "Google Fonts", bunny: "Bunny Fonts", fontsource: "Fontsource", uploaded: "Uploaded" })[src] || src;
-    return html`<a className="workflow-node-typo-chip is-found" href=${currentUrl || "#"} target="_blank" rel="noopener" title=${"Loaded from " + sourceLabel + " — click to inspect the CDN URL"}>${label} · ✓ ${sourceLabel}</a>`;
+    const sourceLabel = ({ google: "Google Fonts", bunny: "Bunny Fonts", fontsource: "Fontsource", uploaded: "Uploaded", local: "Local library" })[src] || src;
+    return html`<a className="workflow-node-typo-chip is-found" href=${currentUrl || "#"} target="_blank" rel="noopener" title=${"Loaded from " + sourceLabel + (src === "local" ? " (design-systems/<ds>/fonts/)" : " — click to inspect the CDN URL")}>${label} · ✓ ${sourceLabel}</a>`;
   }
   if (status.phase === "missing") {
     return html`
@@ -42575,11 +42616,16 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
     inject(node.monoCdn);
     inject(node.uploadedCssUrl);
   }, [node.fontCdn, node.monoCdn, node.uploadedCssUrl]);
-  // File input ref for the manual-upload fallback.
+  // File input refs — one per font field. Upload is always available (not
+  // just the resolve-failed fallback): uploaded files land in the project's
+  // local font library (design-systems/<ds>/fonts/), where agents and the
+  // resolver look FIRST.
   const uploadInputRef = useRef(null);
+  const monoUploadInputRef = useRef(null);
   const onUploadFile = async (file, which) => {
     if (!file) return;
-    const family = (which === "mono" ? node.monoFamily : node.fontFamily) || file.name.replace(/\.[^.]+$/, "");
+    const typed = (which === "mono" ? node.monoFamily : node.fontFamily) || "";
+    const family = typed.trim() || file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
     try {
       const r = await fetch(apiUrl(`/__upload_font?name=${encodeURIComponent(family)}`), {
         method: "POST",
@@ -42591,8 +42637,8 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
       onChange({
         uploadedCssUrl: apiUrl(j.cssUrl),
         ...(which === "mono"
-          ? { monoSource: "uploaded", monoCdn: apiUrl(j.cssUrl) }
-          : { fontSource: "uploaded", fontCdn: apiUrl(j.cssUrl) }),
+          ? { monoSource: "uploaded", monoCdn: apiUrl(j.cssUrl), ...(node.monoFamily ? {} : { monoFamily: j.family }) }
+          : { fontSource: "uploaded", fontCdn: apiUrl(j.cssUrl), ...(node.fontFamily ? {} : { fontFamily: j.family }) }),
       });
     } catch (e) {
       alert("Upload failed: " + (e?.message || e));
@@ -42619,26 +42665,36 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
       </div>
       <div className="workflow-node-typo-fontrow" onMouseDown=${(e) => e.stopPropagation()}>
         <div className="workflow-node-typo-fontcol">
-          <input
-            className="workflow-node-typo-fontfield"
-            value=${node.fontFamily || ""}
-            onInput=${(e) => onChange({ fontFamily: e.target.value })}
-            placeholder="Sans family"
-            title="Type any font family. The editor probes Google Fonts → Bunny Fonts → Fontsource and uses the first one that serves it. If none have it, an Upload button appears so you can drop in a .woff2 / .ttf manually."
-          />
+          <div className="workflow-node-typo-fieldrow">
+            <input
+              className="workflow-node-typo-fontfield"
+              value=${node.fontFamily || ""}
+              onInput=${(e) => onChange({ fontFamily: e.target.value })}
+              placeholder="Sans family"
+              title="Type any font family. The editor checks the local font library (design-systems/<ds>/fonts/) first, then probes Google Fonts → Bunny Fonts → Fontsource. Or upload a .woff2 / .ttf / .otf from your machine with the ⤒ button."
+            />
+            <button className="workflow-node-typo-uploadbtn" title="Upload a local font file (.woff2 / .ttf / .otf) — saved to the project's font library so agents can use it too"
+              onClick=${() => uploadInputRef.current?.click()}>⤒</button>
+          </div>
           ${typoResolverChip(sansStatus, "sans", node.fontSource, () => uploadInputRef.current?.click(), node.fontCdn)}
           <input ref=${uploadInputRef} type="file" accept=".woff2,.woff,.ttf,.otf,font/*" style=${{display:"none"}}
             onChange=${(e) => onUploadFile(e.target.files?.[0], "sans")}/>
         </div>
         <div className="workflow-node-typo-fontcol">
-          <input
-            className="workflow-node-typo-fontfield"
-            value=${node.monoFamily || ""}
-            onInput=${(e) => onChange({ monoFamily: e.target.value })}
-            placeholder="Mono family"
-            title="Same as sans — probed across Google / Bunny / Fontsource."
-          />
-          ${typoResolverChip(monoStatus, "mono", node.monoSource, null, node.monoCdn)}
+          <div className="workflow-node-typo-fieldrow">
+            <input
+              className="workflow-node-typo-fontfield"
+              value=${node.monoFamily || ""}
+              onInput=${(e) => onChange({ monoFamily: e.target.value })}
+              placeholder="Mono family"
+              title="Same as sans — local library first, then Google / Bunny / Fontsource. Or upload with ⤒."
+            />
+            <button className="workflow-node-typo-uploadbtn" title="Upload a local font file (.woff2 / .ttf / .otf) — saved to the project's font library so agents can use it too"
+              onClick=${() => monoUploadInputRef.current?.click()}>⤒</button>
+          </div>
+          ${typoResolverChip(monoStatus, "mono", node.monoSource, () => monoUploadInputRef.current?.click(), node.monoCdn)}
+          <input ref=${monoUploadInputRef} type="file" accept=".woff2,.woff,.ttf,.otf,font/*" style=${{display:"none"}}
+            onChange=${(e) => onUploadFile(e.target.files?.[0], "mono")}/>
         </div>
       </div>
       <div className="workflow-node-typo-body" onMouseDown=${(e) => e.stopPropagation()}>
@@ -49584,6 +49640,13 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
         title="Drag to resize"
         onMouseDown=${onResizeDown}
       />
+      <div className="workflow-port-zone workflow-port-zone-in"
+           data-port-node=${node.id} data-port-side="in"
+           title="Generate into section — wire an Agent or image Skill here. Its outputs are committed as asset nodes laid out INSIDE this frame."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+        <span className="workflow-port-label workflow-port-label-left">generate into</span>
+      </div>
       <div className="workflow-port-zone workflow-port-zone-out"
            data-port-node=${node.id} data-port-side="out"
            title="Section contents — wire into an Agent / Skill / Design system. Text-bearing nodes inside flow as combined context; image-consuming skills get a capture of whatever is seen inside."

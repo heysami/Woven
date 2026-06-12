@@ -1371,6 +1371,65 @@ def resolve_project_root(qs_or_body=None, *, require_explicit=True):
     return candidate
 
 
+# ── Local font library ───────────────────────────────────────────────────
+# Uploaded fonts are collected under design-systems/<dsId>/fonts/ — one file
+# per face plus an auto-generated _fontface.css sibling and a fonts.json
+# manifest preserving the exact family casing the user typed at upload time
+# (the filename slug is lossy: "PP Neue Montreal" → "pp-neue-montreal").
+# Consumers: GET /__fonts, GET /__resolve_font (local-first), GET
+# /__design_system, and kinds/capabilities.py's agent preamble (so spawned
+# agents see the library and propose local faces first).
+FONT_EXTS = (".woff2", ".woff", ".ttf", ".otf")
+
+
+def _font_slug(name):
+    return re.sub(r"\s+", "-", (name or "").strip().lower())
+
+
+def _read_fonts_manifest(fonts_dir):
+    try:
+        with open(os.path.join(fonts_dir, "fonts.json"), "r", encoding="utf-8") as f:
+            m = json.load(f)
+            return m if isinstance(m, dict) else {}
+    except Exception:
+        return {}
+
+
+def _list_local_fonts(project_root):
+    """Enumerate every uploaded font under design-systems/*/fonts/.
+
+    Returns [{family, slug, ds, file, fontPath, cssUrl, format}] sorted by
+    ds then filename. `family` comes from the fonts.json manifest when
+    present (exact user casing), else de-slugged from the filename.
+    """
+    out = []
+    ds_root = os.path.join(project_root, "design-systems")
+    if not os.path.isdir(ds_root):
+        return out
+    for ds_id in sorted(os.listdir(ds_root)):
+        fonts_dir = os.path.join(ds_root, ds_id, "fonts")
+        if not os.path.isdir(fonts_dir):
+            continue
+        manifest = _read_fonts_manifest(fonts_dir)
+        for fname in sorted(os.listdir(fonts_dir)):
+            if not fname.lower().endswith(FONT_EXTS):
+                continue
+            slug, ext = fname.rsplit(".", 1)
+            entry = manifest.get(slug) if isinstance(manifest.get(slug), dict) else {}
+            family = ((entry or {}).get("family") or "").strip() \
+                     or " ".join(p.capitalize() for p in slug.split("-"))
+            out.append({
+                "family":   family,
+                "slug":     slug,
+                "ds":       ds_id,
+                "file":     fname,
+                "fontPath": f"design-systems/{ds_id}/fonts/{fname}",
+                "cssUrl":   f"/design-systems/{ds_id}/fonts/_fontface.css",
+                "format":   ext.lower(),
+            })
+    return out
+
+
 def _project_paths(project_root: str) -> dict:
     """Per-project derived paths. v3.1 — branches deprecated; `merges`
     retained for legacy callers but no longer used."""
@@ -5581,6 +5640,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._ds_proposals_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__resolve_font":
             return self._resolve_font_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__fonts":
+            return self._fonts_list_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__media_config":
             return self._media_config_get()
         if url_path == "/__export_config":
@@ -6764,7 +6825,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     elif ck == "asset" and str(cn.get("path") or "").startswith("source/"):
                         parts.append(f"- asset ({cn.get('assetKind') or 'file'}): {cn.get('path')}")
                     elif ck == "design-system":
-                        parts.append(f"- design system reference: id={cn.get('dsId') or 'main'}")
+                        ds_ref = cn.get("dsId") or "main"
+                        ds_fonts = [f["family"] for f in _list_local_fonts(project_root) if f["ds"] == ds_ref]
+                        parts.append(f"- design system reference: id={ds_ref}"
+                                     + (f". Local uploaded fonts (PREFER these): {', '.join(ds_fonts)}" if ds_fonts else ""))
                     elif ck == "folder" and str(cn.get("path") or "").strip():
                         parts.append(f"- folder: {cn.get('path')}")
                 if parts:
@@ -6792,6 +6856,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             dkind = dn.get("kind")
             dlabel = dn.get("title") or dn.get("name") or to_id
             dpath = (dn.get("path") or "").lstrip("/")
+            if dkind == "section":
+                # v3.9 — generate INTO the section: the producer commits its
+                # outputs as asset nodes laid out inside the frame.
+                sx = float(dn.get("x") or 0); sy = float(dn.get("y") or 0)
+                sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
+                downstream_targets.append(
+                    f"- Generate INTO the section frame “{dlabel}” (canvas rect x={sx:.0f} y={sy:.0f} "
+                    f"w={sw:.0f} h={sh:.0f}). After writing each output file under source/, register it as an "
+                    f"asset node INSIDE that rect via POST /__workflow/node/{node_id}/commit with "
+                    "addNodes: [{\"id\": \"<fresh id>\", \"kind\": \"asset\", \"assetKind\": \"image|html|svg|…\", "
+                    "\"path\": \"source/…\", \"x\": …, \"y\": …, \"w\": 320, \"h\": 240}]. Lay the nodes out as a "
+                    "grid inside the section bounds: start ~24px in from the left edge and ~48px below the top "
+                    "(the title strip), step by node width/height + 40px gaps, and keep every node FULLY inside "
+                    "the rect. If they don't fit, shrink w/h per node rather than overflowing the frame.")
+                continue
             if dkind == "asset" and dpath:
                 ak = dn.get("assetKind") or "file"
                 downstream_targets.append(f"- Write your {ak} output to `{dpath}` (wired to asset node “{dlabel}”).")
@@ -8370,6 +8449,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # List mode: no id → enumerate every DS folder.
         if not ds_id:
             items = []
+            all_fonts = _list_local_fonts(project_root)
             if os.path.isdir(ds_root):
                 for entry in sorted(os.listdir(ds_root)):
                     sub = os.path.join(ds_root, entry)
@@ -8387,6 +8467,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "hasGallery": os.path.isfile(os.path.join(sub, "gallery.html")),
                         "hasStyles":  os.path.isfile(os.path.join(sub, "styles.css")),
                         "hasDesignMd": os.path.isfile(os.path.join(sub, "DESIGN.md")),
+                        "fonts": [f["family"] for f in all_fonts if f["ds"] == entry],
                     })
             return self._reply(200, {"items": items})
         # Single-DS mode.
@@ -8412,6 +8493,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "galleryHtml": gallery_html,
                 "designMd":    design_md,
             },
+            # Local font library scoped to this DS — uploaded faces under
+            # design-systems/<id>/fonts/. Full cross-DS list: GET /__fonts.
+            "fonts": [f for f in _list_local_fonts(project_root) if f["ds"] == ds_id],
             "exists": True,
         })
 
@@ -8807,16 +8891,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             return {}
 
     # ── GET /__resolve_font?name=<family> ────────────────────────────────
-    # Tries multiple font hosts in order and returns the first one that
-    # responds with a valid CSS stylesheet. Used by the typography node so
-    # arbitrary font names (not just Google Fonts) work without the user
-    # having to know which host serves which family.
+    # Checks the LOCAL font library first (design-systems/*/fonts/ — fonts
+    # the user uploaded), then tries multiple font hosts in order and
+    # returns the first one that responds with a valid CSS stylesheet. Used
+    # by the typography node so arbitrary font names (not just Google Fonts)
+    # work without the user having to know which host serves which family.
     #
     # Response shape:
-    #   { "ok": true, "url": "...", "source": "google" | "bunny" | "fontsource",
+    #   { "ok": true, "url": "...", "source": "local" | "google" | "bunny" | "fontsource",
     #     "family": "Inter", "preview": "/* first 200 chars of CSS */" }
     # On no-match:
-    #   { "ok": false, "family": "Inter", "providers_tried": ["google", "bunny", "fontsource"] }
+    #   { "ok": false, "family": "Inter", "providers_tried": ["local", "google", "bunny", "fontsource"] }
     #
     # The font name is used verbatim (after url-encoding) — case + spelling
     # matter. We do NOT search for fuzzy matches; that's the user's job.
@@ -8832,14 +8917,34 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         family_url = urllib.parse.quote(name).replace("%20", "+")
         # slug = lower-case dash-joined (Fontsource convention)
-        slug = re.sub(r"\s+", "-", name.strip().lower())
+        slug = _font_slug(name)
+
+        # LOCAL LIBRARY FIRST. Uploaded faces are exactly the ones the CDNs
+        # won't have (custom / licensed fonts) — and when a local face
+        # shadows a Google Fonts name, the user's own file wins (they
+        # uploaded it on purpose).
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError:
+            project_root = None
+        if project_root:
+            for f in _list_local_fonts(project_root):
+                if f["slug"] == slug or f["family"].strip().lower() == name.strip().lower():
+                    return self._reply(200, {
+                        "ok":      True,
+                        "url":     f["cssUrl"],
+                        "source":  "local",
+                        "family":  f["family"],
+                        "ds":      f["ds"],
+                        "preview": f"/* local upload: {f['fontPath']} */",
+                    })
 
         candidates = [
             ("google", f"https://fonts.googleapis.com/css2?family={family_url}:wght@400;500;600;700;800&display=swap"),
             ("bunny",  f"https://fonts.bunny.net/css?family={family_url.lower()}:400,500,600,700,800"),
             ("fontsource", f"https://cdn.jsdelivr.net/fontsource/css/{slug}@latest/index.css"),
         ]
-        tried = []
+        tried = ["local"] if project_root else []
         for source, url in candidates:
             tried.append(source)
             try:
@@ -8882,7 +8987,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "ok":              False,
             "family":          name,
             "providers_tried": tried,
-            "hint":            "Font not found on Google Fonts / Bunny Fonts / Fontsource. Upload a .woff2 / .ttf manually via POST /__upload_font.",
+            "hint":            "Font not in the local library (design-systems/*/fonts/) nor on Google Fonts / Bunny Fonts / Fontsource. Upload a .woff2 / .ttf manually via POST /__upload_font?name=<family>.",
         })
 
     # ── POST /__upload_font?ds=<id>&name=<family> ────────────────────────
@@ -8922,7 +9027,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "application/octet-stream": "woff2",
         }.get(ctype, "woff2")
         body = self.rfile.read(length)
-        slug = re.sub(r"\s+", "-", name.strip().lower())
+        slug = _font_slug(name)
         # Write under design-systems/<dsId>/fonts/. Auto-create dirs.
         fonts_dir = os.path.join(project_root, "design-systems", ds_id, "fonts")
         try:
@@ -8935,18 +9040,31 @@ class H(http.server.SimpleHTTPRequestHandler):
                 f.write(body)
         except Exception as e:
             return self._reply(500, {"error": f"could not write font file: {e}"})
+        # Manifest — fonts.json maps slug → exact family casing the user
+        # typed ("PP Neue Montreal", not the lossy de-slug "Pp Neue
+        # Montreal"). _list_local_fonts + the @font-face CSS both read it.
+        manifest = _read_fonts_manifest(fonts_dir)
+        manifest[slug] = {"family": name, "file": slug + "." + ext}
+        try:
+            with open(os.path.join(fonts_dir, "fonts.json"), "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, sort_keys=True)
+        except Exception as e:
+            return self._reply(500, {"error": f"could not write fonts.json: {e}"})
         # Sibling CSS — append to design-systems/<dsId>/fonts/_fontface.css.
         # This is what the editor <link>s to register the uploaded face. We
         # rebuild it from scratch each call so deleted fonts vanish.
         css_path = os.path.join(fonts_dir, "_fontface.css")
         files = sorted(f for f in os.listdir(fonts_dir)
-                       if f.lower().endswith((".woff2", ".woff", ".ttf", ".otf")))
+                       if f.lower().endswith(FONT_EXTS))
         css_chunks = ["/* Auto-generated by /__upload_font. Edit at your own risk. */\n"]
         for f in files:
             face_name = f.rsplit(".", 1)[0]
             face_fmt  = {"woff2": "woff2", "woff": "woff", "ttf": "truetype", "otf": "opentype"}.get(f.rsplit(".", 1)[1].lower(), "woff2")
-            # Use display family name (de-slug) for font-family
-            display = " ".join(p.capitalize() for p in face_name.split("-"))
+            # font-family = exact manifest casing; de-slug fallback for
+            # pre-manifest uploads.
+            mrow = manifest.get(face_name) if isinstance(manifest.get(face_name), dict) else {}
+            display = ((mrow or {}).get("family") or "").strip() \
+                      or " ".join(p.capitalize() for p in face_name.split("-"))
             css_chunks.append(
                 f"@font-face {{\n"
                 f"  font-family: '{display}';\n"
@@ -8968,6 +9086,28 @@ class H(http.server.SimpleHTTPRequestHandler):
             "fontPath": os.path.relpath(font_path, project_root),
             "cssUrl":  css_url,
             "source":  "uploaded",
+        })
+
+    # ── GET /__fonts ─────────────────────────────────────────────────────
+    # Enumerate the LOCAL FONT LIBRARY: every uploaded font file under
+    # design-systems/*/fonts/ across the project. This is the discovery
+    # endpoint agents hit before proposing typography — local (user-
+    # uploaded) faces take priority over CDN families because they're the
+    # ones the user deliberately collected.
+    def _fonts_list_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        items = _list_local_fonts(project_root)
+        return self._reply(200, {
+            "items": items,
+            "count": len(items),
+            "hint":  ("Load a family by linking its cssUrl stylesheet, then use "
+                      "font-family: '<family>'. Add more via POST /__upload_font"
+                      "?name=<family>[&ds=<id>] with the raw font file as body. "
+                      "Resolve any name (local first, then Google/Bunny/Fontsource) "
+                      "via GET /__resolve_font?name=<family>."),
         })
 
     # ── Phase 4a — BYOK media config + asset generation ──────────────────

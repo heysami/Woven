@@ -169,8 +169,11 @@ def _daemon_endpoints() -> list:
         {"method": "GET",  "path": "/__kinds/registry",     "purpose": "Per-kind contracts: inputs, outputs, dispatch, fanOut"},
         {"method": "GET",  "path": "/__kinds/reconcile",    "purpose": "Drift detection across workflow.json vs disk"},
         {"method": "GET",  "path": "/__capabilities",       "purpose": "This catalog — what the app can do"},
-        {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files"},
+        {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files (incl. per-DS local fonts)"},
         {"method": "POST", "path": "/__design_system",      "purpose": "Write a DS trio (vars/primitives/index)"},
+        {"method": "GET",  "path": "/__fonts",              "purpose": "LOCAL FONT LIBRARY — every user-uploaded font under design-systems/*/fonts/ (family, cssUrl, ds)"},
+        {"method": "GET",  "path": "/__resolve_font",       "purpose": "Resolve a font family: local library FIRST, then Google/Bunny/Fontsource (?name=<family>)"},
+        {"method": "POST", "path": "/__upload_font",        "purpose": "Add a font to the local library (?name=<family>&ds=<id>, raw .woff2/.ttf/.otf body)"},
         {"method": "POST", "path": "/__decision/<id>",      "purpose": "Persist a checkpoint pick (DECISION_<id>.json)"},
     ]
 
@@ -439,6 +442,32 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
         f"  • ImageMagick    {'✓ INSTALLED' if tools.get('imagemagick') else '⚠ NOT INSTALLED'}\n"
         f"  • ffmpeg         {'✓ INSTALLED' if tools.get('ffmpeg') else '⚠ NOT INSTALLED'}"
     )
+    # v3.10 — LOCAL FONT LIBRARY. Fonts the user uploaded (custom / licensed
+    # faces the CDNs don't carry) are collected under design-systems/<ds>/fonts/.
+    # Embed the live list when we have project context so the agent proposes
+    # from the user's own collection FIRST instead of defaulting to the same
+    # ten Google Fonts every time. Without project context, fall back to
+    # pointing at GET /__fonts.
+    font_lines = ""
+    try:
+        if project_root:
+            import sys, os
+            _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if _editor_dir not in sys.path:
+                sys.path.insert(0, _editor_dir)
+            from serve import _list_local_fonts
+            _font_rows = _list_local_fonts(project_root)
+            if _font_rows:
+                font_lines = "\n".join(
+                    f"  • '{r['family']}'  ({r['format']}, ds={r['ds']}) — stylesheet: {r['cssUrl']}"
+                    for r in _font_rows[:40]
+                )
+            else:
+                font_lines = "  (none uploaded yet in this project — re-check with GET /__fonts before assuming so)"
+    except Exception:
+        pass
+    if not font_lines:
+        font_lines = "  (no project context at preamble build time — enumerate with GET $TH_DAEMON_URL/__fonts?project=$TH_PROJECT_ID)"
     # v3.9 — cap bumped from 60 to 100: the agent catalogue crossed 60 with the
     # motion-studio family (7) + the photography / illustration / creative-visual /
     # material families; at 60 the alphabetical tail (sim-*, vector-*, video,
@@ -511,6 +540,18 @@ If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → bac
 > **WORKSPACE MODE — every daemon URL needs `?project=$TH_PROJECT_ID`.** The daemon hosts many projects under one process. Your shell already has `TH_PROJECT_ID` set (your project's id) and `TH_DAEMON_URL` set (the daemon root). When you `curl` an endpoint, append `?project=$TH_PROJECT_ID` (or `&project=$TH_PROJECT_ID` if the URL already has a query). Forgetting it returns `400 workspace mode with N projects requires explicit ?project=<id>` — that's the daemon telling you to fix the URL, not asking what to do. Always use `$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID` (and same shape for every other endpoint), never the bare `$TH_DAEMON_URL/__workflow`. Bug history: the musem chat got back the install's brand-landing workflow (27 unrelated nodes) because of this.
 
 **Node kinds** ({len(caps['kinds'])}): {', '.join(k['kind'] for k in caps['kinds'])}. See `GET /__kinds/registry` for full per-kind contracts.
+
+## Local font library — check it BEFORE proposing typography
+
+The user collects custom fonts under `design-systems/<dsId>/fonts/` (one file per face + an auto-generated `_fontface.css` + a `fonts.json` manifest with exact family casing). These are deliberate picks — licensed faces, brand fonts, faces the CDNs don't carry. **When proposing a design or choosing typography, look through this library FIRST and prefer a local face that fits the brief over a Google Fonts default.** Only fall back to CDN families when nothing local fits (and say so).
+
+**Local fonts in THIS project right now:**
+{font_lines}
+
+How to use one:
+- In any `source/` page: `<link rel="stylesheet" href="/design-systems/<ds>/fonts/_fontface.css">` then `font-family: '<family>'` (use the exact family casing from the list / `GET /__fonts`).
+- To resolve any family name (local first, then Google → Bunny → Fontsource): `GET /__resolve_font?name=<family>`.
+- To add a face the user gives you (or a file already on disk): `POST /__upload_font?name=<family>&ds=<id>` with the raw `.woff2`/`.ttf`/`.otf` as the request body — it lands in the library, regenerates `_fontface.css`, and becomes visible to every future run.
 
 ## Style cues are non-negotiable (v3.1 hard rule)
 

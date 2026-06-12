@@ -6350,7 +6350,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    .workflow-port-dot's own pointer-events: auto. Keep the zone narrow — a
    50%-wide zone over a big section frame is a huge crosshair-cursor region
    even though it doesn't catch clicks. */
-.workflow-node-section .workflow-port-zone-out {
+.workflow-node-section .workflow-port-zone-out,
+.workflow-node-section .workflow-port-zone-in {
   width: 24px;
 }
 
@@ -8759,6 +8760,30 @@ a.ds-badge:hover, button.ds-badge:hover {
   box-sizing: border-box;
 }
 .workflow-node-typo-fontfield:focus { border-color: var(--accent); }
+.workflow-node-typo-fieldrow {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+/* Always-available local-font upload (⤒) next to each family field —
+   lands in design-systems/<ds>/fonts/, the library agents check first. */
+.workflow-node-typo-uploadbtn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 7px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.workflow-node-typo-uploadbtn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .workflow-node-typo-chip {
   display: inline-flex;
   align-items: center;
