@@ -1932,6 +1932,18 @@ button {
      covers the first paint before measurement lands. */
   transform: scale(var(--thumb-scale, 0.25));
 }
+/* Static-capture variant (v3.6): the daemon-captured .thumbnail.png replaces
+   the live iframe. The capture is 1280×720 and the strip is 16:9, so
+   object-fit: cover is a pure scale — no crop drift vs the iframe render. */
+.landing-card-thumb-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
 /* No-thumbnail variant: a SHEER tinted-glass overlay that lets the
    background diamond shader read CLEAR through the strip. Two layered
    fills:
@@ -3303,6 +3315,98 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-color: var(--accent);
 }
 .workflow-node-top-action:active { transform: translateY(1px); }
+
+/* v3.8 — Connector-spawn chrome: floating ⊕ buttons at the left/right
+   connector midpoints of the selected node, plus the spawn-menu popover.
+   Same chip vocabulary as the top-action strip so the chrome reads as one
+   family; round buttons because they anchor to ports, not the title bar. */
+.workflow-connector-spawn-btn {
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
+}
+.workflow-connector-spawn-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.workflow-connector-spawn-btn.is-open,
+.workflow-connector-spawn-btn.is-open:hover {
+  background: var(--accent);
+  color: oklch(98% 0.002 250);
+  border-color: var(--accent);
+}
+.workflow-connector-spawn-btn:active { transform: scale(0.94); }
+.workflow-connector-menu {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  padding: 6px;
+  max-height: 330px;
+  overflow-y: auto;
+}
+.workflow-connector-menu-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 8px 6px;
+}
+.workflow-connector-menu-group { margin-top: 2px; }
+.workflow-connector-menu-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.workflow-connector-menu-group:first-of-type .workflow-connector-menu-group-label {
+  border-top: none;
+  margin-top: 0;
+}
+.workflow-connector-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+  transition: background 0.1s;
+}
+.workflow-connector-menu-item:hover { background: var(--surface-2); }
+.workflow-connector-menu-item-label { font-weight: 500; }
+.workflow-connector-menu-item-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.workflow-connector-menu-bundle {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border: 1px dashed color-mix(in oklab, var(--accent) 45%, transparent);
+  margin-bottom: 4px;
+}
+.workflow-connector-menu-bundle:hover {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
 
 /* v3.3 — Asset action bar. Portaled horizontal strip of 4 icon buttons
    floating above a selected asset node. Each button opens a popover
@@ -5794,6 +5898,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    mirrored for the right-hand labels. */
 .workflow-port-label-left  { right: 100%; margin-right: 10px; }
 .workflow-port-label-right { left:  100%; margin-left:  10px; }
+/* v3.8 — port labels are quiet by default: hidden until the node is
+   SELECTED (data-selected is flagged imperatively by WorkflowSurface's
+   selection effect). Hovering a port zone also reveals ITS label so the
+   target name still surfaces mid-edge-drag onto an unselected node.
+   opacity (not display) so the reveal can fade and layout never shifts. */
+.workflow-node .workflow-port-label {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.workflow-node[data-selected="true"] .workflow-port-label,
+.workflow-port-zone:hover .workflow-port-label {
+  opacity: 1;
+}
 .workflow-proto-port:hover .workflow-port-label {
   background: var(--accent-soft);
   border-color: var(--accent);

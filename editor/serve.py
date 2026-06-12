@@ -1491,7 +1491,124 @@ def _thumbnail_for_project(project_root: str) -> "dict | None":
         label = "/".join(parts[1:-1])
     else:
         label = parts[-1]
-    return {"path": norm, "label": label, "exists": exists}
+    return {"path": norm, "label": label, "exists": exists,
+            **_thumbnail_screenshot_fields(project_root)}
+
+
+def _thumbnail_screenshot_fields(project_root: str) -> dict:
+    """Static-capture sidecar for the landing thumbnail. When the daemon has
+    screenshotted the chosen page to <project>/.thumbnail.png, the landing
+    renders that PNG instead of a live iframe — one cheap <img> per card
+    instead of a whole page runtime. screenshotV is the capture's mtime; the
+    frontend appends it as ?v= so a re-capture busts the browser cache."""
+    try:
+        st = os.stat(os.path.join(project_root, ".thumbnail.png"))
+        return {"screenshot": True, "screenshotV": int(st.st_mtime)}
+    except OSError:
+        return {"screenshot": False, "screenshotV": 0}
+
+
+# Headless-browser binary for thumbnail captures. Any Chromium flavor works —
+# we only need `--headless --screenshot`. Missing binary is fine: the landing
+# keeps its live-iframe fallback and we log once per attempt.
+_CHROME_CANDIDATES = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+)
+
+
+def _find_chrome_binary() -> "str | None":
+    for cand in _CHROME_CANDIDATES:
+        if os.path.isfile(cand):
+            return cand
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "msedge"):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
+
+
+def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
+    """Screenshot the chosen thumbnail page (served by this daemon) to
+    <project>/.thumbnail.png — headless Chrome at the same 1280×720 viewport
+    the live-iframe fallback renders at, so the capture is pixel-equivalent
+    to what the iframe showed. Runs on a worker thread spawned by
+    /__thumbnail_prototype/set; failures only log and leave the landing on
+    its live-iframe fallback, never block or fail the set call."""
+    import tempfile as _tempfile
+    out = os.path.join(project_root, ".thumbnail.png")
+    if not os.path.isfile(os.path.join(project_root, tp.replace("/", os.sep))):
+        return
+    chrome = _find_chrome_binary()
+    if not chrome:
+        print("[thumbnail] no Chrome/Chromium binary found — keeping live-iframe thumbnail", flush=True)
+        return
+    url = f"http://127.0.0.1:{PORT}/{urllib.parse.quote(tp)}"
+    if project_id:
+        url += "?project=" + urllib.parse.quote(project_id)
+    # Chrome's headless command handler validates the --screenshot extension
+    # (".tmp" → "Unsupported screenshot image file type"), so the staging
+    # file must itself end in .png.
+    tmp_png = os.path.join(project_root, ".thumbnail.tmp.png")
+    profile = _tempfile.mkdtemp(prefix="th-thumb-shot-")
+    try:
+        cmd = [
+            chrome,
+            "--headless=new",
+            "--disable-gpu",
+            "--hide-scrollbars",
+            "--window-size=1280,720",
+            "--force-device-scale-factor=1",
+            "--default-background-color=FFFFFFFF",
+            "--user-data-dir=" + profile,
+            # Fast-forward timers/animations so pages that reveal content on
+            # load (or fetch data) settle before the shot, without real waits.
+            "--virtual-time-budget=10000",
+            "--screenshot=" + tmp_png,
+            url,
+        ]
+        # Don't trust Chrome to exit: pages that keep a connection or rAF
+        # loop alive (SSE, shaders, sims) hold --virtual-time-budget open
+        # indefinitely — but the screenshot file is written long before
+        # that. Poll for the PNG and kill Chrome once it lands.
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if os.path.isfile(tmp_png) and os.path.getsize(tmp_png) > 0:
+                time.sleep(0.5)  # let the write finish before we kill
+                break
+            if proc.poll() is not None:
+                break
+            time.sleep(0.5)
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=15)
+        if os.path.isfile(tmp_png) and os.path.getsize(tmp_png) > 0:
+            os.replace(tmp_png, out)
+            print(f"[thumbnail] captured {out}", flush=True)
+        else:
+            err = b""
+            with contextlib.suppress(Exception):
+                err = proc.stderr.read() if proc.stderr else b""
+            lines = err.decode("utf-8", "replace").strip().splitlines()
+            print(f"[thumbnail] capture produced no PNG for {url}" + (f" — {lines[-1]}" if lines else ""), flush=True)
+    except Exception as e:
+        print(f"[thumbnail] capture failed for {url}: {e}", flush=True)
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp_png)
+        shutil.rmtree(profile, ignore_errors=True)
+
+
+def _spawn_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
+    threading.Thread(
+        target=_capture_thumbnail_screenshot,
+        args=(project_root, project_id, tp),
+        name="thumbnail-shot",
+        daemon=True,
+    ).start()
 
 
 def _list_projects() -> list:
@@ -10843,7 +10960,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             label = "/".join(parts[1:-1])
         else:
             label = parts[-1]
-        return {"path": norm, "label": label, "exists": exists}
+        return {"path": norm, "label": label, "exists": exists,
+                **_thumbnail_screenshot_fields(project_root)}
 
     # GET /__thumbnail_prototype?project=<id>
     def _thumbnail_prototype_get(self, qs):
@@ -10881,6 +10999,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             tp = norm
         if not self._write_thumbnail_path(project_root, tp):
             return self._reply(500, {"error": "write failed"})
+        # Static capture: screenshot the chosen page to .thumbnail.png on a
+        # worker thread (the landing prefers the PNG over a live iframe).
+        # Clearing the thumbnail drops the capture so the card returns to
+        # the placeholder field instead of showing a dead PNG.
+        if tp:
+            _spawn_thumbnail_screenshot(project_root, _qs_get(qs, "project") or "", tp)
+        else:
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(project_root, ".thumbnail.png"))
         return self._reply(200, {
             "path": tp,
             "thumbnail": self._hydrate_thumbnail(project_root, tp),

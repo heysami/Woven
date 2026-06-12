@@ -15423,6 +15423,27 @@ function LandingCardThumbIframe({ src, title }) {
   `;
 }
 
+// v3.6 — Static thumbnail capture. The daemon screenshots the chosen page to
+// <project>/.thumbnail.png when the thumbnail is set (headless Chrome at the
+// same 1280×720 viewport), so the landing renders one cheap <img> per card
+// instead of booting a whole page runtime in a live iframe. The iframe stays
+// as the fallback: capture missing / not landed yet / 404 → onError swaps it
+// back in. `version` is the capture mtime (screenshotV) for cache busting.
+function LandingCardThumbShot({ projectId, version, src, title }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return html`<${LandingCardThumbIframe} src=${src} title=${title}/>`;
+  return html`
+    <img
+      className="landing-card-thumb-img"
+      src=${"/.thumbnail.png?project=" + encodeURIComponent(projectId) + "&v=" + (version || 0)}
+      alt=${title}
+      loading="lazy"
+      draggable=${false}
+      onError=${() => setFailed(true)}
+    />
+  `;
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -15828,10 +15849,20 @@ function ProjectsLanding({ info, projects, onReload }) {
               <div key=${p.id} className=${"landing-card landing-card-has-thumb" + (p.thumbnailPrototype && p.thumbnailPrototype.exists ? " landing-card-thumb-asset" : " landing-card-thumb-field")} onClick=${() => openProject(p.id, "workflow")} role="button" tabIndex=${0} onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProject(p.id, "workflow"); } }}>
                 <div className="landing-card-thumb">
                   ${p.thumbnailPrototype && p.thumbnailPrototype.exists
-                    ? html`<${LandingCardThumbIframe}
-                        src=${"/" + p.thumbnailPrototype.path + "?project=" + encodeURIComponent(p.id)}
-                        title=${"Preview of " + (p.thumbnailPrototype.label || p.thumbnailPrototype.id)}
-                      />`
+                    ? (p.thumbnailPrototype.screenshot === false
+                        /* daemon says no capture on disk → straight to the live
+                           iframe, no wasted 404 probe. Undefined (pre-restart
+                           daemon) or true → try the PNG, onError falls back. */
+                        ? html`<${LandingCardThumbIframe}
+                            src=${"/" + p.thumbnailPrototype.path + "?project=" + encodeURIComponent(p.id)}
+                            title=${"Preview of " + (p.thumbnailPrototype.label || p.thumbnailPrototype.id)}
+                          />`
+                        : html`<${LandingCardThumbShot}
+                            projectId=${p.id}
+                            version=${p.thumbnailPrototype.screenshotV || p.lastActivity || 0}
+                            src=${"/" + p.thumbnailPrototype.path + "?project=" + encodeURIComponent(p.id)}
+                            title=${"Preview of " + (p.thumbnailPrototype.label || p.thumbnailPrototype.id)}
+                          />`)
                     : html`<${LandingCardField} seed=${p.id} hostRef=${null}/>`}
                 </div>
                 <div className="landing-card-body">
@@ -17143,6 +17174,611 @@ function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
   const b = workflowPortFlavor(toNode,   toPort);
   if (a == null || b == null) return true;   // wildcard at either end
   return a === b;
+}
+
+/* ───────────────────── Connector-spawn pipeline (v3.8) ─────────────────────
+   The "⊕ add connected node" feature. ONE declarative catalogue drives the
+   whole pipeline so a NEW node kind only needs entries here to participate —
+   and a kind with NO entry simply gets no ⊕ buttons (nothing breaks):
+
+     1. WORKFLOW_NODE_FACTORY — per-kind creation defaults. Single source of
+        truth shared by library drag-drop (onCanvasDrop) and the ⊕ menus.
+     2. WORKFLOW_CONNECT_DEFS — per-kind connection semantics: which tags
+        each port PROVIDES (data out) and ACCEPTS (data in). The ⊕ menus are
+        computed by TAG INTERSECTION — a new kind that declares
+        `provides: { out: { tags: ["asset"] } }` automatically appears in the
+        left-menu of every node whose accepts include "asset".
+     3. WORKFLOW_CONNECT_BUNDLES — multi-node recipes (e.g. asset ⊕left →
+        prompt → agent → this asset, with the prompt auto-drafted by
+        describing the asset via /__llm_run).
+
+   Tag vocabulary — a tag names a CAPABILITY, not a kind. Keep it small:
+     text            static or runtime text usable as a prompt/template input
+     text-gen        runtime producer that can fill a prompt node's text
+     asset           file-backed artifact (image / svg / html / video / …)
+     asset-gen       runtime producer that can fill an asset card's file
+     palette         color swatch set            palette-gen     producer
+     typography      type-scale reference        typography-gen  producer
+     design-system   DS reference (constraint + readable dir)
+     folder          readable folder scope
+     folder-write    writes a source/ folder (agent) → prototype.source-write
+     runnable        can be repeated by iterator-repeater
+     remixable       can be rasterised + remixed by iterator-remix
+     blendable       can be a weighted iterator-blend input
+*/
+
+function workflowNewNodeId() {
+  return "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// kind → (payload) => node body (no id / x / y — the caller positions it).
+// Defaults mirror the library drag-drop payloads exactly; onCanvasDrop now
+// routes through this map so the two creation paths can't drift.
+const WORKFLOW_NODE_FACTORY = {
+  "prompt": (p) => ({
+    kind: "prompt", w: 280, h: 200,
+    text: p.text || "", title: p.title || "",
+  }),
+  "folder": (p) => ({
+    kind: "folder", w: 320, h: 130,
+    path: p.path || "", title: p.title || "",
+  }),
+  "skill": (p) => {
+    const node = { kind: "skill", w: 280, h: 160, skill: p.skill || "generate-image" };
+    if (p.model)    node.model    = p.model;
+    if (p.provider) node.provider = p.provider;
+    if (p.aspect)   node.aspect   = p.aspect;
+    return node;
+  },
+  "asset": (p) => {
+    const branch = "main";
+    const ak = p.assetKind || null;
+    const akExt = ak === "image" ? "png"
+                : ak === "vector" || ak === "svg" ? "svg"
+                : ak === "lottie" ? "json"
+                : ak === "video"  ? "mp4"
+                : ak === "3d"     ? "glb"
+                : ak === "html"   ? "html"
+                : ak === "text"   ? "md"
+                : "png";
+    const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const path = p.path || `source/${branch}/images/asset-${stamp}.${akExt}`;
+    // Auto-derive kind from extension when not explicitly set; so a path
+    // like `source/main/svg/foo.svg` lands as kind=svg (rendered via <img>).
+    const extKind = (() => {
+      const ext = (path.split(".").pop() || "").toLowerCase();
+      if (ext === "svg" || ext === "svgz") return "svg";
+      if (ext === "html" || ext === "htm") return "html";
+      if (ext === "json") return "lottie";  // bare .json defaults to lottie — only JSON skill output
+      if (["mp4", "webm", "mov", "m4v", "ogv"].includes(ext)) return "video";
+      if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) return "audio";
+      if (["glb", "gltf", "obj", "fbx"].includes(ext)) return "3d";
+      if (["glsl", "frag", "vert"].includes(ext)) return "shader";
+      return "image";
+    })();
+    const finalKind = p.assetKind || extKind;
+    // HTML asset cards match the 1920×1440 design viewport; raster assets
+    // stay compact (220×170) — same as the library drop.
+    const { w, h } = finalKind === "html" ? { w: 1920, h: 1440 } : { w: 220, h: 170 };
+    return { kind: "asset", w, h, assetKind: finalKind, path };
+  },
+  "agent": (p) => {
+    const node = {
+      kind: "agent", w: p.w || 320, h: p.h || 240,
+      name: p.name || "Untitled agent",
+      conversation: [],
+    };
+    if (p.preset)       node.preset       = p.preset;
+    if (p.systemPreset) node.systemPreset = p.systemPreset;
+    if (p.outputMode)   node.outputMode   = p.outputMode;
+    if (p.outputPath)   node.outputPath   = p.outputPath.replace(/\{\{branch\}\}/g, "main");
+    return node;
+  },
+  "ds-brainstorm": (p) => ({
+    kind: "ds-brainstorm", w: 360, h: 620,
+    spec: {
+      mode: "any", genre: "", targetAudience: "", emotion: "",
+      samplePage: "", sampleImages: "", attachments: [],
+      ...(p.spec || {}),
+    },
+    rationale: "",
+  }),
+  "section": (p) => ({
+    kind: "section", w: 880, h: 560,
+    title: p.title || "Section",
+  }),
+  "design-system": (p) => ({
+    kind: "design-system", w: 340, h: 380,
+    dsId: (p.dsId || "main").toLowerCase(),
+    spec: {
+      genre:           p.spec?.genre || "",
+      tokenPreference: p.spec?.tokenPreference || "",
+      personaModes:    p.spec?.personaModes || [],
+      primitivePreset: p.spec?.primitivePreset || (typeof DS_DEFAULT_PRIMITIVE_PRESET !== "undefined" ? DS_DEFAULT_PRIMITIVE_PRESET : "standard"),
+      parentRef:       p.spec?.parentRef || null,
+    },
+  }),
+  "color-palette": (p) => ({
+    kind: "color-palette", w: 320, h: 280,
+    name: p.name || "Palette",
+    swatches: p.swatches || [
+      { name: "--bg",      value: "oklch(99% 0 0)" },
+      { name: "--surface", value: "oklch(97% 0.003 250)" },
+      { name: "--text",    value: "oklch(22% 0.01 250)" },
+      { name: "--accent",  value: "oklch(54% 0.16 252)" },
+      { name: "--success", value: "oklch(58% 0.15 150)" },
+      { name: "--warn",    value: "oklch(58% 0.14 60)" },
+      { name: "--danger",  value: "oklch(58% 0.18 25)" },
+    ],
+  }),
+  "typography": (p) => ({
+    kind: "typography", w: 360, h: 360,
+    name: p.name || "Type scale",
+    fontFamily: p.fontFamily || "Inter",
+    fontCdn:    p.fontCdn    || "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
+    monoFamily: p.monoFamily || "JetBrains Mono",
+    monoCdn:    p.monoCdn    || "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
+    levels: p.levels || [
+      { name: "Display",  size: 36, weight: 600, lineHeight: 1.1,  sample: "Refuse the median" },
+      { name: "H1",       size: 28, weight: 600, lineHeight: 1.15, sample: "Operating standard" },
+      { name: "H2",       size: 22, weight: 600, lineHeight: 1.2,  sample: "Module title" },
+      { name: "H3",       size: 18, weight: 500, lineHeight: 1.3,  sample: "Section heading" },
+      { name: "Body L",   size: 16, weight: 400, lineHeight: 1.5,  sample: "The kind of body copy that does the work." },
+      { name: "Body",     size: 14, weight: 400, lineHeight: 1.5,  sample: "Default reading size for the product." },
+      { name: "Caption",  size: 12, weight: 500, lineHeight: 1.3,  sample: "Metadata · timestamps · counts" },
+      { name: "Mono",     size: 12, weight: 500, lineHeight: 1.3,  sample: "ID-9F4C2 · 03:42:17", mono: true },
+    ],
+  }),
+  "iterator-repeater": (p) => {
+    const n = Math.max(1, Math.min(8, p.n || 4));
+    return {
+      kind: "iterator-repeater", w: 360, h: 380, n,
+      variants: p.variants || Array.from({ length: n }, () => ""),
+    };
+  },
+  "iterator-remix": (p) => {
+    const n = Math.max(1, Math.min(8, p.n || 4));
+    return {
+      kind: "iterator-remix", w: 360, h: 400, n,
+      variants: p.variants || Array.from({ length: n }, () => ""),
+      model: p.model || "gpt-image-2",
+    };
+  },
+  "iterator-blend": (p) => {
+    const n = Math.max(2, Math.min(6, p.n || 3));
+    return {
+      kind: "iterator-blend", w: 380, h: 420, n,
+      slots: p.slots || Array.from({ length: n }, () => ({ weight: 1, criteria: "" })),
+      outputKind: p.outputKind || "image",   // image | text
+      model: p.model || "gpt-image-2",
+    };
+  },
+  "iterator-refiner": (p) => ({
+    kind: "iterator-refiner", w: 420, h: 480,
+    goal:  p.goal  || "",
+    focus: p.focus || "",
+    pushPast: p.pushPast || [
+      { from: "", to: "" },
+      { from: "", to: "" },
+      { from: "", to: "" },
+    ],
+  }),
+  "composer": (p) => ({
+    kind: "composer", w: 520, h: 460,
+    canvasW: p.canvasW || 1600,
+    canvasH: p.canvasH || 900,
+    maxWidth:  p.maxWidth  || null,
+    maxHeight: p.maxHeight || null,
+    background: p.background || "#ffffff",
+    layers: p.layers || [],
+  }),
+  "vector-editor": (p) => ({
+    kind: "vector-editor", w: 720, h: 520,
+    canvasW: p.canvasW || 1200,
+    canvasH: p.canvasH || 800,
+    background: p.background || "#ffffff",
+    shapes: p.shapes || [],
+    selection: [],
+    activeTool: p.activeTool || "select",
+  }),
+  "formatted-text": (p) => ({
+    kind: "formatted-text", w: 380, h: 320,
+    html: p.html || "<p>Type or wire a prompt here.</p>",
+    lastSourceText: null,
+  }),
+  "mermaid": (p) => ({
+    kind: "mermaid", w: 420, h: 320,
+    code: p.code || "",
+    diagramType: p.diagramType || "flowchart",
+  }),
+  "prototype": (p) => {
+    const node = {
+      kind: "prototype", w: 720, h: 480,
+      prototype: p.prototype || p.branch || "main",
+    };
+    if (p.lockedState) node.lockedState = p.lockedState;
+    return node;
+  },
+};
+
+// The shared creation entrypoint. Returns a node body (no id/x/y) or null
+// for unknown kinds — callers must treat null as "this kind can't be
+// created here" rather than throwing, so future kinds degrade gracefully.
+function workflowMakeNodeOfKind(kind, payload) {
+  const make = WORKFLOW_NODE_FACTORY[kind];
+  if (!make) return null;
+  return make(payload || {});
+}
+
+// Per-kind connection semantics. `provides` = right-side ports (data out),
+// `accepts` = left-side ports (data in); both map portName → { label, tags }.
+// A kind may declare `presets` (spawnable variants — skill needs two because
+// LLM-skills emit text and image-skills emit assets) and/or `resolve(node)`
+// (pick the effective variant for an EXISTING node when computing its menus).
+// The special accept-port "input-*" means "next free input-i" (iterator-blend).
+const WORKFLOW_CONNECT_DEFS = {
+  "prompt": {
+    label: "Prompt",
+    provides: { out: { label: "Text", tags: ["text", "runnable", "blendable"] } },
+    accepts:  { in:  { label: "Generate text with", tags: ["text-gen"] } },
+  },
+  "folder": {
+    label: "Folder",
+    provides: { out: { label: "Folder scope", tags: ["folder"] } },
+    accepts:  {},
+  },
+  "asset": {
+    label: "Asset",
+    provides: { out: { label: "Asset", tags: ["asset", "remixable", "blendable"] } },
+    accepts:  { in:  { label: "Generate with", tags: ["asset-gen"] } },
+  },
+  "color-palette": {
+    label: "Color palette",
+    provides: { out: { label: "Palette", tags: ["palette"] } },
+    accepts:  { in:  { label: "Generate with", tags: ["palette-gen"] } },
+  },
+  "typography": {
+    label: "Typography",
+    provides: { out: { label: "Type scale", tags: ["typography"] } },
+    accepts:  { in:  { label: "Generate with", tags: ["typography-gen"] } },
+  },
+  "design-system": {
+    label: "Design system",
+    provides: { out: { label: "DS reference", tags: ["design-system", "folder"] } },
+    accepts:  { in:  { label: "Direction input", tags: ["palette", "typography", "asset", "folder"] } },
+  },
+  "skill": {
+    label: "Skill",
+    resolve(node) {
+      const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+      const spec = skills.find(s => s.id === node.skill);
+      const textOut = spec ? spec.output === "text" : node.skill === "llm";
+      return this.presets[textOut ? 0 : 1];
+    },
+    presets: [
+      {
+        id: "skill-llm", label: "LLM skill", payload: { skill: "llm" },
+        provides: { out: { label: "Text output", tags: ["text", "text-gen", "runnable"] } },
+        accepts:  { in:  { label: "Prompt", tags: ["text"] } },
+      },
+      {
+        id: "skill-image", label: "Image skill", payload: { skill: "generate-image" },
+        provides: { out: { label: "Generated image", tags: ["asset-gen", "runnable"] } },
+        accepts:  { in:  { label: "Prompt / input image", tags: ["text", "asset"] } },
+      },
+    ],
+  },
+  "agent": {
+    label: "Agent",
+    provides: {
+      "output":       { label: "Output", tags: ["text-gen", "asset-gen", "palette-gen", "typography-gen", "runnable"] },
+      "folder-write": { label: "Writes folder", tags: ["folder-write"] },
+    },
+    accepts: {
+      "input":        { label: "Context input", tags: ["text", "asset", "palette", "typography", "design-system"] },
+      "system-in":    { label: "System prompt", tags: ["text"] },
+      "folder-read":  { label: "Read scope", tags: ["folder"] },
+    },
+  },
+  "prototype": {
+    label: "Prototype",
+    provides: { "source-read": { label: "Source folder", tags: ["folder"] } },
+    accepts:  { "source-write": { label: "Built by", tags: ["folder-write"] } },
+  },
+  "ds-brainstorm": {
+    label: "DS brainstorm",
+    provides: { out: { label: "Runnable", tags: ["runnable"] } },
+    accepts:  { in:  { label: "Reference folder", tags: ["folder"] } },
+  },
+  "iterator-repeater": {
+    label: "Repeater",
+    provides: {},
+    accepts:  { in: { label: "Runnable to repeat", tags: ["runnable"] } },
+  },
+  "iterator-remix": {
+    label: "Remix",
+    provides: {},
+    accepts:  { in: { label: "Source to remix", tags: ["remixable"] } },
+  },
+  "iterator-blend": {
+    label: "Blend",
+    provides: { out: { label: "Blended output", tags: ["asset-gen"] } },
+    accepts:  { "input-*": { label: "Blend input", tags: ["blendable"] } },
+  },
+  "iterator-refiner": {
+    label: "Refiner",
+    provides: { out: { label: "Refined prompt", tags: ["text", "text-gen"] } },
+    accepts:  { in:  { label: "Prompt to refine", tags: ["text"] } },
+  },
+  "composer": {
+    label: "Composer",
+    provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
+    accepts:  { in:  { label: "Layer", tags: ["asset"] } },
+  },
+  "vector-editor": {
+    label: "Vector editor",
+    provides: { out: { label: "Baked SVG", tags: ["asset"] } },
+    accepts:  {},
+  },
+  "formatted-text": {
+    label: "Formatted text",
+    provides: { out: { label: "Baked HTML", tags: ["asset"] } },
+    accepts:  { in:  { label: "Text / typography", tags: ["text", "typography"] } },
+  },
+};
+
+// Resolve the EFFECTIVE def for an existing node (presets / resolve hook).
+function workflowConnectEffectiveDef(node) {
+  const def = WORKFLOW_CONNECT_DEFS[node && node.kind];
+  if (!def) return null;
+  if (typeof def.resolve === "function") {
+    const eff = def.resolve(node) || def;
+    return { label: eff.label || def.label, provides: eff.provides || {}, accepts: eff.accepts || {} };
+  }
+  return { label: def.label, provides: def.provides || {}, accepts: def.accepts || {} };
+}
+
+// Every spawnable candidate: one per kind, or one per preset when declared.
+function workflowConnectSpawnables() {
+  const out = [];
+  for (const [kind, def] of Object.entries(WORKFLOW_CONNECT_DEFS)) {
+    if (Array.isArray(def.presets)) {
+      for (const p of def.presets) {
+        out.push({ kind, id: p.id, label: p.label, payload: p.payload || {}, provides: p.provides || {}, accepts: p.accepts || {} });
+      }
+    } else {
+      out.push({ kind, id: kind, label: def.label, payload: {}, provides: def.provides || {}, accepts: def.accepts || {} });
+    }
+  }
+  return out;
+}
+
+function workflowConnectTagsIntersect(a, b) {
+  return (a || []).some(t => (b || []).includes(t));
+}
+
+// Compute the ⊕ menu for one side of a node. Returns groups:
+//   [{ port, label, items: [{ key, kind, label, payload, newPort, anchorPort, hint }] }]
+// side "left"  → groups by the anchor's ACCEPT ports; items spawn UPSTREAM.
+// side "right" → groups by the anchor's PROVIDE ports; items spawn DOWNSTREAM.
+function workflowConnectMenu(node, side) {
+  const eff = workflowConnectEffectiveDef(node);
+  if (!eff) return [];
+  const spawnables = workflowConnectSpawnables();
+  const anchorPorts = side === "left" ? eff.accepts : eff.provides;
+  const groups = [];
+  for (const [port, spec] of Object.entries(anchorPorts || {})) {
+    const items = [];
+    for (const sp of spawnables) {
+      const otherPorts = side === "left" ? sp.provides : sp.accepts;
+      for (const [oPort, oSpec] of Object.entries(otherPorts || {})) {
+        if (!workflowConnectTagsIntersect(spec.tags, oSpec.tags)) continue;
+        // Every matching port is its own item — "Agent → Context input" and
+        // "Agent → System prompt" are DIFFERENT wirings, both offered. The
+        // hint shows the port the edge will land on.
+        items.push({
+          key: sp.id + ":" + oPort + "->" + port,
+          kind: sp.kind, label: sp.label, payload: sp.payload,
+          newPort: oPort, anchorPort: port,
+          hint: oSpec.label || "",
+        });
+      }
+    }
+    if (items.length) groups.push({ port, label: spec.label || port, items });
+  }
+  return groups;
+}
+
+// "input-*" → next free input-i on the anchor (iterator-blend fan-in).
+function workflowResolveAcceptPort(anchor, port, edges) {
+  if (port !== "input-*") return port;
+  const used = new Set();
+  for (const e of (edges || [])) {
+    const t = workflowParseEdgeRef(e.to);
+    if (t && t.node === anchor.id) {
+      const m = /^input-(\d+)$/.exec(t.port);
+      if (m) used.add(parseInt(m[1], 10));
+    }
+  }
+  const total = Math.max(1, anchor.n || 1);
+  for (let i = 1; i <= total; i++) if (!used.has(i)) return "input-" + i;
+  return "input-" + total;
+}
+
+// Nudge a spawn position downward until it doesn't overlap an existing node.
+function workflowFindFreeSpot(nodes, x, y, w, h) {
+  const PAD = 24;
+  const overlaps = (ny) => (nodes || []).some(n => {
+    if (!n || n.kind === "section") return false;
+    const nw = n.w || 280, nh = n.h || 200;
+    return x < n.x + nw + PAD && x + w + PAD > n.x && ny < n.y + nh + PAD && ny + h + PAD > n.y;
+  });
+  let ny = y;
+  for (let i = 0; i < 40 && overlaps(ny); i++) ny += 56;
+  return { x, y: ny };
+}
+
+// Multi-node recipes surfaced at the top of the ⊕ menu. Each bundle builds
+// its node/edge set from the anchor via the SAME factory the single-kind
+// items use. `build(anchor, helpers)` → { nodes, edges, selectId, post? };
+// `post` runs AFTER the canvas commit (async side effects like drafting the
+// generation prompt from the asset via /__llm_run).
+const WORKFLOW_CONNECT_BUNDLE_GAP = 90;
+const WORKFLOW_CONNECT_BUNDLES = [
+  {
+    id: "asset-gen-agent",
+    side: "left",
+    label: "Agent + prompt",
+    desc: "Generate this asset with an agent — prompt drafted from the asset",
+    appliesTo: (node) => node.kind === "asset",
+    build(anchor, h) {
+      const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
+      const fileName = (anchor.path || "asset").split("/").pop();
+      const seed = (anchor.promptUsed || (anchor.promptDebug && anchor.promptDebug.userMsg) || "").trim();
+      const agentBody  = h.make("agent",  { name: "Generate " + fileName });
+      const promptBody = h.make("prompt", { title: "Generation prompt", text: seed || "✦ Drafting a prompt from the asset…" });
+      const agentId = h.newId(), promptId = h.newId();
+      const aSpot = h.findFreeSpot(anchor.x - agentBody.w - gap, anchor.y, agentBody.w, agentBody.h);
+      const agent = { id: agentId, ...agentBody, x: Math.round(aSpot.x), y: Math.round(aSpot.y) };
+      const pSpot = h.findFreeSpot(agent.x - promptBody.w - gap, anchor.y, promptBody.w, promptBody.h);
+      const prompt = { id: promptId, ...promptBody, x: Math.round(pSpot.x), y: Math.round(pSpot.y) };
+      return {
+        nodes: [prompt, agent],
+        edges: [
+          { from: `${promptId}.out`, to: `${agentId}.input` },
+          { from: `${agentId}.output`, to: `${anchor.id}.in` },
+        ],
+        selectId: promptId,
+        post: seed ? null : (helpers) => workflowDraftPromptFromAsset(anchor, promptId, helpers),
+      };
+    },
+  },
+  {
+    id: "asset-gen-skill",
+    side: "left",
+    label: "Image skill + prompt",
+    desc: "Generate this asset with an image-generation skill",
+    appliesTo: (node) => node.kind === "asset" && node.assetKind !== "html",
+    build(anchor, h) {
+      const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
+      const seed = (anchor.promptUsed || (anchor.promptDebug && anchor.promptDebug.userMsg) || "").trim();
+      const skillBody  = h.make("skill",  { skill: "generate-image" });
+      const promptBody = h.make("prompt", { title: "Generation prompt", text: seed || "✦ Drafting a prompt from the asset…" });
+      const skillId = h.newId(), promptId = h.newId();
+      const sSpot = h.findFreeSpot(anchor.x - skillBody.w - gap, anchor.y, skillBody.w, skillBody.h);
+      const skill = { id: skillId, ...skillBody, x: Math.round(sSpot.x), y: Math.round(sSpot.y) };
+      const pSpot = h.findFreeSpot(skill.x - promptBody.w - gap, anchor.y, promptBody.w, promptBody.h);
+      const prompt = { id: promptId, ...promptBody, x: Math.round(pSpot.x), y: Math.round(pSpot.y) };
+      return {
+        nodes: [prompt, skill],
+        edges: [
+          { from: `${promptId}.out`, to: `${skillId}.in` },
+          { from: `${skillId}.out`, to: `${anchor.id}.in` },
+        ],
+        selectId: promptId,
+        post: seed ? null : (helpers) => workflowDraftPromptFromAsset(anchor, promptId, helpers),
+      };
+    },
+  },
+  {
+    id: "ds-direction-pack",
+    side: "left",
+    label: "Direction pack",
+    desc: "Color palette + typography wired in as direction inputs",
+    appliesTo: (node) => node.kind === "design-system",
+    build(anchor, h) {
+      const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
+      const palBody  = h.make("color-palette", {});
+      const typoBody = h.make("typography", {});
+      const palId = h.newId(), typoId = h.newId();
+      const palSpot  = h.findFreeSpot(anchor.x - palBody.w - gap, anchor.y, palBody.w, palBody.h);
+      const pal  = { id: palId,  ...palBody,  x: Math.round(palSpot.x),  y: Math.round(palSpot.y) };
+      const typoSpot = h.findFreeSpot(anchor.x - typoBody.w - gap, pal.y + palBody.h + 40, typoBody.w, typoBody.h);
+      const typo = { id: typoId, ...typoBody, x: Math.round(typoSpot.x), y: Math.round(typoSpot.y) };
+      return {
+        nodes: [pal, typo],
+        edges: [
+          { from: `${palId}.out`,  to: `${anchor.id}.in` },
+          { from: `${typoId}.out`, to: `${anchor.id}.in` },
+        ],
+        selectId: palId,
+      };
+    },
+  },
+  {
+    id: "proto-builder",
+    side: "left",
+    label: "Builder agent + prompt",
+    desc: "An agent that writes this prototype's source folder",
+    appliesTo: (node) => node.kind === "prototype",
+    build(anchor, h) {
+      const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
+      const slug = anchor.prototype || "main";
+      const agentBody  = h.make("agent",  { name: "Build " + slug });
+      const promptBody = h.make("prompt", { title: "Build brief", text: "" });
+      const agentId = h.newId(), promptId = h.newId();
+      const aSpot = h.findFreeSpot(anchor.x - agentBody.w - gap, anchor.y, agentBody.w, agentBody.h);
+      const agent = { id: agentId, ...agentBody, x: Math.round(aSpot.x), y: Math.round(aSpot.y) };
+      const pSpot = h.findFreeSpot(agent.x - promptBody.w - gap, anchor.y, promptBody.w, promptBody.h);
+      const prompt = { id: promptId, ...promptBody, x: Math.round(pSpot.x), y: Math.round(pSpot.y) };
+      return {
+        nodes: [prompt, agent],
+        edges: [
+          { from: `${promptId}.out`, to: `${agentId}.input` },
+          { from: `${agentId}.folder-write`, to: `${anchor.id}.source-write` },
+        ],
+        selectId: promptId,
+      };
+    },
+  },
+  {
+    id: "proto-reader",
+    side: "right",
+    label: "Reader agent",
+    desc: "An agent that reads this prototype's source as its scope",
+    appliesTo: (node) => node.kind === "prototype",
+    build(anchor, h) {
+      const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
+      const slug = anchor.prototype || "main";
+      const agentBody = h.make("agent", { name: "Iterate on " + slug });
+      const agentId = h.newId();
+      const aSpot = h.findFreeSpot(anchor.x + (anchor.w || 720) + gap, anchor.y, agentBody.w, agentBody.h);
+      const agent = { id: agentId, ...agentBody, x: Math.round(aSpot.x), y: Math.round(aSpot.y) };
+      return {
+        nodes: [agent],
+        edges: [{ from: `${anchor.id}.source-read`, to: `${agentId}.folder-read` }],
+        selectId: agentId,
+      };
+    },
+  },
+];
+
+function workflowConnectBundlesFor(node, side) {
+  return WORKFLOW_CONNECT_BUNDLES.filter(b => b.side === side && b.appliesTo(node));
+}
+
+// Draft a generation prompt for an asset by describing it via /__llm_run
+// (skill=describe takes input_path). Falls back to an editable placeholder
+// when the asset isn't a raster image or no vision key is configured.
+async function workflowDraftPromptFromAsset(anchor, promptId, { updateNode }) {
+  const fallback = "Describe the asset to generate — subject, composition, palette, style, mood.";
+  try {
+    const isRaster = (anchor.assetKind || "image") === "image" && (anchor.path || "").trim();
+    if (!isRaster) { updateNode(promptId, { text: fallback }); return; }
+    const r = await fetch(apiUrl("/__llm_run"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        skill: "describe", provider: "openai", model: "gpt-4o-mini",
+        prompt: "Write a single image-generation prompt that would reproduce this image: subject, composition, color palette, style, lighting, mood. Output ONLY the prompt text — no preamble.",
+        input_path: anchor.path,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const text = (r.ok && (j.text || "").trim()) || fallback;
+    updateNode(promptId, { text });
+  } catch {
+    updateNode(promptId, { text: fallback });
+  }
 }
 
 // Project a line from the rectangle's center toward (towardX, towardY) and
@@ -19920,6 +20556,146 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
   `, document.body);
 }
 
+/* v3.8 — Connector-spawn chrome. When EXACTLY ONE node is selected and its
+   kind has a WORKFLOW_CONNECT_DEFS entry, render a floating ⊕ button at the
+   vertical middle of each side that has menu content (left = upstream
+   sources, right = downstream consumers). Clicking opens a small popover:
+   bundles first (multi-node recipes), then single-kind items grouped by the
+   anchor port they'd wire into. Picking an item calls back into the surface,
+   which creates the node(s) + edge(s) via the shared factory and selects the
+   spawn. Rect tracking mirrors WorkflowNodeTopActions (rAF on the node's
+   [data-node-id] rect) so the chrome glides with the node during pan/zoom. */
+function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightBundles, onPickItem, onPickBundle }) {
+  const [rect, setRect] = useState(null);
+  const [openSide, setOpenSide] = useState(null);
+  const nodeId = node && node.id;
+  // Close the popover when the selection moves to another node.
+  useEffect(() => { setOpenSide(null); }, [nodeId]);
+  useEffect(() => {
+    if (!nodeId) { setRect(null); return; }
+    let raf = 0;
+    let last = null;
+    const tick = () => {
+      const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height,
+                   right: r.right, bottom: r.bottom };
+          setRect(last);
+        }
+      } else if (last) {
+        last = null;
+        setRect(null);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeId]);
+  // Outside-click closes the popover. Capture phase so node/canvas handlers
+  // (which stopPropagation liberally) can't swallow the close.
+  useEffect(() => {
+    if (!openSide) return;
+    const onDown = (e) => {
+      if (e.target && e.target.closest && e.target.closest(".workflow-connector-spawn")) return;
+      setOpenSide(null);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpenSide(null); };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [openSide]);
+  const leftHas  = (leftMenu  && leftMenu.length  > 0) || (leftBundles  && leftBundles.length  > 0);
+  const rightHas = (rightMenu && rightMenu.length > 0) || (rightBundles && rightBundles.length > 0);
+  if (!rect || (!leftHas && !rightHas)) return null;
+  const BTN = 26, GAP = 10;
+  const midY = rect.top + rect.height / 2 - BTN / 2;
+  const mkBtnStyle = (side) => ({
+    position: "fixed",
+    top: midY + "px",
+    left: (side === "left" ? rect.left - BTN - GAP : rect.right + GAP) + "px",
+    width: BTN + "px", height: BTN + "px",
+    zIndex: 40,
+  });
+  const renderMenu = (side) => {
+    const groups  = side === "left" ? (leftMenu || []) : (rightMenu || []);
+    const bundles = side === "left" ? (leftBundles || []) : (rightBundles || []);
+    const btnLeft = side === "left" ? rect.left - BTN - GAP : rect.right + GAP;
+    // Anchor the popover beside the button, growing AWAY from the node so it
+    // never covers the card. Clamp to the viewport.
+    const POP_W = 264;
+    let popLeft = side === "left" ? btnLeft - POP_W - 6 : btnLeft + BTN + 6;
+    popLeft = Math.max(8, Math.min(popLeft, window.innerWidth - POP_W - 8));
+    const popTop = Math.max(8, Math.min(midY, window.innerHeight - 340));
+    return html`
+      <div
+        className="workflow-connector-menu"
+        style=${{ position: "fixed", left: popLeft + "px", top: popTop + "px", width: POP_W + "px", zIndex: 50 }}
+        onMouseDown=${(e) => e.stopPropagation()}
+      >
+        <div className="workflow-connector-menu-title">
+          ${side === "left" ? "Add upstream node" : "Add downstream node"}
+        </div>
+        ${bundles.map(b => html`
+          <button
+            key=${"bundle-" + b.id}
+            className="workflow-connector-menu-item workflow-connector-menu-bundle"
+            onClick=${() => { setOpenSide(null); onPickBundle(side, b.id); }}
+          >
+            <span className="workflow-connector-menu-item-label">✦ ${b.label}</span>
+            <span className="workflow-connector-menu-item-hint">${b.desc}</span>
+          </button>
+        `)}
+        ${groups.map(g => html`
+          <div key=${"group-" + g.port} className="workflow-connector-menu-group">
+            <div className="workflow-connector-menu-group-label">${g.label}</div>
+            ${g.items.map(it => html`
+              <button
+                key=${it.key}
+                className="workflow-connector-menu-item"
+                onClick=${() => { setOpenSide(null); onPickItem(side, it); }}
+              >
+                <span className="workflow-connector-menu-item-label">${it.label}</span>
+                ${it.hint && it.hint !== g.label && html`<span className="workflow-connector-menu-item-hint">${it.hint}</span>`}
+              </button>
+            `)}
+          </div>
+        `)}
+      </div>
+    `;
+  };
+  return createPortal(html`
+    <div className="workflow-connector-spawn" data-node-id=${nodeId}>
+      ${leftHas && html`
+        <button
+          className=${"workflow-connector-spawn-btn" + (openSide === "left" ? " is-open" : "")}
+          style=${mkBtnStyle("left")}
+          title="Add a node that feeds this one"
+          aria-label="Add upstream node"
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); setOpenSide(s => s === "left" ? null : "left"); }}
+        >+</button>
+      `}
+      ${rightHas && html`
+        <button
+          className=${"workflow-connector-spawn-btn" + (openSide === "right" ? " is-open" : "")}
+          style=${mkBtnStyle("right")}
+          title="Add a node this one feeds into"
+          aria-label="Add downstream node"
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); setOpenSide(s => s === "right" ? null : "right"); }}
+        >+</button>
+      `}
+      ${openSide && renderMenu(openSide)}
+    </div>
+  `, document.body);
+}
+
 /* v3.2 — Toast for pick-mode element ops (copy / paste / delete).
    Portaled to document.body, fixed at bottom-center, auto-dismisses via
    the flashPickOp dwell timer in WorkflowSurface. Three visual variants:
@@ -20381,6 +21157,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     }
     return set;
   }, [selectedNodeId, data?.edges]);
+  // v3.8 — Connector-spawn chrome data. Only when EXACTLY ONE node is
+  // selected; kinds with no WORKFLOW_CONNECT_DEFS entry yield empty menus
+  // and the host renders nothing (future kinds degrade gracefully).
+  const connectorNode = useMemo(() => {
+    if (selectedNodeIds.size !== 1 || !selectedNodeId) return null;
+    return (data.nodes || []).find(n => n.id === selectedNodeId) || null;
+  }, [selectedNodeIds, selectedNodeId, data.nodes]);
+  const connectorMenus = useMemo(() => {
+    if (!connectorNode) return null;
+    return {
+      left:  workflowConnectMenu(connectorNode, "left"),
+      right: workflowConnectMenu(connectorNode, "right"),
+      leftBundles:  workflowConnectBundlesFor(connectorNode, "left"),
+      rightBundles: workflowConnectBundlesFor(connectorNode, "right"),
+    };
+  }, [connectorNode && connectorNode.id, connectorNode && connectorNode.kind, connectorNode && connectorNode.skill]);
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -20843,428 +21635,48 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
     let payload;
     try { payload = JSON.parse(raw); } catch { return; }
     const { x, y } = screenToWorld(e.clientX, e.clientY);
-    const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-
-    if (payload.kind === "prototype") {
-      const w = 720, h = 480;
-      const newNode = {
-        id, kind: "prototype",
-        x: Math.round(x - w / 2), y: Math.round(y - 18),
-        w, h,
-        // v3.7 — `prototype` is the canonical slug field; accept `branch` from
-        // older drag payloads for compat.
-        prototype: payload.prototype || payload.branch,
-        instanceId: id,
-      };
-      // Depth-2 prototypes (e.g. agent-generated source/main/sketches/) drag
-      // with a lockedState so the iframe loads at the right sub-path on
-      // first mount instead of the prototype root.
-      if (payload.lockedState) newNode.lockedState = payload.lockedState;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), newNode],
-      }));
-    } else if (payload.kind === "prompt") {
-      const w = 280, h = 200;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "prompt",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          text: payload.text || "",
-          title: payload.title || "",
-        }],
-      }));
-    } else if (payload.kind === "folder") {
-      const w = 320, h = 130;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "folder",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          path: payload.path || "",
-          title: payload.title || "",
-        }],
-      }));
-    } else if (payload.kind === "skill") {
-      const w = 280, h = 160;
-      const node = {
-        id, kind: "skill",
-        x: Math.round(x - w / 2), y: Math.round(y - 18),
-        w, h,
-        skill: payload.skill || "generate-image",
-      };
-      if (payload.model)    node.model    = payload.model;
-      if (payload.provider) node.provider = payload.provider;
-      if (payload.aspect)   node.aspect   = payload.aspect;
-      setData(d => ({ ...d, nodes: [...(d.nodes || []), node] }));
-    } else if (payload.kind === "asset") {
-      // Phase 4c — user-created (not Expose-bound) asset card. The user
-      // controls the path; the skill's Run writes bytes to that path on disk.
-      // No boundTo → asset card renders an editable path input instead of
-      // the read-only foot label.
-      const branch = "main";
-      const path = payload.path || `source/${branch}/images/${id}.png`;
-      // Auto-derive kind from extension when not explicitly set; so a path
-      // like `source/main/svg/foo.svg` lands as kind=svg (rendered via <img>).
-      const extKind = (() => {
-        const ext = (path.split(".").pop() || "").toLowerCase();
-        if (ext === "svg" || ext === "svgz") return "svg";
-        if (ext === "html" || ext === "htm") return "html";
-        if (ext === "json") return "lottie";  // v3.4.16 — bare .json defaults to lottie since that's the only JSON skill output
-        if (["mp4", "webm", "mov", "m4v", "ogv"].includes(ext)) return "video";
-        if (["mp3", "wav", "ogg", "m4a", "flac", "aac"].includes(ext)) return "audio";
-        if (["glb", "gltf", "obj", "fbx"].includes(ext)) return "3d";
-        if (["glsl", "frag", "vert"].includes(ext)) return "shader";
-        return "image";
-      })();
-      const finalKind = payload.assetKind || extKind;
-      // HTML asset cards match the 1920×1440 design viewport so the iframe
-      // shows the page at native size, same as the DS-brainstorm cards.
-      // Visual / raster assets stay compact (220×170).
-      const { w, h } = finalKind === "html"
-        ? { w: 1920, h: 1440 }
-        : { w: 220,  h: 170  };
-      // v3.4.42 — If the drop landed over a composer (OR a composer is
-      // the current selection), also create the edge so the new asset
-      // shows up as a layer immediately. Selection wins because the
-      // user may have just clicked the composer to focus it before
-      // dragging in the library card. Inlined (instead of calling
-      // `_findComposerPasteTarget`) so we don't TDZ on it — that
-      // function is declared later in the component.
-      let composerTarget = null;
-      {
-        const nodes = data.nodes || [];
-        const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
-        for (const id of sel) {
-          const n = nodes.find(nn => nn.id === id);
-          if (n && n.kind === "composer") { composerTarget = n; break; }
-        }
-        if (!composerTarget) {
-          for (const n of nodes) {
-            if (n.kind !== "composer") continue;
-            const x0 = n.x, y0 = n.y;
-            const x1 = x0 + (n.w || 520), y1 = y0 + (n.h || 460);
-            if (x >= x0 && x <= x1 && y >= y0 && y <= y1) { composerTarget = n; break; }
-          }
+    // v3.8 — ALL per-kind creation defaults live in WORKFLOW_NODE_FACTORY
+    // (the same factory the connector-spawn ⊕ menus use), so library drops
+    // and ⊕ spawns can't drift. Unknown kinds are ignored, not errors —
+    // a future library card whose kind has no factory entry simply no-ops.
+    const body = workflowMakeNodeOfKind(payload.kind, payload);
+    if (!body) return;
+    const id = workflowNewNodeId();
+    const node = {
+      id, ...body,
+      x: Math.round(x - (body.w || 280) / 2),
+      y: Math.round(y - (payload.kind === "section" ? 28 : 18)),
+    };
+    if (node.kind === "prototype") node.instanceId = id;
+    // Asset drops keep the composer affordance (v3.4.42): if the drop landed
+    // over a composer (OR a composer is the current selection), also create
+    // the edge so the new asset shows up as a layer immediately. Selection
+    // wins because the user may have just clicked the composer to focus it
+    // before dragging in the library card.
+    let composerTarget = null;
+    if (node.kind === "asset") {
+      const nodes = data.nodes || [];
+      const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+      for (const sid of sel) {
+        const n = nodes.find(nn => nn.id === sid);
+        if (n && n.kind === "composer") { composerTarget = n; break; }
+      }
+      if (!composerTarget) {
+        for (const n of nodes) {
+          if (n.kind !== "composer") continue;
+          const x0 = n.x, y0 = n.y;
+          const x1 = x0 + (n.w || 520), y1 = y0 + (n.h || 460);
+          if (x >= x0 && x <= x1 && y >= y0 && y <= y1) { composerTarget = n; break; }
         }
       }
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "asset",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          assetKind: finalKind,
-          path,
-        }],
-        edges: composerTarget
-          ? [...(d.edges || []), { from: `${id}.out`, to: `${composerTarget.id}.in` }]
-          : (d.edges || []),
-      }));
-    } else if (payload.kind === "agent") {
-      // Agent nodes can be dropped raw OR as a task-specific preset
-      // (Prototype generator, etc.). Preset fields the library item may
-      // attach: systemPreset (baked system prompt — used when no prompt
-      // is wired into the `system-in` port), outputMode + outputPath
-      // (default file/folder destination), and optional sizing overrides.
-      const w = payload.w || 320, h = payload.h || 240;
-      const newNode = {
-        id, kind: "agent",
-        x: Math.round(x - w / 2), y: Math.round(y - 18),
-        w, h,
-        name: payload.name || "Untitled agent",
-        conversation: [],
-      };
-      if (payload.preset)       newNode.preset       = payload.preset;
-      if (payload.systemPreset) newNode.systemPreset = payload.systemPreset;
-      if (payload.outputMode)   newNode.outputMode   = payload.outputMode;
-      if (payload.outputPath) {
-        // Resolve {{branch}} placeholder lazily — at drop time, against
-        // the currently-active branch. The user can edit the field later
-        // if they want a different folder.
-        const branch = "main";
-        newNode.outputPath = payload.outputPath.replace(/\{\{branch\}\}/g, branch);
-      }
-      setData(d => ({ ...d, nodes: [...(d.nodes || []), newNode] }));
-    } else if (payload.kind === "ds-brainstorm") {
-      // DS brainstorm — produces ONE sample HTML page with images embedded
-      // inline, plus a ds-samples one-pager that holds the rest of the
-      // images. A single Claude run generates all of it in one shared
-      // design context. Spec fields:
-      //   0. mode             ("dark" | "light" | "any")
-      //   1. genre
-      //   2. targetAudience
-      //   3. emotion          (emotion to invoke)
-      //   4. samplePage       (single screen type, NOT a list)
-      //   5. sampleImages     (comma-separated image subjects)
-      //   6. attachments      ([{ kind: "file"|"link", … }]) — reference
-      //                       materials the agent can Read / WebFetch
-      const w = 360, h = 620;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "ds-brainstorm",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          spec: {
-            mode: "any",
-            genre: "",
-            targetAudience: "",
-            emotion: "",
-            samplePage: "",
-            sampleImages: "",
-            attachments: [],
-          },
-          rationale: "",
-        }],
-      }));
-    } else if (payload.kind === "section") {
-      // Figma-style section frame. Holds a labeled bounding-box; nodes
-      // whose centers sit inside follow when the section is dragged. The
-      // title bar text uses inverse-zoom scaling so it stays the same
-      // visual size at any zoom level — see WorkflowSectionNode.
-      const sw = 880, sh = 560;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "section",
-          x: Math.round(x - sw / 2), y: Math.round(y - 28),
-          w: sw, h: sh,
-          title: payload.title || "Section",
-        }],
-      }));
-    } else if (payload.kind === "design-system") {
-      // Phase 7 — Design system library node. Holds an editable spec
-      // (genre / token-preference / persona-modes / primitive-preset) that
-      // Workflow 0 / Subagent 0 consumes to write design-systems/<dsId>/.
-      // The node mirrors the on-disk state via /__design_system?id=<dsId> —
-      // its "built" badge flips on once the daemon finds the trio on disk.
-      const w = 340, h = 380;
-      const dsId = (payload.dsId || "main").toLowerCase();
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "design-system",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          dsId,
-          spec: {
-            genre:           payload.spec?.genre || "",
-            tokenPreference: payload.spec?.tokenPreference || "",
-            personaModes:    payload.spec?.personaModes || [],
-            primitivePreset: payload.spec?.primitivePreset || DS_DEFAULT_PRIMITIVE_PRESET,
-            parentRef:       payload.spec?.parentRef || null,
-          },
-        }],
-      }));
-    } else if (payload.kind === "color-palette") {
-      // Direction input — composable color set wired into a DS generator.
-      // Each swatch is { name, value } where value is OKLCH or hex; the node
-      // renders the actual color so the user can compose against what they see.
-      const w = 320, h = 280;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "color-palette",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          name: payload.name || "Palette",
-          swatches: payload.swatches || [
-            { name: "--bg",      value: "oklch(99% 0 0)" },
-            { name: "--surface", value: "oklch(97% 0.003 250)" },
-            { name: "--text",    value: "oklch(22% 0.01 250)" },
-            { name: "--accent",  value: "oklch(54% 0.16 252)" },
-            { name: "--success", value: "oklch(58% 0.15 150)" },
-            { name: "--warn",    value: "oklch(58% 0.14 60)" },
-            { name: "--danger",  value: "oklch(58% 0.18 25)" },
-          ],
-        }],
-      }));
-    } else if (payload.kind === "iterator-repeater") {
-      // Repeats whatever runnable feeds its input N times, exposing N output
-      // ports — one per variant. Each variant may carry a "variant prompt"
-      // that gets composed onto the upstream runnable's base prompt; blank
-      // entries default to "try another option" so a no-config repeater
-      // still produces N distinct attempts.
-      const n = Math.max(1, Math.min(8, payload.n || 4));
-      const w = 360, h = 380;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "iterator-repeater",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          n,
-          variants: payload.variants || Array.from({ length: n }, () => ""),
-        }],
-      }));
-    } else if (payload.kind === "iterator-remix") {
-      // Same shape as Repeater but the upstream is rasterised into a PNG and
-      // fed into an image-generation skill as the `input_image`. Each variant
-      // re-uses the same source image with the variant prompt as extra guidance.
-      const n = Math.max(1, Math.min(8, payload.n || 4));
-      const w = 360, h = 400;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "iterator-remix",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          n,
-          variants: payload.variants || Array.from({ length: n }, () => ""),
-          model: payload.model || "gpt-image-2",
-        }],
-      }));
-    } else if (payload.kind === "iterator-blend") {
-      // Fan-IN node: N input slots each with a weight + criteria field.
-      // The blend's Run constructs a single prompt that summarises every
-      // input with its weight, then runs a generator (image or text) once.
-      const n = Math.max(2, Math.min(6, payload.n || 3));
-      const w = 380, h = 420;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "iterator-blend",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          n,
-          slots: payload.slots || Array.from({ length: n }, () => ({ weight: 1, criteria: "" })),
-          outputKind: payload.outputKind || "image",   // image | text
-          model: payload.model || "gpt-image-2",
-        }],
-      }));
-    } else if (payload.kind === "iterator-refiner") {
-      // Spawn two cooperating agents (interviewer + interviewee) wired in a
-      // feedback loop. The interviewer's prompt template is the one you
-      // dictated: relentless Q&A driven by user-defined criteria, "push
-      // past" pairs, and a focused tree of aspects.
-      const w = 420, h = 480;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "iterator-refiner",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          goal:    payload.goal    || "",
-          focus:   payload.focus   || "",
-          pushPast: payload.pushPast || [
-            { from: "", to: "" },
-            { from: "", to: "" },
-            { from: "", to: "" },
-          ],
-        }],
-      }));
-    } else if (payload.kind === "composer") {
-      // v3.4.37 — Responsive layered canvas. Default size matches a 16:9
-      // hero frame so dragging one onto the canvas already shows a
-      // sensible preview. Layers are populated dynamically from edges
-      // that terminate at .input — the WorkflowComposerNode component
-      // walks allEdges / allNodes for the current wired set.
-      const w = 520, h = 460;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "composer",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          canvasW: payload.canvasW || 1600,
-          canvasH: payload.canvasH || 900,
-          maxWidth:  payload.maxWidth  || null,
-          maxHeight: payload.maxHeight || null,
-          background: payload.background || "#ffffff",
-          // layers: [{ assetId, opacity, anchor, offsetX, offsetY, width, height, visible }]
-          // Per-edge layer config keyed by upstream node id. The node
-          // synthesises missing entries when new edges arrive.
-          layers: payload.layers || [],
-        }],
-      }));
-    } else if (payload.kind === "vector-editor") {
-      // Inline SVG drawing tool. Three-pane layout (tools+layers, stage,
-      // properties) mirrors the composer. Bake writes a self-contained
-      // .svg to source/<branch>/vector-<nodeId>.svg so downstream
-      // consumers can read it as an SVG asset.
-      const w = 720, h = 520;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "vector-editor",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          canvasW: payload.canvasW || 1200,
-          canvasH: payload.canvasH || 800,
-          background: payload.background || "#ffffff",
-          shapes: payload.shapes || [],
-          selection: [],
-          activeTool: payload.activeTool || "select",
-        }],
-      }));
-    } else if (payload.kind === "formatted-text") {
-      // v3.4.37 — Rich text node. The body is contentEditable; selection
-      // + a wired Typography input enables a per-level picker. A plain
-      // Prompt wired to text-in overwrites the body when its content
-      // changes (one-way sync: the node tracks lastSourceText so
-      // subsequent local edits don't get overwritten until the source
-      // changes again).
-      const w = 380, h = 320;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "formatted-text",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          html: payload.html || "<p>Type or wire a prompt here.</p>",
-          lastSourceText: null,
-        }],
-      }));
-    } else if (payload.kind === "mermaid") {
-      // v3.4.38 — Mermaid diagram node. Blank by default; the user opens
-      // the </> code panel to edit the source. diagramType is a hint that
-      // pre-fills the textarea with a template + drives the dropdown
-      // selection; the renderer infers the real type from the source's
-      // first line at render time.
-      const w = 420, h = 320;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "mermaid",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          code: payload.code || "",
-          diagramType: payload.diagramType || "flowchart",
-        }],
-      }));
-    } else if (payload.kind === "typography") {
-      // Direction input — composable type scale wired into a DS generator.
-      // The font CDN URL (Google Fonts) loads the actual family so the
-      // rendered samples match what the DS will use.
-      const w = 360, h = 360;
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), {
-          id, kind: "typography",
-          x: Math.round(x - w / 2), y: Math.round(y - 18),
-          w, h,
-          name: payload.name || "Type scale",
-          fontFamily: payload.fontFamily || "Inter",
-          fontCdn:    payload.fontCdn    || "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
-          monoFamily: payload.monoFamily || "JetBrains Mono",
-          monoCdn:    payload.monoCdn    || "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
-          levels: payload.levels || [
-            { name: "Display",  size: 36, weight: 600, lineHeight: 1.1,  sample: "Refuse the median" },
-            { name: "H1",       size: 28, weight: 600, lineHeight: 1.15, sample: "Operating standard" },
-            { name: "H2",       size: 22, weight: 600, lineHeight: 1.2,  sample: "Module title" },
-            { name: "H3",       size: 18, weight: 500, lineHeight: 1.3,  sample: "Section heading" },
-            { name: "Body L",   size: 16, weight: 400, lineHeight: 1.5,  sample: "The kind of body copy that does the work." },
-            { name: "Body",     size: 14, weight: 400, lineHeight: 1.5,  sample: "Default reading size for the product." },
-            { name: "Caption",  size: 12, weight: 500, lineHeight: 1.3,  sample: "Metadata · timestamps · counts" },
-            { name: "Mono",     size: 12, weight: 500, lineHeight: 1.3,  sample: "ID-9F4C2 · 03:42:17", mono: true },
-          ],
-        }],
-      }));
     }
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []), node],
+      edges: composerTarget
+        ? [...(d.edges || []), { from: `${id}.out`, to: `${composerTarget.id}.in` }]
+        : (d.edges || []),
+    }));
   }, [screenToWorld, setData, data]);
 
   const updateNode = useCallback((nid, patchOrFn) => {
@@ -21279,6 +21691,68 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       }),
     }));
   }, [setData]);
+
+  // v3.8 — Connector-spawn: create ONE node from a ⊕ menu item and wire it
+  // to the anchor. side "left" → new node feeds the anchor; side "right" →
+  // the anchor feeds the new node. Placement: beside the anchor with a
+  // collision-avoiding downward nudge. The spawn becomes the selection.
+  const spawnConnectedNode = useCallback((anchorId, side, item) => {
+    let newId = null;
+    setData(d => {
+      const anchor = (d.nodes || []).find(n => n.id === anchorId);
+      if (!anchor) return d;
+      const body = workflowMakeNodeOfKind(item.kind, item.payload || {});
+      if (!body) return d;
+      newId = workflowNewNodeId();
+      const gap = 90;
+      const w = body.w || 280, h = body.h || 200;
+      const x0 = side === "left" ? anchor.x - w - gap : anchor.x + (anchor.w || 280) + gap;
+      const spot = workflowFindFreeSpot(d.nodes, x0, anchor.y, w, h);
+      const node = { id: newId, ...body, x: Math.round(spot.x), y: Math.round(spot.y) };
+      if (node.kind === "prototype") node.instanceId = newId;
+      const anchorPort = workflowResolveAcceptPort(anchor, item.anchorPort, d.edges);
+      const edge = side === "left"
+        ? { from: `${newId}.${item.newPort}`, to: `${anchorId}.${anchorPort}` }
+        : { from: `${anchorId}.${anchorPort}`, to: `${newId}.${item.newPort}` };
+      return {
+        ...d,
+        nodes: [...(d.nodes || []), node],
+        edges: [...(d.edges || []), edge],
+      };
+    });
+    if (newId) setSelectedNodeIds(new Set([newId]));
+    return newId;
+  }, [setData]);
+
+  // v3.8 — Connector-spawn bundles: multi-node recipes (prompt → agent →
+  // this asset, direction pack, builder/reader agents…). The bundle builds
+  // its node/edge set inside the setData updater (so findFreeSpot sees the
+  // freshest node list); an optional async `post` step runs after commit
+  // (e.g. drafting the generation prompt from the asset via /__llm_run).
+  const runConnectBundle = useCallback((anchorId, bundleId) => {
+    const bundle = WORKFLOW_CONNECT_BUNDLES.find(b => b.id === bundleId);
+    if (!bundle) return;
+    let result = null;
+    setData(d => {
+      const anchor = (d.nodes || []).find(n => n.id === anchorId);
+      if (!anchor) return d;
+      result = bundle.build(anchor, {
+        make: workflowMakeNodeOfKind,
+        newId: workflowNewNodeId,
+        findFreeSpot: (x, y, w, h) => workflowFindFreeSpot(d.nodes, x, y, w, h),
+      });
+      if (!result || !Array.isArray(result.nodes) || result.nodes.length === 0) return d;
+      return {
+        ...d,
+        nodes: [...(d.nodes || []), ...result.nodes],
+        edges: [...(d.edges || []), ...(result.edges || [])],
+      };
+    });
+    if (result && result.selectId) setSelectedNodeIds(new Set([result.selectId]));
+    if (result && typeof result.post === "function") {
+      Promise.resolve(result.post({ updateNode })).catch(() => {});
+    }
+  }, [setData, updateNode]);
   // moveNode reads the LATEST node position inside the updater. The previous
   // shape — `(dx,dy) => updateNode(n.id, {x: n.x+dx, y: n.y+dy})` — captured
   // `n.x` / `n.y` at mousedown time, so every subsequent mousemove added
@@ -24873,12 +25347,39 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // API call completes. Sparse storage keyed by variant index `i` so
       // single-variant re-runs don't disturb the array indices used by
       // the all-variants case.
+      // v3.8 — REUSE-FIRST (same contract as the repeater's pre-pass): if
+      // output-(i+1) is already wired to a matching target (asset card for
+      // image/text/html output, prompt node otherwise), UPDATE that node in
+      // place — write to its existing path — instead of spawning a duplicate
+      // card on every Run. Spawning only happens for unwired ports.
       const stampBase = Date.now().toString(36);
       const variantIds = variantIdsAll;  // alias — outer scope holds the same map for catch-sweep
       const variantPaths = {};     // { [i]: path }
       const spawnedNodes = [];
       const spawnedEdges = [];
+      const reusedTargetIds = new Set();
       for (const i of runIndices) {
+        const targetEdge = (cur.edges || []).find(e => {
+          const f = workflowParseEdgeRef(e.from);
+          return f && f.node === remixId && f.port === ("output-" + (i + 1));
+        });
+        const target = targetEdge
+          ? (cur.nodes || []).find(nn => nn.id === (workflowParseEdgeRef(targetEdge.to) || {}).node)
+          : null;
+        const wantsAssetTarget = effectiveKind === "image" || effectiveKind === "text" || effectiveKind === "html";
+        if (target && wantsAssetTarget && target.kind === "asset"
+            && typeof target.path === "string" && target.path.startsWith("source/")) {
+          variantIds[i] = target.id;
+          variantPaths[i] = target.path;
+          reusedTargetIds.add(target.id);
+          continue;
+        }
+        if (target && !wantsAssetTarget && target.kind === "prompt") {
+          variantIds[i] = target.id;
+          variantPaths[i] = null;
+          reusedTargetIds.add(target.id);
+          continue;
+        }
         const newId = "n" + stampBase + "-r" + i + Math.random().toString(36).slice(2, 5);
         const offsetX = (rmx.w || 360) + 60;
         variantIds[i] = newId;
@@ -24932,9 +25433,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         }
         spawnedEdges.push({ from: `${remixId}.output-${i + 1}`, to: `${newId}.in` });
       }
+      // Commit eager spawns + flip pre-existing (reused) targets to pending
+      // in one pass — mirrors the repeater's commit.
       setData(d => ({
         ...d,
-        nodes:  [...(d.nodes  || []), ...spawnedNodes],
+        nodes: [
+          ...(d.nodes || []).map(nn => reusedTargetIds.has(nn.id) ? { ...nn, runStatus: "pending", runError: null } : nn),
+          ...spawnedNodes,
+        ],
         edges:  [...(d.edges  || []), ...spawnedEdges],
       }));
 
@@ -25334,48 +25840,82 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
 
       // Eager-spawn the destination node so the user sees it pulsing while
       // the LLM + writer run. Patched in place once bytes / text land.
+      // v3.8 — REUSE-FIRST (same contract as the repeater / remix pre-pass):
+      // if blend.out is already wired to a matching target (asset card for
+      // file-backed output kinds, prompt node for text), UPDATE that node in
+      // place — write to its existing path — instead of spawning a duplicate
+      // card on every Run.
       const blendStamp = Date.now().toString(36);
-      const blendOutId = "n" + blendStamp + Math.random().toString(36).slice(2, 6);
       const blendOffsetX = (blend.w || 380) + 60;
+      const blendWantsAsset = effectiveKind === "image" || effectiveKind === "vector" || effectiveKind === "svg"
+        || effectiveKind === "lottie" || effectiveKind === "video" || effectiveKind === "3d"
+        || effectiveKind === "html";
+      const blendOutEdge = (cur.edges || []).find(e => {
+        const f = workflowParseEdgeRef(e.from);
+        return f && f.node === blendId && f.port === "out";
+      });
+      const blendOutTarget = blendOutEdge
+        ? (cur.nodes || []).find(nn => nn.id === (workflowParseEdgeRef(blendOutEdge.to) || {}).node)
+        : null;
+      let blendOutId = null;
       let blendOutPath = null;
       let blendSpawnedNode = null;
-      if (effectiveKind === "image" || effectiveKind === "vector" || effectiveKind === "svg"
-          || effectiveKind === "lottie" || effectiveKind === "video" || effectiveKind === "3d") {
-        // v3.4 — Use kind-aware spawn defaults so blend output kinds like
-        // vector / lottie / video write the right extension instead of
-        // forcing `.png`. effectiveKind === "image" still maps to .png.
-        const blendSpawn = pickAssetSpawnDefaultsForKind(effectiveKind, "blend", branch, blendStamp);
-        blendOutPath = blendSpawn.path;
-        blendSpawnedNode = {
-          id: blendOutId, kind: "asset",
-          x: Math.round(blend.x + blendOffsetX),
-          y: Math.round(blend.y + ((blend.h || 420) - 170) / 2),
-          w: 220, h: 170, assetKind: blendSpawn.assetKind, path: blendOutPath,
-          runStatus: "pending",
-        };
-      } else if (effectiveKind === "html") {
-        blendOutPath = `source/${branch}/html/blend-${blendStamp}.html`;
-        blendSpawnedNode = {
-          id: blendOutId, kind: "asset",
-          x: Math.round(blend.x + blendOffsetX),
-          y: Math.round(blend.y + ((blend.h || 420) - 220) / 2),
-          w: 320, h: 240, assetKind: "html", path: blendOutPath,
-          runStatus: "pending",
-        };
+      if (blendOutTarget && blendWantsAsset && blendOutTarget.kind === "asset"
+          && typeof blendOutTarget.path === "string" && blendOutTarget.path.startsWith("source/")) {
+        blendOutId = blendOutTarget.id;
+        blendOutPath = blendOutTarget.path;
+      } else if (blendOutTarget && !blendWantsAsset && blendOutTarget.kind === "prompt") {
+        blendOutId = blendOutTarget.id;
+        blendOutPath = null;
       } else {
-        blendSpawnedNode = {
-          id: blendOutId, kind: "prompt",
-          x: Math.round(blend.x + blendOffsetX), y: Math.round(blend.y),
-          w: 360, h: 280,
-          title: "Blend output", text: "",
-          runStatus: "pending",
-        };
+        blendOutId = "n" + blendStamp + Math.random().toString(36).slice(2, 6);
+        if (effectiveKind === "image" || effectiveKind === "vector" || effectiveKind === "svg"
+            || effectiveKind === "lottie" || effectiveKind === "video" || effectiveKind === "3d") {
+          // v3.4 — Use kind-aware spawn defaults so blend output kinds like
+          // vector / lottie / video write the right extension instead of
+          // forcing `.png`. effectiveKind === "image" still maps to .png.
+          const blendSpawn = pickAssetSpawnDefaultsForKind(effectiveKind, "blend", branch, blendStamp);
+          blendOutPath = blendSpawn.path;
+          blendSpawnedNode = {
+            id: blendOutId, kind: "asset",
+            x: Math.round(blend.x + blendOffsetX),
+            y: Math.round(blend.y + ((blend.h || 420) - 170) / 2),
+            w: 220, h: 170, assetKind: blendSpawn.assetKind, path: blendOutPath,
+            runStatus: "pending",
+          };
+        } else if (effectiveKind === "html") {
+          blendOutPath = `source/${branch}/html/blend-${blendStamp}.html`;
+          blendSpawnedNode = {
+            id: blendOutId, kind: "asset",
+            x: Math.round(blend.x + blendOffsetX),
+            y: Math.round(blend.y + ((blend.h || 420) - 220) / 2),
+            w: 320, h: 240, assetKind: "html", path: blendOutPath,
+            runStatus: "pending",
+          };
+        } else {
+          blendSpawnedNode = {
+            id: blendOutId, kind: "prompt",
+            x: Math.round(blend.x + blendOffsetX), y: Math.round(blend.y),
+            w: 360, h: 280,
+            title: "Blend output", text: "",
+            runStatus: "pending",
+          };
+        }
       }
-      setData(d => ({
-        ...d,
-        nodes: [...(d.nodes || []), blendSpawnedNode],
-        edges: [...(d.edges || []), { from: `${blendId}.out`, to: `${blendOutId}.in` }],
-      }));
+      if (blendSpawnedNode) {
+        setData(d => ({
+          ...d,
+          nodes: [...(d.nodes || []), blendSpawnedNode],
+          edges: [...(d.edges || []), { from: `${blendId}.out`, to: `${blendOutId}.in` }],
+        }));
+      } else {
+        // Reused target — just flip it to pending; the patch below lands
+        // the result on the same card.
+        setData(d => ({
+          ...d,
+          nodes: (d.nodes || []).map(nn => nn.id === blendOutId ? { ...nn, runStatus: "pending", runError: null } : nn),
+        }));
+      }
       // Compose the blend prompt. Text inputs are inlined VERBATIM (no
       // truncation) so the model has the full source to work from; palette
       // / typography / asset slots are compact descriptors.
@@ -29348,6 +29888,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         onClose=${() => setCtxMenu(null)}
       />`}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
+      ${connectorNode && connectorMenus && html`<${WorkflowConnectorSpawn}
+        node=${connectorNode}
+        leftMenu=${connectorMenus.left}
+        rightMenu=${connectorMenus.right}
+        leftBundles=${connectorMenus.leftBundles}
+        rightBundles=${connectorMenus.rightBundles}
+        onPickItem=${(side, item) => spawnConnectedNode(connectorNode.id, side, item)}
+        onPickBundle=${(side, id) => runConnectBundle(connectorNode.id, id)}
+      />`}
       ${pickedElement && html`<${WorkflowPickedElementActionBar}
         pickedElement=${pickedElement}
         pickerIframeRef=${pickerIframeRef}
@@ -44648,7 +45197,7 @@ function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, o
               <button
                 className="workflow-node-iter-variant-run"
                 disabled=${running}
-                title=${"Re-run only variant " + (i + 1) + " — spawns a fresh output card without touching the other " + (n - 1) + "."}
+                title=${"Re-run only variant " + (i + 1) + " — updates its wired output card in place (or spawns one if unwired) without touching the other " + (n - 1) + "."}
                 onClick=${(e) => { e.stopPropagation(); onRun && onRun(node.id, i); }}
                 onMouseDown=${(e) => e.stopPropagation()}
               ><${Icon.Play}/></button>
