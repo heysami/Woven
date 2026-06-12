@@ -17853,18 +17853,98 @@ function _mergePatchOps(prior, fresh) {
     seen.add(key);
     merged.push(op);
   }
-  return merged.slice(-300);
+  return _resolvePatchOpCancellations(merged).slice(-300);
 }
 
-function _injectInspectorPatch(html, ops) {
+/* v3.6.4 — Cancellation pass. The patch replay applies EVERY op on EVERY
+   mutation burst — it is not a one-shot sequence. So a `delete` aimed at an
+   element a PRIOR op created (the duplicate's clone, the pasted insert, a
+   replace's swap-in) fights that op forever: the delete removes the element,
+   the creator's idempotency marker is gone, the creator re-creates it on the
+   next burst, the delete removes it again… whichever runs last wins — the
+   user sees a "mixed bag" after refresh. Delete/replace stage-time now
+   captures the target's creator markers (cancelIns / cancelDup / cancelRep);
+   this pass resolves them into a CONSISTENT op list:
+     • delete of an inserted element   → drop the insert op + the delete.
+     • delete of a duplicate clone     → drop the duplicate op + the delete.
+     • delete of a replace's swap-in   → drop the replace op, retarget the
+       delete at the replace's ORIGINAL selector (net effect: the original
+       element is deleted).
+     • replace of an inserted element  → rewrite the insert op's html to the
+       replacement (marker flips to data-th-rep), drop the replace op.
+     • replace of a duplicate clone    → drop the duplicate op, convert the
+       replace into an insert anchored after the duplicate's source.
+   Ops with no matching creator in the list keep their fallback behaviour. */
+function _resolvePatchOpCancellations(ops) {
+  let out = ops.slice();
+  const drop = (o) => { out = out.filter(x => x !== o); };
+  for (const del of out.slice()) {
+    if (!del || del.type !== "delete") continue;
+    if (del.cancelIns) {
+      const creator = out.find(o => o.type === "insert" && o.key === del.cancelIns);
+      if (creator) { drop(creator); drop(del); continue; }
+    }
+    if (del.cancelDup) {
+      const creator = out.find(o => o.type === "duplicate"
+        && (o.key === del.cancelDup || o.selector === del.cancelDup));
+      if (creator) { drop(creator); drop(del); continue; }
+    }
+    if (del.cancelRep) {
+      const creator = out.find(o => o.type === "replace" && o.key === del.cancelRep);
+      if (creator) {
+        del.selector = creator.selector;
+        delete del.cancelRep;
+        drop(creator);
+      }
+    }
+  }
+  for (const rep of out.slice()) {
+    if (!rep || rep.type !== "replace") continue;
+    if (rep.cancelIns) {
+      const creator = out.find(o => o.type === "insert" && o.key === rep.cancelIns);
+      if (creator) {
+        creator.html = rep.html;
+        creator.key = rep.key;
+        creator.marker = "data-th-rep";
+        drop(rep);
+        continue;
+      }
+    }
+    if (rep.cancelDup) {
+      const creator = out.find(o => o.type === "duplicate"
+        && (o.key === rep.cancelDup || o.selector === rep.cancelDup));
+      if (creator) {
+        rep.type = "insert";
+        rep.anchor = creator.selector;
+        rep.position = "after";
+        rep.marker = "data-th-rep";
+        delete rep.selector;
+        delete rep.cancelDup;
+        drop(creator);
+      }
+    }
+  }
+  return out;
+}
+
+function _injectInspectorPatch(html, ops, priorOps) {
   if (!html) return html;
   // Always strip any prior patch block first — otherwise a save with no
   // pending ops leaves a stale (and possibly buggy, see commit history)
   // script in place. Strip is unconditional; re-inject is conditional.
   const stripPrior = (s) => s.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
-  // v3.6.2 — Merge with ops already persisted in the file so a save never
-  // forgets edits committed by an earlier save.
-  try { ops = _mergePatchOps(_extractPatchOps(html), ops); } catch {}
+  // v3.6.2 — Merge with ops already persisted so a save never forgets
+  // edits committed by an earlier save.
+  //
+  // v3.6.4 — `priorOps` (when given) is extracted from the ON-DISK file by
+  // the caller and OVERRIDES extraction from `html`. `html` is the
+  // serialized LIVE doc, whose embedded patch script is frozen at iframe
+  // LOAD time — and since active editing suppresses iframe reloads, two
+  // consecutive save sessions without a reload made the second save merge
+  // against PRE-first-save ops, silently dropping everything the first
+  // save persisted ("I deleted, saved, duplicated, saved — after refresh
+  // it's a mixed bag"). Disk is the source of truth for persisted ops.
+  try { ops = _mergePatchOps(priorOps != null ? priorOps : _extractPatchOps(html), ops); } catch {}
   if (!ops || !ops.length) return stripPrior(html);
   let opsJson;
   try { opsJson = JSON.stringify(ops); } catch { return stripPrior(html); }
@@ -17910,8 +17990,12 @@ function _injectInspectorPatch(html, ops) {
     // both are idempotency-keyed via data-th-ins / data-th-rep stamps that
     // ride INSIDE op.html (stamped on the live nodes before serialize), so
     // a replay can tell "already applied" without positional guesswork.
+    // op.marker overrides the idempotency attribute — cancellation can
+    // rewrite a replace-of-inserted into an insert whose html carries a
+    // data-th-rep stamp instead of data-th-ins.
     'function applyInsert(op){',
-    '  if(op.key){try{if(document.querySelector("[data-th-ins=\\"".concat(op.key,"\\"]")))return;}catch(_){}}',
+    '  var attr=op.marker||"data-th-ins";',
+    '  if(op.key){try{if(document.querySelector("[".concat(attr,"=\\"").concat(op.key,"\\"]")))return;}catch(_){}}',
     '  var anch=$(op.anchor);if(!anch||typeof op.html!=="string"||!op.html)return;',
     '  try{anch.insertAdjacentHTML(op.position==="before"?"beforebegin":"afterend",op.html);}catch(_){}',
     '}',
@@ -22407,7 +22491,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
   const stageInspectorEdit = useCallback((ifr, doc, op) => {
     if (!ifr || !doc) return;
     const path = _resolveIframePathFor(ifr);
-    if (!path) return;
+    // v3.6.4 — Surface the failure instead of silently dropping the op.
+    // The DOM mutation has already happened by the time we're called, so a
+    // silent return here means the user SEES their edit but it can never
+    // be saved — e.g. when the iframe is showing a workflow/views/<…>
+    // version path instead of source/. A visible error beats a phantom
+    // edit that evaporates on refresh.
+    if (!path) {
+      try { flashPickOp("error", "Edit can't be saved: this iframe isn't showing a source/ file (version view?) — switch to the live version and redo the edit"); } catch {}
+      return;
+    }
     const nodeId = ifr.getAttribute("data-prototype-id")
                 || ifr.getAttribute("data-asset-id")
                 || "";
@@ -22420,7 +22513,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       _dispatchPendingDigest(next);
       return next;
     });
-  }, [_resolveIframePathFor, _dispatchPendingDigest]);
+  }, [_resolveIframePathFor, _dispatchPendingDigest, flashPickOp]);
 
   const pastePickedElement = useCallback(async () => {
     const clip = nodeClipboardRef.current;
@@ -22785,6 +22878,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
         // patch script re-applies the swap after React re-renders.
         const replaceSel = elementPatchSelector(targetEl);
         const repKey = "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+        // v3.6.4 — Creator markers of the REPLACED target, for the merge's
+        // cancellation pass (replacing a pasted/duplicated element rewrites
+        // the creator op rather than persisting a fighting replace op).
+        const cancelIns = targetEl.getAttribute && targetEl.getAttribute("data-th-ins");
+        const cancelDup = targetEl.getAttribute && targetEl.getAttribute("data-th-clone-of");
         const tmp = doc.createElement("div");
         tmp.innerHTML = liveOuter;
         Array.from(tmp.children).forEach(n => { try { n.setAttribute("data-th-rep", repKey); } catch {} });
@@ -22801,12 +22899,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
           el.classList.remove("th-pick-hover");
           el.classList.remove("th-pick-selected");
         });
-        stageInspectorEdit(ifrLive || pickerIframeRef.current, doc, {
+        const repOp = {
           type:     "replace",
           selector: replaceSel,
           html:     stampedHtml,
           key:      repKey,
-        });
+        };
+        if (cancelIns) repOp.cancelIns = cancelIns;
+        if (cancelDup) repOp.cancelDup = cancelDup;
+        stageInspectorEdit(ifrLive || pickerIframeRef.current, doc, repOp);
         // Clear the picked target so the next Cmd+R requires a fresh pick
         // (the old target is gone from the DOM; the pick state is stale).
         setPickedElement(null);
@@ -22848,13 +22949,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // `delete` op instead of an immediate POST — same rationale as
       // paste/replace. Selector captured BEFORE removal (the patch replays
       // against the fresh, pre-delete DOM).
+      // v3.6.4 — If the target was CREATED by an earlier op (pasted insert,
+      // duplicate clone, replace swap-in), capture its creator marker so
+      // the merge's cancellation pass drops the creator op instead of
+      // persisting a delete that fights it on every replay burst.
       const deleteSel = elementPatchSelector(targetEl);
+      const cancelIns = targetEl.getAttribute && targetEl.getAttribute("data-th-ins");
+      const cancelDup = targetEl.getAttribute && targetEl.getAttribute("data-th-clone-of");
+      const cancelRep = targetEl.getAttribute && targetEl.getAttribute("data-th-rep");
       targetEl.remove();
       doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
         el.classList.remove("th-pick-hover");
         el.classList.remove("th-pick-selected");
       });
-      stageInspectorEdit(ifr, doc, { type: "delete", selector: deleteSel });
+      const delOp = { type: "delete", selector: deleteSel };
+      if (cancelIns) delOp.cancelIns = cancelIns;
+      if (cancelDup) delOp.cancelDup = cancelDup;
+      if (cancelRep) delOp.cancelRep = cancelRep;
+      stageInspectorEdit(ifr, doc, delOp);
       pickedDomRef.current = null;
       setPickedElement(null);
       flashPickOp("done", `Deleted <${tagSnap}> — staged; click Save on the node pill to persist`);
@@ -22931,6 +23043,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       if (!curDoc || curDoc !== entry.doc) continue;
       const project = activeProjectId();
       let fullHtml = pickSerializeClean(entry.doc);
+      // v3.6.4 — Read the ON-DISK file's persisted ops as the merge base.
+      // The live doc's embedded patch script is frozen at iframe-load time;
+      // with reloads suppressed during editing it goes stale across
+      // consecutive saves and the merge would drop the previous save's ops.
+      let priorOps = null;
+      try {
+        const pu = apiUrl("/" + entry.path);
+        const pr = await fetch(pu + (pu.includes("?") ? "&" : "?") + "_pm=" + Date.now());
+        if (pr.ok) priorOps = _extractPatchOps(await pr.text());
+      } catch {}
       // v3.5.10 — Inject a post-mount patch script so React-managed
       // prototypes don't revert the user's edits on the next iframe load.
       // The script:
@@ -22944,7 +23066,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, history, historyOpen, o
       // Vanilla (non-React) prototypes get the same script — it's idempotent
       // and a no-op on the parsed-DOM state that already matches the ops.
       if (entry.ops && entry.ops.length > 0) {
-        fullHtml = _injectInspectorPatch(fullHtml, entry.ops);
+        fullHtml = _injectInspectorPatch(fullHtml, entry.ops, priorOps);
       }
       const apiU = apiUrl("/__html_save");
       const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
@@ -30406,11 +30528,18 @@ async function zoomSaveDoc(filePath, doc, ops) {
   // exactly like the workflow pick-mode staging path. Without this, zoom
   // saves on React-managed prototypes baked the rendered DOM into the file
   // but the app's own render wiped it on the next load — every zoom edit
-  // looked like it "didn't work". zoomSerialize keeps any prior
-  // <script data-th-patch> block in the html, so _injectInspectorPatch's
-  // merge preserves edits persisted by earlier saves.
+  // looked like it "didn't work".
+  // v3.6.4 — Merge base comes from the ON-DISK file (fetched fresh), not
+  // the serialized live doc: its embedded patch script is frozen at
+  // overlay-open time and goes stale if another surface saved meanwhile.
   if (ops && ops.length) {
-    try { html = _injectInspectorPatch(html, ops); } catch {}
+    let priorOps = null;
+    try {
+      const pu = apiUrl("/" + filePath);
+      const pr = await fetch(pu + (pu.includes("?") ? "&" : "?") + "_pm=" + Date.now());
+      if (pr.ok) priorOps = _extractPatchOps(await pr.text());
+    } catch {}
+    try { html = _injectInspectorPatch(html, ops, priorOps); } catch {}
   }
   const r = await fetch(apiUrl("/__html_save"), {
     method: "POST",
@@ -32081,14 +32210,26 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
     const snap = snapshotBefore();
     // Selector must be captured BEFORE removal — the patch script replays
     // it against the fresh (pre-delete) DOM on the next load.
+    // v3.6.4 — Creator markers captured for the merge's cancellation pass
+    // (deleting a pasted/duplicated/replaced element drops the creator op
+    // instead of persisting a delete that fights it on every replay burst).
     const patchSel = elementPatchSelector(el);
+    const delOp = { type: "delete", selector: patchSel };
+    try {
+      const mIns = el.getAttribute("data-th-ins");
+      const mDup = el.getAttribute("data-th-clone-of");
+      const mRep = el.getAttribute("data-th-rep");
+      if (mIns) delOp.cancelIns = mIns;
+      if (mDup) delOp.cancelDup = mDup;
+      if (mRep) delOp.cancelRep = mRep;
+    } catch {}
     el.remove();
     setSelectedId(null); setSelectionRect(null);
     if (meta.isNested) {
       _markNestedDirty(meta);
       showToast("Removed `" + label + "` from imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
-      recordOp("Removed `" + label + "` (unsaved)", snap, { type: "delete", selector: patchSel });
+      recordOp("Removed `" + label + "` (unsaved)", snap, delOp);
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
 
