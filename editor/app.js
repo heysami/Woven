@@ -17585,7 +17585,9 @@ const WORKFLOW_NODE_FACTORY = {
       genre:           p.spec?.genre || "",
       tokenPreference: p.spec?.tokenPreference || "",
       personaModes:    p.spec?.personaModes || [],
-      primitivePreset: p.spec?.primitivePreset || (typeof DS_DEFAULT_PRIMITIVE_PRESET !== "undefined" ? DS_DEFAULT_PRIMITIVE_PRESET : "standard"),
+      // primitivePreset is an ARRAY (WorkflowDesignSystemNode .join()s it) —
+      // a string here crashes the whole canvas render.
+      primitivePreset: p.spec?.primitivePreset || (typeof DS_DEFAULT_PRIMITIVE_PRESET !== "undefined" ? DS_DEFAULT_PRIMITIVE_PRESET : []),
       parentRef:       p.spec?.parentRef || null,
     },
   }),

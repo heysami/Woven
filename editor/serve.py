@@ -6714,6 +6714,43 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # Pull whatever the node stored as output, if anything.
                 txt = (up.get("output") or up.get("text") or "").strip() if isinstance(up.get("output"), str) else (up.get("text") or "").strip()
                 if txt: upstream_chunks.append(f"### {label} ({kind})\n{txt}")
+            elif kind == "section":
+                # v3.8 — section upstream: the COMBINATION of every node whose
+                # center sits inside the section frame (same containment rule
+                # as the editor's moveSection group-drag). Text-bearing nodes
+                # flatten verbatim; visual nodes contribute path descriptors.
+                sx0 = float(up.get("x") or 0); sy0 = float(up.get("y") or 0)
+                sx1 = sx0 + float(up.get("w") or 880); sy1 = sy0 + float(up.get("h") or 560)
+                parts = []
+                for cn in (wf.get("nodes") or []):
+                    if not cn or cn.get("id") == up.get("id") or cn.get("kind") == "section":
+                        continue
+                    cx = float(cn.get("x") or 0) + float(cn.get("w") or 280) / 2
+                    cy = float(cn.get("y") or 0) + float(cn.get("h") or 200) / 2
+                    if not (sx0 <= cx <= sx1 and sy0 <= cy <= sy1):
+                        continue
+                    ck = cn.get("kind")
+                    clabel = cn.get("title") or cn.get("name") or cn.get("id")
+                    if ck in ("prompt", "skill"):
+                        ctxt = ((cn.get("output") if ck == "skill" else None) or cn.get("text") or "")
+                        ctxt = ctxt.strip() if isinstance(ctxt, str) else ""
+                        if ctxt: parts.append(f"- {clabel}:\n{ctxt}")
+                    elif ck == "color-palette":
+                        sw = ", ".join(f"{s.get('name')}={s.get('value')}" for s in (cn.get("swatches") or []) if isinstance(s, dict))
+                        if sw: parts.append(f"- color palette '{clabel}': {sw}")
+                    elif ck == "typography":
+                        lv = ", ".join(f"{l.get('name')} {l.get('size')}px/{l.get('weight')}" for l in (cn.get("levels") or []) if isinstance(l, dict))
+                        parts.append(f"- typography '{clabel}': sans={cn.get('fontFamily') or ''}, mono={cn.get('monoFamily') or ''}" + (f". Scale: {lv}" if lv else ""))
+                    elif ck == "asset" and str(cn.get("path") or "").startswith("source/"):
+                        parts.append(f"- asset ({cn.get('assetKind') or 'file'}): {cn.get('path')}")
+                    elif ck == "design-system":
+                        parts.append(f"- design system reference: id={cn.get('dsId') or 'main'}")
+                    elif ck == "folder" and str(cn.get("path") or "").strip():
+                        parts.append(f"- folder: {cn.get('path')}")
+                if parts:
+                    upstream_chunks.append(
+                        f"### {label} (section — combined contents of every node inside)\n" + "\n".join(parts)
+                    )
         upstream_text = "\n\n".join(upstream_chunks)
 
         # v2.50 — DOWNSTREAM walk. Previously only incoming edges were read, so
