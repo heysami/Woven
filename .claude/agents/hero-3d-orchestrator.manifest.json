@@ -1,0 +1,68 @@
+{
+  "id": "hero-3d-orchestrator",
+  "label": "Hero 3D",
+  "tagline": "Spline-grade 3D hero scenes — physical materials, studio light, damped choreography, UI in the quiet zone",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "subagentName": "hero-3d-orchestrator",
+  "playbookPath": ".claude/agents/hero-3d-orchestrator.md",
+
+  "description": "Research + scaffold orchestrator for ONE Spline-grade 3D hero scene (one heroId) — the escalation path above the plain `3d` drawer for full-bleed/hero-slot scenes where material quality IS the message: transmission/reeded/dispersion glass, chrome with real env-maps, anodized iridescence, edge-lit acrylic, volumetric light shafts (the register defined in docs/research/spline-grade-3d-study.md, quality-anchored by docs/research/prism-glass-reference/prism-hero.html). Dispatches h3d-research-technique to commit integration mode + renderer config (ACES, env map, DPR cap) + post chain (pmndrs postprocessing, one merged pass) + material cast (per object: design-library materialId + three.js recipe) + camera/interaction grammar with damped-easing constants + quiet-zone contract + perf fallback rungs, scaffolds the multi-trio node graph (research/material/scene/interaction/runtime/container) with full per-drawer envelopes, then RETURNS a hand-off envelope; the caller drives the build with lens trios and §8.7 multi-draft cruxes (scene camera axis, lead-material axis, runtime ambient-energy axis). Routed primarily by visual-orchestrator's 3d-hero classification; also directly dispatchable on explicit user request for a Spline-grade scene.",
+
+  "triggers": [
+    {
+      "mode": "via-visual-orchestrator",
+      "title": "3d-hero slot escalation (the primary route)",
+      "rule": "visual-orchestrator classifies a slot as `3d-hero` (instead of plain `3d`) when the slot is hero-register — full-bleed or ≥60% viewport canvas/iframe — AND the brief/intent names a material story (glass, prism, refraction, dispersion, chrome, iridescent, volumetric light, 'spline-grade', 'cinematic 3D') or performance:hero is declared. The classification lands in workflow/visual-plan.json with subagent_type hero-3d-orchestrator; the parent chat dispatches this orchestrator per qualifying slot instead of the plain 3d drawer.",
+      "ruleSource": "docs/agents/subagents/1V-visual-orchestrator.md — '3d vs 3d-hero escalation rule'"
+    },
+    {
+      "mode": "chat",
+      "title": "Explicit Spline-grade scene request",
+      "rule": "User explicitly asks for a Spline-grade / cinematic / physically-lit 3D hero (names Spline, prism glass, chrome scene, 'high-definition 3D hero'). Chat dispatches hero-3d-orchestrator directly with the §1 envelope; after hand-off, chat drives the build per simulation-orchestrator.md §5.1.0 shape and embeds the runtime.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Image creation: dispatch visual-orchestrator FIRST'"
+    }
+  ],
+
+  "dispatches": {
+    "research": [
+      "h3d-research-technique"
+    ],
+    "components": [
+      "h3d-material-author",
+      "h3d-scene-author",
+      "h3d-interaction-author",
+      "h3d-runtime-composer"
+    ],
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
+    ]
+  },
+
+  "skills": [],
+
+  "nodeKinds": {
+    "container": [
+      "hero-3d"
+    ],
+    "agent_overrides": [
+      "h3d_research_*",
+      "h3d_material_*",
+      "h3d_scene_*",
+      "h3d_interaction_*",
+      "h3d_runtime_*",
+      "cp_h3d_material_pick_*",
+      "cp_h3d_scene_pick_*",
+      "cp_h3d_runtime_pick_*",
+      "cp_h3d_gate_*"
+    ]
+  },
+
+  "documents": {
+    "designDoc": "docs/research/spline-grade-3d-study.md",
+    "reference": "docs/research/prism-glass-reference/prism-hero.html",
+    "calibration": null
+  }
+}

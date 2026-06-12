@@ -253,6 +253,53 @@ KINDS = {
                 "notes": "Glue + permission UX. Lens-gated on all three lenses.",
             },
 
+            # ── Hero-3d component drawers (wildcard prefixes) ──────────────────
+            "h3d_research_": {
+                "outputsRoot": "source/{prototype}/hero3d/{heroId}/research.md",
+                "completion": {"requires": ["files: research.md exists, non-empty"]},
+                "notes": (
+                    "Committed stack: integration mode, renderer config, post "
+                    "chain, material cast, interaction grammar, quiet zone."
+                ),
+            },
+            "h3d_material_": {
+                "outputsRoot": "source/{prototype}/hero3d/{heroId}/materials.js",
+                "completion": {"requires": [
+                    "files: materials.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Material cast factories (transmission/chrome/iridescence). "
+                    "Lens-gated on craft + aesthetic."
+                ),
+            },
+            "h3d_scene_": {
+                "outputsRoot": "source/{prototype}/hero3d/{heroId}/scene.js",
+                "completion": {"requires": [
+                    "files: scene.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": "World + lighting + camera + composition. Lens-gated.",
+            },
+            "h3d_interaction_": {
+                "outputsRoot": "source/{prototype}/hero3d/{heroId}/interaction.js",
+                "completion": {"requires": [
+                    "files: interaction.js exists, non-empty",
+                ]},
+                "notes": (
+                    "Damped pointer parallax / orbit / scroll-scrub. "
+                    "Lens-gated on craft (passive listeners, no scroll trap)."
+                ),
+            },
+            "h3d_runtime_": {
+                "outputsRoot": "source/{prototype}/hero3d/{heroId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": "Composer + post chain + veil + harness. All three lenses.",
+            },
+
             # ── Lens agents (wildcard — one dispatch per drawer iteration) ────
             "craft_lens_": {
                 "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
@@ -322,6 +369,26 @@ KINDS = {
                     "files: DECISION_cp_im_output_pick_{imId}.json exists with non-empty values",
                 ]},
             },
+            "cp_h3d_material_pick_": {
+                "outputsRoot": "DECISION_cp_h3d_material_pick_{heroId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_h3d_material_pick_{heroId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 lead-material drafts (iterator-remix).",
+            },
+            "cp_h3d_scene_pick_": {
+                "outputsRoot": "DECISION_cp_h3d_scene_pick_{heroId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_h3d_scene_pick_{heroId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 camera-axis scene drafts (iterator-remix).",
+            },
+            "cp_h3d_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_h3d_runtime_pick_{heroId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_h3d_runtime_pick_{heroId}.json exists with non-empty values",
+                ]},
+            },
 
             # ── Family release gates (mirror cp_coherence_gate) ───────────────
             "cp_sim_gate_": {
@@ -343,6 +410,13 @@ KINDS = {
                     "files: DECISION_cp_im_gate_{imId}.json exists with non-empty values",
                 ]},
                 "notes": "Same as cp_sim_gate_ for interactive-media family.",
+            },
+            "cp_h3d_gate_": {
+                "outputsRoot": "DECISION_cp_h3d_gate_{heroId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_h3d_gate_{heroId}.json exists with non-empty values",
+                ]},
+                "notes": "Same as cp_sim_gate_ for hero-3d family.",
             },
 
             # ──────────────────────────────────────────────────────────────────
@@ -1689,6 +1763,46 @@ KINDS = {
             "to the canvas BEFORE Run so the user grants camera/mic/etc. "
             "consent at the canvas-side prompt rather than being surprised "
             "by the iframe. Component children own their files + lens verdicts."
+        ),
+    },
+
+    # ── hero-3d (v1.0 — live iframe for Spline-grade 3D hero scenes) ──────
+    # The escalation container above the plain `3d` drawer trio. Routed by
+    # visual-orchestrator's `3d-hero` classification or direct dispatch.
+    # See `hero-3d-orchestrator.md` + docs/research/spline-grade-3d-study.md.
+    "hero-3d": {
+        "title":        "Hero 3D scene (live iframe)",
+        "category":     "container",
+        "inputs": {
+            "heroId":         {"type": "text",   "userEditable": False, "required": True},
+            "integration":    {"type": "enum",
+                                "values": ["full-bleed", "inline-object",
+                                           "scroll-scrubbed"],
+                                "userEditable": False},
+            "materialCast":   {"type": "array",  "userEditable": False},
+            "exposedAssets":  {"type": "array",  "userEditable": False},
+            "lockedState":    {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research/material/scene/interaction/runtime)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Live iframe of a Spline-grade 3D hero scene. Run re-builds via "
+            "re-dispatching hero-3d-orchestrator. materialCast lists the "
+            "design-library materialIds the scene wears. Component children "
+            "own their files + lens verdicts; this container is marked done "
+            "only when the orchestrator's commit carries lensVerdict='pass'."
         ),
     },
 

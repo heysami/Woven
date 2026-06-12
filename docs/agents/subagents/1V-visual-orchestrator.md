@@ -145,8 +145,33 @@ For every member of the candidate set, output exactly one of:
 | `img-placeholder` with object / person / product subject, will composite over UI | `raster-foreground` | `prompt → generate-image → rembg` (Pathway A + cutout) |
 | `background-image:` on hero / wash / aurora / gradient panel where genre allows decoration | `shader` | `prompt → shader` (Pathway B) |
 | `<canvas data-three>` / `<div data-three>` declared in markup | `3d` | `prompt → threejs` (Pathway B) |
+| `3d` signal AND hero-register (see escalation rule below) | `3d-hero` | **dispatch `hero-3d-orchestrator`** (orchestrator, not a drawer — scaffolds its own `h3d_*` node graph; no trio) |
 | Already a real inline `<svg>` built from primitives that matches shape-language tokens | `none` | **drop:already-drawn** |
 | Existing file in `assets/` referenced by source AND on disk | `none` | **drop:pre-supplied** |
+
+#### 3d vs 3d-hero escalation rule
+
+A slot that classifies `3d` ESCALATES to `3d-hero` when BOTH hold:
+
+1. **Hero register** — the slot is full-bleed, ≥60% viewport, or sits in the hero
+   section (`<iframe class="h3d-mount" data-h3d>`, hero-section `<canvas data-three>`,
+   or `data-performance="hero"` declared).
+2. **Material story** — the intent / `data-intent` / brief names a physically-lit
+   material register: glass, prism, refraction, dispersion, reeded/fluted, chrome,
+   iridescent, holographic-3D, obsidian, edge-lit, volumetric light, "spline",
+   "spline-grade", "cinematic 3D", "high-definition 3D".
+
+When it escalates: do NOT scaffold a `p_/s_/a_` trio for this slot. Record it in
+`visual-plan.json` with `medium: "3d-hero"`, `subagent_type: "hero-3d-orchestrator"`,
+and the heroId (= assetId). The parent dispatches the orchestrator, which scaffolds
+its own `h3d_research/material/scene/interaction/runtime/container` node graph and
+returns a hand-off envelope (see `.claude/agents/hero-3d-orchestrator.md`). Wire the
+resulting `h3d_<heroId>` container to the prototype's `visual-assets` port the same
+way you wire `a_*` assets.
+
+When only ONE of the two conditions holds, stay `3d` — the plain drawer at the
+appropriate performance tier is the right cost. Log the borderline call in
+`visual-plan.json`'s rejection log either way.
 
 #### Classifier table (motion)
 

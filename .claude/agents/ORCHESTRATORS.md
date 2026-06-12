@@ -18,12 +18,15 @@ A orchestrator is a top-level orchestrating agent that:
 - Is the right entry point for a particular kind of user request
   (image, simulation, interactive piece, future: 3D scene, document, etc.)
 
-Eleven ship today: `visual-orchestrator`, `simulation-orchestrator`,
+Thirteen ship today: `visual-orchestrator`, `simulation-orchestrator`,
 `interactive-media-orchestrator`, `narrative-experience-orchestrator`,
 `game-experience-orchestrator`, `scrapbook-experience-orchestrator`,
-`interactive-polish-orchestrator`, `photography-orchestrator`,
-`illustration-orchestrator`, `material-orchestrator`, and
-`creative-visual-orchestrator`.
+`interactive-polish-orchestrator`, `motion-studio-orchestrator`,
+`photography-orchestrator`, `illustration-orchestrator`,
+`material-orchestrator`, `creative-visual-orchestrator`, and
+`hero-3d-orchestrator` (the Spline-grade 3D escalation routed by
+visual-orchestrator's `3d-hero` classification — see
+`docs/research/spline-grade-3d-study.md`).
 
 A subagent that just produces one file (a drawer, a researcher, a lens) is
 NOT a orchestrator — it's a component. Don't manifest it here.
