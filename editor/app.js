@@ -594,6 +594,10 @@ const Icon = {
   User:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>`,
   Image:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><circle cx="6" cy="6.5" r="1"/><path d="M3 11l3-2.5 2.5 2 2-1.5L13 11.5"/></svg>`,
   Film:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M2.5 6h11M2.5 10h11M6 3v10M10 3v10"/></svg>`,
+  // Motion: keyframe diamonds on two timeline tracks (the After-Effects /
+  // GSAP-timeline metaphor) — used by the motion-gen skill ("Motion (HTML)")
+  // which previously fell through SKILL_ICON to its raw 🎞 emoji glyph.
+  Motion:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 5h3M10 5h3.5M2.5 11h1.5M8.5 11h5"/><path d="M7.5 3.5L9 5 7.5 6.5 6 5z"/><path d="M5.5 9.5L7 11l-1.5 1.5L4 11z"/></svg>`,
   Music:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 12V4l7-1.5V10.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="10.5" r="1.5"/></svg>`,
   Shader:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 6h11M2.5 9.5h11M6 2.5v11"/></svg>`,
   Cube:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l5 2.8v6.4L8 14l-5-2.8V4.8z"/><path d="M3 4.8L8 7.6l5-2.8M8 7.6V14"/></svg>`,
@@ -663,6 +667,7 @@ const SKILL_ICON = {
   "threejs":        Icon.Cube,
   "lottie-gen":     Icon.Play,
   "video-gen":      Icon.Film,
+  "motion-gen":     Icon.Motion,
   "canvas-gen":     Icon.Spark,
 };
 const skillGlyph = (spec) => {
@@ -16162,7 +16167,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                       title="Delete (moves to .trash/)"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); deleteProject(p.id, p.label); }}
-                    >🗑</button>
+                    ><${Icon.Trash}/></button>
                   </div>
                 </div>
                 <div className="landing-card-id">${p.id}</div>
@@ -16451,6 +16456,12 @@ function WorkflowCanvas() {
   useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
   const startLibResize = useCallback((e) => {
     e.preventDefault();
+    // Latch: iframes go pointer-transparent for the drag duration (CSS
+    // body[data-panel-resizing] rule) so mousemove keeps reaching the
+    // window listener even when the cursor crosses a live iframe — the
+    // prototype viewer's frame is ALWAYS interactive, unlike canvas node
+    // iframes, and otherwise eats the drag (same trap as node drags).
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const startX = e.clientX;
     const startW = libWidth;
     const onMove = (ev) => {
@@ -16460,6 +16471,7 @@ function WorkflowCanvas() {
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
       try { localStorage.setItem("th-workflow-lib-width", String(libWidthRef.current)); } catch {}
     };
     window.addEventListener("mousemove", onMove);
@@ -16477,6 +16489,12 @@ function WorkflowCanvas() {
     try {
       window.dispatchEvent(new CustomEvent("th:set-canvas-selection", { detail: { ids: [] } }));
     } catch {}
+    // Latch: iframes go pointer-transparent for the drag duration (CSS
+    // body[data-panel-resizing] rule). The selection-clear above only
+    // covers canvas node iframes; the prototype VIEWER's frame is always
+    // interactive and was eating mousemove whenever the drag crossed it,
+    // making the chat resize stall/jump in prototype view.
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const startX = e.clientX;
     const startW = chatWidth;
     const onMove = (ev) => {
@@ -16486,6 +16504,7 @@ function WorkflowCanvas() {
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
       try { localStorage.setItem("th-workflow-chat-width", String(chatWidthRef.current)); } catch {}
     };
     window.addEventListener("mousemove", onMove);
@@ -34396,6 +34415,20 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
 
   const iframeRef = useRef(null);
   const hostRef = useRef(null);
+  // Initial fit-to-width. A 1920px stage rarely fits a laptop viewport at
+  // 100%, and opening at 1:1 used to show the prototype clipped at its
+  // left edge (see the .zoom-iframe-host comment in styles.css). Open at
+  // the largest scale that shows the full width instead — capped at 1 so
+  // big displays still get native 1:1. The user can ⌘+wheel from there;
+  // the % chip resets to 100% as before.
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const avail = host.clientWidth - 24;     // small breathing gutter
+    if (avail >= 1920) return;               // fits at 100% — keep 1:1
+    pendingScrollRef.current = { left: 0, top: 0 };
+    setCanvasScale(Math.max(0.25, Math.round((avail / 1920) * 100) / 100));
+  }, []);
   const docRef = useRef(null);
   const overlayRef = useRef(null);
   const sketchCanvasRef = useRef(null);
@@ -36054,6 +36087,11 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
           height: (1440 * canvasScale) + "px",
           position: "relative",
           flexShrink: 0,
+          /* Overflow-safe centering: auto margins center the stage when
+             it fits the host and collapse to 0 when it overflows, so the
+             left edge always stays scroll-reachable (justify-content:
+             center pushed overflow past scrollLeft 0 — unreachable). */
+          margin: "0 auto",
         }}
       >
         <div
@@ -53878,7 +53916,7 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
                             onClick=${(e) => { e.stopPropagation(); onRenameFolder(d); }}><${Icon.Pen}/></button>
                           <button className="workflow-folder-picker-rowbtn workflow-folder-picker-rowbtn-danger"
                             title="Delete this folder (and everything inside)"
-                            onClick=${(e) => { e.stopPropagation(); onDeleteFolder(d); }}>🗑</button>
+                            onClick=${(e) => { e.stopPropagation(); onDeleteFolder(d); }}><${Icon.Trash}/></button>
                           <button className="workflow-folder-picker-select"
                             title="Use this folder as the agent output"
                             onClick=${(e) => { e.stopPropagation(); onPick(d.rel || d.abs); }}>Pick</button>

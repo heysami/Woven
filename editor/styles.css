@@ -995,6 +995,15 @@ button {
 .system-sidebar {
   position: sticky;
   top: 24px;
+  /* Sticky + taller-than-scrollport = unreachable bottom items: once the
+     sidebar sticks it stops moving, so any overflow below the fold can
+     never scroll into view (the user couldn't reach "MCP servers" on
+     short windows). Cap it to the visible scrollport (100vh minus the
+     ~166px landing header + sticky top + breathing room) and let the nav
+     scroll internally instead. */
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -15034,6 +15043,20 @@ a.ds-badge:hover, button.ds-badge:hover {
 .chat-drawer[data-fullscreen="true"] .chat-drawer-resize-handle {
   display: none;
 }
+/* While a panel-divider drag is live (library / chat), EVERY iframe goes
+   pointer-transparent so mousemove keeps reaching the window listener.
+   Canvas node iframes already had this via the data-node-dragging rules,
+   but the prototype viewer's frame is always interactive — without this
+   the chat resize stalls the moment the cursor crosses the prototype.
+   Set/removed by startLibResize / startChatResize in app.js. */
+body[data-panel-resizing="true"] iframe {
+  pointer-events: none !important;
+}
+body[data-panel-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .chat-drawer[data-fullscreen="true"] {
   left: 0;
   right: 0;
@@ -16918,7 +16941,13 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
 
 /* Iframe host — scrollable container so a 1920×1440 prototype can be
    panned around at native resolution while the toolbar / footer stay
-   pinned. Flex-centers small prototypes; falls back to top-left for big. */
+   pinned. Centering comes from `margin: 0 auto` on the scaler, NOT
+   justify-content: center — flex-centered overflow hangs off the LEFT
+   edge where scrollLeft can't reach (scroll positions are never
+   negative), which clipped the prototype's left side whenever the
+   scaled stage was wider than the host. Auto margins center when the
+   stage fits and collapse to 0 when it overflows, so every pixel stays
+   scroll-reachable. */
 .zoom-iframe-host {
   position: absolute;
   left: 48px;
@@ -16929,7 +16958,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   background: var(--surface-2);
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   z-index: 1;
 }
 .zoom-iframe-frame {
