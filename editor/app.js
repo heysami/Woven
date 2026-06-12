@@ -30689,7 +30689,7 @@ function PickedColorField({ label, value, inherited, cssVars, onChange }) {
 /* v3.4.x — Free-text field for shadows/filters (or any longer CSS
    property). Commits on blur or Cmd+Enter so the inspector doesn't
    thrash onStyle for every keystroke. */
-function PickedTextField({ label, value, inherited, placeholder, rows, onChange }) {
+function PickedTextField({ label, value, inherited, placeholder, rows, className, onChange }) {
   const [draft, setDraft] = useState(value || "");
   useEffect(() => { setDraft(value || ""); }, [value]);
   const commit = () => {
@@ -30714,7 +30714,7 @@ function PickedTextField({ label, value, inherited, placeholder, rows, onChange 
         />`
     : html`
         <input
-          className="zoom-inspector-input"
+          className=${"zoom-inspector-input" + (className ? " " + className : "")}
           type="text"
           value=${draft}
           placeholder=${ph}
@@ -30914,11 +30914,13 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
         onChange=${(v) => set1("borderColor", v)}/>
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">W</span>
-        <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
-               value=${styleVal("borderWidth")}
-               placeholder=${inheritedVal("borderWidth") || "e.g. 1px"}
-               onBlur=${(e) => set1("borderWidth", e.target.value.trim())}
-               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+        <${PickedTextField}
+          label="Border width"
+          className="zoom-inspector-input-narrow"
+          value=${styleVal("borderWidth")}
+          inherited=${inheritedVal("borderWidth")}
+          placeholder="e.g. 1px"
+          onChange=${(v) => set1("borderWidth", v)}/>
       </div>
       <div className="zoom-inspector-row">
         <${Seg} value=${styleVal("borderStyle") || inheritedVal("borderStyle")} onChange=${v => set1("borderStyle", v)} options=${[
@@ -30933,11 +30935,12 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
     <div className="zoom-inspector-section">
       <div className="zoom-inspector-label">Radius</div>
       <div className="zoom-inspector-row">
-        <input className="zoom-inspector-input" type="text"
-               value=${styleVal("borderRadius")}
-               placeholder=${inheritedVal("borderRadius") || "e.g. 8px or 8px 12px"}
-               onBlur=${(e) => set1("borderRadius", e.target.value.trim())}
-               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+        <${PickedTextField}
+          label="Border radius"
+          value=${styleVal("borderRadius")}
+          inherited=${inheritedVal("borderRadius")}
+          placeholder="e.g. 8px or 8px 12px"
+          onChange=${(v) => set1("borderRadius", v)}/>
       </div>
     </div>
 
@@ -30951,24 +30954,29 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
         onChange=${(v) => set1("color", v)}/>
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">F</span>
-        <input className="zoom-inspector-input" type="text"
-               value=${styleVal("fontFamily")}
-               placeholder=${inheritedVal("fontFamily") || "e.g. Inter, system-ui, sans-serif"}
-               onBlur=${(e) => set1("fontFamily", e.target.value.trim())}
-               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+        <${PickedTextField}
+          label="Font family"
+          value=${styleVal("fontFamily")}
+          inherited=${inheritedVal("fontFamily")}
+          placeholder="e.g. Inter, system-ui, sans-serif"
+          onChange=${(v) => set1("fontFamily", v)}/>
       </div>
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">S</span>
-        <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
-               value=${styleVal("fontSize")}
-               placeholder=${inheritedVal("fontSize") || "e.g. 14px"}
-               onBlur=${(e) => set1("fontSize", e.target.value.trim())}
-               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
-        <input className="zoom-inspector-input zoom-inspector-input-narrow" type="text"
-               value=${styleVal("fontWeight")}
-               placeholder=${inheritedVal("fontWeight") || "e.g. 500 / bold"}
-               onBlur=${(e) => set1("fontWeight", e.target.value.trim())}
-               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+        <${PickedTextField}
+          label="Font size"
+          className="zoom-inspector-input-narrow"
+          value=${styleVal("fontSize")}
+          inherited=${inheritedVal("fontSize")}
+          placeholder="e.g. 14px"
+          onChange=${(v) => set1("fontSize", v)}/>
+        <${PickedTextField}
+          label="Font weight"
+          className="zoom-inspector-input-narrow"
+          value=${styleVal("fontWeight")}
+          inherited=${inheritedVal("fontWeight")}
+          placeholder="e.g. 500 / bold"
+          onChange=${(v) => set1("fontWeight", v)}/>
       </div>
     </div>
 
@@ -34275,9 +34283,27 @@ function WorkflowPickedInspectorDock({
   // sizing/align controls.
   const applyStyle = useCallback(async (nextStyles) => {
     if (isReactManaged && isReactManaged("Inspector style change")) return;
-    const ifr = pickerIframeRef.current;
+    // v3.6.1 — Re-resolve BOTH the iframe and the element instead of
+    // trusting the refs blindly. The read path (useMemo above) already
+    // falls back to querySelector(pickedElement.path) when the cached
+    // ref went stale (iframe reloaded after a source change, ref cleared
+    // by the pick-mode onLoad handler) — so the dock keeps rendering
+    // fields, but writes through the raw refs silently no-oped. Mirror
+    // the same recovery here so what the user SEES is also what they
+    // can EDIT.
+    let ifr = pickerIframeRef.current;
+    if (!ifr || !ifr.isConnected) {
+      const hostId = (pickedElement && pickedElement.nodeId) || node.id;
+      const sel = 'iframe[data-prototype-id="' + hostId + '"], iframe[data-asset-id="' + hostId + '"]';
+      const live = document.querySelector(sel);
+      if (live) { ifr = live; pickerIframeRef.current = live; }
+    }
     const doc = ifr && ifr.contentDocument;
-    const el = pickedDomRef.current;
+    let el = pickedDomRef.current;
+    if ((!el || !doc || !doc.contains(el)) && doc && pickedElement && pickedElement.path) {
+      try { el = doc.querySelector(pickedElement.path); } catch { el = null; }
+      if (el) pickedDomRef.current = el;
+    }
     if (!doc || !el) return;
     const cssKeys = [
       ["width",         "width"],
@@ -34330,7 +34356,7 @@ function WorkflowPickedInspectorDock({
         await onSaveIframeHtml(doc, "Inspector style");
       }
     } catch {}
-  }, [pickerIframeRef, pickedDomRef, onSaveIframeHtml, onStageInspectorEdit, isReactManaged]);
+  }, [pickerIframeRef, pickedDomRef, pickedElement, node.id, onSaveIframeHtml, onStageInspectorEdit, isReactManaged]);
 
   // v3.4.x — Re-pick a different element from the tree links. Updates
   // pickedDomRef + dispatches th:element-picked so WorkflowSurface's
