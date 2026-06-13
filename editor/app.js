@@ -14047,6 +14047,8 @@ function ProjectHomeButton({ info }) {
 const DS_DEFAULTS = {
   primary:   "#074ECF",
   secondary: "#E20E10",
+  tertiary:  "#8D98AC",
+  neutral:   "#828486",   // the grey "base" (= --neutral-500); tints the ramp
   fontFamilyCss: "'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
   fontKey:   "plus-jakarta-sans",
   baseFontPx: 16,
@@ -14150,6 +14152,53 @@ function dsRamp(hex) {
   return out;
 }
 
+// ── neutral (grey) ramp ──
+// Greys live or die by their hue/temperature, not a tint-to-white mix, so the
+// neutral ramp is generated in HSL: take the base's hue + (modest) saturation
+// and walk a fixed lightness ladder. A pure-grey base → pure-grey ramp; a warm
+// base → warm greys. The stop set matches the DS (note 70/80/150).
+function dsRgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return [h, s, l];
+}
+function dsHslToRgb(h, s, l) {
+  if (s === 0) { const v = l * 255; return [v, v, v]; }
+  const hue2 = (p, q, t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [hue2(p, q, h + 1 / 3) * 255, hue2(p, q, h) * 255, hue2(p, q, h - 1 / 3) * 255];
+}
+const DS_NEUTRAL_STOPS = [
+  ["50", 0.97], ["70", 0.94], ["80", 0.91], ["100", 0.87], ["150", 0.83], ["200", 0.79],
+  ["300", 0.69], ["400", 0.605], ["500", 0.515], ["600", 0.435], ["700", 0.34],
+  ["800", 0.25], ["900", 0.155], ["950", 0.075],
+];
+function dsNeutralRamp(hex) {
+  const rgb = dsHexToRgb(hex);
+  if (!rgb) return null;
+  const hsl = dsRgbToHsl(rgb);
+  const h = hsl[0], s = Math.min(hsl[1], 0.4);   // cap saturation so greys stay grey-ish
+  const out = {};
+  for (const [stop, L] of DS_NEUTRAL_STOPS) out[stop] = dsRgbToHex(dsHslToRgb(h, s, L));
+  return out;
+}
+
 /* Build the `:root{}` override CSS + font payload from the customizer state.
    `s` is the settings object; any field left null/default emits nothing for
    that dimension. Returns { overrideCss, font, dirty }. */
@@ -14179,6 +14228,31 @@ function buildDsCustomization(s) {
     const r = dsRamp(s.secondary);
     if (r) {
       for (const k of Object.keys(r)) lines.push(`--secondary-${k}:${r[k]};`);
+    }
+  }
+  // ── Tertiary ──
+  if (s.tertiary && s.tertiary.toUpperCase() !== D.tertiary.toUpperCase()) {
+    const r = dsRamp(s.tertiary);
+    if (r) for (const k of Object.keys(r)) lines.push(`--tertiary-${k}:${r[k]};`);
+  }
+  // ── Neutral / grey base — regenerate the ramp AND the semantic surface /
+  //    text / border tokens it feeds, so the chosen grey actually tints the UI.
+  if (s.neutral && s.neutral.toUpperCase() !== D.neutral.toUpperCase()) {
+    const r = dsNeutralRamp(s.neutral);
+    if (r) {
+      for (const k of Object.keys(r)) lines.push(`--neutral-${k}:${r[k]};`);
+      lines.push(
+        `--surface-default:${r["50"]};`,
+        `--surface-medium:${r["70"]};`,
+        `--surface-strong:${r["80"]};`,
+        `--fg-default:${r["900"]};`,
+        `--fg-muted:${r["700"]};`,
+        `--fg-subtle:${r["500"]};`,
+        `--border-default:${r["100"]};`,
+        `--border-subtle:${r["100"]};`,
+        `--interactive-hover:${r["100"]};`,
+        `--interactive-active:${r["150"]};`,
+      );
     }
   }
   // ── Roundness (scale radii DOWN from the max baseline) ──
@@ -14246,7 +14320,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [useDefaultDs, setUseDefaultDs] = useState(false);
   const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
   const [dsSettings, setDsSettings] = useState({
-    primary: null, secondary: null,
+    primary: null, secondary: null, tertiary: null, neutral: null,
     roundness: 1,
     fontKey: DS_DEFAULTS.fontKey,
     baseFontPx: null, typeRatio: null, typeTouched: false,
@@ -14563,6 +14637,10 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 onChange=${(v) => set({ primary: v })} onReset=${() => set({ primary: null })}/>
               <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
                 onChange=${(v) => set({ secondary: v })} onReset=${() => set({ secondary: null })}/>
+              <${DsColorRow} label="Tertiary" value=${settings.tertiary} fallback=${DS_DEFAULTS.tertiary}
+                onChange=${(v) => set({ tertiary: v })} onReset=${() => set({ tertiary: null })}/>
+              <${DsColorRow} label="Neutral (grey base)" value=${settings.neutral} fallback=${DS_DEFAULTS.neutral}
+                onChange=${(v) => set({ neutral: v })} onReset=${() => set({ neutral: null })}/>
             </section>
 
             <section className="dscz-group">
