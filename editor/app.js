@@ -20183,10 +20183,15 @@ const WORKFLOW_CONNECT_DEFS = {
       return this.presets[textOut ? 0 : 1];
     },
     presets: [
+      // Any text-output skill is treated as a PROMPT ADJUSTER in the connector
+      // graph: it takes a prompt's text and produces text that fills another
+      // prompt. Narrowed to text-in / text-gen-out so it only wires
+      // prompt → adjuster → prompt (no longer offered as a generic text source
+      // for agents/skills/sections/repeaters).
       {
-        id: "skill-llm", label: "LLM skill", payload: { skill: "llm" },
-        provides: { out: { label: "Text output", tags: ["text", "text-gen", "runnable"] } },
-        accepts:  { in:  { label: "Prompt", tags: ["text", "section"] } },
+        id: "skill-llm", label: "Prompt adjuster", payload: { skill: "llm" },
+        provides: { out: { label: "Adjusted prompt", tags: ["text-gen"] } },
+        accepts:  { in:  { label: "Prompt to adjust", tags: ["text"] } },
       },
       {
         id: "skill-image", label: "Image skill", payload: { skill: "generate-image" },
