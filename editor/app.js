@@ -18064,6 +18064,12 @@ function WorkflowCanvas() {
               // can fetch the conversation while the run is in flight.
               runId:     disk.runId,
               output:    disk.output,
+              // v3.9 — eager "building" prototype marker is daemon-authored:
+              // the reconciler sets it on an eager mount and CLEARS it on
+              // settle (index.html landed). Pull it so the body swaps the
+              // "Building…" placeholder for the live iframe when the build
+              // finishes. (undefined after settle → falsy → placeholder gone.)
+              _building: disk._building,
               // v3.0 — asset-versioning fields are daemon-authoritative. Without
               // these in dDaemon, the SSE reload after a /version/<vid>/pin
               // (or revert / branch / composition switch) leaves the picker
@@ -24266,6 +24272,55 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return {
         ...d,
         nodes: nodes.map(n => contained.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n),
+      };
+    });
+  }, [setData]);
+
+  // v3.9 — "Tidy" a section: pack its contained nodes into a left-to-right
+  // grid (palette → typography → everything else, so a Materials section
+  // reads top-down), then grow the section to fit. Heterogeneous node sizes
+  // are row-packed (wrap when the next node would overflow the section's
+  // current inner width; row height = tallest node in the row). Keeping the
+  // section's width as-is means "drag the section wider, hit Tidy again" =
+  // more columns — the "resize for more space" behaviour the materials grid
+  // wants. Centres stay inside the (grown) rect, so containment holds.
+  const tidySection = useCallback((sid) => {
+    setData(d => {
+      const nodes = d.nodes || [];
+      const section = nodes.find(n => n.id === sid && n.kind === "section");
+      if (!section) return d;
+      const contained = workflowSectionContainedNodes(section, nodes);
+      if (!contained.length) return d;
+      const PAD = 28, GAP = 24, HEADER = 12;
+      const kindOrder = { "color-palette": 0, "typography": 1 };
+      const items = [...contained].sort((a, b) => {
+        const oa = kindOrder[a.kind] ?? 2, ob = kindOrder[b.kind] ?? 2;
+        if (oa !== ob) return oa - ob;
+        return ((a.y || 0) - (b.y || 0)) || ((a.x || 0) - (b.x || 0));
+      });
+      const secW = Math.max(280, section.w || 880);
+      const innerW = secW - PAD * 2;
+      const x0 = (section.x || 0) + PAD;
+      const y0 = (section.y || 0) + PAD + HEADER;
+      let cx = x0, cy = y0, rowH = 0, maxRight = x0;
+      const patch = new Map();
+      for (const n of items) {
+        const nw = n.w || 280, nh = n.h || 200;
+        if (cx > x0 && (cx - x0) + nw > innerW) { cx = x0; cy += rowH + GAP; rowH = 0; }
+        patch.set(n.id, { x: Math.round(cx), y: Math.round(cy) });
+        cx += nw + GAP;
+        maxRight = Math.max(maxRight, cx - GAP);
+        rowH = Math.max(rowH, nh);
+      }
+      const newW = Math.max(secW, Math.round(maxRight - (section.x || 0)) + PAD);
+      const newH = Math.max(180, Math.round((cy + rowH) - (section.y || 0)) + PAD);
+      return {
+        ...d,
+        nodes: nodes.map(n => {
+          if (n.id === sid) return { ...n, w: newW, h: newH };
+          const p = patch.get(n.id);
+          return p ? { ...n, ...p } : n;
+        }),
       };
     });
   }, [setData]);
@@ -32067,6 +32122,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
                 onChange=${(patch) => updateNode(n.id, patch)}
+                onTidy=${() => tidySection(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
@@ -32897,6 +32953,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onAddOutputAsset=${addOutputAsset}
               />
             `)}
+            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} />
             <${WorkflowWhiteboardLayer}
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
@@ -40713,6 +40770,14 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           <div className="workflow-paused-placeholder-title">Generation paused</div>
           <div className="workflow-paused-placeholder-body">
             The agent stopped mid-build with a follow-up question. <strong>Open the agent's chat</strong> to see what it needs, then reply — the prototype will pick back up.
+          </div>
+        </div>
+      ` : node._building ? html`
+        <div className="workflow-paused-placeholder" data-building="true">
+          <div className="workflow-paused-placeholder-icon">▶</div>
+          <div className="workflow-paused-placeholder-title">Building…</div>
+          <div className="workflow-paused-placeholder-body">
+            The agent is writing <strong>source/${branch}/</strong>. The page will render here the moment it lands.
           </div>
         </div>
       ` : (() => {
@@ -51086,7 +51151,7 @@ function formatDirectionForPrompt(d) {
      - Sections do NOT participate in edges; they have no ports.
      - Lower z-index than nodes so dragging passes through to children
        except for the title bar handle area. */
-function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const titleInputRef = useRef(null);
@@ -51176,6 +51241,12 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
               onMouseDown=${(e) => e.stopPropagation()}
             />`
           : html`<span className="workflow-node-section-title" title="Double-click to rename">${node.title || "Section"}</span>`}
+        <button
+          className="workflow-node-section-tidy"
+          title="Tidy — pack the contained nodes into a grid and resize this section to fit. Drag the section wider first for more columns."
+          onClick=${(e) => { e.stopPropagation(); onTidy && onTidy(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >⊞</button>
         <button
           className="workflow-node-section-close"
           title="Remove section (does NOT delete contained nodes)"
@@ -51662,6 +51733,163 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
    One SVG inside .workflow-canvas, so it shares the transform with every
    node. Three layers, drawn in z-order:
      1. Binding lines  — asset.center → closest point on bound prototype's
+// v3.9 — "Someone's working in here." An agent run on a node is signalled by
+// the data-run-status pulse + top-right spinner (record-LED language). This
+// adds an abstract, anthropomorphic read that peeks out of a node's
+// bottom-left corner while an agent works on it. A SECTION is "working" when
+// any node inside it is — so the badge also tells you a grouped pass is live.
+function workflowNodeIsWorking(n) {
+  if (!n) return false;
+  const rs = n.runStatus;
+  if (rs === "pending" || rs === "running") return true;
+  if (n.lastBuildStatus === "running") return true;   // ds-brainstorm fan-out
+  return false;
+}
+
+// v3.9.1 — the abstract geometric "worker". A FRAME of two CSS squares (a
+// fill square with a faint diamond hatch + a slightly-larger outline square)
+// rotate 0↔45° — alternating between reading as a box and a diamond, the
+// outline LAGGING the fill — around an inner ACTOR drawn on a <canvas>: a
+// glyph that orbits an ∞ (lemniscate) path trailing ASCII-dither particles,
+// then on a centre pass SPLITS into two; the halves drift to opposite
+// extremes, BLINK as lines (─), BOP up/down as carets (^ ^), revert to boxes,
+// MERGE back at the centre, and repeat. Squares = CSS; actor + particles =
+// canvas rAF state machine. Honours prefers-reduced-motion (static frame).
+const AAB_DITHER = ["▓", "▒", "░", "·"];
+
+function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const CSS_W = 46, CSS_H = 46, CX = 23, CY = 23, AX = 12, AY = 8;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = CSS_W * dpr; cv.height = CSS_H * dpr;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
+    // De-sync sibling badges so they don't all animate in lockstep.
+    const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
+    const seed = (parseInt(hx, 16) % 997) / 997;
+    const D_ORBIT = 3.0, D_SEP = 0.7, D_LINE = 1.0, D_CARET = 1.2, D_MERGE = 0.7;
+    const CYCLE = D_ORBIT + D_SEP + D_LINE + D_CARET + D_MERGE;
+    const LOOPS = 2;
+    const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
+    const pos = (th) => ({ x: CX + AX * Math.sin(th), y: CY + AY * Math.sin(2 * th) });
+    let particles = [];
+    const spawn = (x, y) => {
+      if (particles.length > 44) return;
+      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 6;
+      particles.push({ x: x + (Math.random() - 0.5) * 3, y: y + (Math.random() - 0.5) * 3,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5 + Math.random() * 0.5, age: 0 });
+    };
+    const glyph = (g, x, y, size, alpha) => {
+      ctx.globalAlpha = alpha; ctx.fillStyle = hot;
+      ctx.font = `${size}px ui-monospace, "SF Mono", Menlo, monospace`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(g, x, y);
+    };
+    const drawActors = (lt, dt) => {
+      let p = lt;
+      if (p < D_ORBIT) {
+        const a = pos((p / D_ORBIT) * LOOPS * Math.PI * 2);
+        glyph("■", a.x, a.y, 11, 1); if (dt > 0) spawn(a.x, a.y);
+      } else if ((p -= D_ORBIT) < D_SEP) {
+        const e = ease(p / D_SEP), pa = pos(e * Math.PI / 2), pb = pos(-e * Math.PI / 2);
+        glyph("■", pa.x, pa.y, 11, 1); glyph("■", pb.x, pb.y, 11, 1);
+        if (dt > 0) { spawn(pa.x, pa.y); spawn(pb.x, pb.y); }
+      } else if ((p -= D_SEP) < D_LINE) {
+        const on = (Math.floor((p / D_LINE) * 6) % 2 === 0) ? 1 : 0.12;
+        const pa = pos(Math.PI / 2), pb = pos(-Math.PI / 2);
+        glyph("─", pa.x, pa.y, 12, on); glyph("─", pb.x, pb.y, 12, on);
+      } else if ((p -= D_LINE) < D_CARET) {
+        const bob = -Math.sin((p / D_CARET) * Math.PI * 6) * 2.4;
+        const pa = pos(Math.PI / 2), pb = pos(-Math.PI / 2);
+        glyph("^", pa.x, pa.y + bob, 12, 1); glyph("^", pb.x, pb.y + bob, 12, 1);
+      } else {
+        const e = ease((p - D_CARET) / D_MERGE);
+        const pa = pos((1 - e) * Math.PI / 2), pb = pos(-(1 - e) * Math.PI / 2);
+        glyph("■", pa.x, pa.y, 11, 1); glyph("■", pb.x, pb.y, 11, 1);
+        if (dt > 0) { spawn(pa.x, pa.y); spawn(pb.x, pb.y); }
+      }
+    };
+    const drawParticles = (dt) => {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const q = particles[i];
+        q.age += dt;
+        if (q.age >= q.life) { particles.splice(i, 1); continue; }
+        q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.92; q.vy *= 0.92;
+        const f = 1 - q.age / q.life;
+        glyph(AAB_DITHER[Math.min(AAB_DITHER.length - 1, Math.floor((1 - f) * AAB_DITHER.length))],
+              q.x, q.y, 6 + f * 2, f * 0.8);
+      }
+    };
+    let raf = 0, t0 = 0, last = 0;
+    const frame = (ts) => {
+      if (!t0) t0 = ts;
+      const t = (ts - t0) / 1000;
+      const dt = last ? Math.min(0.05, t - last) : 0; last = t;
+      ctx.clearRect(0, 0, CSS_W, CSS_H);
+      drawParticles(dt);
+      drawActors((t + seed * CYCLE) % CYCLE, dt);
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(frame);
+    };
+    if (reduce) { ctx.clearRect(0, 0, CSS_W, CSS_H); glyph("■", CX, CY, 11, 1); ctx.globalAlpha = 1; }
+    else { raf = requestAnimationFrame(frame); }
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [keyId]);
+
+  return html`
+    <div className="workflow-agent-badge"
+         style=${{ left: ax + "px", top: ay + "px", transform: `scale(${invZoom})`, transformOrigin: "0 100%" }}>
+      <div className="workflow-agent-frame" title=${title}>
+        <span className="aab-square aab-square-out"/>
+        <span className="aab-square aab-square-fill"/>
+        <canvas ref=${canvasRef} className="aab-canvas" width="46" height="46"/>
+        ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
+      </div>
+    </div>
+  `;
+}
+
+// Overlay layer rendered ONCE inside the transformed canvas container, after
+// every node map, so one edit covers every node kind (incl. sections) and the
+// badges stack above the cards. pointer-events:none — pure decoration.
+// Counter-scaled by 1/zoom so the badge stays a constant on-screen size.
+function WorkflowAgentBadgeLayer({ nodes, zoom }) {
+  const list = nodes || [];
+  const invZoom = Math.max(0.3, Math.min(3, 1 / (zoom || 1)));
+  const badges = [];
+  for (const n of list) {
+    let working = false;
+    let count = 0;
+    if (n.kind === "section") {
+      const inside = workflowSectionContainedNodes(n, list).filter(workflowNodeIsWorking);
+      count = inside.length;
+      working = count > 0;
+    } else {
+      working = workflowNodeIsWorking(n);
+    }
+    if (!working) continue;
+    const isSection = n.kind === "section";
+    const h = isSection ? Math.max(180, n.h || 560) : (n.h || 200);
+    const title = isSection
+      ? `An agent is working inside this section${count > 1 ? ` — ${count} nodes` : ""}`
+      : "An agent is working on this node";
+    badges.push(html`<${WorkflowAgentBadge}
+      key=${n.id} keyId=${n.id}
+      ax=${n.x || 0} ay=${(n.y || 0) + h} invZoom=${invZoom}
+      count=${isSection ? count : 0} title=${title} />`);
+  }
+  if (!badges.length) return null;
+  return html`<div className="workflow-agent-badge-layer">${badges}</div>`;
+}
+
+/* Edges layer — three kinds of connectors, stacked:
+     1. Expose edges    — dashed faded links from a prototype to its exposed
         rect. Inferred from each asset.boundTo.node; dashed, faded, no
         pointer events. Communicates the Expose relationship visually.
      2. User edges     — bezier paths in data.edges[], clickable, deletable.

@@ -4804,6 +4804,26 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   background: color-mix(in oklch, var(--danger, #c0392b) 14%, transparent);
   color: var(--danger, #c0392b);
 }
+/* v3.9 — Tidy button: same chrome as close, accent-on-hover (it organises,
+   it doesn't destroy). Sits just left of the close button in the bar. */
+.workflow-node-section-tidy {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+.workflow-node-section:hover .workflow-node-section-tidy { opacity: 1; }
+.workflow-node-section-tidy:hover {
+  background: color-mix(in oklch, var(--accent, #2d7ff9) 14%, transparent);
+  color: var(--accent, #2d7ff9);
+}
 .workflow-node-section-resize {
   position: absolute;
   right: 0;
@@ -7095,6 +7115,63 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: oklch(60% 0.14 75);
   pointer-events: none;
 }
+
+/* ── "Someone's working in here" — abstract geometric worker badge ─────
+   Rendered by WorkflowAgentBadgeLayer at a working node's bottom-left
+   corner (and at a section's corner when any node inside it is running).
+   A FRAME of two squares (fill + diamond hatch, and a larger outline)
+   rotate 0↔45°, the outline LAGGING the fill, so they alternate between
+   box and diamond out of phase. The inner actor (orbiting glyph + ASCII
+   dither particles) is drawn on the <canvas> by the rAF state machine in
+   WorkflowAgentBadge. Tinted with --hot. Pure decoration. */
+.workflow-agent-badge-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 6; }
+.workflow-agent-badge { position: absolute; pointer-events: none; will-change: transform; }
+.workflow-agent-frame {
+  position: absolute; left: -6px; bottom: 2px;   /* peek just outside the corner */
+  width: 46px; height: 46px;
+}
+.aab-square {
+  position: absolute; left: 50%; top: 50%;
+  border-radius: 3px;
+  transform: translate(-50%, -50%) rotate(0deg);
+  animation: aabRot 3.4s cubic-bezier(.7, 0, .3, 1) infinite;
+}
+.aab-square-fill {
+  width: 24px; height: 24px;
+  background:
+    repeating-linear-gradient(45deg,  transparent 0 3px, color-mix(in oklch, var(--hot) 40%, transparent) 3px 4px),
+    repeating-linear-gradient(-45deg, transparent 0 3px, color-mix(in oklch, var(--hot) 40%, transparent) 3px 4px),
+    color-mix(in oklch, var(--hot) 15%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--hot) 55%, transparent);
+}
+.aab-square-out {
+  width: 31px; height: 31px;
+  border: 1.5px solid color-mix(in oklch, var(--hot) 60%, transparent);
+  background: transparent;
+  animation-delay: 0.5s;   /* lag the outline behind the fill */
+}
+.aab-canvas {
+  position: absolute; left: 50%; top: 50%;
+  width: 46px; height: 46px;
+  transform: translate(-50%, -50%);
+  color: var(--hot);       /* read by the canvas ctx for the glyph/particle fill */
+}
+.workflow-agent-count {
+  position: absolute; top: -7px; right: -7px;
+  min-width: 13px; height: 13px; padding: 0 3px;
+  border-radius: 7px;
+  background: oklch(30% 0.03 250); color: white;
+  font: 500 9px/13px var(--font-sans, system-ui);
+  text-align: center;
+}
+@keyframes aabRot {
+  0%,  38% { transform: translate(-50%, -50%) rotate(0deg); }
+  50%, 88% { transform: translate(-50%, -50%) rotate(45deg); }
+  100%     { transform: translate(-50%, -50%) rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aab-square { animation: none !important; }
+}
 .workflow-paused-placeholder {
   position: relative;
   flex: 1 1 0;
@@ -7106,6 +7183,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-paused-placeholder[data-error="true"] {
   background: color-mix(in oklch, oklch(58% 0.18 25) 8%, var(--surface));
+}
+/* v3.9 — eager "building" prototype placeholder. Hot-tinted to match the
+   data-run-status="pending" pulse + the working badge, so the whole
+   "an agent is building this right now" story reads as one colour. */
+.workflow-paused-placeholder[data-building="true"] {
+  background: color-mix(in oklch, var(--hot) 8%, var(--surface));
+}
+.workflow-paused-placeholder[data-building="true"] .workflow-paused-placeholder-icon {
+  color: var(--hot);
 }
 .workflow-paused-placeholder[data-error="true"] .workflow-paused-placeholder-icon {
   color: oklch(58% 0.18 25);

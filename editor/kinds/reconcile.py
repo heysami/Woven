@@ -37,6 +37,8 @@ DATA_DRIFT         = "DATA_DRIFT"      # any block-severity entry in COHERENCE_R
 KIND_MIGRATION     = "KIND_MIGRATION"  # node's kind disagrees with registry's declared kind for that id
 ORPHAN_ASSET_NO_PROTOTYPE_EDGE = "ORPHAN_ASSET_NO_PROTOTYPE_EDGE"  # v3.1 — asset has no edge to prototype
 ORPHAN_PROTOTYPE_FOLDER        = "ORPHAN_PROTOTYPE_FOLDER"        # v3.2 — source/<slug>/index.html on disk, no Prototype node
+PROTOTYPE_FOLDER_SETTLE        = "PROTOTYPE_FOLDER_SETTLE"        # v3.9 — eager pending Prototype node; index.html now landed → flip to done
+PROTOTYPE_FOLDER_ABANDON       = "PROTOTYPE_FOLDER_ABANDON"       # v3.9 — eager pending Prototype node whose folder lost all artifacts → remove
 
 
 def _load_workflow(project_root):
@@ -715,18 +717,60 @@ _PROTOTYPE_FOLDER_SKIP_NAMES = {
     "_staging", "_tmp", ".staging", ".trash",
 }
 
+# v3.9 — "is this folder a prototype build in progress?" A prototype's entry
+# is index.html, but an agent typically writes it LAST (tokens → styles.css →
+# data.js → component JS → finally index.html), or writes other pages first
+# in a multi-HTML build. So a freshly-created slug folder can hold real build
+# output for many seconds before index.html exists. We treat the presence of
+# ANY html page, or the styles.css/data.js prototype skeleton, as the signal
+# that a build is underway — enough to mount an eager "building" node so the
+# canvas reflects what's happening instead of staying empty until the last
+# write. Cheap, shallow-ish scan (root + one nested level).
+def _folder_has_prototype_artifacts(folder_path):
+    try:
+        for entry in os.scandir(folder_path):
+            nm = entry.name
+            if entry.is_file(follow_symlinks=False):
+                low = nm.lower()
+                if low.endswith((".html", ".htm")):
+                    return True
+                if low in ("styles.css", "data.js"):
+                    return True
+            elif entry.is_dir(follow_symlinks=False) and not nm.startswith((".", "_")):
+                # one level deep — multi-HTML builds drop pages/ first
+                try:
+                    for sub in os.scandir(entry.path):
+                        if (sub.is_file(follow_symlinks=False)
+                                and sub.name.lower().endswith((".html", ".htm"))):
+                            return True
+                except OSError:
+                    pass
+    except OSError:
+        return False
+    return False
+
 
 def _detect_orphan_prototype_folder(workflow, project_root, drifts):
-    """For every `source/<slug>/index.html` (or `index.htm`) on disk where
-    `<slug>` doesn't start with `_` and isn't a known scratch directory,
-    check whether the workflow already has a `kind: "prototype"` node whose
-    canonical slug (`prototype`, falling back to legacy `branch`) equals
-    `slug`. If not, emit an auto-class ORPHAN_PROTOTYPE_FOLDER drift so the
-    autoheal can mount one.
+    """Keep the canvas in step with prototype folders on disk, across the
+    whole build lifecycle:
 
-    This makes the per-prototype subfolder convention (v3.2) feel
-    automatic: the agent writes `source/<slug>/...`, the user sees a
-    Prototype node appear within ~1.5 s, no drag-and-drop needed."""
+      • `source/<slug>/index.html` exists, no Prototype node covers the slug
+        → ORPHAN_PROTOTYPE_FOLDER (mount a done node). [v3.2]
+      • `source/<slug>/` has build artifacts (any .html page, or the
+        styles.css / data.js skeleton) but NO index.html yet, and no node
+        covers the slug → ORPHAN_PROTOTYPE_FOLDER with `building: True`
+        (mount an eager *pending* node so the canvas shows the build the
+        moment it starts, complete with the "working" badge). [v3.9]
+      • index.html has since landed for a slug already covered by an eager
+        pending/running node → PROTOTYPE_FOLDER_SETTLE (flip it to done so
+        the iframe renders and the badge stops). [v3.9]
+      • an eager pending node whose folder vanished or lost every artifact
+        (build abandoned before index.html) → PROTOTYPE_FOLDER_ABANDON
+        (remove it, so we never leave a forever-"building" creature). [v3.9]
+
+    This makes the per-prototype subfolder convention feel automatic: the
+    agent writes `source/<slug>/...`, the user sees a Prototype node appear
+    within ~1.5 s — now from the FIRST write, not the last."""
     source_dir = os.path.join(project_root, "source")
     if not os.path.isdir(source_dir):
         return
@@ -738,44 +782,95 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     # duplicate prototype_<slug> siblings every reconcile tick, and worse, to
     # respawn one immediately after the user deletes it (the canonical-field
     # node still exists, so the slug stays "orphaned" in this detector's eyes).
-    existing_branches = set()
+    # v3.9 — also remember the covering node so we can settle / abandon eager
+    # pending nodes (keyed by canonical slug → node).
+    slug_to_node = {}
     for n in nodes:
         if not isinstance(n, dict) or n.get("kind") != "prototype":
             continue
         slug = (n.get("prototype") or n.get("branch") or "").strip()
-        if slug:
-            existing_branches.add(slug)
+        if slug and slug not in slug_to_node:
+            slug_to_node[slug] = n
+    existing_branches = set(slug_to_node.keys())
+
+    def _index_for(folder_path):
+        for cand in ("index.html", "index.htm"):
+            p = os.path.join(folder_path, cand)
+            if os.path.isfile(p):
+                return os.path.relpath(p, project_root)
+        return None
+
     try:
         entries = sorted(os.scandir(source_dir), key=lambda e: e.name)
     except OSError:
         return
+    seen_slugs = set()
     for entry in entries:
         if not entry.is_dir(follow_symlinks=False):
             continue
         slug = entry.name
+        seen_slugs.add(slug)
         if slug in _PROTOTYPE_FOLDER_SKIP_NAMES:
             continue
         if any(slug.startswith(p) for p in _PROTOTYPE_FOLDER_SKIP_PREFIXES):
             continue
-        if slug in existing_branches:
+        index_path = _index_for(entry.path)
+        covering = slug_to_node.get(slug)
+        if covering is not None:
+            # Already on the canvas. The only thing left to do is settle an
+            # eager pending node once its page finally lands.
+            if (index_path
+                    and covering.get("_building")
+                    and covering.get("runStatus") in ("pending", "running")):
+                drifts.append({
+                    "type":     PROTOTYPE_FOLDER_SETTLE,
+                    "class":    "auto",
+                    "slug":     slug,
+                    "nodeId":   covering.get("id"),
+                    "indexPath": index_path,
+                    "summary":  f"`source/{slug}/index.html` landed; settling the "
+                                f"eager Prototype node to done.",
+                })
             continue
-        # Require an index.html/htm to consider it a prototype root.
-        index_path = None
-        for cand in ("index.html", "index.htm"):
-            p = os.path.join(entry.path, cand)
-            if os.path.isfile(p):
-                index_path = os.path.relpath(p, project_root)
-                break
-        if not index_path:
+        if index_path:
+            drifts.append({
+                "type":     ORPHAN_PROTOTYPE_FOLDER,
+                "class":    "auto",
+                "slug":     slug,
+                "indexPath": index_path,
+                "summary":  f"`source/{slug}/index.html` exists but no Prototype node "
+                            f"covers slug={slug!r}; mounting one.",
+            })
+        elif _folder_has_prototype_artifacts(entry.path):
+            drifts.append({
+                "type":     ORPHAN_PROTOTYPE_FOLDER,
+                "class":    "auto",
+                "slug":     slug,
+                "building": True,
+                "summary":  f"`source/{slug}/` is being built (no index.html yet); "
+                            f"mounting an eager 'building' Prototype node.",
+            })
+
+    # Abandon pass — an eager pending node whose folder disappeared or was
+    # emptied of artifacts before producing index.html. Without this, a
+    # cancelled / failed build would leave a node stuck "building" forever.
+    for slug, covering in slug_to_node.items():
+        if not covering.get("_building"):
             continue
-        drifts.append({
-            "type":     ORPHAN_PROTOTYPE_FOLDER,
-            "class":    "auto",
-            "slug":     slug,
-            "indexPath": index_path,
-            "summary":  f"`source/{slug}/index.html` exists but no Prototype node "
-                        f"covers slug={slug!r}; mounting one.",
-        })
+        folder = os.path.join(source_dir, slug)
+        gone = (slug not in seen_slugs) or (not os.path.isdir(folder))
+        emptied = (not gone
+                   and _index_for(folder) is None
+                   and not _folder_has_prototype_artifacts(folder))
+        if gone or emptied:
+            drifts.append({
+                "type":     PROTOTYPE_FOLDER_ABANDON,
+                "class":    "auto",
+                "slug":     slug,
+                "nodeId":   covering.get("id"),
+                "summary":  f"eager 'building' Prototype node for slug={slug!r} "
+                            f"has no artifacts on disk; removing it.",
+            })
 
 
 def _autoheal_orphan_prototype_folder(workflow, drift):
@@ -823,7 +918,12 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
     # CSS-scales to fit the node body — but choosing a node size with the
     # same aspect means no letterbox. 720×482 = 16:10 (with +32 title bar
     # → 720×450 body region, which has the same 16:10 ratio as 1440×900).
-    nodes.append({
+    # v3.9 — eager "building" mount. The folder has artifacts but no
+    # index.html yet, so render a pending node (the frontend shows a
+    # "Building…" placeholder + the working badge) instead of a 404 iframe.
+    # PROTOTYPE_FOLDER_SETTLE flips it to done once index.html lands.
+    building = bool(drift.get("building"))
+    node = {
         "id":         new_id,
         "kind":       "prototype",
         "branch":     slug,
@@ -832,16 +932,76 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
         "w":          720,
         "h":          482,
         "viewport":   {"w": 1440, "h": 900},
-        "runStatus":  "done",
-        "title":      slug,
-        "healedBy":   "reconciler.orphan-prototype-folder",
+        "runStatus":  "pending" if building else "done",
+        "title":      (slug + " (building…)") if building else slug,
+        "healedBy":   "reconciler.orphan-prototype-folder-building" if building
+                      else "reconciler.orphan-prototype-folder",
         "commitRef":  {
             "at":              _now_iso(),
             "callerSessionId": "auto-heal",
             "requestId":       "reconciler",
         },
-    })
+    }
+    if building:
+        node["_building"] = True
+    nodes.append(node)
     workflow["nodes"] = nodes
+    return True
+
+
+def _autoheal_prototype_folder_settle(workflow, drift):
+    """Flip an eager 'building' Prototype node to done now that its
+    `index.html` has landed: clear the pending state + the _building marker
+    so the frontend swaps the placeholder for the live iframe and the
+    working badge stops. Idempotent — bails if the node is gone or already
+    settled."""
+    node_id = drift.get("nodeId")
+    slug = (drift.get("slug") or "").strip()
+    for n in workflow.get("nodes") or []:
+        if not isinstance(n, dict) or n.get("kind") != "prototype":
+            continue
+        matches = (n.get("id") == node_id) if node_id else \
+                  ((n.get("prototype") or n.get("branch") or "").strip() == slug)
+        if not matches:
+            continue
+        if not n.get("_building") and n.get("runStatus") == "done":
+            return False
+        n["runStatus"] = "done"
+        n.pop("_building", None)
+        if n.get("title") == (slug + " (building…)"):
+            n["title"] = slug
+        return True
+    return False
+
+
+def _autoheal_prototype_folder_abandon(workflow, drift):
+    """Remove an eager 'building' Prototype node whose folder produced no
+    lasting artifacts (cancelled / failed build). Only ever removes nodes
+    this reconciler mounted as eager-building — never user- or
+    agent-authored prototype nodes. Idempotent."""
+    node_id = drift.get("nodeId")
+    slug = (drift.get("slug") or "").strip()
+    nodes = workflow.get("nodes") or []
+    keep = []
+    removed = False
+    removed_ids = set()
+    for n in nodes:
+        if (isinstance(n, dict) and n.get("kind") == "prototype"
+                and n.get("_building")
+                and ((n.get("id") == node_id) if node_id
+                     else ((n.get("prototype") or n.get("branch") or "").strip() == slug))):
+            removed = True
+            removed_ids.add(n.get("id"))
+            continue
+        keep.append(n)
+    if not removed:
+        return False
+    workflow["nodes"] = keep
+    # Drop any edges touching the removed node so we don't strand connectors.
+    edges = workflow.get("edges") or []
+    workflow["edges"] = [e for e in edges
+                         if (e.get("from") or "").split(".")[0] not in removed_ids
+                         and (e.get("to") or "").split(".")[0] not in removed_ids]
     return True
 
 
@@ -890,6 +1050,10 @@ def apply_auto_heals(project_root):
                 applied = _autoheal_orphan_asset_no_prototype_edge(workflow, drift)
             elif t == ORPHAN_PROTOTYPE_FOLDER:
                 applied = _autoheal_orphan_prototype_folder(workflow, drift)
+            elif t == PROTOTYPE_FOLDER_SETTLE:
+                applied = _autoheal_prototype_folder_settle(workflow, drift)
+            elif t == PROTOTYPE_FOLDER_ABANDON:
+                applied = _autoheal_prototype_folder_abandon(workflow, drift)
             # PHANTOM_DECISION auto-resolves once ORPHAN_VARIANT runs (same loop).
             # COHERENCE_NOT_RUN is manual-class — never auto-heals.
         except Exception as e:

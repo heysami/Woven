@@ -32,6 +32,25 @@ NOT `"Anton"`, NOT `"Inter"`, NOT "whatever the agent thinks fits the genre bett
 
 Same for the palette: every hex in `<palette>` becomes a `:root` var. Don't substitute "warmer slate" for `#161616`. If you derive a hover state, do it via `oklch(from var(--accent) calc(l - 0.1) c h)` — anchored to the locked token.
 
+## Phase A.6 — Drop the design materials onto the workflow canvas (only when this pick IS the design-system lock-in)
+
+The Step -1 pick is the moment the project's design language gets locked — and that lock should leave a visible, editable artefact on the canvas, not just live inside `styles.css`. **When this build is the project's design-system commit** (Trigger A — no DS existed and the user just picked a direction; equivalently `meta.dsRef` is still unset), materialise the locked contract as a **"Design materials" section** so the palette, typography, and the picked direction's imagery sit together on the canvas where the user (and later passes) can see and reuse them.
+
+Skip this phase when a DS already existed (Step -1 carve-out 1 — you inherited vocabulary, didn't lock a new one) or when the user is editing an existing prototype in place.
+
+**Build the nodes from the locked Phase-A contract** and append them in ONE race-safe call to `POST $TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID` (this endpoint APPENDS — it never rewrites the whole canvas, so it can't clobber the editor's in-flight edits; do NOT GET-then-POST the full `/__workflow`). Containment is geometric — a node belongs to the section when its CENTRE falls inside the section's rect — so there are NO edges to add; just place each child's `x/y/w/h` inside the section rect.
+
+Pick a clear spot for the section (`SX`,`SY` — anywhere not overlapping existing nodes, e.g. to the right of the prototype node). The body of the POST is `{ "addNodes": [ … ] }` containing:
+
+- **1 `section`** — `{ "id":"sec_materials", "kind":"section", "x":SX, "y":SY, "w":1180, "h":760, "title":"Design materials" }`
+- **1 `color-palette`** — every hex from the locked `<palette>` as a swatch (keep the token names you used in `:root`): `{ "id":"mat_palette", "kind":"color-palette", "x":SX+28, "y":SY+64, "w":320, "h":280, "name":"Palette", "swatches":[ {"name":"--bg","value":"#…"}, {"name":"--surface","value":"#…"}, {"name":"--fg","value":"#…"}, {"name":"--muted","value":"#…"}, {"name":"--border","value":"#…"}, {"name":"--accent","value":"#…"} ] }`
+- **1 `typography`** — the locked display + body families: `{ "id":"mat_type", "kind":"typography", "x":SX+372, "y":SY+64, "w":360, "h":360, "name":"Type", "fontFamily":"<display family>", "fontCdn":"<the Google Fonts css2 URL you linked, or omit for system fonts>", "monoFamily":"<body family>", "monoCdn":"<its css2 URL>", "levels":[ {"name":"Display","size":40,"weight":700,"lineHeight":1.1,"sample":"<the display sample from the picked opt>"}, {"name":"Body","size":16,"weight":400,"lineHeight":1.5,"sample":"<the body sample from the picked opt>"} ] }`  ‹fontFamily = display, monoFamily = body — the node shows both as the two specimen rows.›
+- **N `asset` (image)** — one per recoloured preview PNG the picked `<opt>` carried (`aesthetic` / `style` / `shell`, plus `photo` / `illust` if present). Lay them in a row below: for the i-th image `{ "id":"mat_img_<axis>", "kind":"asset", "assetKind":"image", "path":".prototype-options/<TURN_SLUG>/option-<N>-<axis>.png", "x":SX+28+i*324, "y":SY+460, "w":300, "h":200 }`. These PNGs already exist from the emit step — reference them, don't regenerate.
+
+The grid above is already tidy; if you add or remove items and want it re-packed, the section's **⊞ Tidy** button (top-right of the section bar) re-flows the contained nodes into a grid and resizes the section to fit. Mention it once to the user.
+
+> **Quick imagegen mockups land here too.** Later in the project, when the user asks for a quick imagegen mockup (and an image-gen model is wired), after generating the asset, append it as one more `asset` (image) node INSIDE the existing "Design materials" section (find it in `GET /__workflow`, place the new node's centre within its rect, `POST /__workflow/nodes/add`). One home for every material the project accumulates.
+
 ## Phase A.5 — Orchestrator plan gate (MANDATORY stop-and-ask, second and last gate of the flow)
 
 Which orchestrator passes run on this build is a taste + budget decision, and — exactly like the direction pick — it belongs to the user. After locking the Phase A contract, **compose the orchestrator roster proposal from the locked axes + the brief's surfaces, emit it as a multi-select `<decision-request>` card, END YOUR TURN, and wait.** Phases B → F run only after the user's reply. Do NOT silently dispatch the Phase E chain; do NOT bury the roster in prose and proceed.

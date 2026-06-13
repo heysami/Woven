@@ -157,6 +157,7 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__projects/new",       "purpose": "Scaffold a new project"},
         {"method": "GET",  "path": "/__workflow",           "purpose": "Get the canvas (nodes + edges + projections)"},
         {"method": "POST", "path": "/__workflow",           "purpose": "Save the canvas (full or partial)"},
+        {"method": "POST", "path": "/__workflow/nodes/add",  "purpose": "Race-safe APPEND of nodes+edges (no full-graph rewrite) — e.g. an agent dropping a 'Design materials' section + palette/type/image nodes onto the canvas mid-build. Body {addNodes:[...], addEdges:[...]}"},
         {"method": "GET",  "path": "/__workflow/events",    "purpose": "SSE stream: workflow-changed / asset-changed events"},
         {"method": "POST", "path": "/__workflow/node/<id>/run",    "purpose": "Dispatch one node (skill/agent)"},
         {"method": "POST", "path": "/__workflow/node/<id>/status", "purpose": "Patch runStatus/text on a node"},

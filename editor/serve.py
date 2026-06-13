@@ -5703,6 +5703,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._layout_save(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
+            if parsed.path == "/__workflow/nodes/add":
+                return self._workflow_nodes_add(qs)
             if parsed.path == "/__design_system":
                 return self._design_system_save(qs)
             if parsed.path == "/__ds_proposals":
@@ -6840,6 +6842,110 @@ class H(http.server.SimpleHTTPRequestHandler):
             _lk.release()
         finally:
           _sem.release()
+
+    # ── POST /__workflow/nodes/add — race-safe append (v3.9) ─────────────
+    # Append nodes + edges to workflow.json WITHOUT a read-modify-write of
+    # the whole graph from the caller. Unlike POST /__workflow (which
+    # replaces the canvas wholesale and is the editor's debounced save
+    # path), this is for an AGENT that wants to drop a few nodes onto the
+    # canvas mid-build — e.g. the Step -1 direction lock materialising a
+    # "Design materials" section (a `section` node + the picked palette /
+    # typography / image nodes inside it), or a quick imagegen mockup
+    # landing as an asset card in that section. The whole append runs under
+    # the per-project workflow lock, so it never clobbers the editor's
+    # in-flight edits or another writer's nodes the way a GET→mutate→POST
+    # of the full graph would.
+    #
+    # Body: { "addNodes": [ {id, kind, x, y, ...} ], "addEdges": [ {from, to} ] }
+    # Existing ids / duplicate edges are skipped (idempotent on re-POST).
+    def _workflow_nodes_add(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body() or {}
+        except Exception as e:
+            return self._reply(400, {"error": f"invalid JSON body: {e}"})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        add_nodes = body.get("addNodes") or []
+        add_edges = body.get("addEdges") or []
+        if not isinstance(add_nodes, list) or not isinstance(add_edges, list):
+            return self._reply(400, {"error": "addNodes and addEdges must be arrays"})
+        project_id = os.path.basename(project_root.rstrip("/"))
+        _sem = _request_semaphore(project_id)
+        if not _sem.acquire(timeout=5.0):
+            return self._reply(503, {"error": "project request queue full (cap=3)",
+                                      "hint": "retry in ~1s", "retryAfterMs": 1000})
+        try:
+            _lk = _workflow_lock(project_id)
+            if not _lk.acquire(timeout=2.0):
+                return self._reply(503, {"error": "workflow locked (another write in progress)",
+                                          "hint": "retry in ~1s", "retryAfterMs": 1000})
+            try:
+                wf_dir = os.path.join(project_root, "workflow")
+                path = os.path.join(wf_dir, "workflow.json")
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        wf = json.load(f) or {}
+                except Exception:
+                    wf = {}
+                wf_nodes = wf.get("nodes") or []
+                wf_edges = wf.get("edges") or []
+                existing_ids = {n.get("id") for n in wf_nodes if isinstance(n, dict)}
+                added_ids = []
+                for nn in add_nodes:
+                    if not isinstance(nn, dict): continue
+                    nid = nn.get("id"); kind = nn.get("kind")
+                    if not isinstance(nid, str) or not nid: continue
+                    if not isinstance(kind, str) or not kind: continue
+                    if nid in existing_ids: continue
+                    entry = dict(nn)
+                    entry["id"] = nid
+                    entry["kind"] = kind
+                    try: entry["x"] = float(nn.get("x", 0))
+                    except Exception: entry["x"] = 0.0
+                    try: entry["y"] = float(nn.get("y", 0))
+                    except Exception: entry["y"] = 0.0
+                    wf_nodes.append(entry)
+                    existing_ids.add(nid)
+                    added_ids.append(nid)
+                existing_edge_keys = {(e.get("from"), e.get("to"))
+                                      for e in wf_edges if isinstance(e, dict)}
+                added_edges = 0
+                for ee in add_edges:
+                    if not isinstance(ee, dict): continue
+                    f_str = ee.get("from"); t_str = ee.get("to")
+                    if not isinstance(f_str, str) or not isinstance(t_str, str): continue
+                    if (f_str, t_str) in existing_edge_keys: continue
+                    wf_edges.append({"from": f_str, "to": t_str})
+                    existing_edge_keys.add((f_str, t_str))
+                    added_edges += 1
+                if not added_ids and not added_edges:
+                    return self._reply(200, {"ok": True, "addedNodes": [], "addedEdges": 0,
+                                              "note": "nothing new to add (ids/edges already present)"})
+                wf["nodes"] = wf_nodes
+                wf["edges"] = wf_edges
+                try:
+                    os.makedirs(wf_dir, exist_ok=True)
+                    rel_path = os.path.relpath(path, project_root)
+                    with _history_bracket(project_root, [rel_path],
+                                           kind="workflow-op",
+                                           label=f"Add {len(added_ids)} node(s) to canvas",
+                                           source="workflow-nodes-add",
+                                           extra={"addedNodes": added_ids, "addedEdges": added_edges}):
+                        with open(path, "w", encoding="utf-8") as f:
+                            json.dump(wf, f, indent=2)
+                except Exception as e:
+                    return self._reply(500, {"error": f"could not write workflow.json: {e}"})
+                _broadcast_workflow_change(project_id)
+                return self._reply(200, {"ok": True, "addedNodes": added_ids,
+                                          "addedEdges": added_edges})
+            finally:
+                _lk.release()
+        finally:
+            _sem.release()
 
     # ── GET /__design_system / POST /__design_system ─────────────────────
     # Reads / writes a Design System library node at
