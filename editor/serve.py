@@ -14563,22 +14563,27 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": "path escapes project"})
         try:
             if os.path.isdir(abs_path):
-                h = hashlib.sha1()
                 names = sorted(n for n in os.listdir(abs_path)
                                if os.path.isfile(os.path.join(abs_path, n)))
                 latest = 0.0
+                entries = {}          # {name: per-file sha1} — lets the client
+                combo = hashlib.sha1()  # name WHICH files changed since ack
                 for n in names:
                     fp = os.path.join(abs_path, n)
-                    h.update(n.encode("utf-8")); h.update(b"\0")
+                    fh = hashlib.sha1()
                     st = os.stat(fp)
                     latest = max(latest, st.st_mtime)
                     with open(fp, "rb") as f:
                         for chunk in iter(lambda: f.read(65536), b""):
-                            h.update(chunk)
-                    h.update(b"\0")
+                            fh.update(chunk)
+                    digest = fh.hexdigest()[:16]
+                    entries[n] = digest
+                    combo.update(n.encode("utf-8")); combo.update(b"\0")
+                    combo.update(digest.encode("utf-8")); combo.update(b"\0")
                 return self._reply(200, {
                     "exists": True, "dir": True,
-                    "hash": h.hexdigest()[:16], "mtime": latest, "files": len(names),
+                    "hash": combo.hexdigest()[:16], "mtime": latest,
+                    "files": len(names), "entries": entries,
                 })
             if not os.path.isfile(abs_path):
                 return self._reply(200, {"exists": False})

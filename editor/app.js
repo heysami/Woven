@@ -43516,17 +43516,19 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     `;
   }
 
-  // DS reminder — when ANY top-level design-system file changes (styles.css /
-  // gallery.html / DESIGN.md / meta.json), nudge the user to keep the trio in
-  // sync. Keyed on a content hash of the design-systems/<id>/ FOLDER (immediate
-  // files only — subdir templates/ etc. don't trigger it) via /__file_stat, so
-  // it re-appears on each genuine edit and survives reloads + edits made while
-  // the editor was closed. Dismissal stores the acknowledged hash on the node
-  // (node.dsGalleryAckHash), persisted in workflow.json; the banner returns
-  // only when the hash changes again.
+  // DS reminder — when any top-level design-system file changes (styles.css /
+  // gallery.html / DESIGN.md / meta.json), nudge the user to keep the set in
+  // sync, NAMING the file(s) that changed. /__file_stat on the
+  // design-systems/<id>/ FOLDER returns a per-file hash map (immediate files
+  // only — subdir templates/ etc. don't trigger it). Dismissal stores that
+  // whole map on the node (node.dsGalleryAck), persisted in workflow.json; the
+  // banner returns naming whichever files differ from the acked snapshot.
+  // Survives reloads + edits made while the editor was closed.
   // (isDsGallery is declared earlier, alongside the path computation.)
   const dsDir = isDsGallery ? (String(node.path).match(/^(.*?design-systems\/[^/]+)\//) || [])[1] : null;
-  const [galleryHash, setGalleryHash] = useState(null);
+  // Per-file hash map {name: sha1} of the DS folder's immediate files, so we
+  // can name WHICH files changed since the user last acknowledged.
+  const [galleryEntries, setGalleryEntries] = useState(null);
   useEffect(() => {
     if (!dsDir) return;
     let cancelled = false;
@@ -43535,7 +43537,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         const r = await fetch(apiUrl("/__file_stat?path=" + encodeURIComponent(dsDir)));
         if (!r.ok || cancelled) return;
         const j = await r.json();
-        if (!cancelled && j && j.exists && j.hash) setGalleryHash(j.hash);
+        if (!cancelled && j && j.exists && j.entries) setGalleryEntries(j.entries);
       } catch { /* offline — keep last known */ }
     };
     fetchSig();
@@ -43549,7 +43551,17 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => { cancelled = true; window.removeEventListener("th:asset-refresh", onRefresh); };
   }, [dsDir]);
-  const galleryReminderOpen = isDsGallery && !!galleryHash && galleryHash !== node.dsGalleryAckHash;
+  // Files whose current hash differs from the acknowledged snapshot
+  // (node.dsGalleryAck = {name: hash} stored on dismiss). No ack yet → all
+  // present files count as changed.
+  const dsAck = (node.dsGalleryAck && typeof node.dsGalleryAck === "object") ? node.dsGalleryAck : null;
+  const dsChangedFiles = galleryEntries
+    ? Object.keys(galleryEntries).filter(n => !dsAck || dsAck[n] !== galleryEntries[n]).sort()
+    : [];
+  const dsUnchangedFiles = galleryEntries
+    ? Object.keys(galleryEntries).filter(n => !dsChangedFiles.includes(n)).sort()
+    : [];
+  const galleryReminderOpen = isDsGallery && dsChangedFiles.length > 0;
 
   return html`
     <div
@@ -43568,12 +43580,15 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       ${galleryReminderOpen && html`
         <div className="workflow-ds-reminder" onMouseDown=${(e) => e.stopPropagation()}>
           <div className="workflow-ds-reminder-body">
-            <strong>Design system changed.</strong> Keep the set in sync —
-            <code>styles.css</code>, <code>gallery.html</code>, <code>DESIGN.md</code>, <code>meta.json</code>.
+            ${dsChangedFiles.map((f, i) => html`${i ? ", " : ""}<code>${f}</code>`)}
+            ${dsChangedFiles.length === 1 ? " was" : " were"} updated — remember to update the others if needed${
+              dsUnchangedFiles.length
+                ? html`: ${dsUnchangedFiles.map((f, i) => html`${i ? ", " : ""}<code>${f}</code>`)}`
+                : ""}.
           </div>
           <button
             className="workflow-ds-reminder-ok"
-            onClick=${(e) => { e.stopPropagation(); onChange && onChange({ dsGalleryAckHash: galleryHash }); }}
+            onClick=${(e) => { e.stopPropagation(); onChange && onChange({ dsGalleryAck: galleryEntries }); }}
             onMouseDown=${(e) => e.stopPropagation()}
           >OK, got it!</button>
         </div>
