@@ -602,6 +602,40 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
             defaults_block = "\n".join(rows)
     except Exception:
         pass
+
+    # v3.13 — Per-orchestrator model overrides, synced from the editor's
+    # Orchestrators landing tab (localStorage → POST /__orchestrator_models).
+    # The agent-capability default above governs the whole spawn; these rows
+    # name orchestrators the user wants run on a DIFFERENT model. When you
+    # dispatch one of these orchestrators' subagent drawers via the Task tool,
+    # pass `model: <id>` so the drawer runs on the user's chosen model.
+    orchestrator_models_block = ""
+    try:
+        import sys, os
+        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _editor_dir not in sys.path:
+            sys.path.insert(0, _editor_dir)
+        from serve import _orchestrator_models_get
+        _orch_models = _orchestrator_models_get()
+        if _orch_models:
+            _orows = []
+            for oid in sorted(_orch_models.keys()):
+                row = _orch_models[oid] or {}
+                model = row.get("model")
+                if not model:
+                    continue
+                _orows.append(f"  • {oid:36s}  → dispatch its drawers with model: {model}")
+            if _orows:
+                orchestrator_models_block = (
+                    "\n\n**Per-orchestrator model overrides THIS RUN** — the user set these "
+                    "orchestrators to run on a specific model (Orchestrators tab → model dropdown). "
+                    "When you dispatch the Task-tool subagents for one of these orchestrators, pass "
+                    "`model:` set to the id below. Orchestrators not listed follow the Chat / agent "
+                    "default above.\n" + "\n".join(_orows)
+                )
+    except Exception:
+        pass
+
     tools = _local_tool_availability()
     tool_status = (
         f"  • rembg          {'✓ INSTALLED' if tools.get('rembg') else '⚠ NOT INSTALLED — pip install rembg'}\n"
@@ -726,7 +760,7 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 **Do not refuse the user with "no raster provider available" if ANY of those conditions hold.** Dispatch the relevant orchestrator and let it route through the available path — `/__asset_generate` already knows how to pick API vs CLI vs local fallback per skill.
 
 **Default models per capability THIS RUN** — the user picked these in Settings → API keys → "Default models per capability". When the user hasn't named a specific provider/model in their request, **use the USER DEFAULT row for that capability**. Do not override based on training-data familiarity (e.g. don't pick `fal-ai/flux-pro` just because FLUX is well-known when the user has set OpenAI gpt-image-2 as the Image-generation default). Override only when the user explicitly names a different provider/model in the current request.
-{defaults_block}
+{defaults_block}{orchestrator_models_block}
 
 **Local tool availability THIS RUN**:
 {tool_status}

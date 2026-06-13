@@ -864,6 +864,43 @@ button {
   color: var(--text-muted);
 }
 
+/* ── v3.13 — Per-orchestrator model override dropdown ─────────────────────── */
+.orchestrator-card-model {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 6px 4px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  align-self: center;
+}
+.orchestrator-card-model:hover { border-color: var(--border-strong); }
+.orchestrator-card-model-icon {
+  font-size: 11px; color: var(--text-faint); line-height: 1;
+}
+.orchestrator-card-model-select {
+  border: 0; background: transparent;
+  font-size: 11px; color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  cursor: pointer; max-width: 150px;
+  padding: 0;
+}
+.orchestrator-card-model-select:focus { outline: none; }
+.orchestrator-card-model:has(.orchestrator-card-model-select:disabled) {
+  opacity: 0.45; cursor: default;
+}
+/* A set override reads as "active" — accent the chrome so a glance down the
+   grid shows which orchestrators carry a non-default model. Driven by the
+   label's data-active (select [value] doesn't reflect runtime selection). */
+.orchestrator-card-model[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.orchestrator-card-model[data-active="true"] .orchestrator-card-model-icon {
+  color: var(--accent);
+}
+
 /* ── v3.3 — Per-orchestrator toggle switch — LIGHT ────────────────────────── */
 .orchestrator-toggle {
   display: inline-flex; align-items: center; gap: 8px;

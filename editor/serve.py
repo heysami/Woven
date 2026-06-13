@@ -251,6 +251,21 @@ def _default_providers_get() -> dict:
     return dict(_DEFAULT_PROVIDERS)
 
 
+# ── Per-orchestrator model overrides (synced from browser localStorage) ─────
+# The agent-capability default above picks ONE model for the whole spawn. This
+# map lets the user override the model PER orchestrator (simulation → opus,
+# interactive-polish → sonnet, …). Keyed by orchestrator id → {provider,model};
+# absent means "follow the agent default". Same lifecycle as _DEFAULT_PROVIDERS:
+# browser localStorage is source of truth, the editor re-POSTs to
+# /__orchestrator_models on load + on every change, no disk persistence. The
+# capabilities preamble reads this so the dispatching agent passes `model:` to
+# the Task tool per orchestrator.
+_ORCHESTRATOR_MODELS: dict = {}
+
+def _orchestrator_models_get() -> dict:
+    return dict(_ORCHESTRATOR_MODELS)
+
+
 def _guess_image_mime(path):
     pl = (path or "").lower()
     if pl.endswith(".jpg") or pl.endswith(".jpeg"): return "image/jpeg"
@@ -5832,6 +5847,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._media_config_test(qs)
             if parsed.path == "/__default_providers":
                 return self._default_providers_set()
+            if parsed.path == "/__orchestrator_models":
+                return self._orchestrator_models_set()
             if parsed.path == "/__asset_generate":
                 return self._asset_generate(qs)
             if parsed.path == "/__llm_run":
@@ -9823,6 +9840,38 @@ class H(http.server.SimpleHTTPRequestHandler):
                 cleaned[cap] = entry
         _DEFAULT_PROVIDERS = cleaned
         return self._reply(200, {"ok": True, "defaults": cleaned})
+
+    def _orchestrator_models_set(self):
+        """POST /__orchestrator_models
+        Body: { "<orchestrator-id>": {provider, model}, ... }
+        Mirrors localStorage["th.editor.orchestrator-models.v1"] into a daemon
+        cache the capabilities preamble reads to steer per-orchestrator model
+        dispatch. No persistence — the editor re-POSTs on load + on change."""
+        global _ORCHESTRATOR_MODELS
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return self._reply(400, {"error": "empty body"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON", "detail": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        cleaned: dict = {}
+        for oid, row in body.items():
+            if not isinstance(oid, str) or not oid.strip():
+                continue
+            if not isinstance(row, dict):
+                continue
+            entry = {}
+            for k in ("provider", "model"):
+                v = row.get(k)
+                if isinstance(v, str) and v.strip():
+                    entry[k] = v.strip()
+            if entry.get("model"):
+                cleaned[oid.strip()] = entry
+        _ORCHESTRATOR_MODELS = cleaned
+        return self._reply(200, {"ok": True, "orchestratorModels": cleaned})
 
     def _media_config_test(self, qs):
         provider = (_qs_get(qs, "provider") or "openai").strip()

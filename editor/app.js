@@ -6978,6 +6978,70 @@ function pickAgentIdForChat() {
   } catch {}
   return "claude";
 }
+/* ────────── Per-orchestrator model overrides (v3.13) ──────────
+   The agent-capability default (above) picks ONE model for the whole spawn —
+   the main chat agent AND, by inheritance, every orchestrator's dispatched
+   subagent drawers. This map lets the user break that single knob per
+   orchestrator: simulation-orchestrator → opus, interactive-polish →
+   sonnet, etc. Keyed by orchestrator id → { provider, model }; absent /
+   null means "follow the agent-capability default".
+
+   Same storage tier + daemon-sync shape as the default-providers map. The
+   daemon surfaces these to every spawn via the capabilities preamble so the
+   dispatching agent passes `model:` to the Task tool per orchestrator. It is
+   prompt-level steering (consistent with how default-providers already
+   works), not a hard runtime override. */
+const ORCH_MODELS_KEY = "th.editor.orchestrator-models.v1";
+function loadOrchestratorModels() {
+  try { return JSON.parse(localStorage.getItem(ORCH_MODELS_KEY) || "{}"); }
+  catch { return {}; }
+}
+function getOrchestratorModel(orchestratorId) {
+  const all = loadOrchestratorModels();
+  const v = all && all[orchestratorId];
+  if (!v || !v.model) return null;
+  return v;
+}
+function saveOrchestratorModel(orchestratorId, value) {
+  const cur = loadOrchestratorModels();
+  const next = { ...cur };
+  if (value && value.model) next[orchestratorId] = value;
+  else delete next[orchestratorId];     // null / empty model → clear the override
+  try { localStorage.setItem(ORCH_MODELS_KEY, JSON.stringify(next)); } catch {}
+  try { window.dispatchEvent(new CustomEvent("th:orchestrator-models-changed", { detail: next })); } catch {}
+  try { syncOrchestratorModelsToDaemon(next); } catch {}
+  return next;
+}
+function syncOrchestratorModelsToDaemon(map) {
+  try {
+    fetch("/__orchestrator_models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(map || {}),
+    }).catch(() => {});
+  } catch {}
+}
+// Boot-time push — mirrors the default-providers re-sync so a daemon restart
+// (cache lost) re-receives the user's saved per-orchestrator picks.
+if (typeof window !== "undefined") {
+  try {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => syncOrchestratorModelsToDaemon(loadOrchestratorModels()), { once: true });
+    } else {
+      syncOrchestratorModelsToDaemon(loadOrchestratorModels());
+    }
+  } catch {}
+}
+/* The model choices a per-orchestrator override can pick from. Orchestrator
+   drawers dispatch as Claude Task-tool subagents (the only CLI whose subagent
+   path the daemon supports today — see _pickAutoForCapability), so the menu
+   is the anthropic text tier: opus 4.8 / 4.7 / 4.6, sonnet 4.6, haiku 4.5.
+   The Task tool's `model:` param accepts these ids / their tier aliases. */
+function listOrchestratorModelChoices() {
+  const M = (window.TH_MEDIA || {});
+  return (M.textModels || []).filter(m => m.provider === "anthropic" && !m.cliOnly && m.integrated !== false);
+}
+
 /* Pull the per-capability model lists from the media catalog. svg / video /
    3d / lottie aren't first-class lists in the catalog (yet) so we synthesize
    them from the providers' capability tags. */
@@ -16190,6 +16254,47 @@ function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread }) {
   `;
 }
 
+// v3.13 — Per-orchestrator LLM model override. One dropdown per card: the
+// model THIS orchestrator's dispatched drawers run on, independent of the
+// global agent-capability default. "Agent default" (empty value) clears the
+// override so the orchestrator follows whatever the chat agent uses. Stored
+// in localStorage["th.editor.orchestrator-models.v1"] and synced to the
+// daemon so the capabilities preamble can steer the dispatch per orchestrator.
+function OrchestratorModelSelect({ orchestratorId, disabled }) {
+  const [override, setOverride] = useState(() => getOrchestratorModel(orchestratorId));
+  useEffect(() => {
+    const on = () => setOverride(getOrchestratorModel(orchestratorId));
+    window.addEventListener("th:orchestrator-models-changed", on);
+    return () => window.removeEventListener("th:orchestrator-models-changed", on);
+  }, [orchestratorId]);
+  const choices = useMemo(() => listOrchestratorModelChoices(), []);
+  const current = (override && override.model) || "";
+  return html`
+    <label
+      className="orchestrator-card-model"
+      data-active=${current ? "true" : "false"}
+      title=${disabled
+        ? "Enable this orchestrator to set its model"
+        : "Model this orchestrator's dispatched subagents run on. ‘Agent default’ follows the global chat/agent model."}
+      onClick=${(e) => e.stopPropagation()}
+    >
+      <span className="orchestrator-card-model-icon" aria-hidden="true">◇</span>
+      <select
+        className="orchestrator-card-model-select"
+        value=${current}
+        disabled=${disabled}
+        onChange=${(e) => {
+          const id = e.target.value;
+          saveOrchestratorModel(orchestratorId, id ? { provider: "anthropic", model: id } : null);
+        }}
+      >
+        <option value="">Agent default</option>
+        ${choices.map(m => html`<option key=${m.id} value=${m.id}>${m.label || m.id}</option>`)}
+      </select>
+    </label>
+  `;
+}
+
 function OrchestratorCard({ orchestrator, busy, onToggle }) {
   const p = orchestrator;
   const [expanded, setExpanded] = useState(false);
@@ -16219,7 +16324,7 @@ function OrchestratorCard({ orchestrator, busy, onToggle }) {
     >
       <div
         className="orchestrator-card-head"
-        onClick=${(e) => { if (!e.target.closest(".orchestrator-toggle")) setExpanded(x => !x); }}
+        onClick=${(e) => { if (!e.target.closest(".orchestrator-toggle") && !e.target.closest(".orchestrator-card-model")) setExpanded(x => !x); }}
         title=${expanded ? "Click to collapse" : "Click to expand"}
         style=${{ cursor: "pointer" }}
       >
@@ -16235,6 +16340,7 @@ function OrchestratorCard({ orchestrator, busy, onToggle }) {
           </div>
           <div className="orchestrator-card-tagline">${p.tagline}</div>
         </div>
+        <${OrchestratorModelSelect} orchestratorId=${p.id} disabled=${!p.enabled}/>
         <button
           className=${"orchestrator-toggle" + (busy ? " is-busy" : "")}
           data-enabled=${p.enabled ? "true" : "false"}

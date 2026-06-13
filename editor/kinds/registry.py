@@ -62,6 +62,30 @@ KINDS = {
         "notes": "Reads a file or lists a directory. Synchronous, no side effects.",
     },
 
+    # ── browser ───────────────────────────────────────────────────────────
+    "browser": {
+        "title":        "Web browser",
+        "category":     "container",
+        "inputs": {
+            "url":   {"type": "text", "label": "URL", "userEditable": True, "required": True},
+            "title": {"type": "text", "label": "Display name", "userEditable": True},
+        },
+        "outputs": {
+            "text": {"type": "text", "required": False,
+                     "doc": "The rendered page's readable text. Wire into an agent / skill as context, or clip the current selection into a prompt node."},
+        },
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "inline-server-call",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done", "error"],
+        "completion":   {"requires": ["inputs.url loads (sites that refuse embedding are re-served via the daemon proxy)"]},
+        "pauseAfter":   False,
+        "notes": "Embedded public-website browser. Renders the page live inside the node; select the node to scroll / click / select text. The out port carries the page's readable text.",
+    },
+
     # ── prompt ────────────────────────────────────────────────────────────
     "prompt": {
         "title":        "Prompt (markdown)",
