@@ -22667,7 +22667,7 @@ function WorkflowGroupAlignBar({ onAlign }) {
    which creates the node(s) + edge(s) via the shared factory and selects the
    spawn. Rect tracking mirrors WorkflowNodeTopActions (rAF on the node's
    [data-node-id] rect) so the chrome glides with the node during pan/zoom. */
-function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightBundles, onPickItem, onPickBundle }) {
+function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightBundles, onPickItem, onPickBundle, suppressLeft, suppressRight }) {
   const [rect, setRect] = useState(null);
   const [openSide, setOpenSide] = useState(null);
   const nodeId = node && node.id;
@@ -22714,8 +22714,13 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
       window.removeEventListener("keydown", onKey, true);
     };
   }, [openSide]);
-  const leftHas  = (leftMenu  && leftMenu.length  > 0) || (leftBundles  && leftBundles.length  > 0);
-  const rightHas = (rightMenu && rightMenu.length > 0) || (rightBundles && rightBundles.length > 0);
+  // A dock panel (share = left, code / inspector = right) occupies the
+  // node's side. The body-portaled ⊕ buttons live at a higher stacking
+  // level than the canvas-internal panels (z 40 vs 6, different stacking
+  // contexts), so true z-ordering "behind" isn't reachable — instead drop
+  // the ⊕ on whichever side a panel covers. The opposite side stays.
+  const leftHas  = !suppressLeft  && ((leftMenu  && leftMenu.length  > 0) || (leftBundles  && leftBundles.length  > 0));
+  const rightHas = !suppressRight && ((rightMenu && rightMenu.length > 0) || (rightBundles && rightBundles.length > 0));
   if (!rect || (!leftHas && !rightHas)) return null;
   const BTN = 26, GAP = 10;
   const midY = rect.top + rect.height / 2 - BTN / 2;
@@ -33469,6 +33474,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         rightMenu=${connectorMenus.right}
         leftBundles=${connectorMenus.leftBundles}
         rightBundles=${connectorMenus.rightBundles}
+        suppressLeft=${commentsPanelNodeId === connectorNode.id}
+        suppressRight=${codePanelNodeId === connectorNode.id || (pickedElement && pickedElement.nodeId === connectorNode.id)}
         onPickItem=${(side, item) => spawnConnectedNode(connectorNode.id, side, item)}
         onPickBundle=${(side, id) => runConnectBundle(connectorNode.id, id)}
       />`}

@@ -4884,6 +4884,12 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   box-sizing: border-box;
   pointer-events: none;
   transition: border-color 0.12s ease, background 0.12s ease;
+  /* v3.x — same fix as .workflow-node: scope the section's connector
+     port-zones (z-index:2) back inside the section so the green diamond
+     ports don't paint OVER the regular nodes that sit in front of the
+     section. Sections render before nodes in DOM, so once isolated the
+     nodes cleanly paint above the section + its ports. */
+  isolation: isolate;
 }
 .workflow-node-section[data-selected="true"] {
   border-color: var(--text);
