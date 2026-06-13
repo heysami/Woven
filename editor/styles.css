@@ -7361,9 +7361,12 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .aab-square-fill {
   width: 28px; height: 28px;
   /* white fill (the solid-hot inner animation reads against it) + a light
-     orange outline */
+     orange outline + a soft light-orange glow (matches the running-node glow).
+     The glow breathes via the aabPulse keyframes below; this is the static
+     fallback (e.g. reduced-motion). */
   background: var(--surface);
   border: 1px solid color-mix(in oklch, var(--hot) 34%, transparent);
+  box-shadow: 0 0 12px color-mix(in oklch, var(--hot) 34%, transparent);
 }
 .aab-square-out {
   width: 38px; height: 38px;
@@ -7387,9 +7390,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font: 500 9px/13px var(--font-sans, system-ui);
   text-align: center;
 }
-@keyframes aabPulse {     /* fill — subtle, slow breathing */
-  0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.94); }
-  50%      { transform: translate(-50%, -50%) rotate(45deg) scale(1.06); }
+@keyframes aabPulse {     /* fill — subtle, slow breathing + light-orange glow */
+  0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.94); box-shadow: 0 0 9px color-mix(in oklch, var(--hot) 26%, transparent); }
+  50%      { transform: translate(-50%, -50%) rotate(45deg) scale(1.06); box-shadow: 0 0 18px color-mix(in oklch, var(--hot) 44%, transparent); }
 }
 @keyframes aabPulseBig {  /* outline — bigger swing, lagged via animation-delay */
   0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.86); }
