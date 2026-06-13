@@ -14367,6 +14367,13 @@ function buildDsDarkCss(s) {
   const ph = dsRgbToHsl(dsHexToRgb(P) || [7, 78, 207]);
   const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.55), 0.115));
   const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.6), 0.06));
+  // Dark surfaces are tinted toward the PRIMARY hue (low saturation), so the
+  // whole dark theme is in HARMONY with the brand — a warm primary gives warm
+  // greys, a cool primary cool greys. (Light mode does the opposite: the
+  // neutral BALANCES the primary; dark wants harmony.)
+  const hue = ph[0];
+  const surf = (L, sat) => dsRgbToHex(dsHslToRgb(hue, sat === undefined ? Math.min(ph[1], 0.12) : sat, L));
+  const sTxt = Math.min(ph[1], 0.05);   // faint tint on light text so it gels
   const lines = [
     `--primary-surface:${pf.fill};`,
     `--on-primary:${pf.onText};`,
@@ -14377,6 +14384,15 @@ function buildDsDarkCss(s) {
     `--secondary-surface:${sf.fill};`, `--on-secondary:${sf.onText};`,
     `--tertiary-surface:${tf.fill};`, `--on-tertiary:${tf.onText};`,
     `--chip-primary-fg:${rP["300"]};`, `--chip-secondary-fg:${rS["300"]};`, `--chip-tertiary-fg:${rT["300"]};`,
+    // harmony surface scale (page → elevations) + lines + soft neutrals
+    `--surface:${surf(0.145)};`, `--surface-default:${surf(0.184)};`,
+    `--surface-medium:${surf(0.225)};`, `--surface-strong:${surf(0.275)};`,
+    `--fg-on-surface:${surf(0.145)};`,
+    `--border-subtle:${surf(0.225)};`, `--border-default:${surf(0.31, Math.min(ph[1], 0.10))};`,
+    `--interactive-hover:${surf(0.225)};`, `--interactive-active:${surf(0.31)};`,
+    `--neutral-50:${surf(0.184)};`, `--neutral-70:${surf(0.205)};`, `--neutral-80:${surf(0.225)};`,
+    `--neutral-100:${surf(0.31)};`, `--neutral-150:${surf(0.355)};`, `--neutral-200:${surf(0.42)};`,
+    `--fg-default:${surf(0.905, sTxt)};`, `--fg-muted:${surf(0.69, sTxt)};`, `--fg-subtle:${surf(0.51, sTxt)};`,
   ];
   // Status colours adapt too — always (default values included) so the screen
   // statuses/alerts/callouts don't read as pale blobs on the dark page.
