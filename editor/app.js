@@ -43266,6 +43266,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     return rawPath;
   })();
   // (kind already declared above for adaptive-sizing block.)
+  // Design-system gallery node — its preview page links to sibling pages
+  // (templates/*.html, shells/*) with target="_blank". Used below to widen
+  // the iframe sandbox so those "open full-screen" links actually open, and
+  // to drive the "update the rest of the trio" reminder banner.
+  const isDsGallery = /(^|\/)design-systems\/[^/]+\/gallery\.html$/.test(node.path || "");
 
   const isInlinePath = typeof path === "string" && path.startsWith("inline:");
   const isInlineSvg = kind === "svg" && typeof node.src === "string" && node.src.startsWith("<svg");
@@ -43493,7 +43498,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         className="workflow-node-asset-thumb workflow-node-asset-iframe"
         src=${fileSrc}
         title=${basename}
-        sandbox="allow-scripts allow-same-origin"
+        sandbox=${isDsGallery
+          ? "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          : "allow-scripts allow-same-origin"}
         data-asset-id=${node.id}
         onLoad=${onHtmlIframeLoad}
         onError=${() => setThumbState("missing")}
@@ -43516,7 +43523,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // + edits made while the editor was closed. Dismissal stores the
   // acknowledged hash on the node (node.dsGalleryAckHash), persisted in
   // workflow.json; the banner returns only when the hash changes again.
-  const isDsGallery = /(^|\/)design-systems\/[^/]+\/gallery\.html$/.test(node.path || "");
+  // (isDsGallery is declared earlier, alongside the path computation.)
   const [galleryHash, setGalleryHash] = useState(null);
   useEffect(() => {
     if (!isDsGallery || !node.path) return;
