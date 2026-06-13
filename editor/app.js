@@ -10411,13 +10411,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
   };
 
+  const sendHint = sendOnEnter ? "Enter to send" : "⌘/Ctrl+Enter to send";
   const placeholder = isResuming
-    ? "Continue the conversation — replies resume the same session  ·  ⌘/Ctrl+Enter to send"
+    ? `Continue the conversation — replies resume the same session  ·  ${sendHint}`
     : isNew
-      ? "Ask the agent anything  ·  ⌘/Ctrl+Enter to send"
+      ? `Ask the agent anything  ·  ${sendHint}`
     : disabled
       ? "Type a follow-up — Send queues it. The next turn picks it up automatically."
-      : "Reply to the agent  ·  ⌘/Ctrl+Enter to send";
+      : `Reply to the agent  ·  ${sendHint}`;
 
   return html`
     <div className="chat-composer" data-busy=${disabled} data-queued=${queue.length > 0 ? "true" : "false"} onDragOver=${(e) => e.preventDefault()} onDrop=${onDrop}>
@@ -15656,11 +15657,168 @@ function OnboardingLocalToolsSection({ headless } = {}) {
   `;
 }
 
+/* Step-1 add-on — the chat-composer send-key preference, sitting right under
+   the CLI / API-key choices. Two-option segmented control persisted via
+   saveSendOnEnter; the composer reads it live (th:chat-send-pref-changed). */
+function OnboardingSendKeyPref() {
+  const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
+  useEffect(() => {
+    const on = () => setSendOnEnter(loadSendOnEnter());
+    window.addEventListener("th:chat-send-pref-changed", on);
+    return () => window.removeEventListener("th:chat-send-pref-changed", on);
+  }, []);
+  const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
+  return html`
+    <div className="onboarding-sendkey">
+      <div className="onboarding-sendkey-head">
+        <span className="onboarding-sendkey-title">Chat send key</span>
+        <span className="onboarding-sendkey-desc">How you send a message to the agent from the chat box.</span>
+      </div>
+      <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Chat send key">
+        <button type="button" role="radio" aria-checked=${!sendOnEnter}
+          className="onboarding-sendkey-opt" data-active=${!sendOnEnter}
+          onClick=${() => pick(false)}>
+          <span className="onboarding-sendkey-keys">⌘/Ctrl + ↵</span>
+          <span className="onboarding-sendkey-sub">Enter = new line</span>
+        </button>
+        <button type="button" role="radio" aria-checked=${sendOnEnter}
+          className="onboarding-sendkey-opt" data-active=${sendOnEnter}
+          onClick=${() => pick(true)}>
+          <span className="onboarding-sendkey-keys">↵ Enter</span>
+          <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/* Capability flags derived from the provider keys / CLI configured in step 2
+   (and any keys already set in the full Settings dialog). The provider→media
+   sets mirror prompts/media-models.js so a pre-existing key for any image
+   provider — not just the two surfaced in onboarding step 2 — counts. The
+   Codex CLI can also generate images. These drive the per-orchestrator gate. */
+const IMAGE_PROVIDER_IDS = ["openai", "fal", "xai", "volcengine", "bfl", "recraft", "nanobanana", "leonardo", "imagerouter"];
+const VIDEO_PROVIDER_IDS = ["fal", "volcengine"];
+function mediaCapsFromConfig(mediaCfg) {
+  const cfg = (mediaCfg && mediaCfg.config) || {};
+  const p = cfg.providers || {};
+  const has = (id) => !!(p[id] && (p[id].has_key || p[id].saved || p[id].from_env));
+  return {
+    image: IMAGE_PROVIDER_IDS.some(has) || !!cfg.codex_cli_available,
+    video: VIDEO_PROVIDER_IDS.some(has),
+    svg:   has("quiver"),
+  };
+}
+
+/* Per-orchestrator capability gate. `block` → the orchestrator can't do its
+   job at all without the capability (toggle forced off + disabled); `warn` →
+   it still runs but degraded (toggle works, warning shown). Orchestrators not
+   listed here have no media dependency (code / canvas / three.js based). */
+function orchestratorGate(id, caps) {
+  switch (id) {
+    case "photography-orchestrator":
+    case "illustration-orchestrator":
+      return caps.image ? null : { mode: "block", pill: "needs image model",
+        msg: "Needs an image model — add a fal.ai or OpenAI key in step 2 to enable." };
+    case "visual-orchestrator":
+      return caps.image ? null : { mode: "warn", pill: "limited",
+        msg: "No image model — icons, SVG marks & shaders still generate, but raster images (photos, illustrations) won't." };
+    case "creative-visual-orchestrator":
+      return caps.image ? null : { mode: "warn", pill: "limited",
+        msg: "No image model — SVG-mask compositions still work; image-backed promotions are skipped." };
+    case "material-orchestrator":
+      return caps.image ? null : { mode: "warn", pill: "limited",
+        msg: "No image model — shader & CSS materials still work; raster-texture materials are skipped." };
+    case "motion-studio-orchestrator":
+      return caps.video ? null : { mode: "warn", pill: "video-limited",
+        msg: "No video model — falls back to motion rasters; cinematic quality is severely limited. Add a fal.ai key for real video." };
+    default:
+      return null;
+  }
+}
+
+/* Step-3 — Orchestrators. Compact toggle list reusing the same
+   /__orchestrators GET + /__orchestrators/disable POST as the landing
+   Orchestrators view (workspace-scoped here, since there's no project yet).
+   Each row shows the manifest tagline (one sentence) and, when a needed media
+   key is missing, a capability gate: photography / illustration become
+   un-toggleable; visual / motion-studio / material / creative-visual show a
+   "limited" warning. */
+function OnboardingOrchestratorsSection({ mediaCfg }) {
+  const [data, setData] = useState(null);
+  const [err, setErr]   = useState(null);
+  const [busy, setBusy] = useState(null);
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__orchestrators"));
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setData(j);
+    } catch (e) { setErr(e.message || String(e)); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const caps = mediaCapsFromConfig(mediaCfg);
+  const toggle = async (id, enabled) => {
+    setBusy(id);
+    // Optimistic — flip locally, reconcile on error.
+    setData(d => d ? { ...d, orchestrators: d.orchestrators.map(o => o.id === id ? { ...o, enabled } : o) } : d);
+    try {
+      const r = await fetch(apiUrl("/__orchestrators/disable"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orchestratorId: id, enabled }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `HTTP ${r.status}`); }
+    } catch (e) { setErr(e.message || String(e)); await load(); }
+    finally { setBusy(null); }
+  };
+  return html`
+    <div className="onboarding-orchestrators">
+      <div className="onboarding-section-desc onboarding-orchestrators-intro">
+        Orchestrators dispatch families of subagents for richer artefacts. Turn off any you don't want auto-dispatched — you can still invoke them by name. Some are limited by the keys from step 2.
+      </div>
+      ${err && html`<div className="onboarding-tool-err">${err}</div>`}
+      ${!data && !err && html`<div className="orchestrators-loading">Loading orchestrators…</div>`}
+      <div className="onboarding-orchestrators-list">
+        ${data && data.orchestrators.map(o => {
+          const gate = orchestratorGate(o.id, caps);
+          const blocked = !!(gate && gate.mode === "block");
+          const on = blocked ? false : o.enabled !== false;
+          return html`
+            <div key=${o.id} className=${"onboarding-orch-row" + (blocked ? " is-blocked" : "")}>
+              <div className="onboarding-orch-main">
+                <div className="onboarding-orch-head">
+                  <span className="onboarding-orch-name">${o.label || o.id}</span>
+                  ${gate && html`<span
+                    className=${"onboarding-orch-pill onboarding-orch-pill-" + gate.mode}
+                    title=${gate.msg}>${gate.pill}</span>`}
+                </div>
+                <div className="onboarding-orch-tagline">${o.tagline || ""}</div>
+                ${gate && html`<div className=${"onboarding-orch-gate onboarding-orch-gate-" + gate.mode}>${gate.msg}</div>`}
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked=${on}
+                aria-label=${`${o.label || o.id} — ${on ? "enabled" : "disabled"}`}
+                className="onboarding-orch-switch"
+                data-on=${on}
+                disabled=${blocked || busy === o.id}
+                title=${blocked ? gate.msg : (on ? "Enabled — click to turn off" : "Disabled — click to turn on")}
+                onClick=${() => { if (!blocked) toggle(o.id, !on); }}
+              ><span className="onboarding-orch-switch-knob"/></button>
+            </div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
 /* v3.4.43 — Onboarding wizard, simplified.
-   One step visible at a time, pips at the top show the three steps
-   (Agent model · Asset keys · Local skills). The body for each step is
-   just the section content — no big headlines, no paragraph blurbs,
-   no nested heads. Footer is Back/Next, both always free to click;
+   One step visible at a time, pips at the top show the steps
+   (Agent model · Asset keys · Orchestrators · Local skills · Done). The body
+   for each step is just the section content — no big headlines, no paragraph
+   blurbs, no nested heads. Footer is Back/Next, both always free to click;
    the actual gate ("+ New project" disabled) is enforced on the landing,
    not by the wizard itself, so the user can roam.
    Step 1 collapses to a single button that opens a small install-
@@ -15669,19 +15827,24 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
   const modelOk  = !!(mediaCfg && mediaCfg.configured);
   const skillsOk = !!(localSkills && localSkills.allRequiredInstalled);
   const allOk    = modelOk && skillsOk;
-  // v3.4.47 — Four pips now: 1 Model · 2 Asset keys · 3 Local skills · 4 Done.
-  // Step 4 is its own dedicated celebration so the user can press ← Back to
-  // review Steps 1/2/3 instead of being trapped on a single completion view.
-  // Initial step = first unmet requirement on FIRST mount only. After that,
+  // v3.5 — Five pips now: 1 Model · 2 Asset keys · 3 Orchestrators · 4 Local
+  // skills · 5 Done. Orchestrators is an optional review step (toggle the
+  // dispatch families on/off, see which are limited by the keys set in step 2).
+  // Step 5 is its own dedicated celebration so the user can press ← Back to
+  // review the earlier steps instead of being trapped on a completion view.
+  // Initial step = first unmet REQUIRED requirement on FIRST mount only (the
+  // two optional steps — Asset keys, Orchestrators — never gate). After that,
   // navigation is user-driven (no surprise auto-jumps).
-  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 3 : 4);
+  const DONE_STEP = 5;
+  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 4 : DONE_STEP);
   const [installOpen, setInstallOpen] = useState(false);
 
   const pips = [
-    { n: 1, label: "Agent model",  done: modelOk },
-    { n: 2, label: "Asset keys",   done: false },
-    { n: 3, label: "Local skills", done: skillsOk },
-    { n: 4, label: "Done",         done: allOk   },
+    { n: 1, label: "Agent model",   done: modelOk },
+    { n: 2, label: "Asset keys",    done: false },
+    { n: 3, label: "Orchestrators", done: false },
+    { n: 4, label: "Local skills",  done: skillsOk },
+    { n: 5, label: "Done",          done: allOk   },
   ];
 
   return html`
@@ -15735,12 +15898,14 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
               className="model-setup-step1-refresh"
               onClick=${onRefresh}
             >I've already set one up · refresh</button>
+            <${OnboardingSendKeyPref}/>
           </div>
         `}
 
         ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
-        ${step === 3 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
-        ${step === 4 && html`
+        ${step === 3 && html`<${OnboardingOrchestratorsSection} mediaCfg=${mediaCfg}/>`}
+        ${step === 4 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
+        ${step === 5 && html`
           <div className="model-setup-allset" data-ok=${allOk}>
             <div className="model-setup-allset-check">${allOk ? "✓" : "…"}</div>
             <div className="model-setup-allset-title">${allOk ? "All set!" : "Almost there"}</div>
@@ -15758,14 +15923,14 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
           disabled=${step <= 1}
           onClick=${() => setStep(step - 1)}
         >← Back</button>
-        ${step < 4 && html`
+        ${step < DONE_STEP && html`
           <button
             type="button"
             className="model-setup-wizard-nav is-primary"
             onClick=${() => setStep(step + 1)}
           >Next →</button>
         `}
-        ${step === 4 && html`
+        ${step === DONE_STEP && html`
           <button
             type="button"
             className="model-setup-wizard-nav is-primary"

@@ -10935,6 +10935,117 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-step1-refresh:hover { color: var(--text); }
 
+/* Step-1 send-key preference — segmented two-option chooser sitting under
+   the CLI / API-key tiles. */
+.onboarding-sendkey {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.onboarding-sendkey-head { display: grid; gap: 2px; }
+.onboarding-sendkey-title { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.onboarding-sendkey-desc  { font-size: 11.5px; color: var(--text-muted); }
+.onboarding-sendkey-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.onboarding-sendkey-opt {
+  appearance: none;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  text-align: left;
+  padding: 9px 11px;
+  font: inherit;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color .12s, background .12s;
+}
+.onboarding-sendkey-opt:hover { border-color: color-mix(in oklch, var(--accent) 40%, var(--border)); }
+.onboarding-sendkey-opt[data-active="true"] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+}
+.onboarding-sendkey-keys { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.onboarding-sendkey-sub  { font-size: 11px; color: var(--text-muted); }
+
+/* Step-3 orchestrators — compact toggle list. */
+.onboarding-orchestrators { display: grid; gap: 10px; }
+.onboarding-orchestrators-intro { margin: 0; }
+.onboarding-orchestrators-list {
+  display: grid;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.onboarding-orch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.onboarding-orch-row.is-blocked { opacity: 0.62; }
+.onboarding-orch-main { flex: 1 1 auto; display: grid; gap: 3px; min-width: 0; }
+.onboarding-orch-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.onboarding-orch-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.onboarding-orch-tagline { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
+.onboarding-orch-pill {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.onboarding-orch-pill-block {
+  color: var(--danger, #c2410c);
+  background: color-mix(in oklch, var(--danger, #c2410c) 14%, transparent);
+}
+.onboarding-orch-pill-warn {
+  color: var(--warn, #b45309);
+  background: color-mix(in oklch, var(--warn, #b45309) 16%, transparent);
+}
+.onboarding-orch-gate { font-size: 11px; line-height: 1.4; }
+.onboarding-orch-gate-block { color: var(--danger, #c2410c); }
+.onboarding-orch-gate-warn  { color: var(--warn, #b45309); }
+/* Pill-switch toggle. */
+.onboarding-orch-switch {
+  appearance: none;
+  flex: 0 0 auto;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--text-faint);
+  cursor: pointer;
+  transition: background .14s;
+}
+.onboarding-orch-switch[data-on="true"] { background: var(--accent); }
+.onboarding-orch-switch:disabled { cursor: not-allowed; opacity: 0.55; }
+.onboarding-orch-switch-knob {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+  transition: transform .14s;
+}
+.onboarding-orch-switch[data-on="true"] .onboarding-orch-switch-knob { transform: translateX(16px); }
+
 /* Wizard-scoped variant of the choice grid — slightly tighter padding,
    smaller icon, single-line description so two cards fit cleanly inside
    the 480px wizard card. */
