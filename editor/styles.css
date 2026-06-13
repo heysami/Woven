@@ -4807,7 +4807,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section {
   position: absolute;
   border: 1.5px dashed color-mix(in oklch, var(--text-faint) 65%, transparent);
-  border-radius: 14px;
+  /* top-left square so it merges flush with the title tab; other corners round */
+  border-radius: 0 14px 14px 14px;
   background: color-mix(in oklch, var(--surface-2) 35%, transparent);
   box-sizing: border-box;
   pointer-events: none;
