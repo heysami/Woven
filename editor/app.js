@@ -14851,7 +14851,7 @@ Restate your file plan in one short message; if anything is genuinely ambiguous,
 function AddLibraryModal({ onClose, onSubmit }) {
   const [desc, setDesc]     = useState("");
   const [groups, setGroups] = useState(() => new Set());
-  const [coupling, setCoupling] = useState("none");   // "none" | "existing" | "new"
+  const [coupling, setCoupling] = useState("existing");   // "existing" | "new" — every entry is consumed by SOMETHING
   const [couplingDetail, setCouplingDetail] = useState("");
   const [busy, setBusy]     = useState(false);
   const [err, setErr]       = useState(null);
@@ -14865,9 +14865,9 @@ function AddLibraryModal({ onClose, onSubmit }) {
 
   const compose = () => {
     const grpLine = [...groups].map(g => (LIBRARY_GROUPS.find(x => x.id === g) || {}).label || g).join(", ") || "(decide which group fits)";
-    let coupleLine = "Standalone — no orchestrator coupling.";
-    if (coupling === "existing") coupleLine = `Couples to an EXISTING orchestrator${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : ""} — update that playbook's references too.`;
-    if (coupling === "new")      coupleLine = `Needs a NEW orchestrator too${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : ""} — scaffold both and wire them.`;
+    let coupleLine = coupling === "new"
+      ? `Needs a NEW orchestrator to consume it${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : ""} — scaffold the orchestrator too and wire it to read this entry.`
+      : `Wires into the EXISTING consumer for this group${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : " (the orchestrator family or the /prototype skill that already reads it)"} — update that consumer's references so the entry is actually used.`;
     return `Add or update design-library entries.
 
 **Target group(s):** ${grpLine}
@@ -14917,16 +14917,14 @@ Restate your plan briefly; if anything is ambiguous, ask — otherwise proceed a
               placeholder="Describe the entry (or the edit). The agent reads existing entries in that group as the template."></textarea>
           </label>
           <div className="sysadd-field">
-            <span className="sysadd-label">Orchestrator coupling</span>
+            <span className="sysadd-label">What reads this entry?</span>
+            <span className="sysadd-hint">Every library entry is consumed by something — an orchestrator family or the /prototype skill. Pick whether it plugs into an existing consumer or needs a new orchestrator.</span>
             <div className="sysadd-radio-row">
-              <button type="button" className=${"sysadd-radio" + (coupling === "none" ? " is-on" : "")} onClick=${() => setCoupling("none")}>Standalone</button>
-              <button type="button" className=${"sysadd-radio" + (coupling === "existing" ? " is-on" : "")} onClick=${() => setCoupling("existing")}>Existing orchestrator</button>
-              <button type="button" className=${"sysadd-radio" + (coupling === "new" ? " is-on" : "")} onClick=${() => setCoupling("new")}>Needs a new one</button>
+              <button type="button" className=${"sysadd-radio" + (coupling === "existing" ? " is-on" : "")} onClick=${() => setCoupling("existing")}>An existing consumer</button>
+              <button type="button" className=${"sysadd-radio" + (coupling === "new" ? " is-on" : "")} onClick=${() => setCoupling("new")}>Needs a new orchestrator</button>
             </div>
-            ${coupling !== "none" && html`
-              <input className="sysadd-input sysadd-input-sub" value=${couplingDetail} onInput=${e => setCouplingDetail(e.target.value)}
-                placeholder=${coupling === "existing" ? "Which orchestrator references this group?" : "What should the new orchestrator do?"}/>
-            `}
+            <input className="sysadd-input sysadd-input-sub" value=${couplingDetail} onInput=${e => setCouplingDetail(e.target.value)}
+              placeholder=${coupling === "existing" ? "Which orchestrator / skill reads this group? (optional — the agent infers from the group)" : "What should the new orchestrator do?"}/>
           </div>
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>
