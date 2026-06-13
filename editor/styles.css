@@ -15717,7 +15717,10 @@ body[data-panel-resizing="true"] {
 .chat-drawer-dock { top: 44px; box-shadow: none; }
 .chat-drawer-dock > .chat-header { border-top-left-radius: 0; border-top-right-radius: 0; }
 .chat-drawer-dock > .chat-footer { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
+/* Canvas fullscreen takes over the whole viewport — hide the docked agent
+   box too. `display:none` (not unmount) keeps the run alive so exiting
+   fullscreen brings the same conversation right back. */
+body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: none; }
 /* Body needs its own overflow clip since the drawer itself can't clip
    (overflow:visible above so the perm-menu can escape upward). */
 .chat-drawer > .chat-body { overflow-y: auto; }
