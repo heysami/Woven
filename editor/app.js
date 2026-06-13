@@ -14590,134 +14590,411 @@ function ModelInstallDialog({ onClose, onRefresh }) {
 // Each subview renders differently. Skills + Subagents + Node kinds are
 // read-only reference; Orchestrators has its toggle. State lives here; sidebar
 // items show counts so the user knows the size of each surface before clicking.
-// ─── SystemThreadsPanel ───────────────────────────────────────────────────
-// v3.12 — Workspace SYSTEM AGENT threads, embedded in the landing System
-// tab's Orchestrators + Design library sections. Each thread is a normal
-// ChatDrawer conversation, but the run is spawned with scope:"system":
-// cwd = the workspace root itself, full permission bypass, and NONE of the
-// project-agent confinement (no capabilities preamble, no orchestrator
-// gates, no harness hooks) — because this agent's job is to EDIT those
-// layers (add/update orchestrators, design-library entries, skills, MCP
-// wiring). Transcripts persist per-section to .system-chats/<section>.jsonl
-// via the daemon; /__system_runs lists live + historical threads.
-function SystemThreadsPanel({ section, blurb }) {
-  const [runs, setRuns] = useState(null);
-  const [chatRun, setChatRun] = useState(null);
-  const [permissionMode, setPermissionMode] = useState("bypassPermissions");
+// ─── Workspace SYSTEM AGENT threads — shared infrastructure ────────────────
+// v3.13 — The system agent (cwd = the workspace repo itself, full permission
+// bypass, NONE of the project-agent confinement) edits the harness's own
+// building blocks: orchestrators, the design library, skills, MCP wiring.
+// Earlier (v3.12) each System-tab section carried a persistent "Agent
+// threads" panel with an always-on warning. That was loud. v3.13 redesigns:
+//   • the warning + intake live INSIDE an "Add orchestrator" / "Add library
+//     entry" flow, surfaced only when the user opts in,
+//   • the intake gathers structure (what · how it's triggered · whether it
+//     needs new library) and a visual of the orchestrator pipeline, then
+//     composes a brief and hands it to a system thread,
+//   • running / recent threads are reachable from ONE shared Bot icon button
+//     in the landing title row — shared across Orchestrators + Design library.
+// The run/persistence plumbing (scope:"system", /__system_runs,
+// .system-chats/<section>.jsonl) is unchanged from v3.12; the spawn + drawer
+// now live at ProjectsLanding so the header button can reach them.
 
-  const refetch = useCallback(() => {
-    fetch(`/__system_runs?section=${encodeURIComponent(section)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(j => setRuns(j ? (j.runs || []) : []))
-      .catch(() => setRuns([]));
-  }, [section]);
-  useEffect(() => { refetch(); }, [refetch]);
+function systemThreadStatus(r) {
+  if (!r) return "done";
+  if (!r.done && !r.historical) return r.turnDone ? "waiting" : "live";
+  if (r.stopReason === "user-stop") return "stopped";
+  return (r.exitCode === 0 || r.exitCode == null) ? "done" : "failed";
+}
+function fmtSystemThreadWhen(t) {
+  if (!t) return "";
+  try {
+    const d = new Date(t * 1000);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString([], { month: "short", day: "numeric" }) +
+        " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
 
-  const openNewThread = useCallback(() => {
-    setChatRun({
-      runId: null,
-      isNew: true,
-      title: `System · ${section}`,
-      kind: "freeform",
-      branch: "main",
-      agentId: "claude",
-      scope: "system",
-      section,
-    });
-  }, [section]);
+const SYSTEM_THREAD_WARNING = html`
+  <div className="sysadd-warning">
+    <span className="sysadd-warning-icon">⚠</span>
+    <span>
+      This runs a <strong>workspace system agent</strong> with elevated access — cwd is the
+      harness repo itself, permissions are bypassed, and the usual app-skill / orchestrator
+      confinement is off, because its job is to edit those layers. Best for focused additions
+      and updates. For sweeping refactors prefer a dedicated harness (Claude Code in a terminal
+      at the workspace root) — bigger context, reviewable diffs, no daemon mid-flight.
+    </span>
+  </div>`;
 
-  const spawnSystemThread = useCallback(async (text) => {
-    const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
-    const res = await fetch("/__run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        scope: "system", section, prompt: text, title,
-        agentId: "claude", kind: "freeform", permissionMode,
-      }),
-    });
-    let body = null;
-    try { body = await res.json(); } catch {}
-    if (!res.ok) throw new Error((body && (body.error || body.hint)) || `HTTP ${res.status}`);
-    setChatRun(body);
-    refetch();
-    return body;
-  }, [section, permissionMode, refetch]);
+// Trigger points are POSITIONS on the main build pipeline (see
+// OrchestratorPipelineDiagram). `hook` maps a selected trigger to the stage
+// it slots into so the diagram can light it up — answering the user's
+// framing: "the pipeline is where it is triggered."
+const ORCH_TRIGGER_OPTIONS = [
+  { id: "upfront",   hook: "discuss",  label: "Upfront — with the main agent",
+    desc: "fires during the opening discussion, before any source is scaffolded — the orchestrator can own the whole build (experience families: simulation / game / narrative / motion-studio brainstorm)" },
+  { id: "on-source", hook: "scaffold", label: "After source is scaffolded",
+    desc: "fires on the post-scaffold enumeration pass over the written HTML, like visual-orchestrator" },
+  { id: "late",      hook: "polish",   label: "Late — after assets, before QA",
+    desc: "fires near the end of the build, e.g. interactive-polish right before Step-8 QA" },
+  { id: "manual",    hook: null,       label: "Manual / by name only",
+    desc: "no automatic hook; only when the user or another agent invokes it explicitly" },
+];
+const LIBRARY_GROUPS = [
+  { id: "shell",     label: "Shells" },
+  { id: "style",     label: "Styles" },
+  { id: "aesthetic", label: "Aesthetics" },
+  { id: "recipe",    label: "Recipes" },
+  { id: "photo",     label: "Photography" },
+  { id: "illust",    label: "Illustration" },
+  { id: "material",  label: "Materials" },
+  { id: "motion",    label: "Motion" },
+];
 
-  const onRunComplete = useCallback(({ didModifyFiles }) => {
-    refetch();
-    // System changes feed live registries (orchestrators / catalog / skills /
-    // MCP) — tell the landing page to re-pull its section data.
-    if (didModifyFiles) {
-      try { window.dispatchEvent(new CustomEvent("th:system-changed")); } catch {}
-    }
-  }, [refetch]);
+function slugifyOrchestratorId(name) {
+  let s = (name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!s) return "";
+  if (!/orchestrator$/.test(s)) s = s.replace(/-?$/, "") + "-orchestrator";
+  return s;
+}
 
-  const fmtWhen = (t) => {
-    if (!t) return "";
-    try {
-      const d = new Date(t * 1000);
-      const sameDay = d.toDateString() === new Date().toDateString();
-      return sameDay
-        ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        : d.toLocaleDateString([], { month: "short", day: "numeric" }) +
-          " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch { return ""; }
-  };
-  const statusOf = (r) => {
-    if (!r.done && !r.historical) return r.turnDone ? "waiting" : "live";
-    if (r.stopReason === "user-stop") return "stopped";
-    return (r.exitCode === 0 || r.exitCode == null) ? "done" : "failed";
-  };
-
+// The MAIN BUILD PIPELINE — a request flows left→right through the main
+// agent's lifecycle, and an orchestrator hooks in at ONE of these points.
+// The `selected` trigger set lights up where THIS orchestrator will fire, so
+// the trigger question reads as "where on the pipeline is it triggered."
+// (Not a diagram of an orchestrator's own internals — wrong altitude here.)
+function OrchestratorPipelineDiagram({ selected }) {
+  const hooks = new Set(
+    ORCH_TRIGGER_OPTIONS.filter(o => selected && selected.has(o.id) && o.hook).map(o => o.hook)
+  );
+  const stages = [
+    { id: "brief",    icon: Icon.Comment,  title: "Brief",       sub: "the user's ask" },
+    { id: "discuss",  icon: Icon.Bot,      title: "Discuss",     sub: "main agent commits direction" },
+    { id: "scaffold", icon: Icon.NotesDoc, title: "Scaffold",    sub: "main agent writes source" },
+    { id: "assets",   icon: Icon.Image,    title: "Assets",      sub: "enumerate + fill slots" },
+    { id: "polish",   icon: Icon.Spark,    title: "Polish + QA", sub: "interactions · checks" },
+  ];
   return html`
-    <section className="system-threads">
-      <div className="system-threads-head">
-        <div className="system-threads-headings">
-          <div className="system-threads-title">Agent threads</div>
-          <div className="system-threads-sub">${blurb}</div>
+    <div className="opipe" aria-label="Main build pipeline — orchestrator trigger points">
+      ${stages.map((s, i) => html`
+        <${React.Fragment} key=${s.id}>
+          <div className=${"opipe-stage" + (hooks.has(s.id) ? " is-hook" : "")}>
+            ${hooks.has(s.id) && html`<div className="opipe-hook">▸ triggers here</div>`}
+            <div className="opipe-stage-icon"><${s.icon}/></div>
+            <div className="opipe-stage-title">${s.title}</div>
+            <div className="opipe-stage-sub">${s.sub}</div>
+          </div>
+          ${i < stages.length - 1 && html`<div className="opipe-arrow" aria-hidden="true">→</div>`}
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+// Small reusable chip-toggle row.
+function ChipToggleRow({ options, selected, onToggle, getId = (o) => o.id, getLabel = (o) => o.label }) {
+  return html`
+    <div className="sysadd-chiprow">
+      ${options.map(o => {
+        const id = getId(o);
+        const on = selected.has(id);
+        return html`
+          <button key=${id} type="button"
+            className=${"sysadd-chip" + (on ? " is-on" : "")}
+            onClick=${() => onToggle(id)}
+            title=${o.desc || ""}
+          >${getLabel(o)}</button>
+        `;
+      })}
+    </div>
+  `;
+}
+
+// ── Add-orchestrator intake modal ──
+function AddOrchestratorModal({ onClose, onSubmit }) {
+  const [name, setName]         = useState("");
+  const [desc, setDesc]         = useState("");
+  const [triggers, setTriggers] = useState(() => new Set(["on-source"]));
+  const [trigOther, setTrigOther] = useState("");
+  const [needsLib, setNeedsLib] = useState("no");          // "no" | "yes"
+  const [libGroups, setLibGroups] = useState(() => new Set());
+  const [libDetail, setLibDetail] = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [err, setErr]           = useState(null);
+
+  const proposedId = slugifyOrchestratorId(name);
+  const canSubmit = name.trim() && desc.trim() && !busy;
+
+  const toggle = (set, setter) => (id) => {
+    const next = new Set(set);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setter(next);
+  };
+
+  const compose = () => {
+    const trigLabels = ORCH_TRIGGER_OPTIONS.filter(o => triggers.has(o.id))
+      .map(o => `- ${o.label} — ${o.desc}`);
+    if (trigOther.trim()) trigLabels.push(`- Other: ${trigOther.trim()}`);
+    const libLine = needsLib === "yes"
+      ? `YES — new entries in: ${[...libGroups].map(g => (LIBRARY_GROUPS.find(x => x.id === g) || {}).label || g).join(", ") || "(decide which groups fit)"}${libDetail.trim() ? `\n  Detail: ${libDetail.trim()}` : ""}`
+      : "No — reuse existing design-library entries.";
+    return `Add a NEW orchestrator to the workspace.
+
+**Name:** ${name.trim()}
+**Proposed id:** ${proposedId || "(you decide a kebab id ending in -orchestrator)"}
+
+**What it should do:**
+${desc.trim()}
+
+**How it should be triggered:**
+${trigLabels.join("\n") || "- (decide the appropriate trigger)"}
+
+**New design-library entries needed:**
+${libLine}
+
+Scaffold it end-to-end following the workspace conventions you already know:
+1. Write \`.claude/agents/${proposedId || "<id>"}.md\` (the playbook: \`name\` / \`description\` / \`tools\` frontmatter, then full operating instructions) and \`.claude/agents/${proposedId || "<id>"}.manifest.json\` (the registry entry the daemon + landing page read). If this orchestrator should gate project spawns, include a \`hardRule\` { header, body } field in the manifest so the capabilities preamble injects it dynamically (no capabilities.py edit needed).
+2. If new design-library entries are needed, create them under \`design-library/<prefix>-<slug>.md\` and reference them from the playbook so the coupling stays in sync.
+3. Run the validation loop: \`curl $TH_DAEMON_URL/__orchestrators\` (your manifest parses + registers) and \`curl $TH_DAEMON_URL/__capabilities\` (it shows up). Report exactly what you created.
+
+Restate your file plan in one short message; if anything is genuinely ambiguous, ask — otherwise proceed and report.`;
+  };
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true); setErr(null);
+    try {
+      const title = `New orchestrator: ${name.trim().slice(0, 48)}`;
+      await onSubmit({ section: "orchestrators", prompt: compose(), title });
+      onClose();
+    } catch (e) {
+      setErr(e.message || String(e));
+      setBusy(false);
+    }
+  };
+
+  return createPortal(html`
+    <div className="sysadd-overlay" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="sysadd-card sysadd-card-wide" role="dialog" aria-modal="true" aria-label="Add orchestrator">
+        <div className="sysadd-head">
+          <h2>Add an orchestrator</h2>
+          <button className="sysadd-close" onClick=${onClose} aria-label="Close"><${Icon.X}/></button>
         </div>
-        <button className="system-threads-new" onClick=${openNewThread}>+ New thread</button>
+        <div className="sysadd-body">
+          ${SYSTEM_THREAD_WARNING}
+
+          <label className="sysadd-field">
+            <span className="sysadd-label">Name</span>
+            <input className="sysadd-input" value=${name} onInput=${e => setName(e.target.value)}
+              placeholder="e.g. Diagram, Typography, Data-viz" autoFocus=${true}/>
+            ${name.trim() && html`<span className="sysadd-hint">id: <code>${proposedId}</code> · playbook <code>.claude/agents/${proposedId}.md</code> + manifest</span>`}
+          </label>
+
+          <label className="sysadd-field">
+            <span className="sysadd-label">What should it do?</span>
+            <textarea className="sysadd-textarea" rows="4" value=${desc} onInput=${e => setDesc(e.target.value)}
+              placeholder="What kind of artefact does it own, what drawers/lenses does it dispatch, what's the success bar?"></textarea>
+          </label>
+
+          <div className="sysadd-field">
+            <span className="sysadd-label">Where in the build pipeline does it trigger?</span>
+            <div className="sysadd-pipeline-wrap">
+              <div className="sysadd-pipeline-caption">A request flows left → right through the main agent. Pick where your orchestrator hooks in — it lights up here.</div>
+              <${OrchestratorPipelineDiagram} selected=${triggers}/>
+            </div>
+            <${ChipToggleRow} options=${ORCH_TRIGGER_OPTIONS} selected=${triggers} onToggle=${toggle(triggers, setTriggers)}/>
+            <input className="sysadd-input sysadd-input-sub" value=${trigOther} onInput=${e => setTrigOther(e.target.value)}
+              placeholder="…or describe the trigger condition in your own words (optional)"/>
+          </div>
+
+          <div className="sysadd-field">
+            <span className="sysadd-label">Does it need new design-library entries?</span>
+            <div className="sysadd-radio-row">
+              <button type="button" className=${"sysadd-radio" + (needsLib === "no" ? " is-on" : "")} onClick=${() => setNeedsLib("no")}>No — reuse existing</button>
+              <button type="button" className=${"sysadd-radio" + (needsLib === "yes" ? " is-on" : "")} onClick=${() => setNeedsLib("yes")}>Yes — add new</button>
+            </div>
+            ${needsLib === "yes" && html`
+              <div className="sysadd-sublib">
+                <${ChipToggleRow} options=${LIBRARY_GROUPS} selected=${libGroups} onToggle=${toggle(libGroups, setLibGroups)}/>
+                <input className="sysadd-input sysadd-input-sub" value=${libDetail} onInput=${e => setLibDetail(e.target.value)}
+                  placeholder="Which entries / styles? (the agent will create them + wire the playbook)"/>
+              </div>
+            `}
+          </div>
+
+          ${err && html`<div className="sysadd-error">${err}</div>`}
+        </div>
+        <div className="sysadd-foot">
+          <span className="sysadd-foot-note">On create, this is handed to a system agent thread — you'll review its plan and steer there.</span>
+          <div className="sysadd-foot-actions">
+            <button className="sysadd-btn-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
+            <button className="sysadd-btn-go" onClick=${submit} disabled=${!canSubmit}>${busy ? "Starting…" : "Create in a thread"}</button>
+          </div>
+        </div>
       </div>
-      <div className="system-threads-warning">
-        <span className="system-threads-warning-icon">⚠</span>
-        <span>
-          These threads run a <strong>workspace system agent</strong> with elevated access —
-          cwd is the harness repo itself, permissions are bypassed, and the usual app-skill /
-          orchestrator confinement is off. Best for focused additions and updates; for sweeping
-          refactors prefer a dedicated harness (Claude Code in a terminal at the workspace root).
-        </span>
+    </div>
+  `, document.body);
+}
+
+// ── Add / update design-library entry intake modal (lighter) ──
+function AddLibraryModal({ onClose, onSubmit }) {
+  const [desc, setDesc]     = useState("");
+  const [groups, setGroups] = useState(() => new Set());
+  const [coupling, setCoupling] = useState("none");   // "none" | "existing" | "new"
+  const [couplingDetail, setCouplingDetail] = useState("");
+  const [busy, setBusy]     = useState(false);
+  const [err, setErr]       = useState(null);
+
+  const canSubmit = desc.trim() && !busy;
+  const toggleGroup = (id) => {
+    const next = new Set(groups);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setGroups(next);
+  };
+
+  const compose = () => {
+    const grpLine = [...groups].map(g => (LIBRARY_GROUPS.find(x => x.id === g) || {}).label || g).join(", ") || "(decide which group fits)";
+    let coupleLine = "Standalone — no orchestrator coupling.";
+    if (coupling === "existing") coupleLine = `Couples to an EXISTING orchestrator${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : ""} — update that playbook's references too.`;
+    if (coupling === "new")      coupleLine = `Needs a NEW orchestrator too${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : ""} — scaffold both and wire them.`;
+    return `Add or update design-library entries.
+
+**Target group(s):** ${grpLine}
+
+**What to add / change:**
+${desc.trim()}
+
+**Orchestrator coupling:** ${coupleLine}
+
+The library couples to orchestrators (photography / illustration / material / motion / scrapbook / creative-visual families reference their library docs by slug). So:
+1. Create or edit \`design-library/<prefix>-<slug>.md\` (YAML frontmatter + prose + any sample-image references), using the existing entries in that group as the shape template.
+2. Grep \`.claude/agents/\` and \`prototype/\` for references to any slug you add, rename, or remove, and update them in the SAME change so nothing is orphaned.
+3. Verify with \`curl $TH_DAEMON_URL/__prototype_catalog\` and report what changed.
+
+Restate your plan briefly; if anything is ambiguous, ask — otherwise proceed and report.`;
+  };
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true); setErr(null);
+    try {
+      const title = `Library update: ${desc.trim().slice(0, 44)}`;
+      await onSubmit({ section: "design-library", prompt: compose(), title });
+      onClose();
+    } catch (e) {
+      setErr(e.message || String(e));
+      setBusy(false);
+    }
+  };
+
+  return createPortal(html`
+    <div className="sysadd-overlay" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="sysadd-card" role="dialog" aria-modal="true" aria-label="Add library entry">
+        <div className="sysadd-head">
+          <h2>Add / update a library entry</h2>
+          <button className="sysadd-close" onClick=${onClose} aria-label="Close"><${Icon.X}/></button>
+        </div>
+        <div className="sysadd-body">
+          ${SYSTEM_THREAD_WARNING}
+          <div className="sysadd-field">
+            <span className="sysadd-label">Which group?</span>
+            <${ChipToggleRow} options=${LIBRARY_GROUPS} selected=${groups} onToggle=${toggleGroup}/>
+          </div>
+          <label className="sysadd-field">
+            <span className="sysadd-label">What to add or change?</span>
+            <textarea className="sysadd-textarea" rows="4" value=${desc} onInput=${e => setDesc(e.target.value)}
+              placeholder="Describe the entry (or the edit). The agent reads existing entries in that group as the template."></textarea>
+          </label>
+          <div className="sysadd-field">
+            <span className="sysadd-label">Orchestrator coupling</span>
+            <div className="sysadd-radio-row">
+              <button type="button" className=${"sysadd-radio" + (coupling === "none" ? " is-on" : "")} onClick=${() => setCoupling("none")}>Standalone</button>
+              <button type="button" className=${"sysadd-radio" + (coupling === "existing" ? " is-on" : "")} onClick=${() => setCoupling("existing")}>Existing orchestrator</button>
+              <button type="button" className=${"sysadd-radio" + (coupling === "new" ? " is-on" : "")} onClick=${() => setCoupling("new")}>Needs a new one</button>
+            </div>
+            ${coupling !== "none" && html`
+              <input className="sysadd-input sysadd-input-sub" value=${couplingDetail} onInput=${e => setCouplingDetail(e.target.value)}
+                placeholder=${coupling === "existing" ? "Which orchestrator references this group?" : "What should the new orchestrator do?"}/>
+            `}
+          </div>
+          ${err && html`<div className="sysadd-error">${err}</div>`}
+        </div>
+        <div className="sysadd-foot">
+          <span className="sysadd-foot-note">Handed to a system agent thread — review + steer there.</span>
+          <div className="sysadd-foot-actions">
+            <button className="sysadd-btn-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
+            <button className="sysadd-btn-go" onClick=${submit} disabled=${!canSubmit}>${busy ? "Starting…" : "Update in a thread"}</button>
+          </div>
+        </div>
       </div>
-      ${runs === null && html`<div className="system-threads-empty">Loading threads…</div>`}
-      ${runs !== null && runs.length === 0 && html`<div className="system-threads-empty">No threads yet — start one to add or update entries here.</div>`}
-      ${runs !== null && runs.length > 0 && html`
-        <div className="system-threads-list">
-          ${runs.map(r => html`
-            <button key=${r.runId} className="system-threads-row" onClick=${() => setChatRun(r)}>
-              <span className=${"system-threads-dot is-" + statusOf(r)}></span>
-              <span className="system-threads-row-title">${r.title || r.runId}</span>
-              <span className="system-threads-row-meta">${statusOf(r)} · ${fmtWhen(r.startedAt)}</span>
+    </div>
+  `, document.body);
+}
+
+// ── Per-section action bar — the normal "+ Add" button that opens intake ──
+function SystemAddBar({ kind, onSpawn }) {
+  const [open, setOpen] = useState(false);
+  const label = kind === "orchestrators" ? "Add orchestrator" : "Add / update library entry";
+  const Modal = kind === "orchestrators" ? AddOrchestratorModal : AddLibraryModal;
+  return html`
+    <div className="sysadd-bar">
+      <button className="sysadd-bar-btn" onClick=${() => setOpen(true)}>
+        <${Icon.Plus}/><span>${label}</span>
+      </button>
+      ${open && html`<${Modal} onClose=${() => setOpen(false)} onSubmit=${onSpawn}/>`}
+    </div>
+  `;
+}
+
+// ── Shared Bot icon button in the landing title row → thread dropdown ──
+function SystemAgentThreadButton({ threads, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const live = threads.filter(t => { const s = systemThreadStatus(t); return s === "live" || s === "waiting"; }).length;
+  return html`
+    <div className="landing-threads" ref=${ref}>
+      <button className=${"landing-threads-btn" + (live > 0 ? " has-live" : "")} onClick=${() => setOpen(o => !o)}
+        title="Workspace system-agent threads" aria-expanded=${open}>
+        <${Icon.Bot}/>
+        <span className="landing-threads-count">${threads.length}</span>
+      </button>
+      ${open && html`
+        <div className="landing-threads-menu">
+          <div className="landing-threads-menu-head">System agent threads</div>
+          ${threads.map(r => html`
+            <button key=${r.runId} className="landing-threads-row" onClick=${() => { onOpen(r); setOpen(false); }}>
+              <span className=${"system-threads-dot is-" + systemThreadStatus(r)}></span>
+              <span className="landing-threads-row-main">
+                <span className="landing-threads-row-title">${r.title || r.runId}</span>
+                <span className="landing-threads-row-meta">${r.section || "system"} · ${systemThreadStatus(r)} · ${fmtSystemThreadWhen(r.startedAt)}</span>
+              </span>
             </button>
           `)}
         </div>
       `}
-      ${chatRun && createPortal(html`<${ChatDrawer}
-        run=${chatRun}
-        variant="system"
-        onClose=${() => { setChatRun(null); refetch(); }}
-        onStop=${() => {}}
-        onRunComplete=${onRunComplete}
-        onStatusChange=${() => {}}
-        permissionMode=${permissionMode}
-        onPermissionModeChange=${setPermissionMode}
-        onStartNewChat=${spawnSystemThread}
-      />`, document.body)}
-    </section>
+    </div>
   `;
 }
 
 
-function SystemLanding() {
+function SystemLanding({ onSpawnSystemThread }) {
   const [activeSection, setActiveSection] = useState("prototype");
 
   // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
@@ -14796,14 +15073,12 @@ function SystemLanding() {
       </nav>
       <div className="system-content">
         ${activeSection === "orchestrators"   && html`
-          <${SystemThreadsPanel} key="threads-orchestrators" section="orchestrators"
-            blurb="Add or update orchestrators by chatting — the agent writes the manifest + playbook pair and keeps the capability rules in sync."/>
+          <${SystemAddBar} key="add-orchestrator" kind="orchestrators" onSpawn=${onSpawnSystemThread}/>
           <${OrchestratorsLanding} key="orchestrators-list" scopeLabel="workspace"/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
         ${activeSection === "fonts"      && html`<div className="system-fonts"><${DSFontsPanel} scope="global"/></div>`}
         ${activeSection === "prototype"  && html`
-          <${SystemThreadsPanel} key="threads-design-library" section="design-library"
-            blurb="The library couples to orchestrators — update it through a thread so playbook references stay in sync (hand-edits are easy to orphan)."/>
+          <${SystemAddBar} key="add-library" kind="design-library" onSpawn=${onSpawnSystemThread}/>
           <${PrototypeCatalogLanding} key="proto-catalog" data=${protoCatalog}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
@@ -16348,6 +16623,51 @@ function ProjectsLanding({ info, projects, onReload }) {
       .then((j) => { if (j) setShareCount((j.shares || []).length); })
       .catch(() => {});
   }, []);
+
+  // v3.13 — Workspace SYSTEM AGENT threads, lifted to the landing root so the
+  // shared Bot icon button in the title row and both System-tab section
+  // "Add" buttons drive ONE drawer + thread list (threads are shared across
+  // Orchestrators + Design library). See the SystemThreadsPanel→intake
+  // redesign block above for the rationale.
+  const [systemThreads, setSystemThreads] = useState([]);
+  const [systemRun, setSystemRun] = useState(null);
+  const [systemPermMode, setSystemPermMode] = useState("bypassPermissions");
+  const fetchSystemThreads = useCallback(() => {
+    fetch("/__system_runs").then(r => r.ok ? r.json() : null)
+      .then(j => setSystemThreads(j ? (j.runs || []) : []))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { fetchSystemThreads(); }, [fetchSystemThreads]);
+  useEffect(() => {
+    const h = () => fetchSystemThreads();
+    window.addEventListener("th:system-changed", h);
+    return () => window.removeEventListener("th:system-changed", h);
+  }, [fetchSystemThreads]);
+  // POST the composed intake brief straight to /__run (scope=system); the
+  // daemon spawns the system agent and feeds the brief as its first message,
+  // so the drawer opens on a LIVE run already streaming the agent's plan —
+  // no isNew shell, no re-typing.
+  const spawnSystemThread = useCallback(async ({ section, prompt, title }) => {
+    const res = await fetch("/__run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scope: "system", section, prompt, title,
+        agentId: "claude", kind: "freeform", permissionMode: systemPermMode,
+      }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    if (!res.ok) throw new Error((body && (body.error || body.hint)) || `HTTP ${res.status}`);
+    setSystemRun(body);
+    fetchSystemThreads();
+    return body;
+  }, [systemPermMode, fetchSystemThreads]);
+  const openSystemThread = useCallback((run) => { setSystemRun(run); }, []);
+  const onSystemRunComplete = useCallback(({ didModifyFiles }) => {
+    fetchSystemThreads();
+    if (didModifyFiles) { try { window.dispatchEvent(new CustomEvent("th:system-changed")); } catch {} }
+  }, [fetchSystemThreads]);
   const mediaCfg = useMediaConfig();
   // v3.4.41 — Required local skills (rembg). The setup card stays open
   // until every required skill is installed, even after the model is
@@ -16648,7 +16968,9 @@ function ProjectsLanding({ info, projects, onReload }) {
                 <span className="landing-tab-label">System</span>
               </button>
             </div>
-            ${activeTab === "projects" && html`
+            <div className="landing-titlebar-right">
+              ${systemThreads.length > 0 && html`<${SystemAgentThreadButton} threads=${systemThreads} onOpen=${openSystemThread}/>`}
+              ${activeTab === "projects" && html`
               <div className="landing-actions">
                 ${projects.length > 0 && html`
                   <input
@@ -16675,15 +16997,27 @@ function ProjectsLanding({ info, projects, onReload }) {
                 </button>
               </div>
             `}
+            </div>
           </div>
         </div>
       </header>
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
+      ${systemRun && createPortal(html`<${ChatDrawer}
+        run=${systemRun}
+        variant="system"
+        onClose=${() => { setSystemRun(null); fetchSystemThreads(); }}
+        onStop=${() => {}}
+        onRunComplete=${onSystemRunComplete}
+        onStatusChange=${() => {}}
+        permissionMode=${systemPermMode}
+        onPermissionModeChange=${setSystemPermMode}
+        onStartNewChat=${(text) => spawnSystemThread({ section: (systemRun && systemRun.section) || "orchestrators", prompt: text, title: text.slice(0, 60) })}
+      />`, document.body)}
       <main className="landing-main">
         <div className="landing-main-inner">
 
         ${activeTab === "shares" && html`<${SharesLanding} onCountChange=${setShareCount}/>`}
-        ${activeTab === "system" && html`<${SystemLanding}/>`}
+        ${activeTab === "system" && html`<${SystemLanding} onSpawnSystemThread=${spawnSystemThread}/>`}
 
         ${activeTab === "projects" && creating && html`<${NewProjectWizard}
           workspaceProjects=${projects}
