@@ -15147,6 +15147,11 @@ function SkillsLanding() {
     }
   }, []);
   useEffect(() => { loadCcSkills(); }, [loadCcSkills]);
+  // v3.13 — refresh when a system-agent thread installs/edits a harness skill.
+  useEffect(() => {
+    window.addEventListener("th:system-changed", loadCcSkills);
+    return () => window.removeEventListener("th:system-changed", loadCcSkills);
+  }, [loadCcSkills]);
 
   const onUpload = useCallback(async (files) => {
     if (!files || !files.length) return;
@@ -16677,9 +16682,14 @@ function ProjectsLanding({ info, projects, onReload }) {
     return body;
   }, [systemPermMode, fetchSystemThreads]);
   const openSystemThread = useCallback((run) => { setSystemRun(run); }, []);
-  const onSystemRunComplete = useCallback(({ didModifyFiles }) => {
+  const onSystemRunComplete = useCallback(() => {
     fetchSystemThreads();
-    if (didModifyFiles) { try { window.dispatchEvent(new CustomEvent("th:system-changed")); } catch {} }
+    // v3.13 — always re-pull the System registries when a system thread
+    // turn ends. The Write/Edit detector misses files the agent creates via
+    // Bash (cat >, cp, mkdir), and a system thread's whole purpose is to
+    // mutate the harness, so refetch unconditionally — the endpoints are
+    // cheap GETs and each re-reads disk per request.
+    try { window.dispatchEvent(new CustomEvent("th:system-changed")); } catch {}
   }, [fetchSystemThreads]);
   const mediaCfg = useMediaConfig();
   // v3.4.41 — Required local skills (rembg). The setup card stays open

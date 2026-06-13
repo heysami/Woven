@@ -13535,6 +13535,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         for key, label, desc in self._PROTOTYPE_CATEGORIES:
             groups_by_key[key] = {"key": key, "label": label, "description": desc, "items": []}
         unknown = {"key": "other", "label": "Other", "description": "Detail files that don't match a known category prefix.", "items": []}
+        # v3.13 — a NEW library group (a new filename prefix) created by a
+        # system-agent thread must surface as its OWN labeled group, not get
+        # dumped into "Other" — otherwise the files exist on disk and agents
+        # read them, but the System-tab page never shows the group ("function
+        # but not page"). We derive a group per unknown prefix on the fly
+        # (titleized label) so a new group is first-class with no serve.py
+        # edit / daemon restart. Curating its label/description in
+        # _PROTOTYPE_CATEGORIES is optional polish, not a requirement.
+        dynamic_groups = {}
 
         if os.path.isdir(proto_dir):
             for name in sorted(os.listdir(proto_dir)):
@@ -13548,9 +13557,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # visual picks and don't belong in the catalog.
                 if any(slug.startswith(p) for p in self._PROTOTYPE_HIDDEN_PREFIXES):
                     continue
-                # Category from the filename prefix. Falls back to "other"
-                # for stray files (e.g. a README dropped in the folder).
-                cat = "other"
+                # Category from the filename prefix. Known prefixes get their
+                # curated group; an unknown prefix (with a hyphen) gets a
+                # derived group; truly prefix-less strays fall to "other".
+                cat = None
                 for k, _, _ in self._PROTOTYPE_CATEGORIES:
                     if slug == k or slug.startswith(k + "-"):
                         cat = k
@@ -13581,17 +13591,35 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "images":  images,
                     "path":    "design-library/" + name,
                 }
-                bucket = groups_by_key.get(cat, unknown)
+                if cat is not None:
+                    bucket = groups_by_key[cat]
+                elif "-" in slug:
+                    prefix = slug.split("-", 1)[0]
+                    g = dynamic_groups.get(prefix)
+                    if g is None:
+                        g = {"key": prefix,
+                             "label": prefix.replace("_", " ").title(),
+                             "description": f"Custom library group (design-library/{prefix}-*) added in this workspace.",
+                             "items": [], "custom": True}
+                        dynamic_groups[prefix] = g
+                    bucket = g
+                else:
+                    bucket = unknown
                 bucket["items"].append(item)
 
         groups = [g for g in groups_by_key.values() if g["items"]]
+        # Append agent-created groups (sorted) after the curated ones.
+        groups += [g for _, g in sorted(dynamic_groups.items()) if g["items"]]
         if unknown["items"]:
             groups.append(unknown)
         total = sum(len(g["items"]) for g in groups)
+        categories = [{"key": k, "label": l} for k, l, _ in self._PROTOTYPE_CATEGORIES]
+        categories += [{"key": g["key"], "label": g["label"]}
+                       for _, g in sorted(dynamic_groups.items()) if g["items"]]
         return self._reply(200, {
             "groups":     groups,
             "total":      total,
-            "categories": [{"key": k, "label": l} for k, l, _ in self._PROTOTYPE_CATEGORIES],
+            "categories": categories,
             "note":       ("Picks are not deterministic — a finished prototype can blend two recipes or "
                            "borrow one aesthetic's palette while wearing another shell. Treat sample "
                            "images as references, not destinations."),
