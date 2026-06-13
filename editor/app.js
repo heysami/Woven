@@ -18324,6 +18324,7 @@ function WorkflowCanvas() {
       onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
       onCloseHistory=${() => setHistoryOpen(false)}
       chatActive=${!!chatRun}
+      chatBusy=${!!chatRun && !chatRunFinished}
       onLibResizeStart=${startLibResize}
       onOpenNewChat=${openWorkflowChat}
       onStartChatWithPrompt=${async (text) => {
@@ -22847,7 +22848,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   `;
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, onOpenNewChat, onStartChatWithPrompt, onReopenRun, selectionRef, onSelectionCountChange, onLibResizeStart }) {
+function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, onOpenNewChat, onStartChatWithPrompt, onReopenRun, selectionRef, onSelectionCountChange, onLibResizeStart }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -33032,7 +33033,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onAddOutputAsset=${addOutputAsset}
               />
             `)}
-            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} />
+            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} />
             <${WorkflowWhiteboardLayer}
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
@@ -51813,11 +51814,19 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
 // adds an abstract, anthropomorphic read that peeks out of a node's
 // bottom-left corner while an agent works on it. A SECTION is "working" when
 // any node inside it is — so the badge also tells you a grouped pass is live.
-function workflowNodeIsWorking(n) {
+function workflowNodeIsWorking(n, chatBusy, activeProto) {
   if (!n) return false;
   const rs = n.runStatus;
   if (rs === "pending" || rs === "running") return true;
   if (n.lastBuildStatus === "running") return true;   // ds-brainstorm fan-out
+  // A workflow-chat run edits source/ directly without flipping any node's
+  // runStatus. While such a run is STREAMING (chatBusy), treat the prototype
+  // it's updating as working so the badge appears. Scope to the active
+  // prototype when known; otherwise (single-prototype / unknown) any prototype.
+  if (chatBusy && n.kind === "prototype") {
+    const slug = prototypeSlugForNode(n);
+    if (!activeProto || slug === activeProto) return true;
+  }
   return false;
 }
 
@@ -51948,7 +51957,7 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
 // every node map, so one edit covers every node kind (incl. sections) and the
 // badges stack above the cards. pointer-events:none — pure decoration.
 // Counter-scaled by 1/zoom so the badge stays a constant on-screen size.
-function WorkflowAgentBadgeLayer({ nodes, zoom }) {
+function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto }) {
   const list = nodes || [];
   const invZoom = Math.max(0.3, Math.min(3, 1 / (zoom || 1)));
   const badges = [];
@@ -51956,11 +51965,11 @@ function WorkflowAgentBadgeLayer({ nodes, zoom }) {
     let working = false;
     let count = 0;
     if (n.kind === "section") {
-      const inside = workflowSectionContainedNodes(n, list).filter(workflowNodeIsWorking);
+      const inside = workflowSectionContainedNodes(n, list).filter(x => workflowNodeIsWorking(x, chatBusy, activeProto));
       count = inside.length;
       working = count > 0;
     } else {
-      working = workflowNodeIsWorking(n);
+      working = workflowNodeIsWorking(n, chatBusy, activeProto);
     }
     if (!working) continue;
     const isSection = n.kind === "section";
