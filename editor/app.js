@@ -14049,6 +14049,11 @@ const DS_DEFAULTS = {
   secondary: "#E20E10",
   tertiary:  "#8D98AC",
   neutral:   "#828486",   // the grey "base" (= --neutral-500); tints the ramp
+  // status / semantic bases (= each ramp's -500). Tunable behind "More colours".
+  success:   "#32CD56",
+  attention: "#F57C00",
+  error:     "#DA291C",
+  info:      "#2EB1CC",
   fontFamilyCss: "'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
   fontKey:   "plus-jakarta-sans",
   baseFontPx: 16,
@@ -14329,6 +14334,19 @@ function dsPickDarkFg(r) {
   for (const s of ["300", "400"]) { const c = dsContrast(r[s], DS_DARK.card); if (c > bc) { bc = c; best = r[s]; } }
   return best;
 }
+// Dark-mode steps for a STATUS/semantic ramp (success/attention/error/info):
+// flip the soft-bg steps (50/100/200) to dark tints and the text steps
+// (700/800/900) to light, keeping the hue. Status chips/alerts then read as a
+// tinted DARK chip + a light coloured label instead of a pale blob on dark.
+function dsSemanticDarkSteps(hex) {
+  const rgb = dsHexToRgb(hex);
+  if (!rgb) return null;
+  const hsl = dsRgbToHsl(rgb), h = hsl[0], s = hsl[1];
+  const bg = (L) => dsRgbToHex(dsHslToRgb(h, Math.min(s, 0.55), L));
+  const tx = (L) => dsRgbToHex(dsHslToRgb(h, Math.min(s, 0.72), L));
+  return { "50": bg(0.14), "100": bg(0.18), "200": bg(0.30), "700": tx(0.70), "800": tx(0.78), "900": tx(0.86) };
+}
+const DS_SEMANTIC = ["success", "attention", "error", "info"];
 /* The `:root[data-theme="dark"]{}` role override for the effective palette —
    always computed (default colours included) so dark mode is correct for any
    palette. Sets the dark-tuned roles + the new semantic tokens the components
@@ -14352,6 +14370,12 @@ function buildDsDarkCss(s) {
     `--tertiary-surface:${tf.fill};`, `--on-tertiary:${tf.onText};`,
     `--chip-primary-fg:${rP["300"]};`, `--chip-secondary-fg:${rS["300"]};`, `--chip-tertiary-fg:${rT["300"]};`,
   ];
+  // Status colours adapt too — always (default values included) so the screen
+  // statuses/alerts/callouts don't read as pale blobs on the dark page.
+  for (const name of DS_SEMANTIC) {
+    const d = dsSemanticDarkSteps(s[name] || DS_DEFAULTS[name]);
+    if (d) for (const k of Object.keys(d)) lines.push(`--${name}-${k}:${d[k]};`);
+  }
   return ':root[data-theme="dark"]{\n  ' + lines.join("\n  ") + "\n}";
 }
 
@@ -14409,6 +14433,15 @@ function buildDsCustomization(s) {
         `--interactive-hover:${r["100"]};`,
         `--interactive-active:${r["150"]};`,
       );
+    }
+  }
+  // ── Status colours (success / attention / error / info) — regenerate the
+  //    role's full ramp when changed; dark steps come from buildDsDarkCss. ──
+  for (const name of DS_SEMANTIC) {
+    const v = s[name + "Color"];
+    if (v && v.toUpperCase() !== (D[name] || "").toUpperCase()) {
+      const r = dsRamp(v);
+      if (r) for (const k of Object.keys(r)) lines.push(`--${name}-${k}:${r[k]};`);
     }
   }
   // ── Roundness (scale radii DOWN from the max baseline) ──
@@ -14477,6 +14510,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
   const [dsSettings, setDsSettings] = useState({
     primary: null, secondary: null, tertiary: null, neutral: null,
+    successColor: null, attentionColor: null, errorColor: null, infoColor: null,
     paletteName: null,   // label of the applied Coolors preset (display only)
     roundness: 1,
     fontKey: DS_DEFAULTS.fontKey,
@@ -14704,6 +14738,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
   const [previewFile, setPreviewFile] = useState("gallery.html");
+  const [showSemantic, setShowSemantic] = useState(false);
   // Preview in dark when the DS includes dark — and default to dark when it's
   // the ONLY scheme the user kept.
   const darkOnly = settings.schemeDark && !settings.schemeLight;
@@ -14818,6 +14853,20 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 onChange=${(v) => set({ tertiary: v, paletteName: null })} onReset=${() => set({ tertiary: null, paletteName: null })}/>
               <${DsColorRow} label="Neutral (grey base)" value=${settings.neutral} fallback=${DS_DEFAULTS.neutral}
                 onChange=${(v) => set({ neutral: v })} onReset=${() => set({ neutral: null })}/>
+
+              ${!showSemantic
+                ? html`<button type="button" className="dscz-morelink" onClick=${() => setShowSemantic(true)}>＋ Status colours (success · warning · error · info)</button>`
+                : html`
+                  <div className="dscz-sub-label">Status colours</div>
+                  <${DsColorRow} label="Success" value=${settings.successColor} fallback=${DS_DEFAULTS.success}
+                    onChange=${(v) => set({ successColor: v })} onReset=${() => set({ successColor: null })}/>
+                  <${DsColorRow} label="Warning" value=${settings.attentionColor} fallback=${DS_DEFAULTS.attention}
+                    onChange=${(v) => set({ attentionColor: v })} onReset=${() => set({ attentionColor: null })}/>
+                  <${DsColorRow} label="Error" value=${settings.errorColor} fallback=${DS_DEFAULTS.error}
+                    onChange=${(v) => set({ errorColor: v })} onReset=${() => set({ errorColor: null })}/>
+                  <${DsColorRow} label="Info" value=${settings.infoColor} fallback=${DS_DEFAULTS.info}
+                    onChange=${(v) => set({ infoColor: v })} onReset=${() => set({ infoColor: null })}/>
+                `}
             </section>
 
             <section className="dscz-group">
