@@ -6904,6 +6904,17 @@ function saveSettings(patch) {
   return next;
 }
 
+/* Chat composer send-key preference. false (default) = ⌘/Ctrl+Enter sends,
+   plain Enter inserts a newline. true = plain Enter sends, ⌘/Ctrl/Shift+Enter
+   inserts a newline. Lives in the main settings blob; the composer reads it
+   live via the th:chat-send-pref-changed event so toggling it (in onboarding
+   or Settings) takes effect without a page reload. */
+function loadSendOnEnter() { return !!loadSettings().chatSendOnEnter; }
+function saveSendOnEnter(v) {
+  saveSettings({ chatSendOnEnter: !!v });
+  try { window.dispatchEvent(new CustomEvent("th:chat-send-pref-changed")); } catch {}
+}
+
 /* Pending-queue persistence — the composer's send-while-busy queue is
    React state, so closing the drawer unmounts it and a page refresh
    discards it entirely. Mirror it to localStorage keyed by runId so a
@@ -9865,6 +9876,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [slashQuery, setSlashQuery] = useState("");
   const [slashSkills, setSlashSkills] = useState(() => __slashSkillCache || []);
   const [slashIndex, setSlashIndex] = useState(0);
+  // Send-key preference (Enter-sends vs ⌘/Ctrl+Enter-sends), read live so a
+  // change in onboarding/Settings takes effect without remounting the composer.
+  const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
+  useEffect(() => {
+    const on = () => setSendOnEnter(loadSendOnEnter());
+    window.addEventListener("th:chat-send-pref-changed", on);
+    return () => window.removeEventListener("th:chat-send-pref-changed", on);
+  }, []);
   // Two distinct kinds of file the user can stage on a chat turn (Phase 5c):
   //
   //   • attachments — IMAGES bound to this single turn. Posted to
@@ -10380,9 +10399,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         return;
       }
     }
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      send();
+    if (e.key === "Enter") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (sendOnEnter) {
+        // Enter sends; Shift/⌘/Ctrl+Enter inserts a newline.
+        if (!e.shiftKey && !mod) { e.preventDefault(); send(); }
+      } else {
+        // Default: ⌘/Ctrl+Enter sends; plain Enter inserts a newline.
+        if (mod) { e.preventDefault(); send(); }
+      }
     }
   };
 
@@ -14170,9 +14195,9 @@ const DS_TYPE_RATIOS = [
 // see customizations land on real screens (the app-shell side-menu layout,
 // dashboards, auth, etc.), not just the component catalog.
 const DS_PREVIEW_VIEWS = [
-  { id: "gallery.html",                 label: "Components" },
   { id: "templates/landing.html",       label: "Landing" },
   { id: "templates/ecommerce.html",     label: "Storefront" },
+  { id: "gallery.html",                 label: "Components" },
   { id: "templates/basic-form.html",    label: "App shell" },
   { id: "templates/dashboard.html",     label: "Dashboard" },
   { id: "templates/technical-logs.html", label: "Logs" },
@@ -14818,7 +14843,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
 function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate, confirmLabel, busyLabel }) {
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
-  const [previewFile, setPreviewFile] = useState("gallery.html");
+  const [previewFile, setPreviewFile] = useState("templates/landing.html");
   const [showSemantic, setShowSemantic] = useState(false);
   // Preview in dark when the DS includes dark — and default to dark when it's
   // the ONLY scheme the user kept.
