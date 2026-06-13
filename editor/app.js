@@ -14299,9 +14299,65 @@ function dsAssignRoles(colors) {
   };
 }
 
+/* ── Dark-mode role derivation ──
+   Dark mode can't just reuse the light ramp steps: a vivid primary needs a
+   saturated fill + white text, but a light/pastel/warm primary needs a LIGHT
+   fill + DARK text (Material-dark). And the sidebar/hero/CTA gradients (white
+   text) must anchor on DARK steps so they don't fuse into the page. These
+   helpers pick WCAG-correct dark values from a ramp; buildDsDarkCss assembles
+   the `:root[data-theme="dark"]{}` role block from the effective palette. */
+const DS_DARK = { page: "#15181E", card: "#1C2027" };
+function _dsLin(v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+function dsLum(hex) { const c = dsHexToRgb(hex) || [0, 0, 0]; return 0.2126 * _dsLin(c[0]) + 0.7152 * _dsLin(c[1]) + 0.0722 * _dsLin(c[2]); }
+function dsContrast(a, b) { const la = dsLum(a), lb = dsLum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); }
+// Dark-mode fill (button/tag/badge): a saturated step + WHITE text when dark
+// enough; else a light step + DARK text. Returns { fill, onText }.
+function dsPickDarkFill(r) {
+  for (const s of ["500", "400", "600"]) {
+    if (dsContrast(r[s], "#FFFFFF") >= 4.5 && dsContrast(r[s], DS_DARK.page) >= 2.2)
+      return { fill: r[s], onText: "#FFFFFF" };
+  }
+  for (const s of ["300", "400", "200"]) {
+    if (dsContrast(r[s], DS_DARK.page) >= 4.5) return { fill: r[s], onText: DS_DARK.page };
+  }
+  return { fill: r["300"], onText: DS_DARK.page };
+}
+// Dark-mode fg (links/emphasis on dark surface): lightest step ≥4.5 vs card.
+function dsPickDarkFg(r) {
+  for (const s of ["300", "400", "200", "500"]) if (dsContrast(r[s], DS_DARK.card) >= 4.5) return r[s];
+  let best = r["200"], bc = dsContrast(r["200"], DS_DARK.card);
+  for (const s of ["300", "400"]) { const c = dsContrast(r[s], DS_DARK.card); if (c > bc) { bc = c; best = r[s]; } }
+  return best;
+}
+/* The `:root[data-theme="dark"]{}` role override for the effective palette —
+   always computed (default colours included) so dark mode is correct for any
+   palette. Sets the dark-tuned roles + the new semantic tokens the components
+   read (on-*, *-surface, gradient anchors, chip glyph colours). */
+function buildDsDarkCss(s) {
+  const P = s.primary || DS_DEFAULTS.primary;
+  const S = s.secondary || DS_DEFAULTS.secondary;
+  const T = s.tertiary || DS_DEFAULTS.tertiary;
+  const rP = dsRamp(P), rS = dsRamp(S), rT = dsRamp(T);
+  if (!rP || !rS || !rT) return "";
+  const pf = dsPickDarkFill(rP), sf = dsPickDarkFill(rS), tf = dsPickDarkFill(rT);
+  const pfg = dsPickDarkFg(rP);
+  const lines = [
+    `--primary-surface:${pf.fill};`,
+    `--on-primary:${pf.onText};`,
+    `--primary-fg:${pfg};`, `--primary-fg-emphasis:${pfg};`,
+    `--primary-hover:${rP["400"]};`, `--primary-active:${rP["600"]};`,
+    `--primary-surface-subtle:${rP["950"]};`, `--primary-surface-muted:${rP["900"]};`,
+    `--primary-grad-from:${rP["700"]};`, `--primary-grad-to:${rP["900"]};`,
+    `--secondary-surface:${sf.fill};`, `--on-secondary:${sf.onText};`,
+    `--tertiary-surface:${tf.fill};`, `--on-tertiary:${tf.onText};`,
+    `--chip-primary-fg:${rP["300"]};`, `--chip-secondary-fg:${rS["300"]};`, `--chip-tertiary-fg:${rT["300"]};`,
+  ];
+  return ':root[data-theme="dark"]{\n  ' + lines.join("\n  ") + "\n}";
+}
+
 /* Build the `:root{}` override CSS + font payload from the customizer state.
    `s` is the settings object; any field left null/default emits nothing for
-   that dimension. Returns { overrideCss, font, dirty }. */
+   that dimension. Returns { overrideCss, font, dirty, darkCss }. */
 function buildDsCustomization(s) {
   const lines = [];
   const D = DS_DEFAULTS;
@@ -14404,7 +14460,7 @@ function buildDsCustomization(s) {
   const overrideCss = lines.length
     ? ":root{\n  " + lines.join("\n  ") + "\n}"
     : "";
-  return { overrideCss, font, dirty: lines.length > 0 };
+  return { overrideCss, font, dirty: lines.length > 0, darkCss: buildDsDarkCss(s) };
 }
 
 /* ────────── New-project form (v3.5 — onboarding cut) ──────────
@@ -14480,6 +14536,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
       if (useDefaultDs) {
         payload.useDefaultDs = true;
         payload.dsOverrideCss = dsCustom.overrideCss;
+        payload.dsDarkCss = dsCustom.darkCss;
         payload.dsFont = dsCustom.font;
         payload.dsLabel = name.trim() ? (name.trim() + " — design system") : "Default Design System";
         if (dsSettings.logo && dsSettings.logo.dataUrl) {
@@ -14689,7 +14746,9 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       style = doc.createElement("style");
       style.id = "__ds_custom_style";
     }
-    style.textContent = custom.overrideCss || "";
+    // Light overrides (apply always) + the computed dark role block (only
+    // bites under [data-theme="dark"], so safe to always include).
+    style.textContent = (custom.overrideCss || "") + "\n" + (custom.darkCss || "");
     doc.head.appendChild(style);   // re-append → keep it last
     void previewDark;              // (in deps below — keeps theme in sync)
     // The gallery's token-docs (ramp swatches/hex, spacing bars) are JS-rendered

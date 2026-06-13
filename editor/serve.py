@@ -14697,6 +14697,32 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(styles_path, "w", encoding="utf-8") as f:
                 f.write(styles_css)
 
+        # 2b) Dark-mode roles — merge the frontend-computed dark scheme into the
+        #     :root[data-theme="dark"]{} block in place (only present when dark
+        #     ships). These are contrast-tuned per palette (button fill vs
+        #     gradient anchor use different steps so white text holds on both).
+        dark_css = (body.get("dsDarkCss") or "").strip()
+        if include_dark and dark_css:
+            dpairs = re.findall(r'--([\w-]+)\s*:\s*([^;{}]+);', dark_css)
+            md = re.search(r':root\[data-theme="dark"\]\s*\{', styles_css)
+            if md and dpairs:
+                istart = md.end()
+                iend = styles_css.index('}', istart)
+                dinner = styles_css[istart:iend]
+                dappended = []
+                for name, val in dpairs:
+                    val = val.strip()
+                    tre = re.compile(r'(--' + re.escape(name) + r'\s*:\s*)[^;]+;')
+                    if tre.search(dinner):
+                        dinner = tre.sub(lambda mm: mm.group(1) + val + ';', dinner, count=1)
+                    else:
+                        dappended.append('--' + name + ':' + val + ';')
+                if dappended:
+                    dinner = dinner.rstrip() + '\n  /* project customization (dark) */\n  ' + ' '.join(dappended) + '\n'
+                styles_css = styles_css[:istart] + dinner + styles_css[iend:]
+                with open(styles_path, "w", encoding="utf-8") as f:
+                    f.write(styles_css)
+
         # 3) meta.json — stamp a content version + label; never carry a
         #    project name. Version = sha256(styles + gallery)[:12], matching
         #    the POST /__design_system convention.

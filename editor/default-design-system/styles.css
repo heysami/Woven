@@ -53,6 +53,15 @@
   --primary-fg:#06348A; --primary-fg-emphasis:#074ECF; --primary-border:#0642AC;
   --primary-hover:#3A73E6; --primary-active:#0642AC;
 
+  /* ---- on-colour text + filled surfaces + gradient anchors ----
+     One indirection so dark mode can flip text/fills per palette. In light
+     mode text on a brand fill is white and the gradient runs surface→700;
+     dark mode (and the bake) re-point these for contrast. */
+  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#FFFFFF;
+  --secondary-surface:var(--secondary-500); --tertiary-surface:var(--tertiary-500);
+  --primary-grad-from:var(--primary-surface); --primary-grad-to:var(--primary-700);
+  --chip-primary-fg:var(--primary-fg-emphasis); --chip-secondary-fg:var(--secondary-700); --chip-tertiary-fg:var(--tertiary-700);
+
   /* tints / shades */
   --tint-10:rgba(255,255,255,.1); --tint-20:rgba(255,255,255,.2); --tint-30:rgba(255,255,255,.3);
   --tint-50:rgba(255,255,255,.5); --tint-80:rgba(255,255,255,.8);
@@ -128,7 +137,7 @@ a:hover { text-decoration:underline; }
   white-space:nowrap;text-decoration:none;
 }
 .btn:hover{text-decoration:none;}
-.btn--primary{background:var(--primary-surface);color:var(--white);}
+.btn--primary{background:var(--primary-surface);color:var(--on-primary);}
 .btn--primary:hover{background:var(--primary-hover);}
 .btn--primary:active{background:var(--primary-active);}
 .btn--outline{background:var(--surface);border-color:var(--primary-border);color:var(--primary-fg);}
@@ -169,16 +178,16 @@ a:hover { text-decoration:underline; }
 .tag{
   display:inline-flex;align-items:center;gap:var(--space-2xs);height:24px;padding:0 var(--space-xs);
   border-radius:var(--radius-s);font:var(--w-medium) var(--text-xs)/1 var(--font);
-  background:var(--primary-surface);color:var(--white);border:1px solid transparent;white-space:nowrap;
+  background:var(--primary-surface);color:var(--on-primary);border:1px solid transparent;white-space:nowrap;
 }
 .tag--sm{height:20px;padding:0 6px;}
 .tag--xs{height:18px;padding:0 var(--space-2xs);font-size:11px;}
 .tag--light{background:var(--primary-surface-muted);color:var(--primary-fg);}
 .tag--outline{background:transparent;border-color:var(--primary-border);color:var(--primary-fg);}
-.tag--secondary{background:var(--secondary-500);color:var(--white);}
+.tag--secondary{background:var(--secondary-surface);color:var(--on-secondary);}
 .tag--secondary.tag--light{background:var(--secondary-100);color:var(--secondary-800);}
 .tag--secondary.tag--outline{background:transparent;border-color:var(--secondary-600);color:var(--secondary-800);}
-.tag--tertiary{background:var(--tertiary-500);color:var(--white);}
+.tag--tertiary{background:var(--tertiary-surface);color:var(--on-tertiary);}
 .tag--tertiary.tag--light{background:var(--tertiary-100);color:var(--tertiary-700);}
 .tag--tertiary.tag--outline{background:transparent;border-color:var(--tertiary-600);color:var(--tertiary-700);}
 .tag--mono{background:var(--neutral-900);color:var(--white);}
@@ -191,12 +200,12 @@ a:hover { text-decoration:underline; }
 .badge{
   display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 var(--space-xs);
   border-radius:var(--radius-pill);font:var(--w-medium) var(--text-s)/1 var(--font);
-  background:var(--primary-surface);color:var(--white);border:1px solid transparent;
+  background:var(--primary-surface);color:var(--on-primary);border:1px solid transparent;
 }
 .badge--light{background:var(--primary-surface-muted);color:var(--primary-fg);}
 .badge--outline{background:transparent;border-color:var(--primary-border);color:var(--primary-fg);}
-.badge--secondary{background:var(--secondary-500);color:var(--white);}
-.badge--tertiary{background:var(--tertiary-500);color:var(--white);}
+.badge--secondary{background:var(--secondary-surface);color:var(--on-secondary);}
+.badge--tertiary{background:var(--tertiary-surface);color:var(--on-tertiary);}
 .badge--mono{background:var(--neutral-900);color:var(--white);}
 .badge--sm{min-width:24px;height:24px;font-size:var(--text-xs);}
 
@@ -875,10 +884,17 @@ a:hover { text-decoration:underline; }
   /* light-end neutrals (used as soft backgrounds) invert to dark elevations */
   --neutral-50:#1C2027; --neutral-70:#20242C; --neutral-80:#232831; --neutral-100:#2C313B;
   --neutral-150:#343A45; --neutral-200:#3C4350;
-  /* primary roles — pulled from the (possibly customized) ramp */
+  /* brand roles + on-colour text — these are CONTRAST-TUNED per palette: the
+     bake (and the live preview) inject computed values here. The defaults
+     below are correct for the bundled blue/red/slate palette. Buttons/fills
+     vs gradients use different primary steps so white text holds on both. */
   --primary-surface:var(--primary-500); --primary-surface-muted:var(--primary-900); --primary-surface-subtle:var(--primary-950);
-  --primary-fg:var(--primary-300); --primary-fg-emphasis:var(--primary-400); --primary-border:var(--primary-700);
+  --primary-fg:var(--primary-300); --primary-fg-emphasis:var(--primary-300); --primary-border:var(--primary-700);
   --primary-hover:var(--primary-400); --primary-active:var(--primary-600);
+  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#15181E;
+  --secondary-surface:var(--secondary-500); --tertiary-surface:var(--tertiary-400);
+  --primary-grad-from:var(--primary-700); --primary-grad-to:var(--primary-900);
+  --chip-primary-fg:var(--primary-300); --chip-secondary-fg:var(--secondary-300); --chip-tertiary-fg:var(--tertiary-300);
   /* deeper shadows + a subtler focus ring on dark */
   --shadow-xs:0 1px 2px rgba(0,0,0,.5); --shadow-s:0 2px 4px 0 rgba(0,0,0,.5);
   --shadow-base:0 4px 8px 0 rgba(0,0,0,.55); --shadow-m:0 4px 6px rgba(0,0,0,.5);

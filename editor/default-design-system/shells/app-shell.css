@@ -10,7 +10,7 @@
 .sidebar{
   position:sticky;top:0;align-self:start;height:100vh;width:var(--sidebar-w);
   display:flex;flex-direction:column;padding:var(--space-xs);box-sizing:border-box;color:var(--tint-80);
-  background:linear-gradient(var(--primary-surface), var(--primary-700));
+  background:linear-gradient(var(--primary-grad-from), var(--primary-grad-to));
   transition:width var(--ease);z-index:15;overflow:hidden;
 }
 /* grid texture as <img> (not CSS bg) so it survives daemon preview asset-stamping;
