@@ -14358,32 +14358,40 @@ function dsDarkSurfaceDefault(primaryHex) {
    palette. Sets the dark-tuned roles + the new semantic tokens the components
    read (on-*, *-surface, gradient anchors, chip glyph colours). */
 function buildDsDarkCss(s) {
-  const P = s.primary || DS_DEFAULTS.primary;
-  const S = s.secondary || DS_DEFAULTS.secondary;
-  const T = s.tertiary || DS_DEFAULTS.tertiary;
-  const rP = dsRamp(P), rS = dsRamp(S), rT = dsRamp(T);
+  // Dark mode has its OWN colour set. Each role's dark base defaults to the
+  // light base (accents follow light); the dark RAMP + roles are derived from
+  // the dark base. If the user overrides a dark base, the whole ramp changes in
+  // dark, so dark can be a completely different colour from light.
+  const Pl = s.primary || DS_DEFAULTS.primary, Pd = s.primaryDark || Pl;
+  const Sl = s.secondary || DS_DEFAULTS.secondary, Sd = s.secondaryDark || Sl;
+  const Tl = s.tertiary || DS_DEFAULTS.tertiary, Td = s.tertiaryDark || Tl;
+  const rP = dsRamp(Pd), rS = dsRamp(Sd), rT = dsRamp(Td);
   if (!rP || !rS || !rT) return "";
+  const lines = [];
+  // When a dark base differs from light, emit its full ramp so dark uses it.
+  const emitRamp = (over, light, ramp, name) => {
+    if (over && over.toUpperCase() !== (light || "").toUpperCase())
+      for (const k of Object.keys(ramp)) lines.push(`--${name}-${k}:${ramp[k]};`);
+  };
+  emitRamp(s.primaryDark, Pl, rP, "primary");
+  emitRamp(s.secondaryDark, Sl, rS, "secondary");
+  emitRamp(s.tertiaryDark, Tl, rT, "tertiary");
   const pf = dsPickDarkFill(rP), sf = dsPickDarkFill(rS), tf = dsPickDarkFill(rT);
   const pfg = dsPickDarkFg(rP);
-  // Gradient surfaces (sidebar / hero / CTA) read as a big vivid block in dark
-  // if they keep the brand ramp's 700→900. Instead anchor them on a DARK,
-  // low-saturation tint of the primary hue (surface-level lightness) so they
-  // feel like a primary-tinted PANEL — still recognisably the brand colour,
-  // but it recedes as a surface rather than shouting like a button.
-  const ph = dsRgbToHsl(dsHexToRgb(P) || [7, 78, 207]);
+  // Gradient surfaces (sidebar / hero / CTA): a DARK, low-saturation tint of the
+  // dark primary hue at surface-level lightness — a brand-tinted panel that
+  // recedes, not a vivid button.
+  const ph = dsRgbToHsl(dsHexToRgb(Pd) || [7, 78, 207]);
   const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.55), 0.115));
   const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.6), 0.06));
-  // Dark surfaces are tinted toward the PRIMARY hue, so the whole dark theme is
-  // in HARMONY with the brand — a warm primary gives warm greys, a cool primary
-  // cool greys. (Light mode does the opposite: the neutral BALANCES the primary;
-  // dark wants harmony.) The user can OVERRIDE the tint with s.darkSurface — its
-  // hue + saturation then drive the whole surface scale.
-  const surfHsl = s.darkSurface ? dsRgbToHsl(dsHexToRgb(s.darkSurface) || [33, 36, 41]) : ph;
+  // Dark surfaces harmonise with the dark primary (warm→warm greys, cool→cool).
+  // The Neutral dark column (s.neutralDark) overrides the surface temperature.
+  const surfHsl = s.neutralDark ? dsRgbToHsl(dsHexToRgb(s.neutralDark) || [33, 36, 41]) : ph;
   const hue = surfHsl[0];
-  const baseSat = Math.min(surfHsl[1] * (s.darkSurface ? 1.6 : 1), 0.18);   // stronger so the tint reads
+  const baseSat = Math.min(surfHsl[1] * (s.neutralDark ? 1.6 : 1), 0.18);
   const surf = (L, sat) => dsRgbToHex(dsHslToRgb(hue, sat === undefined ? baseSat : sat, L));
   const sTxt = Math.min(baseSat, 0.05);   // faint tint on light text so it gels
-  const lines = [
+  lines.push(
     `--primary-surface:${pf.fill};`,
     `--on-primary:${pf.onText};`,
     `--primary-fg:${pfg};`, `--primary-fg-emphasis:${pfg};`,
@@ -14402,11 +14410,12 @@ function buildDsDarkCss(s) {
     `--neutral-50:${surf(0.184)};`, `--neutral-70:${surf(0.205)};`, `--neutral-80:${surf(0.225)};`,
     `--neutral-100:${surf(0.31)};`, `--neutral-150:${surf(0.355)};`, `--neutral-200:${surf(0.42)};`,
     `--fg-default:${surf(0.905, sTxt)};`, `--fg-muted:${surf(0.69, sTxt)};`, `--fg-subtle:${surf(0.51, sTxt)};`,
-  ];
-  // Status colours adapt too — always (default values included) so the screen
-  // statuses/alerts/callouts don't read as pale blobs on the dark page.
+  );
+  // Status colours: dark base defaults to the light status colour; the dark
+  // steps (tinted dark chip + light label) derive from it.
   for (const name of DS_SEMANTIC) {
-    const d = dsSemanticDarkSteps(s[name] || DS_DEFAULTS[name]);
+    const darkBase = s[name + "ColorDark"] || s[name + "Color"] || DS_DEFAULTS[name];
+    const d = dsSemanticDarkSteps(darkBase);
     if (d) for (const k of Object.keys(d)) lines.push(`--${name}-${k}:${d[k]};`);
   }
   return ':root[data-theme="dark"]{\n  ' + lines.join("\n  ") + "\n}";
@@ -14542,9 +14551,12 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [useDefaultDs, setUseDefaultDs] = useState(false);
   const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
   const [dsSettings, setDsSettings] = useState({
+    // light set
     primary: null, secondary: null, tertiary: null, neutral: null,
     successColor: null, attentionColor: null, errorColor: null, infoColor: null,
-    darkSurface: null,   // dark-mode surface tint base; null = harmonise w/ primary
+    // dark set — null = follow light (accents/status) or harmonise (neutral)
+    primaryDark: null, secondaryDark: null, tertiaryDark: null, neutralDark: null,
+    successColorDark: null, attentionColorDark: null, errorColorDark: null, infoColorDark: null,
     paletteName: null,   // label of the applied Coolors preset (display only)
     roundness: 1,
     fontKey: DS_DEFAULTS.fontKey,
@@ -14872,41 +14884,59 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 disabled=${settings.schemeDark && !settings.schemeLight}
                 onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
               <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
-              ${settings.schemeDark && html`
-                <div className="dscz-sub-label" style=${{ marginTop: "10px" }}>Dark surface</div>
-                <${DsColorRow} label="Surface tint" value=${settings.darkSurface}
-                  fallback=${dsDarkSurfaceDefault(settings.primary || DS_DEFAULTS.primary)}
-                  onChange=${(v) => set({ darkSurface: v })} onReset=${() => set({ darkSurface: null })}/>
-                <div className="dscz-row-hint">The dark theme's surface temperature. Defaults to harmonise with the primary — pick a colour to set it yourself.</div>
-              `}
             </section>
 
             <section className="dscz-group">
-              <div className="dscz-group-label">Colour</div>
+              <div className="dscz-group-label">Colour ${settings.schemeDark && html`<span className="dscz-group-val">Light · Dark</span>`}</div>
               <${DsPaletteDropdown}
                 current=${settings.paletteName}
                 onApply=${(roles, name) => set({ primary: roles.primary, secondary: roles.secondary, tertiary: roles.tertiary, neutral: roles.neutral, paletteName: name })}/>
-              <${DsColorRow} label="Primary"   value=${settings.primary}   fallback=${DS_DEFAULTS.primary}
-                onChange=${(v) => set({ primary: v, paletteName: null })} onReset=${() => set({ primary: null, paletteName: null })}/>
-              <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
-                onChange=${(v) => set({ secondary: v, paletteName: null })} onReset=${() => set({ secondary: null, paletteName: null })}/>
-              <${DsColorRow} label="Tertiary" value=${settings.tertiary} fallback=${DS_DEFAULTS.tertiary}
-                onChange=${(v) => set({ tertiary: v, paletteName: null })} onReset=${() => set({ tertiary: null, paletteName: null })}/>
-              <${DsColorRow} label="Neutral (grey base)" value=${settings.neutral} fallback=${DS_DEFAULTS.neutral}
-                onChange=${(v) => set({ neutral: v })} onReset=${() => set({ neutral: null })}/>
+              <${DsColorRowLD} label="Primary" showDark=${settings.schemeDark}
+                light=${settings.primary} lightFb=${DS_DEFAULTS.primary}
+                dark=${settings.primaryDark} darkFb=${settings.primary || DS_DEFAULTS.primary}
+                onLight=${(v) => set({ primary: v, paletteName: null })} onResetLight=${() => set({ primary: null, paletteName: null })}
+                onDark=${(v) => set({ primaryDark: v })} onResetDark=${() => set({ primaryDark: null })}/>
+              <${DsColorRowLD} label="Secondary" showDark=${settings.schemeDark}
+                light=${settings.secondary} lightFb=${DS_DEFAULTS.secondary}
+                dark=${settings.secondaryDark} darkFb=${settings.secondary || DS_DEFAULTS.secondary}
+                onLight=${(v) => set({ secondary: v, paletteName: null })} onResetLight=${() => set({ secondary: null, paletteName: null })}
+                onDark=${(v) => set({ secondaryDark: v })} onResetDark=${() => set({ secondaryDark: null })}/>
+              <${DsColorRowLD} label="Tertiary" showDark=${settings.schemeDark}
+                light=${settings.tertiary} lightFb=${DS_DEFAULTS.tertiary}
+                dark=${settings.tertiaryDark} darkFb=${settings.tertiary || DS_DEFAULTS.tertiary}
+                onLight=${(v) => set({ tertiary: v, paletteName: null })} onResetLight=${() => set({ tertiary: null, paletteName: null })}
+                onDark=${(v) => set({ tertiaryDark: v })} onResetDark=${() => set({ tertiaryDark: null })}/>
+              <${DsColorRowLD} label="Neutral (grey base)" showDark=${settings.schemeDark}
+                light=${settings.neutral} lightFb=${DS_DEFAULTS.neutral}
+                dark=${settings.neutralDark} darkFb=${dsDarkSurfaceDefault(settings.primaryDark || settings.primary || DS_DEFAULTS.primary)}
+                onLight=${(v) => set({ neutral: v })} onResetLight=${() => set({ neutral: null })}
+                onDark=${(v) => set({ neutralDark: v })} onResetDark=${() => set({ neutralDark: null })}/>
+              ${settings.schemeDark && html`<div className="dscz-row-hint">Dark = its own set. Defaults follow light (neutral harmonises with the primary); edit any to give dark its own colours.</div>`}
 
               ${!showSemantic
                 ? html`<button type="button" className="dscz-morelink" onClick=${() => setShowSemantic(true)}>＋ Status colours (success · warning · error · info)</button>`
                 : html`
                   <div className="dscz-sub-label">Status colours</div>
-                  <${DsColorRow} label="Success" value=${settings.successColor} fallback=${DS_DEFAULTS.success}
-                    onChange=${(v) => set({ successColor: v })} onReset=${() => set({ successColor: null })}/>
-                  <${DsColorRow} label="Warning" value=${settings.attentionColor} fallback=${DS_DEFAULTS.attention}
-                    onChange=${(v) => set({ attentionColor: v })} onReset=${() => set({ attentionColor: null })}/>
-                  <${DsColorRow} label="Error" value=${settings.errorColor} fallback=${DS_DEFAULTS.error}
-                    onChange=${(v) => set({ errorColor: v })} onReset=${() => set({ errorColor: null })}/>
-                  <${DsColorRow} label="Info" value=${settings.infoColor} fallback=${DS_DEFAULTS.info}
-                    onChange=${(v) => set({ infoColor: v })} onReset=${() => set({ infoColor: null })}/>
+                  <${DsColorRowLD} label="Success" showDark=${settings.schemeDark}
+                    light=${settings.successColor} lightFb=${DS_DEFAULTS.success}
+                    dark=${settings.successColorDark} darkFb=${settings.successColor || DS_DEFAULTS.success}
+                    onLight=${(v) => set({ successColor: v })} onResetLight=${() => set({ successColor: null })}
+                    onDark=${(v) => set({ successColorDark: v })} onResetDark=${() => set({ successColorDark: null })}/>
+                  <${DsColorRowLD} label="Warning" showDark=${settings.schemeDark}
+                    light=${settings.attentionColor} lightFb=${DS_DEFAULTS.attention}
+                    dark=${settings.attentionColorDark} darkFb=${settings.attentionColor || DS_DEFAULTS.attention}
+                    onLight=${(v) => set({ attentionColor: v })} onResetLight=${() => set({ attentionColor: null })}
+                    onDark=${(v) => set({ attentionColorDark: v })} onResetDark=${() => set({ attentionColorDark: null })}/>
+                  <${DsColorRowLD} label="Error" showDark=${settings.schemeDark}
+                    light=${settings.errorColor} lightFb=${DS_DEFAULTS.error}
+                    dark=${settings.errorColorDark} darkFb=${settings.errorColor || DS_DEFAULTS.error}
+                    onLight=${(v) => set({ errorColor: v })} onResetLight=${() => set({ errorColor: null })}
+                    onDark=${(v) => set({ errorColorDark: v })} onResetDark=${() => set({ errorColorDark: null })}/>
+                  <${DsColorRowLD} label="Info" showDark=${settings.schemeDark}
+                    light=${settings.infoColor} lightFb=${DS_DEFAULTS.info}
+                    dark=${settings.infoColorDark} darkFb=${settings.infoColor || DS_DEFAULTS.info}
+                    onLight=${(v) => set({ infoColor: v })} onResetLight=${() => set({ infoColor: null })}
+                    onDark=${(v) => set({ infoColorDark: v })} onResetDark=${() => set({ infoColorDark: null })}/>
                 `}
             </section>
 
@@ -15127,6 +15157,43 @@ function DsColorRow({ label, value, fallback, onChange, onReset }) {
           }}/>
       </div>
       ${isCustom && html`<button type="button" className="dscz-reset" onClick=${onReset}>reset</button>`}
+    </div>
+  `;
+}
+
+/* Compact swatch + hex used inside the two-column Light/Dark rows. */
+function DsMiniColor({ value, fallback, onChange, onReset }) {
+  const current = value || fallback;
+  const isCustom = !!value && value.toUpperCase() !== fallback.toUpperCase();
+  return html`
+    <div className=${"dscz-mini" + (isCustom ? " is-custom" : "")}>
+      <label className="dscz-mini-sw" style=${{ background: current }}>
+        <input type="color" value=${current} onInput=${(e) => onChange(e.target.value.toUpperCase())}/>
+      </label>
+      <input className="dscz-mini-hex" type="text" spellCheck="false" value=${current}
+        onInput=${(e) => { const v = e.target.value.trim(); if (/^#?[0-9a-fA-F]{6}$/.test(v)) onChange((v[0] === "#" ? v : "#" + v).toUpperCase()); }}/>
+      ${isCustom && html`<button type="button" className="dscz-mini-reset" title="Reset to default" onClick=${onReset}>×</button>`}
+    </div>
+  `;
+}
+
+/* One role with a Light column and (when dark ships) a Dark column. The Dark
+   value defaults to following the light/harmony value but is fully editable. */
+function DsColorRowLD({ label, light, lightFb, dark, darkFb, onLight, onResetLight, onDark, onResetDark, showDark }) {
+  return html`
+    <div className="dscz-ld">
+      <span className="dscz-ld-label">${label}</span>
+      <div className=${"dscz-ld-cols" + (showDark ? " two" : "")}>
+        <div className="dscz-ld-col">
+          ${showDark && html`<span className="dscz-ld-tag">Light</span>`}
+          <${DsMiniColor} value=${light} fallback=${lightFb} onChange=${onLight} onReset=${onResetLight}/>
+        </div>
+        ${showDark && html`
+          <div className="dscz-ld-col">
+            <span className="dscz-ld-tag">Dark</span>
+            <${DsMiniColor} value=${dark} fallback=${darkFb} onChange=${onDark} onReset=${onResetDark}/>
+          </div>`}
+      </div>
     </div>
   `;
 }
