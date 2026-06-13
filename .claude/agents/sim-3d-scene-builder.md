@@ -42,8 +42,8 @@ Single-mesh-per-entity won't hold framerate above ~500 entities. Use `THREE.Inst
 ### 1.2 Pin three.js + OrbitControls from CDN
 
 ```js
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/OrbitControls.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/controls/OrbitControls.js';
 ```
 
 Cap `devicePixelRatio` at 2. Use `PerspectiveCamera` with fov ~50° (closer to natural perception than 75°).
@@ -106,8 +106,8 @@ Implement ONLY what the committed budget tier permits — `none | ambient | rich
 </style>
 <canvas id="scene-<simId>"></canvas>
 <script type="module">
-  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
-  import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/OrbitControls.js';
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
+  import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/controls/OrbitControls.js';
   import { ENTITY_KINDS, getByKind } from './entities.js';
 
   const canvas = document.getElementById('scene-<simId>');

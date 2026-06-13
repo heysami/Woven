@@ -30,6 +30,14 @@ export function beveledTextGeometry(THREE, font, text, opts) { ... }
 
 Pure factories — the scene drawer instantiates; you never touch the scene graph.
 
+**If research §2 committed `three.js-webgpu`** (3D_CAPABILITIES §1.4): the factories
+return **TSL node materials** — `MeshPhysicalNodeMaterial` with the SAME physical params
+below, or a node graph built from `three/tsl` imports (`uniform`, `float`, `mix`, fresnel
+nodes…). Same recipes, node authoring. Do NOT pair the webgpu renderer with a raw GLSL
+`ShaderMaterial` — TSL compiles to both WGSL and WebGL2; hand-GLSL breaks the fallback. The
+`env` arg is still the IBL texture; everything in §2 about env-map-mandatory holds harder
+on WebGPU (the whole reason to escalate is the IBL reflection quality).
+
 ## 2. The recipes that define the register (apply per cast entry's library file)
 
 - **Transmission glass family** (reeded / smoked / dispersion / frosted): `transmission: 1`, committed `ior` / `thickness` / `roughness` per entry; `dispersion` (r163+) ONLY where the entry calls for spectral fringing; reeded slicing comes from REAL geometry (half-cylinder displacement + computeVertexNormals), never a normal-map fake.

@@ -10,8 +10,8 @@ The "no build, opens by double-clicking" commitment is preserved. Scene librarie
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "three": "https://unpkg.com/three@0.178.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.178.0/examples/jsm/",
     "maplibre-gl": "https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.js",
     "openseadragon": "https://unpkg.com/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"
   }

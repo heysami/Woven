@@ -17,9 +17,11 @@ Self-contained page: importmap pinning three.js + postprocessing versions per re
 1. Creates the renderer per research §2 (ACES, exposure, DPR cap, alpha per integration mode).
 2. `await createScene(...)`; instantiates `createInteraction(...)`.
 3. Builds the post chain per research §3 — `EffectComposer` + ONE `EffectPass` merging bloom/AA/grain. Skip the composer entirely if research committed none (plain `renderer.render` is cheaper than a pass-through composer).
+
+**WebGPU branch** — if research §2 committed `three.js-webgpu` (3D_CAPABILITIES §1.4): pin `three/webgpu` + `three/tsl` in the importmap (NOT pmndrs `postprocessing` — it's WebGL-only); construct `WebGPURenderer` and `await renderer.init()` BEFORE the first frame (the loading veil in step 5 holds on this promise — a frame drawn pre-init is the classic WebGPU blank-flash); build the post chain from the **TSL post stack** (`three/addons/tsl/display/…`, the `PostProcessing` node) instead of `EffectComposer`. The WebGL2 fallback is automatic inside `WebGPURenderer` — your no-WebGPU path is the renderer's own, your no-WebGL path is still the static poster.
 4. The master rAF: `interaction.onFrame(t)` → `scene.onFrame(t)` → `composer.render()`. Paused on `document.hidden` and when the slot is off-screen (IntersectionObserver).
 5. **Loading veil**: the page paints the field color / poster IMMEDIATELY (CSS, ≤300ms), the canvas fades in over 400ms once the first frame renders. No white flash, no pop-in.
-6. **Fallback rungs** (research §8): rolling FPS meter over 120 frames → below threshold: DPR → 1.25 → drop post chain → swap to static poster (a baked screenshot you generate during self-test). No-WebGL → poster immediately.
+6. **Fallback rungs** (research §8): rolling FPS meter over 120 frames → below threshold: DPR → 1.25 → drop post chain → swap to static poster (a baked screenshot you generate during self-test). No-WebGL → poster immediately. (WebGPU pieces add a rung first per §1.4: drop the `Reflector` before the post chain — the mirror re-renders the scene and is the cheapest big win to shed.)
 7. **§12.3 devtools harness**: `window.__h3d = { scene, camera, subjects, setPointer(x,y), freeze(), resume(), perfStats() }` — the lens trios and Step-8 QA drive the scene through this.
 8. **§1.2 contract**: canvas `pointer-events: none` (unless research committed clickable subjects), all listeners passive, slot height bounded, `prefers-reduced-motion` → freeze ambient + parallax at the hero frame (composition intact, motion zero).
 

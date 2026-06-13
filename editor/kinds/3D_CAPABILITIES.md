@@ -1,11 +1,13 @@
 # 3D capabilities — render sources, texture policy, advanced effects
 
-Shared contract for every drawer that renders real 3D. Read by:
-`sim-3d-scene-builder`, `game-world-builder` (paradigm=`3d-environment`),
-`im-output-3d`, the narrative-experience 3D scene drawers, the generic `3d`
-drawer, and the research drawers that commit the fields in §4
-(`sim-research-technique`, `game-research-technique`, `im-research-technique`,
-`nx-research-technique`). The "3D must feel 3D" contract
+Shared contract for every drawer that renders real 3D. Read by: the hero-3d
+cluster (`hero-3d-orchestrator`, `h3d-research-technique`, `h3d-scene-author`,
+`h3d-material-author`, `h3d-runtime-composer` — the WebGPU/TSL escalation in
+§1.4 is theirs first), `sim-3d-scene-builder`, `game-world-builder`
+(paradigm=`3d-environment`), `im-output-3d`, the narrative-experience 3D scene
+drawers, the generic `3d` drawer, and the research drawers that commit the
+fields in §4 (`sim-research-technique`, `game-research-technique`,
+`im-research-technique`, `nx-research-technique`). The "3D must feel 3D" contract
 (`sim-3d-scene-builder.md §1.0` / capabilities.py HARD CHECK D) applies to
 EVERYTHING in this file — a textured, particle-dusted scene that is static and
 flat-lit still fails.
@@ -84,6 +86,72 @@ returns a textured PBR `.glb`.
   `InstancedMesh` when the brief wants a field of them.
 - If Meshy is NOT wired: build the hero from three.js primitives/CSG +
   §2 textures. Do not block the whole piece on a missing provider.
+
+### 1.4 `three.js-webgpu` — WebGPURenderer + TSL (the high-fidelity escalation)
+
+**When:** material quality IS the message — refractive / dispersion glass,
+chrome luxe, polished-floor product heroes, the "how is this running in a
+browser" tier. Reference-grade exemplar: **vectrfl.com** (Astro shell + a single
+hydrated three.js island: WebGPURenderer→WebGL2 fallback, TSL node materials,
+HDR-IBL, Draco glTF, KTX2 textures, a mirror floor, GSAP ScrollTrigger). Escalate
+here from §1.1 when the piece is a hero-3d / `showcase` scene AND the lead
+material needs physically-correct reflection/refraction under IBL. This is NOT
+the default — plain `three.js` (§1.1) stays the standing pick for sim / game /
+everyday 3D; it carries a bundle + an async-init cost you only pay back when the
+materials are the spectacle.
+
+**What it is:** the SAME three.js, swapping `WebGLRenderer` for
+`WebGPURenderer` (`three/webgpu`), which **auto-falls-back to WebGL2** when
+`navigator.gpu` is absent. Shaders are authored in **TSL (Three Shading
+Language)** node materials (`three/tsl`) — one shader graph compiles to BOTH
+WGSL (WebGPU) and GLSL (WebGL2), so you write the material once and it runs on
+every device. This is the only renderer path where you do NOT hand-fork a
+backend; do not pair raw GLSL `ShaderMaterial` with it.
+
+**The recipe that makes it look expensive** (copy vectrfl's exact stack):
+- **HDR/EXR environment map** for image-based lighting → `HDRLoader` /
+  `EXRLoader` + `PMREMGenerator`. This IS the reflections; metals and glass are
+  invisible without it. (§1.1's `RoomEnvironment` is the no-asset fallback.)
+- **Draco-compressed glTF** hero meshes → `GLTFLoader` + `DRACOLoader` (decoder
+  from the pinned CDN). ~20× smaller payload than raw `.glb`.
+- **KTX2 / Basis** GPU-compressed textures → `KTX2Loader`; loads to VRAM
+  already compressed. Reach for it above a couple of 2K maps.
+- **Reflective floor** → `Reflector` (mirror) or a roughness-mapped ground plane
+  catching the IBL. The polished-ground reflection is most of why these scenes
+  read as "rendered, not real-time." ONE reflector max — it re-renders the scene
+  (§3.2 cost), never on mobile.
+- **`InstancedMesh`** for any repeated geometry; **GSAP `ScrollTrigger`** for
+  scroll-driven camera/material choreography (the binding lives in the
+  interaction drawer, not here).
+
+**Import pins** (importmap — bump in lockstep across `three`, `three/tsl`,
+`three/addons/`):
+
+```json
+{ "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.webgpu.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.tsl.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/" }
+```
+```js
+import * as THREE from 'three';
+import { uniform, float, mix, /* … */ } from 'three/tsl';
+const renderer = new THREE.WebGPURenderer({ antialias: true, alpha: true });
+await renderer.init();          // WebGPU init is ASYNC — gate the first frame on it
+```
+
+**Rules / gates:**
+- `renderer.init()` is **async** — the loading veil holds until it resolves;
+  never start the loop before init (this is why the runtime composer owns the
+  veil for WebGPU pieces).
+- Post-processing uses the **TSL post stack** (`three/addons/tsl/display/…`,
+  the `PostProcessing` node), NOT pmndrs `postprocessing` (WebGL-only). At
+  `rich`/`showcase` budget only (§3.6 / §4).
+- **Perf fallback adds one rung above §1.1's:** WebGPU→WebGL2 is automatic; if
+  even WebGL2 + the post stack misses the fps floor, drop the reflector first,
+  then the post stack, then DPR. §4 lens-gating thresholds are unchanged.
+- The "3D must feel 3D" contract (§1.0) is verified identically — a WebGPU scene
+  that is static and flat-lit still fails. The renderer never earns the pass;
+  the light story + ambient motion do.
 
 ## 2. Texture policy — "if the style permits, the object gets a texture"
 
@@ -209,10 +277,16 @@ fields (the scene drawer does not improvise them):
 
 ```markdown
 ## Committed 3D extras
-- renderSource:  three.js | spline | three.js+gltf | hybrid   (+ scene URL / model list if not pure three.js)
+- renderSource:  three.js | three.js-webgpu | spline | three.js+gltf | hybrid   (+ scene URL / model list if not pure three.js; §1.4 if webgpu)
 - texturePolicy: none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres
 - effectsBudget: none | ambient | rich | showcase   (+ which §3 effects, named)
 ```
+
+`three.js-webgpu` (§1.4) is reserved for `effectsBudget: rich`/`showcase`
+material-bearing heroes — it almost always pairs with `texturePolicy:
+pbr-generated` (or a Meshy/Draco glb's baked PBR set) under an HDR environment.
+Committing it on an `ambient`/`none-flat` piece is a research error: the
+async-init + bundle cost buys nothing a flat-lit `three.js` scene wouldn't.
 
 | `effectsBudget` | Permits |
 |---|---|

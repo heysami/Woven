@@ -36,7 +36,8 @@ Division of labor is strict: **you own ambient idle** (drift / turntable / breat
 
 - ONE hero subject (or one cluster ≤ 30 bodies) — never competing subjects.
 - Monochrome scene discipline: field + subject + light share one hue family; ≤ 1 accent (research §4 commits it).
-- ONE light story: env + single key direction; every specular agrees. Volumetric shafts (if cast) originate from the SAME corner as the key.
+- ONE light story: env + single key direction; every specular agrees. Volumetric shafts (if cast) originate from the SAME corner as the key. On `three.js-webgpu` heroes (3D_CAPABILITIES §1.4) the env is a real HDR/EXR map (`HDRLoader`+`PMREMGenerator`) — it carries the reflections, so the key light is for shape, not specular fill.
+- Polished-ground register → a `Reflector` mirror floor (or roughness-mapped plane catching the IBL) is what sells "rendered, not real-time"; ONE max, build it here, expose nothing animatable on it. Skip on mobile per §1.4 / §3.2 cost.
 - Subject anchored opposite the quiet zone; verify the quiet zone holds at the motion arc's EXTREMES (idle drift max + parallax max), not just the hero pose.
 - Full-bleed integration: scene background per research §2 (color, or `alpha: true` transparent over DOM).
 - No flat resting state — onFrame's idle must read alive within 3 seconds of load.

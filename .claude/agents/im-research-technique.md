@@ -61,7 +61,7 @@ That's it. No precedent essays. No "mapping philosophy" deep-dives. The §8.3 le
 |---|---|---|---|
 | `shader` | WebGL2 fragment shader, fullscreen quad, uniforms | Update uniforms in mapping handler, draw per rAF | <16ms |
 | `particle` | WebGL2 instanced quads + transform feedback OR canvas2D + object pool | Per-particle update in compute shader OR JS pool | <16ms |
-| `3d` | three.js InstancedMesh or BatchedMesh | Update instance matrices in mapping handler | <16ms |
+| `3d` | three.js InstancedMesh or BatchedMesh (escalate to `three.js-webgpu` + TSL, 3D_CAPABILITIES §1.4, ONLY when mapping modulates real material physics — glass IOR / chrome roughness under IBL — never for a uniform-driven gradient) | Update instance matrices / TSL uniforms in mapping handler | <16ms |
 | `audio` | WebAudio nodes (Osc / Gain / BiquadFilter / Convolver / AudioWorklet) | Update node params via .value or AudioParam.linearRampToValueAtTime; AudioWorklet for custom DSP | <5ms (audio thread) |
 
 #### 2.2.1 Optional shader sub-flag: `feedback`

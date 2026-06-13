@@ -101,6 +101,7 @@ At the declared entity count, which rendering primitive holds 60 fps?
 For 3D: `three.js` is the default; below 1000 entities single meshes work; above use `InstancedMesh` or `BatchedMesh`.
 
 **3D render sources, textures, effects — read `editor/kinds/3D_CAPABILITIES.md` when paradigm=`3d-environment`.** Beyond plain three.js you may commit:
+- `renderSource: three.js-webgpu` — WebGPURenderer + TSL (doc §1.4) when the SCENE itself is a material showpiece (a glossy data-sculpture, a refractive instrument). Rare for a sim — most sims read better as legible flat-lit worlds than render-quality showpieces; commit it only when the material IS the insight, not as default polish.
 - `renderSource: spline` — the Spline runtime (`@splinetool/runtime`) when the brief calls for a DESIGNED 3D register AND a scene source exists (user-provided `.splinecode` URL / export, or a Spline-exported glTF loaded via three.js). Hard gate: agents cannot synthesize `.splinecode`; if the user wants Spline-grade 3D with no scene source, surface a `<decision-request>` for one.
 - `renderSource: three.js+gltf` — Meshy text-to-3D hero meshes when `TH_MESHY_API_KEY` is wired (`GET /__capabilities`).
 - `texturePolicy` — if the style permits, 3D objects get textures (generated tileable maps via visual-orchestrator co-dispatch, matcaps, or procedural CanvasTexture). Pick from the §2 table: `none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres`.
@@ -162,7 +163,7 @@ Why: {1-2 sentences, anchored in the intent's spatial/temporal/relational shape 
 Why: {1-2 sentences. If real-world target named in intent, this is one of the §2.0 mandated candidates — name it.}
 
 ## Committed 3D extras (paradigm=3d-environment only — delete this section otherwise)
-- renderSource:  **{three.js | spline | three.js+gltf | hybrid}** {+ scene URL / model list if not pure three.js}
+- renderSource:  **{three.js | three.js-webgpu | spline | three.js+gltf | hybrid}** {+ scene URL / model list if not pure three.js; doc §1.4 if webgpu}
 - texturePolicy: **{none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres}** — {1 line: which style register earns it}
 - effectsBudget: **{none | ambient | rich | showcase}** — {named §3 effects from editor/kinds/3D_CAPABILITIES.md, e.g. "gerstner water plane + ≤2k dust motes"}
 

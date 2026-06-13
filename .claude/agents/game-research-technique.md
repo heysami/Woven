@@ -57,7 +57,7 @@ No precedent essays. No mental-model bullets. No accessibility deep-dives. The �
 | `hybrid` | composition (e.g. PixiJS overlay over three.js room) | per-region |
 
 **For `3d-environment`, also read `editor/kinds/3D_CAPABILITIES.md` and commit the three 3D-extras fields** (the world drawer does not improvise them):
-- `renderSource` — `three.js` (default) / `spline` (the Spline runtime, ONLY when a `.splinecode` scene source exists — user-provided URL or export; agents cannot synthesize one) / `three.js+gltf` (Meshy text-to-3D hero meshes when `TH_MESHY_API_KEY` is wired).
+- `renderSource` — `three.js` (default) / `three.js-webgpu` (WebGPURenderer + TSL, doc §1.4 — only for a material-as-message world: glossy product-arena, refractive set-pieces; rarely worth the async-init cost in a fast game loop) / `spline` (the Spline runtime, ONLY when a `.splinecode` scene source exists — user-provided URL or export; agents cannot synthesize one) / `three.js+gltf` (Meshy text-to-3D hero meshes when `TH_MESHY_API_KEY` is wired).
 - `texturePolicy` — if the style permits, 3D objects get textures: `none-flat | matcap-stylized | painted-plates | pbr-generated | pixel-lowres` per the doc's §2 table.
 - `effectsBudget` — particles / water / cloth / strand-hair / fur per the doc's §3 catalog: `none | ambient | rich | showcase`, with the named effects. Cross-check against the juice register — feedback-drawer particles (screen juice) and world-drawer effects (environmental) share the performance budget.
 

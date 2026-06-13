@@ -44,10 +44,12 @@ Self-check in §4 internal refinement: `preview_eval` `window.__output_3d.applyM
 ### 3.1 three.js from CDN, pinned
 
 ```js
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
 // Optional: OrbitControls — only if the piece has user-driven camera
 // (most interactive pieces have the MAPPING drive the camera, not the user)
 ```
+
+If research committed `renderSource: three.js-webgpu` (3D_CAPABILITIES §1.4), pin `three/webgpu` + `three/tsl` instead, construct `WebGPURenderer`, and `await renderer.init()` before the first frame — drive TSL material uniforms from mapping output exactly as you'd drive `ShaderMaterial` uniforms here. Reserve it for material-bearing pieces (the mapping modulating glass IOR / chrome roughness under IBL is the concept); a particle field or uniform-driven gradient does NOT need it and pays an async-init cost for nothing.
 
 ### 3.2 Lighting matches creative brief
 
@@ -110,7 +112,7 @@ Read `editor/kinds/3D_CAPABILITIES.md` and obey research.md's committed 3D extra
      References: <three.js examples gallery URL> -->
 <canvas id="scene-3d-canvas" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
 <script type="module">
-  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js';
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
 
   const canvas = document.getElementById('scene-3d-canvas');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -221,7 +223,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_output_<imId>_3d/commit?pro
     "outputs": {
       "iterationCount": <N>,
       "medium": "3d",
-      "threejsVersion": "0.163.0",
+      "threejsVersion": "0.178.0",
       "instanceCount": <N>,
       "consumesIndices": [0, 1, 2],
       "fpsObserved": <N>,
