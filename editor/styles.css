@@ -1623,6 +1623,24 @@ button {
   padding-top: 0;
 }
 
+.proto-catalog-card-reveal {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 120ms, color 120ms;
+}
+.proto-catalog-card-reveal:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .proto-catalog-thumb {
   margin: 0;
   display: flex; flex-direction: column;
@@ -3730,6 +3748,53 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-color: var(--accent);
 }
 .workflow-node-top-action:active { transform: translateY(1px); }
+
+/* Submenu dropdown for a top-action carrying `menu` (e.g. the prototype
+   node's Views button → User flow / IA / Timeline). Anchored under the
+   button by WorkflowNodeTopActions; same surface/shadow language as the
+   action buttons. */
+.workflow-node-top-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 196px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.workflow-node-top-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.workflow-node-top-menu-item:hover {
+  background: var(--surface-2);
+}
+.workflow-node-top-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--text-muted);
+  flex: none;
+}
+.workflow-node-top-menu-item:hover .workflow-node-top-menu-icon {
+  color: var(--text);
+}
+.workflow-node-top-menu-label { flex: 1; }
 
 /* v3.8 — Connector-spawn chrome: floating ⊕ buttons at the left/right
    connector midpoints of the selected node, plus the spawn-menu popover.
@@ -21963,6 +22028,47 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   gap: 6px;
   flex: none;
 }
+/* Share-first empty state — shown when the prototype has no share yet.
+   Foregrounds publishing before any comment chrome. */
+.workflow-comments-share-first {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 28px 22px;
+}
+.workflow-comments-share-first-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.workflow-comments-share-first-glyph svg { width: 22px; height: 22px; }
+.workflow-comments-share-first-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+}
+.workflow-comments-share-first-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 260px;
+}
+.workflow-comments-share-first-body code {
+  font: 10.5px var(--font-mono);
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.workflow-comments-share-first .workflow-comments-share-cta { margin-top: 2px; }
 .workflow-comments-share-cta {
   display: inline-flex;
   align-items: center;

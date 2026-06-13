@@ -608,6 +608,17 @@ const Icon = {
   Bell:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M5 7a3 3 0 016 0c0 3 1 4 1 4H4s1-1 1-4z"/><path d="M6.8 13.5a1.4 1.4 0 002.4 0"/></svg>`,
   ExportBox:() => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2v8M5 5l3-3 3 3"/><path d="M3 10v3a1 1 0 001 1h8a1 1 0 001-1v-3"/></svg>`,
   ImportBox:() => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 10V2M5 7l3 3 3-3"/><path d="M3 10v3a1 1 0 001 1h8a1 1 0 001-1v-3"/></svg>`,
+  // Download: down-arrow into a baseline tray — distinct from ImportBox's
+  // full box. Per-node Export buttons use this (the share glyph took over
+  // the box-with-up-arrow read).
+  Download: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2.5v7M4.5 6.5L8 9.5l3.5-3"/><path d="M3 13h10"/></svg>`,
+  // FolderUp: a big folder with a small upload arrow tucked into the
+  // bottom-right corner — the per-project "export folder destination" mark
+  // for the toolbar Exports button.
+  FolderUp: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M1.8 4.4a.9.9 0 01.9-.9h2.7l1.3 1.4h3.7a.9.9 0 01.9.9V8.2"/><path d="M1.8 6.2v5a.9.9 0 00.9.9h4.5"/><path d="M12 15v-4M10.4 12.6L12 11l1.6 1.6"/></svg>`,
+  // Share: three connected nodes — the canonical share affordance. Replaces
+  // the comment glyph on the prototype node's share toggle.
+  Share:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="12" cy="3.8" r="1.9"/><circle cx="12" cy="12.2" r="1.9"/><circle cx="4" cy="8" r="1.9"/><path d="M5.7 7.1l4.6-2.4M5.7 8.9l4.6 2.4"/></svg>`,
   Check:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8.5l3.5 3.5L13 5"/></svg>`,
   Circle:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="5.5"/></svg>`,
   Save:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 2.5h8.5L13.5 5v8.5a.5.5 0 01-.5.5H3a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"/><path d="M5 2.5v3.5h5V2.5M5.5 9.5h5"/></svg>`,
@@ -8398,7 +8409,7 @@ function WorkflowExportsButton({ onClick, className }) {
     data-tip-host="true"
     aria-label="Exports"
     onClick=${onClick}
-  ><${Icon.ExportBox}/><span className="tab-tip">Exports</span></button>`;
+  ><${Icon.FolderUp}/><span className="tab-tip">Exports</span></button>`;
 }
 
 
@@ -15662,6 +15673,16 @@ function PrototypeGenreCard({ item, category, onZoom }) {
         <div className="proto-catalog-card-summary">${item.summary}</div>
       `}
 
+      ${!open && hasImages && html`
+        <button
+          type="button"
+          className="proto-catalog-card-reveal"
+          onClick=${() => setOpen(true)}
+          title="Show reference images"
+        >Show ${item.images.length} reference image${item.images.length === 1 ? "" : "s"} ▾</button>
+      `}
+
+      ${open && html`
       <div className="proto-catalog-card-imgstrip" data-empty=${!hasImages}>
         ${hasImages
           ? item.images.map((img, i) => html`
@@ -15691,6 +15712,7 @@ function PrototypeGenreCard({ item, category, onZoom }) {
               </div>
             `}
       </div>
+      `}
 
       ${open && html`
         <div className="proto-catalog-card-meta">
@@ -22241,6 +22263,10 @@ function ExportPromptHost() {
 function WorkflowNodeTopActions({ nodeId, selected, actions }) {
   const [rect, setRect] = useState(null);
   const [tipState, setTipState] = useState(null);
+  // Submenu — an action carrying `menu: [{key,label,icon,onClick}]` opens a
+  // dropdown anchored under its button instead of firing directly. Holds
+  // { key, items, left, top } (screen coords of the anchor button) or null.
+  const [menu, setMenu] = useState(null);
   // v3.5.5 — Smooth tracking. rAF runs every frame; setRect fires when the
   // rect changes (every frame during pan/zoom is fine — React 18 batches
   // them and the render is cheap). No longer pauses on __thCanvasInteracting
@@ -22268,6 +22294,23 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [nodeId, selected]);
+  // Close the submenu on outside-click / Escape, and whenever the node
+  // deselects. Listener only mounts while a menu is open.
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e) => {
+      if (e.target && e.target.closest && e.target.closest(".workflow-node-top-menu")) return;
+      setMenu(null);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setMenu(null); };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+  useEffect(() => { if (!selected) setMenu(null); }, [selected]);
   const visibleActions = (actions || []).filter(Boolean);
   if (!selected || !rect || visibleActions.length === 0) return null;
   // 32×32 button matches the pick-badge sizing; 4px between buttons; 6px
@@ -22319,11 +22362,24 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
         ${visibleActions.map(a => html`
           <button
             key=${a.key}
-            className=${"workflow-node-top-action" + (a.active ? " is-on" : "") + (a.className ? " " + a.className : "")}
+            className=${"workflow-node-top-action" + ((a.active || (menu && menu.key === a.key)) ? " is-on" : "") + (a.className ? " " + a.className : "")}
             data-node-id=${nodeId}
             disabled=${!!a.disabled}
+            aria-haspopup=${a.menu ? "menu" : undefined}
+            aria-expanded=${a.menu ? (menu && menu.key === a.key ? "true" : "false") : undefined}
             onMouseDown=${(e) => e.stopPropagation()}
-            onClick=${(e) => { e.stopPropagation(); if (a.onClick) a.onClick(); }}
+            onClick=${(e) => {
+              e.stopPropagation();
+              if (a.menu) {
+                // Toggle the dropdown anchored to this button.
+                if (menu && menu.key === a.key) { setMenu(null); return; }
+                clearTip();
+                const r = e.currentTarget.getBoundingClientRect();
+                setMenu({ key: a.key, items: a.menu, left: r.left, top: r.bottom + 4 });
+                return;
+              }
+              if (a.onClick) a.onClick();
+            }}
             onMouseEnter=${(e) => showTip(a.key, e.currentTarget, a.tip)}
             onMouseLeave=${clearTip}
             onFocus=${(e) => showTip(a.key, e.currentTarget, a.tip)}
@@ -22332,6 +22388,27 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
           >${a.icon}</button>
         `)}
       </div>
+      ${menu ? html`
+        <div
+          className="workflow-node-top-menu"
+          role="menu"
+          style=${{ position: "fixed", left: menu.left + "px", top: menu.top + "px", zIndex: 50 }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >
+          ${menu.items.map(it => html`
+            <button
+              key=${it.key}
+              className="workflow-node-top-menu-item"
+              role="menuitem"
+              onMouseDown=${(e) => e.stopPropagation()}
+              onClick=${(e) => { e.stopPropagation(); setMenu(null); if (it.onClick) it.onClick(); }}
+            >
+              <span className="workflow-node-top-menu-icon">${it.icon}</span>
+              <span className="workflow-node-top-menu-label">${it.label}</span>
+            </button>
+          `)}
+        </div>
+      ` : null}
       ${tipBubble}
     <//>
   `, document.body);
@@ -38608,21 +38685,30 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
       onWheel=${(e) => e.stopPropagation()}
     >
       <div className="workflow-comments-panel-bar">
-        <span className="workflow-comments-panel-glyph"><${Icon.Comment}/></span>
-        <span className="workflow-comments-panel-title">Comments · source/${slug}/</span>
+        <span className="workflow-comments-panel-glyph"><${Icon.Share}/></span>
+        <span className="workflow-comments-panel-title">Share · source/${slug}/</span>
         <button className="workflow-comments-panel-close" title="Close" onClick=${onClose}>×</button>
       </div>
-      <div className="workflow-comments-share">
-        ${!share && html`
+      ${!share && html`
+        <div className="workflow-comments-share-first">
+          <div className="workflow-comments-share-first-glyph"><${Icon.Share}/></div>
+          <div className="workflow-comments-share-first-title">Share this prototype</div>
+          <div className="workflow-comments-share-first-body">
+            Publish <code>source/${slug}/</code> through a Cloudflare quick tunnel.
+            Anyone with the link can open it and pin feedback — their comments show up right here.
+          </div>
           <button key="cta" className="workflow-comments-share-cta" disabled=${shareBusy || !cloudflared}
             title=${cloudflared
               ? "Publish this prototype through a Cloudflare quick tunnel — anyone with the link can review + comment"
               : "cloudflared not installed — brew install cloudflared, then retry"}
             onClick=${shareCreate}
           ><${Icon.Globe}/> ${shareBusy ? "Publishing…" : "Share via tunnel"}</button>
-          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">Install via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>)</div>`}
-        `}
-        ${share && html`
+          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">cloudflared not installed — set it up via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>)</div>`}
+          ${err && html`<div className="workflow-comments-err">${err}</div>`}
+        </div>
+      `}
+      ${share && html`
+      <div className="workflow-comments-share">
           <div key="srow" className="workflow-comments-share-row">
             <span className=${"shares-dot is-" + stMeta[0]}></span>
             <span className="workflow-comments-share-status">${stMeta[1]}</span>
@@ -38639,7 +38725,6 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
               <button className="shares-btn" onClick=${() => window.open(share.shareUrl, "_blank")} title="Open the share link">↗</button>
             </div>
           `}
-        `}
         ${err && html`<div className="workflow-comments-err">${err}</div>`}
       </div>
       <div className="workflow-comments-filters">
@@ -38720,6 +38805,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
           onClick=${sendToAgent}
         >${busy ? "Dispatching…" : `Send ${selectedIds.length || ""} to agent`}</button>
       </div>
+      `}
     </div>
   `;
 }
@@ -39791,6 +39877,20 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
           onMouseDown=${(e) => e.stopPropagation()}
         >⚙</>
         <${HoverTip}
+          className="workflow-node-action workflow-node-action-export"
+          tip=${"Export — bundle this " + (
+                  family === "simulation" ? "simulation"
+                : family === "interactive" ? "interactive piece"
+                : family === "narrative"   ? "narrative experience"
+                : family === "game"        ? "game experience"
+                : family === "scrapbook"   ? "scrapbook experience"
+                : family === "polish"      ? "interactive-polish pass"
+                : "experience") + "'s source tree (including runtime.html, every drawer-committed file, and the bundled design system if referenced) + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). The README's Entry pointer goes straight at the runtime.html for this " + familyLabel + "."}
+          ariaLabel=${"Export " + familyLabel}
+          onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title || (familyLabel + ":" + (assetId || ""))); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Download}/><//>
+        <${HoverTip}
           className="workflow-node-close"
           tip="Remove this container from the canvas (does not delete files on disk)."
           ariaLabel="Remove from canvas"
@@ -39843,27 +39943,6 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
 
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
       <${WorkflowNodeStagePill} nodeId=${node.id}/>
-      ${selected && html`<${WorkflowNodeTopActions}
-        nodeId=${node.id}
-        selected=${selected}
-        actions=${[
-          {
-            key: "export",
-            icon: html`<${Icon.ExportBox}/>`,
-            tip: "Export — bundle this " + (
-                  family === "simulation" ? "simulation"
-                : family === "interactive" ? "interactive piece"
-                : family === "narrative"   ? "narrative experience"
-                : family === "game"        ? "game experience"
-                : family === "scrapbook"   ? "scrapbook experience"
-                : family === "polish"      ? "interactive-polish pass"
-                : "experience") + "'s source tree (including runtime.html, every drawer-committed file, and the bundled design system if referenced) + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). The README's Entry pointer goes straight at the runtime.html for this " + familyLabel + ".",
-            ariaLabel: "Export " + familyLabel,
-            onClick: () => runExportForNode(node.id, node.label || node.title || (familyLabel + ":" + (assetId || ""))),
-            className: "workflow-node-top-action-export",
-          },
-        ]}
-      />`}
     </div>
   `;
 }
@@ -40990,6 +41069,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.List}/><//>
         <${HoverTip}
+          className="workflow-node-action workflow-node-action-export"
+          tip="Export — bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar)."
+          ariaLabel="Export prototype"
+          onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Download}/><//>
+        <${HoverTip}
           className="workflow-node-close"
           tip="Remove this prototype instance from the canvas (does not delete files on disk)."
           ariaLabel="Remove from canvas"
@@ -41149,15 +41235,15 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             className: "workflow-node-top-action-code",
           },
           onToggleComments && {
-            key: "comments",
-            icon: html`<${Icon.Comment}/>`,
+            key: "share",
+            icon: html`<${Icon.Share}/>`,
             tip: commentsOpen
-              ? "Hide comments — close the review-comments dock."
-              : "Comments & sharing — dock the review-comment threads for this prototype (share it via a Cloudflare tunnel, triage reviewer feedback, send selected comments to the agent).",
-            ariaLabel: "Show share comments",
+              ? "Hide share panel."
+              : "Share — publish this prototype via a Cloudflare tunnel so anyone with the link can review it. Reviewer comments land in the same panel.",
+            ariaLabel: "Share prototype",
             active: commentsOpen,
             onClick: onToggleComments,
-            className: "workflow-node-top-action-comments",
+            className: "workflow-node-top-action-share",
           },
           onOpenCanvasFrames && {
             key: "canvas-frames",
@@ -41168,28 +41254,16 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             className: "workflow-node-top-action-canvas-frames",
           },
           onOpenPrototypeView && {
-            key: "userflow",
-            icon: html`<${Icon.Flow}/>`,
-            tip: "Open user flow — spawn a read-only node showing the editor's User flow view for this prototype.",
-            ariaLabel: "Open user flow",
-            onClick: () => onOpenPrototypeView(node, "userflow"),
-            className: "workflow-node-top-action-userflow",
-          },
-          onOpenPrototypeView && {
-            key: "ia",
-            icon: html`<${Icon.Tree}/>`,
-            tip: "Open information architecture — spawn a read-only node showing the editor's IA view for this prototype.",
-            ariaLabel: "Open information architecture",
-            onClick: () => onOpenPrototypeView(node, "ia"),
-            className: "workflow-node-top-action-ia",
-          },
-          onOpenPrototypeView && {
-            key: "timeline",
-            icon: html`<${Icon.Clock}/>`,
-            tip: "Open timeline — spawn a read-only node showing the editor's Timeline view for this prototype.",
-            ariaLabel: "Open timeline",
-            onClick: () => onOpenPrototypeView(node, "timeline"),
-            className: "workflow-node-top-action-timeline",
+            key: "views",
+            icon: html`<${Icon.Eye}/>`,
+            tip: "Open a view — spawn a read-only User flow / Information architecture / Timeline node for this prototype.",
+            ariaLabel: "Open prototype view",
+            className: "workflow-node-top-action-views",
+            menu: [
+              { key: "userflow", icon: html`<${Icon.Flow}/>`,  label: "User flow",                onClick: () => onOpenPrototypeView(node, "userflow") },
+              { key: "ia",       icon: html`<${Icon.Tree}/>`,  label: "Information architecture", onClick: () => onOpenPrototypeView(node, "ia") },
+              { key: "timeline", icon: html`<${Icon.Clock}/>`, label: "Timeline",                 onClick: () => onOpenPrototypeView(node, "timeline") },
+            ],
           },
           onZoom && {
             key: "zoom",
@@ -41198,14 +41272,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             ariaLabel: "Zoom",
             onClick: onZoom,
             className: "workflow-node-top-action-zoom",
-          },
-          {
-            key: "export",
-            icon: html`<${Icon.ExportBox}/>`,
-            tip: "Export — bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar).",
-            ariaLabel: "Export prototype",
-            onClick: () => runExportForNode(node.id, node.label || node.title),
-            className: "workflow-node-top-action-export",
           },
         ]}
       />`}
@@ -43468,6 +43534,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           >📜<//>
         `}
         <${HoverTip}
+          className="workflow-node-action workflow-node-action-export"
+          tip="Export — bundle this asset into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate."
+          ariaLabel="Export asset"
+          onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Download}/><//>
+        <${HoverTip}
           className="workflow-node-close"
           tip="Remove this asset card from the canvas (does not delete files on disk)."
           ariaLabel="Remove asset card"
@@ -43701,14 +43774,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             ariaLabel: "Zoom",
             onClick: onZoom,
             className: "workflow-node-top-action-zoom",
-          },
-          {
-            key: "export",
-            icon: html`<${Icon.ExportBox}/>`,
-            tip: "Export — bundle this asset into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate.",
-            ariaLabel: "Export asset",
-            onClick: () => runExportForNode(node.id, node.label || node.title),
-            className: "workflow-node-top-action-export",
           },
         ]}
       />`}
@@ -50017,6 +50082,13 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         ${badge}
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}
+          className="workflow-node-action workflow-node-action-export"
+          tip="Export — bundle this design system into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). The bundle contains design-systems/<dsId>/ with DESIGN.md (token + component spec), styles.css (CSS variables + base styles), and gallery.html (every component rendered together), plus a README and a port-fallback static server so gallery.html opens with one click."
+          ariaLabel="Export design system"
+          onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title || ("ds:" + (dsId || ""))); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Download}/><//>
+        <${HoverTip}
           className="workflow-node-close"
           tip=${"Remove this node from the canvas (does NOT delete design-systems/" + dsId + "/ on disk)."}
           ariaLabel="Remove DS node"
@@ -50240,20 +50312,6 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
 
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
       <${WorkflowNodeStagePill} nodeId=${node.id}/>
-      ${selected && html`<${WorkflowNodeTopActions}
-        nodeId=${node.id}
-        selected=${selected}
-        actions=${[
-          {
-            key: "export",
-            icon: html`<${Icon.ExportBox}/>`,
-            tip: "Export — bundle this design system into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). The bundle contains design-systems/<dsId>/ with DESIGN.md (token + component spec), styles.css (CSS variables + base styles), and gallery.html (every component rendered together), plus a README and a port-fallback static server so gallery.html opens with one click.",
-            ariaLabel: "Export design system",
-            onClick: () => runExportForNode(node.id, node.label || node.title || ("ds:" + (dsId || ""))),
-            className: "workflow-node-top-action-export",
-          },
-        ]}
-      />`}
     </div>
   `;
 }
@@ -53593,7 +53651,7 @@ function WorkflowExportsSection({ activeProjectId: activePid }) {
   };
   return html`
     <div className="workflow-settings-section-group-sub">
-      Per-asset Export (the ⤓ button on a selected node's top-right) drops a self-contained bundle into this folder — README, port-fallback static server, and the right files (prototype tree + bundled design system, or a single asset under <code>${"resources/<kind>/"}</code>).
+      Set asset export folder file location for this project.
     </div>
     ${projects === null
       ? html`<div className="workflow-settings-section"><span className="workflow-settings-localhint">loading projects…</span></div>`
