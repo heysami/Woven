@@ -873,17 +873,19 @@ a:hover { text-decoration:underline; }
    Ramps, radius, spacing, and type stay on :root and are inherited.
    ========================================================================== */
 :root[data-theme="dark"]{
-  /* surfaces */
-  --surface:#15181E; --surface-default:#1C2027; --surface-medium:#232831; --surface-strong:#2C313C;
+  /* surfaces — a comfortable dark grey, deliberately LIGHTER than the primary
+     gradient (which anchors below them), so the content reads as the canvas
+     and the brand sidebar/hero recedes as a darker tinted rail. */
+  --surface:#222428; --surface-default:#2B2E33; --surface-medium:#34383F; --surface-strong:#40444C;
   --surface-inverse:#F2F4F7;
   /* text */
-  --fg-default:#E8EBEF; --fg-muted:#A6ADB8; --fg-subtle:#79808B; --fg-on-surface:#15181E;
+  --fg-default:#E8EBEF; --fg-muted:#A6ADB8; --fg-subtle:#79808B; --fg-on-surface:#222428;
   /* lines + interaction */
-  --border-default:#2C313B; --border-subtle:#232831;
-  --interactive-hover:#232831; --interactive-active:#2C313B;
+  --border-default:#484D56; --border-subtle:#34383F;
+  --interactive-hover:#34383F; --interactive-active:#484D56;
   /* light-end neutrals (used as soft backgrounds) invert to dark elevations */
-  --neutral-50:#1C2027; --neutral-70:#20242C; --neutral-80:#232831; --neutral-100:#2C313B;
-  --neutral-150:#343A45; --neutral-200:#3C4350;
+  --neutral-50:#2B2E33; --neutral-70:#303339; --neutral-80:#34383F; --neutral-100:#484D56;
+  --neutral-150:#525863; --neutral-200:#616875;
   /* brand roles + on-colour text — these are CONTRAST-TUNED per palette: the
      bake (and the live preview) inject computed values here. The defaults
      below are correct for the bundled blue/red/slate palette. Buttons/fills
@@ -891,7 +893,7 @@ a:hover { text-decoration:underline; }
   --primary-surface:var(--primary-500); --primary-surface-muted:var(--primary-900); --primary-surface-subtle:var(--primary-950);
   --primary-fg:var(--primary-300); --primary-fg-emphasis:var(--primary-300); --primary-border:var(--primary-700);
   --primary-hover:var(--primary-400); --primary-active:var(--primary-600);
-  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#15181E;
+  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#222428;
   --secondary-surface:var(--secondary-500); --tertiary-surface:var(--tertiary-400);
   --primary-grad-from:var(--primary-700); --primary-grad-to:var(--primary-900);
   --chip-primary-fg:var(--primary-300); --chip-secondary-fg:var(--secondary-300); --chip-tertiary-fg:var(--tertiary-300);

@@ -14311,7 +14311,7 @@ function dsAssignRoles(colors) {
    text) must anchor on DARK steps so they don't fuse into the page. These
    helpers pick WCAG-correct dark values from a ramp; buildDsDarkCss assembles
    the `:root[data-theme="dark"]{}` role block from the effective palette. */
-const DS_DARK = { page: "#15181E", card: "#1C2027" };
+const DS_DARK = { page: "#222428", card: "#2B2E33" };
 function _dsLin(v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
 function dsLum(hex) { const c = dsHexToRgb(hex) || [0, 0, 0]; return 0.2126 * _dsLin(c[0]) + 0.7152 * _dsLin(c[1]) + 0.0722 * _dsLin(c[2]); }
 function dsContrast(a, b) { const la = dsLum(a), lb = dsLum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); }
@@ -14344,7 +14344,7 @@ function dsSemanticDarkSteps(hex) {
   const hsl = dsRgbToHsl(rgb), h = hsl[0], s = hsl[1];
   const bg = (L) => dsRgbToHex(dsHslToRgb(h, Math.min(s, 0.55), L));
   const tx = (L) => dsRgbToHex(dsHslToRgb(h, Math.min(s, 0.72), L));
-  return { "50": bg(0.14), "100": bg(0.18), "200": bg(0.30), "700": tx(0.70), "800": tx(0.78), "900": tx(0.86) };
+  return { "50": bg(0.17), "100": bg(0.22), "200": bg(0.33), "700": tx(0.72), "800": tx(0.80), "900": tx(0.87) };
 }
 const DS_SEMANTIC = ["success", "attention", "error", "info"];
 /* The `:root[data-theme="dark"]{}` role override for the effective palette —
@@ -14365,8 +14365,8 @@ function buildDsDarkCss(s) {
   // feel like a primary-tinted PANEL — still recognisably the brand colour,
   // but it recedes as a surface rather than shouting like a button.
   const ph = dsRgbToHsl(dsHexToRgb(P) || [7, 78, 207]);
-  const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.52), 0.17));
-  const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.58), 0.10));
+  const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.55), 0.115));
+  const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.6), 0.06));
   const lines = [
     `--primary-surface:${pf.fill};`,
     `--on-primary:${pf.onText};`,
@@ -14934,7 +14934,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
             </section>
           </div>
 
-          <div className="dscz-preview" style=${{ background: previewDark ? "#15181E" : "#ffffff" }}>
+          <div className="dscz-preview" style=${{ background: previewDark ? "#222428" : "#ffffff" }}>
             <div className="dscz-preview-tabs" role="tablist">
               ${DS_PREVIEW_VIEWS.map(v => html`
                 <button
