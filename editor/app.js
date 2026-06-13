@@ -52497,7 +52497,10 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         mvInit = true;
       }
       let bx, by;
-      if (dwell > 0) { dwell -= dt; bx = pTo[0]; by = pTo[1]; }
+      // Dwell = a pause AT the just-arrived waypoint (pFrom) before the next
+      // leg starts — NOT at the upcoming target (returning pTo here teleported
+      // the worker to the next waypoint and back).
+      if (dwell > 0) { dwell -= dt; legT = t; bx = pFrom[0]; by = pFrom[1]; }
       else {
         const e = (t - legT) / legDur;
         if (e >= 1) { newLeg(t, W, H, D); bx = pFrom[0]; by = pFrom[1]; }
