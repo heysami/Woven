@@ -7319,10 +7319,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    dither particles) is drawn on the <canvas> by the rAF state machine in
    WorkflowAgentBadge. Tinted with --hot. Pure decoration. */
 .workflow-agent-badge-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 6; }
-/* The badge box spans the whole node: the trail/tether canvas fills it and
-   the worker (.aab-floater) roams its perimeter via a per-frame transform. */
+/* The connecting line + trail render in this BEHIND-the-nodes host (rendered
+   just after sections, before the node maps) so the tether is occluded by the
+   node it points at. z-index auto → painted under the node cards by DOM order. */
+.workflow-agent-tether-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.workflow-agent-tether { position: absolute; pointer-events: none; }
+/* The worker (.aab-floater) floats OUTSIDE the node in the FRONT layer; its
+   badge box stays node-sized but overflow is visible so it can sit beyond it. */
 .workflow-agent-badge { position: absolute; pointer-events: none; overflow: visible; }
-.aab-trail {            /* tether-to-centre + comet trail; fills the node box */
+.aab-trail {            /* tether-to-centre + comet trail; fills the tether wrap */
   position: absolute; inset: 0; width: 100%; height: 100%;
 }
 .aab-floater {          /* diamonds + face; rAF translates it around the edge */

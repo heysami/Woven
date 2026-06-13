@@ -23130,6 +23130,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Files the live agent run is touching — tethers the worker badge onto the
   // node holding them (covers freeform chat runs that never flip runStatus).
   const workingPaths = useWorkflowWorkingPaths();
+  // Behind-nodes host for the agent worker's tether/trail canvases (portaled
+  // in per badge) so the connecting line is occluded by the node it points at.
+  const agentTetherRef = useRef(null);
   // Workflow-canvas node selection. Multi-select via marquee or Shift+click.
   // `selectedNodeIds` is the source of truth (Set of ids); `selectedNodeId`
   // is the primary (first) for any UI that still consumes a single id.
@@ -32517,6 +32520,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
             <${WorkflowEdgesLayer}
               nodes=${data.nodes || []}
               edges=${data.edges || []}
@@ -33343,7 +33347,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onAddOutputAsset=${addOutputAsset}
               />
             `)}
-            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
+            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} tetherHost=${agentTetherRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
             <${WorkflowWhiteboardLayer}
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
@@ -52300,14 +52304,15 @@ function useWorkflowWorkingPaths() {
 //   prefers-reduced-motion (static row of squares).
 const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
-function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, working, count, title, onExited }) {
-  const canvasRef = useRef(null);    // inner face / sequence
-  const trailRef = useRef(null);     // tether + trail, spans the whole node
-  const floaterRef = useRef(null);   // the diamond + face; roams the perimeter
-  // Geometry can change frame-to-frame (node resize / zoom) — keep the latest
-  // in a ref so the single rAF loop reads fresh values without re-subscribing.
-  const geomRef = useRef({ w, h, invZoom, zoom, pan });
-  geomRef.current = { w, h, invZoom, zoom, pan };
+function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, working, count, title, onExited, tetherHost }) {
+  const canvasRef = useRef(null);      // inner face / sequence (front)
+  const trailRef = useRef(null);       // tether + trail canvas (portaled BEHIND the nodes)
+  const tetherWrapRef = useRef(null);  // wrapper for the behind canvas (positioned per frame)
+  const floaterRef = useRef(null);     // the diamond + face; floats OUTSIDE the node (front)
+  // Geometry can change frame-to-frame (node move / resize / zoom) — keep the
+  // latest in a ref so the single rAF loop reads fresh values without re-subscribing.
+  const geomRef = useRef({ w, h, invZoom, zoom, pan, nx, ny });
+  geomRef.current = { w, h, invZoom, zoom, pan, nx, ny };
   // `working` flips false when the run ends — the loop reads it to start the
   // farewell (^_^ wave → scale out → particles), then calls onExited so the
   // layer drops the badge. Read via refs so the rAF loop never re-subscribes.
@@ -52316,8 +52321,8 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
   const onExitedRef = useRef(onExited);
   onExitedRef.current = onExited;
   useEffect(() => {
-    const cv = canvasRef.current, tcv = trailRef.current, floater = floaterRef.current;
-    if (!cv || !tcv || !floater) return;
+    const cv = canvasRef.current, floater = floaterRef.current;
+    if (!cv || !floater) return;   // the tether canvas is portaled — fetched lazily
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Inner face — UNCHANGED 50px morphing canvas (waveform → squares → ^_^ →
     // ascii). Lives within the fill square's inscribed circle (radius CLIP).
@@ -52329,7 +52334,10 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    const tctx = tcv.getContext("2d");
+    // The tether canvas mounts via a portal into the behind-layer; it may not
+    // exist on the first frame, so resolve its 2D context lazily each frame.
+    let tctx = null;
+    const getTctx = () => { if (!tctx) { const el = trailRef.current; if (el) tctx = el.getContext("2d"); } return tctx; };
     const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
     // De-sync sibling badges + give each a stable per-slot glyph stream.
     const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
@@ -52393,35 +52401,47 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       ctx.restore();
     };
 
-    // ── Trail/tether canvas — spans the whole node; backing capped for memory
-    //    (decorative thin lines, slight downscale is invisible). Drawn in node
-    //    coords via setTransform(sc,…). ──
-    let tcvW = 0, tcvH = 0, sc = 1;
-    const ensureTrailCanvas = (W, H) => {
-      const CAP = 1100;
-      const nsc = Math.min(1, CAP / Math.max(W, H, 1));
-      const bw = Math.max(1, Math.round(W * nsc)), bh = Math.max(1, Math.round(H * nsc));
+    // ── Tether/trail canvas — covers the node PLUS a margin (the worker floats
+    //    OUTSIDE the node, so the canvas must extend past the edges to hold the
+    //    worker, its trail, and the tether). Backing capped for memory; drawn in
+    //    "expanded-local" coords = node-local + MC (the canvas's top-left is at
+    //    node (-MC,-MC)). ──
+    let sc = 1, eW = 0, eH = 0;
+    const ensureTether = (EW, EH, ox, oy) => {
+      const tcv = trailRef.current, wrap = tetherWrapRef.current;
+      if (!tcv) return;
+      const CAP = 1200;
+      const nsc = Math.min(1, CAP / Math.max(EW, EH, 1));
+      const bw = Math.max(1, Math.round(EW * nsc)), bh = Math.max(1, Math.round(EH * nsc));
       if (bw !== tcv.width || bh !== tcv.height) { tcv.width = bw; tcv.height = bh; }
-      sc = nsc; tcvW = W; tcvH = H;
+      sc = nsc; eW = EW; eH = EH;
+      if (wrap) { wrap.style.left = ox + "px"; wrap.style.top = oy + "px"; wrap.style.width = EW + "px"; wrap.style.height = EH + "px"; }
     };
-    // Map a perimeter parameter s∈[0,peri) → a point on the node's edge,
-    // walking top L→R, right T→B, bottom R→L, left B→T.
-    const perimPoint = (s, W, H, peri) => {
-      s = ((s % peri) + peri) % peri;
-      if (s < W) return [s, 0];
-      s -= W; if (s < H) return [W, s];
-      s -= H; if (s < W) return [W - s, H];
-      s -= W; return [0, H - s];
+    // A point on the node's boundary EXPANDED outward by D — where the worker
+    // floats. Walks top L→R, right T→B, bottom R→L, left B→T. Returns node-local
+    // coords (can be negative / beyond W,H).
+    const expPoint = (s, W, H, D) => {
+      const EW = W + 2 * D, EH = H + 2 * D, ep = 2 * (EW + EH);
+      s = ((s % ep) + ep) % ep;
+      if (s < EW) return [-D + s, -D];
+      s -= EW; if (s < EH) return [W + D, -D + s];
+      s -= EH; if (s < EW) return [W + D - s, H + D];
+      s -= EW; return [-D, H + D - s];
     };
+    const ePeriOf = (W, H, D) => 2 * ((W + 2 * D) + (H + 2 * D));
 
     // Lifecycle phases: enter (fly in from the chat icon) → work (roam the
     // perimeter) → bye (^_^ + waving hand, a few seconds) → vanish (scale out,
     // burst into particles). `working` flipping false triggers bye from any
     // active phase.
-    const ENTER_DUR = 0.8, BYE_DUR = 2.4, VANISH_DUR = 0.55, PART_LIFE = 0.75;
+    const ENTER_DUR = 0.85, BYE_DUR = 2.4, VANISH_DUR = 0.55, PART_LIFE = 0.75;
+    const DIST_S = 64, ARC_S = 46, DRIFT_S = 5, PAD_S = 34;   // screen-px tunables
     let phase = (workingRef.current ? "enter" : "bye"), phaseStart = 0, phaseInit = false;
     let enterFrom = null, enterTo = null;
-    let curS = 0, tgtS = 0, dwell = 0, roamInit = false;
+    // Floaty waypoint motion: ease from waypoint A → B on the expanded boundary,
+    // arcing perpendicular for float, the straight base path CROSSING the node.
+    let mvInit = false, sFrom = 0, sTo = 0, pFrom = [0, 0], pTo = [0, 0];
+    let legT = 0, legDur = 2.6, arcSign = 1, dwell = 0;
     let lastPx = 0, lastPy = 0;
     const trail = [];   // flat [x,y, …] of recent worker points, in node coords
     const MAX = 24;
@@ -52451,26 +52471,48 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 12 * iz, life: 1 });
       }
     };
-    const advanceRoam = (t, dt, W, H, peri, iz) => {
-      if (!roamInit) { curS = (seed * peri) % peri; tgtS = ((seed * 0.37 + 0.5) * peri) % peri; roamInit = true; }
-      if (dwell > 0) { dwell -= dt; }
-      else {
-        let d = tgtS - curS;
-        if (d > peri / 2) d -= peri; else if (d < -peri / 2) d += peri;
-        const step = (peri / 13) * dt;
-        if (Math.abs(d) <= step) {
-          curS = tgtS;
-          dwell = 0.4 + rnd(7, Math.floor(t)) * 1.3;
-          const off = (0.28 + rnd(11, Math.floor(t) + 1) * 0.5) * peri;
-          const dir = rnd(13, Math.floor(t) + 2) < 0.5 ? -1 : 1;
-          tgtS = (((curS + dir * off) % peri) + peri) % peri;
-        } else { curS += Math.sign(d) * step; }
+    // Pick the next leg: a target on the EXPANDED boundary roughly opposite the
+    // current spot, so the straight base path crosses the node surface.
+    const newLeg = (t, W, H, D) => {
+      const ep = ePeriOf(W, H, D);
+      sFrom = sTo; pFrom = pTo;
+      const tk = Math.floor(t * 1.7);
+      const jump = (0.3 + rnd(20, tk) * 0.42) * ep;   // ~30–72% around → opposite-ish
+      const dir = rnd(22, tk + 2) < 0.5 ? -1 : 1;
+      sTo = (((sFrom + dir * jump) % ep) + ep) % ep;
+      pTo = expPoint(sTo, W, H, D);
+      legT = t; legDur = 2.3 + rnd(21, tk + 1) * 1.7;
+      arcSign = rnd(23, tk + 3) < 0.5 ? -1 : 1;
+      dwell = 0.12 + rnd(24, tk + 4) * 0.5;
+    };
+    // Floaty crossing motion (eased waypoint tween + perpendicular arc + drift),
+    // starting the first leg from (startX,startY) so it picks up where enter ended.
+    const advanceFloat = (t, dt, W, H, iz, startX, startY) => {
+      const D = DIST_S * iz, AMP = ARC_S * iz, ep = ePeriOf(W, H, D);
+      if (!mvInit) {
+        pFrom = [startX, startY]; sFrom = (seed * ep) % ep;
+        const jump = (0.32 + rnd(20, 0) * 0.4) * ep;
+        sTo = ((sFrom + jump) % ep + ep) % ep; pTo = expPoint(sTo, W, H, D);
+        legT = t; legDur = 2.4 + rnd(21, 0) * 1.6; arcSign = rnd(23, 0) < 0.5 ? -1 : 1; dwell = 0;
+        mvInit = true;
       }
-      let [px, py] = perimPoint(curS, W, H, peri);
-      const cx = W / 2, cy = H / 2;
-      const ivx = cx - px, ivy = cy - py, ilen = Math.hypot(ivx, ivy) || 1;
-      const bob = (Math.sin(t * 1.7 + seed * 6.28) * 0.5 + 0.5) * 7 * iz;
-      return [px + (ivx / ilen) * bob, py + (ivy / ilen) * bob];
+      let bx, by;
+      if (dwell > 0) { dwell -= dt; bx = pTo[0]; by = pTo[1]; }
+      else {
+        const e = (t - legT) / legDur;
+        if (e >= 1) { newLeg(t, W, H, D); bx = pFrom[0]; by = pFrom[1]; }
+        else {
+          const ee = ease(e);   // easeInOut → no constant-speed linearity
+          bx = lerp(pFrom[0], pTo[0], ee); by = lerp(pFrom[1], pTo[1], ee);
+          const dx = pTo[0] - pFrom[0], dy = pTo[1] - pFrom[1], dl = Math.hypot(dx, dy) || 1;
+          const arc = Math.sin(ee * Math.PI) * AMP * arcSign;
+          bx += (-dy / dl) * arc; by += (dx / dl) * arc;
+        }
+      }
+      // gentle global float so it never feels mechanical
+      bx += Math.sin(t * 0.6 + seed * 6.28) * DRIFT_S * iz;
+      by += Math.cos(t * 0.8 + seed * 4.0) * DRIFT_S * iz;
+      return [bx, by];
     };
 
     const frame = (ts) => {
@@ -52479,8 +52521,12 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       const dt = Math.min(0.05, Math.max(0, (ts - prevTs) / 1000)); prevTs = ts;
       const g = geomRef.current;
       const W = Math.max(40, g.w || 200), H = Math.max(40, g.h || 200), iz = g.invZoom || 1;
-      const peri = 2 * (W + H), cx = W / 2, cy = H / 2;
-      ensureTrailCanvas(W, H);
+      const cx = W / 2, cy = H / 2;
+      // Canvas margin: it must reach beyond the node to hold the outside worker,
+      // its arc, and trail. Position the wrap so node-local (0,0) sits at +MC.
+      const MC = (DIST_S + ARC_S + PAD_S) * iz;
+      ensureTether(W + 2 * MC, H + 2 * MC, (g.nx || 0) - MC, (g.ny || 0) - MC);
+      const tctx = getTctx();
       if (!phaseInit) { phaseStart = t; phaseInit = true; }
       // run ended → start the farewell from whatever phase we're in
       if (phase !== "bye" && phase !== "vanish" && !workingRef.current) { phase = "bye"; phaseStart = t; }
@@ -52489,8 +52535,8 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
 
       if (phase === "enter") {
         if (!enterFrom) {
-          if (!roamInit) { curS = (seed * peri) % peri; tgtS = ((seed * 0.37 + 0.5) * peri) % peri; roamInit = true; }
-          const tp = perimPoint(curS, W, H, peri); enterTo = [tp[0], tp[1]];
+          const D = DIST_S * iz, ep = ePeriOf(W, H, D);
+          enterTo = expPoint((seed * ep) % ep, W, H, D);
           enterFrom = computeEnterFrom(W, H);
         }
         const e = Math.min(1, (t - phaseStart) / ENTER_DUR), ee = easeOut(e);
@@ -52498,7 +52544,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         scale = Math.max(0.05, ee); tetherA = 0.45 * e;
         if (e >= 1) { phase = "work"; phaseStart = t; }
       } else if (phase === "work") {
-        const p2 = advanceRoam(t, dt, W, H, peri, iz); lastPx = p2[0]; lastPy = p2[1];
+        const p2 = advanceFloat(t, dt, W, H, iz, lastPx, lastPy); lastPx = p2[0]; lastPy = p2[1];
       } else if (phase === "bye") {
         forced = true; faceT = t - phaseStart;
         tetherA = Math.max(0, 0.45 * (1 - (t - phaseStart) / BYE_DUR));
@@ -52512,6 +52558,8 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
 
       drawFace(faceT, forced);
       floater.dataset.phase = phase;
+      // floater is in the FRONT layer, node-local coords (overflow visible so it
+      // shows outside the node box).
       floater.style.transform = `translate(${(lastPx - SF).toFixed(2)}px, ${(lastPy - SF).toFixed(2)}px) scale(${(iz * scale).toFixed(3)})`;
       floater.style.opacity = (phase === "vanish") ? String(Math.max(0, scale)) : "1";
 
@@ -52519,8 +52567,10 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       else if (trail.length) trail.length = 0;
 
       if (tctx) {
-        tctx.setTransform(sc, 0, 0, sc, 0, 0);
-        tctx.clearRect(0, 0, tcvW, tcvH);
+        // Draw in node-local coords; the +MC offset (so node 0,0 → canvas MC,MC)
+        // is folded into the transform. Everything here paints BEHIND the nodes.
+        tctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc);
+        tctx.clearRect(-MC, -MC, eW, eH);
         const lw = Math.max(0.4, iz), mk = 2.6 * iz;
         if (tetherA > 0.01) {
           tctx.save();
@@ -52552,7 +52602,6 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
           tctx.strokeRect(-s2 / 2, -s2 / 2, s2, s2);
           tctx.restore();
         }
-        // celebration particles (during/after vanish)
         for (const pt of particles) {
           if (pt.life <= 0) continue;
           pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 34 * iz * dt; pt.life -= dt / PART_LIFE;
@@ -52566,7 +52615,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       }
 
       if (exited && particles.every(p => p.life <= 0)) {
-        if (tctx) { tctx.setTransform(sc, 0, 0, sc, 0, 0); tctx.clearRect(0, 0, tcvW, tcvH); }
+        if (tctx) { tctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc); tctx.clearRect(-MC, -MC, eW, eH); }
         if (onExitedRef.current) onExitedRef.current(keyId);
         return;   // stop the loop; layer unmounts us
       }
@@ -52574,32 +52623,35 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     };
 
     if (reduce) {
-      // Static: face squares + worker parked on the top edge + one tether line.
-      // If we mounted already-ended, just exit immediately (no animation).
+      // Static: face squares + worker parked just outside the top edge + tether.
       if (!workingRef.current) { if (onExitedRef.current) onExitedRef.current(keyId); return () => {}; }
       ctx.save(); ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
       for (let i = 0; i < N; i++) fillRect(slotX(i), CY, SQ, SQ);
       ctx.restore();
       const g = geomRef.current;
       const W = Math.max(40, g.w || 200), H = Math.max(40, g.h || 200), iz = g.invZoom || 1;
-      ensureTrailCanvas(W, H);
-      const px = W * 0.5, py = 0, cx = W / 2, cy = H / 2;
+      const MC = (DIST_S + ARC_S + PAD_S) * iz;
+      const px = W * 0.5, py = -DIST_S * iz, cx = W / 2, cy = H / 2;
       floater.style.transform = `translate(${(px - SF).toFixed(2)}px, ${(py - SF).toFixed(2)}px) scale(${iz})`;
-      if (tctx) {
-        tctx.setTransform(sc, 0, 0, sc, 0, 0);
-        tctx.clearRect(0, 0, tcvW, tcvH);
+      // one-shot draw once the portaled canvas is mounted
+      raf = requestAnimationFrame(() => {
+        ensureTether(W + 2 * MC, H + 2 * MC, (g.nx || 0) - MC, (g.ny || 0) - MC);
+        const tctx = getTctx();
+        if (!tctx) return;
+        tctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc);
+        tctx.clearRect(-MC, -MC, eW, eH);
         tctx.save(); tctx.globalAlpha = 0.4; tctx.strokeStyle = hot;
         tctx.lineWidth = Math.max(0.4, iz); tctx.setLineDash([4 * iz, 4 * iz]);
         tctx.beginPath(); tctx.moveTo(px, py); tctx.lineTo(cx, cy); tctx.stroke(); tctx.restore();
-      }
+      });
     } else { raf = requestAnimationFrame(frame); }
     return () => { if (raf) cancelAnimationFrame(raf); };
   }, [keyId]);
 
+  const host = tetherHost && tetherHost.current;
   return html`
     <div className="workflow-agent-badge"
          style=${{ left: nx + "px", top: ny + "px", width: (w || 200) + "px", height: (h || 200) + "px" }}>
-      <canvas ref=${trailRef} className="aab-trail"/>
       <div ref=${floaterRef} className="aab-floater" title=${title}>
         <span className="aab-square aab-square-out"/>
         <span className="aab-square aab-square-fill"/>
@@ -52607,6 +52659,10 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         <span className="aab-wave" aria-hidden="true">👋</span>
         ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
       </div>
+      ${host ? createPortal(html`
+        <div ref=${tetherWrapRef} className="workflow-agent-tether">
+          <canvas ref=${trailRef} className="aab-trail"/>
+        </div>`, host) : null}
     </div>
   `;
 }
@@ -52615,7 +52671,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
 // every node map, so one edit covers every node kind (incl. sections) and the
 // badges stack above the cards. pointer-events:none — pure decoration.
 // Counter-scaled by 1/zoom so the badge stays a constant on-screen size.
-function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, chatBusy, activeProto, workingPaths }) {
+function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, tetherHost, chatBusy, activeProto, workingPaths }) {
   const list = nodes || [];
   const invZoom = Math.max(0.3, Math.min(3, 1 / (zoom || 1)));
   // Currently-working entries.
@@ -52679,6 +52735,10 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, chatBusy, activePr
   }
   prevRef.current = new Set(liveIds);
   useEffect(() => () => { for (const tm of timersRef.current.values()) clearTimeout(tm); timersRef.current.clear(); }, []);
+  // The behind-layer tether host attaches its ref during commit; force one
+  // re-render after mount so the per-badge portals (which target host.current)
+  // actually render into it.
+  useEffect(() => { force(); }, []);
 
   const entries = [
     ...liveEntries.map(e => ({ ...e, working: true })),
@@ -52689,7 +52749,7 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, chatBusy, activePr
     ${entries.map(e => html`<${WorkflowAgentBadge}
       key=${e.id} keyId=${e.id}
       nx=${e.nx} ny=${e.ny} w=${e.w} h=${e.h}
-      invZoom=${invZoom} zoom=${zoom} pan=${pan} wrapRef=${wrapRef}
+      invZoom=${invZoom} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} tetherHost=${tetherHost}
       working=${e.working} count=${e.count} title=${e.title} onExited=${onExited} />`)}
   </div>`;
 }
