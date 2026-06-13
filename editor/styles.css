@@ -7327,8 +7327,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 /* The worker (.aab-floater) floats OUTSIDE the node in the FRONT layer; its
    badge box stays node-sized but overflow is visible so it can sit beyond it. */
 .workflow-agent-badge { position: absolute; pointer-events: none; overflow: visible; }
-.aab-trail {            /* tether-to-centre + comet trail; fills the tether wrap */
+.aab-trail {            /* tether LINE; fills the behind tether wrap */
   position: absolute; inset: 0; width: 100%; height: 100%;
+}
+.aab-front {            /* comet trail + particles; in the FRONT badge box, sized per frame */
+  position: absolute; pointer-events: none;
 }
 .aab-floater {          /* diamonds + face; rAF translates it around the edge */
   position: absolute; left: 0; top: 0;

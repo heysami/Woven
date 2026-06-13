@@ -52306,8 +52306,9 @@ const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
 function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, working, count, title, onExited, tetherHost }) {
   const canvasRef = useRef(null);      // inner face / sequence (front)
-  const trailRef = useRef(null);       // tether + trail canvas (portaled BEHIND the nodes)
+  const trailRef = useRef(null);       // tether LINE canvas (portaled BEHIND the nodes)
   const tetherWrapRef = useRef(null);  // wrapper for the behind canvas (positioned per frame)
+  const frontRef = useRef(null);       // comet trail + celebration particles (FRONT of nodes)
   const floaterRef = useRef(null);     // the diamond + face; floats OUTSIDE the node (front)
   // Geometry can change frame-to-frame (node move / resize / zoom) — keep the
   // latest in a ref so the single rAF loop reads fresh values without re-subscribing.
@@ -52336,8 +52337,9 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     ctx.scale(dpr, dpr);
     // The tether canvas mounts via a portal into the behind-layer; it may not
     // exist on the first frame, so resolve its 2D context lazily each frame.
-    let tctx = null;
+    let tctx = null, fctx = null;
     const getTctx = () => { if (!tctx) { const el = trailRef.current; if (el) tctx = el.getContext("2d"); } return tctx; };
+    const getFctx = () => { if (!fctx) { const el = frontRef.current; if (el) fctx = el.getContext("2d"); } return fctx; };
     const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
     // De-sync sibling badges + give each a stable per-slot glyph stream.
     const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
@@ -52416,6 +52418,17 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       if (bw !== tcv.width || bh !== tcv.height) { tcv.width = bw; tcv.height = bh; }
       sc = nsc; eW = EW; eH = EH;
       if (wrap) { wrap.style.left = ox + "px"; wrap.style.top = oy + "px"; wrap.style.width = EW + "px"; wrap.style.height = EH + "px"; }
+    };
+    // Front canvas (comet trail + celebration particles) — lives in the FRONT
+    // badge box so it paints OVER the nodes. Same expanded dims/scale as the
+    // behind canvas; positioned at (-MC,-MC) within the node-sized box.
+    const ensureFront = (MC) => {
+      const fcv = frontRef.current;
+      if (!fcv) return;
+      const bw = Math.max(1, Math.round(eW * sc)), bh = Math.max(1, Math.round(eH * sc));
+      if (bw !== fcv.width || bh !== fcv.height) { fcv.width = bw; fcv.height = bh; }
+      fcv.style.left = (-MC) + "px"; fcv.style.top = (-MC) + "px";
+      fcv.style.width = eW + "px"; fcv.style.height = eH + "px";
     };
     // A point on the node's boundary EXPANDED outward by D — where the worker
     // floats. Walks top L→R, right T→B, bottom R→L, left B→T. Returns node-local
@@ -52529,7 +52542,8 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       // its arc, and trail. Position the wrap so node-local (0,0) sits at +MC.
       const MC = (DIST_S + ARC_S + PAD_S) * iz;
       ensureTether(W + 2 * MC, H + 2 * MC, (g.nx || 0) - MC, (g.ny || 0) - MC);
-      const tctx = getTctx();
+      ensureFront(MC);
+      const tctx = getTctx(), fctx = getFctx();
       if (!phaseInit) { phaseStart = t; phaseInit = true; }
       // run ended → start the farewell from whatever phase we're in
       if (phase !== "bye" && phase !== "vanish" && !workingRef.current) { phase = "bye"; phaseStart = t; }
@@ -52569,12 +52583,11 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       if (doTrail) { trail.push(lastPx, lastPy); if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2); }
       else if (trail.length) trail.length = 0;
 
+      const lw = Math.max(0.4, iz), mk = 2.6 * iz;
+      // BEHIND the nodes: the connecting line + the flow marks travelling it.
       if (tctx) {
-        // Draw in node-local coords; the +MC offset (so node 0,0 → canvas MC,MC)
-        // is folded into the transform. Everything here paints BEHIND the nodes.
         tctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc);
         tctx.clearRect(-MC, -MC, eW, eH);
-        const lw = Math.max(0.4, iz), mk = 2.6 * iz;
         if (tetherA > 0.01) {
           tctx.save();
           tctx.globalAlpha = tetherA; tctx.strokeStyle = hot; tctx.lineWidth = lw;
@@ -52595,30 +52608,37 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
             }
           }
         }
+      }
+      // IN FRONT of the nodes: the comet trail + celebration particles (they
+      // follow / burst from the worker, which is the focal point).
+      if (fctx) {
+        fctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc);
+        fctx.clearRect(-MC, -MC, eW, eH);
         const pts = trail.length / 2;
         for (let k = 0; k < pts - 1; k++) {
           const f = k / pts, s2 = (3 + f * 6) * iz;
-          tctx.save();
-          tctx.globalAlpha = f * f * 0.28;
-          tctx.translate(trail[k * 2], trail[k * 2 + 1]); tctx.rotate(Math.PI / 4);
-          tctx.strokeStyle = hot; tctx.lineWidth = lw;
-          tctx.strokeRect(-s2 / 2, -s2 / 2, s2, s2);
-          tctx.restore();
+          fctx.save();
+          fctx.globalAlpha = f * f * 0.28;
+          fctx.translate(trail[k * 2], trail[k * 2 + 1]); fctx.rotate(Math.PI / 4);
+          fctx.strokeStyle = hot; fctx.lineWidth = lw;
+          fctx.strokeRect(-s2 / 2, -s2 / 2, s2, s2);
+          fctx.restore();
         }
         for (const pt of particles) {
           if (pt.life <= 0) continue;
           pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 34 * iz * dt; pt.life -= dt / PART_LIFE;
           const ps = Math.max(0, (2.6 * iz) * pt.life);
-          tctx.save();
-          tctx.globalAlpha = Math.max(0, pt.life) * 0.85; tctx.fillStyle = hot;
-          tctx.translate(pt.x, pt.y); tctx.rotate(Math.PI / 4);
-          tctx.fillRect(-ps / 2, -ps / 2, ps, ps);
-          tctx.restore();
+          fctx.save();
+          fctx.globalAlpha = Math.max(0, pt.life) * 0.85; fctx.fillStyle = hot;
+          fctx.translate(pt.x, pt.y); fctx.rotate(Math.PI / 4);
+          fctx.fillRect(-ps / 2, -ps / 2, ps, ps);
+          fctx.restore();
         }
       }
 
       if (exited && particles.every(p => p.life <= 0)) {
         if (tctx) { tctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc); tctx.clearRect(-MC, -MC, eW, eH); }
+        if (fctx) { fctx.setTransform(sc, 0, 0, sc, MC * sc, MC * sc); fctx.clearRect(-MC, -MC, eW, eH); }
         if (onExitedRef.current) onExitedRef.current(keyId);
         return;   // stop the loop; layer unmounts us
       }
@@ -52655,6 +52675,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
   return html`
     <div className="workflow-agent-badge"
          style=${{ left: nx + "px", top: ny + "px", width: (w || 200) + "px", height: (h || 200) + "px" }}>
+      <canvas ref=${frontRef} className="aab-front"/>
       <div ref=${floaterRef} className="aab-floater" title=${title}>
         <span className="aab-square aab-square-out"/>
         <span className="aab-square aab-square-fill"/>
