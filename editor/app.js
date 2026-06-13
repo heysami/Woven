@@ -14059,6 +14059,20 @@ const DS_DEFAULTS = {
   radii: { xs:2, s:4, base:8, m:12, l:16, xl:24, "2xl":32, pill:100 },
 };
 
+// Design-system palettes — role-defined (not auto-analysed). Each is a strong
+// primary+secondary COMPLEMENTARY pair at the default's saturation level, with
+// a tertiary muted slate tinted toward the primary, and a neutral grey base
+// whose temperature balances the (cool-led) strong colours: cool primaries →
+// faintly WARM grey, so the UI doesn't read cold. #1 is the current default.
+const DS_ROLE_PALETTES = [
+  { name: "Classic (default)",  primary: "#074ECF", secondary: "#E20E10", tertiary: "#8D98AC", neutral: "#828486" },
+  { name: "Teal & Coral",       primary: "#0E9F8C", secondary: "#F0533C", tertiary: "#8AA39E", neutral: "#877E73" },
+  { name: "Violet & Amber",     primary: "#6D28D9", secondary: "#F59E0B", tertiary: "#9890AE", neutral: "#847C76" },
+  { name: "Forest & Magenta",   primary: "#15803D", secondary: "#DB2777", tertiary: "#8DA394", neutral: "#827E78" },
+  { name: "Indigo & Tangerine", primary: "#4338CA", secondary: "#EA580C", tertiary: "#9094B3", neutral: "#857C73" },
+];
+const dsRolePaletteStrip = p => [p.primary, p.secondary, p.tertiary, p.neutral];
+
 // Popular Coolors palettes (most-saved on coolors.co). Picking one fills the
 // primary / secondary / tertiary swatches from the palette's first three
 // colours; the neutral grey base is left to its own control. Colours are the
@@ -14706,7 +14720,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
               <div className="dscz-group-label">Colour</div>
               <${DsPaletteDropdown}
                 current=${settings.paletteName}
-                onPick=${(p) => { const r = dsAssignRoles(p.colors); set({ primary: r.primary, secondary: r.secondary, tertiary: r.tertiary, neutral: r.neutral, paletteName: p.name }); }}/>
+                onApply=${(roles, name) => set({ primary: roles.primary, secondary: roles.secondary, tertiary: roles.tertiary, neutral: roles.neutral, paletteName: name })}/>
               <${DsColorRow} label="Primary"   value=${settings.primary}   fallback=${DS_DEFAULTS.primary}
                 onChange=${(v) => set({ primary: v, paletteName: null })} onReset=${() => set({ primary: null, paletteName: null })}/>
               <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
@@ -14878,30 +14892,38 @@ function DsLogoRow({ logo, onPick }) {
    palettes (name + 5-swatch strip). Selecting one fills primary/secondary/
    tertiary via onPick. Inline (not an overlay) so it never clips inside the
    scrolling controls rail. */
-function DsPaletteDropdown({ current, onPick }) {
+function DsPaletteDropdown({ current, onApply }) {
   const [open, setOpen] = useState(false);
-  const active = current ? DS_PALETTES.find(p => p.name === current) : null;
-  const strip = (cols, cls) => html`<span className=${"dscz-pal-strip" + (cls ? " " + cls : "")}>
+  const strip = (cols) => html`<span className="dscz-pal-strip">
     ${cols.map((c, i) => html`<span key=${i} style=${{ background: c }}/>`)}
   </span>`;
+  // Resolve the active palette's strip for the trigger (role group → 4-swatch
+  // P/S/T/N strip; Coolors group → its 5-colour strip).
+  const activeRole = current ? DS_ROLE_PALETTES.find(p => p.name === current) : null;
+  const activeCoolors = current ? DS_PALETTES.find(p => p.name === current) : null;
+  const activeStrip = activeRole ? dsRolePaletteStrip(activeRole) : (activeCoolors ? activeCoolors.colors : null);
+  const item = (name, cols, roles) => html`
+    <button key=${name} type="button"
+      className=${"dscz-pal-item" + (current === name ? " is-active" : "")}
+      onClick=${() => { onApply(roles, name); setOpen(false); }}>
+      ${strip(cols)}
+      <span className="dscz-pal-name">${name}</span>
+    </button>`;
   return html`
     <div className="dscz-pal">
       <button type="button" className="dscz-pal-trigger" onClick=${() => setOpen(o => !o)} aria-expanded=${open}>
-        ${active
-          ? html`${strip(active.colors)}<span className="dscz-pal-name">${active.name}</span>`
+        ${activeStrip
+          ? html`${strip(activeStrip)}<span className="dscz-pal-name">${current}</span>`
           : html`<span className="dscz-pal-name dscz-pal-name-empty">Pick a palette…</span>`}
         <span className=${"dscz-pal-caret" + (open ? " is-open" : "")} aria-hidden="true">▾</span>
       </button>
       ${open && html`
         <div className="dscz-pal-list">
-          ${DS_PALETTES.map(p => html`
-            <button key=${p.name} type="button"
-              className=${"dscz-pal-item" + (current === p.name ? " is-active" : "")}
-              onClick=${() => { onPick(p); setOpen(false); }}>
-              ${strip(p.colors)}
-              <span className="dscz-pal-name">${p.name}</span>
-            </button>
-          `)}
+          <div className="dscz-pal-group">Design system</div>
+          ${DS_ROLE_PALETTES.map(p => item(p.name, dsRolePaletteStrip(p),
+            { primary: p.primary, secondary: p.secondary, tertiary: p.tertiary, neutral: p.neutral }))}
+          <div className="dscz-pal-group">Popular</div>
+          ${DS_PALETTES.map(p => item(p.name, p.colors, dsAssignRoles(p.colors)))}
         </div>
       `}
     </div>

@@ -806,6 +806,11 @@ button {
 }
 .dscz-pal-item:hover { background: rgba(0,0,0,0.05); }
 .dscz-pal-item.is-active { background: color-mix(in srgb, var(--accent, #2c5fff) 12%, transparent); }
+.dscz-pal-group {
+  font: 600 10px/1.2 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.06em; text-transform: uppercase;
+  opacity: 0.5; padding: 8px 6px 4px;
+}
+.dscz-pal-group:first-child { padding-top: 4px; }
 
 .dscz-color-row { display: flex; align-items: center; gap: 10px; }
 .dscz-color-swatch {
