@@ -118,6 +118,17 @@ function nodePrototype(node) {
   return node.prototype || node.branch || "main";
 }
 
+// True when the editor is mounted inside a read-only workflow view node
+// (Canvas frames / User flow / Information architecture / Timeline embed —
+// URL carries ?embed=1). The derived views (FlowView / IAView / TimelineView)
+// read this to drop their edit chrome (add buttons, lane/page creation,
+// comment affordances, how-to-edit hints) so the embed reads as a clean
+// viewer, not a half-disabled editor.
+function viewIsEmbed() {
+  try { return new URLSearchParams(location.search).get("embed") === "1"; }
+  catch { return false; }
+}
+
 // Workflow-1 frames-only regen prompt. Shared by two call sites: the
 // auto-dispatch in `openCanvasFrames` (fires when no frames exist yet) and
 // the manual Regenerate button on the canvas-frames node title bar (fires
@@ -4235,6 +4246,7 @@ function PrototypeView() {
    arrows are the branch conditions). Layout is column-by-rank (BFS from pages),
    so the flow reads top-down. SVG is rendered at native scale, scrollable. */
 function FlowView({ model, setEdits }) {
+  const embed = viewIsEmbed();
   const frames = model.frames;
   const arrows = model.arrows;
   const lanes  = model.lanes;
@@ -4760,14 +4772,14 @@ function FlowView({ model, setEdits }) {
             <div className="flow-lane-row" key=${l.id}>
               <span data-kind=${l.kind}/>
               <span className="flow-lane-label">${l.label}</span>
-              <span className="flow-lane-actions">
+              ${!embed && html`<span className="flow-lane-actions">
                 <button title="Rename lane" onClick=${() => renameLane(l.id)}><${Icon.Pen}/></button>
                 <button title="Delete lane" onClick=${() => deleteLane(l.id)} className="flow-lane-x">×</button>
-              </span>
+              </span>`}
             </div>
           `)}
         </div>
-        <button className="tbtn" onClick=${addLane}><${Icon.Plus}/> New lane</button>
+        ${!embed && html`<button className="tbtn" onClick=${addLane}><${Icon.Plus}/> New lane</button>`}
         <h3 style=${{ marginTop: 20 }}>Legend</h3>
         <div className="flow-legend">
           <div className="flow-legend-row"><span className="flow-legend-step"/> Step (page/state/overlay)</div>
@@ -4989,12 +5001,12 @@ function FlowView({ model, setEdits }) {
         </svg>
         </div>
         <${ZoomPill} zoom=${zoom}/>
-        <div className="flow-add-rail" onClick=${e => e.stopPropagation()}>
+        ${!embed && html`<div className="flow-add-rail" onClick=${e => e.stopPropagation()}>
           <span className="flow-add-rail-hint">Empty lane? Add a <strong>Start</strong>. From there, select a step and use <strong>+ next ▾</strong> / <strong>→ connect</strong>. Or select an arrow and use <strong>+ between</strong> to insert a step in the middle.</span>
           ${lanes.map(l => html`
             <button key=${l.id} className="flow-add-step" onClick=${() => addStep(l.id, { kind: "start" })}>+ Start in ${l.label}</button>
           `)}
-        </div>
+        </div>`}
         </div>
       </div>
       ${commentAt && html`<${CommentModal} at=${commentAt} onClose=${() => setCommentAt(null)}
@@ -5077,6 +5089,7 @@ function SplitArrowModal({ arrow, fromLabel, toLabel, onCancel, onSave }) {
    (outgoing arrow labels), and child states/overlays. Inferred from D.frames +
    D.arrows + D.entities — no extra schema required. */
 function IAView({ model, setEdits }) {
+  const embed = viewIsEmbed();
   const frames = model.frames;
   const arrows = model.arrows;
   const entities = model.entities;
@@ -5362,7 +5375,7 @@ function IAView({ model, setEdits }) {
           <div className="ia-sitemap-actions">
             <button className="tbtn" onClick=${expandAll}>Expand all</button>
             <button className="tbtn" onClick=${collapseAll}>Collapse all</button>
-            <button className="tbtn tbtn-primary" onClick=${addPage}><${Icon.Plus}/> Page</button>
+            ${!embed && html`<button className="tbtn tbtn-primary" onClick=${addPage}><${Icon.Plus}/> Page</button>`}
           </div>
         </div>
         <div className="ia-sitemap-canvas"
@@ -5449,10 +5462,10 @@ function IAView({ model, setEdits }) {
           ${topLevel.length === 0 && html`
             <div className="ia-sitemap-empty">
               <div>No pages yet under <em>${rootLabel}</em>.</div>
-              <button className="tbtn tbtn-primary" onClick=${addPage}>+ Add a page</button>
+              ${!embed && html`<button className="tbtn tbtn-primary" onClick=${addPage}>+ Add a page</button>`}
             </div>
           `}
-          <p className="ia-sitemap-hint">Click a node to select. Drag onto another node to re-parent (drop on the canvas to promote back to a top-level page). ▼/▶ collapses each branch.</p>
+          ${!embed && html`<p className="ia-sitemap-hint">Click a node to select. Drag onto another node to re-parent (drop on the canvas to promote back to a top-level page). ▼/▶ collapses each branch.</p>`}
           </div>
         </div>
       </div>
@@ -13549,6 +13562,7 @@ Workflow 1. Delete this request file when done.
    positions. The agent declares events with `at: "T+0d"`-style offsets; this
    view parses them into a numeric scale and lays them out left-to-right. */
 function TimelineView({ model, setEdits }) {
+  const embed = viewIsEmbed();
   const timelines = model.timelines || [];
   const commentsOf = (key) => (model?.commentsByTarget?.[key]) || [];
   const [commentAt, setCommentAt] = useState(null);
@@ -13558,6 +13572,7 @@ function TimelineView({ model, setEdits }) {
     setCommentAt(null);
   };
   const CommentBtn = ({ k, label, className }) => {
+    if (embed) return null;
     const has = commentsOf(k).length > 0;
     return html`
       <button type="button"
@@ -13958,6 +13973,18 @@ function useWorkspace() {
    Clears ?project= and ?branch= so we land back on the gallery. */
 function ProjectHomeButton({ info }) {
   if (!info || info.mode !== "workspace") return null;
+  // Context-aware back target: if the editor was opened from the workflow
+  // canvas (?from=workflow), go back THERE; otherwise back to the projects
+  // landing.
+  if (cameFromWorkflow()) {
+    return html`
+      <button className="project-home-btn" onClick=${backToWorkflow} title="Back to workflow">
+        <span className="project-home-arrow">←</span>
+        <${Icon.Branch}/>
+        <span>Workflow</span>
+      </button>
+    `;
+  }
   return html`
     <button className="project-home-btn" onClick=${backToProjects} title="Back to projects">
       <span className="project-home-arrow">←</span>
@@ -17455,7 +17482,27 @@ function backToProjects() {
   url.searchParams.delete("prototype");
   url.searchParams.delete("branch");
   url.searchParams.delete("view");
+  url.searchParams.delete("from");
   window.location.href = url.toString();
+}
+
+// Return to the workflow canvas for the active project — used when the editor
+// was opened FROM workflow mode (the open carries ?from=workflow). Keeps the
+// project, drops the prototype/branch/from markers, sets view=workflow.
+function backToWorkflow() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("prototype");
+  url.searchParams.delete("branch");
+  url.searchParams.delete("from");
+  url.searchParams.set("view", "workflow");
+  window.location.href = url.toString();
+}
+
+// True when the editor was reached from the workflow canvas (the open stamps
+// ?from=workflow). Drives the ProjectHomeButton's back target.
+function cameFromWorkflow() {
+  try { return new URLSearchParams(location.search).get("from") === "workflow"; }
+  catch { return false; }
 }
 
 /* Phase 3.5a — Prototype door.
@@ -40137,7 +40184,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
             // apiUrl-aware construction so workspace projects keep the
             // ?project=… query that serve.py uses for routing.
             try {
-              const url = apiUrl(`/editor/index.html?view=${cfg.view}&prototype=${encodeURIComponent(protoSlug)}`);
+              const url = apiUrl(`/editor/index.html?view=${cfg.view}&prototype=${encodeURIComponent(protoSlug)}&from=workflow`);
               window.open(url, "_blank", "noopener");
             } catch {}
           }}
@@ -40902,6 +40949,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     url.searchParams.set("prototype", branch);
     url.searchParams.delete("branch");
     url.searchParams.delete("view");
+    url.searchParams.set("from", "workflow");   // editor's back button → workflow
     window.open(url.toString(), "_blank", "noopener");
   }, [branch]);
 
@@ -53624,12 +53672,7 @@ function WorkflowExportsDialog({ onClose }) {
       <div className="workflow-modal workflow-settings-modal" onMouseDown=${(e) => e.stopPropagation()}>
         <div className="workflow-modal-head">
           <div>
-            <div className="workflow-modal-title">Exports · per project</div>
-            <div className="workflow-modal-sub">
-              ${active
-                ? html`scope: <code>${active}</code> · stored in <code>workspace.json</code>`
-                : html`no active project · open a project first`}
-            </div>
+            <div className="workflow-modal-title">Exports</div>
           </div>
           <button className="workflow-modal-close" onClick=${onClose}>×</button>
         </div>
@@ -53708,7 +53751,6 @@ function WorkflowExportsSection({ activeProjectId: activePid }) {
 function WorkflowExportRow({ project, busy, onSave }) {
   const [draft, setDraft] = useState(project.exportFolder || "");
   useEffect(() => { setDraft(project.exportFolder || ""); }, [project.exportFolder]);
-  const status = project.status || null;
   const dirty = (draft || "") !== (project.exportFolder || "");
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
   const pick = async () => {
@@ -53723,24 +53765,8 @@ function WorkflowExportRow({ project, busy, onSave }) {
       alert(`Folder picker unavailable: ${e.message || e}`);
     }
   };
-  const stateLabel = !project.exportFolder
-    ? "— not set"
-    : (status && status.exists && status.writable
-        ? "✓ ready"
-        : status && status.writable
-          ? "will be created on first export"
-          : "⚠ not writable");
-  const state = !project.exportFolder
-    ? "missing"
-    : (status && status.exists && status.writable ? "ok"
-        : status && status.writable ? "loading" : "missing");
   return html`
     <div className="workflow-settings-section">
-      <div className="workflow-settings-section-head">
-        <span className="workflow-settings-provider">${project.label || project.id}</span>
-        <span className="workflow-settings-skills">id: <code>${project.id}</code></span>
-        <span className="workflow-settings-status" data-state=${state}>${stateLabel}</span>
-      </div>
       <div className="workflow-settings-row" style=${{ gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="text"
@@ -53769,11 +53795,6 @@ function WorkflowExportRow({ project, busy, onSave }) {
           onClick=${() => { setDraft(""); onSave(null); }}
           title="Clear the saved export folder for this project"
         >Clear</button>`}
-      </div>
-      <div className="workflow-settings-hint">
-        ${project.exportFolder
-          ? html`Stored: <code>${project.exportFolder}</code>`
-          : "No folder set yet. Pick or paste an absolute path, then click Save."}
       </div>
     </div>
   `;
