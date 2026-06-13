@@ -14078,6 +14078,9 @@ const DS_ROLE_PALETTES = [
   { name: "Violet & Amber",     primary: "#6D28D9", secondary: "#F59E0B", tertiary: "#9890AE", neutral: "#8A8196" }, // lavender
   { name: "Forest & Magenta",   primary: "#15803D", secondary: "#DB2777", tertiary: "#8DA394", neutral: "#7A8A7A" }, // sage green
   { name: "Indigo & Tangerine", primary: "#4338CA", secondary: "#EA580C", tertiary: "#9094B3", neutral: "#8E8080" }, // warm rose
+  // Mostly black & white: a cool deep onyx primary, a blood-red accent, and a
+  // gunmetal monotone tertiary — for users who want monochrome + one accent.
+  { name: "Onyx",               primary: "#24252D", secondary: "#A4161A", tertiary: "#4A4D55", neutral: "#80838A" }, // cool charcoal
 ];
 const dsRolePaletteStrip = p => [p.primary, p.secondary, p.tertiary, p.neutral];
 
