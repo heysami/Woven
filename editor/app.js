@@ -13291,7 +13291,7 @@ Workflow 1. Delete this request file when done.
           <p>Two ways to populate:</p>
           <ul>
             <li><strong>Auto:</strong> click "Generate" below. Writes <code>STATEMACHINE_REQUEST.md</code> at the repo root. Run Claude in this folder; it walks Workflow 1 → Step 5d.A and writes <code>stateMachines[]</code> into <code>prototype.json</code> for every entity that qualifies.</li>
-            <li><strong>Manual:</strong> hand-author the array in <code>source/&lt;branch&gt;/prototype.json</code>:</li>
+            <li><strong>Manual:</strong> hand-author the array in <code>source/${"<branch>"}/prototype.json</code>:</li>
           </ul>
           <pre>"stateMachines": [
   {
@@ -13550,7 +13550,7 @@ this file anyway.
           <p>Two ways to populate:</p>
           <ul>
             <li><strong>Auto:</strong> click "Generate" below. Writes <code>TIMELINE_REQUEST.md</code> at the repo root. Run Claude in this folder; it scans for cron / scheduled / "after N days" logic in source and writes <code>timelines[]</code> entries into <code>prototype.json</code>.</li>
-            <li><strong>Manual:</strong> hand-author in <code>source/&lt;branch&gt;/prototype.json</code>:</li>
+            <li><strong>Manual:</strong> hand-author in <code>source/${"<branch>"}/prototype.json</code>:</li>
           </ul>
           <pre>"timelines": [
   {
@@ -13692,7 +13692,7 @@ and delete this file anyway.
           <p>Two ways to populate:</p>
           <ul>
             <li><strong>Auto:</strong> click "Generate" below. Writes <code>GRID_REQUEST.md</code> at the repo root. Run Claude in this folder; it walks every form and every entity for 2D variance, emitting one grid per (subject, use-case axis) pair.</li>
-            <li><strong>Manual:</strong> hand-author entries in <code>source/&lt;branch&gt;/prototype.json</code>.</li>
+            <li><strong>Manual:</strong> hand-author entries in <code>source/${"<branch>"}/prototype.json</code>.</li>
           </ul>
           <p style=${{ marginTop: 18, marginBottom: 6, fontWeight: 600, color: "var(--text)" }}>Form-field × status — the most common shape:</p>
           <pre>{
@@ -15704,7 +15704,7 @@ function SubagentsLanding({ caps }) {
       <${SystemSectionHead}
         name="Subagents"
         count=${agents.length}
-        desc=${html`Each subagent is a cold-isolated Claude session with a focused playbook. The orchestrator (or another agent) dispatches one via the Task tool with <code>subagent_type: "&lt;name&gt;"</code>.`}
+        desc=${html`Each subagent is a cold-isolated Claude session with a focused playbook. The orchestrator (or another agent) dispatches one via the Task tool with <code>subagent_type: "${"<name>"}"</code>.`}
       />
 
       <div className="ref-filter-row">
@@ -16160,7 +16160,7 @@ function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread }) {
       <${SystemSectionHead}
         name="Orchestrators"
         count=${data.count}
-        desc=${html`Orchestrators dispatch families of subagents to produce complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from its <code>.claude/agents/&lt;name&gt;.manifest.json</code>. Disabling one removes its hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} — the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.`}
+        desc=${html`Orchestrators dispatch families of subagents to produce complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from its <code>.claude/agents/${"<name>"}.manifest.json</code>. Disabling one removes its hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} — the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.`}
         action=${onSpawnSystemThread && html`<${SystemAddBar} kind="orchestrators" onSpawn=${onSpawnSystemThread}/>`}
         extra=${html`<div className="sys-shead-extra">scope: ${scopeLabel || "workspace"}${data.disabledIds && data.disabledIds.length > 0 ? ` · ${data.disabledIds.length} disabled` : ""}</div>`}
       />
@@ -34183,7 +34183,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Prototypes</div>
         ${(extraProtos.length === 0)
-          ? html`<div className="workflow-library-empty">No prototypes yet. When the agent writes <code>source/&lt;slug&gt;/index.html</code>, it shows up here AND auto-mounts a Prototype node on the canvas.</div>`
+          ? html`<div className="workflow-library-empty">No prototypes yet. When the agent writes <code>source/${"<slug>"}/index.html</code>, it shows up here AND auto-mounts a Prototype node on the canvas.</div>`
           : (outputsView === "list"
             ? html`<div className="workflow-library-list">
                 ${extraProtos.map(p => {
@@ -34293,7 +34293,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Design system pages</div>
         ${dsPages.length === 0
-          ? html`<div className="workflow-library-empty">No DS pages yet. The DS-brainstorm node writes <code>_ds_brainstorm/&lt;variant&gt;/</code> under <code>source/</code>; any DS library's <code>design-systems/&lt;id&gt;/gallery.html</code> also lands here.</div>`
+          ? html`<div className="workflow-library-empty">No DS pages yet. The DS-brainstorm node writes <code>_ds_brainstorm/${"<variant>"}/</code> under <code>source/</code>; any DS library's <code>design-systems/${"<id>"}/gallery.html</code> also lands here.</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
               ${dsPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
@@ -37650,7 +37650,7 @@ function ZoomExportPanel({ panel, onChange, onCancel, onConfirm, busy }) {
       </label>
       <div className="zoom-export-panel-foot">
         <p className="zoom-export-panel-hint">
-          Writes <code>source/&lt;branch&gt;/components/&lt;name&gt;.html</code> and spawns a standalone HTML asset card on the workflow canvas. Width / height default to the selected element's size — edit to override.
+          Writes <code>source/${"<branch>"}/components/${"<name>"}.html</code> and spawns a standalone HTML asset card on the workflow canvas. Width / height default to the selected element's size — edit to override.
         </p>
         <div className="zoom-export-panel-actions">
           <button className="tbtn" onClick=${onCancel}>Cancel</button>
@@ -37730,7 +37730,7 @@ function ZoomImportPanel({ assets, onCancel, onPick, busy }) {
       `}
       <div className="zoom-import-panel-foot">
         <p className="zoom-import-panel-hint">
-          The selected element is replaced with an <code>&lt;iframe&gt;</code> pointing at the picked file — the component's own CSS, fonts, and JS render exactly as they do standalone.
+          The selected element is replaced with an <code>${"<iframe>"}</code> pointing at the picked file — the component's own CSS, fonts, and JS render exactly as they do standalone.
         </p>
         <div className="zoom-import-panel-actions">
           <button className="tbtn" onClick=${onCancel}>Cancel</button>
