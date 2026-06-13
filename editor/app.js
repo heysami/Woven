@@ -15274,7 +15274,7 @@ function MediaSkillCard({ skill: sk, allModels }) {
         style=${{ cursor: "pointer" }}
       >
         <span className="skill-card-disclosure" aria-hidden="true">${open ? "▼" : "▶"}</span>
-        <span className="skill-glyph">${sk.glyph}</span>
+        <span className="skill-glyph">${skillGlyph(sk)}</span>
         <div className="skill-card-head-text">
           <div className="skill-card-name">
             <span className="skill-label">${sk.label}</span>
@@ -51812,16 +51812,17 @@ function workflowNodeIsWorking(n) {
   return false;
 }
 
-// v3.9.1 — the abstract geometric "worker". A FRAME of two CSS squares (a
-// fill square with a faint diamond hatch + a slightly-larger outline square)
-// rotate 0↔45° — alternating between reading as a box and a diamond, the
-// outline LAGGING the fill — around an inner ACTOR drawn on a <canvas>: a
-// glyph that orbits an ∞ (lemniscate) path trailing ASCII-dither particles,
-// then on a centre pass SPLITS into two; the halves drift to opposite
-// extremes, BLINK as lines (─), BOP up/down as carets (^ ^), revert to boxes,
-// MERGE back at the centre, and repeat. Squares = CSS; actor + particles =
-// canvas rAF state machine. Honours prefers-reduced-motion (static frame).
-const AAB_DITHER = ["▓", "▒", "░", "·"];
+// v3.9.2 — the abstract geometric "worker". A FRAME of two CSS squares (a
+// FLAT fill square + a slightly-larger outline square) rotate 0↔45° —
+// alternating between reading as a box and a diamond, the outline LAGGING
+// the fill. INSIDE the box, a <canvas> runs a state machine (clipped to the
+// fill square's inscribed circle so it NEVER overlaps the rotating frame):
+//   waveform bars → settle into squares → one becomes an outline square that
+//   travels along the row and loops → each square scrambles into a random
+//   monospace glyph → one-by-one they revert to squares → back to the
+//   waveform. Squares = CSS; inner sequence = canvas rAF. Honours
+//   prefers-reduced-motion (static row of squares).
+const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
 function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
   const canvasRef = useRef(null);
@@ -51829,82 +51830,95 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
     const cv = canvasRef.current;
     if (!cv) return;
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const CSS_W = 46, CSS_H = 46, CX = 23, CY = 23, AX = 12, AY = 8;
+    // 50px frame; the inner sequence lives within the fill square's inscribed
+    // circle (radius CLIP) and is hard-clipped to it, so it stays in the box
+    // at every rotation.
+    const W = 50, H = 50, CX = 25, CY = 25, N = 5, PITCH = 4.2, CLIP = 14;
+    const BAR_W = 2.4, SQ = 4, GH = 7;
+    const slotX = (i) => CX + (i - (N - 1) / 2) * PITCH;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = CSS_W * dpr; cv.height = CSS_H * dpr;
+    cv.width = W * dpr; cv.height = H * dpr;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
     const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
-    // De-sync sibling badges so they don't all animate in lockstep.
+    // De-sync sibling badges + give each a stable per-slot glyph stream.
     const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
     const seed = (parseInt(hx, 16) % 997) / 997;
-    const D_ORBIT = 3.0, D_SEP = 0.7, D_LINE = 1.0, D_CARET = 1.2, D_MERGE = 0.7;
-    const CYCLE = D_ORBIT + D_SEP + D_LINE + D_CARET + D_MERGE;
-    const LOOPS = 2;
+    const rnd = (a, b) => { const x = Math.sin(a * 97.13 + b * 41.7 + seed * 123.4) * 43758.5453; return x - Math.floor(x); };
+    const glyphFor = (i, tick) => AAB_GLYPHS[Math.floor(rnd(i + 1, tick + 1) * AAB_GLYPHS.length) % AAB_GLYPHS.length];
+    // Phase plan (seconds): waveform · settle-to-squares · squares(travel) ·
+    // → ^_^ face · face bop · back-to-squares · → ascii · hold-ascii ·
+    // revert-one-by-one · grow-back-to-waveform. Three expressive states:
+    // waveform, face, characters — squares are the neutral hub between them.
+    // Squares are the hub; the face + ascii states hard-CUT in and out (no
+    // fade). Only the waveform keeps its grow/settle morph (W2S / S2W).
+    const PH = { WAVE: 2.2, W2S: 0.5, SQ1: 1.6, FACE: 8.0, SQ2: 1.4, ASCII: 1.6, SQ3: 1.4, S2W: 0.5 };
+    const ORDER = ["WAVE", "W2S", "SQ1", "FACE", "SQ2", "ASCII", "SQ3", "S2W"];
+    const CYCLE = ORDER.reduce((s, k) => s + PH[k], 0);
     const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
-    const pos = (th) => ({ x: CX + AX * Math.sin(th), y: CY + AY * Math.sin(2 * th) });
-    let particles = [];
-    const spawn = (x, y) => {
-      if (particles.length > 44) return;
-      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 6;
-      particles.push({ x: x + (Math.random() - 0.5) * 3, y: y + (Math.random() - 0.5) * 3,
-        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5 + Math.random() * 0.5, age: 0 });
-    };
-    const glyph = (g, x, y, size, alpha) => {
-      ctx.globalAlpha = alpha; ctx.fillStyle = hot;
-      ctx.font = `${size}px ui-monospace, "SF Mono", Menlo, monospace`;
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const fillRect = (x, y, w, h) => { ctx.fillStyle = hot; ctx.fillRect(x - w / 2, y - h / 2, w, h); };
+    const strokeRect = (x, y, s) => { ctx.strokeStyle = hot; ctx.lineWidth = 1; ctx.strokeRect(x - s / 2, y - s / 2, s, s); };
+    const drawGlyph = (g, x, y, a) => {
+      ctx.globalAlpha = a; ctx.fillStyle = hot;
+      ctx.font = `${GH}px ui-monospace, "SF Mono", Menlo, monospace`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(g, x, y);
+      ctx.fillText(g, x, y); ctx.globalAlpha = 1;
     };
-    const drawActors = (lt, dt) => {
-      let p = lt;
-      if (p < D_ORBIT) {
-        const a = pos((p / D_ORBIT) * LOOPS * Math.PI * 2);
-        glyph("■", a.x, a.y, 11, 1); if (dt > 0) spawn(a.x, a.y);
-      } else if ((p -= D_ORBIT) < D_SEP) {
-        const e = ease(p / D_SEP), pa = pos(e * Math.PI / 2), pb = pos(-e * Math.PI / 2);
-        glyph("■", pa.x, pa.y, 11, 1); glyph("■", pb.x, pb.y, 11, 1);
-        if (dt > 0) { spawn(pa.x, pa.y); spawn(pb.x, pb.y); }
-      } else if ((p -= D_SEP) < D_LINE) {
-        const on = (Math.floor((p / D_LINE) * 6) % 2 === 0) ? 1 : 0.12;
-        const pa = pos(Math.PI / 2), pb = pos(-Math.PI / 2);
-        glyph("─", pa.x, pa.y, 12, on); glyph("─", pb.x, pb.y, 12, on);
-      } else if ((p -= D_LINE) < D_CARET) {
-        const bob = -Math.sin((p / D_CARET) * Math.PI * 6) * 2.4;
-        const pa = pos(Math.PI / 2), pb = pos(-Math.PI / 2);
-        glyph("^", pa.x, pa.y + bob, 12, 1); glyph("^", pb.x, pb.y + bob, 12, 1);
-      } else {
-        const e = ease((p - D_CARET) / D_MERGE);
-        const pa = pos((1 - e) * Math.PI / 2), pb = pos(-(1 - e) * Math.PI / 2);
-        glyph("■", pa.x, pa.y, 11, 1); glyph("■", pb.x, pb.y, 11, 1);
-        if (dt > 0) { spawn(pa.x, pa.y); spawn(pb.x, pb.y); }
-      }
+    // Random-beat waveform: every BEAT all bars snap to a NEW random height
+    // — shared beat grid (same rhythm) but each bar a different height —
+    // easing over the first third of the beat, then holding.
+    const BEAT = 0.2;
+    const barH = (i, t) => {
+      const b = Math.floor(t / BEAT), f = (t / BEAT) - b;
+      const h0 = 3 + rnd(i + 3, b) * 11, h1 = 3 + rnd(i + 3, b + 1) * 11;
+      return lerp(h0, h1, ease(Math.min(1, f / 0.34)));
     };
-    const drawParticles = (dt) => {
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const q = particles[i];
-        q.age += dt;
-        if (q.age >= q.life) { particles.splice(i, 1); continue; }
-        q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.92; q.vy *= 0.92;
-        const f = 1 - q.age / q.life;
-        glyph(AAB_DITHER[Math.min(AAB_DITHER.length - 1, Math.floor((1 - f) * AAB_DITHER.length))],
-              q.x, q.y, 6 + f * 2, f * 0.8);
-      }
-    };
-    let raf = 0, t0 = 0, last = 0;
+    // ^_^ face: eyes at i1/i3 are "^", mouth at i2 is "_"; the outer i0/i4
+    // stay plain squares (no blush). "^" already sits high in its em box, so
+    // eyes only rise a hair.
+    const EYE_Y = CY - 2, MOUTH_Y = CY + 2.5;
+    let raf = 0, t0 = 0, scrambleTick = 0, lastScramble = 0;
     const frame = (ts) => {
       if (!t0) t0 = ts;
       const t = (ts - t0) / 1000;
-      const dt = last ? Math.min(0.05, t - last) : 0; last = t;
-      ctx.clearRect(0, 0, CSS_W, CSS_H);
-      drawParticles(dt);
-      drawActors((t + seed * CYCLE) % CYCLE, dt);
-      ctx.globalAlpha = 1;
+      ctx.clearRect(0, 0, W, H);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
+      const lt = (t + seed * CYCLE) % CYCLE;
+      let acc = 0, phase = ORDER[0], pp = 0;
+      for (const k of ORDER) { if (lt < acc + PH[k]) { phase = k; pp = (lt - acc) / PH[k]; break; } acc += PH[k]; }
+      if (phase === "WAVE") {
+        for (let i = 0; i < N; i++) fillRect(slotX(i), CY, BAR_W, barH(i, t));
+      } else if (phase === "W2S") {
+        const e = ease(pp);
+        for (let i = 0; i < N; i++) fillRect(slotX(i), CY, lerp(BAR_W, SQ, e), lerp(barH(i, t), SQ, e));
+      } else if (phase === "SQ1" || phase === "SQ2" || phase === "SQ3") {
+        const cursor = Math.floor(pp * N * 3) % N;   // one outline square travels, loops ~3×
+        for (let i = 0; i < N; i++) (i === cursor ? strokeRect(slotX(i), CY, SQ) : fillRect(slotX(i), CY, SQ, SQ));
+      } else if (phase === "FACE") {                 // ^_^ bops happily — hard cut in/out, no fade
+        const bop = -Math.abs(Math.sin(t * 4.5)) * 2.5;
+        for (let i = 0; i < N; i++) {
+          if (i === 1 || i === 3) drawGlyph("^", slotX(i), EYE_Y + bop, 1);
+          else if (i === 2) drawGlyph("_", slotX(i), MOUTH_Y + bop, 1);
+          else fillRect(slotX(i), CY + bop, SQ, SQ);   // outer slots stay plain squares (no blush)
+        }
+      } else if (phase === "ASCII") {                // scrambling glyphs — hard cut in/out, no fade
+        if (t - lastScramble > 0.28) { scrambleTick++; lastScramble = t; }
+        for (let i = 0; i < N; i++) drawGlyph(glyphFor(i, scrambleTick), slotX(i), CY, 1);
+      } else { // S2W — squares grow back into bars
+        const e = ease(pp);
+        for (let i = 0; i < N; i++) fillRect(slotX(i), CY, lerp(SQ, BAR_W, e), lerp(SQ, barH(i, t), e));
+      }
+      ctx.restore();
       raf = requestAnimationFrame(frame);
     };
-    if (reduce) { ctx.clearRect(0, 0, CSS_W, CSS_H); glyph("■", CX, CY, 11, 1); ctx.globalAlpha = 1; }
-    else { raf = requestAnimationFrame(frame); }
+    if (reduce) {
+      ctx.save(); ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
+      for (let i = 0; i < N; i++) fillRect(slotX(i), CY, SQ, SQ);
+      ctx.restore();
+    } else { raf = requestAnimationFrame(frame); }
     return () => { if (raf) cancelAnimationFrame(raf); };
   }, [keyId]);
 
@@ -51914,7 +51928,7 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
       <div className="workflow-agent-frame" title=${title}>
         <span className="aab-square aab-square-out"/>
         <span className="aab-square aab-square-fill"/>
-        <canvas ref=${canvasRef} className="aab-canvas" width="46" height="46"/>
+        <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
         ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
       </div>
     </div>

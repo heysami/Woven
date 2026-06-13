@@ -1814,7 +1814,8 @@ button {
   background: oklch(96% 0.04 25);
 }
 .ref-group-user .ref-group-head { border-left: 3px solid var(--accent); padding-left: 10px; }
-.skill-glyph { font-size: 22px; line-height: 1; padding-top: 2px; color: var(--text-muted); }
+.skill-glyph { font-size: 22px; line-height: 1; padding-top: 2px; color: var(--text-muted); display: inline-flex; align-items: center; }
+.skill-glyph svg { width: 18px; height: 18px; }
 .skill-card-head-text { min-width: 0; }
 .skill-card-name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .skill-label { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -7151,34 +7152,37 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-agent-badge-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 6; }
 .workflow-agent-badge { position: absolute; pointer-events: none; will-change: transform; }
 .workflow-agent-frame {
-  position: absolute; left: -6px; bottom: 2px;   /* peek just outside the corner */
-  width: 46px; height: 46px;
+  position: absolute; left: -7px; bottom: 2px;   /* peek just outside the corner */
+  width: 50px; height: 50px;
 }
 .aab-square {
   position: absolute; left: 50%; top: 50%;
-  border-radius: 3px;
-  transform: translate(-50%, -50%) rotate(0deg);
-  animation: aabRot 3.4s cubic-bezier(.7, 0, .3, 1) infinite;
+  border-radius: 0;   /* sharp diamond corners */
+  /* Both start as DIAMONDS (fixed 45°) and slowly breathe in scale rather
+     than rotating. */
+  transform: translate(-50%, -50%) rotate(45deg) scale(1);
+  animation: aabPulse 4s ease-in-out infinite;
 }
 .aab-square-fill {
-  width: 24px; height: 24px;
-  background:
-    repeating-linear-gradient(45deg,  transparent 0 3px, color-mix(in oklch, var(--hot) 40%, transparent) 3px 4px),
-    repeating-linear-gradient(-45deg, transparent 0 3px, color-mix(in oklch, var(--hot) 40%, transparent) 3px 4px),
-    color-mix(in oklch, var(--hot) 15%, var(--surface));
+  width: 28px; height: 28px;
+  /* flat fill (no pattern) — a light tint of --hot so the solid-hot inner
+     animation reads against it */
+  background: color-mix(in oklch, var(--hot) 15%, var(--surface));
   border: 1px solid color-mix(in oklch, var(--hot) 55%, transparent);
 }
 .aab-square-out {
-  width: 31px; height: 31px;
+  width: 38px; height: 38px;
   border: 1.5px solid color-mix(in oklch, var(--hot) 60%, transparent);
   background: transparent;
-  animation-delay: 0.5s;   /* lag the outline behind the fill */
+  /* the outline FOLLOWS the fill's breathing — lagging, with a bigger swing */
+  animation-name: aabPulseBig;
+  animation-delay: 0.9s;
 }
 .aab-canvas {
   position: absolute; left: 50%; top: 50%;
-  width: 46px; height: 46px;
+  width: 50px; height: 50px;
   transform: translate(-50%, -50%);
-  color: var(--hot);       /* read by the canvas ctx for the glyph/particle fill */
+  color: var(--hot);       /* read by the canvas ctx for the glyph/square fill */
 }
 .workflow-agent-count {
   position: absolute; top: -7px; right: -7px;
@@ -7188,10 +7192,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font: 500 9px/13px var(--font-sans, system-ui);
   text-align: center;
 }
-@keyframes aabRot {
-  0%,  38% { transform: translate(-50%, -50%) rotate(0deg); }
-  50%, 88% { transform: translate(-50%, -50%) rotate(45deg); }
-  100%     { transform: translate(-50%, -50%) rotate(0deg); }
+@keyframes aabPulse {     /* fill — subtle, slow breathing */
+  0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.94); }
+  50%      { transform: translate(-50%, -50%) rotate(45deg) scale(1.06); }
+}
+@keyframes aabPulseBig {  /* outline — bigger swing, lagged via animation-delay */
+  0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.86); }
+  50%      { transform: translate(-50%, -50%) rotate(45deg) scale(1.14); }
 }
 @media (prefers-reduced-motion: reduce) {
   .aab-square { animation: none !important; }
