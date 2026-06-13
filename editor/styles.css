@@ -4611,6 +4611,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 
 /* List/grid toggle for the Outputs tab. Two radio buttons styled as a
    compact segmented control. */
+/* v3.13 — Outputs view toggle moved into the head row, top-right, icon-only. */
+.workflow-library-head { justify-content: space-between; }
+.workflow-library-head .workflow-library-viewtoggle { padding: 0; border-bottom: 0; gap: 2px; }
+.workflow-library-head .workflow-library-viewtoggle-btn { flex: none; padding: 4px 7px; }
+
 .workflow-library-viewtoggle {
   display: flex;
   gap: 4px;

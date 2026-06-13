@@ -33814,8 +33814,27 @@ function WorkflowLibrary({ tab = "nodes" }) {
   return html`
     <aside className="workflow-library">
       <div className="workflow-library-head">
-        ${tab === "outputs" ? "Outputs" : "Nodes"}
-        ${tab === "outputs" && html`<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length + assets.length}</span>`}
+        <span className="workflow-library-head-title">${tab === "outputs" ? "Outputs" : "Nodes"}</span>
+        ${tab === "outputs" && html`
+          <div className="workflow-library-viewtoggle" role="radiogroup" aria-label="View mode">
+            <button
+              role="radio"
+              aria-checked=${outputsView === "list" ? "true" : "false"}
+              aria-label="List view"
+              className=${"workflow-library-viewtoggle-btn" + (outputsView === "list" ? " is-active" : "")}
+              onClick=${() => setOutputsView("list")}
+              title="List view"
+            ><span className="workflow-library-viewtoggle-glyph">≡</span></button>
+            <button
+              role="radio"
+              aria-checked=${outputsView === "grid" ? "true" : "false"}
+              aria-label="Grid view"
+              className=${"workflow-library-viewtoggle-btn" + (outputsView === "grid" ? " is-active" : "")}
+              onClick=${() => setOutputsView("grid")}
+              title="Thumbnail grid view"
+            ><span className="workflow-library-viewtoggle-glyph">▦</span></button>
+          </div>
+        `}
       </div>
       ${tab === "nodes" ? html`
       <div className="workflow-library-section">
@@ -34197,7 +34216,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
           aria-selected=${outputsSubTab === "protos" ? "true" : "false"}
           onClick=${() => setOutputsSubTab("protos")}
           title="Prototypes + generated HTML pages / components"
-        >Prototypes + components<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length}</span></button>
+        >Prototypes<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length}</span></button>
         <button
           role="tab"
           className=${"workflow-library-subtab" + (outputsSubTab === "visual" ? " is-active" : "")}
@@ -34205,28 +34224,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
           onClick=${() => setOutputsSubTab("visual")}
           title="Image / SVG / video / scenes — file-backed visuals"
         >Visual assets<span className="workflow-library-tab-count">${assets.length}</span></button>
-      </div>
-      <div className="workflow-library-viewtoggle" role="radiogroup" aria-label="View mode">
-        <button
-          role="radio"
-          aria-checked=${outputsView === "list" ? "true" : "false"}
-          className=${"workflow-library-viewtoggle-btn" + (outputsView === "list" ? " is-active" : "")}
-          onClick=${() => setOutputsView("list")}
-          title="List view"
-        >
-          <span className="workflow-library-viewtoggle-glyph">≡</span>
-          <span>List</span>
-        </button>
-        <button
-          role="radio"
-          aria-checked=${outputsView === "grid" ? "true" : "false"}
-          className=${"workflow-library-viewtoggle-btn" + (outputsView === "grid" ? " is-active" : "")}
-          onClick=${() => setOutputsView("grid")}
-          title="Thumbnail grid view"
-        >
-          <span className="workflow-library-viewtoggle-glyph">▦</span>
-          <span>Grid</span>
-        </button>
       </div>
       ${outputsSubTab === "protos" ? html`
       <div className="workflow-library-section">
