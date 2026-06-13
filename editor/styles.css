@@ -7423,6 +7423,34 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   transform: translate(-50%, -50%);
   color: var(--hot);       /* read by the canvas ctx for the glyph/square fill */
 }
+/* Apology bubble shown when the worker bumps the mouse cursor. Sits above the
+   diamond (floater is 88px, centre 44,44); rides the floater's scale so it
+   stays a constant on-screen size. */
+.aab-speak {
+  position: absolute; left: 44px; bottom: 58px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font: 600 11px/1 var(--font-sans, system-ui);
+  color: var(--hot);
+  background: var(--surface);
+  border: 1px solid color-mix(in oklch, var(--hot) 34%, transparent);
+  border-radius: 9px;
+  padding: 3px 7px;
+  box-shadow: 0 2px 9px color-mix(in oklch, var(--hot) 22%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.aab-speak.is-on { animation: aab-speak-pop 1.3s ease-out forwards; }
+@keyframes aab-speak-pop {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(7px)  scale(0.6); }
+  16%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1.1); }
+  30%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
+  72%  { opacity: 1; transform: translateX(-50%) translateY(-2px) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aab-speak.is-on { animation-duration: 0.01ms; }
+}
 .workflow-agent-count {
   position: absolute; top: 22px; right: 22px;   /* near the diamond's upper-right, inside the 88px floater */
   min-width: 13px; height: 13px; padding: 0 3px;

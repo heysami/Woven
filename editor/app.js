@@ -52462,12 +52462,32 @@ function useWorkflowWorkingPaths() {
 //   prefers-reduced-motion (static row of squares).
 const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
+// Cursor-collision reaction: when the floating worker bumps into the mouse it
+// wobbles, sheds particles, and blurts a polite apology. One shared window
+// listener feeds every badge's rAF loop (screen coords; -1 = pointer unknown).
+// CRITICAL: the rAF loop must NEVER read layout (getBoundingClientRect) —
+// doing so per-frame thrashes layout and makes node drag / resize glitchy
+// whenever a run is active. The loop uses a CACHED wrap rect refreshed only on
+// resize (see refreshWrapRect in the effect), so per-frame cost is pure math.
+const __aabCursor = { x: -1, y: -1, installed: false };
+function aabTrackCursor() {
+  if (__aabCursor.installed) return;
+  __aabCursor.installed = true;
+  try {
+    window.addEventListener("mousemove", (e) => { __aabCursor.x = e.clientX; __aabCursor.y = e.clientY; }, { passive: true });
+    window.addEventListener("mouseout", (e) => { if (!e.relatedTarget && !e.toElement) { __aabCursor.x = -1; __aabCursor.y = -1; } }, { passive: true });
+    window.__aabCursor = __aabCursor;   // diagnostic: inspect live cursor tracking from the console
+  } catch {}
+}
+const AAB_BONK_PHRASES = ["excuse me", "sorry", "pardon me", "oops!", "'scuse me", "whoops"];
+
 function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, working, count, title, onExited, tetherHost }) {
   const canvasRef = useRef(null);      // inner face / sequence (front)
   const trailRef = useRef(null);       // tether LINE canvas (portaled BEHIND the nodes)
   const tetherWrapRef = useRef(null);  // wrapper for the behind canvas (positioned per frame)
   const frontRef = useRef(null);       // comet trail + celebration particles (FRONT of nodes)
   const floaterRef = useRef(null);     // the diamond + face; floats OUTSIDE the node (front)
+  const speakRef = useRef(null);       // apology bubble shown on cursor collision
   // Geometry can change frame-to-frame (node move / resize / zoom) — keep the
   // latest in a ref so the single rAF loop reads fresh values without re-subscribing.
   const geomRef = useRef({ w, h, invZoom, zoom, pan, nx, ny });
@@ -52618,6 +52638,34 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     const MAX = 24;
     const particles = [];   // {x,y,vx,vy,life}
     let raf = 0, t0 = 0, prevTs = 0, scrambleTick = 0, lastScramble = 0, exited = false;
+    // ── Cursor-collision ("excuse me") state ──
+    // bonkT = when the last wobble began; bonkDir = recoil direction (node-local,
+    // away from the cursor). wrapRect is CACHED — refreshed only on resize, so
+    // the rAF loop does zero layout reads (the old per-frame getBoundingClientRect
+    // thrashed layout and made drag/resize glitchy).
+    aabTrackCursor();
+    const BONK_R = 42;          // screen-px collision radius — generous (worker ~40–50px + margin)
+    const BONK_COOLDOWN = 1.3;  // min seconds between reactions (no spam while lingering)
+    const BONK_DUR = 0.6;       // wobble duration, seconds
+    let bonkT = -1e9, bonkDirX = 0, bonkDirY = -1, speakTimer = 0;
+    let bonkPrevSx = null, bonkPrevSy = null;   // worker screen pos last frame (anti-tunnel sweep)
+    // Distance² from point (px,py) to segment (ax,ay)-(bx,by). A fast worker can
+    // jump >radius between frames; testing the swept segment (not just the point)
+    // means it still registers a bump instead of tunnelling past the cursor.
+    const segDistSq = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      let u = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const ex = px - (ax + u * dx), ey = py - (ay + u * dy);
+      return ex * ex + ey * ey;
+    };
+    let wrapRect = null, ro = null;
+    const refreshWrapRect = () => { const el = wrapRef && wrapRef.current; if (el) wrapRect = el.getBoundingClientRect(); };
+    refreshWrapRect();
+    try {
+      window.addEventListener("resize", refreshWrapRect, { passive: true });
+      if (wrapRef && wrapRef.current && window.ResizeObserver) { ro = new ResizeObserver(refreshWrapRect); ro.observe(wrapRef.current); }
+    } catch {}
 
     // The chat icon (top-right RunsMenu button) in this badge's node-local
     // coords — where the worker is "summoned" from. Mapped via the canvas
@@ -52731,6 +52779,38 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         if (e >= 1) exited = true;
       }
 
+      // ── Cursor collision ── while roaming, if the worker bumps the mouse it
+      // recoils + apologises. Worker is pointer-events:none, so detect proximity
+      // geometrically: map its node-local centre to screen px using the CACHED
+      // wrap rect + the pan/zoom already in geomRef (NO getBoundingClientRect
+      // here — that would thrash layout every frame). Test the cursor against the
+      // worker's SWEPT segment this frame so a fast pass still counts.
+      if ((phase === "work" || phase === "enter") && wrapRect) {
+        const z = g.zoom || 1, p = g.pan || { x: 0, y: 0 };
+        const wsx = (g.nx + lastPx) * z + p.x + wrapRect.left;
+        const wsy = (g.ny + lastPy) * z + p.y + wrapRect.top;
+        if (__aabCursor.x >= 0 && (t - bonkT) > BONK_COOLDOWN) {
+          const ax = bonkPrevSx == null ? wsx : bonkPrevSx;
+          const ay = bonkPrevSy == null ? wsy : bonkPrevSy;
+          if (segDistSq(__aabCursor.x, __aabCursor.y, ax, ay, wsx, wsy) < BONK_R * BONK_R) {
+            bonkT = t;
+            const curLX = (__aabCursor.x - wrapRect.left - p.x) / z - g.nx;
+            const curLY = (__aabCursor.y - wrapRect.top - p.y) / z - g.ny;
+            let rx = lastPx - curLX, ry = lastPy - curLY;
+            const rl = Math.hypot(rx, ry) || 1; bonkDirX = rx / rl; bonkDirY = ry / rl;
+            spawnParticles(lastPx, lastPy, iz);
+            const sp = speakRef.current;
+            if (sp) {
+              sp.textContent = AAB_BONK_PHRASES[Math.floor(rnd(7, Math.floor(t * 9.7)) * AAB_BONK_PHRASES.length) % AAB_BONK_PHRASES.length];
+              sp.classList.remove("is-on"); void sp.offsetWidth; sp.classList.add("is-on");
+              if (speakTimer) clearTimeout(speakTimer);
+              speakTimer = setTimeout(() => { if (speakRef.current) speakRef.current.classList.remove("is-on"); }, 1300);
+            }
+          }
+        }
+        bonkPrevSx = wsx; bonkPrevSy = wsy;
+      } else { bonkPrevSx = null; bonkPrevSy = null; }
+
       drawFace(faceT, forced);
       floater.dataset.phase = phase;
       // Lean the diamond into its horizontal motion — tilt toward the side it's
@@ -52742,9 +52822,22 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         ? Math.max(-0.5, Math.min(0.5, vxScreen * 0.026))
         : 0;
       tilt += (tiltTarget - tilt) * 0.12;
+      // Cursor-bonk wobble: a damped rotation shimmy + scale pop + knockback,
+      // decaying over BONK_DUR. Folded into the loop-owned transform so it
+      // doesn't fight the per-frame imperative write (a CSS animation would).
+      let wob = 0, pop = 1, recoil = 0;
+      const bonkP = (t - bonkT) / BONK_DUR;
+      if (bonkP >= 0 && bonkP < 1) {
+        const damp = 1 - bonkP;
+        wob = Math.sin(bonkP * Math.PI * 7) * 0.6 * damp;     // ±~34° shimmy, fading
+        pop = 1 + Math.sin(bonkP * Math.PI) * 0.18;           // quick scale pop
+        recoil = Math.sin(bonkP * Math.PI) * 12 * iz;         // ~12px screen knockback
+      }
       // floater is in the FRONT layer, node-local coords (overflow visible so it
       // shows outside the node box).
-      floater.style.transform = `translate(${(lastPx - SF).toFixed(2)}px, ${(lastPy - SF).toFixed(2)}px) scale(${(iz * scale).toFixed(3)}) rotate(${tilt.toFixed(3)}rad)`;
+      const ftx = (lastPx - SF) + bonkDirX * recoil;
+      const fty = (lastPy - SF) + bonkDirY * recoil;
+      floater.style.transform = `translate(${ftx.toFixed(2)}px, ${fty.toFixed(2)}px) scale(${(iz * scale * pop).toFixed(3)}) rotate(${(tilt + wob).toFixed(3)}rad)`;
       floater.style.opacity = (phase === "vanish") ? String(Math.max(0, scale)) : "1";
 
       if (doTrail) { trail.push(lastPx, lastPy); if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2); }
@@ -52835,7 +52928,12 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         tctx.beginPath(); tctx.moveTo(px, py); tctx.lineTo(cx, cy); tctx.stroke(); tctx.restore();
       });
     } else { raf = requestAnimationFrame(frame); }
-    return () => { if (raf) cancelAnimationFrame(raf); };
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      if (speakTimer) clearTimeout(speakTimer);
+      if (ro) { try { ro.disconnect(); } catch {} }
+      try { window.removeEventListener("resize", refreshWrapRect); } catch {}
+    };
   }, [keyId]);
 
   const host = tetherHost && tetherHost.current;
@@ -52848,6 +52946,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         <span className="aab-square aab-square-fill"/>
         <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
         <span className="aab-wave" aria-hidden="true">👋</span>
+        <span ref=${speakRef} className="aab-speak" aria-hidden="true"></span>
         ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
       </div>
       ${host ? createPortal(html`
