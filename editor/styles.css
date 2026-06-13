@@ -815,6 +815,17 @@ button {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
 }
 .orchestrator-card-head-text { flex: 1; min-width: 0; }
+/* v3.13 — per-orchestrator art thumbnail (or placeholder for new ones). */
+.orchestrator-card-art {
+  flex: none; width: 64px; height: 48px; border-radius: 8px;
+  object-fit: contain; padding: 3px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.orchestrator-card-art-ph {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-faint); background: var(--accent-soft);
+}
+.orchestrator-card-art-ph svg { width: 22px; height: 22px; }
 .orchestrator-card-name {
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
 }

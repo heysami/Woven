@@ -144,16 +144,28 @@ def get_registry(project_root: Optional[str] = None) -> dict:
     manifests = _scan_manifests()
     disabled  = set(load_disabled(project_root))
 
+    # v3.13 — per-orchestrator art. A square SVG illustration at
+    # editor/orchestrator-art/<id>.svg, served (shared) at
+    # /editor/orchestrator-art/<id>.svg. `art` is null when no file exists
+    # (e.g. a freshly-added orchestrator) so the landing card shows a
+    # placeholder instead of a broken image.
+    art_dir = os.path.join(_HERE, "orchestrator-art")
+
     orchestrators: list[dict] = []
     for m in manifests:
         default_enabled = bool(m.get("defaultEnabled", True))
         is_disabled     = m.get("id") in disabled
         enabled         = default_enabled and not is_disabled
+        oid             = m.get("id")
+        art_url = None
+        if oid and os.path.isfile(os.path.join(art_dir, f"{oid}.svg")):
+            art_url = f"/editor/orchestrator-art/{oid}.svg"
         orchestrators.append({
             **m,
             "enabled":        enabled,
             "defaultEnabled": default_enabled,
             "userDisabled":   is_disabled,
+            "art":            art_url,
         })
 
     return {

@@ -16224,6 +16224,9 @@ function OrchestratorCard({ orchestrator, busy, onToggle }) {
         style=${{ cursor: "pointer" }}
       >
         <span className="orchestrator-card-disclosure" aria-hidden="true">${expanded ? "▼" : "▶"}</span>
+        ${p.art
+          ? html`<img className="orchestrator-card-art" src=${p.art} alt="" loading="lazy"/>`
+          : html`<div className="orchestrator-card-art orchestrator-card-art-ph" aria-hidden="true" title="No art yet — placeholder"><${Icon.Flow}/></div>`}
         <div className="orchestrator-card-head-text">
           <div className="orchestrator-card-name">
             <span className="orchestrator-card-label">${p.label}</span>
