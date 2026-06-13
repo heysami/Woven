@@ -33917,7 +33917,180 @@ function WorkflowLibrary({ tab = "nodes" }) {
         </div>
       </div>
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Design systems · direction</div>
+        <div className="workflow-library-section-head">Composition</div>
+        <div className="workflow-library-list">
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "composer" }));
+            }}
+            title="Drag onto canvas — responsive layered canvas. Wire multiple asset nodes in to stack them with per-layer opacity, anchor, and offset."
+          >
+            <span className="workflow-library-item-glyph">▣</span>
+            <span className="workflow-library-item-label">Composer</span>
+            <span className="workflow-library-item-id">layered canvas</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "formatted-text" }));
+            }}
+            title="Drag onto canvas — rich text node. Type directly; wire a Typography node to enable selection-based level picking."
+          >
+            <span className="workflow-library-item-glyph">¶</span>
+            <span className="workflow-library-item-label">Formatted text</span>
+            <span className="workflow-library-item-id">rich</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "mermaid" }));
+            }}
+            title="Drag onto canvas — Mermaid diagram. Edit the source in the code panel; flowchart / sequence / class / state / ER / pie supported."
+          >
+            <span className="workflow-library-item-glyph">⇄</span>
+            <span className="workflow-library-item-label">Mermaid diagram</span>
+            <span className="workflow-library-item-id">diagram</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "vector-editor" }));
+            }}
+            title="Drag onto canvas — inline SVG drawing tool. Draw rects, ellipses, lines, paths, freehand strokes, text. Apply fill/stroke/gradient/shadow/blur, run boolean ops, convert text to outlines. Bake to a self-contained .svg file."
+          >
+            <span className="workflow-library-item-glyph">✎</span>
+            <span className="workflow-library-item-label">Vector editor</span>
+            <span className="workflow-library-item-id">svg drawing</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "color-palette" }));
+            }}
+            title="Drag onto canvas — color swatches with name + value. Wire into a design-system node."
+          >
+            <span className="workflow-library-item-glyph">●</span>
+            <span className="workflow-library-item-label">Color palette</span>
+            <span className="workflow-library-item-id">swatches</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "typography" }));
+            }}
+            title="Drag onto canvas — type scale rendered with real fonts. Wire into a design-system node."
+          >
+            <span className="workflow-library-item-glyph">Aa</span>
+            <span className="workflow-library-item-label">Typography</span>
+            <span className="workflow-library-item-id">scale</span>
+          </div>
+        </div>
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Asset generators</div>
+        <div className="workflow-library-list">
+          ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
+            // Each skill is draggable; payload carries kind+skill so the drop
+            // handler creates a node already configured for this skill type.
+            const payload = { kind: "skill", skill: s.id };
+            if (s.model)        payload.model    = s.model;
+            if (s.provider)     payload.provider = s.provider;
+            if (s.defaultModel) payload.model    = s.defaultModel;
+            if (s.hasAspect)    payload.aspect   = "1:1";
+            // Subtitle: provider-fixed skills show "<provider> · <model>";
+            // dropdown skills show the default model.
+            const subtitle = s.model
+              ? s.model.split("/").pop()
+              : (s.defaultModel || "");
+            return html`
+              <div
+                key=${s.id}
+                className="workflow-library-item"
+                draggable=${true}
+                onDragStart=${(e) => {
+                  e.dataTransfer.effectAllowed = "copy";
+                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify(payload));
+                }}
+                title=${s.hint || s.label}
+              >
+                <span className="workflow-library-item-glyph">${skillGlyph(s)}</span>
+                <span className="workflow-library-item-label">${s.label}</span>
+                <span className="workflow-library-item-id">${subtitle}</span>
+              </div>
+            `;
+          })}
+        </div>
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Iterator</div>
+        <div className="workflow-library-list">
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-repeater" }));
+               }}
+               title="Drag onto canvas — repeats any upstream runnable N times, optional variant prompt per output.">
+            <span className="workflow-library-item-glyph"><${Icon.Refresh}/></span>
+            <span className="workflow-library-item-label">Repeater</span>
+            <span className="workflow-library-item-id">N variants</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-remix" }));
+               }}
+               title="Drag onto canvas — rasterises any input + regenerates N variants of the image.">
+            <span className="workflow-library-item-glyph"><${Icon.Shuffle}/></span>
+            <span className="workflow-library-item-label">Remix</span>
+            <span className="workflow-library-item-id">N variants</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-blend" }));
+               }}
+               title="Drag onto canvas — weighted blend of N inputs by user-defined criteria, single generated output.">
+            <span className="workflow-library-item-glyph"><${Icon.Blend}/></span>
+            <span className="workflow-library-item-label">Blend</span>
+            <span className="workflow-library-item-id">N inputs</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-refiner" }));
+               }}
+               title="Drag onto canvas — spawns interviewer + interviewee agents that loop Q/A until your criteria are met.">
+            <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
+            <span className="workflow-library-item-label">Prompt refiner</span>
+            <span className="workflow-library-item-id">2-agent loop</span>
+          </div>
+        </div>
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Others</div>
         <div className="workflow-library-list">
           <div
             className="workflow-library-item"
@@ -34012,179 +34185,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Canvas}/></span>
             <span className="workflow-library-item-label">Prototype generator</span>
             <span className="workflow-library-item-id">agent · DS-aware preset</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "color-palette" }));
-            }}
-            title="Drag onto canvas — color swatches with name + value. Wire into a design-system node."
-          >
-            <span className="workflow-library-item-glyph">●</span>
-            <span className="workflow-library-item-label">Color palette</span>
-            <span className="workflow-library-item-id">swatches</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "typography" }));
-            }}
-            title="Drag onto canvas — type scale rendered with real fonts. Wire into a design-system node."
-          >
-            <span className="workflow-library-item-glyph">Aa</span>
-            <span className="workflow-library-item-label">Typography</span>
-            <span className="workflow-library-item-id">scale</span>
-          </div>
-        </div>
-      </div>
-      <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Composition · text</div>
-        <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "composer" }));
-            }}
-            title="Drag onto canvas — responsive layered canvas. Wire multiple asset nodes in to stack them with per-layer opacity, anchor, and offset."
-          >
-            <span className="workflow-library-item-glyph">▣</span>
-            <span className="workflow-library-item-label">Composer</span>
-            <span className="workflow-library-item-id">layered canvas</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "formatted-text" }));
-            }}
-            title="Drag onto canvas — rich text node. Type directly; wire a Typography node to enable selection-based level picking."
-          >
-            <span className="workflow-library-item-glyph">¶</span>
-            <span className="workflow-library-item-label">Formatted text</span>
-            <span className="workflow-library-item-id">rich</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "mermaid" }));
-            }}
-            title="Drag onto canvas — Mermaid diagram. Edit the source in the code panel; flowchart / sequence / class / state / ER / pie supported."
-          >
-            <span className="workflow-library-item-glyph">⇄</span>
-            <span className="workflow-library-item-label">Mermaid diagram</span>
-            <span className="workflow-library-item-id">diagram</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "vector-editor" }));
-            }}
-            title="Drag onto canvas — inline SVG drawing tool. Draw rects, ellipses, lines, paths, freehand strokes, text. Apply fill/stroke/gradient/shadow/blur, run boolean ops, convert text to outlines. Bake to a self-contained .svg file."
-          >
-            <span className="workflow-library-item-glyph">✎</span>
-            <span className="workflow-library-item-label">Vector editor</span>
-            <span className="workflow-library-item-id">svg drawing</span>
-          </div>
-        </div>
-      </div>
-      <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Asset tools</div>
-        <div className="workflow-library-list">
-          ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
-            // Each skill is draggable; payload carries kind+skill so the drop
-            // handler creates a node already configured for this skill type.
-            const payload = { kind: "skill", skill: s.id };
-            if (s.model)        payload.model    = s.model;
-            if (s.provider)     payload.provider = s.provider;
-            if (s.defaultModel) payload.model    = s.defaultModel;
-            if (s.hasAspect)    payload.aspect   = "1:1";
-            // Subtitle: provider-fixed skills show "<provider> · <model>";
-            // dropdown skills show the default model.
-            const subtitle = s.model
-              ? s.model.split("/").pop()
-              : (s.defaultModel || "");
-            return html`
-              <div
-                key=${s.id}
-                className="workflow-library-item"
-                draggable=${true}
-                onDragStart=${(e) => {
-                  e.dataTransfer.effectAllowed = "copy";
-                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify(payload));
-                }}
-                title=${s.hint || s.label}
-              >
-                <span className="workflow-library-item-glyph">${skillGlyph(s)}</span>
-                <span className="workflow-library-item-label">${s.label}</span>
-                <span className="workflow-library-item-id">${subtitle}</span>
-              </div>
-            `;
-          })}
-        </div>
-      </div>
-      <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Iterator</div>
-        <div className="workflow-library-list">
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-repeater" }));
-               }}
-               title="Drag onto canvas — repeats any upstream runnable N times, optional variant prompt per output.">
-            <span className="workflow-library-item-glyph"><${Icon.Refresh}/></span>
-            <span className="workflow-library-item-label">Repeater</span>
-            <span className="workflow-library-item-id">N variants</span>
-          </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-remix" }));
-               }}
-               title="Drag onto canvas — rasterises any input + regenerates N variants of the image.">
-            <span className="workflow-library-item-glyph"><${Icon.Shuffle}/></span>
-            <span className="workflow-library-item-label">Remix</span>
-            <span className="workflow-library-item-id">N variants</span>
-          </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-blend" }));
-               }}
-               title="Drag onto canvas — weighted blend of N inputs by user-defined criteria, single generated output.">
-            <span className="workflow-library-item-glyph"><${Icon.Blend}/></span>
-            <span className="workflow-library-item-label">Blend</span>
-            <span className="workflow-library-item-id">N inputs</span>
-          </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-refiner" }));
-               }}
-               title="Drag onto canvas — spawns interviewer + interviewee agents that loop Q/A until your criteria are met.">
-            <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
-            <span className="workflow-library-item-label">Prompt refiner</span>
-            <span className="workflow-library-item-id">2-agent loop</span>
           </div>
         </div>
       </div>
