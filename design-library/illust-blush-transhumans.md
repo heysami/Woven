@@ -19,7 +19,9 @@ notForUseWhen: cottagecore, restrained editorial, warm-lifestyle, B2B-clean
 # subject matter (visors, antennae, robotic arms), isolated on transparent
 # or flat background. Avoid: glossy 3D, painterly gradients, smooth
 # rendering, Pixar-adjacent character design. See §Visual signatures below.
-images: []
+images:
+  - src: illust-blush-transhumans.png
+    reason: Illustration style sample.
 ---
 
 # Transhumans (Pablo Stanley — punk-zine cyborg ink)

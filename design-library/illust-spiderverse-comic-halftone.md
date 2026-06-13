@@ -20,7 +20,9 @@ notForUseWhen: restrained-editorial, cottagecore, B2B-clean, premium-luxury-rest
 # noise. The character can be anything — Spider-Man-adjacent or original —
 # but the print-shader treatment over CG is the whole point. See §Visual
 # signatures below for the full checklist.
-images: []
+images:
+  - src: illust-spiderverse-comic-halftone.png
+    reason: Illustration style sample.
 ---
 
 # Spider-Verse comic-halftone (Sony Imageworks)

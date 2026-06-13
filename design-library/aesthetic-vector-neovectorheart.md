@@ -15,7 +15,11 @@
 # and on §Voice register (`AGENT 014 · REGION NA · TACTICAL`). Refuse the
 # explicit §Forbidden list: no multi-hue gradient, no rounded forms, no
 # free-angle rotation, no kanji-as-texture, no bubble chrome.
-images: []
+images:
+  - src: aesthetic-vector-neovectorheart-ui.png
+    reason: Aesthetic vocabulary in UI.
+  - src: aesthetic-vector-neovectorheart-isolated.png
+    reason: Signature motif, isolated.
 ---
 # Neo-Vectorheart (aesthetic)
 
