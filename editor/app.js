@@ -14347,6 +14347,12 @@ function dsSemanticDarkSteps(hex) {
   return { "50": bg(0.17), "100": bg(0.22), "200": bg(0.33), "700": tx(0.72), "800": tx(0.80), "900": tx(0.87) };
 }
 const DS_SEMANTIC = ["success", "attention", "error", "info"];
+// The auto dark-surface (page) tint for a given primary — what the "Dark
+// surface" control shows as its default before the user overrides it.
+function dsDarkSurfaceDefault(primaryHex) {
+  const ph = dsRgbToHsl(dsHexToRgb(primaryHex) || [7, 78, 207]);
+  return dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.18), 0.145));
+}
 /* The `:root[data-theme="dark"]{}` role override for the effective palette —
    always computed (default colours included) so dark mode is correct for any
    palette. Sets the dark-tuned roles + the new semantic tokens the components
@@ -14367,13 +14373,16 @@ function buildDsDarkCss(s) {
   const ph = dsRgbToHsl(dsHexToRgb(P) || [7, 78, 207]);
   const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.55), 0.115));
   const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.6), 0.06));
-  // Dark surfaces are tinted toward the PRIMARY hue (low saturation), so the
-  // whole dark theme is in HARMONY with the brand — a warm primary gives warm
-  // greys, a cool primary cool greys. (Light mode does the opposite: the
-  // neutral BALANCES the primary; dark wants harmony.)
-  const hue = ph[0];
-  const surf = (L, sat) => dsRgbToHex(dsHslToRgb(hue, sat === undefined ? Math.min(ph[1], 0.12) : sat, L));
-  const sTxt = Math.min(ph[1], 0.05);   // faint tint on light text so it gels
+  // Dark surfaces are tinted toward the PRIMARY hue, so the whole dark theme is
+  // in HARMONY with the brand — a warm primary gives warm greys, a cool primary
+  // cool greys. (Light mode does the opposite: the neutral BALANCES the primary;
+  // dark wants harmony.) The user can OVERRIDE the tint with s.darkSurface — its
+  // hue + saturation then drive the whole surface scale.
+  const surfHsl = s.darkSurface ? dsRgbToHsl(dsHexToRgb(s.darkSurface) || [33, 36, 41]) : ph;
+  const hue = surfHsl[0];
+  const baseSat = Math.min(surfHsl[1] * (s.darkSurface ? 1.6 : 1), 0.18);   // stronger so the tint reads
+  const surf = (L, sat) => dsRgbToHex(dsHslToRgb(hue, sat === undefined ? baseSat : sat, L));
+  const sTxt = Math.min(baseSat, 0.05);   // faint tint on light text so it gels
   const lines = [
     `--primary-surface:${pf.fill};`,
     `--on-primary:${pf.onText};`,
@@ -14388,7 +14397,7 @@ function buildDsDarkCss(s) {
     `--surface:${surf(0.145)};`, `--surface-default:${surf(0.184)};`,
     `--surface-medium:${surf(0.225)};`, `--surface-strong:${surf(0.275)};`,
     `--fg-on-surface:${surf(0.145)};`,
-    `--border-subtle:${surf(0.225)};`, `--border-default:${surf(0.31, Math.min(ph[1], 0.10))};`,
+    `--border-subtle:${surf(0.225)};`, `--border-default:${surf(0.31, Math.min(baseSat, 0.12))};`,
     `--interactive-hover:${surf(0.225)};`, `--interactive-active:${surf(0.31)};`,
     `--neutral-50:${surf(0.184)};`, `--neutral-70:${surf(0.205)};`, `--neutral-80:${surf(0.225)};`,
     `--neutral-100:${surf(0.31)};`, `--neutral-150:${surf(0.355)};`, `--neutral-200:${surf(0.42)};`,
@@ -14535,6 +14544,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [dsSettings, setDsSettings] = useState({
     primary: null, secondary: null, tertiary: null, neutral: null,
     successColor: null, attentionColor: null, errorColor: null, infoColor: null,
+    darkSurface: null,   // dark-mode surface tint base; null = harmonise w/ primary
     paletteName: null,   // label of the applied Coolors preset (display only)
     roundness: 1,
     fontKey: DS_DEFAULTS.fontKey,
@@ -14862,6 +14872,13 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 disabled=${settings.schemeDark && !settings.schemeLight}
                 onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
               <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
+              ${settings.schemeDark && html`
+                <div className="dscz-sub-label" style=${{ marginTop: "10px" }}>Dark surface</div>
+                <${DsColorRow} label="Surface tint" value=${settings.darkSurface}
+                  fallback=${dsDarkSurfaceDefault(settings.primary || DS_DEFAULTS.primary)}
+                  onChange=${(v) => set({ darkSurface: v })} onReset=${() => set({ darkSurface: null })}/>
+                <div className="dscz-row-hint">The dark theme's surface temperature. Defaults to harmonise with the primary — pick a colour to set it yourself.</div>
+              `}
             </section>
 
             <section className="dscz-group">
