@@ -14922,9 +14922,8 @@ function DsPaletteDropdown({ current, onApply }) {
   return html`
     <div className="dscz-pal">
       <button type="button" className="dscz-pal-trigger" onClick=${() => setOpen(o => !o)} aria-expanded=${open}>
-        ${activeStrip
-          ? html`${strip(activeStrip)}<span className="dscz-pal-name">${current}</span>`
-          : html`<span className="dscz-pal-name dscz-pal-name-empty">Pick a palette…</span>`}
+        ${activeStrip ? strip(activeStrip) : null}
+        <span className=${"dscz-pal-name" + (activeStrip ? "" : " dscz-pal-name-empty")}>${activeStrip ? current : "Pick a palette…"}</span>
         <span className=${"dscz-pal-caret" + (open ? " is-open" : "")} aria-hidden="true">▾</span>
       </button>
       ${open && html`

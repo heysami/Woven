@@ -8,176 +8,438 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
 <link rel="stylesheet" href="../styles.css">
 <style>
-  /* Page-local marketing layout — built from DS tokens so it tracks the
-     customizer (colour / roundness / type / spacing all flow through). */
-  body{background:var(--surface);}
-  .lp-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-m);}
-  /* nav */
-  .lp-nav{display:flex;align-items:center;gap:var(--space-m);height:72px;}
-  .lp-nav__logo{display:flex;align-items:center;gap:var(--space-xs);font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
-  .lp-nav__logo img{height:34px;width:auto;}
+  /* ============================================================
+     Marketing landing — built entirely from DS tokens so colour /
+     roundness / type / spacing all flow through. 60-30-10: primary
+     leads, secondary accents, tertiary supports, greys are the canvas.
+     ============================================================ */
+  body{background:var(--surface);color:var(--fg-default);}
+  .lp-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-l);}
+  section{position:relative;}
+  .eyebrow{display:inline-flex;align-items:center;gap:var(--space-2xs);font:var(--w-semibold) var(--text-xs)/1 var(--font);
+    letter-spacing:.10em;text-transform:uppercase;color:var(--primary-fg-emphasis);}
+  .eyebrow::before{content:"";width:18px;height:2px;border-radius:2px;background:currentColor;}
+
+  /* ---- nav ---- */
+  .lp-nav{display:flex;align-items:center;gap:var(--space-m);height:76px;}
+  .lp-logo{display:flex;align-items:center;gap:var(--space-xs);font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
+  .lp-logo img{height:32px;width:auto;}
   .lp-nav__links{display:flex;gap:var(--space-m);margin-left:var(--space-l);}
   .lp-nav__links a{color:var(--fg-muted);font-weight:var(--w-medium);font-size:var(--text-s);}
   .lp-nav__links a:hover{color:var(--fg-default);text-decoration:none;}
   .lp-nav__cta{margin-left:auto;display:flex;align-items:center;gap:var(--space-xs);}
-  /* hero */
-  .lp-hero{display:grid;grid-template-columns:1.05fr .95fr;gap:var(--space-2xl);align-items:center;padding:var(--space-3xl) 0;}
-  .lp-eyebrow{display:inline-flex;align-items:center;gap:var(--space-2xs);}
-  .lp-hero h1{margin:var(--space-base) 0 0;font-size:var(--text-h1);font-weight:var(--w-light);line-height:var(--lh-tight);letter-spacing:-.02em;color:var(--fg-default);}
-  .lp-hero p{margin:var(--space-base) 0 0;font-size:var(--text-h5);font-weight:var(--w-regular);line-height:var(--lh-relaxed);color:var(--fg-muted);max-width:36ch;}
-  .lp-hero__cta{display:flex;gap:var(--space-s);margin-top:var(--space-l);}
-  .lp-hero__art{aspect-ratio:4/3;border-radius:var(--radius-xl);overflow:hidden;position:relative;
-    background:linear-gradient(135deg,var(--primary-surface),var(--primary-700));box-shadow:var(--shadow-l);}
-  .lp-hero__svg{position:absolute;inset:0;width:100%;height:100%;}
-  .lp-hero__chip{position:absolute;top:var(--space-base);left:var(--space-base);z-index:1;}
-  /* trust row */
-  .lp-trust{display:flex;align-items:center;gap:var(--space-l);flex-wrap:wrap;padding:var(--space-base) 0 var(--space-2xl);
-    color:var(--fg-subtle);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.08em;}
-  .lp-trust b{font-weight:var(--w-semibold);color:var(--fg-muted);letter-spacing:0;text-transform:none;font-size:var(--text-base);}
-  /* features */
+
+  /* ---- hero ---- */
+  .lp-hero{display:grid;grid-template-columns:1fr 1.08fr;gap:var(--space-2xl);align-items:center;padding:var(--space-2xl) 0 var(--space-3xl);}
+  .lp-hero h1{margin:var(--space-base) 0 0;font-size:clamp(2.2rem,4.2vw,var(--text-h1));font-weight:var(--w-light);
+    line-height:1.05;letter-spacing:-.025em;color:var(--fg-default);}
+  .lp-hero h1 b{font-weight:var(--w-semibold);color:var(--primary-fg-emphasis);}
+  .lp-hero__sub{margin:var(--space-base) 0 0;font-size:var(--text-h5);font-weight:var(--w-regular);line-height:1.55;color:var(--fg-muted);max-width:40ch;}
+  .lp-hero__cta{display:flex;gap:var(--space-s);margin-top:var(--space-l);flex-wrap:wrap;}
+  .lp-hero__proof{display:flex;align-items:center;gap:var(--space-s);margin-top:var(--space-l);}
+  .lp-avatars{display:flex;}
+  .lp-avatars span{width:34px;height:34px;border-radius:var(--radius-pill);border:2px solid var(--surface);margin-left:-10px;
+    display:flex;align-items:center;justify-content:center;color:#fff;font:var(--w-semibold) 12px/1 var(--font);}
+  .lp-avatars span:first-child{margin-left:0;}
+  .lp-proof__txt{font-size:var(--text-s);color:var(--fg-muted);}
+  .lp-proof__txt b{color:var(--fg-default);}
+  .lp-hero__art{position:relative;}
+  .lp-hero__art svg{width:100%;height:auto;display:block;overflow:visible;}
+
+  /* ---- logo cloud ---- */
+  .lp-cloud{display:flex;align-items:center;justify-content:center;gap:var(--space-xl);flex-wrap:wrap;
+    padding:var(--space-l) 0 var(--space-2xl);border-top:1px solid var(--border-subtle);}
+  .lp-cloud__label{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.08em;color:var(--fg-subtle);}
+  .lp-cloud b{font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-subtle);opacity:.75;}
+
+  /* ---- section scaffolding ---- */
   .lp-section{padding:var(--space-3xl) 0;}
-  .lp-section__head{text-align:center;max-width:50ch;margin:0 auto var(--space-2xl);}
-  .lp-section__head h2{font-size:var(--text-h2);font-weight:var(--w-regular);line-height:var(--lh-tight);margin:var(--space-xs) 0 0;color:var(--fg-default);}
-  .lp-section__head p{font-size:var(--text-base);color:var(--fg-muted);margin:var(--space-s) 0 0;}
-  .lp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-m);}
-  .lp-feat{padding:var(--space-l);}
-  .lp-feat__ico{width:44px;height:44px;border-radius:var(--radius-m);display:flex;align-items:center;justify-content:center;
-    background:var(--primary-surface-subtle);color:var(--primary-fg-emphasis);margin-bottom:var(--space-base);}
-  .lp-feat__ico svg{width:24px;height:24px;}
-  .lp-feat__ico--primary{background:var(--primary-surface-subtle);color:var(--primary-fg-emphasis);}
-  .lp-feat__ico--secondary{background:var(--secondary-100);color:var(--secondary-700);}
-  .lp-feat__ico--tertiary{background:var(--tertiary-100);color:var(--tertiary-700);}
-  /* full-bleed grey band — "play on the grey" canvas behind the feature cards */
-  .lp-band{background:var(--surface-default);border-block:1px solid var(--border-subtle);margin-top:var(--space-2xl);}
+  .lp-band{background:var(--surface-default);border-block:1px solid var(--border-subtle);}
+  .lp-head{max-width:54ch;margin:0 0 var(--space-2xl);}
+  .lp-head--center{margin-inline:auto;text-align:center;}
+  .lp-head h2{font-size:var(--text-h2);font-weight:var(--w-regular);line-height:1.1;letter-spacing:-.02em;margin:var(--space-xs) 0 0;color:var(--fg-default);}
+  .lp-head p{font-size:var(--text-base);color:var(--fg-muted);margin:var(--space-s) 0 0;line-height:1.6;}
+
+  /* ---- bento showcase ---- */
+  .lp-bento{display:grid;grid-template-columns:1.4fr 1fr;grid-auto-rows:1fr;gap:var(--space-base);}
+  .lp-bento__feature{grid-row:span 2;}
+  .lp-tile{background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-l);overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:var(--shadow-xs);transition:box-shadow var(--ease),transform var(--ease);}
+  .lp-tile:hover{box-shadow:var(--shadow-m);transform:translateY(-2px);}
+  .lp-tile__art{position:relative;background:var(--surface-default);border-bottom:1px solid var(--border-subtle);}
+  .lp-tile__art svg{width:100%;height:auto;display:block;}
+  .lp-tile__body{padding:var(--space-l);display:flex;flex-direction:column;gap:var(--space-2xs);}
+  .lp-tile__body h3{font-size:var(--text-h5);font-weight:var(--w-semibold);margin:0;color:var(--fg-default);}
+  .lp-tile__body p{font-size:var(--text-s);color:var(--fg-muted);line-height:1.55;margin:0;}
+  .lp-bento__feature .lp-tile__body{padding:var(--space-xl);gap:var(--space-xs);}
+  .lp-bento__feature .lp-tile__body h3{font-size:var(--text-h4);}
+
+  /* ---- feature trio (spot illustrations) ---- */
+  .lp-trio{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-l);}
+  .lp-feat{text-align:left;}
+  .lp-feat__art{width:84px;height:84px;margin-bottom:var(--space-base);}
   .lp-feat h3{font-size:var(--text-h5);font-weight:var(--w-semibold);margin:0 0 var(--space-2xs);color:var(--fg-default);}
-  .lp-feat p{font-size:var(--text-s);color:var(--fg-muted);line-height:var(--lh-relaxed);margin:0;}
-  /* metrics */
-  .lp-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-m);text-align:center;}
-  .lp-metric__n{font-size:var(--text-display);font-weight:var(--w-light);color:var(--primary-fg-emphasis);line-height:1;}
-  .lp-metric__l{font-size:var(--text-s);color:var(--fg-muted);margin-top:var(--space-xs);}
-  /* CTA band */
-  .lp-cta-band{background:linear-gradient(120deg,var(--primary-surface),var(--primary-700));color:#fff;
-    border-radius:var(--radius-2xl);padding:var(--space-3xl) var(--space-2xl);text-align:center;}
-  .lp-cta-band h2{font-size:var(--text-h2);font-weight:var(--w-light);margin:0;line-height:var(--lh-tight);}
-  .lp-cta-band p{font-size:var(--text-base);opacity:.85;margin:var(--space-s) 0 var(--space-l);}
-  .lp-cta-band .btn--light{background:#fff;color:var(--primary-fg);}
-  /* footer */
-  .lp-foot{border-top:1px solid var(--border-default);margin-top:var(--space-3xl);padding:var(--space-2xl) 0;
-    display:flex;align-items:center;gap:var(--space-base);color:var(--fg-subtle);font-size:var(--text-s);}
-  .lp-foot a{color:var(--fg-muted);margin-left:var(--space-base);}
-  @media(max-width:820px){.lp-hero,.lp-grid,.lp-metrics{grid-template-columns:1fr;}}
+  .lp-feat p{font-size:var(--text-s);color:var(--fg-muted);line-height:1.6;margin:0;}
+  .lp-feat a{display:inline-flex;align-items:center;gap:4px;margin-top:var(--space-s);font-size:var(--text-s);font-weight:var(--w-semibold);color:var(--primary-fg-emphasis);}
+
+  /* ---- stats band ---- */
+  .lp-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-l);align-items:center;}
+  .lp-stat__n{font-size:clamp(2.4rem,5vw,var(--text-display));font-weight:var(--w-light);line-height:1;letter-spacing:-.02em;}
+  .lp-stat__l{font-size:var(--text-s);color:var(--fg-muted);margin-top:var(--space-2xs);}
+  .lp-stat{position:relative;padding-left:var(--space-base);}
+  .lp-stat::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:3px;background:var(--primary-surface);}
+  .lp-stat:nth-child(2)::before{background:var(--secondary-500);}
+  .lp-stat:nth-child(3)::before{background:var(--tertiary-500);}
+
+  /* ---- testimonial ---- */
+  .lp-quote{max-width:760px;margin:0 auto;text-align:center;}
+  .lp-quote__mark{color:var(--primary-200);font-size:5rem;line-height:.5;font-family:Georgia,serif;}
+  .lp-quote blockquote{font-size:var(--text-h4);font-weight:var(--w-light);line-height:1.35;letter-spacing:-.01em;color:var(--fg-default);margin:0;}
+  .lp-quote__by{display:flex;align-items:center;justify-content:center;gap:var(--space-s);margin-top:var(--space-l);}
+  .lp-quote__av{width:44px;height:44px;border-radius:var(--radius-pill);background:linear-gradient(135deg,var(--secondary-400),var(--tertiary-400));}
+  .lp-quote__meta{text-align:left;font-size:var(--text-s);}
+  .lp-quote__meta b{display:block;color:var(--fg-default);}
+  .lp-quote__meta span{color:var(--fg-subtle);}
+
+  /* ---- CTA ---- */
+  .lp-cta{position:relative;overflow:hidden;border-radius:var(--radius-2xl);
+    background:linear-gradient(120deg,var(--primary-surface),var(--primary-700));color:#fff;
+    padding:var(--space-3xl) var(--space-2xl);display:grid;grid-template-columns:1.3fr 1fr;gap:var(--space-xl);align-items:center;}
+  .lp-cta h2{font-size:var(--text-h2);font-weight:var(--w-light);margin:0;line-height:1.1;letter-spacing:-.02em;}
+  .lp-cta p{opacity:.85;margin:var(--space-s) 0 var(--space-l);font-size:var(--text-base);}
+  .lp-cta .btn--light{background:#fff;color:var(--primary-fg);}
+  .lp-cta__art{position:relative;}
+  .lp-cta__art svg{width:100%;height:auto;display:block;overflow:visible;}
+
+  /* ---- footer ---- */
+  .lp-foot{padding:var(--space-2xl) 0;border-top:1px solid var(--border-default);
+    display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:var(--space-l);}
+  .lp-foot__brand p{font-size:var(--text-s);color:var(--fg-muted);max-width:30ch;margin:var(--space-s) 0 0;line-height:1.6;}
+  .lp-foot__col h4{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-subtle);margin:0 0 var(--space-s);}
+  .lp-foot__col a{display:block;font-size:var(--text-s);color:var(--fg-muted);padding:4px 0;}
+  .lp-foot__col a:hover{color:var(--fg-default);text-decoration:none;}
+  .lp-foot__bar{border-top:1px solid var(--border-subtle);padding:var(--space-base) 0;display:flex;align-items:center;gap:var(--space-base);
+    font-size:var(--text-xs);color:var(--fg-subtle);}
+
+  @media(max-width:900px){
+    .lp-hero,.lp-bento,.lp-trio,.lp-stats,.lp-cta,.lp-foot{grid-template-columns:1fr;}
+    .lp-bento__feature{grid-row:auto;}
+    .lp-nav__links{display:none;}
+  }
 </style>
 </head>
 <body>
 
 <header class="lp-wrap">
   <nav class="lp-nav">
-    <span class="lp-nav__logo"><img class="app-logo" src="../assets/logo.svg" alt="">Default</span>
+    <span class="lp-logo"><img class="app-logo" src="../assets/logo.svg" alt="">Default</span>
     <div class="lp-nav__links">
-      <a href="#">Product</a><a href="#">Solutions</a><a href="#">Pricing</a><a href="#">Docs</a>
+      <a href="#">Product</a><a href="#">Solutions</a><a href="#">Customers</a><a href="#">Pricing</a><a href="#">Docs</a>
     </div>
     <div class="lp-nav__cta">
       <button class="btn btn--text">Sign in</button>
-      <button class="btn btn--primary">Get started</button>
+      <button class="btn btn--primary">Start free</button>
     </div>
   </nav>
 </header>
 
 <main>
+  <!-- HERO -->
   <section class="lp-wrap lp-hero">
     <div>
-      <span class="lp-eyebrow tag tag--secondary tag--light">New · Workspace 2.0</span>
-      <h1>The operating system for your whole team.</h1>
-      <p>Plan, build, and ship from one calm surface. Every workflow, every asset, one source of truth.</p>
+      <span class="eyebrow">Workspace 2.0 is here</span>
+      <h1>The calm home for your team's <b>best work</b>.</h1>
+      <p class="lp-hero__sub">Plan, build, and ship from one fast surface. Docs, tasks, and assets — finally in the same place.</p>
       <div class="lp-hero__cta">
         <button class="btn btn--primary btn--l">Start free trial</button>
         <button class="btn btn--outline btn--l">Book a demo</button>
       </div>
+      <div class="lp-hero__proof">
+        <div class="lp-avatars">
+          <span style="background:var(--primary-surface)">A</span>
+          <span style="background:var(--secondary-500)">M</span>
+          <span style="background:var(--tertiary-500)">K</span>
+          <span style="background:var(--neutral-400)">+</span>
+        </div>
+        <div class="lp-proof__txt"><b>12,000+ teams</b> ship faster with Default</div>
+      </div>
     </div>
     <div class="lp-hero__art">
-      <span class="lp-hero__chip badge badge--light">Live</span>
-      <!-- Token-driven hero illustration: a neutral dashboard card carrying a
-           primary/secondary/tertiary donut + bars, floating on the brand field
-           with secondary & tertiary accent shapes. Recolours with the DS. -->
-      <svg class="lp-hero__svg" viewBox="0 0 440 330" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Product analytics illustration">
-        <circle cx="392" cy="56" r="40" fill="var(--secondary-500)"/>
-        <path d="M34 252a36 36 0 0 1 36-36v72a36 36 0 0 1-36-36Z" fill="var(--tertiary-400)"/>
-        <circle cx="58" cy="74" r="9" fill="var(--tertiary-300)"/>
-        <circle cx="406" cy="256" r="7" fill="var(--secondary-300)"/>
-        <rect x="362" y="150" width="20" height="20" rx="5" fill="var(--secondary-400)" transform="rotate(18 372 160)"/>
-        <rect x="58" y="64" width="300" height="206" rx="18" fill="var(--surface)"/>
-        <rect x="58.5" y="64.5" width="299" height="205" rx="17.5" stroke="var(--neutral-100)"/>
-        <rect x="80" y="86" width="96" height="11" rx="5.5" fill="var(--neutral-300)"/>
-        <rect x="80" y="104" width="58" height="8" rx="4" fill="var(--neutral-150)"/>
-        <rect x="300" y="84" width="40" height="22" rx="11" fill="var(--primary-surface-subtle)"/>
-        <g transform="translate(124,198)">
-          <circle r="40" fill="none" stroke="var(--neutral-100)" stroke-width="16"/>
-          <circle r="40" fill="none" stroke="var(--primary-surface)" stroke-width="16" stroke-dasharray="108 143" transform="rotate(-90)"/>
-          <circle r="40" fill="none" stroke="var(--secondary-500)" stroke-width="16" stroke-dasharray="74 177" stroke-dashoffset="-108" transform="rotate(-90)"/>
-          <circle r="40" fill="none" stroke="var(--tertiary-500)" stroke-width="16" stroke-dasharray="44 207" stroke-dashoffset="-182" transform="rotate(-90)"/>
+      <svg viewBox="0 0 560 460" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Product workspace illustration">
+        <defs>
+          <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="1.6" fill="var(--neutral-300)"/>
+          </pattern>
+          <linearGradient id="heroOrb" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="var(--secondary-400)"/><stop offset="1" stop-color="var(--secondary-600)"/>
+          </linearGradient>
+        </defs>
+        <!-- decorative field -->
+        <rect x="360" y="20" width="180" height="120" fill="url(#dots)" opacity=".7"/>
+        <circle cx="486" cy="92" r="60" fill="url(#heroOrb)"/>
+        <path d="M40 380a44 44 0 0 1 44-44v88a44 44 0 0 1-44-44Z" fill="var(--tertiary-400)"/>
+        <!-- app window -->
+        <g filter="">
+          <rect x="56" y="70" width="430" height="316" rx="20" fill="var(--surface)" stroke="var(--border-default)"/>
+          <rect x="56" y="70" width="430" height="44" rx="20" fill="var(--surface-default)"/>
+          <rect x="56" y="96" width="430" height="18" fill="var(--surface-default)"/>
+          <circle cx="80" cy="92" r="5" fill="var(--neutral-300)"/><circle cx="98" cy="92" r="5" fill="var(--neutral-200)"/><circle cx="116" cy="92" r="5" fill="var(--neutral-200)"/>
+          <rect x="300" y="84" width="160" height="16" rx="8" fill="var(--surface)"/>
+          <!-- sidebar -->
+          <rect x="56" y="114" width="104" height="272" fill="var(--primary-700)"/>
+          <rect x="56" y="114" width="104" height="272" fill="var(--primary-surface)" opacity=".22"/>
+          <rect x="74" y="136" width="68" height="9" rx="4.5" fill="#fff" opacity=".9"/>
+          <rect x="74" y="168" width="68" height="9" rx="4.5" fill="#fff" opacity=".35"/>
+          <rect x="74" y="190" width="56" height="9" rx="4.5" fill="#fff" opacity=".35"/>
+          <rect x="74" y="212" width="62" height="9" rx="4.5" fill="#fff" opacity=".35"/>
+          <rect x="66" y="128" width="86" height="26" rx="8" fill="#fff" opacity=".16"/>
+          <!-- content header -->
+          <rect x="184" y="136" width="120" height="12" rx="6" fill="var(--neutral-300)"/>
+          <rect x="184" y="156" width="80" height="8" rx="4" fill="var(--neutral-150)"/>
+          <!-- KPI cards -->
+          <g>
+            <rect x="184" y="184" width="88" height="62" rx="10" fill="var(--surface-default)"/>
+            <rect x="196" y="196" width="34" height="7" rx="3.5" fill="var(--neutral-200)"/>
+            <rect x="196" y="212" width="48" height="14" rx="4" fill="var(--primary-surface)"/>
+            <rect x="282" y="184" width="88" height="62" rx="10" fill="var(--surface-default)"/>
+            <rect x="294" y="196" width="34" height="7" rx="3.5" fill="var(--neutral-200)"/>
+            <rect x="294" y="212" width="40" height="14" rx="4" fill="var(--secondary-500)"/>
+            <rect x="380" y="184" width="88" height="62" rx="10" fill="var(--surface-default)"/>
+            <rect x="392" y="196" width="34" height="7" rx="3.5" fill="var(--neutral-200)"/>
+            <rect x="392" y="212" width="44" height="14" rx="4" fill="var(--tertiary-500)"/>
+          </g>
+          <!-- donut -->
+          <g transform="translate(232,322)">
+            <circle r="36" fill="none" stroke="var(--neutral-100)" stroke-width="14"/>
+            <circle r="36" fill="none" stroke="var(--primary-surface)" stroke-width="14" stroke-dasharray="98 128" transform="rotate(-90)"/>
+            <circle r="36" fill="none" stroke="var(--secondary-500)" stroke-width="14" stroke-dasharray="60 166" stroke-dashoffset="-98" transform="rotate(-90)"/>
+            <circle r="36" fill="none" stroke="var(--tertiary-500)" stroke-width="14" stroke-dasharray="40 186" stroke-dashoffset="-158" transform="rotate(-90)"/>
+          </g>
+          <!-- bars -->
+          <g transform="translate(312,290)">
+            <rect x="0"  y="40" width="20" height="40" rx="4" fill="var(--neutral-200)"/>
+            <rect x="30" y="22" width="20" height="58" rx="4" fill="var(--tertiary-400)"/>
+            <rect x="60" y="30" width="20" height="50" rx="4" fill="var(--secondary-500)"/>
+            <rect x="90" y="8"  width="20" height="72" rx="4" fill="var(--primary-surface)"/>
+            <rect x="120" y="26" width="20" height="54" rx="4" fill="var(--primary-300)"/>
+          </g>
         </g>
-        <g transform="translate(212,150)">
-          <rect x="0"  y="58" width="22" height="42" rx="5" fill="var(--neutral-200)"/>
-          <rect x="32" y="34" width="22" height="66" rx="5" fill="var(--tertiary-400)"/>
-          <rect x="64" y="46" width="22" height="54" rx="5" fill="var(--secondary-500)"/>
-          <rect x="96" y="14" width="22" height="86" rx="5" fill="var(--primary-surface)"/>
+        <!-- floating stat card -->
+        <g>
+          <rect x="392" y="150" width="148" height="86" rx="14" fill="var(--surface)" stroke="var(--border-default)"/>
+          <rect x="408" y="166" width="56" height="8" rx="4" fill="var(--neutral-200)"/>
+          <text x="408" y="206" font-family="Plus Jakarta Sans" font-size="26" font-weight="700" fill="var(--fg-default)">$48k</text>
+          <g transform="translate(486,184)">
+            <circle r="16" fill="var(--success-100)"/>
+            <path d="M-5 3 L0 -4 L5 3" stroke="var(--success-700)" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+          <rect x="408" y="216" width="40" height="7" rx="3.5" fill="var(--success-500)"/>
+        </g>
+        <!-- floating avatar card -->
+        <g>
+          <rect x="40" y="330" width="186" height="72" rx="14" fill="var(--surface)" stroke="var(--border-default)"/>
+          <circle cx="74" cy="366" r="14" fill="var(--primary-surface)"/>
+          <circle cx="98" cy="366" r="14" fill="var(--secondary-500)"/>
+          <circle cx="122" cy="366" r="14" fill="var(--tertiary-500)"/>
+          <circle cx="146" cy="366" r="14" fill="var(--neutral-200)"/>
+          <text x="142" y="371" font-family="Plus Jakarta Sans" font-size="11" font-weight="700" fill="var(--fg-muted)">+8</text>
+          <rect x="170" y="358" width="44" height="8" rx="4" fill="var(--neutral-200)"/>
+          <rect x="170" y="372" width="30" height="7" rx="3.5" fill="var(--neutral-150)"/>
         </g>
       </svg>
     </div>
   </section>
 
-  <section class="lp-wrap lp-trust">
-    <span>Trusted by teams at</span>
-    <b>Northwind</b><b>Acme Co</b><b>Lumen</b><b>Vertex</b><b>Hollowpoint</b>
+  <!-- LOGO CLOUD -->
+  <section class="lp-wrap lp-cloud">
+    <span class="lp-cloud__label">Trusted by fast-moving teams</span>
+    <b>Northwind</b><b>Acme</b><b>Lumen</b><b>Vertex</b><b>Halcyon</b>
   </section>
 
+  <!-- BENTO SHOWCASE -->
+  <section class="lp-wrap lp-section">
+    <div class="lp-head">
+      <span class="eyebrow">One surface</span>
+      <h2>Everything your team needs, nothing it doesn't.</h2>
+      <p>A focused toolkit that scales from a five-person startup to a five-thousand-person org — without the sprawl.</p>
+    </div>
+    <div class="lp-bento">
+      <article class="lp-tile lp-bento__feature">
+        <div class="lp-tile__art">
+          <svg viewBox="0 0 460 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Unified board">
+            <rect width="460" height="300" fill="var(--surface-default)"/>
+            <rect x="36" y="40" width="388" height="42" rx="10" fill="var(--surface)" stroke="var(--border-default)"/>
+            <circle cx="60" cy="61" r="9" fill="var(--primary-surface)"/>
+            <rect x="80" y="56" width="120" height="10" rx="5" fill="var(--neutral-300)"/>
+            <rect x="356" y="51" width="48" height="20" rx="10" fill="var(--primary-surface-subtle)"/>
+            <!-- three kanban columns -->
+            <g>
+              <rect x="36"  y="98" width="120" height="170" rx="12" fill="var(--surface)" stroke="var(--border-subtle)"/>
+              <rect x="172" y="98" width="120" height="170" rx="12" fill="var(--surface)" stroke="var(--border-subtle)"/>
+              <rect x="308" y="98" width="120" height="170" rx="12" fill="var(--surface)" stroke="var(--border-subtle)"/>
+              <rect x="50"  y="112" width="44" height="8" rx="4" fill="var(--neutral-200)"/>
+              <rect x="186" y="112" width="44" height="8" rx="4" fill="var(--neutral-200)"/>
+              <rect x="322" y="112" width="44" height="8" rx="4" fill="var(--neutral-200)"/>
+              <!-- cards -->
+              <rect x="48"  y="130" width="96" height="40" rx="8" fill="var(--surface-default)"/><rect x="48" y="130" width="4" height="40" rx="2" fill="var(--primary-surface)"/>
+              <rect x="48"  y="178" width="96" height="40" rx="8" fill="var(--surface-default)"/><rect x="48" y="178" width="4" height="40" rx="2" fill="var(--secondary-500)"/>
+              <rect x="184" y="130" width="96" height="40" rx="8" fill="var(--surface-default)"/><rect x="184" y="130" width="4" height="40" rx="2" fill="var(--tertiary-500)"/>
+              <rect x="184" y="178" width="96" height="40" rx="8" fill="var(--surface-default)"/><rect x="184" y="178" width="4" height="40" rx="2" fill="var(--primary-surface)"/>
+              <rect x="320" y="130" width="96" height="40" rx="8" fill="var(--surface-default)"/><rect x="320" y="130" width="4" height="40" rx="2" fill="var(--secondary-500)"/>
+            </g>
+          </svg>
+        </div>
+        <div class="lp-tile__body">
+          <h3>One workspace, every workflow</h3>
+          <p>Boards, docs, and assets share a single graph — so a task always knows the doc it came from, and search finds it all.</p>
+        </div>
+      </article>
+
+      <article class="lp-tile">
+        <div class="lp-tile__art">
+          <svg viewBox="0 0 320 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Automation">
+            <rect width="320" height="180" fill="var(--surface-default)"/>
+            <rect x="36" y="74" width="60" height="32" rx="8" fill="var(--surface)" stroke="var(--border-default)"/>
+            <rect x="132" y="58" width="56" height="64" rx="12" fill="var(--primary-surface)"/>
+            <path d="M158 80v20M148 90h20" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+            <rect x="224" y="58" width="60" height="28" rx="8" fill="var(--surface)" stroke="var(--border-default)"/>
+            <rect x="224" y="94" width="60" height="28" rx="8" fill="var(--surface)" stroke="var(--border-default)"/>
+            <path d="M96 90h28M188 76h28M188 104h28" stroke="var(--tertiary-500)" stroke-width="2.5" stroke-dasharray="4 4" stroke-linecap="round"/>
+            <circle cx="124" cy="90" r="3.5" fill="var(--secondary-500)"/>
+          </svg>
+        </div>
+        <div class="lp-tile__body">
+          <h3>Automate the busywork</h3>
+          <p>Triggers and rules move work forward while you sleep.</p>
+        </div>
+      </article>
+
+      <article class="lp-tile">
+        <div class="lp-tile__art">
+          <svg viewBox="0 0 320 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Insights">
+            <rect width="320" height="180" fill="var(--surface-default)"/>
+            <rect x="36" y="36" width="248" height="108" rx="12" fill="var(--surface)" stroke="var(--border-default)"/>
+            <polyline points="56,118 96,96 132,108 172,74 212,86 256,58" fill="none" stroke="var(--primary-surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="56,128 96,118 132,122 172,104 212,110 256,92" fill="none" stroke="var(--secondary-500)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>
+            <circle cx="256" cy="58" r="5" fill="var(--primary-surface)"/>
+            <circle cx="172" cy="74" r="4" fill="var(--tertiary-500)"/>
+          </svg>
+        </div>
+        <div class="lp-tile__body">
+          <h3>Insight, on tap</h3>
+          <p>Live dashboards turn activity into decisions.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- FEATURE TRIO (spot illustrations) -->
   <div class="lp-band">
     <section class="lp-wrap lp-section">
-      <div class="lp-section__head">
-        <span class="title-mini">Why teams switch</span>
-        <h2>Everything you need, nothing you don't.</h2>
-        <p>A focused toolkit that scales from a five-person startup to a five-thousand-person org.</p>
+      <div class="lp-head lp-head--center">
+        <span class="eyebrow" style="justify-content:center">Why teams switch</span>
+        <h2>Built for speed, depth, and trust.</h2>
       </div>
-      <div class="lp-grid">
-        <div class="card lp-feat">
-          <span class="lp-feat__ico lp-feat__ico--primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></span>
+      <div class="lp-trio">
+        <div class="lp-feat">
+          <svg class="lp-feat__art" viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fast">
+            <rect x="6" y="6" width="72" height="72" rx="20" fill="var(--primary-surface-subtle)"/>
+            <path d="M46 20 L30 46 H42 L38 64 L56 36 H44 Z" fill="var(--primary-surface)"/>
+            <circle cx="60" cy="24" r="4" fill="var(--secondary-500)"/>
+            <circle cx="24" cy="60" r="3" fill="var(--tertiary-500)"/>
+          </svg>
           <h3>Fast by default</h3>
           <p>Sub-100ms interactions everywhere. No spinners, no waiting — the app keeps up with your thinking.</p>
+          <a href="#">Learn more →</a>
         </div>
-        <div class="card lp-feat">
-          <span class="lp-feat__ico lp-feat__ico--secondary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></span>
-          <h3>One workspace</h3>
+        <div class="lp-feat">
+          <svg class="lp-feat__art" viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Layered">
+            <rect x="6" y="6" width="72" height="72" rx="20" fill="var(--secondary-100)"/>
+            <rect x="24" y="44" width="36" height="20" rx="5" fill="var(--tertiary-500)"/>
+            <rect x="20" y="34" width="44" height="20" rx="5" fill="var(--secondary-500)"/>
+            <rect x="26" y="22" width="32" height="20" rx="5" fill="var(--surface)" stroke="var(--secondary-600)" stroke-width="2"/>
+          </svg>
+          <h3>One source of truth</h3>
           <p>Docs, tasks, and assets live side by side. Stop tab-hopping between five disconnected tools.</p>
+          <a href="#">Learn more →</a>
         </div>
-        <div class="card lp-feat">
-          <span class="lp-feat__ico lp-feat__ico--tertiary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></span>
+        <div class="lp-feat">
+          <svg class="lp-feat__art" viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Secure">
+            <rect x="6" y="6" width="72" height="72" rx="20" fill="var(--tertiary-100)"/>
+            <path d="M42 22 L60 30 V44 c0 12 -8 18 -18 22 c-10 -4 -18 -10 -18 -22 V30 Z" fill="var(--primary-surface)"/>
+            <path d="M35 44 l5 5 l10 -12" stroke="#fff" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="62" cy="58" r="4" fill="var(--secondary-500)"/>
+          </svg>
           <h3>Secure to the core</h3>
           <p>SSO, audit logs, and granular roles ship on day one. Enterprise-grade without the enterprise tax.</p>
+          <a href="#">Learn more →</a>
         </div>
       </div>
     </section>
   </div>
 
+  <!-- STATS -->
   <section class="lp-wrap lp-section">
-    <div class="lp-metrics">
-      <div><div class="lp-metric__n" style="color:var(--primary-fg-emphasis)">12k+</div><div class="lp-metric__l">Teams onboarded</div></div>
-      <div><div class="lp-metric__n" style="color:var(--secondary-600)">99.9%</div><div class="lp-metric__l">Uptime, measured</div></div>
-      <div><div class="lp-metric__n" style="color:var(--tertiary-600)">4.9</div><div class="lp-metric__l">Average rating</div></div>
+    <div class="lp-stats">
+      <div class="lp-stat"><div class="lp-stat__n" style="color:var(--primary-fg-emphasis)">12k+</div><div class="lp-stat__l">Teams onboarded</div></div>
+      <div class="lp-stat"><div class="lp-stat__n" style="color:var(--secondary-600)">99.9%</div><div class="lp-stat__l">Uptime, measured monthly</div></div>
+      <div class="lp-stat"><div class="lp-stat__n" style="color:var(--tertiary-700)">4.9/5</div><div class="lp-stat__l">Average customer rating</div></div>
     </div>
   </section>
 
-  <section class="lp-wrap">
-    <div class="lp-cta-band">
-      <h2>Ready to move faster?</h2>
-      <p>Spin up a workspace in under a minute. No card required.</p>
-      <button class="btn btn--light btn--l">Get started free</button>
+  <!-- TESTIMONIAL -->
+  <div class="lp-band">
+    <section class="lp-wrap lp-section lp-quote">
+      <div class="lp-quote__mark">“</div>
+      <blockquote>We replaced four tools with Default in a week. The team actually enjoys planning now — and we ship twice as often.</blockquote>
+      <div class="lp-quote__by">
+        <span class="lp-quote__av"></span>
+        <div class="lp-quote__meta"><b>Elena Marsh</b><span>VP Product, Northwind</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- CTA -->
+  <section class="lp-wrap lp-section">
+    <div class="lp-cta">
+      <div>
+        <h2>Ready to move faster?</h2>
+        <p>Spin up a workspace in under a minute. No credit card required.</p>
+        <button class="btn btn--light btn--l">Get started free</button>
+      </div>
+      <div class="lp-cta__art">
+        <svg viewBox="0 0 320 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Launch">
+          <circle cx="200" cy="110" r="86" fill="#fff" opacity=".08"/>
+          <circle cx="200" cy="110" r="58" fill="#fff" opacity=".10"/>
+          <path d="M200 44 c26 14 40 42 40 72 l-18 16 h-44 l-18 -16 c0 -30 14 -58 40 -72Z" fill="#fff"/>
+          <circle cx="200" cy="98" r="14" fill="var(--secondary-500)"/>
+          <path d="M182 132 l-14 22 18 -6Z" fill="var(--tertiary-300)"/>
+          <path d="M218 132 l14 22 -18 -6Z" fill="var(--tertiary-300)"/>
+          <path d="M188 150 c-6 10 -6 22 -2 32 c8 -6 12 -16 12 -26Z" fill="var(--secondary-400)"/>
+          <path d="M212 150 c6 10 6 22 2 32 c-8 -6 -12 -16 -12 -26Z" fill="var(--secondary-400)"/>
+          <circle cx="92"  cy="56"  r="4" fill="#fff" opacity=".8"/>
+          <circle cx="120" cy="170" r="5" fill="#fff" opacity=".6"/>
+          <circle cx="270" cy="180" r="4" fill="#fff" opacity=".7"/>
+        </svg>
+      </div>
     </div>
   </section>
 
-  <footer class="lp-wrap lp-foot">
-    <span class="lp-nav__logo" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:24px">Default</span>
-    <span style="margin-left:auto">© 2026 Default Inc.</span>
-    <a href="#">Privacy</a><a href="#">Terms</a><a href="#">Status</a>
+  <!-- FOOTER -->
+  <footer class="lp-wrap">
+    <div class="lp-foot">
+      <div class="lp-foot__brand">
+        <span class="lp-logo" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:26px">Default</span>
+        <p>The calm home for your team's best work. Plan, build, and ship from one fast surface.</p>
+      </div>
+      <div class="lp-foot__col"><h4>Product</h4><a href="#">Overview</a><a href="#">Features</a><a href="#">Integrations</a><a href="#">Pricing</a></div>
+      <div class="lp-foot__col"><h4>Company</h4><a href="#">About</a><a href="#">Careers</a><a href="#">Blog</a><a href="#">Contact</a></div>
+      <div class="lp-foot__col"><h4>Resources</h4><a href="#">Docs</a><a href="#">Guides</a><a href="#">Changelog</a><a href="#">Status</a></div>
+    </div>
+    <div class="lp-foot__bar">
+      <span>© 2026 Default Inc.</span>
+      <span style="margin-left:auto">Privacy</span><span>Terms</span><span>Security</span>
+    </div>
   </footer>
 </main>
 

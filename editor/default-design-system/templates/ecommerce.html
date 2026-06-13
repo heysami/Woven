@@ -8,77 +8,133 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
 <link rel="stylesheet" href="../styles.css">
 <style>
-  /* Interactive storefront — catalogue → cart → checkout → payment → done.
-     Built from DS tokens so colour / roundness / type / spacing all flow. */
-  body{background:var(--surface-default);}
-  .sh-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-m);}
-  /* top bar */
-  .sh-nav{display:flex;align-items:center;gap:var(--space-base);height:68px;background:var(--surface);
-    border-bottom:1px solid var(--border-default);position:sticky;top:0;z-index:20;}
-  .sh-nav__logo{display:flex;align-items:center;gap:var(--space-xs);font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
-  .sh-nav__logo img{height:30px;width:auto;}
-  .sh-nav__links{display:flex;gap:var(--space-m);margin-left:var(--space-l);}
-  .sh-nav__links a{color:var(--fg-muted);font-weight:var(--w-medium);font-size:var(--text-s);}
-  .sh-cart-btn{margin-left:auto;position:relative;}
+  /* ============================================================
+     Interactive storefront — catalogue → cart → checkout → payment →
+     confirmation. Every product is a token-driven flat illustration, so
+     the whole shop recolours with the DS. 60-30-10 with the greys as canvas.
+     ============================================================ */
+  body{background:var(--surface-default);color:var(--fg-default);}
+  .sh-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-l);}
+
+  /* ---- top bar ---- */
+  .sh-top{background:var(--surface);border-bottom:1px solid var(--border-default);position:sticky;top:0;z-index:20;}
+  .sh-nav{display:flex;align-items:center;gap:var(--space-base);height:70px;}
+  .sh-logo{display:flex;align-items:center;gap:var(--space-xs);font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
+  .sh-logo img{height:28px;width:auto;}
+  .sh-cats{display:flex;gap:var(--space-xs);margin-left:var(--space-l);}
+  .sh-cats a{padding:7px 12px;border-radius:var(--radius-pill);font-size:var(--text-s);font-weight:var(--w-medium);color:var(--fg-muted);}
+  .sh-cats a:hover{background:var(--surface-default);color:var(--fg-default);text-decoration:none;}
+  .sh-cats a.is-active{background:var(--primary-surface-subtle);color:var(--primary-fg);}
+  .sh-search{margin-left:auto;display:flex;align-items:center;gap:var(--space-2xs);height:38px;padding:0 var(--space-s);
+    background:var(--surface-default);border:1px solid var(--border-default);border-radius:var(--radius-pill);color:var(--fg-subtle);min-width:150px;}
+  .sh-search input{border:0;background:transparent;outline:none;font:inherit;font-size:var(--text-s);color:var(--fg-default);width:100%;}
+  .sh-cart-btn{position:relative;}
   .sh-cart-btn .badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;font-size:11px;background:var(--secondary-500);}
-  /* hero strip */
-  .sh-hero{background:linear-gradient(120deg,var(--primary-surface),var(--primary-700));color:#fff;border-radius:var(--radius-xl);
-    padding:var(--space-2xl);margin:var(--space-l) 0;display:flex;align-items:center;gap:var(--space-base);}
-  .sh-hero h1{font-size:var(--text-h2);font-weight:var(--w-light);margin:0;line-height:var(--lh-tight);}
-  .sh-hero p{opacity:.85;margin:var(--space-xs) 0 0;}
-  /* catalogue */
+
+  /* ---- hero ---- */
+  .sh-hero{margin:var(--space-l) 0;border-radius:var(--radius-2xl);overflow:hidden;position:relative;
+    background:linear-gradient(120deg,var(--primary-surface),var(--primary-700));color:#fff;
+    display:grid;grid-template-columns:1.2fr .8fr;align-items:center;gap:var(--space-base);padding:var(--space-2xl);}
+  .sh-hero .badge{background:rgba(255,255,255,.18);color:#fff;}
+  .sh-hero h1{font-size:clamp(2rem,4vw,var(--text-h1));font-weight:var(--w-light);margin:var(--space-s) 0 0;line-height:1.05;letter-spacing:-.02em;}
+  .sh-hero p{opacity:.88;margin:var(--space-s) 0 var(--space-l);font-size:var(--text-h5);}
+  .sh-hero .btn--light{background:#fff;color:var(--primary-fg);}
+  .sh-hero__art{position:relative;}
+  .sh-hero__art svg{width:100%;height:auto;display:block;overflow:visible;}
+
+  /* ---- value strip ---- */
+  .sh-values{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-base);margin:var(--space-l) 0;}
+  .sh-value{display:flex;align-items:center;gap:var(--space-s);padding:var(--space-base);background:var(--surface);
+    border:1px solid var(--border-subtle);border-radius:var(--radius-l);}
+  .sh-value__ico{width:40px;height:40px;flex:none;border-radius:var(--radius-m);display:flex;align-items:center;justify-content:center;}
+  .sh-value__ico svg{width:22px;height:22px;}
+  .sh-value b{font-size:var(--text-s);color:var(--fg-default);display:block;}
+  .sh-value span{font-size:var(--text-xs);color:var(--fg-subtle);}
+
+  /* ---- catalogue ---- */
   .sh-head{display:flex;align-items:baseline;justify-content:space-between;margin:var(--space-l) 0 var(--space-base);}
-  .sh-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-m);}
-  .sh-card{display:flex;flex-direction:column;overflow:hidden;}
-  .sh-card__media{position:relative;}
-  .sh-card__art{aspect-ratio:5/4;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:var(--w-semibold);font-size:var(--text-h3);}
-  .sh-card__art--illus{padding:0;background:var(--surface-default);}
-  .sh-illus{width:100%;height:100%;display:block;}
-  .sh-card__tag{position:absolute;top:var(--space-xs);left:var(--space-xs);box-shadow:var(--shadow-xs);}
-  .sh-card__body{padding:var(--space-base);display:flex;flex-direction:column;gap:var(--space-2xs);flex:1;}
+  .sh-head h2{font-size:var(--text-h4);font-weight:var(--w-semibold);margin:0;}
+  .sh-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-base);}
+  .sh-card{display:flex;flex-direction:column;overflow:hidden;background:var(--surface);transition:box-shadow var(--ease),transform var(--ease);}
+  .sh-card:hover{box-shadow:var(--shadow-m);transform:translateY(-3px);}
+  .sh-card__media{position:relative;aspect-ratio:5/4;background:var(--surface-default);}
+  .sh-card__media svg{width:100%;height:100%;display:block;}
+  .sh-card__tag{position:absolute;top:var(--space-s);left:var(--space-s);box-shadow:var(--shadow-xs);}
+  .sh-card__fav{position:absolute;top:var(--space-s);right:var(--space-s);width:32px;height:32px;border-radius:var(--radius-pill);
+    background:var(--surface);border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--fg-subtle);cursor:pointer;}
+  .sh-card__fav:hover{color:var(--secondary-500);}
+  .sh-card__body{padding:var(--space-base);display:flex;flex-direction:column;gap:6px;flex:1;}
   .sh-card__name{font-weight:var(--w-semibold);color:var(--fg-default);}
   .sh-card__desc{font-size:var(--text-xs);color:var(--fg-subtle);flex:1;}
-  .sh-card__foot{display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-xs);}
+  .sh-stars{display:flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--fg-subtle);}
+  .sh-stars svg{width:13px;height:13px;color:var(--attention-500);}
+  .sh-card__foot{display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-2xs);}
   .sh-price{font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
-  /* cart slideout */
+  .sh-price s{font-weight:var(--w-regular);font-size:var(--text-s);color:var(--fg-subtle);margin-right:6px;}
+
+  /* ---- collection promo band ---- */
+  .sh-promo{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:var(--space-2xl) 0;border:1px solid var(--border-default);
+    border-radius:var(--radius-xl);overflow:hidden;background:var(--surface);}
+  .sh-promo__art{background:var(--surface-default);position:relative;}
+  .sh-promo__art svg{width:100%;height:100%;display:block;position:absolute;inset:0;}
+  .sh-promo__body{padding:var(--space-2xl);display:flex;flex-direction:column;justify-content:center;gap:var(--space-xs);}
+  .sh-promo__body .eyebrow{display:inline-flex;align-items:center;gap:6px;font:var(--w-semibold) var(--text-xs)/1 var(--font);
+    letter-spacing:.08em;text-transform:uppercase;color:var(--secondary-600);}
+  .sh-promo__body h2{font-size:var(--text-h3);font-weight:var(--w-regular);margin:0;letter-spacing:-.02em;}
+  .sh-promo__body p{color:var(--fg-muted);margin:0 0 var(--space-s);}
+
+  /* ---- cart / checkout slideout ---- */
   .sh-scrim{position:fixed;inset:0;background:var(--shade-50);opacity:0;visibility:hidden;transition:opacity var(--ease),visibility var(--ease);z-index:40;}
   .sh-scrim.is-open{opacity:1;visibility:visible;}
-  .sh-drawer{position:fixed;top:0;right:0;height:100%;width:420px;max-width:92vw;background:var(--surface);box-shadow:var(--shadow-xl);
+  .sh-drawer{position:fixed;top:0;right:0;height:100%;width:440px;max-width:94vw;background:var(--surface);box-shadow:var(--shadow-xl);
     transform:translateX(100%);transition:transform var(--ease);z-index:41;display:flex;flex-direction:column;}
   .sh-drawer.is-open{transform:none;}
   .sh-drawer__head{display:flex;align-items:center;gap:var(--space-xs);padding:var(--space-base) var(--space-m);border-bottom:1px solid var(--border-default);}
   .sh-drawer__head h3{margin:0;font-size:var(--text-h5);font-weight:var(--w-semibold);}
   .sh-drawer__close{margin-left:auto;border:0;background:transparent;cursor:pointer;font-size:22px;line-height:1;color:var(--fg-muted);}
+  .sh-steps{display:flex;gap:6px;padding:var(--space-s) var(--space-m) 0;}
+  .sh-steps span{flex:1;height:4px;border-radius:2px;background:var(--neutral-100);}
+  .sh-steps span.is-on{background:var(--primary-surface);}
   .sh-drawer__body{flex:1;overflow-y:auto;padding:var(--space-base) var(--space-m);}
   .sh-drawer__foot{border-top:1px solid var(--border-default);padding:var(--space-base) var(--space-m);display:flex;flex-direction:column;gap:var(--space-s);}
   .sh-line{display:flex;gap:var(--space-s);padding:var(--space-s) 0;border-bottom:1px solid var(--border-subtle);}
-  .sh-line__art{width:56px;height:56px;border-radius:var(--radius-base);flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;}
+  .sh-line__art{width:60px;height:60px;border-radius:var(--radius-base);flex:none;overflow:hidden;background:var(--surface-default);}
+  .sh-line__art svg{width:100%;height:100%;display:block;}
   .sh-line__meta{flex:1;min-width:0;}
   .sh-line__name{font-weight:var(--w-medium);font-size:var(--text-s);color:var(--fg-default);}
-  .sh-line__qty{display:inline-flex;align-items:center;gap:var(--space-xs);margin-top:var(--space-2xs);}
-  .sh-qbtn{width:24px;height:24px;border:1px solid var(--border-default);background:var(--surface);border-radius:var(--radius-s);cursor:pointer;color:var(--fg-default);line-height:1;}
+  .sh-line__qty{display:inline-flex;align-items:center;gap:var(--space-xs);margin-top:6px;}
+  .sh-qbtn{width:26px;height:26px;border:1px solid var(--border-default);background:var(--surface);border-radius:var(--radius-s);cursor:pointer;color:var(--fg-default);line-height:1;}
   .sh-summary{display:flex;justify-content:space-between;font-size:var(--text-s);color:var(--fg-muted);}
-  .sh-summary--total{font-size:var(--text-h5);font-weight:var(--w-semibold);color:var(--fg-default);}
+  .sh-summary--total{font-size:var(--text-h5);font-weight:var(--w-semibold);color:var(--fg-default);padding-top:var(--space-2xs);border-top:1px solid var(--border-subtle);margin-top:var(--space-2xs);}
   .sh-empty{text-align:center;color:var(--fg-subtle);padding:var(--space-2xl) 0;}
-  /* checkout / payment / done panels reuse the drawer body */
-  .sh-field{display:flex;flex-direction:column;gap:var(--space-2xs);margin-bottom:var(--space-s);}
+  .sh-empty svg{width:72px;height:72px;margin:0 auto var(--space-s);display:block;}
+  .sh-field{display:flex;flex-direction:column;gap:6px;margin-bottom:var(--space-s);}
   .sh-field label{font-size:var(--text-xs);font-weight:var(--w-medium);color:var(--fg-muted);}
   .sh-field--row{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-s);}
   .sh-done{text-align:center;padding:var(--space-xl) var(--space-base);}
-  .sh-done__tick{width:64px;height:64px;border-radius:var(--radius-pill);background:var(--success-100);color:var(--success-700);
+  .sh-done__tick{width:72px;height:72px;border-radius:var(--radius-pill);background:var(--success-100);color:var(--success-700);
     display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-base);}
-  .sh-done__tick svg{width:32px;height:32px;}
-  .sh-step-hint{font-size:var(--text-xs);color:var(--fg-subtle);text-align:center;}
-  @media(max-width:820px){.sh-grid{grid-template-columns:1fr 1fr;}.sh-hero{flex-direction:column;align-items:flex-start;}}
+  .sh-done__tick svg{width:36px;height:36px;}
+
+  /* ---- footer ---- */
+  .sh-foot{background:var(--surface);border-top:1px solid var(--border-default);margin-top:var(--space-2xl);}
+  .sh-foot__in{display:flex;align-items:center;gap:var(--space-base);padding:var(--space-xl) 0;color:var(--fg-subtle);font-size:var(--text-s);}
+  .sh-foot__in a{color:var(--fg-muted);}
+
+  @media(max-width:860px){.sh-grid,.sh-values,.sh-promo{grid-template-columns:1fr;}.sh-hero{grid-template-columns:1fr;}.sh-cats,.sh-search{display:none;}}
 </style>
 </head>
 <body>
 
-<header class="sh-nav-wrap" style="background:var(--surface)">
+<header class="sh-top">
   <div class="sh-wrap sh-nav">
-    <span class="sh-nav__logo"><img class="app-logo" src="../assets/logo.svg" alt="">Default Store</span>
-    <div class="sh-nav__links"><a href="#">New</a><a href="#">Apparel</a><a href="#">Gear</a><a href="#">Sale</a></div>
-    <button class="btn btn--outline-mono sh-cart-btn" id="cartOpen">
+    <span class="sh-logo"><img class="app-logo" src="../assets/logo.svg" alt="">Default Store</span>
+    <nav class="sh-cats"><a class="is-active" href="#">All</a><a href="#">Apparel</a><a href="#">Gear</a><a href="#">Home</a><a href="#">Sale</a></nav>
+    <div class="sh-search">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input placeholder="Search the shop…">
+    </div>
+    <button class="btn btn--outline-mono sh-cart-btn" id="cartOpen" style="margin-left:var(--space-s)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:20px;height:20px"><path d="M3 4h2l2.4 12.3a1 1 0 0 0 1 .7h8.7a1 1 0 0 0 1-.8L21 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>
       Cart<span class="badge" id="cartCount" hidden>0</span>
     </button>
@@ -86,19 +142,85 @@
 </header>
 
 <main class="sh-wrap">
+  <!-- HERO -->
   <section class="sh-hero">
     <div>
-      <h1>Spring drop is live.</h1>
+      <span class="badge badge--sm">New season</span>
+      <h1>The spring drop is live.</h1>
       <p>Considered goods, built to last. Free shipping over $80.</p>
+      <button class="btn btn--light btn--l">Shop the collection</button>
     </div>
-    <button class="btn btn--light btn--l" style="margin-left:auto;background:#fff;color:var(--primary-fg)">Shop the drop</button>
+    <div class="sh-hero__art">
+      <svg viewBox="0 0 300 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shopping illustration">
+        <circle cx="160" cy="120" r="98" fill="#fff" opacity=".08"/>
+        <circle cx="160" cy="120" r="66" fill="#fff" opacity=".10"/>
+        <!-- shopping bag -->
+        <path d="M104 96 h112 l10 110 a10 10 0 0 1 -10 10 h-112 a10 10 0 0 1 -10 -10 Z" fill="#fff"/>
+        <path d="M126 98 c0 -22 14 -34 34 -34 s34 12 34 34" stroke="var(--secondary-400)" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <path d="M138 144 c0 14 10 24 22 24 s22 -10 22 -24" stroke="var(--tertiary-500)" stroke-width="5" fill="none" stroke-linecap="round"/>
+        <circle cx="160" cy="134" r="9" fill="var(--secondary-500)"/>
+        <!-- sparkles -->
+        <path d="M250 70 l4 12 12 4 -12 4 -4 12 -4 -12 -12 -4 12 -4 Z" fill="#fff" opacity=".9"/>
+        <path d="M70 60 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 Z" fill="var(--secondary-300)"/>
+        <path d="M248 178 l2 7 7 2 -7 2 -2 7 -2 -7 -7 -2 7 -2 Z" fill="var(--tertiary-300)"/>
+        <circle cx="84" cy="186" r="5" fill="#fff" opacity=".7"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- VALUE STRIP -->
+  <section class="sh-values">
+    <div class="sh-value">
+      <span class="sh-value__ico" style="background:var(--primary-surface-subtle);color:var(--primary-fg-emphasis)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h13v8H3zM16 10h3l2 3v2h-5z"/><circle cx="7" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg></span>
+      <div><b>Free shipping</b><span>On all orders over $80</span></div>
+    </div>
+    <div class="sh-value">
+      <span class="sh-value__ico" style="background:var(--secondary-100);color:var(--secondary-700)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg></span>
+      <div><b>60-day returns</b><span>No-questions-asked policy</span></div>
+    </div>
+    <div class="sh-value">
+      <span class="sh-value__ico" style="background:var(--tertiary-100);color:var(--tertiary-700)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></span>
+      <div><b>2-year warranty</b><span>Built to outlast the season</span></div>
+    </div>
   </section>
 
   <div class="sh-head">
-    <div class="title-page" style="font-size:var(--text-h4)">Featured</div>
+    <h2>Featured</h2>
     <span class="text-s text-subtle" id="resultCount">6 items</span>
   </div>
   <div class="sh-grid" id="catalogue"></div>
+
+  <!-- COLLECTION PROMO -->
+  <section class="sh-promo">
+    <div class="sh-promo__art">
+      <svg viewBox="0 0 300 260" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Everyday carry collection">
+        <rect width="300" height="260" fill="var(--surface-default)"/>
+        <circle cx="150" cy="130" r="92" fill="var(--primary-surface-subtle)"/>
+        <!-- bottle -->
+        <g transform="translate(96,70)">
+          <rect x="-2" y="-16" width="28" height="14" rx="4" fill="var(--tertiary-500)"/>
+          <rect x="2" y="-4" width="20" height="10" fill="var(--primary-700)"/>
+          <rect x="-6" y="4" width="36" height="96" rx="16" fill="var(--primary-surface)"/>
+          <rect x="-6" y="36" width="36" height="30" fill="var(--secondary-500)"/>
+          <rect x="2" y="14" width="5" height="78" rx="2.5" fill="#fff" opacity=".3"/>
+        </g>
+        <!-- notebook -->
+        <g transform="translate(150,84)">
+          <rect x="0" y="0" width="74" height="96" rx="8" fill="var(--tertiary-500)"/>
+          <rect x="0" y="0" width="11" height="96" fill="var(--tertiary-700)"/>
+          <rect x="58" y="0" width="6" height="96" fill="var(--secondary-500)"/>
+          <rect x="22" y="20" width="30" height="6" rx="3" fill="#fff" opacity=".7"/>
+        </g>
+        <path d="M226 50 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 Z" fill="var(--secondary-400)"/>
+      </svg>
+    </div>
+    <div class="sh-promo__body">
+      <span class="eyebrow">◆ Everyday carry</span>
+      <h2>The kit that goes everywhere.</h2>
+      <p>Hand-picked essentials that earn their place in your bag — and look good doing it.</p>
+      <div><button class="btn btn--primary">Shop the edit</button></div>
+    </div>
+  </section>
 </main>
 
 <!-- Cart / checkout slideout -->
@@ -109,118 +231,156 @@
     <h3 id="drawerTitle">Your cart</h3>
     <button class="sh-drawer__close" id="cartClose" aria-label="Close">×</button>
   </div>
+  <div class="sh-steps" id="steps" hidden><span></span><span></span><span></span></div>
   <div class="sh-drawer__body" id="drawerBody"></div>
   <div class="sh-drawer__foot" id="drawerFoot"></div>
 </aside>
 
+<footer class="sh-foot">
+  <div class="sh-wrap sh-foot__in">
+    <span class="sh-logo" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:22px">Default Store</span>
+    <span style="margin-left:auto">© 2026 Default Store</span><a href="#">Shipping</a><a href="#">Returns</a><a href="#">Help</a>
+  </div>
+</footer>
+
 <script>
 (function(){
+  // ---- token-driven product illustrations (flat, recolour with the DS) ----
+  function ILLUS(id){
+    var S='<svg viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg" role="img">';
+    var bg='<rect width="200" height="160" fill="var(--surface-default)"/><ellipse cx="100" cy="138" rx="46" ry="7" fill="var(--neutral-200)" opacity=".5"/>';
+    var body={
+      tee: '<circle cx="30" cy="30" r="6" fill="var(--secondary-400)"/><circle cx="172" cy="126" r="8" fill="var(--tertiary-400)"/>'
+        + '<path d="M88 44 Q100 56 112 44 L124 40 L162 50 L156 78 L138 70 L136 128 L64 128 L62 70 L44 78 L38 50 L76 40 Z" fill="var(--primary-surface)"/>'
+        + '<path d="M88 44 Q100 56 112 44" fill="none" stroke="var(--tertiary-500)" stroke-width="3.5" stroke-linecap="round"/>'
+        + '<circle cx="100" cy="94" r="15" fill="var(--secondary-500)"/><path d="M93 94 l5 5 l9 -11" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>',
+      cap: '<rect x="150" y="26" width="13" height="13" rx="3" fill="var(--secondary-400)" transform="rotate(15 156 32)"/>'
+        + '<path d="M58 102 a42 42 0 0 1 84 0 Z" fill="var(--primary-surface)"/>'
+        + '<path d="M142 102 q26 2 34 16 q-44 8 -56 -2 Z" fill="var(--primary-700)"/>'
+        + '<circle cx="100" cy="60" r="4" fill="var(--tertiary-400)"/>'
+        + '<path d="M100 60 V102 M78 66 Q100 96 122 66" stroke="var(--primary-300)" stroke-width="2" fill="none"/>'
+        + '<rect x="86" y="80" width="28" height="14" rx="3" fill="var(--secondary-500)"/>',
+      tote: '<circle cx="30" cy="32" r="6" fill="var(--tertiary-400)"/>'
+        + '<path d="M80 62 C80 38 92 32 100 32 C108 32 120 38 120 62" stroke="var(--tertiary-500)" stroke-width="5" fill="none" stroke-linecap="round"/>'
+        + '<path d="M60 60 h80 l7 70 a5 5 0 0 1 -5 5 h-84 a5 5 0 0 1 -5 -5 Z" fill="var(--primary-surface)"/>'
+        + '<rect x="80" y="88" width="40" height="22" rx="4" fill="var(--secondary-500)"/>'
+        + '<path d="M89 99 l4 4 l8 -9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>',
+      bot: '<path d="M62 40 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 Z" fill="var(--tertiary-300)"/>'
+        + '<rect x="88" y="26" width="24" height="16" rx="4" fill="var(--tertiary-500)"/>'
+        + '<rect x="92" y="40" width="16" height="10" fill="var(--primary-700)"/>'
+        + '<rect x="80" y="50" width="40" height="86" rx="16" fill="var(--primary-surface)"/>'
+        + '<rect x="80" y="80" width="40" height="28" fill="var(--secondary-500)"/>'
+        + '<rect x="88" y="60" width="5" height="70" rx="2.5" fill="#fff" opacity=".32"/>',
+      sock: '<circle cx="40" cy="40" r="6" fill="var(--secondary-400)"/><circle cx="166" cy="120" r="7" fill="var(--tertiary-400)"/>'
+        + '<rect x="66" y="56" width="26" height="70" rx="13" fill="var(--primary-surface)"/>'
+        + '<rect x="66" y="56" width="26" height="15" rx="7.5" fill="var(--secondary-500)"/>'
+        + '<rect x="66" y="112" width="32" height="14" rx="7" fill="var(--primary-surface)"/>'
+        + '<rect x="102" y="48" width="26" height="70" rx="13" fill="var(--primary-surface)"/>'
+        + '<rect x="102" y="48" width="26" height="15" rx="7.5" fill="var(--tertiary-500)"/>'
+        + '<rect x="102" y="104" width="32" height="14" rx="7" fill="var(--primary-surface)"/>',
+      note: '<rect x="138" y="34" width="8" height="84" rx="4" fill="var(--tertiary-500)" transform="rotate(13 142 76)"/>'
+        + '<path d="M136 116 l-2 9 8 -4 Z" fill="var(--secondary-500)" transform="rotate(13 138 120)"/>'
+        + '<rect x="60" y="38" width="74" height="92" rx="8" fill="var(--primary-surface)"/>'
+        + '<rect x="60" y="38" width="11" height="92" fill="var(--primary-700)"/>'
+        + '<rect x="120" y="38" width="6" height="92" fill="var(--secondary-500)"/>'
+        + '<rect x="82" y="58" width="34" height="6" rx="3" fill="#fff" opacity=".75"/>'
+        + '<circle cx="98" cy="96" r="13" fill="#fff" opacity=".16"/>'
+    };
+    return S + bg + (body[id]||'') + '</svg>';
+  }
+  var star='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.8.6-5.1 4.5 1.5 6.7L12 17l-6 3.6 1.5-6.7L2.4 8.9l6.8-.6z"/></svg>';
+
   var PRODUCTS = [
-    {id:'tee',  name:'Heavyweight Tee',   desc:'14oz organic cotton, boxy fit.',   price:38, c:'var(--primary-surface)', tag:'Bestseller', tk:'secondary'},
-    {id:'cap',  name:'6-Panel Cap',        desc:'Washed twill, brass clasp.',       price:28, c:'var(--secondary-500)'},
-    {id:'tote', name:'Canvas Tote',        desc:'Roomy, structured, built to haul.',price:24, c:'var(--tertiary-500)', tag:'New', tk:'tertiary'},
-    {id:'bot',  name:'Insulated Bottle',   desc:'24h cold, 12h hot, 600ml.',        price:42, c:'var(--info-500)'},
-    {id:'sock', name:'Ribbed Socks (3pk)', desc:'Cushioned heel, combed cotton.',   price:18, c:'var(--attention-500)', tag:'Sale', tk:'secondary'},
-    {id:'note', name:'Dot-Grid Notebook',  desc:'120gsm, lay-flat binding.',        price:16, c:'var(--success-600)'}
+    {id:'tee',  name:'Heavyweight Tee',   desc:'14oz organic cotton, boxy fit.',    price:38, was:48, rating:4.9, tag:'Bestseller', tk:'secondary'},
+    {id:'cap',  name:'6-Panel Cap',        desc:'Washed twill, brass clasp.',        price:28, rating:4.7},
+    {id:'tote', name:'Canvas Tote',         desc:'Roomy, structured, built to haul.', price:24, rating:4.8, tag:'New', tk:'tertiary'},
+    {id:'bot',  name:'Insulated Bottle',    desc:'24h cold, 12h hot, 600ml.',         price:42, rating:4.9},
+    {id:'sock', name:'Ribbed Socks (3pk)',  desc:'Cushioned heel, combed cotton.',    price:18, was:24, rating:4.6, tag:'Sale', tk:'secondary'},
+    {id:'note', name:'Dot-Grid Notebook',   desc:'120gsm, lay-flat binding.',         price:16, rating:4.8}
   ];
-  // Token-driven product illustration for the lead card (a tee built from the
-  // primary body + secondary/tertiary trim & accents over a grey field).
-  var TEE_SVG = '<svg class="sh-illus" viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Heavyweight tee">'
-    + '<rect width="200" height="160" fill="var(--surface-default)"/>'
-    + '<circle cx="30" cy="32" r="7" fill="var(--secondary-400)"/>'
-    + '<circle cx="172" cy="126" r="9" fill="var(--tertiary-400)"/>'
-    + '<rect x="150" y="24" width="14" height="14" rx="3" fill="var(--tertiary-300)" transform="rotate(16 157 31)"/>'
-    + '<ellipse cx="100" cy="135" rx="44" ry="7" fill="var(--neutral-200)" opacity=".55"/>'
-    + '<path d="M88 46 Q100 58 112 46 L124 42 L160 52 L154 78 L136 70 L134 128 L66 128 L64 70 L46 78 L40 52 L76 42 Z" fill="var(--primary-surface)"/>'
-    + '<path d="M88 46 Q100 58 112 46" fill="none" stroke="var(--tertiary-500)" stroke-width="3.5" stroke-linecap="round"/>'
-    + '<circle cx="100" cy="95" r="15" fill="var(--secondary-500)"/>'
-    + '<path d="M93 95 l5 5 l9 -11" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
-    + '</svg>';
   var cart = {};                 // id -> qty
   var view = 'cart';             // cart | checkout | payment | done
   var $ = function(s){return document.querySelector(s);};
   var fmt = function(n){return '$'+n.toFixed(2);};
+  function find(id){for(var i=0;i<PRODUCTS.length;i++)if(PRODUCTS[i].id===id)return PRODUCTS[i];}
 
   // ----- catalogue -----
-  $('#catalogue').innerHTML = PRODUCTS.map(function(p,i){
-    var art = i===0
-      ? '<div class="sh-card__art sh-card__art--illus">'+TEE_SVG+'</div>'
-      : '<div class="sh-card__art" style="background:linear-gradient(135deg,'+p.c+',var(--primary-700))">'+p.name.charAt(0)+'</div>';
+  $('#catalogue').innerHTML = PRODUCTS.map(function(p){
     var tag = p.tag ? '<span class="tag tag--'+p.tk+' tag--xs sh-card__tag">'+p.tag+'</span>' : '';
+    var price = (p.was ? '<s>'+fmt(p.was)+'</s>' : '') + fmt(p.price);
     return '<article class="card sh-card">'
-      + '<div class="sh-card__media">'+art+tag+'</div>'
+      + '<div class="sh-card__media">'+ILLUS(p.id)+tag
+      + '<span class="sh-card__fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:16px;height:16px"><path d="M12 20s-7-4.3-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.7-7 9-7 9z"/></svg></span></div>'
       + '<div class="sh-card__body"><div class="sh-card__name">'+p.name+'</div>'
+      + '<div class="sh-stars">'+star+'<span>'+p.rating.toFixed(1)+'</span></div>'
       + '<div class="sh-card__desc">'+p.desc+'</div>'
-      + '<div class="sh-card__foot"><span class="sh-price">'+fmt(p.price)+'</span>'
+      + '<div class="sh-card__foot"><span class="sh-price">'+price+'</span>'
       + '<button class="btn btn--primary btn--s" data-add="'+p.id+'">Add</button></div></div></article>';
   }).join('');
 
   function count(){var n=0;for(var k in cart)n+=cart[k];return n;}
-  function subtotal(){var s=0;for(var k in cart){var p=find(k);s+=p.price*cart[k];}return s;}
-  function find(id){for(var i=0;i<PRODUCTS.length;i++)if(PRODUCTS[i].id===id)return PRODUCTS[i];}
+  function subtotal(){var s=0;for(var k in cart){s+=find(k).price*cart[k];}return s;}
   function ship(){return subtotal()>=80||subtotal()===0?0:6;}
   function total(){return subtotal()+ship();}
 
-  function renderBadge(){
-    var n=count(), el=$('#cartCount');
-    el.textContent=n; el.hidden=n===0;
-  }
+  function renderBadge(){var n=count(),el=$('#cartCount');el.textContent=n;el.hidden=n===0;}
 
-  function open(){ $('#scrim').classList.add('is-open'); $('#drawer').classList.add('is-open'); $('#drawer').setAttribute('aria-hidden','false'); render(); }
+  function open(){ $('#scrim').classList.add('is-open'); $('#drawer').classList.add('is-open'); $('#drawer').setAttribute('aria-hidden','false'); view='cart'; render(); }
   function close(){ $('#scrim').classList.remove('is-open'); $('#drawer').classList.remove('is-open'); $('#drawer').setAttribute('aria-hidden','true'); view='cart'; }
-
   function add(id){ cart[id]=(cart[id]||0)+1; renderBadge(); if($('#drawer').classList.contains('is-open'))render(); }
   function setQty(id,d){ cart[id]=(cart[id]||0)+d; if(cart[id]<=0)delete cart[id]; renderBadge(); render(); }
+
+  function steps(){
+    var on={cart:1,checkout:2,payment:3,done:3}[view];
+    var el=$('#steps'); el.hidden = (view==='cart' && !count()) || view==='done';
+    [].forEach.call(el.children,function(s,i){ s.className = i<on ? 'is-on' : ''; });
+  }
 
   function render(){
     var body=$('#drawerBody'), foot=$('#drawerFoot'), title=$('#drawerTitle'), back=$('#backBtn');
     back.hidden = (view==='cart' || view==='done');
+    steps();
     if(view==='cart'){
       title.textContent='Your cart';
       var ids=Object.keys(cart);
-      if(!ids.length){ body.innerHTML='<div class="sh-empty">Your cart is empty.<br>Add something nice.</div>'; foot.innerHTML=''; return; }
+      if(!ids.length){
+        body.innerHTML='<div class="sh-empty"><svg viewBox="0 0 24 24" fill="none" stroke="var(--neutral-300)" stroke-width="1.5"><path d="M3 4h2l2.4 12.3a1 1 0 0 0 1 .7h8.7a1 1 0 0 0 1-.8L21 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>Your cart is empty.<br>Add something nice.</div>';
+        foot.innerHTML=''; return;
+      }
       body.innerHTML = ids.map(function(id){var p=find(id);return ''
-        + '<div class="sh-line"><div class="sh-line__art" style="background:linear-gradient(135deg,'+p.c+',var(--primary-700))">'+p.name.charAt(0)+'</div>'
+        + '<div class="sh-line"><div class="sh-line__art">'+ILLUS(id)+'</div>'
         + '<div class="sh-line__meta"><div class="sh-line__name">'+p.name+'</div>'
         + '<div class="sh-line__qty"><button class="sh-qbtn" data-dec="'+id+'">–</button><span>'+cart[id]+'</span><button class="sh-qbtn" data-inc="'+id+'">+</button></div></div>'
         + '<div class="sh-price" style="font-size:var(--text-base)">'+fmt(p.price*cart[id])+'</div></div>';
       }).join('');
-      foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="toCheckout">Checkout</button>';
+      foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="toCheckout">Checkout · '+fmt(total())+'</button>';
     } else if(view==='checkout'){
       title.textContent='Shipping';
-      body.innerHTML = ''
-        + field('Full name','Alex Doe')
-        + field('Email','alex@example.com','email')
-        + field('Address','24 Maple Street')
+      body.innerHTML = field('Full name','Alex Doe')+field('Email','alex@example.com','email')+field('Address','24 Maple Street')
         + '<div class="sh-field--row">'+field('City','Portland')+field('ZIP','97201')+'</div>';
       foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="toPayment">Continue to payment</button>';
     } else if(view==='payment'){
       title.textContent='Payment';
-      body.innerHTML = ''
-        + '<div class="alert alert--info" style="margin-bottom:var(--space-base)"><div class="alert__body"><strong>Test mode</strong> — no real card is charged.</div></div>'
-        + field('Card number','4242 4242 4242 4242')
-        + '<div class="sh-field--row">'+field('Expiry','12 / 28')+field('CVC','123')+'</div>'
-        + field('Name on card','Alex Doe');
+      body.innerHTML = '<div class="alert alert--info" style="margin-bottom:var(--space-base)"><div class="alert__body"><strong>Test mode</strong> — no real card is charged.</div></div>'
+        + field('Card number','4242 4242 4242 4242')+'<div class="sh-field--row">'+field('Expiry','12 / 28')+field('CVC','123')+'</div>'+field('Name on card','Alex Doe');
       foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="payNow">Pay '+fmt(total())+'</button>';
     } else if(view==='done'){
       title.textContent='Order confirmed';
-      var order = 'DS-'+(1000+Math.floor((subtotal()*7)%9000));
+      var order='DS-'+(1000+Math.floor((subtotal()*7)%9000));
       body.innerHTML = '<div class="sh-done"><div class="sh-done__tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12l5 5L20 6"/></svg></div>'
-        + '<div class="title-paragraph">Payment successful</div>'
-        + '<p class="text-s text-muted">Order '+order+' is confirmed. A receipt is on its way to your inbox.</p></div>';
+        + '<div class="title-paragraph">Payment successful</div><p class="text-s text-muted">Order '+order+' is confirmed. A receipt is on its way to your inbox.</p></div>';
       foot.innerHTML = '<button class="btn btn--outline btn--l" id="keepShopping">Continue shopping</button>';
       cart={}; renderBadge();
     }
   }
   function field(label,val,type){ return '<div class="sh-field"><label>'+label+'</label><input class="input" type="'+(type||'text')+'" value="'+val+'"></div>'; }
   function summaryHtml(){
-    var s=subtotal(), sh=ship();
+    var s=subtotal(),sh=ship();
     return '<div class="sh-summary"><span>Subtotal</span><span>'+fmt(s)+'</span></div>'
       + '<div class="sh-summary"><span>Shipping</span><span>'+(sh===0?'Free':fmt(sh))+'</span></div>'
       + '<div class="sh-summary sh-summary--total"><span>Total</span><span>'+fmt(total())+'</span></div>';
   }
 
-  // ----- events (delegated) -----
   document.addEventListener('click', function(e){
     var t=e.target.closest('[data-add],[data-inc],[data-dec],#cartOpen,#cartClose,#toCheckout,#toPayment,#payNow,#keepShopping,#backBtn');
     if(!t) return;
