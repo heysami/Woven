@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../shells/app-shell.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <img class="sidebar__wave" src="../assets/sidebar-grid.svg" alt="" aria-hidden="true">
+    <div class="sidebar__logo"><img class="app-logo" src="../assets/logo.svg" alt="Default" style="height:40px"><span class="sep" style="width:1px;height:24px;background:var(--tint-30)"></span><span class="title" style="font-weight:600;font-size:var(--text-h5);color:#fff">Default</span></div>
+    <div class="sidebar__section">Component Manager</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link is-active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="nav-label">Dashboard</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h18"/></svg><span class="nav-label">Portfolios</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg><span class="nav-label">Notifications</span></a>
+    </nav>
+    <div class="sidebar__user"><a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="nav-label">Marcus Vale</span></a></div>
+  </aside>
+  <div class="main">
+    <header class="topbar"><span class="title-paragraph">Dashboard</span></header>
+    <div class="content">
+      <div style="display:flex;gap:24px;align-items:flex-start">
+        <nav class="subnav">
+          <a class="subnav__item is-active">Category 1 <span class="subnav__count">12</span></a>
+          <a class="subnav__item">Category 2 <span class="subnav__count">99</span></a>
+          <a class="subnav__item">Category 3 <span class="subnav__count">8</span></a>
+        </nav>
+
+        <div class="section-card" style="flex:1;padding:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:24px 24px 12px">
+            <div><div class="h5" style="margin:0">My Tasks</div><p class="text-s text-muted" style="margin:2px 0 0">The description of the section.</p></div>
+            <span class="btn-split"><button class="btn btn--primary">Upload</button><button class="btn-split__caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button></span>
+          </div>
+          <div class="feed" style="padding:0 24px 12px">
+            <div class="feed__item"><span class="status status--attention status--sm">Pending Approval</span><div class="feed__body"><div class="feed__title">Review licence renewal for Acme Co.</div><div class="feed__desc">Requested by Daniel Brooks · Basic Plan</div></div><span class="feed__meta">5d ago</span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="var(--fg-muted)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="feed__item"><span class="status status--info status--sm">In Review</span><div class="feed__body"><div class="feed__title">Approve new component submission</div><div class="feed__desc">Submitted by Elena Marsh</div></div><span class="feed__meta">1w ago</span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="var(--fg-muted)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="feed__item"><span class="status status--success status--sm">Approved</span><div class="feed__body"><div class="feed__title">Asset Bundle — Set 1</div><div class="feed__desc">Auto-approved by system</div></div><span class="feed__meta">2w ago</span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="var(--fg-muted)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="feed__item"><span class="status status--error status--sm">Rejected</span><div class="feed__body"><div class="feed__title">Budget increase request</div><div class="feed__desc">Reason: insufficient budget</div></div><span class="feed__meta">3w ago</span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="var(--fg-muted)" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></div>
+          </div>
+          <div class="row" style="justify-content:space-between;padding:0 24px 20px"><span class="pagination__info">1 to 4 of 65 records</span><div class="pagination"><button class="pagination__item pagination__item--icon" disabled>‹</button><button class="pagination__item is-active">1</button><button class="pagination__item">2</button><button class="pagination__item">3</button><button class="pagination__item pagination__item--icon">›</button></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

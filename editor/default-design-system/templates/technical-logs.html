@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default — Technical Logs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../shells/app-shell.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <img class="sidebar__wave" src="../assets/sidebar-grid.svg" alt="" aria-hidden="true">
+    <div class="sidebar__logo"><img class="app-logo" src="../assets/logo.svg" alt="Default" style="height:40px"><span class="sep" style="width:1px;height:24px;background:var(--tint-30)"></span><span class="title" style="font-weight:600;font-size:var(--text-h5);color:#fff">Default</span></div>
+    <div class="sidebar__section">Log Manager</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link is-active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z"/></svg><span class="nav-label">Change History</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span class="nav-label">Bulk Upload</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-label">Job Log</span></a>
+    </nav>
+    <div class="sidebar__user"><a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="nav-label">Marcus Vale</span></a></div>
+  </aside>
+  <div class="main">
+    <header class="topbar"><nav class="breadcrumbs"><a href="#">List of Items</a><span class="sep">/</span><span class="current">Item ABC</span></nav></header>
+    <div class="content">
+      <div class="page-head"><div class="title-page">Change History</div></div>
+
+      <div class="dg-filters" style="margin-bottom:16px">
+        <div class="dg-filters__search">
+          <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input class="input" placeholder="Search Description"></span>
+          <span class="vsep"></span><button class="btn btn--outline">Search</button>
+        </div>
+        <div class="dg-filters__row">
+          <div class="dg-filters__chips">
+            <button class="dg-chip">Action Type <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+            <button class="dg-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg> Date <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+            <button class="dg-chip">By Whom <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+          </div>
+          <div class="dg-filters__actions"><button class="btn btn--text">Clear All</button><span style="width:1px;height:20px;background:var(--border-default)"></span><button class="btn btn--text">Apply Filter</button></div>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+      <table class="table">
+        <thead><tr>
+          <th class="is-sortable is-desc">Updated on <span class="sort"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5-4 5 4M7 15l5 4 5-4"/></svg></span></th>
+          <th class="is-sortable">By Whom <span class="sort"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5-4 5 4M7 15l5 4 5-4"/></svg></span></th>
+          <th>Action Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>26 Feb 2026, 10:00 AM</td><td>Elena Marsh</td><td><span class="status status--info status--sm">Updated</span></td><td>Changed status of <strong>Item ABC</strong> to Active</td></tr>
+          <tr><td>24 Feb 2026, 4:32 PM</td><td>Daniel Brooks</td><td><span class="status status--success status--sm">Created</span></td><td>Created <strong>Item ABC</strong></td></tr>
+          <tr><td>20 Feb 2026, 9:14 AM</td><td>System</td><td><span class="status status--attention status--sm">Imported</span></td><td>Bulk imported from CSV</td></tr>
+          <tr><td>18 Feb 2026, 2:05 PM</td><td>Elena Marsh</td><td><span class="status status--error status--sm">Deleted</span></td><td>Removed attachment <strong>spec.pdf</strong></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:12px"><span class="pagination__info">1 to 4 of 65 records</span><div class="pagination"><button class="pagination__item pagination__item--icon" disabled>‹</button><button class="pagination__item is-active">1</button><button class="pagination__item">2</button><button class="pagination__item">3</button><button class="pagination__item pagination__item--more">…</button><button class="pagination__item">10</button><button class="pagination__item pagination__item--icon">›</button></div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

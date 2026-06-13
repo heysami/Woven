@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default — Exception Handling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../styles.css">
+<style>body{margin:0;background:var(--brand-grey);} .ex-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:24px;padding:32px;max-width:1180px;margin:0 auto;}</style>
+</head>
+<body>
+<div class="ex-board">
+
+  <!-- 404 -->
+  <div class="exception">
+    <span class="exception__badge" style="color:var(--neutral-500)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.2-4.2"/><path d="M9 9l4 4M13 9l-4 4"/></svg></span>
+    <h2 class="exception__title">This page doesn't exist</h2>
+    <p class="exception__sub">The page you're looking for could not be found.</p>
+    <button class="btn btn--outline">Back to Home</button>
+  </div>
+
+  <!-- 403 -->
+  <div class="exception">
+    <span class="exception__badge" style="color:var(--attention-500)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10.5 11V9.5a1.5 1.5 0 013 0V11"/></svg></span>
+    <h2 class="exception__title">You do not have permission</h2>
+    <p class="exception__sub">You don't have permission to access this content.</p>
+    <button class="btn btn--outline">Back to Home</button>
+  </div>
+
+  <!-- 400 with list -->
+  <div class="exception">
+    <span class="exception__badge" style="color:var(--error-500)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg></span>
+    <h2 class="exception__title">There was a problem with your request</h2>
+    <p class="exception__sub" style="align-self:flex-start;text-align:left">Try these solutions:</p>
+    <ul class="exception__list"><li>Check the URL is correct</li><li>Clear your browser cache &amp; cookies</li><li>Refresh the page</li><li>Deactivate browser extensions</li></ul>
+    <button class="btn btn--outline">Back to Home</button>
+  </div>
+
+  <!-- Session timeout (countdown) -->
+  <div class="exception">
+    <span class="exception__badge" style="color:var(--attention-500)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12M6 21h12M8 3v3.2l4 3.8 4-3.8V3M8 21v-3.2l4-3.8 4 3.8V21"/></svg></span>
+    <h2 class="exception__title">Your session will expire in: <span style="color:var(--attention-500)">0:56</span></h2>
+    <p class="exception__sub">You will be logged out for security reasons.</p>
+    <button class="btn btn--primary">Stay Logged In</button>
+    <button class="btn btn--outline">Log Out</button>
+  </div>
+
+  <!-- Session expired -->
+  <div class="exception">
+    <span class="exception__badge" style="color:var(--neutral-500)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+    <h2 class="exception__title">Your session has expired</h2>
+    <p class="exception__sub">For security reasons, your session was logged out at 13 Jun 2026, 4:43 PM.</p>
+    <button class="btn btn--outline">Back to Home</button>
+  </div>
+
+  <!-- Under maintenance -->
+  <div class="exception">
+    <span class="exception__badge" style="color:var(--attention-500)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M19.1 4.9l-2.1 2.1M7 17l-2.1 2.1M19.1 19.1L17 17M7 7L4.9 4.9"/></svg></span>
+    <h2 class="exception__title">This site is under maintenance</h2>
+    <p class="exception__sub">We will be back soon. Thank you for your patience.</p>
+  </div>
+
+</div>
+</body>
+</html>

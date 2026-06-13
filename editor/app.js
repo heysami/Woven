@@ -14030,18 +14030,214 @@ function ProjectHomeButton({ info }) {
   `;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   Default-DS customizer — pure helpers
+   The new-project wizard can seed design-systems/default/ from the bundled
+   starter DS (served at /__default_ds/). Step 2 lets the user retune a small
+   set of tokens; everything here turns those choices into a `:root{}` CSS
+   override the daemon appends to the copied styles.css (and that we inject
+   live into the preview iframe). Only CHANGED dimensions emit overrides, so
+   an untouched control reproduces the starter DS exactly.
+   ══════════════════════════════════════════════════════════════════════ */
+
+// The starter DS's own token values — these are the "max"/baseline. Radii
+// here are the MAXIMUM roundness; the roundness slider only scales DOWN.
+const DS_DEFAULTS = {
+  primary:   "#074ECF",
+  secondary: "#E20E10",
+  fontFamilyCss: "'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+  fontKey:   "plus-jakarta-sans",
+  baseFontPx: 16,
+  typeRatio:  1.20,
+  spacingBasePx: 16,
+  spacingRatio:  1.5,
+  // radii in px, in token order (pill kept separate)
+  radii: { xs:2, s:4, base:8, m:12, l:16, xl:24, "2xl":32, pill:100 },
+};
+
+// Curated Google-Fonts catalog for the family picker. familyCss includes a
+// sensible system fallback; url is the css2 link the daemon swaps in.
+const DS_FONT_CATALOG = [
+  { key:"plus-jakarta-sans", name:"Plus Jakarta Sans", serif:false },
+  { key:"inter",             name:"Inter",             serif:false },
+  { key:"work-sans",         name:"Work Sans",         serif:false },
+  { key:"manrope",           name:"Manrope",           serif:false },
+  { key:"dm-sans",           name:"DM Sans",           serif:false },
+  { key:"poppins",           name:"Poppins",           serif:false },
+  { key:"montserrat",        name:"Montserrat",        serif:false },
+  { key:"ibm-plex-sans",     name:"IBM Plex Sans",     serif:false },
+  { key:"figtree",           name:"Figtree",           serif:false },
+  { key:"source-serif-4",    name:"Source Serif 4",    serif:true  },
+  { key:"fraunces",          name:"Fraunces",          serif:true  },
+  { key:"space-grotesk",     name:"Space Grotesk",     serif:false },
+];
+function dsFontCss(font) {
+  const fb = font.serif
+    ? "Georgia,'Times New Roman',serif"
+    : "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+  return "'" + font.name + "'," + fb;
+}
+function dsFontUrl(font) {
+  return "https://fonts.googleapis.com/css2?family="
+    + font.name.replace(/ /g, "+")
+    + ":wght@300;400;500;600;700&display=swap";
+}
+
+// Type-scale ratios (typescale.com vocabulary).
+const DS_TYPE_RATIOS = [
+  { v:1.067, label:"1.067 · Minor Second" },
+  { v:1.125, label:"1.125 · Major Second" },
+  { v:1.200, label:"1.200 · Minor Third" },
+  { v:1.250, label:"1.250 · Major Third" },
+  { v:1.333, label:"1.333 · Perfect Fourth" },
+  { v:1.414, label:"1.414 · Augmented Fourth" },
+  { v:1.500, label:"1.500 · Perfect Fifth" },
+  { v:1.618, label:"1.618 · Golden Ratio" },
+];
+const DS_SPACE_RATIOS = [
+  { v:1.25, label:"1.25 · tight" },
+  { v:1.333, label:"1.333" },
+  { v:1.5,  label:"1.5 · default" },
+  { v:1.618, label:"1.618 · golden" },
+  { v:2.0,  label:"2.0 · airy" },
+];
+
+// ── colour math ──
+function dsHexToRgb(hex) {
+  let h = String(hex || "").trim().replace(/^#/, "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function dsRgbToHex(rgb) {
+  const cl = v => Math.max(0, Math.min(255, Math.round(v)));
+  return "#" + rgb.map(v => cl(v).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+function dsMix(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
+// 50..950 tint/shade ramp from a base hex (base sits at 500).
+const DS_RAMP_STOPS = [
+  ["50", "w", 0.92], ["100", "w", 0.80], ["200", "w", 0.62], ["300", "w", 0.40],
+  ["400", "w", 0.19], ["500", "base", 0],
+  ["600", "b", 0.13], ["700", "b", 0.30], ["800", "b", 0.45], ["900", "b", 0.62], ["950", "b", 0.80],
+];
+function dsRamp(hex) {
+  const base = dsHexToRgb(hex);
+  if (!base) return null;
+  const WHITE = [255, 255, 255], BLACK = [0, 0, 0];
+  const out = {};
+  for (const [stop, dir, t] of DS_RAMP_STOPS) {
+    out[stop] = dir === "base" ? dsRgbToHex(base)
+      : dsRgbToHex(dsMix(base, dir === "w" ? WHITE : BLACK, t));
+  }
+  return out;
+}
+
+/* Build the `:root{}` override CSS + font payload from the customizer state.
+   `s` is the settings object; any field left null/default emits nothing for
+   that dimension. Returns { overrideCss, font, dirty }. */
+function buildDsCustomization(s) {
+  const lines = [];
+  const D = DS_DEFAULTS;
+
+  // ── Primary ──
+  if (s.primary && s.primary.toUpperCase() !== D.primary.toUpperCase()) {
+    const r = dsRamp(s.primary);
+    if (r) {
+      for (const k of Object.keys(r)) lines.push(`--primary-${k}:${r[k]};`);
+      lines.push(`--brand-blue:${r["500"]};`, `--interaction-blue:${r["500"]};`);
+      lines.push(
+        `--primary-surface:${r["500"]};`,
+        `--primary-surface-muted:${r["100"]};`,
+        `--primary-surface-subtle:${r["50"]};`,
+        `--primary-fg:${r["700"]};`,
+        `--primary-fg-emphasis:${r["500"]};`,
+        `--primary-border:${r["600"]};`,
+        `--primary-hover:${r["400"]};`,
+        `--primary-active:${r["600"]};`,
+      );
+    }
+  }
+  // ── Secondary ──
+  if (s.secondary && s.secondary.toUpperCase() !== D.secondary.toUpperCase()) {
+    const r = dsRamp(s.secondary);
+    if (r) {
+      for (const k of Object.keys(r)) lines.push(`--secondary-${k}:${r[k]};`);
+      lines.push(`--brand-red:${r["500"]};`);
+    }
+  }
+  // ── Roundness (scale radii DOWN from the max baseline) ──
+  if (typeof s.roundness === "number" && s.roundness < 1) {
+    const f = Math.max(0, Math.min(1, s.roundness));
+    const R = D.radii;
+    const px = v => Math.round(v * f) + "px";
+    lines.push(
+      `--radius-xs:${px(R.xs)};`, `--radius-s:${px(R.s)};`, `--radius-base:${px(R.base)};`,
+      `--radius-m:${px(R.m)};`, `--radius-l:${px(R.l)};`, `--radius-xl:${px(R.xl)};`,
+      `--radius-2xl:${px(R["2xl"])};`, `--radius-pill:${px(R.pill)};`,
+    );
+  }
+  // ── Font family (the --font var; webfont swapped server-side / via <link>) ──
+  let font = null;
+  if (s.fontKey && s.fontKey !== D.fontKey) {
+    const f = DS_FONT_CATALOG.find(x => x.key === s.fontKey);
+    if (f) {
+      font = { familyCss: dsFontCss(f), googleFontsUrl: dsFontUrl(f), name: f.name };
+      lines.push(`--font:${font.familyCss};`);
+    }
+  }
+  // ── Type scale (base size + modular ratio → full ladder) ──
+  if (s.typeTouched) {
+    const baseRem = (s.baseFontPx == null ? D.baseFontPx : s.baseFontPx) / 16;
+    const r = (s.typeRatio == null ? D.typeRatio : s.typeRatio);
+    const step = n => +(baseRem * Math.pow(r, n)).toFixed(3) + "rem";
+    lines.push(
+      `--text-base:${baseRem}rem;`,
+      `--text-s:${step(-1)};`, `--text-xs:${step(-2)};`,
+      `--text-h6:${step(0.5)};`, `--text-h5:${step(1)};`, `--text-h4:${step(2)};`,
+      `--text-h3:${step(3)};`, `--text-h2:${step(4)};`, `--text-h1:${step(5)};`,
+      `--text-display:${step(6)};`,
+    );
+  }
+  // ── Spacing scale (base + modular ratio → geometric ladder) ──
+  if (s.spacingTouched) {
+    const b = (s.spacingBasePx == null ? D.spacingBasePx : s.spacingBasePx);
+    const r = (s.spacingRatio == null ? D.spacingRatio : s.spacingRatio);
+    const step = n => Math.max(1, Math.round(b * Math.pow(r, n))) + "px";
+    lines.push(
+      `--space-3xs:${step(-4)};`, `--space-2xs:${step(-3)};`, `--space-xs:${step(-2)};`,
+      `--space-s:${step(-1)};`, `--space-base:${b}px;`, `--space-m:${step(1)};`,
+      `--space-l:${step(2)};`, `--space-xl:${step(3)};`, `--space-2xl:${step(4)};`,
+      `--space-3xl:${step(5)};`,
+    );
+  }
+
+  const overrideCss = lines.length
+    ? ":root{\n  " + lines.join("\n  ") + "\n}"
+    : "";
+  return { overrideCss, font, dirty: lines.length > 0 };
+}
+
 /* ────────── New-project form (v3.5 — onboarding cut) ──────────
-   Simple modal: name input + Create button. POSTs `{id, label}` to
-   /__projects/new, which scaffolds an empty source/main/ + editor/data.js
-   and returns. The wizard's earlier multi-step scope / intent / reference /
-   PRD upload flow was removed when the guided onboarding was deleted; the
-   user drops into an empty workflow canvas and builds from chat or the
-   library. */
+   Simple modal: name input + Create button (Step 1). When the user opts into
+   the bundled design system, a second, wider step (DsCustomizerStep) lets
+   them retune colour / roundness / type / spacing against a live preview;
+   the computed override rides along in the /__projects/new POST. */
 function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [name, setName] = useState("");
   const [exportFolder, setExportFolder] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [useDefaultDs, setUseDefaultDs] = useState(false);
+  const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
+  const [dsSettings, setDsSettings] = useState({
+    primary: null, secondary: null,
+    roundness: 1,
+    fontKey: DS_DEFAULTS.fontKey,
+    baseFontPx: null, typeRatio: null, typeTouched: false,
+    spacingBasePx: null, spacingRatio: null, spacingTouched: false,
+    logo: null,   // { dataUrl, ext, name } when the user uploads a sidebar logo
+  });
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
   const existingIds = useMemo(
@@ -14071,22 +14267,38 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const collision = !!slugId && existingIds.has(slugId);
   const canSubmit = !busy && slugId.length > 0 && !collision;
 
-  // Allow Esc to close.
+  const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
+
+  // Allow Esc to close (but in step 2, Esc steps back instead).
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (step === 2) { setStep(1); return; }
+      onClose && onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, step]);
 
-  const submit = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
+  // The actual POST. Includes the DS payload when the user opted in.
+  const doCreate = async () => {
     if (!canSubmit) return;
     setBusy(true); setErr(null);
     try {
+      const payload = { id: slugId, label: name.trim() };
+      if (useDefaultDs) {
+        payload.useDefaultDs = true;
+        payload.dsOverrideCss = dsCustom.overrideCss;
+        payload.dsFont = dsCustom.font;
+        payload.dsLabel = name.trim() ? (name.trim() + " — design system") : "Default Design System";
+        if (dsSettings.logo && dsSettings.logo.dataUrl) {
+          payload.dsLogo = { dataUrl: dsSettings.logo.dataUrl, ext: dsSettings.logo.ext };
+        }
+      }
       const r = await fetch(apiUrl("/__projects/new"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: slugId, label: name.trim() }),
+        body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -14096,9 +14308,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
       }
       // Follow-up: if the user provided an export folder, save it on the
       // newly created project's entry in workspace.json. Best-effort —
-      // a failure here doesn't roll back the project creation. The user
-      // would just see "no folder set" next time they hit Exports and
-      // can fix it then.
+      // a failure here doesn't roll back the project creation.
       const newId = j.id || slugId;
       const trimmedFolder = (exportFolder || "").trim();
       if (trimmedFolder) {
@@ -14119,6 +14329,15 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     }
   };
 
+  // Step-1 form submit. With the DS opt-in on, advance to the customizer
+  // instead of creating immediately; otherwise create straight away.
+  const submitStep1 = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!canSubmit) return;
+    if (useDefaultDs) { setStep(2); return; }
+    doCreate();
+  };
+
   // Hint line: nothing typed → blank (no fake "project" id). Typed → echo the
   // slug we'll send (lets the user see odd chars get folded into dashes).
   // Collides with an existing id → warn.
@@ -14131,9 +14350,25 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
           : null);
   }
 
-  return html`
+  // ── Step 2 — the wide DS customizer overlay ──
+  if (step === 2) {
+    return html`<${DsCustomizerStep}
+      settings=${dsSettings}
+      setSettings=${setDsSettings}
+      custom=${dsCustom}
+      busy=${busy}
+      err=${err}
+      onBack=${() => setStep(1)}
+      onClose=${onClose}
+      onCreate=${doCreate}/>`;
+  }
+
+  // ── Step 1 — name + options ──
+  // Portal to <body> so the fixed overlay escapes the landing's stacking
+  // context (.landing-main z-index:1 sits below the .landing-header z-index:4).
+  return createPortal(html`
     <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
-      <form className="newproj-card" onSubmit=${submit}>
+      <form className="newproj-card" onSubmit=${submitStep1}>
         <header className="newproj-card-head">
           <h2>New project</h2>
           <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
@@ -14175,15 +14410,264 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
               Where per-asset Export (⤓ on a selected node) drops bundles. You can change this later from the Exports button in the workflow toolbar.
             </span>
           </div>
+
+          <button
+            type="button"
+            className=${"newproj-ds-toggle" + (useDefaultDs ? " is-on" : "")}
+            onClick=${() => setUseDefaultDs(v => !v)}
+            disabled=${busy}
+            aria-pressed=${useDefaultDs}>
+            <span className=${"newproj-ds-check" + (useDefaultDs ? " is-on" : "")} aria-hidden="true">
+              ${useDefaultDs ? html`<${Icon.Check}/>` : null}
+            </span>
+            <span className="newproj-ds-toggle-text">
+              <span className="newproj-ds-toggle-title">Start from the default design system</span>
+              <span className="newproj-ds-toggle-sub">Seed a tokenized component library you can recolour, round, and retype in the next step.</span>
+            </span>
+          </button>
+
           ${err && html`<div className="newproj-error">${err}</div>`}
         </div>
         <footer className="newproj-card-foot">
           <button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
           <button type="submit" className="newproj-create" disabled=${!canSubmit}>
-            ${busy ? "Creating…" : "+ Create"}
+            ${busy ? "Creating…" : (useDefaultDs ? "Customize →" : "+ Create")}
           </button>
         </footer>
       </form>
+    </div>
+  `, document.body);
+}
+
+/* ────────── Step 2 — the wide DS customizer ──────────
+   Left rail: colour / roundness / font / type / spacing controls. Right:
+   a live preview of the bundled DS gallery (served at /__default_ds/) with
+   the computed `:root{}` override + webfont injected into its iframe head,
+   updated on every settings change (no reload, no flash). */
+function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate }) {
+  const iframeRef = useRef(null);
+  const [frameReady, setFrameReady] = useState(false);
+  const set = (patch) => setSettings(s => ({ ...s, ...patch }));
+
+  // Inject / refresh the override <style> + font <link> inside the iframe.
+  const applyToFrame = useCallback(() => {
+    const ifr = iframeRef.current;
+    let doc;
+    try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
+    if (!doc || !doc.head) return;
+    // Font webfont link
+    let link = doc.getElementById("__ds_custom_font");
+    if (custom.font && custom.font.googleFontsUrl) {
+      if (!link) {
+        link = doc.createElement("link");
+        link.id = "__ds_custom_font";
+        link.rel = "stylesheet";
+        doc.head.appendChild(link);
+      }
+      if (link.getAttribute("href") !== custom.font.googleFontsUrl) {
+        link.setAttribute("href", custom.font.googleFontsUrl);
+      }
+    } else if (link) {
+      link.parentNode.removeChild(link);
+    }
+    // Token override — must be the LAST child of <head> so it wins the cascade.
+    let style = doc.getElementById("__ds_custom_style");
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = "__ds_custom_style";
+    }
+    style.textContent = custom.overrideCss || "";
+    doc.head.appendChild(style);   // re-append → keep it last
+    // Logo — swap every sidebar / topnav logo <img> src to the uploaded
+    // data URL (or restore the bundled default when cleared).
+    const imgs = doc.querySelectorAll(".sidebar__logo img, .topnav__logo img, img.app-logo");
+    imgs.forEach(img => {
+      if (settings.logo && settings.logo.dataUrl) {
+        if (!img.dataset.dsOrigSrc) img.dataset.dsOrigSrc = img.getAttribute("src") || "";
+        if (img.getAttribute("src") !== settings.logo.dataUrl) img.setAttribute("src", settings.logo.dataUrl);
+      } else if (img.dataset.dsOrigSrc != null) {
+        img.setAttribute("src", img.dataset.dsOrigSrc);
+      }
+    });
+  }, [custom, settings.logo]);
+
+  useEffect(() => { if (frameReady) applyToFrame(); }, [frameReady, applyToFrame]);
+
+  const fontObj = DS_FONT_CATALOG.find(f => f.key === settings.fontKey) || DS_FONT_CATALOG[0];
+  const roundPct = Math.round((settings.roundness ?? 1) * 100);
+  const dirty = custom.dirty || !!settings.logo;
+
+  // Portal to <body> — the overlay must escape the landing's .landing-main
+  // stacking context (z-index:1, below the z-index:4 header).
+  return createPortal(html`
+    <div className="dscz-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <div className="dscz-card">
+        <header className="dscz-head">
+          <div className="dscz-head-titles">
+            <h2>Tune your design system</h2>
+            <p>Adjust the tokens — the preview updates live. Untouched controls keep the default. Confirm to bake these into the project's design system.</p>
+          </div>
+          <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+        </header>
+        <div className="dscz-body">
+          <div className="dscz-controls">
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">
+                Logo
+                ${settings.logo && html`<button type="button" className="dscz-reset" onClick=${() => set({ logo: null })}>remove</button>`}
+              </div>
+              <${DsLogoRow} logo=${settings.logo} onPick=${(lg) => set({ logo: lg })}/>
+              <div className="dscz-row-hint">Shown top-left of the sidebar nav. SVG, PNG, or JPG · up to 1.5&nbsp;MB.</div>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">Colour</div>
+              <${DsColorRow} label="Primary"   value=${settings.primary}   fallback=${DS_DEFAULTS.primary}
+                onChange=${(v) => set({ primary: v })} onReset=${() => set({ primary: null })}/>
+              <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
+                onChange=${(v) => set({ secondary: v })} onReset=${() => set({ secondary: null })}/>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">Roundness <span className="dscz-group-val">${roundPct}%${roundPct === 100 ? " · max" : ""}</span></div>
+              <input className="dscz-range" type="range" min="0" max="100" step="1"
+                value=${roundPct}
+                onInput=${(e) => set({ roundness: (+e.target.value) / 100 })}/>
+              <div className="dscz-row-hint">The current design system is the maximum roundness; this only reduces it.</div>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">Font family</div>
+              <select className="dscz-select" value=${settings.fontKey}
+                onChange=${(e) => set({ fontKey: e.target.value })}>
+                ${DS_FONT_CATALOG.map(f => html`<option key=${f.key} value=${f.key}>${f.name}${f.serif ? " (serif)" : ""}</option>`)}
+              </select>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">
+                Typography
+                ${settings.typeTouched && html`<button type="button" className="dscz-reset" onClick=${() => set({ baseFontPx: null, typeRatio: null, typeTouched: false })}>reset</button>`}
+              </div>
+              <label className="dscz-stack">
+                <span className="dscz-stack-label">Base size <b>${(settings.baseFontPx ?? DS_DEFAULTS.baseFontPx)}px</b></span>
+                <input className="dscz-range" type="range" min="12" max="20" step="1"
+                  value=${settings.baseFontPx ?? DS_DEFAULTS.baseFontPx}
+                  onInput=${(e) => set({ baseFontPx: +e.target.value, typeTouched: true })}/>
+              </label>
+              <label className="dscz-stack">
+                <span className="dscz-stack-label">Scale ratio</span>
+                <select className="dscz-select" value=${settings.typeRatio ?? DS_DEFAULTS.typeRatio}
+                  onChange=${(e) => set({ typeRatio: +e.target.value, typeTouched: true })}>
+                  ${DS_TYPE_RATIOS.map(r => html`<option key=${r.v} value=${r.v}>${r.label}</option>`)}
+                </select>
+              </label>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">
+                Spacing
+                ${settings.spacingTouched && html`<button type="button" className="dscz-reset" onClick=${() => set({ spacingBasePx: null, spacingRatio: null, spacingTouched: false })}>reset</button>`}
+              </div>
+              <label className="dscz-stack">
+                <span className="dscz-stack-label">Base unit <b>${(settings.spacingBasePx ?? DS_DEFAULTS.spacingBasePx)}px</b></span>
+                <input className="dscz-range" type="range" min="8" max="24" step="1"
+                  value=${settings.spacingBasePx ?? DS_DEFAULTS.spacingBasePx}
+                  onInput=${(e) => set({ spacingBasePx: +e.target.value, spacingTouched: true })}/>
+              </label>
+              <label className="dscz-stack">
+                <span className="dscz-stack-label">Scale ratio</span>
+                <select className="dscz-select" value=${settings.spacingRatio ?? DS_DEFAULTS.spacingRatio}
+                  onChange=${(e) => set({ spacingRatio: +e.target.value, spacingTouched: true })}>
+                  ${DS_SPACE_RATIOS.map(r => html`<option key=${r.v} value=${r.v}>${r.label}</option>`)}
+                </select>
+              </label>
+            </section>
+          </div>
+
+          <div className="dscz-preview">
+            <iframe
+              ref=${iframeRef}
+              className="dscz-preview-frame"
+              title="Design system preview"
+              src=${apiUrl("/__default_ds/gallery.html")}
+              onLoad=${() => { setFrameReady(true); applyToFrame(); }}/>
+          </div>
+        </div>
+        ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
+        <footer className="dscz-foot">
+          <button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>
+          <div className="dscz-foot-right">
+            ${dirty
+              ? html`<span className="dscz-foot-note">Customized</span>`
+              : html`<span className="dscz-foot-note dscz-foot-note-muted">Defaults</span>`}
+            <button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
+              ${busy ? "Creating…" : "Create project"}
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  `, document.body);
+}
+
+/* Logo uploader row: drop/pick an image, read it to a data URL for live
+   preview, carry { dataUrl, ext, name } up. The bytes ride to the daemon in
+   the create payload (dsLogo) which writes assets/logo.<ext> + rewrites the
+   sidebar/topnav references. */
+const DS_LOGO_EXT = { "image/svg+xml": "svg", "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+function DsLogoRow({ logo, onPick }) {
+  const inputRef = useRef(null);
+  const [err, setErr] = useState(null);
+  const read = (file) => {
+    setErr(null);
+    if (!file) return;
+    const ext = DS_LOGO_EXT[file.type];
+    if (!ext) { setErr("Unsupported file — use SVG, PNG, JPG, GIF, or WebP."); return; }
+    if (file.size > 1.5 * 1024 * 1024) { setErr("Too large — keep it under 1.5 MB."); return; }
+    const r = new FileReader();
+    r.onload = () => onPick({ dataUrl: String(r.result), ext, name: file.name });
+    r.onerror = () => setErr("Could not read that file.");
+    r.readAsDataURL(file);
+  };
+  return html`
+    <div className="dscz-logo-row">
+      <button type="button" className="dscz-logo-drop"
+        onClick=${() => inputRef.current && inputRef.current.click()}
+        onDragOver=${(e) => { e.preventDefault(); }}
+        onDrop=${(e) => { e.preventDefault(); read(e.dataTransfer.files && e.dataTransfer.files[0]); }}
+        title=${logo ? "Replace logo" : "Upload a logo"}>
+        ${logo
+          ? html`<img className="dscz-logo-thumb" src=${logo.dataUrl} alt="Logo preview"/>`
+          : html`<span className="dscz-logo-placeholder"><${Icon.Image || (() => "＋")}/> Upload logo</span>`}
+      </button>
+      <input ref=${inputRef} type="file" accept="image/svg+xml,image/png,image/jpeg,image/gif,image/webp"
+        style=${{ display: "none" }}
+        onChange=${(e) => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
+      ${err && html`<div className="newproj-error">${err}</div>`}
+    </div>
+  `;
+}
+
+/* One colour control row: swatch + native picker + hex field + reset-to-default. */
+function DsColorRow({ label, value, fallback, onChange, onReset }) {
+  const current = value || fallback;
+  const isCustom = !!value && value.toUpperCase() !== fallback.toUpperCase();
+  return html`
+    <div className="dscz-color-row">
+      <label className="dscz-color-swatch" style=${{ background: current }}>
+        <input type="color" value=${current} onInput=${(e) => onChange(e.target.value.toUpperCase())}/>
+      </label>
+      <div className="dscz-color-meta">
+        <span className="dscz-color-label">${label}</span>
+        <input className="dscz-color-hex" type="text" spellCheck="false" value=${current}
+          onInput=${(e) => {
+            const v = e.target.value.trim();
+            if (/^#?[0-9a-fA-F]{6}$/.test(v)) onChange((v[0] === "#" ? v : "#" + v).toUpperCase());
+          }}/>
+      </div>
+      ${isCustom && html`<button type="button" className="dscz-reset" onClick=${onReset}>reset</button>`}
     </div>
   `;
 }

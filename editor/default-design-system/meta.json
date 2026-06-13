@@ -1,0 +1,588 @@
+{
+  "id": "default",
+  "label": "Default Design System",
+  "genre": "restrained institutional product UI (neutral product, Plus Jakarta Sans, pill controls)",
+  "font": "Plus Jakarta Sans (Google Fonts CDN)",
+  "brand": {
+    "brand-blue": "#074ECF",
+    "brand-red": "#E20E10",
+    "brand-grey": "#DADFE8",
+    "brand-gold": "#F5B301",
+    "brand-sky": "#7FB9EE",
+    "interaction-blue": "#074ECF"
+  },
+  "builtFrom": {
+    "method": "clean hand-authored CSS; self-contained single source of truth in this folder"
+  },
+  "files": {
+    "styles": "styles.css",
+    "gallery": "gallery.html",
+    "designMd": "DESIGN.md"
+  },
+  "assets": [
+    "assets/sidebar-grid.svg",
+    "assets/logo.svg"
+  ],
+  "componentCount": 47,
+  "components": [
+    {
+      "name": "Button",
+      "layer": "atom",
+      "variants": [
+        "primary",
+        "outline",
+        "light",
+        "outline-mono",
+        "outline-mono-shadow",
+        "well",
+        "text",
+        "tertiary",
+        "tertiary-mono",
+        "l",
+        "s",
+        "xs",
+        "icon",
+        "split"
+      ],
+      "classHint": "btn btn--primary"
+    },
+    {
+      "name": "Button group",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "active",
+        "readonly"
+      ],
+      "classHint": "btn-group"
+    },
+    {
+      "name": "Link",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "mono",
+        "disabled"
+      ],
+      "classHint": "link"
+    },
+    {
+      "name": "Tag",
+      "layer": "atom",
+      "variants": [
+        "primary",
+        "light",
+        "outline",
+        "secondary",
+        "tertiary",
+        "mono",
+        "sm",
+        "xs"
+      ],
+      "classHint": "tag"
+    },
+    {
+      "name": "Badge",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "light",
+        "outline",
+        "secondary",
+        "tertiary",
+        "mono",
+        "positive",
+        "attention",
+        "negative",
+        "dot",
+        "text",
+        "sm",
+        "xs"
+      ],
+      "classHint": "badge"
+    },
+    {
+      "name": "Status",
+      "layer": "atom",
+      "variants": [
+        "success",
+        "attention",
+        "error",
+        "info",
+        "disabled",
+        "box",
+        "icon-text",
+        "icon-only",
+        "sm",
+        "xs"
+      ],
+      "classHint": "status status--success"
+    },
+    {
+      "name": "Avatar",
+      "layer": "atom",
+      "variants": [
+        "lg",
+        "base",
+        "sm",
+        "stack"
+      ],
+      "classHint": "avatar avatar--lg"
+    },
+    {
+      "name": "Input",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "focus",
+        "filled",
+        "validated",
+        "error",
+        "disabled",
+        "pill"
+      ],
+      "classHint": "input"
+    },
+    {
+      "name": "Select",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "focus",
+        "error",
+        "disabled"
+      ],
+      "classHint": "select"
+    },
+    {
+      "name": "Textarea",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "counter"
+      ],
+      "classHint": "textarea"
+    },
+    {
+      "name": "Input affix",
+      "layer": "atom",
+      "variants": [
+        "search",
+        "date",
+        "phone",
+        "unit",
+        "stepper",
+        "password",
+        "otp"
+      ],
+      "classHint": "input-icon"
+    },
+    {
+      "name": "Checkbox",
+      "layer": "atom",
+      "variants": [
+        "checked",
+        "off",
+        "disabled",
+        "error",
+        "circle"
+      ],
+      "classHint": "checkbox"
+    },
+    {
+      "name": "Radio",
+      "layer": "atom",
+      "variants": [
+        "on",
+        "off",
+        "dot"
+      ],
+      "classHint": "radio"
+    },
+    {
+      "name": "Check button",
+      "layer": "atom",
+      "variants": [
+        "active",
+        "default"
+      ],
+      "classHint": "check-btn is-active"
+    },
+    {
+      "name": "Switch",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "readonly"
+      ],
+      "classHint": "switch"
+    },
+    {
+      "name": "Progress",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "pending",
+        "error",
+        "success"
+      ],
+      "classHint": "progress"
+    },
+    {
+      "name": "Chip",
+      "layer": "atom",
+      "variants": [
+        "default"
+      ],
+      "classHint": "chip"
+    },
+    {
+      "name": "Tooltip",
+      "layer": "atom",
+      "variants": [
+        "default"
+      ],
+      "classHint": "tooltip__bubble"
+    },
+    {
+      "name": "Separator",
+      "layer": "atom",
+      "variants": [
+        "default",
+        "label",
+        "thick",
+        "vertical"
+      ],
+      "classHint": "separator"
+    },
+    {
+      "name": "Field",
+      "layer": "molecule",
+      "variants": [
+        "default",
+        "error",
+        "validated",
+        "readonly"
+      ],
+      "classHint": "field"
+    },
+    {
+      "name": "Segmented",
+      "layer": "molecule",
+      "variants": [
+        "filled",
+        "outline",
+        "yesno"
+      ],
+      "classHint": "segmented"
+    },
+    {
+      "name": "Tabs",
+      "layer": "molecule",
+      "variants": [
+        "underline",
+        "cards",
+        "buttons",
+        "count",
+        "stacked"
+      ],
+      "classHint": "tabs tabs--underline"
+    },
+    {
+      "name": "Breadcrumbs",
+      "layer": "molecule",
+      "variants": [
+        "full",
+        "truncated",
+        "back"
+      ],
+      "classHint": "breadcrumbs"
+    },
+    {
+      "name": "Alert",
+      "layer": "molecule",
+      "variants": [
+        "success",
+        "attention",
+        "error",
+        "info"
+      ],
+      "classHint": "alert alert--success"
+    },
+    {
+      "name": "Toast",
+      "layer": "molecule",
+      "variants": [
+        "success",
+        "error",
+        "info",
+        "attention",
+        "long"
+      ],
+      "classHint": "toast toast--success"
+    },
+    {
+      "name": "Menu",
+      "layer": "molecule",
+      "variants": [
+        "default"
+      ],
+      "classHint": "menu"
+    },
+    {
+      "name": "Pagination",
+      "layer": "molecule",
+      "variants": [
+        "default"
+      ],
+      "classHint": "row"
+    },
+    {
+      "name": "Table",
+      "layer": "organism",
+      "variants": [
+        "default",
+        "selected-row",
+        "disabled-row",
+        "sortable-header"
+      ],
+      "classHint": "table"
+    },
+    {
+      "name": "DataGrid filters",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "dg-filters"
+    },
+    {
+      "name": "DataGrid bulk action",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "dg-bulk"
+    },
+    {
+      "name": "DataGrid legend",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "dg-legend"
+    },
+    {
+      "name": "DataGrid cell",
+      "layer": "organism",
+      "variants": [
+        "nav-to",
+        "reorder",
+        "range",
+        "chips",
+        "avatars",
+        "badge",
+        "title-sub"
+      ],
+      "classHint": "cell-navto"
+    },
+    {
+      "name": "Card",
+      "layer": "organism",
+      "variants": [
+        "default",
+        "plain",
+        "filled"
+      ],
+      "classHint": "card"
+    },
+    {
+      "name": "Section card",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "section-card"
+    },
+    {
+      "name": "List",
+      "layer": "organism",
+      "variants": [
+        "card",
+        "simple"
+      ],
+      "classHint": "list list--card"
+    },
+    {
+      "name": "Feed",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "feed"
+    },
+    {
+      "name": "Timeline",
+      "layer": "organism",
+      "variants": [
+        "current-pending",
+        "future-pending",
+        "success",
+        "unsuccessful",
+        "cancelled"
+      ],
+      "classHint": "timeline__item timeline--current-pending"
+    },
+    {
+      "name": "Wizard",
+      "layer": "organism",
+      "variants": [
+        "horizontal",
+        "vertical"
+      ],
+      "classHint": "steps"
+    },
+    {
+      "name": "Empty state",
+      "layer": "organism",
+      "variants": [
+        "no-data",
+        "no-results",
+        "no-access"
+      ],
+      "classHint": "blank-slate blank-slate--nodata"
+    },
+    {
+      "name": "Lifecycle bar",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "lifecycle"
+    },
+    {
+      "name": "Modal",
+      "layer": "organism",
+      "variants": [
+        "confirmation",
+        "action",
+        "discard",
+        "delete",
+        "stop",
+        "no-access",
+        "info",
+        "success",
+        "loading",
+        "form",
+        "list"
+      ],
+      "classHint": "scrim"
+    },
+    {
+      "name": "Slideout",
+      "layer": "organism",
+      "variants": [
+        "simple",
+        "complex",
+        "sm",
+        "md",
+        "lg"
+      ],
+      "classHint": "scrim"
+    },
+    {
+      "name": "Sidebar nav",
+      "layer": "organism",
+      "variants": [
+        "rail",
+        "sub-item"
+      ],
+      "classHint": "sidebar__nav"
+    },
+    {
+      "name": "Sub nav",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "subnav"
+    },
+    {
+      "name": "Top bar",
+      "layer": "organism",
+      "variants": [
+        "default"
+      ],
+      "classHint": "topbar"
+    },
+    {
+      "name": "Top menu",
+      "layer": "organism",
+      "variants": [
+        "default",
+        "mobile"
+      ],
+      "classHint": "topnav"
+    },
+    {
+      "name": "App shell",
+      "layer": "template",
+      "variants": [
+        "side-menu"
+      ],
+      "classHint": "app"
+    }
+  ],
+  "shells": [
+    {
+      "id": "app-shell",
+      "label": "Side-menu app shell (.app › .sidebar + .main)",
+      "css": "shells/app-shell.css",
+      "html": "shells/app-shell.html"
+    }
+  ],
+  "templates": [
+    {
+      "id": "basic-form",
+      "label": "Basic Page & Form",
+      "desc": "App shell · lifecycle status bar + section card + form grid",
+      "file": "templates/basic-form.html",
+      "usesShell": true
+    },
+    {
+      "id": "dashboard",
+      "label": "Dashboard · Tasks",
+      "desc": "App shell · secondary side-nav + task feed + pagination",
+      "file": "templates/dashboard.html",
+      "usesShell": true
+    },
+    {
+      "id": "exception",
+      "label": "Exception Handling",
+      "desc": "404 / 403 / 400 / session-timeout / maintenance cards",
+      "file": "templates/exception.html",
+      "usesShell": false
+    },
+    {
+      "id": "login",
+      "label": "Login Entry",
+      "desc": "Full-bleed auth + NovaID SSO + brand masthead + marketing footer",
+      "file": "templates/login.html",
+      "usesShell": false
+    },
+    {
+      "id": "technical-logs",
+      "label": "Technical Logs",
+      "desc": "App shell · filters bar + sortable log table + pagination",
+      "file": "templates/technical-logs.html",
+      "usesShell": true
+    },
+    {
+      "id": "user-profile",
+      "label": "User Profile",
+      "desc": "App shell · two-pane profile card + details",
+      "file": "templates/user-profile.html",
+      "usesShell": true
+    }
+  ]
+}

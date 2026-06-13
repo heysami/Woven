@@ -83,6 +83,11 @@ PORT = _pick_port()
 # to the pre-Phase-6 single-repo install (INSTALL_ROOT == project root).
 INSTALL_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 EDITOR_DIR   = os.path.join(INSTALL_ROOT, "editor")
+# Bundled "starter" design system shipped inside the editor binary. New
+# projects can opt to seed design-systems/default/ from this folder (with the
+# user's colour / radius / type / spacing tweaks baked in). It is version- and
+# project-name-neutral on purpose; the per-project copy gets its own meta.
+DEFAULT_DS_DIR = os.path.join(EDITOR_DIR, "default-design-system")
 
 _workspace_env = os.environ.get("TH_WORKSPACE_DIR")
 _single_env = (os.environ.get("TH_SINGLE_PROJECT") or "").strip().lower()
@@ -6130,6 +6135,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._design_system_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ds_bootstrap":
             return self._ds_bootstrap(urllib.parse.parse_qs(parsed.query))
+        # Static serve for the bundled starter DS — powers the new-project DS
+        # customizer's live-preview iframe. `/__default_ds/gallery.html` and the
+        # relative styles.css / shells/ / templates/ it links resolve here.
+        if url_path == "/__default_ds" or url_path.startswith("/__default_ds/"):
+            return self._default_ds_file(url_path[len("/__default_ds"):])
         if url_path == "/__ds_proposals":
             return self._ds_proposals_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__resolve_font":
@@ -9790,6 +9800,49 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         # no-cache: _fontface.css mutates in place on upload/delete.
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
+    # ── GET /__default_ds[/<relpath>] ────────────────────────────────────
+    # Serves a file from the bundled starter design system (DEFAULT_DS_DIR).
+    # `/__default_ds/` (or bare) → gallery.html. Relative links inside the
+    # gallery (styles.css, shells/app-shell.css, templates/*.html, assets/*)
+    # resolve back through this same route, so the new-project preview iframe
+    # renders the real DS with no project on disk yet. Read-only; traversal
+    # is rejected; the daemon never writes here.
+    def _default_ds_file(self, rel):
+        rel = (rel or "").lstrip("/")
+        if not rel:
+            rel = "gallery.html"
+        try:
+            path = _safe_join(DEFAULT_DS_DIR, rel)
+        except ValueError:
+            return self._reply(400, {"error": "bad path"})
+        if not os.path.isfile(path):
+            return self._reply(404, {"error": "not found", "file": rel})
+        ext = path.rsplit(".", 1)[-1].lower() if "." in os.path.basename(path) else ""
+        ctype = {
+            "html": "text/html; charset=utf-8",
+            "css":  "text/css; charset=utf-8",
+            "js":   "application/javascript; charset=utf-8",
+            "json": "application/json; charset=utf-8",
+            "svg":  "image/svg+xml",
+            "png":  "image/png",
+            "jpg":  "image/jpeg",
+            "jpeg": "image/jpeg",
+            "woff2": "font/woff2",
+            "md":   "text/plain; charset=utf-8",
+        }.get(ext, "application/octet-stream")
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except Exception as e:
+            return self._reply(500, {"error": f"read failed: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
 
@@ -14403,13 +14456,29 @@ class H(http.server.SimpleHTTPRequestHandler):
         if os.path.exists(dest) or (os.path.isdir(legacy) and os.path.isdir(os.path.join(legacy, "source"))):
             return self._reply(409, {"error": "project already exists", "id": proj_id})
         label = (body.get("label") or proj_id).strip()
+        ds_ref = None       # set when the user opted into the bundled DS
+        ds_warning = None   # non-fatal DS-bake issue surfaced in the response
         try:
             os.makedirs(os.path.join(dest, "source", "main"), exist_ok=False)
             os.makedirs(os.path.join(dest, "editor"), exist_ok=True)
+            # Optional: seed design-systems/default/ from the bundled starter DS
+            # with the customizer's colour / radius / type / spacing tweaks
+            # baked in. Best-effort — a failure here leaves a usable (DS-less)
+            # project rather than aborting creation.
+            if body.get("useDefaultDs"):
+                try:
+                    ds_ref = self._seed_default_ds(dest, body)
+                except Exception as e:
+                    ds_warning = f"default design system not seeded: {type(e).__name__}: {e}"
+            meta_inner = (
+                f'project: {json.dumps(label)}, sourceRoot: "../source/main/", sourceEntry: "index.html"'
+            )
+            if ds_ref:
+                meta_inner += ", dsRef: " + json.dumps(ds_ref)
             main_data = (
                 "// Auto-generated by /__projects/new — minimal project seed.\n"
                 "window.EDITOR_DATA = {\n"
-                f'  meta: {{ project: {json.dumps(label)}, sourceRoot: "../source/main/", sourceEntry: "index.html" }},\n'
+                f"  meta: {{ {meta_inner} }},\n"
                 "  frames: [], lanes: [], arrows: [], entities: [], primitives: [], links: [],\n"
                 "};\n"
             )
@@ -14433,7 +14502,196 @@ class H(http.server.SimpleHTTPRequestHandler):
                 json.dump(cfg, f, indent=2)
         except Exception:
             pass  # auto-discovery still picks the project up via folder scan
-        return self._reply(200, {"ok": True, "id": proj_id, "label": label, "path": dest})
+        resp = {"ok": True, "id": proj_id, "label": label, "path": dest}
+        if ds_ref:
+            resp["dsRef"] = ds_ref
+        if ds_warning:
+            resp["dsWarning"] = ds_warning
+        return self._reply(200, resp)
+
+    # Seed <project>/design-systems/default/ from the bundled starter DS,
+    # baking in the new-project customizer's tweaks. `body` carries:
+    #   dsOverrideCss  — a ":root{…}" block (colours/radius/type/spacing) the
+    #                    frontend already computed; appended verbatim so later
+    #                    cascade wins over the template tokens.
+    #   dsFont         — optional { familyCss, googleFontsUrl } to swap the
+    #                    Plus Jakarta Sans webfont + --font family.
+    #   dsLabel        — optional human label for meta.json / dsRef.
+    # Also writes the editor/design-systems/default.js runtime mirror so the
+    # editor's DS view + listDesignSystems() light up at first boot. Returns
+    # the dsRef dict { id, version, pinned:false } for data.js meta.
+    def _seed_default_ds(self, dest, body):
+        if not os.path.isdir(DEFAULT_DS_DIR):
+            raise FileNotFoundError("bundled default-design-system/ is missing")
+        ds_id = "default"
+        ds_dir = _safe_join(dest, "design-systems", ds_id)
+        # Copy the whole template tree (trio + shells + templates + assets).
+        shutil.copytree(DEFAULT_DS_DIR, ds_dir)
+
+        override_css = (body.get("dsOverrideCss") or "").strip()
+        font = body.get("dsFont") if isinstance(body.get("dsFont"), dict) else None
+
+        # 1) Font swap — replace the Plus Jakarta Sans Google Fonts URL across
+        #    every html/css in the copied DS, and the --font family in
+        #    styles.css. Keep the template untouched when no font was chosen.
+        if font and (font.get("googleFontsUrl") or font.get("familyCss")):
+            old_url = "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+            new_url = (font.get("googleFontsUrl") or "").strip()
+            family_css = (font.get("familyCss") or "").strip()
+            for root, _dirs, files in os.walk(ds_dir):
+                for fn in files:
+                    if not fn.lower().endswith((".html", ".css")):
+                        continue
+                    fp = os.path.join(root, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8") as f:
+                            txt = f.read()
+                    except Exception:
+                        continue
+                    new_txt = txt
+                    if new_url:
+                        new_txt = new_txt.replace(old_url, new_url)
+                    if family_css and fn == "styles.css":
+                        new_txt = re.sub(
+                            r"--font:[^;]+;",
+                            "--font:" + family_css + ";",
+                            new_txt,
+                            count=1,
+                        )
+                    if new_txt != txt:
+                        with open(fp, "w", encoding="utf-8") as f:
+                            f.write(new_txt)
+
+        # 1b) Logo swap — the user can upload a sidebar/topnav logo. Decode the
+        #     data URL, write assets/logo.<ext>, and (for non-svg) repoint every
+        #     `logo.svg` reference across the copied html/css. The original ref
+        #     in shells/templates/gallery is `assets/logo.svg` / `../assets/
+        #     logo.svg`; replacing the `logo.svg` token covers both.
+        logo = body.get("dsLogo") if isinstance(body.get("dsLogo"), dict) else None
+        if logo and logo.get("dataUrl"):
+            data_url = logo.get("dataUrl") or ""
+            ext = (logo.get("ext") or "").lower().lstrip(".")
+            allowed = {"svg", "png", "jpg", "jpeg", "gif", "webp"}
+            m = re.match(r"^data:([^;,]*)?(;base64)?,(.*)$", data_url, re.DOTALL)
+            if m and ext in allowed:
+                payload = m.group(3) or ""
+                try:
+                    raw = base64.b64decode(payload) if m.group(2) else urllib.parse.unquote_to_bytes(payload)
+                except Exception:
+                    raw = None
+                # Cap at ~2MB to match the client guard (1.5MB + base64 slack).
+                if raw and len(raw) <= 2 * 1024 * 1024:
+                    assets_dir = os.path.join(ds_dir, "assets")
+                    os.makedirs(assets_dir, exist_ok=True)
+                    logo_name = "logo." + ext
+                    with open(os.path.join(assets_dir, logo_name), "wb") as f:
+                        f.write(raw)
+                    if logo_name != "logo.svg":
+                        # Repoint references and drop the now-unused default svg.
+                        # Covers html/css (live refs) + meta.json assets list +
+                        # DESIGN.md prose so nothing points at the deleted file.
+                        for root, _dirs, files in os.walk(ds_dir):
+                            for fn in files:
+                                if not fn.lower().endswith((".html", ".css", ".json", ".md")):
+                                    continue
+                                fp = os.path.join(root, fn)
+                                try:
+                                    with open(fp, "r", encoding="utf-8") as f:
+                                        t = f.read()
+                                except Exception:
+                                    continue
+                                if "logo.svg" in t:
+                                    with open(fp, "w", encoding="utf-8") as f:
+                                        f.write(t.replace("logo.svg", logo_name))
+                        try:
+                            os.remove(os.path.join(assets_dir, "logo.svg"))
+                        except OSError:
+                            pass
+
+        # 2) Token overrides — append the frontend-computed :root block to the
+        #    end of styles.css. A later :root{} of equal specificity wins by
+        #    source order, so this re-skins colours/radius/type/spacing without
+        #    touching the carefully-authored component rules above.
+        styles_path = os.path.join(ds_dir, "styles.css")
+        styles_css = ""
+        try:
+            with open(styles_path, "r", encoding="utf-8") as f:
+                styles_css = f.read()
+        except Exception:
+            pass
+        if override_css:
+            block = (
+                "\n\n/* ==========================================================================\n"
+                "   Project customization — generated by the new-project DS customizer.\n"
+                "   Overrides the starter tokens above; component rules are untouched.\n"
+                "   ========================================================================== */\n"
+                + override_css + "\n"
+            )
+            styles_css = styles_css + block
+            with open(styles_path, "w", encoding="utf-8") as f:
+                f.write(styles_css)
+
+        # 3) meta.json — stamp a content version + label; never carry a
+        #    project name. Version = sha256(styles + gallery)[:12], matching
+        #    the POST /__design_system convention.
+        gallery_path = os.path.join(ds_dir, "gallery.html")
+        gallery_html = ""
+        try:
+            with open(gallery_path, "r", encoding="utf-8") as f:
+                gallery_html = f.read()
+        except Exception:
+            pass
+        h = hashlib.sha256()
+        h.update(styles_css.encode("utf-8", errors="replace"))
+        h.update(b"\x00")
+        h.update(gallery_html.encode("utf-8", errors="replace"))
+        version = h.hexdigest()[:12]
+        ds_label = (body.get("dsLabel") or "").strip() or "Default Design System"
+        meta = {}
+        meta_path = os.path.join(ds_dir, "meta.json")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f) or {}
+        except Exception:
+            meta = {"id": ds_id}
+        meta["id"] = ds_id
+        meta["version"] = version
+        meta["label"] = ds_label
+        try:
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+        except Exception:
+            pass
+
+        # 4) Runtime mirror — editor/design-systems/default.js, same schema the
+        #    DS view + listDesignSystems() read (window.EDITOR_DS_default).
+        design_md = ""
+        try:
+            with open(os.path.join(ds_dir, "DESIGN.md"), "r", encoding="utf-8") as f:
+                design_md = f.read()
+        except Exception:
+            pass
+        mirror_dir = _safe_join(dest, "editor", "design-systems")
+        os.makedirs(mirror_dir, exist_ok=True)
+        mirror_body = (
+            "// EDITOR_DS_" + ds_id + " — runtime mirror of design-systems/" + ds_id + "/.\n"
+            "// Written by /__projects/new (default DS customizer).\n"
+            "window.EDITOR_DS_" + ds_id + " = " + json.dumps({
+                "id":      ds_id,
+                "version": version,
+                "label":   ds_label,
+                "trio": {
+                    "stylesCss":   styles_css,
+                    "galleryHtml": gallery_html,
+                    "designMd":    design_md,
+                },
+                "meta": meta,
+            }, ensure_ascii=False, indent=2) + ";\n"
+        )
+        with open(os.path.join(mirror_dir, ds_id + ".js"), "w", encoding="utf-8") as f:
+            f.write(mirror_body)
+
+        return {"id": ds_id, "version": version, "pinned": False}
 
     # POST /__projects/rename  body: { id, label }
     # Updates the project's display label by writing workspace.json. The on-disk

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Default">
+  <!-- white "D" monogram reads on the dark blue sidebar/topbar -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M9 9h12.5a15 15 0 0 1 0 30H9V9Zm8.4 7.6v14.8h4.1a7.4 7.4 0 0 0 0-14.8h-4.1Z"/>
+  <!-- red accent dot -->
+  <circle cx="40" cy="12.5" r="4" fill="#E20E10"/>
+</svg>

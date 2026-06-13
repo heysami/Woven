@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 800" preserveAspectRatio="xMidYMax slice" role="img" aria-hidden="true">
+  <defs>
+    <!-- two grid scales: fine + coarse -->
+    <pattern id="fine" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path d="M16 0H0V16" fill="none" stroke="#FFFFFF" stroke-width="1"/>
+    </pattern>
+    <pattern id="coarse" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#FFFFFF" stroke-width="1"/>
+    </pattern>
+    <!-- density fades: dense at the bottom, dissolving upward -->
+    <linearGradient id="fadeFine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.42" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#FFFFFF" stop-opacity="0.45"/>
+      <stop offset="1"    stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="fadeCoarse" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.45"/>
+      <stop offset="1"   stop-color="#FFFFFF" stop-opacity="0.9"/>
+    </linearGradient>
+    <mask id="mFine"><rect width="240" height="800" fill="url(#fadeFine)"/></mask>
+    <mask id="mCoarse"><rect width="240" height="800" fill="url(#fadeCoarse)"/></mask>
+  </defs>
+  <!-- coarse grid: faint, present low, almost gone up top -->
+  <rect width="240" height="800" fill="url(#coarse)" mask="url(#mCoarse)" opacity="0.13"/>
+  <!-- fine grid: concentrated at the bottom, densest at the very base -->
+  <rect width="240" height="800" fill="url(#fine)" mask="url(#mFine)" opacity="0.16"/>
+</svg>

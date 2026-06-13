@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default — Basic Page &amp; Form</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../shells/app-shell.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <img class="sidebar__wave" src="../assets/sidebar-grid.svg" alt="" aria-hidden="true">
+    <div class="sidebar__logo"><img class="app-logo" src="../assets/logo.svg" alt="Default" style="height:40px"><span class="sep" style="width:1px;height:24px;background:var(--tint-30)"></span><span class="title" style="font-weight:600;font-size:var(--text-h5);color:#fff">Default</span></div>
+    <div class="sidebar__section">Asset Manager</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link is-active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h18"/></svg><span class="nav-label">Files</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/></svg><span class="nav-label">Templates</span></a>
+      <a class="nav-link nav-link--sub" href="#"><span class="nav-label">Configuration</span></a>
+    </nav>
+    <div class="sidebar__user"><a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="nav-label">Marcus Vale</span></a></div>
+  </aside>
+  <div class="main">
+    <header class="topbar"><nav class="breadcrumbs"><a href="#">List of Items</a><span class="sep">/</span><span class="current">View Item</span></nav></header>
+    <div class="content">
+
+      <div class="page-head">
+        <div class="title-page">View Item</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn--outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:18px;height:18px"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>Edit</button>
+          <button class="btn btn--icon btn--outline-mono"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+        </div>
+      </div>
+      <div style="margin:-12px 0 20px"><div class="title-paragraph">Item ABC</div><div class="text-s text-subtle">Item ID</div></div>
+
+      <div class="lifecycle">
+        <div class="lifecycle__row"><span class="status status--attention">Pending Approval</span><a class="link" href="#">Approval History ›</a></div>
+        <div class="lifecycle__callout lifecycle__callout--attention"><strong>Submission Remarks:</strong> This submission is awaiting approval by the asset owner.</div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-card__head">
+          <span class="section-card__icon"><svg viewBox="0 0 24 24" fill="currentColor" style="width:22px;height:22px"><path d="M12 2.1 2.6 6.6a.7.7 0 0 0-.4.64V9h19.6V7.24a.7.7 0 0 0-.4-.64z"/><path d="M4 10.4h2v6.1H4zM8.7 10.4h2v6.1h-2zM13.3 10.4h2v6.1h-2zM18 10.4h2v6.1h-2z"/><path d="M3 17.4h18a.6.6 0 0 1 .6.6V20H2.4v-2a.6.6 0 0 1 .6-.6z"/></svg></span>
+          <div><h2 class="section-card__title">Item Details</h2><p class="section-card__desc">The description of the section.</p></div>
+          <div class="section-card__actions"><button class="btn btn--icon btn--outline-mono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button></div>
+        </div>
+        <div class="kv-grid" style="--kv-cols:4">
+          <div class="kv"><span class="kv__label">Reference No.</span><span class="kv__value">REF-2026-0192</span></div>
+          <div class="kv"><span class="kv__label">Category</span><span class="kv__value">Digital Asset</span></div>
+          <div class="kv"><span class="kv__label">Status</span><span class="kv__value"><span class="status status--success status--sm">Active</span></span></div>
+          <div class="kv"><span class="kv__label">Owner</span><span class="kv__value">Elena Marsh</span></div>
+          <div class="kv kv--span2"><span class="kv__label">Title</span><span class="kv__value">Asset Bundle — Set 1</span></div>
+          <div class="kv"><span class="kv__label">Purchased Licence</span><span class="kv__value">200</span></div>
+          <div class="kv"><span class="kv__label">Utilised Licence</span><span class="kv__value">100</span></div>
+          <div class="kv kv--span4"><span class="kv__label">Description</span><span class="kv__value">Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat.</span></div>
+        </div>
+      </div>
+
+      <div class="section-card" style="margin-top:24px">
+        <div class="section-card__head"><div><h2 class="section-card__title">Edit Form</h2><p class="section-card__desc">Responsive label/value form grid.</p></div></div>
+        <div class="kv-grid" style="--kv-cols:2;gap:16px 24px">
+          <div class="field"><label class="field__label">Reference No. <span class="req">*</span></label><input class="input" value="REF-2026-0192"></div>
+          <div class="field"><label class="field__label">Category</label><select class="select"><option>Digital Asset</option></select></div>
+          <div class="field"><label class="field__label">Owner</label><input class="input" value="Elena Marsh"></div>
+          <div class="field"><label class="field__label">Status</label><select class="select"><option>Active</option></select></div>
+          <div class="field" style="grid-column:1/-1"><label class="field__label">Description</label><textarea class="textarea">Lorem ipsum dolor sit amet.</textarea></div>
+        </div>
+        <div class="row" style="justify-content:flex-end;margin-top:20px"><button class="btn btn--outline">Cancel</button><button class="btn btn--primary">Save Changes</button></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>
