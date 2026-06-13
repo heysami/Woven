@@ -9261,6 +9261,11 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface);
   z-index: 1;
 }
+/* The primary Run/Blend/Setup CTA stretches to the full node width so it
+   reads identically to the skill + agent nodes' orange Run bar — not a
+   small content-width pill. Status badges (done/error) wrap onto their
+   own line below it. */
+.workflow-node-iter-actions .workflow-node-skill-run { flex: 1 1 100%; }
 /* Error span inside an iterator action row — full message wraps over
    multiple lines so the user sees the actionable hint, not just a teaser.
    Scrolls if it exceeds 8 lines. */

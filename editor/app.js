@@ -19016,7 +19016,7 @@ const WORKFLOW_NODE_FACTORY = {
   },
   "agent": (p) => {
     const node = {
-      kind: "agent", w: p.w || 320, h: p.h || 240,
+      kind: "agent", w: p.w || 400, h: p.h || 440,
       name: p.name || "Untitled agent",
       conversation: [],
     };
@@ -19040,7 +19040,7 @@ const WORKFLOW_NODE_FACTORY = {
     title: p.title || "Section",
   }),
   "design-system": (p) => ({
-    kind: "design-system", w: 340, h: 380,
+    kind: "design-system", w: 360, h: 720,
     dsId: (p.dsId || "main").toLowerCase(),
     spec: {
       genre:           p.spec?.genre || "",
@@ -19124,7 +19124,7 @@ const WORKFLOW_NODE_FACTORY = {
     ],
   }),
   "composer": (p) => ({
-    kind: "composer", w: 520, h: 460,
+    kind: "composer", w: 900, h: 600,
     canvasW: p.canvasW || 1600,
     canvasH: p.canvasH || 900,
     maxWidth:  p.maxWidth  || null,
@@ -19133,7 +19133,7 @@ const WORKFLOW_NODE_FACTORY = {
     layers: p.layers || [],
   }),
   "vector-editor": (p) => ({
-    kind: "vector-editor", w: 720, h: 520,
+    kind: "vector-editor", w: 960, h: 640,
     canvasW: p.canvasW || 1200,
     canvasH: p.canvasH || 800,
     background: p.background || "#ffffff",
@@ -54173,15 +54173,6 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
           <span className="workflow-node-skill-glyph"><${Icon.Text}/></span>
           <span className="workflow-node-skill-title">${node.title || "LLM call"}</span>
           <span className="workflow-node-bar-spacer"/>
-          ${runState && status === "running" && html`<span className="workflow-node-skill-status">running…</span>`}
-          ${onRun && html`<${HoverTip}
-            className="workflow-node-run"
-            tip="Run this LLM call now (uses upstream wired prompt + context)."
-            ariaLabel="Run LLM"
-            onClick=${(e) => { e.stopPropagation(); onRun(node.id); }}
-            onMouseDown=${(e) => e.stopPropagation()}
-            disabled=${status === "running"}
-          ><${Icon.Play}/><//>`}
           <${HoverTip}
             className="workflow-node-close"
             tip="Remove this LLM node from the canvas."
@@ -54205,6 +54196,19 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
           />
           <${LlmPromptPreviewSection} node=${node} onChange=${onChange}/>
           ${error && html`<div className="workflow-node-skill-error">${error}</div>`}
+          <button
+            className="workflow-node-skill-run"
+            data-status=${status}
+            onClick=${(e) => { e.stopPropagation(); onRun && onRun(node.id); }}
+            disabled=${status === "loading" || status === "running"}
+            title=${status === "error" ? error : "Run this LLM call now (uses upstream wired prompt + context)."}
+          >
+            ${status === "loading" || status === "running"
+              ? html`<span className="workflow-node-skill-spinner"/><span>Running…</span>`
+              : status === "done" ? "Run again ↺"
+              : status === "error" ? "Retry"
+              : html`<${Icon.Play}/> Run`}
+          </button>
         </div>
         <div className="workflow-node-port workflow-node-port-in"  data-side="in"  onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}/>
         <div className="workflow-node-port workflow-node-port-out" data-side="out" onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}/>
