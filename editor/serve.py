@@ -5789,10 +5789,33 @@ class H(http.server.SimpleHTTPRequestHandler):
         sys.stdout.write("[%s] %s\n" % (self.log_date_time_string(), fmt % args))
         sys.stdout.flush()
 
+    def _cacheable_static_asset(self):
+        # The blanket no-store below exists so HTML/JS/data edits show up on a
+        # plain reload. But it also re-downloads the curated image catalog —
+        # ~450 MB of design-library sample PNGs (some 1–4 MB each) — on EVERY
+        # page open, which is what makes the Capabilities → Design library page
+        # feel heavy and lets thumbnails trickle in / fail under load. These
+        # assets are immutable for the lifetime of a session, so let the browser
+        # cache them. The handler still sends Last-Modified, so after the
+        # max-age expires the browser 304-revalidates instead of re-fetching;
+        # a hard reload (Cmd+Shift+R) busts the cache if an asset is recolored
+        # or regenerated mid-session.
+        path = (self.path or "").split("?", 1)[0].split("#", 1)[0].lower()
+        if not path.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif")):
+            return False
+        return (
+            path.startswith("/design-library/")
+            or path.startswith("/prototype/")
+            or path.startswith("/editor/orchestrator-art/")
+        )
+
     def end_headers(self):
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Expires", "0")
+        if self._cacheable_static_asset():
+            self.send_header("Cache-Control", "public, max-age=86400")
+        else:
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
