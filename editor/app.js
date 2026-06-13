@@ -16250,8 +16250,8 @@ function SharesLanding({ onCountChange }) {
       ${cfMissing && html`
         <div className="shares-cf-hint">
           <b>cloudflared is not installed.</b> Shares publish through Cloudflare quick
-          tunnels — install the binary once, then Start any share:
-          <code>brew install cloudflared</code>
+          tunnels — install it once via <b>Settings ⚙ → Local skills → Install cloudflared</b>
+          (or <code>brew install cloudflared</code>), then Start any share.
         </div>
       `}
       ${data && shares.length === 0 && html`
@@ -38015,7 +38015,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
               : "cloudflared not installed — brew install cloudflared, then retry"}
             onClick=${shareCreate}
           ><${Icon.Globe}/> ${shareBusy ? "Publishing…" : "Share via tunnel"}</button>
-          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">Needs <code>brew install cloudflared</code></div>`}
+          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">Install via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>)</div>`}
         `}
         ${share && html`
           <div key="srow" className="workflow-comments-share-row">
@@ -52588,6 +52588,19 @@ const LOCAL_PACKAGES = [
     required: true,
     requiredReason: "Cutout step in the raster-foreground asset pipeline (characters, mascots, isolated subjects). Foreground asset generation fails without it.",
   },
+  {
+    id: "cloudflared",
+    label: "cloudflared",
+    installKind: "brew",   // binary via Homebrew — flips the install-hint line + server branch
+    hint: "Cloudflare quick tunnels for Share mode · installed via Homebrew · no Cloudflare account needed",
+    skills: "Share prototypes for review",
+    docsUrl: "https://github.com/cloudflare/cloudflared",
+    // NOT required — sharing is opt-in, and the Shares tab + prototype-node
+    // comments dock degrade gracefully (Start disabled + install hint) when
+    // the binary is missing. Flip to required:true to make onboarding block
+    // on it like rembg.
+    required: false,
+  },
 ];
 
 function WorkflowLocalSkillsSection() {
@@ -52866,11 +52879,13 @@ function WorkflowLocalPackageRow({ pkg }) {
       `}
       ${logOut && logOut.ok && html`
         <div className="workflow-settings-msg workflow-settings-msg-ok">
-          Installed successfully. No daemon restart needed — rembg runs as a subprocess on each call.
+          Installed successfully. No daemon restart needed — ${pkg.label} runs as a subprocess on each call.
         </div>
       `}
       <div className="workflow-settings-hint">
-        Installs to your user-site (no sudo) via <code>${"pip install --user " + pkg.id}</code>.
+        ${pkg.installKind === "brew"
+          ? html`Installs via Homebrew: <code>${"brew install " + pkg.id}</code> (needs Homebrew — brew.sh).`
+          : html`Installs to your user-site (no sudo) via <code>${"pip install --user " + pkg.id}</code>.`}${" "}
         Docs: <a href=${pkg.docsUrl} target="_blank" rel="noopener">${pkg.docsUrl.replace(/^https?:\/\//, "")}</a>.
       </div>
     </div>

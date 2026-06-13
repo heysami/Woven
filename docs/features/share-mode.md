@@ -84,8 +84,14 @@ prototypes, `workflow/`, `../` traversal all verified unreachable. Tokens are
 
 ## Quick tunnels — what to expect
 
-- Requires the `cloudflared` binary (`brew install cloudflared`). No Cloudflare
-  account. The UI degrades gracefully when missing (install hint, Start disabled).
+- Requires the `cloudflared` binary. No Cloudflare account. **One-click install**
+  ships in onboarding Step 3 / Settings ⚙ → Local skills: `cloudflared` is a
+  `LOCAL_PACKAGES` entry with `installKind: "brew"` — the daemon's
+  `/__local_status` + `/__local_install` endpoints grew a `kind: "binary"`
+  branch (probe = PATH + brew prefixes, install = `brew install cloudflared`;
+  clean error pointing at brew.sh when Homebrew itself is missing). Marked
+  NOT required so onboarding never blocks on it — sharing is opt-in and the
+  Shares tab / node dock degrade gracefully (Start disabled + install hint).
 - **URLs change on every tunnel start** (daemon restart included). The registry
   keeps `prevUrl` + `lastUrlChangedAt`; the UI shows a "⚠ URL changed" chip until
   the user copies the new link (copy ACKs via `POST /__share/<id>/ack_url`).

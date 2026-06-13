@@ -11203,9 +11203,43 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Whitelist of installable packages and the extras to bundle. Limiting
     # to a known set prevents the install button from being a pip-arbitrary-
     # package exploit if the daemon is ever exposed beyond localhost.
+    # Two kinds:
+    #   pip    — python packages installed `pip install --user`, probed via
+    #            a subprocess `import <name>` (rembg).
+    #   binary — standalone executables installed via Homebrew, probed via
+    #            PATH + the usual brew prefixes (cloudflared for share mode).
+    # kind defaults to "pip" for back-compat with older entries.
     _LOCAL_PACKAGES = {
-        "rembg": {"packages": ["rembg", "onnxruntime"], "import": "rembg"},
+        "rembg":       {"kind": "pip", "packages": ["rembg", "onnxruntime"], "import": "rembg"},
+        "cloudflared": {"kind": "binary", "bin": "cloudflared", "brew": "cloudflared"},
     }
+
+    @staticmethod
+    def _find_local_binary(name):
+        """PATH first, then the usual Homebrew prefixes (Apple Silicon /
+        Intel) and /usr/bin — the daemon may have been launched from a GUI
+        context whose PATH lacks the brew prefix."""
+        p = shutil.which(name)
+        if p:
+            return p
+        for cand in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}", f"/usr/bin/{name}"):
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return cand
+        return None
+
+    @staticmethod
+    def _binary_version(bin_path):
+        """`<bin> --version`, first line, with a light scrape for the
+        version token (cloudflared prints 'cloudflared version 2025.x.y
+        (built …)')."""
+        try:
+            r = subprocess.run([bin_path, "--version"], capture_output=True,
+                               text=True, timeout=10, check=False)
+            line = ((r.stdout or r.stderr or "").strip().splitlines() or [""])[0]
+            m = re.search(r"(\d+[\w.\-]*)", line)
+            return (m.group(1) if m else line) or "unknown"
+        except Exception:
+            return "unknown"
 
     # GET /__ls_dirs?project=<id>&root=<rel-or-abs>
     # Returns a list of immediate child directories under `root`. Used by the
@@ -12569,7 +12603,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         pkg = (_qs_get(qs, "package") or "").strip()
         if pkg not in self._LOCAL_PACKAGES:
             return self._reply(400, {"error": f"unknown local package: {pkg}", "known": list(self._LOCAL_PACKAGES.keys())})
-        import_name = self._LOCAL_PACKAGES[pkg]["import"]
+        spec = self._LOCAL_PACKAGES[pkg]
+        # Binary packages (cloudflared): installed = executable findable;
+        # version from `<bin> --version`. No python subprocess involved.
+        if spec.get("kind") == "binary":
+            bin_path = self._find_local_binary(spec["bin"])
+            return self._reply(200, {
+                "package": pkg,
+                "installed": bool(bin_path),
+                "version": self._binary_version(bin_path) if bin_path else None,
+                "path": bin_path,
+            })
+        import_name = spec["import"]
         try:
             r = subprocess.run(
                 [sys.executable, "-c", f"import {import_name}; import sys; print(getattr({import_name}, '__version__', 'unknown'))"],
@@ -12598,7 +12643,46 @@ class H(http.server.SimpleHTTPRequestHandler):
         pkg = (body.get("package") or "").strip()
         if pkg not in self._LOCAL_PACKAGES:
             return self._reply(400, {"error": f"unknown local package: {pkg}", "known": list(self._LOCAL_PACKAGES.keys())})
-        packages = self._LOCAL_PACKAGES[pkg]["packages"]
+        spec = self._LOCAL_PACKAGES[pkg]
+        # Binary packages install via Homebrew (`brew install <formula>`).
+        # No Homebrew → clean error with the manual path; we never sudo or
+        # download arbitrary binaries ourselves.
+        if spec.get("kind") == "binary":
+            already = self._find_local_binary(spec["bin"])
+            if already:
+                return self._reply(200, {
+                    "ok": True, "package": pkg,
+                    "version": self._binary_version(already), "path": already,
+                    "stdout": "already installed", "stderr": "",
+                })
+            brew = self._find_local_binary("brew")
+            if not brew:
+                return self._reply(502, {
+                    "ok": False, "package": pkg,
+                    "error": (f"Homebrew not found — install {spec['bin']} manually "
+                              f"(e.g. download from the project's releases page) or install "
+                              f"Homebrew first (https://brew.sh), then retry."),
+                })
+            try:
+                r = subprocess.run([brew, "install", spec["brew"]],
+                                   capture_output=True, timeout=600, check=False)
+            except subprocess.TimeoutExpired:
+                return self._reply(504, {"ok": False, "package": pkg,
+                                         "error": "brew install timed out after 10 minutes"})
+            except Exception as e:
+                return self._reply(500, {"ok": False, "package": pkg,
+                                         "error": f"brew spawn failed: {e}"})
+            bin_path = self._find_local_binary(spec["bin"])
+            installed = bool(bin_path)
+            return self._reply(200 if installed else 502, {
+                "ok": installed,
+                "package": pkg,
+                "version": self._binary_version(bin_path) if bin_path else None,
+                "path": bin_path,
+                "stdout": (r.stdout or b"").decode("utf-8", "replace")[-4000:],
+                "stderr": (r.stderr or b"").decode("utf-8", "replace")[-4000:],
+            })
+        packages = spec["packages"]
         # --user installs into ~/Library/Python/.../site-packages on macOS
         # without touching the system Python. `--quiet` keeps the output
         # small enough to ship back in the JSON reply.
