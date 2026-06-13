@@ -23127,6 +23127,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
   );
+  // Files the live agent run is touching — tethers the worker badge onto the
+  // node holding them (covers freeform chat runs that never flip runStatus).
+  const workingPaths = useWorkflowWorkingPaths();
   // Workflow-canvas node selection. Multi-select via marquee or Shift+click.
   // `selectedNodeIds` is the source of truth (Set of ids); `selectedNodeId`
   // is the primary (first) for any UI that still consumes a single id.
@@ -33340,7 +33343,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onAddOutputAsset=${addOutputAsset}
               />
             `)}
-            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} />
+            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
             <${WorkflowWhiteboardLayer}
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
@@ -52143,20 +52146,69 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
 // adds an abstract, anthropomorphic read that peeks out of a node's
 // bottom-left corner while an agent works on it. A SECTION is "working" when
 // any node inside it is — so the badge also tells you a grouped pass is live.
-function workflowNodeIsWorking(n, chatBusy, activeProto) {
+function workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths) {
   if (!n) return false;
   const rs = n.runStatus;
   if (rs === "pending" || rs === "running") return true;
   if (n.lastBuildStatus === "running") return true;   // ds-brainstorm fan-out
-  // A workflow-chat run edits source/ directly without flipping any node's
-  // runStatus. While such a run is STREAMING (chatBusy), treat the prototype
-  // it's updating as working so the badge appears. Scope to the active
-  // prototype when known; otherwise (single-prototype / unknown) any prototype.
+  // A freeform / workflow chat run edits files directly without flipping any
+  // node's runStatus. The daemon records each live run's touched paths
+  // (/__runs → touchedPaths); light ANY node whose file(s) intersect them so
+  // the worker badge tethers onto whatever the agent is actually editing —
+  // an asset node (e.g. a design-system gallery), a view node, a prototype,
+  // anything. Sections aggregate via the caller.
+  if (workingPaths && workingPaths.length) {
+    const np = [n.path, ...(Array.isArray(n.paths) ? n.paths : []),
+                ...(Array.isArray(n.canonicalPaths) ? n.canonicalPaths : [])]
+               .filter(p => typeof p === "string" && p);
+    for (const p of np) {
+      for (const w of workingPaths) {
+        if (w === p || w.startsWith(p + "/") || p.startsWith(w + "/")) return true;
+      }
+    }
+  }
+  // Fallback for prototypes when no touched path matched yet (e.g. the agent
+  // is still reading, or wrote via a tool the daemon doesn't path-track):
+  // while a chat run STREAMS (chatBusy), treat the active prototype as working.
   if (chatBusy && n.kind === "prototype") {
     const slug = prototypeSlugForNode(n);
     if (!activeProto || slug === activeProto) return true;
   }
   return false;
+}
+
+// Polls /__runs and returns the union of touched (written) paths across live,
+// this-project runs — the signal the worker badge uses to tether onto the node
+// an agent is editing. Updates in place only when the set actually changes so
+// the badge layer doesn't churn every poll.
+function useWorkflowWorkingPaths() {
+  const [paths, setPaths] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch(apiUrl("/__runs"));
+        if (!r.ok || cancelled) return;
+        const j = await r.json();
+        if (cancelled) return;
+        const proj = activeProjectId();
+        const set = new Set();
+        for (const run of (j.runs || [])) {
+          if (run.done || run.turnDone) continue;
+          if (proj && run.project && run.project !== proj) continue;
+          for (const p of (run.touchedPaths || [])) if (p) set.add(p);
+        }
+        setPaths(prev =>
+          (prev.length === set.size && prev.every(p => set.has(p)))
+            ? prev
+            : Array.from(set));
+      } catch { /* offline / not running — leave last known */ }
+    };
+    tick();
+    const id = setInterval(tick, 1500);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+  return paths;
 }
 
 // v3.9.2 — the abstract geometric "worker". A FRAME of two CSS squares (a
@@ -52349,7 +52401,7 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
 // every node map, so one edit covers every node kind (incl. sections) and the
 // badges stack above the cards. pointer-events:none — pure decoration.
 // Counter-scaled by 1/zoom so the badge stays a constant on-screen size.
-function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto }) {
+function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto, workingPaths }) {
   const list = nodes || [];
   const invZoom = Math.max(0.3, Math.min(3, 1 / (zoom || 1)));
   const badges = [];
@@ -52357,11 +52409,11 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto }) {
     let working = false;
     let count = 0;
     if (n.kind === "section") {
-      const inside = workflowSectionContainedNodes(n, list).filter(x => workflowNodeIsWorking(x, chatBusy, activeProto));
+      const inside = workflowSectionContainedNodes(n, list).filter(x => workflowNodeIsWorking(x, chatBusy, activeProto, workingPaths));
       count = inside.length;
       working = count > 0;
     } else {
-      working = workflowNodeIsWorking(n, chatBusy, activeProto);
+      working = workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths);
     }
     if (!working) continue;
     const isSection = n.kind === "section";

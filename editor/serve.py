@@ -4240,6 +4240,14 @@ class RunState:
         # paused" lock to runs that actually need it — a plain chat asking for
         # a visualization doesn't freeze the canvas.
         self.modifying = False
+        # Project-relative paths this run has written, in first-touch order.
+        # Drives the canvas "someone's working here" worker badge: a freeform
+        # chat run never flips any node's runStatus, so the badge layer matches
+        # these paths against each node's path/canonicalPaths to tether the
+        # animated worker onto whatever node the agent is actually editing
+        # (asset / view / prototype — any kind). Same capture point + tool
+        # whitelist as `modifying`.
+        self.touched_paths: list = []
 
     def append(self, ev_type: str, data) -> None:
         with self.lock:
@@ -4642,10 +4650,20 @@ def _drain_stdout(state: "RunState") -> None:
                 # actually touches a file. The lock is scoped to runs that
                 # need it; ad-hoc chats (visualization, Q&A) don't freeze
                 # the UI even though they're "active."
-                if (not state.modifying
-                        and ev.get("type") == "tool_use"
+                if (ev.get("type") == "tool_use"
                         and ev.get("name") in ("Write", "Edit", "MultiEdit", "NotebookEdit")):
                     state.modifying = True
+                    # Record the project-relative path so the canvas worker
+                    # badge can tether onto the node holding this file.
+                    _inp = ev.get("input") or {}
+                    _fp = _inp.get("file_path") or _inp.get("notebook_path")
+                    if _fp:
+                        try:
+                            _rel = os.path.relpath(_fp, state.project_root)
+                        except Exception:
+                            _rel = None
+                        if _rel and not _rel.startswith("..") and _rel not in state.touched_paths:
+                            state.touched_paths.append(_rel)
                 # Turn lifecycle tracking — distinct from process lifecycle.
                 if ev.get("type") == "status":
                     if ev.get("label") in ("done", "error"):
@@ -14555,6 +14573,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "stopReason": s.stop_reason,  # v2.28
                 "lastSeq": last_seq,
                 "modifying": s.modifying,
+                "touchedPaths": list(s.touched_paths),
                 "project": s.project_id,
                 "historical": False,
             })
