@@ -8473,7 +8473,6 @@ function PermissionModePicker({ value, onChange, compact, openUp }) {
         title=${cur.hint}
         onClick=${() => setOpen(o => !o)}
       >
-        <span className="perm-mark" data-mode=${cur.value}/>
         <span className="perm-trigger-label">${compact ? cur.short : cur.label}</span>
         <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
       </button>
@@ -8548,7 +8547,6 @@ function ChatViewModePicker({ value, onChange, openUp }) {
         title=${cur.hint}
         onClick=${() => setOpen(o => !o)}
       >
-        <span className="perm-mark view-mark" data-view=${cur.value}/>
         <span className="perm-trigger-label">${cur.short}</span>
         <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
       </button>
@@ -10863,6 +10861,16 @@ function buildBlocks(events) {
 const MD_PATH_RE = /(?<![\w/.])((?:source|editor|docs|skills|prompt-templates|design-systems)\/[\w./@-]+|(?:AGENTS|PROTOTYPE|DESIGN|NOTES|README)(?:\.md)?)/;
 const FILE_PATH_TEST = /\.(html|css|js|json|md|py|tsx?|jsx?|svg|png|jpe?g|webp|sh|toml|ya?ml|txt)$/i;
 
+// th:focus-file only resolves RELATIVE project paths (source/<branch>/foo.html,
+// checkout.html, DESIGN.md) back to a prototype frame. An ABSOLUTE filesystem
+// path (/Users/…, ~/…, C:\…) is a workspace / system-agent reference that
+// matches no frame — clicking it is a dead no-op. So absolute paths render as
+// a static, non-clickable chip rather than a link that does nothing.
+const ABS_PATH_RE = /^\s*(?:\/|~|[A-Za-z]:[\\/])/;
+function pathLooksFocusable(path) {
+  return !!path && !ABS_PATH_RE.test(path);
+}
+
 // Color / gradient / asset detection. These render preview swatches inline.
 const MD_HEX_RE      = /(?<![\w-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/;
 const MD_COLOR_FN_RE = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*(?:\([^()]*\)[^()]*)*\)/;
@@ -10982,16 +10990,23 @@ function inlineParse(text) {
       rest = rest.slice(start + m[0].length);
     } else if (best.kind === "link") {
       const label = m[1], href = m[2];
-      const looksFile = !/^https?:/i.test(href);
-      out.push(h("a", {
-        key,
-        className: looksFile ? "md-link md-link-file" : "md-link",
-        href: looksFile ? "#" : href,
-        target: looksFile ? "_self" : "_blank",
-        rel: "noopener noreferrer",
-        onClick: looksFile ? (e) => { e.preventDefault(); focusFileByPath(href); } : undefined,
-        title: looksFile ? `Focus ${href}` : href,
-      }, ...inlineParse(label)));
+      const isHttp = /^https?:/i.test(href);
+      const looksFile = !isHttp && pathLooksFocusable(href);
+      if (!isHttp && !looksFile) {
+        // Absolute / unfocusable file href — no live target, so render the
+        // label as plain text rather than a link that goes nowhere.
+        out.push(h("span", { key }, ...inlineParse(label)));
+      } else {
+        out.push(h("a", {
+          key,
+          className: looksFile ? "md-link md-link-file" : "md-link",
+          href: looksFile ? "#" : href,
+          target: looksFile ? "_self" : "_blank",
+          rel: "noopener noreferrer",
+          onClick: looksFile ? (e) => { e.preventDefault(); focusFileByPath(href); } : undefined,
+          title: looksFile ? `Focus ${href}` : href,
+        }, ...inlineParse(label)));
+      }
       rest = rest.slice(start + m[0].length);
     } else if (best.kind === "url") {
       out.push(h("a", { key, className: "md-link", href: m[1], target: "_blank", rel: "noopener noreferrer" }, m[1]));
@@ -11032,7 +11047,7 @@ function inlineParse(text) {
       // Only treat as a clickable file path if it looks like an actual file
       // (has an extension) or is a known top-level doc. Otherwise pass through
       // as plain text so prose like "the source folder" doesn't get mangled.
-      if (FILE_PATH_TEST.test(path) || /^[A-Z][\w]*$/.test(path) || /\.md$/.test(path)) {
+      if (pathLooksFocusable(path) && (FILE_PATH_TEST.test(path) || /^[A-Z][\w]*$/.test(path) || /\.md$/.test(path))) {
         out.push(h("a", {
           key,
           className: "md-link md-link-file",
@@ -11606,6 +11621,10 @@ function ToolHeader({ name, tag, expanded, onToggle, accessory }) {
 
 function FilePathLink({ path }) {
   if (!path) return null;
+  // Absolute paths can't be focused — show a static chip, not a dead button.
+  if (!pathLooksFocusable(path)) {
+    return html`<span className="tool-path tool-path-static" title=${path}>${path}</span>`;
+  }
   return html`<button
     className="tool-path"
     onClick=${(e) => { e.preventDefault(); focusFileByPath(path); }}
@@ -18868,6 +18887,73 @@ function wbColorCSS(color) {
   return color || "var(--wb-ink)";
 }
 
+/* ────────── Eyedropper colour formats ──────────
+   The native EyeDropper hands back an sRGB hex; the user picks which CSS
+   colour syntax it gets copied AS. The choice is an app-wide sticky
+   preference (shared settings blob → localStorage), not per-board. */
+const WB_EYEDROP_FORMATS = [
+  { id: "oklch", label: "OKLCH" },
+  { id: "hex",   label: "HEX"   },
+  { id: "rgb",   label: "RGB"   },
+  { id: "hsl",   label: "HSL"   },
+];
+const WB_EYEDROP_FMT_KEY = "wbEyedropFormat";
+function loadEyedropFormat() {
+  const v = loadSettings()[WB_EYEDROP_FMT_KEY];
+  return WB_EYEDROP_FORMATS.some(f => f.id === v) ? v : "oklch";
+}
+function saveEyedropFormat(fmt) {
+  if (WB_EYEDROP_FORMATS.some(f => f.id === fmt)) saveSettings({ [WB_EYEDROP_FMT_KEY]: fmt });
+}
+
+// sRGB channel (0–255) → linear-light [0,1].
+function srgbChannelToLinear(c) {
+  c /= 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+// Convert a "#rrggbb" hex to a CSS colour string in the requested format.
+// Falls back to the input on a malformed hex. OKLCH path is Björn
+// Ottosson's linear-sRGB → OKLab → OKLCH (the same space CSS oklch() uses).
+function hexToColorString(hex, fmt) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec((hex || "").trim());
+  if (!m) return hex || "";
+  const int = parseInt(m[1], 16);
+  const r = (int >> 16) & 255, g = (int >> 8) & 255, b = int & 255;
+  if (fmt === "hex") return "#" + m[1].toLowerCase();
+  if (fmt === "rgb") return `rgb(${r}, ${g}, ${b})`;
+  if (fmt === "hsl") {
+    const rn = r / 255, gn = g / 255, bn = b / 255;
+    const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+    const l = (max + min) / 2;
+    let h = 0, s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === rn)      h = (gn - bn) / d + (gn < bn ? 6 : 0);
+      else if (max === gn) h = (bn - rn) / d + 2;
+      else                 h = (rn - gn) / d + 4;
+      h /= 6;
+    }
+    return `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+  }
+  // OKLCH
+  const lr = srgbChannelToLinear(r), lg = srgbChannelToLinear(g), lb = srgbChannelToLinear(b);
+  const l_ = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m_ = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s_ = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  const L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+  const oa = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+  const ob = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+  const C = Math.sqrt(oa * oa + ob * ob);
+  let H = Math.atan2(ob, oa) * 180 / Math.PI;
+  if (H < 0) H += 360;
+  const Lpct = (L * 100).toFixed(1).replace(/\.0$/, "");
+  const Cstr = C.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  const Hstr = C < 0.0005 ? "0" : H.toFixed(1).replace(/\.0$/, "");
+  return `oklch(${Lpct}% ${Cstr} ${Hstr})`;
+}
+
 const WB_FONT_SIZES = { sm: 14, md: 18, lg: 26, xl: 40 };
 
 // fontSize is a preset token OR a raw px number (panel override).
@@ -24147,6 +24233,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const wp = screenToWorld(e.clientX, e.clientY);
     const zoomNow = () => Math.max(zoomRef.current, 0.1);
 
+    // ── eyedropper ── one-shot: hand off to the native screen picker.
+    // No canvas item is created; the click is just the user gesture that
+    // EyeDropper.open() requires. The picker overlays the whole screen.
+    if (tool === "eyedropper") {
+      e.preventDefault();
+      if (runEyedropperRef.current) runEyedropperRef.current();
+      return;
+    }
+
     // ── select ── unified: wb items first (they draw on top), then nodes,
     // then the unified marquee that selects BOTH kinds.
     if (tool === "select") {
@@ -24405,7 +24500,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (isEditingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", l: "arrow" };
+      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", l: "arrow", i: "eyedropper" };
       const tool = map[(e.key || "").toLowerCase()];
       if (tool) { setWbTool(tool); e.preventDefault(); }
     };
@@ -26087,6 +26182,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const dwell = phase === "error" ? 4500 : 2400;
     pickOpTimerRef.current = setTimeout(() => setPickOpState(null), dwell);
   }, []);
+
+  // ── Whiteboard eyedropper ──
+  // Native EyeDropper (Chromium) → sRGB hex → the chosen CSS syntax →
+  // OS clipboard. The output format is an app-wide sticky preference;
+  // lastPicked feeds the panel's preview chip so the user sees what got
+  // copied. runEyedropperRef lets wbPointerDown trigger it on a canvas
+  // click without threading the callback through wbPointerDown's deps.
+  const [eyedropFmt, setEyedropFmt] = useState(() => loadEyedropFormat());
+  const eyedropFmtRef = useRef(eyedropFmt); eyedropFmtRef.current = eyedropFmt;
+  const setEyedropFmtPersist = useCallback((f) => { setEyedropFmt(f); saveEyedropFormat(f); }, []);
+  const [lastEyedrop, setLastEyedrop] = useState(null);  // { hex, text }
+  const runEyedropper = useCallback(async () => {
+    if (typeof window.EyeDropper !== "function") {
+      flashPickOp("error", "Eyedropper needs a Chromium browser (Chrome / Edge / Arc)");
+      return;
+    }
+    let res;
+    try { res = await new window.EyeDropper().open(); }
+    catch { return; }  // user pressed Esc / cancelled — stay silent
+    const hex = res && res.sRGBHex;
+    if (!hex) return;
+    const text = hexToColorString(hex, eyedropFmtRef.current);
+    setLastEyedrop({ hex, text });
+    try { await navigator.clipboard.writeText(text); }
+    catch { flashPickOp("error", "Couldn't write to clipboard — copy manually: " + text); return; }
+    flashPickOp("done", "Copied " + text);
+  }, [flashPickOp]);
+  const runEyedropperRef = useRef(runEyedropper); runEyedropperRef.current = runEyedropper;
+
   // Drive the body-level data attribute so CSS can pulse a ring on the
   // currently-saving iframe. Single attribute beats prop-drilling
   // pendingness into every node component.
@@ -32282,6 +32406,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onPickColor=${(tok) => { wbColorPickRef.current = tok; setWbPickedColor(tok); }}
               fmt=${wbFmt}
               onFmt=${(patch) => setWbFmt(f => ({ ...f, ...patch }))}
+              eyedropFmt=${eyedropFmt}
+              onEyedropFmt=${setEyedropFmtPersist}
+              onEyedrop=${runEyedropper}
+              lastEyedrop=${lastEyedrop}
             />
           ` : html`
             <${WorkflowLibrary} tab=${leftPanel || "nodes"}/>
@@ -53230,6 +53358,7 @@ const WB_TOOL_DEFS = [
   { id: "pen",     label: "Pen",         hotkey: "P" },
   { id: "shape",   label: "Box",         hotkey: "R" },
   { id: "arrow",   label: "Arrow",       hotkey: "L" },
+  { id: "eyedropper", label: "Eyedropper", hotkey: "I" },
 ];
 
 const WB_TOOL_GLYPHS = {
@@ -53240,9 +53369,10 @@ const WB_TOOL_GLYPHS = {
   pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
   shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`,
   arrow:   html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L12 4 M12 4 H7.4 M12 4 V8.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  eyedropper: html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M9.6 3.1 12.9 6.4 M11.2 4.7 13.4 2.5 A1.4 1.4 0 0 0 11.4 0.5 L9.6 2.7 Z M10.4 5.5 4.6 11.3 A1.6 1.6 0 0 0 4.2 12 L3.6 13.8 A0.5 0.5 0 0 0 4.2 14.4 L6 13.8 A1.6 1.6 0 0 0 6.7 13.4 L12.5 7.6 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`,
 };
 
-function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt }) {
+function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt, eyedropFmt, onEyedropFmt, onEyedrop, lastEyedrop }) {
   // Contextual format controls. Which rows show follows the RELEVANT TYPES:
   // the selection’s item types when something is selected, else the armed
   // tool’s type. Every control writes the sticky defaults (next created
@@ -53316,7 +53446,13 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
             type="button"
             className=${"workflow-wb-tool-btn" + (tool === t.id ? " is-active" : "")}
             aria-pressed=${tool === t.id ? "true" : "false"}
-            onClick=${() => onTool(t.id)}
+            onClick=${() => {
+              onTool(t.id);
+              // Eyedropper is a one-shot action — arming it also fires the
+              // native picker immediately (this click is the user gesture
+              // EyeDropper.open() requires).
+              if (t.id === "eyedropper" && onEyedrop) onEyedrop();
+            }}
           >
             <span className="workflow-wb-tool-glyph">${WB_TOOL_GLYPHS[t.id]}</span>
             <span className="workflow-wb-tool-label">${t.label}</span>
@@ -53324,6 +53460,29 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
           </button>
         `)}
       </div>
+      ${tool === "eyedropper" && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Copy as</div>
+          ${seg(WB_EYEDROP_FORMATS.map(f => ({ v: f.id, label: f.label, tip: "Copy picked colour as " + f.label })),
+                eyedropFmt || "oklch",
+                (v) => onEyedropFmt && onEyedropFmt(v))}
+          <button type="button" className="workflow-wb-pick-btn"
+            onClick=${() => onEyedrop && onEyedrop()}>
+            <span className="workflow-wb-tool-glyph">${WB_TOOL_GLYPHS.eyedropper}</span>
+            <span>Pick a colour…</span>
+          </button>
+          ${lastEyedrop && html`
+            <div className="workflow-wb-pick-last" title="Click to copy again"
+              onClick=${() => { try { navigator.clipboard.writeText(lastEyedrop.text); } catch {} }}>
+              <span className="workflow-wb-pick-chip" style=${{ background: lastEyedrop.hex }}/>
+              <code className="workflow-wb-pick-val">${lastEyedrop.text}</code>
+            </div>
+          `}
+          <div className="workflow-wb-tools-hint" style=${{ marginTop: 0 }}>
+            Pick any pixel on screen — the colour is copied to your clipboard.
+          </div>
+        </div>
+      `}
       ${showGenericColors && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Color</div>
