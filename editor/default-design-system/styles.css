@@ -551,7 +551,7 @@ a:hover { text-decoration:underline; }
 .stepper-btn{width:38px;height:100%;border:0;background:var(--surface-default);color:var(--fg-default);font-size:18px;cursor:pointer;}
 /* OTP */
 .otp{display:flex;gap:var(--space-xs);}
-.otp input{width:44px;height:48px;text-align:center;border:1px solid var(--border-default);border-radius:var(--radius-base);font:var(--w-medium) 20px var(--font);}
+.otp input{width:44px;height:48px;text-align:center;border:1px solid var(--border-default);border-radius:var(--radius-base);background:var(--surface);color:var(--fg-default);font:var(--w-medium) 20px var(--font);}
 .otp input:focus{outline:none;border-color:var(--primary-border);}
 /* file upload */
 .upload{border:1.5px dashed var(--neutral-300);border-radius:var(--radius-base);padding:20px;text-align:center;color:var(--fg-muted);background:var(--surface-default);}

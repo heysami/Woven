@@ -46,7 +46,7 @@
 .app.is-collapsed .nav-link{justify-content:center;}
 
 /* ---- main ---- */
-.main{display:flex;flex-direction:column;min-width:0;background:var(--white);}
+.main{display:flex;flex-direction:column;min-width:0;background:var(--surface);}
 .topbar{height:var(--header-h);display:flex;align-items:center;gap:var(--space-base);padding:0 var(--space-m);
-  border-bottom:1px solid var(--border-default);background:var(--white);position:sticky;top:0;z-index:10;}
+  border-bottom:1px solid var(--border-default);background:var(--surface);position:sticky;top:0;z-index:10;}
 .content{padding:var(--space-l);max-width:var(--max-content);width:100%;box-sizing:border-box;}
