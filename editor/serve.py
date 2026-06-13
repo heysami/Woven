@@ -6088,6 +6088,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._web_proxy(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__web_text":
             return self._web_text(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__file_stat":
+            return self._file_stat(urllib.parse.parse_qs(parsed.query))
         # v2.50 — D3/D5 endpoints: registry as JSON + on-demand drift scan.
         if url_path == "/__kinds/registry":
             return self._kinds_registry()
@@ -14532,6 +14534,40 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
         return self._reply(200, {"ok": True, "id": proj_id, "trashedTo": target})
+
+    # GET /__file_stat?path=<project-relative>[&project=<id>]
+    #   Cheap content signature for a single project file. The canvas DS-gallery
+    #   node uses it to detect "gallery.html changed since I last acknowledged"
+    #   and surface the "remember to update the rest of the DS trio" banner.
+    #   Path is resolved within the project root; traversal is rejected.
+    def _file_stat(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        rel = (_qs_get(qs, "path") or "").strip()
+        if not rel:
+            return self._reply(400, {"error": "missing path"})
+        root = os.path.normpath(project_root)
+        abs_path = os.path.normpath(os.path.join(root, rel))
+        if abs_path != root and not abs_path.startswith(root + os.sep):
+            return self._reply(400, {"error": "path escapes project"})
+        if not os.path.isfile(abs_path):
+            return self._reply(200, {"exists": False})
+        try:
+            st = os.stat(abs_path)
+            h = hashlib.sha1()
+            with open(abs_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            return self._reply(200, {
+                "exists": True,
+                "hash": h.hexdigest()[:16],
+                "mtime": st.st_mtime,
+                "size": st.st_size,
+            })
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
 
     # ── Agent daemon routes (Phase 1) ─────────────────────────────────────
 

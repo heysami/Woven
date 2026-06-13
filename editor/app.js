@@ -43509,6 +43509,38 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     `;
   }
 
+  // DS-gallery reminder — when design-systems/<id>/gallery.html changes,
+  // nudge the user to also update the rest of the trio (styles.css /
+  // DESIGN.md / meta.json). Keyed on the file's content hash (via
+  // /__file_stat) so it re-appears on each genuine edit and survives reloads
+  // + edits made while the editor was closed. Dismissal stores the
+  // acknowledged hash on the node (node.dsGalleryAckHash), persisted in
+  // workflow.json; the banner returns only when the hash changes again.
+  const isDsGallery = /(^|\/)design-systems\/[^/]+\/gallery\.html$/.test(node.path || "");
+  const [galleryHash, setGalleryHash] = useState(null);
+  useEffect(() => {
+    if (!isDsGallery || !node.path) return;
+    let cancelled = false;
+    const fetchSig = async () => {
+      try {
+        const r = await fetch(apiUrl("/__file_stat?path=" + encodeURIComponent(node.path)));
+        if (!r.ok || cancelled) return;
+        const j = await r.json();
+        if (!cancelled && j && j.exists && j.hash) setGalleryHash(j.hash);
+      } catch { /* offline — keep last known */ }
+    };
+    fetchSig();
+    const onRefresh = (e) => {
+      const paths = (e.detail && e.detail.paths) || [];
+      if (!paths.length || paths.some(p => p && (p === node.path || p.endsWith(node.path) || node.path.endsWith(p)))) {
+        fetchSig();
+      }
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => { cancelled = true; window.removeEventListener("th:asset-refresh", onRefresh); };
+  }, [isDsGallery, node.path]);
+  const galleryReminderOpen = isDsGallery && !!galleryHash && galleryHash !== node.dsGalleryAckHash;
+
   return html`
     <div
       className="workflow-node workflow-node-asset"
@@ -43523,6 +43555,19 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       title=${node.runStatus === "error" && node.runError ? ("Run error: " + node.runError) : undefined}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
+      ${galleryReminderOpen && html`
+        <div className="workflow-ds-reminder" onMouseDown=${(e) => e.stopPropagation()}>
+          <div className="workflow-ds-reminder-body">
+            <strong>Gallery updated.</strong> Remember to update the rest of the design system —
+            <code>styles.css</code>, <code>DESIGN.md</code>, <code>meta.json</code>.
+          </div>
+          <button
+            className="workflow-ds-reminder-ok"
+            onClick=${(e) => { e.stopPropagation(); onChange && onChange({ dsGalleryAckHash: galleryHash }); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          >OK, got it!</button>
+        </div>
+      `}
       <div className="workflow-node-bar workflow-node-asset-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-asset-glyph">${glyph}</span>
         ${html`
