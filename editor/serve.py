@@ -4182,7 +4182,10 @@ class RunState:
                  "stop_reason",
                  # v2.24 — set on the first status:done frame for a node-agent
                  # run so the finally-block fallback doesn't double-fire.
-                 "_node_completion_fired")
+                 "_node_completion_fired",
+                 # Project-relative paths this run has written (Write/Edit/
+                 # MultiEdit/NotebookEdit). Drives the canvas worker badge.
+                 "touched_paths")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -15747,6 +15750,26 @@ class H(http.server.SimpleHTTPRequestHandler):
             after = -1
         with RUNS_LOCK:
             state = RUNS.get(run_id)
+        if not state:
+            # v3.x — rehydrate from JSONL after a daemon restart (RUNS is
+            # in-memory only), exactly like the events-poll + resume endpoints.
+            # Without this, reopening a historical run (its conversation lives
+            # on disk but the daemon was restarted) 404'd "unknown runId" the
+            # moment the chat drawer opened its SSE tail. A rehydrated run is
+            # marked done (it has a __finish), so the loop below flushes the
+            # persisted transcript and closes cleanly instead of erroring.
+            try:
+                project_root = resolve_project_root(qs)
+                state = _rehydrate_run_from_jsonl(run_id, project_root)
+            except Exception:
+                state = None
+            # System threads (landing-page orchestrator chats) carry no
+            # ?project= — fall back to the .system-chats JSONLs.
+            if not state:
+                try:
+                    state = _rehydrate_system_run(run_id)
+                except Exception:
+                    state = None
         if not state:
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
 
