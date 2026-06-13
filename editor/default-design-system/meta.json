@@ -575,6 +575,20 @@
       "desc": "App shell · two-pane profile card + details",
       "file": "templates/user-profile.html",
       "usesShell": true
+    },
+    {
+      "id": "landing",
+      "label": "Landing Page",
+      "desc": "Marketing site · nav + hero + features + metrics + CTA band + footer",
+      "file": "templates/landing.html",
+      "usesShell": false
+    },
+    {
+      "id": "ecommerce",
+      "label": "Storefront",
+      "desc": "Interactive shop · product grid → cart slideout → checkout → payment → confirmation",
+      "file": "templates/ecommerce.html",
+      "usesShell": false
     }
   ]
 }

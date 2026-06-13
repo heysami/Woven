@@ -14099,6 +14099,8 @@ const DS_TYPE_RATIOS = [
 // dashboards, auth, etc.), not just the component catalog.
 const DS_PREVIEW_VIEWS = [
   { id: "gallery.html",                 label: "Components" },
+  { id: "templates/landing.html",       label: "Landing" },
+  { id: "templates/ecommerce.html",     label: "Storefront" },
   { id: "templates/basic-form.html",    label: "App shell" },
   { id: "templates/dashboard.html",     label: "Dashboard" },
   { id: "templates/technical-logs.html", label: "Logs" },

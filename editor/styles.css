@@ -737,10 +737,10 @@ button {
 .dscz-overlay {
   position: fixed; inset: 0; z-index: 210;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(8, 10, 14, 0.6); padding: 24px;
+  background: rgba(8, 10, 14, 0.6); padding: 16px;
 }
 .dscz-card {
-  width: 100%; max-width: 1180px; height: min(820px, 92vh);
+  width: 100%; height: min(880px, 94vh);
   background: var(--bg, #f7f4ec); color: var(--text, #1a1a1a);
   border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 8px;
   box-shadow: 0 24px 80px rgba(0,0,0,0.4);
@@ -752,9 +752,9 @@ button {
 }
 .dscz-head-titles h2 { margin: 0; font: 600 17px/1.2 var(--font-sans, system-ui, sans-serif); }
 .dscz-head-titles p { margin: 5px 0 0; font: 400 12.5px/1.5 var(--font-sans, system-ui, sans-serif); opacity: 0.66; max-width: 760px; }
-.dscz-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
+.dscz-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 268px 1fr; }
 .dscz-controls {
-  overflow-y: auto; padding: 16px 18px 24px;
+  overflow-y: auto; padding: 16px 16px 24px;
   border-right: 1px solid var(--border, rgba(0,0,0,0.1));
   display: flex; flex-direction: column; gap: 20px;
 }
