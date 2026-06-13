@@ -1320,6 +1320,15 @@ button {
 }
 .sysadd-radio-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .sysadd-sublib { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.sysadd-grouprow { display: flex; gap: 6px; align-items: center; }
+.sysadd-grouprow .sysadd-input-sub { flex: 1; }
+.sysadd-grouprow-x { flex: none; display: inline-flex; padding: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 7px; color: var(--text-muted); cursor: pointer; }
+.sysadd-grouprow-x:hover { background: var(--surface-2); color: var(--text); }
+.sysadd-grouprow-x svg { width: 12px; height: 12px; }
+.sysadd-addgroup { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; }
+.sysadd-addgroup svg { width: 12px; height: 12px; }
+.sysadd-readby { display: flex; flex-wrap: wrap; gap: 6px; }
+.sysadd-readby-chip { padding: 5px 11px; font-size: 12px; font-weight: 600; color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--border); border-radius: 999px; }
 .sysadd-error { font-size: 12px; color: oklch(50% 0.18 25); }
 .sysadd-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;

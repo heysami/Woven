@@ -14662,6 +14662,22 @@ const LIBRARY_GROUPS = [
   { id: "motion",    label: "Motion" },
 ];
 
+// Each library GROUP (prefix) is read by exactly one consumer: the four build
+// genres by the /prototype skill, the asset families by their orchestrator.
+// This is the coupling that makes "what reads this entry" answerable from the
+// group alone, and "new group = new structure" the orchestrator's concern.
+const LIBRARY_GROUP_CONSUMER = {
+  shell: "the /prototype skill", style: "the /prototype skill",
+  aesthetic: "the /prototype skill", recipe: "the /prototype skill",
+  photo: "photography-orchestrator", illust: "illustration-orchestrator",
+  material: "material-orchestrator", motion: "motion-studio-orchestrator",
+};
+function libraryConsumersFor(groupIds) {
+  const out = [];
+  for (const g of groupIds) { const c = LIBRARY_GROUP_CONSUMER[g]; if (c && !out.includes(c)) out.push(c); }
+  return out;
+}
+
 function slugifyOrchestratorId(name) {
   let s = (name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (!s) return "";
@@ -14727,9 +14743,8 @@ function AddOrchestratorModal({ onClose, onSubmit }) {
   const [desc, setDesc]         = useState("");
   const [triggers, setTriggers] = useState(() => new Set(["on-source"]));
   const [trigOther, setTrigOther] = useState("");
-  const [needsLib, setNeedsLib] = useState("no");          // "no" | "yes"
-  const [libGroups, setLibGroups] = useState(() => new Set());
-  const [libDetail, setLibDetail] = useState("");
+  const [needsGroup, setNeedsGroup] = useState("no");      // "no" | "yes" — a new orchestrator may define NEW library GROUP(s) = new structure
+  const [newGroups, setNewGroups]   = useState([""]);      // names of the new group(s) it owns; can be multiple
   const [busy, setBusy]         = useState(false);
   const [err, setErr]           = useState(null);
 
@@ -14746,9 +14761,10 @@ function AddOrchestratorModal({ onClose, onSubmit }) {
     const trigLabels = ORCH_TRIGGER_OPTIONS.filter(o => triggers.has(o.id))
       .map(o => `- ${o.label} — ${o.desc}`);
     if (trigOther.trim()) trigLabels.push(`- Other: ${trigOther.trim()}`);
-    const libLine = needsLib === "yes"
-      ? `YES — new entries in: ${[...libGroups].map(g => (LIBRARY_GROUPS.find(x => x.id === g) || {}).label || g).join(", ") || "(decide which groups fit)"}${libDetail.trim() ? `\n  Detail: ${libDetail.trim()}` : ""}`
-      : "No — reuse existing design-library entries.";
+    const groupNames = newGroups.map(g => g.trim()).filter(Boolean);
+    const libLine = (needsGroup === "yes" && groupNames.length)
+      ? "YES — defines new library group(s) (new STRUCTURE it owns + reads):\n" + groupNames.map(g => `  - ${g}`).join("\n")
+      : "No new library group — it reads existing groups (or needs no library).";
     return `Add a NEW orchestrator to the workspace.
 
 **Name:** ${name.trim()}
@@ -14760,12 +14776,12 @@ ${desc.trim()}
 **How it should be triggered:**
 ${trigLabels.join("\n") || "- (decide the appropriate trigger)"}
 
-**New design-library entries needed:**
+**New library group(s) (structure) needed:**
 ${libLine}
 
 Scaffold it end-to-end following the workspace conventions you already know:
 1. Write \`.claude/agents/${proposedId || "<id>"}.md\` (the playbook: \`name\` / \`description\` / \`tools\` frontmatter, then full operating instructions) and \`.claude/agents/${proposedId || "<id>"}.manifest.json\` (the registry entry the daemon + landing page read). If this orchestrator should gate project spawns, include a \`hardRule\` { header, body } field in the manifest so the capabilities preamble injects it dynamically (no capabilities.py edit needed).
-2. If new design-library entries are needed, create them under \`design-library/<prefix>-<slug>.md\` and reference them from the playbook so the coupling stays in sync.
+2. If it defines new library group(s): each is NEW STRUCTURE (a category the orchestrator owns), not just entries in an existing group. For EACH new group, pick a kebab \`<prefix>\`, scaffold a few seed entries at \`design-library/<prefix>-<slug>.md\` (use an existing family like photo-* / material-* as the shape template), add a \`docs/research/<prefix>-library.md\` index if the family warrants one (mirroring photography-library.md / material-library.md), and wire the playbook to read that group. Existing library groups are read as-is — no new files.
 3. Run the validation loop: \`curl $TH_DAEMON_URL/__orchestrators\` (your manifest parses + registers) and \`curl $TH_DAEMON_URL/__capabilities\` (it shows up). Report exactly what you created.
 
 Restate your file plan in one short message; if anything is genuinely ambiguous, ask — otherwise proceed and report.`;
@@ -14819,16 +14835,23 @@ Restate your file plan in one short message; if anything is genuinely ambiguous,
           </div>
 
           <div className="sysadd-field">
-            <span className="sysadd-label">Does it need new design-library entries?</span>
+            <span className="sysadd-label">Does it need a new library group?</span>
+            <span className="sysadd-hint">A library group is a whole CATEGORY of design vocabulary an orchestrator owns + reads — photography-orchestrator owns <code>photo-</code>, material-orchestrator owns <code>material-</code>. Leave off if it reads existing groups (shell · style · aesthetic · recipe · photo · illust · material · motion).</span>
             <div className="sysadd-radio-row">
-              <button type="button" className=${"sysadd-radio" + (needsLib === "no" ? " is-on" : "")} onClick=${() => setNeedsLib("no")}>No — reuse existing</button>
-              <button type="button" className=${"sysadd-radio" + (needsLib === "yes" ? " is-on" : "")} onClick=${() => setNeedsLib("yes")}>Yes — add new</button>
+              <button type="button" className=${"sysadd-radio" + (needsGroup === "no" ? " is-on" : "")} onClick=${() => setNeedsGroup("no")}>No — reads existing groups</button>
+              <button type="button" className=${"sysadd-radio" + (needsGroup === "yes" ? " is-on" : "")} onClick=${() => setNeedsGroup("yes")}>Yes — define new group(s)</button>
             </div>
-            ${needsLib === "yes" && html`
+            ${needsGroup === "yes" && html`
               <div className="sysadd-sublib">
-                <${ChipToggleRow} options=${LIBRARY_GROUPS} selected=${libGroups} onToggle=${toggle(libGroups, setLibGroups)}/>
-                <input className="sysadd-input sysadd-input-sub" value=${libDetail} onInput=${e => setLibDetail(e.target.value)}
-                  placeholder="Which entries / styles? (the agent will create them + wire the playbook)"/>
+                ${newGroups.map((g, i) => html`
+                  <div key=${i} className="sysadd-grouprow">
+                    <input className="sysadd-input sysadd-input-sub" value=${g}
+                      onInput=${e => { const v = e.target.value; setNewGroups(arr => arr.map((x, j) => j === i ? v : x)); }}
+                      placeholder='New group — e.g. "diagram — flowchart / sequence / ER styles"'/>
+                    ${newGroups.length > 1 && html`<button type="button" className="sysadd-grouprow-x" onClick=${() => setNewGroups(arr => arr.filter((_, j) => j !== i))} aria-label="Remove group"><${Icon.X}/></button>`}
+                  </div>
+                `)}
+                <button type="button" className="sysadd-addgroup" onClick=${() => setNewGroups(arr => [...arr, ""])}><${Icon.Plus}/> Add another group</button>
               </div>
             `}
           </div>
@@ -14851,8 +14874,6 @@ Restate your file plan in one short message; if anything is genuinely ambiguous,
 function AddLibraryModal({ onClose, onSubmit }) {
   const [desc, setDesc]     = useState("");
   const [groups, setGroups] = useState(() => new Set());
-  const [coupling, setCoupling] = useState("existing");   // "existing" | "new" — every entry is consumed by SOMETHING
-  const [couplingDetail, setCouplingDetail] = useState("");
   const [busy, setBusy]     = useState(false);
   const [err, setErr]       = useState(null);
 
@@ -14865,21 +14886,19 @@ function AddLibraryModal({ onClose, onSubmit }) {
 
   const compose = () => {
     const grpLine = [...groups].map(g => (LIBRARY_GROUPS.find(x => x.id === g) || {}).label || g).join(", ") || "(decide which group fits)";
-    let coupleLine = coupling === "new"
-      ? `Needs a NEW orchestrator to consume it${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : ""} — scaffold the orchestrator too and wire it to read this entry.`
-      : `Wires into the EXISTING consumer for this group${couplingDetail.trim() ? `: ${couplingDetail.trim()}` : " (the orchestrator family or the /prototype skill that already reads it)"} — update that consumer's references so the entry is actually used.`;
-    return `Add or update design-library entries.
+    const consumers = libraryConsumersFor([...groups]);
+    const readBy = consumers.length ? consumers.join(", ") : "the group's consumer (an orchestrator family, or the /prototype skill for shell / style / aesthetic / recipe)";
+    return `Add or update design-library ENTRIES inside an existing group.
 
 **Target group(s):** ${grpLine}
+**Read by:** ${readBy}
 
 **What to add / change:**
 ${desc.trim()}
 
-**Orchestrator coupling:** ${coupleLine}
-
-The library couples to orchestrators (photography / illustration / material / motion / scrapbook / creative-visual families reference their library docs by slug). So:
+This is an ENTRY change inside an existing group — NOT a new group (a new group is new structure, which is a new-orchestrator task). The group's consumer already reads the whole group, so:
 1. Create or edit \`design-library/<prefix>-<slug>.md\` (YAML frontmatter + prose + any sample-image references), using the existing entries in that group as the shape template.
-2. Grep \`.claude/agents/\` and \`prototype/\` for references to any slug you add, rename, or remove, and update them in the SAME change so nothing is orphaned.
+2. If the group has a discovery index (e.g. \`docs/research/<group>-library.index.json\` / \`.md\` for photo / illust / material / motion), add or update your entry there too so the consumer can find it. Grep \`.claude/agents/\` and \`prototype/\` for references to any slug you rename or remove and fix them in the SAME change.
 3. Verify with \`curl $TH_DAEMON_URL/__prototype_catalog\` and report what changed.
 
 Restate your plan briefly; if anything is ambiguous, ask — otherwise proceed and report.`;
@@ -14917,14 +14936,10 @@ Restate your plan briefly; if anything is ambiguous, ask — otherwise proceed a
               placeholder="Describe the entry (or the edit). The agent reads existing entries in that group as the template."></textarea>
           </label>
           <div className="sysadd-field">
-            <span className="sysadd-label">What reads this entry?</span>
-            <span className="sysadd-hint">Every library entry is consumed by something — an orchestrator family or the /prototype skill. Pick whether it plugs into an existing consumer or needs a new orchestrator.</span>
-            <div className="sysadd-radio-row">
-              <button type="button" className=${"sysadd-radio" + (coupling === "existing" ? " is-on" : "")} onClick=${() => setCoupling("existing")}>An existing consumer</button>
-              <button type="button" className=${"sysadd-radio" + (coupling === "new" ? " is-on" : "")} onClick=${() => setCoupling("new")}>Needs a new orchestrator</button>
-            </div>
-            <input className="sysadd-input sysadd-input-sub" value=${couplingDetail} onInput=${e => setCouplingDetail(e.target.value)}
-              placeholder=${coupling === "existing" ? "Which orchestrator / skill reads this group? (optional — the agent infers from the group)" : "What should the new orchestrator do?"}/>
+            <span className="sysadd-label">Read by</span>
+            ${groups.size === 0
+              ? html`<span className="sysadd-hint">Pick a group above — its consumer (the orchestrator or /prototype skill that reads it) shows here. Need a brand-new category instead? That's a new library group — start it from "Add orchestrator".</span>`
+              : html`<div className="sysadd-readby">${libraryConsumersFor([...groups]).map(c => html`<span key=${c} className="sysadd-readby-chip">${c}</span>`)}</div>`}
           </div>
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>
