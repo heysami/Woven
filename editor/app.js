@@ -14175,6 +14175,19 @@ function dsRgbToHex(rgb) {
   return "#" + rgb.map(v => cl(v).toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 function dsMix(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
+
+// The bundled "D" monogram, with the accent dot following the secondary
+// colour. Returned as an inline-SVG data URL so the preview can swap it onto
+// the <img class="app-logo"> without a network round-trip; the daemon writes
+// the same dot colour into assets/logo.svg at bake.
+function dsDefaultLogoSvg(dot) {
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Logo">'
+    + '<path fill="#FFFFFF" fill-rule="evenodd" d="M9 9h12.5a15 15 0 0 1 0 30H9V9Zm8.4 7.6v14.8h4.1a7.4 7.4 0 0 0 0-14.8h-4.1Z"/>'
+    + '<circle cx="40" cy="12.5" r="4" fill="' + (dot || "#E20E10") + '"/></svg>';
+}
+function dsDefaultLogoDataUrl(dot) {
+  return "data:image/svg+xml," + encodeURIComponent(dsDefaultLogoSvg(dot));
+}
 // 50..950 tint/shade ramp from a base hex (base sits at 500).
 const DS_RAMP_STOPS = [
   ["50", "w", 0.92], ["100", "w", 0.80], ["200", "w", 0.62], ["300", "w", 0.40],
@@ -14468,6 +14481,9 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
         payload.dsLabel = name.trim() ? (name.trim() + " — design system") : "Default Design System";
         if (dsSettings.logo && dsSettings.logo.dataUrl) {
           payload.dsLogo = { dataUrl: dsSettings.logo.dataUrl, ext: dsSettings.logo.ext };
+        } else if (dsSettings.secondary) {
+          // No custom logo → bake the default "D" dot in the chosen secondary.
+          payload.dsLogoDot = dsSettings.secondary;
         }
         payload.dsSchemes = [
           ...(dsSettings.schemeLight ? ["light"] : []),
@@ -14673,18 +14689,18 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     style.textContent = custom.overrideCss || "";
     doc.head.appendChild(style);   // re-append → keep it last
     void previewDark;              // (in deps below — keeps theme in sync)
-    // Logo — swap every sidebar / topnav logo <img> src to the uploaded
-    // data URL (or restore the bundled default when cleared).
+    // The gallery's token-docs (ramp swatches/hex, spacing bars) are JS-rendered
+    // from computed values, so nudge them to re-read after the override lands.
+    try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
+    // Logo — uploaded custom logo wins; otherwise the bundled "D" with its
+    // accent dot following the secondary colour.
+    const defaultLogo = dsDefaultLogoDataUrl(settings.secondary || DS_DEFAULTS.secondary);
     const imgs = doc.querySelectorAll(".sidebar__logo img, .topnav__logo img, img.app-logo");
     imgs.forEach(img => {
-      if (settings.logo && settings.logo.dataUrl) {
-        if (!img.dataset.dsOrigSrc) img.dataset.dsOrigSrc = img.getAttribute("src") || "";
-        if (img.getAttribute("src") !== settings.logo.dataUrl) img.setAttribute("src", settings.logo.dataUrl);
-      } else if (img.dataset.dsOrigSrc != null) {
-        img.setAttribute("src", img.dataset.dsOrigSrc);
-      }
+      const target = (settings.logo && settings.logo.dataUrl) ? settings.logo.dataUrl : defaultLogo;
+      if (img.getAttribute("src") !== target) img.setAttribute("src", target);
     });
-  }, [custom, settings.logo, previewDark]);
+  }, [custom, settings.logo, settings.secondary, previewDark]);
 
   useEffect(() => { if (frameReady) applyToFrame(); }, [frameReady, applyToFrame]);
 

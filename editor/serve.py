@@ -14607,6 +14607,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                             os.remove(os.path.join(assets_dir, "logo.svg"))
                         except OSError:
                             pass
+        else:
+            # No uploaded logo → tint the bundled "D" monogram's accent dot to
+            # the chosen secondary colour (the default dot is #E20E10).
+            dot = (body.get("dsLogoDot") or "").strip()
+            if re.match(r"^#[0-9a-fA-F]{6}$", dot) and dot.upper() != "#E20E10":
+                logo_svg = os.path.join(ds_dir, "assets", "logo.svg")
+                try:
+                    with open(logo_svg, "r", encoding="utf-8") as f:
+                        t = f.read()
+                    nt = t.replace("#E20E10", dot)
+                    if nt != t:
+                        with open(logo_svg, "w", encoding="utf-8") as f:
+                            f.write(nt)
+                except Exception:
+                    pass
 
         # 1c) Colour schemes — the DS declares which schemes it ships. The
         #     template carries a :root[data-theme="dark"] block; honour the
