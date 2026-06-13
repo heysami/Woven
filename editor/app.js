@@ -52581,7 +52581,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
       const vxScreen = (lastPx - lastPxPrev) / Math.max(0.3, iz);   // ≈ screen px / frame
       lastPxPrev = lastPx;
       const tiltTarget = (phase === "work" || phase === "enter")
-        ? Math.max(-0.22, Math.min(0.22, vxScreen * 0.014))
+        ? Math.max(-0.5, Math.min(0.5, vxScreen * 0.026))
         : 0;
       tilt += (tiltTarget - tilt) * 0.12;
       // floater is in the FRONT layer, node-local coords (overflow visible so it
