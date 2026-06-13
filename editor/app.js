@@ -2973,24 +2973,21 @@ function DSFontsPanel({ scope }) {
       onDragOver=${(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave=${() => setDragOver(false)}
       onDrop=${(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer?.files || []); }}>
-      <div className="ds-section-h">
-        <h2>${isGlobal ? "Custom fonts" : "Fonts · local library"}</h2>
-        <span className="ds-section-meta">${fonts === null ? "loading…" : fonts.length + (fonts.length === 1 ? " face" : " faces")}</span>
-        <button className="ds-fonts-upload" disabled=${busy}
-          onClick=${() => fileRef.current?.click()}
-          title=${isGlobal
-            ? "Upload .woff2 / .woff / .ttf / .otf files — they land in the workspace fonts/ collection, shared across every project"
-            : "Upload .woff2 / .woff / .ttf / .otf files — they land in design-systems/<ds>/fonts/ where agents look first"}>
-          ${busy ? "Uploading…" : "⤒ Upload font"}
-        </button>
-        <input ref=${fileRef} type="file" multiple accept=".woff2,.woff,.ttf,.otf,font/*" style=${{ display: "none" }}
-          onChange=${(e) => { uploadFiles(e.target.files); e.target.value = ""; }}/>
-      </div>
-      <p className="ds-fonts-hint">
-        ${isGlobal
+      <input ref=${fileRef} type="file" multiple accept=".woff2,.woff,.ttf,.otf,font/*" style=${{ display: "none" }}
+        onChange=${(e) => { uploadFiles(e.target.files); e.target.value = ""; }}/>
+      <${SystemSectionHead}
+        name=${isGlobal ? "Custom fonts" : "Fonts"}
+        count=${fonts === null ? null : fonts.length}
+        desc=${isGlobal
           ? html`Your font collection — shared across <strong>every project</strong> in this workspace (stored in <code>${"fonts/"}</code> at the workspace root). Agents check these <strong>first</strong> when proposing typography, before any Google Fonts default. Drop font files here to add more.`
           : html`Custom fonts visible to this project — its own <code>${"design-systems/<ds>/fonts/"}</code> faces plus the workspace collection (<code>ds=global</code>, managed under System → Custom fonts on the landing page). Agents check this library <strong>first</strong> when proposing typography. Drop font files here (or onto the workflow canvas) to add more.`}
-      </p>
+        action=${html`<button className="sysadd-bar-btn" type="button" disabled=${busy}
+          onClick=${() => fileRef.current?.click()}
+          title=${isGlobal
+            ? "Upload .woff2 / .woff / .ttf / .otf files — they land in the workspace fonts/ collection"
+            : "Upload .woff2 / .woff / .ttf / .otf files — they land in design-systems/<ds>/fonts/"}>
+          <${Icon.ArrowUp}/><span>${busy ? "Uploading…" : "Upload font"}</span></button>`}
+      />
       <div className="ds-fonts-grid">
         ${(fonts || []).map(f => html`
           <div className="ds-fonts-card" key=${f.ds + "/" + f.slug}>
@@ -14955,18 +14952,38 @@ Restate your plan briefly; if anything is ambiguous, ask — otherwise proceed a
   `, document.body);
 }
 
+// ── Standardized System-tab section header ──
+// One shape for every System content pane: section name + count chip on the
+// left, an optional primary action on the right, a one-line description below,
+// and optional `extra` (filter-relevant prose / category list) beneath that.
+function SystemSectionHead({ name, count, desc, action, extra }) {
+  return html`
+    <header className="sys-shead">
+      <div className="sys-shead-row">
+        <div className="sys-shead-titles">
+          <span className="sys-shead-title">${name}</span>
+          ${count != null && html`<span className="sys-shead-count">${count}</span>`}
+        </div>
+        ${action ? html`<div className="sys-shead-action">${action}</div>` : null}
+      </div>
+      ${desc && html`<div className="sys-shead-desc">${desc}</div>`}
+      ${extra || null}
+    </header>
+  `;
+}
+
 // ── Per-section action bar — the normal "+ Add" button that opens intake ──
 function SystemAddBar({ kind, onSpawn }) {
   const [open, setOpen] = useState(false);
   const label = kind === "orchestrators" ? "Add orchestrator" : "Add / update library entry";
   const Modal = kind === "orchestrators" ? AddOrchestratorModal : AddLibraryModal;
   return html`
-    <div className="sysadd-bar">
+    <${React.Fragment}>
       <button className="sysadd-bar-btn" onClick=${() => setOpen(true)}>
         <${Icon.Plus}/><span>${label}</span>
       </button>
       ${open && html`<${Modal} onClose=${() => setOpen(false)} onSubmit=${onSpawn}/>`}
-    </div>
+    <//>
   `;
 }
 
@@ -15085,14 +15102,10 @@ function SystemLanding({ onSpawnSystemThread }) {
         `)}
       </nav>
       <div className="system-content">
-        ${activeSection === "orchestrators"   && html`
-          <${SystemAddBar} key="add-orchestrator" kind="orchestrators" onSpawn=${onSpawnSystemThread}/>
-          <${OrchestratorsLanding} key="orchestrators-list" scopeLabel="workspace"/>`}
+        ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace" onSpawnSystemThread=${onSpawnSystemThread}/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
         ${activeSection === "fonts"      && html`<div className="system-fonts"><${DSFontsPanel} scope="global"/></div>`}
-        ${activeSection === "prototype"  && html`
-          <${SystemAddBar} key="add-library" kind="design-library" onSpawn=${onSpawnSystemThread}/>
-          <${PrototypeCatalogLanding} key="proto-catalog" data=${protoCatalog}/>`}
+        ${activeSection === "prototype"  && html`<${PrototypeCatalogLanding} data=${protoCatalog} onSpawnSystemThread=${onSpawnSystemThread}/>`}
         ${activeSection === "subagents"  && html`<${SubagentsLanding} caps=${caps}/>`}
         ${activeSection === "node-kinds" && html`<${NodeKindsLanding} caps=${caps}/>`}
         ${activeSection === "mcp"        && html`<${McpLanding}/>`}
@@ -15193,38 +15206,32 @@ function SkillsLanding() {
 
   return html`
     <div className="ref-root">
-      <div className="ref-header">
-        <div className="ref-header-title">${totalCount} skill${totalCount === 1 ? "" : "s"} available</div>
-        <div className="ref-header-meta">A skill is a unit of generation. Media skills run on the canvas; custom skills you add to this harness are invokable via <code>${"/<skill-name>"}</code> in the chat composer.</div>
-      </div>
-
-      <div className="skills-upload-bar">
-        <input
-          ref=${uploadInputRef}
-          type="file"
-          accept=".md,.zip,.json"
-          multiple
-          style=${{ display: "none" }}
-          onChange=${(e) => {
-            const fs = Array.from(e.target.files || []);
-            if (fs.length) onUpload(fs);
-            e.target.value = "";
-          }}
-        />
-        <button
-          className="skills-upload-btn"
-          type="button"
-          disabled=${uploadBusy}
+      <input
+        ref=${uploadInputRef}
+        type="file"
+        accept=".md,.zip,.json"
+        multiple
+        style=${{ display: "none" }}
+        onChange=${(e) => {
+          const fs = Array.from(e.target.files || []);
+          if (fs.length) onUpload(fs);
+          e.target.value = "";
+        }}
+      />
+      <${SystemSectionHead}
+        name="Skills"
+        count=${totalCount}
+        desc=${html`A skill is a unit of generation. Media skills run on the canvas; custom skills you add to this harness are invokable via <code>${"/<skill-name>"}</code> in the chat composer. Drop a <code>SKILL.md</code> (or a <code>.zip</code> containing one) anywhere on this panel to install one <strong>for this harness only</strong>.`}
+        action=${html`<button className="sysadd-bar-btn" type="button" disabled=${uploadBusy}
           onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
-          title="Upload a SKILL.md (or .zip of SKILL.md + assets) — installed to this harness only"
-        >${uploadBusy ? "Uploading…" : "+ Add skill"}</button>
-        <div className="skills-upload-hint">
-          Drop a <code>SKILL.md</code> with frontmatter (<code>name</code>, <code>description</code>) — or a <code>.zip</code> containing one — to install a custom skill <strong>for this harness only</strong>. Agents spawned here can <code>/invoke</code> the skill; your global Claude Code install is untouched.
-          ${ccRoot && html`<div className="skills-upload-root">Installed under <code>${ccRoot}</code></div>`}
-        </div>
-        ${uploadMsg && html`<div className="skills-upload-msg">${uploadMsg}</div>`}
-        ${ccError && html`<div className="skills-upload-msg skills-upload-msg-err">Skills load error: ${ccError}</div>`}
-      </div>
+          title="Upload a SKILL.md (or .zip) — installed to this harness only">
+          <${Icon.Plus}/><span>${uploadBusy ? "Uploading…" : "Add skill"}</span></button>`}
+        extra=${(uploadMsg || ccError || ccRoot) && html`<div className="sys-shead-extra">
+          ${ccRoot && html`<span>Installed under <code>${ccRoot}</code></span>`}
+          ${uploadMsg && html`<div className="skills-upload-msg">${uploadMsg}</div>`}
+          ${ccError && html`<div className="skills-upload-msg skills-upload-msg-err">Skills load error: ${ccError}</div>`}
+        </div>`}
+      />
 
       ${ccList.length > 0 && html`
         <div className="ref-group ref-group-user">
@@ -15448,7 +15455,7 @@ function CcSkillCard({ skill: sk, reload }) {
 // between recipes or borrows one aesthetic's palette while wearing
 // another shell. The note comes back from the daemon so chat-side
 // agents and this UI agree on the wording.
-function PrototypeCatalogLanding({ data }) {
+function PrototypeCatalogLanding({ data, onSpawnSystemThread }) {
   // The active filter — "all" lists every group sequentially; selecting
   // one category shows only that group. Same chip pattern as
   // SubagentsLanding so the System tab stays consistent.
@@ -15479,18 +15486,18 @@ function PrototypeCatalogLanding({ data }) {
 
   return html`
     <div className="ref-root">
-      <div className="ref-header">
-        <div className="ref-header-title">${total} library entr${total === 1 ? "y" : "ies"} in the design library</div>
-        <div className="ref-header-meta">
-          The vocabulary every Woven prototype inherits from. Each category feeds a specific consumer:
-        </div>
-        <ul className="ref-header-categories">
+      <${SystemSectionHead}
+        name="Design library"
+        count=${total}
+        desc="The vocabulary every Woven prototype inherits from. Each category feeds a specific consumer:"
+        action=${onSpawnSystemThread && html`<${SystemAddBar} kind="design-library" onSpawn=${onSpawnSystemThread}/>`}
+        extra=${html`<ul className="ref-header-categories">
           <li><strong>Shells · Styles · Aesthetics · Recipes</strong> — read by the <code>/prototype</code> skill when a project commits a direction.</li>
           <li><strong>Photography</strong> — read by <code>photography-orchestrator</code> to art-direct raster-photo slots.</li>
           <li><strong>Illustration</strong> — read by <code>illustration-orchestrator</code> to art-direct raster-foreground slots.</li>
           <li><strong>Materials</strong> — read by <code>material-orchestrator</code> for the post-pass fidelity layer (glass, clay, chrome, holographic, paper grain, film grain, etc.).</li>
-        </ul>
-      </div>
+        </ul>`}
+      />
 
       <div className="ref-filter-row">
         <button
@@ -15694,10 +15701,11 @@ function SubagentsLanding({ caps }) {
 
   return html`
     <div className="ref-root">
-      <div className="ref-header">
-        <div className="ref-header-title">${agents.length} subagents available</div>
-        <div className="ref-header-meta">Each subagent is a cold-isolated Claude session with a focused playbook. The orchestrator (or another agent) dispatches one via the Task tool with <code>subagent_type: "&lt;name&gt;"</code>.</div>
-      </div>
+      <${SystemSectionHead}
+        name="Subagents"
+        count=${agents.length}
+        desc=${html`Each subagent is a cold-isolated Claude session with a focused playbook. The orchestrator (or another agent) dispatches one via the Task tool with <code>subagent_type: "&lt;name&gt;"</code>.`}
+      />
 
       <div className="ref-filter-row">
         <button className=${"ref-filter-chip" + (familyFilter === "all" ? " is-active" : "")} onClick=${() => setFamilyFilter("all")}>All <span className="ref-filter-count">${agents.length}</span></button>
@@ -15828,21 +15836,16 @@ function McpLanding() {
   const wiredCount = servers.filter(s => s.wired).length;
   return html`
     <div className="ref-root">
-      <div className="ref-header">
-        <div className="ref-header-title">${servers.length} MCP server${servers.length === 1 ? "" : "s"} available · ${wiredCount} wired</div>
-        <div className="ref-header-meta">
-          Optional MCP servers the harness exposes to spawned <code>claude</code>
-          subprocesses via <code>--mcp-config</code>. Built-in <code>WebFetch</code>
-          and <code>WebSearch</code> stay primary; these are escalation paths
-          (Chrome for logged-in pages, Figma for design files). Runtime config:
-          <code>${data.configPath}</code>${data.configured ? "" : " (not present — flag will be skipped at spawn-time)"}.
-        </div>
-      </div>
+      <${SystemSectionHead}
+        name="MCP servers"
+        count=${servers.length}
+        desc=${html`Optional MCP servers the harness exposes to spawned <code>claude</code> subprocesses via <code>--mcp-config</code>. Built-in <code>WebFetch</code> and <code>WebSearch</code> stay primary; these are escalation paths (Chrome for logged-in pages, Figma for design files). Runtime config: <code>${data.configPath}</code>${data.configured ? "" : " (not present — flag will be skipped at spawn-time)"}.`}
+        action=${html`<button className="sysadd-bar-btn" type="button" onClick=${() => setAddOpen(o => !o)} aria-expanded=${addOpen}>
+          ${addOpen ? html`<${Icon.X}/><span>Cancel</span>` : html`<${Icon.Plus}/><span>Add server</span>`}</button>`}
+        extra=${html`<div className="sys-shead-extra">${wiredCount} of ${servers.length} wired into the runtime config.</div>`}
+      />
 
       <div className="mcp-add">
-        <button className="mcp-add-toggle" onClick=${() => setAddOpen(o => !o)} aria-expanded=${addOpen}>
-          ${addOpen ? "× Cancel" : "+ Add server"}
-        </button>
         ${addOpen && html`
           <div className="mcp-add-form">
             <div className="mcp-add-row">
@@ -15999,10 +16002,11 @@ function NodeKindsLanding() {
 
   return html`
     <div className="ref-root">
-      <div className="ref-header">
-        <div className="ref-header-title">${entries.length} node kinds</div>
-        <div className="ref-header-meta">Every node on the workflow canvas has a kind — its contract for inputs / outputs / dispatch / completion. Drop kinds from the Library panel in workflow mode.</div>
-      </div>
+      <${SystemSectionHead}
+        name="Node kinds"
+        count=${entries.length}
+        desc="Every node on the workflow canvas has a kind — its contract for inputs / outputs / dispatch / completion. Drop kinds from the Library panel in workflow mode."
+      />
 
       ${Object.entries(groups).map(([catKey, g]) => g.kinds.length === 0 ? null : html`
         <div key=${catKey} className="ref-group">
@@ -16112,7 +16116,7 @@ function NodeKindsLanding() {
 //
 // Adding a new orchestrator is a single-file operation: drop a manifest next to
 // the playbook and this view picks it up — no UI code change needed.
-function OrchestratorsLanding({ scopeLabel }) {
+function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread }) {
   const [data, setData] = useState(null);
   const [err, setErr]   = useState(null);
   const [busy, setBusy] = useState(null);
@@ -16153,24 +16157,13 @@ function OrchestratorsLanding({ scopeLabel }) {
 
   return html`
     <div className="orchestrators-root">
-      <div className="orchestrators-header">
-        <div className="orchestrators-header-title">${data.count} orchestrator${data.count === 1 ? "" : "s"} available</div>
-        <div className="orchestrators-header-meta">
-          <span className="orchestrators-scope">scope: ${scopeLabel || "workspace"}</span>
-          ${data.disabledIds && data.disabledIds.length > 0 && html`
-            <span className="orchestrators-disabled-summary">
-              ${data.disabledIds.length} disabled
-            </span>
-          `}
-        </div>
-      </div>
-      <div className="orchestrators-info">
-        Orchestrators are the high-level orchestrators that dispatch families of subagents to produce
-        complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from
-        its <code>.claude/agents/&lt;name&gt;.manifest.json</code>. Disabling a orchestrator removes its
-        hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} —
-        the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.
-      </div>
+      <${SystemSectionHead}
+        name="Orchestrators"
+        count=${data.count}
+        desc=${html`Orchestrators dispatch families of subagents to produce complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from its <code>.claude/agents/&lt;name&gt;.manifest.json</code>. Disabling one removes its hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} — the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.`}
+        action=${onSpawnSystemThread && html`<${SystemAddBar} kind="orchestrators" onSpawn=${onSpawnSystemThread}/>`}
+        extra=${html`<div className="sys-shead-extra">scope: ${scopeLabel || "workspace"}${data.disabledIds && data.disabledIds.length > 0 ? ` · ${data.disabledIds.length} disabled` : ""}</div>`}
+      />
       <div className="orchestrators-grid">
         ${data.orchestrators.map(p => html`
           <${OrchestratorCard}

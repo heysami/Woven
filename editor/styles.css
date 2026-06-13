@@ -1420,6 +1420,21 @@ button {
 .landing-threads-row-meta { font-size: 11px; color: var(--text-faint); }
 
 
+/* ─── v3.13 — Standardized System-tab section header ──────────────────── */
+.sys-shead { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+.sys-shead-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sys-shead-titles { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.sys-shead-title { font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--text); }
+.sys-shead-count {
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-muted);
+}
+.sys-shead-action { flex: none; }
+.sys-shead-desc { font-size: 13px; line-height: 1.55; color: var(--text-muted); max-width: 840px; }
+.sys-shead-desc code, .sys-shead-extra code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); }
+.sys-shead-extra { font-size: 12px; line-height: 1.5; color: var(--text-faint); display: flex; flex-direction: column; gap: 4px; }
+.sys-shead-extra .ref-header-categories { margin: 0; }
+
 /* ─── v3.3 — Shared reference-view chrome — LIGHT ───────────────────── */
 .ref-root         { display: flex; flex-direction: column; gap: 24px; padding-bottom: 32px; }
 .ref-loading      { padding: 40px; text-align: center; color: var(--text-muted); }
