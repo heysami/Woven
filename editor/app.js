@@ -14065,11 +14065,14 @@ const DS_DEFAULTS = {
 // whose temperature balances the (cool-led) strong colours: cool primaries →
 // faintly WARM grey, so the UI doesn't read cold. #1 is the current default.
 const DS_ROLE_PALETTES = [
-  { name: "Classic (default)",  primary: "#074ECF", secondary: "#E20E10", tertiary: "#8D98AC", neutral: "#828486" },
-  { name: "Teal & Coral",       primary: "#0E9F8C", secondary: "#F0533C", tertiary: "#8AA39E", neutral: "#877E73" },
-  { name: "Violet & Amber",     primary: "#6D28D9", secondary: "#F59E0B", tertiary: "#9890AE", neutral: "#847C76" },
-  { name: "Forest & Magenta",   primary: "#15803D", secondary: "#DB2777", tertiary: "#8DA394", neutral: "#827E78" },
-  { name: "Indigo & Tangerine", primary: "#4338CA", secondary: "#EA580C", tertiary: "#9094B3", neutral: "#857C73" },
+  // Each neutral is a distinct tinted grey (not all the same warm grey) — a
+  // different temperature per palette so the grey base reads as a deliberate
+  // choice. Classic keeps the exact default neutral.
+  { name: "Classic (default)",  primary: "#074ECF", secondary: "#E20E10", tertiary: "#8D98AC", neutral: "#828486" }, // cool slate
+  { name: "Teal & Coral",       primary: "#0E9F8C", secondary: "#F0533C", tertiary: "#8AA39E", neutral: "#8E8070" }, // warm sand
+  { name: "Violet & Amber",     primary: "#6D28D9", secondary: "#F59E0B", tertiary: "#9890AE", neutral: "#8A8196" }, // lavender
+  { name: "Forest & Magenta",   primary: "#15803D", secondary: "#DB2777", tertiary: "#8DA394", neutral: "#7A8A7A" }, // sage green
+  { name: "Indigo & Tangerine", primary: "#4338CA", secondary: "#EA580C", tertiary: "#9094B3", neutral: "#8E8080" }, // warm rose
 ];
 const dsRolePaletteStrip = p => [p.primary, p.secondary, p.tertiary, p.neutral];
 
