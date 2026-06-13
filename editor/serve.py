@@ -48,6 +48,7 @@ if _EDITOR_DIR not in sys.path:
 
 from prompts import node_agent_preambles as _node_preambles  # v2.1 — per-node agent preambles
 import exports as _exports  # per-asset export bundles (README + serve.* + files)
+import shares as _shares    # share mode — cloudflare quick tunnels + review comments
 
 
 def _pick_port() -> int:
@@ -3057,6 +3058,27 @@ def _broadcast_asset_change(project_id: str, paths) -> None:
         except Exception: pass
 
 
+def _broadcast_share_comments_changed(project_id: str, prototype: str) -> None:
+    """Share mode — notify SSE subscribers that share/comments.json mutated
+    (a visitor commented through the gate, or the editor ran a comment op).
+    The prototype node's comments panel refetches on this event; the share
+    viewer itself polls the gate instead (visitors have no SSE channel)."""
+    if not project_id: return
+    # WORKFLOW_WAITERS is keyed by basename(project_root) (see
+    # _workflow_events) — normalize so single-project mode ("default")
+    # and workspace ids both land on the right bucket.
+    try:
+        root = resolve_project_root({"project": project_id})
+        project_id = os.path.basename(root.rstrip("/"))
+    except Exception:
+        pass
+    with WORKFLOW_WAITERS_LOCK:
+        waiters = list(WORKFLOW_WAITERS.get(project_id) or [])
+    for w in waiters:
+        try: w.push("share-comments-changed", {"prototype": prototype or ""})
+        except Exception: pass
+
+
 # v2.50 — File-system watcher (polling, no external `watchdog` dependency).
 # Scans `source/<branch>/**` and `design-systems/**` for every known project
 # at FILE_WATCHER_INTERVAL_SEC. When files change (mtime moved, new file,
@@ -3457,6 +3479,11 @@ def _cleanup_subprocesses(reason: str = "shutdown") -> None:
     with _cleanup_lock:
         if _cleanup_ran: return
         _cleanup_ran = True
+    # Share mode — kill cloudflared tunnel subprocesses alongside CLI runs.
+    # keep_intent semantics: shares stay `active` in shares.json so the next
+    # daemon boot restores their tunnels (with fresh quick-tunnel URLs).
+    try: _shares.stop_all_tunnels()
+    except Exception: pass
     # Snapshot the run map under the lock, then operate without it (so
     # finish() / append() inside child threads don't deadlock if the
     # cleanup races with a still-active reader).
@@ -5734,6 +5761,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._export_config_set(qs)
             if parsed.path == "/__export_asset":
                 return self._export_asset(qs)
+            if parsed.path == "/__share/create":
+                return self._share_create(qs)
+            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url)$", parsed.path)
+            if m_share:
+                return self._share_op(m_share.group(1), m_share.group(2), qs)
+            if parsed.path == "/__share_comments":
+                return self._share_comments_post(qs)
             if parsed.path == "/__mkdir":
                 return self._mkdir(qs)
             if parsed.path == "/__rmdir":
@@ -5943,6 +5977,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._export_config_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__export_check_name":
             return self._export_check_name(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__shares":
+            return self._shares_list()
+        if url_path == "/__share_comments":
+            return self._share_comments_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ls_dirs":
             return self._ls_dirs(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__list_files":
@@ -11506,6 +11544,169 @@ class H(http.server.SimpleHTTPRequestHandler):
             "exportRoot": root,
         })
 
+    # ════════════════════════════════════════════════════════════════════
+    # Share mode — cloudflare quick tunnels + review comments.
+    # Registry/tunnels/comments/gate live in editor/shares.py; these
+    # handlers are the EDITOR-facing surface on the main daemon port. The
+    # visitor-facing surface is the gate listener (share-scoped routes
+    # only) that the tunnels point at. See docs/features/share-mode.md.
+    # ════════════════════════════════════════════════════════════════════
+
+    # GET /__shares — every share across the workspace with live tunnel
+    # status + comment counts. The landing "Shares" tab polls this.
+    def _shares_list(self):
+        cf = _shares.find_cloudflared()
+        return self._reply(200, {
+            "shares":      _shares.shares_summary_all(),
+            "cloudflared": {"found": bool(cf), "path": cf or ""},
+            "gatePort":    _shares.GATE_PORT,
+        })
+
+    # POST /__share/create?project=<id>  body {prototype, emailGate?, label?, start?}
+    # Idempotent per (project, prototype) — re-creating returns the existing
+    # share. start defaults true: create-and-tunnel is the one-click path.
+    def _share_create(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = (_qs_get(qs, "project") or "").strip() or "default"
+        try:
+            body = self._read_json_body(max_bytes=16 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        proto = (body.get("prototype") or "").strip()
+        if not proto:
+            return self._reply(400, {"error": "missing prototype in body"})
+        if not os.path.isdir(os.path.join(project_root, "source", *proto.split("/"))):
+            return self._reply(404, {"error": f"no such prototype: source/{proto}/"})
+        rec, created = _shares.share_create(
+            pid, proto,
+            label=body.get("label"),
+            email_gate=bool(body.get("emailGate")),
+        )
+        tunnel_error = None
+        if body.get("start", True):
+            try:
+                _shares.tunnel_start(rec["id"])
+            except Exception as e:
+                tunnel_error = str(e)
+        out = {"ok": True, "created": created,
+               "share": _shares.share_summary(_shares.share_get(rec["id"]) or rec)}
+        if tunnel_error:
+            out["tunnelError"] = tunnel_error
+        return self._reply(200, out)
+
+    # POST /__share/<id>/(start|stop|delete|update|ack_url)
+    #   start   — (re)spawn the cloudflared tunnel; sets active intent
+    #   stop    — kill the tunnel; clears active intent
+    #   delete  — stop + remove the registry record (revokes the token)
+    #   update  — body {emailGate?, label?}
+    #   ack_url — clear the "URL changed" flag after the user copied the new one
+    def _share_op(self, share_id, op, qs):
+        rec = _shares.share_get(share_id)
+        if rec is None:
+            return self._reply(404, {"error": f"unknown share: {share_id}"})
+        if op == "start":
+            try:
+                _shares.tunnel_start(share_id)
+            except Exception as e:
+                return self._reply(500, {"error": str(e)})
+        elif op == "stop":
+            _shares.tunnel_stop(share_id)
+        elif op == "delete":
+            _shares.tunnel_stop(share_id)
+            _shares.share_delete(share_id)
+            return self._reply(200, {"ok": True, "deleted": share_id})
+        elif op == "update":
+            try:
+                body = self._read_json_body(max_bytes=16 * 1024)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+            patch = {}
+            if isinstance(body, dict) and "emailGate" in body:
+                patch["emailGate"] = bool(body.get("emailGate"))
+            if isinstance(body, dict) and isinstance(body.get("label"), str) and body["label"].strip():
+                patch["label"] = body["label"].strip()[:120]
+            if patch:
+                _shares.share_update(share_id, patch)
+        elif op == "ack_url":
+            _shares.share_update(share_id, {"prevUrl": ""})
+        fresh = _shares.share_get(share_id)
+        return self._reply(200, {"ok": True,
+                                 "share": _shares.share_summary(fresh) if fresh else None})
+
+    # GET /__share_comments?project=<id>&prototype=<slug>
+    # Editor-side read of the same store the gate writes. Prototype filter
+    # optional — without it, every comment in the project comes back.
+    def _share_comments_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = (_qs_get(qs, "prototype") or "").strip() or None
+        return self._reply(200, {"comments": _shares.comments_list(project_root, proto)})
+
+    # POST /__share_comments?project=<id>
+    #   {op:"add",       prototype, page, anchor, pin, text, author?}
+    #   {op:"reply",     prototype, commentId, text, author?}
+    #   {op:"status",    prototype, commentId, status}
+    #   {op:"delete",    prototype, commentId}
+    #   {op:"processed", prototype, commentIds:[…]}   ← stamped when sent to agent
+    # The editor's default author is "Owner" — the daemon is local-trust, so
+    # no identity enforcement here (the gate enforces the visitor policy).
+    def _share_comments_post(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = (_qs_get(qs, "project") or "").strip() or "default"
+        try:
+            body = self._read_json_body(max_bytes=64 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        op    = (body.get("op") or "").strip()
+        proto = (body.get("prototype") or "").strip()
+        author = body.get("author") if isinstance(body.get("author"), dict) else {}
+        if not (author.get("name") or "").strip():
+            author = {"name": "Owner", "email": ""}
+        try:
+            if op == "add":
+                if not proto:
+                    return self._reply(400, {"error": "missing prototype"})
+                c = _shares.comment_add(project_root, proto,
+                                        page=body.get("page"), anchor=body.get("anchor"),
+                                        pin=body.get("pin"), text=body.get("text"),
+                                        author=author)
+                _broadcast_share_comments_changed(pid, proto)
+                return self._reply(200, {"ok": True, "comment": c})
+            if op == "reply":
+                r = _shares.comment_reply(project_root, (body.get("commentId") or "").strip(),
+                                          text=body.get("text"), author=author)
+                _broadcast_share_comments_changed(pid, proto)
+                return self._reply(200, {"ok": True, "reply": r})
+            if op == "status":
+                c = _shares.comment_set_status(project_root, (body.get("commentId") or "").strip(),
+                                               body.get("status"))
+                _broadcast_share_comments_changed(pid, proto)
+                return self._reply(200, {"ok": True, "comment": c})
+            if op == "delete":
+                ok = _shares.comment_delete(project_root, (body.get("commentId") or "").strip())
+                _broadcast_share_comments_changed(pid, proto)
+                return self._reply(200 if ok else 404,
+                                   {"ok": ok} if ok else {"ok": False, "error": "unknown comment"})
+            if op == "processed":
+                ids = _shares.comments_mark_processed(project_root, body.get("commentIds"))
+                _broadcast_share_comments_changed(pid, proto)
+                return self._reply(200, {"ok": True, "processed": ids})
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        return self._reply(400, {"error": f"unknown op: {op!r}"})
+
     # GET /__source_prototypes?project=<id>
     # Walks `source/` to find every folder containing an `index.html`. Returns
     # them as a flat list so the workflow library can surface agent-generated
@@ -15790,6 +15991,22 @@ if __name__ == "__main__":
                 flush=True,
             )
     _install_shutdown_hooks()
+    # ── Share mode boot (see editor/shares.py) ──────────────────────────
+    # The gate is a SECOND listener on the first free port after PORT; it
+    # serves only /s/<token>/* routes. Cloudflare quick tunnels point at it
+    # — never at the main daemon port. Boot failure disables share mode but
+    # never blocks the editor.
+    try:
+        _shares.init(
+            WORKSPACE_DIR, INSTALL_ROOT,
+            lambda pid: resolve_project_root({"project": pid}),
+            on_comments_changed=_broadcast_share_comments_changed,
+        )
+        _shares.start_gate_server(PORT)
+        threading.Thread(target=_shares.restore_active_tunnels, daemon=True,
+                         name="share-tunnel-restore").start()
+    except Exception as e:
+        print(f"[share] boot failed (share mode disabled): {e}", flush=True)
     # v2.23 — auto-replace any stale serve.py holding our port. Without this,
     # the user gets EADDRINUSE every time the previous daemon wasn't cleaned
     # up (common during development: editor reloads, separate launchers, my

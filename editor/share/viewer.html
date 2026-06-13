@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Woven share viewer — the page visitors see at /s/<token>/.
+     Served by the share GATE (editor/shares.py), never by the main daemon.
+     Hosts the shared prototype in a same-origin iframe and layers the
+     review-comment UI (pins, sidebar, composer) over it. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <title>Shared prototype · Woven</title>
+  <link rel="stylesheet" href="viewer.css"/>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="viewer.js"></script>
+</body>
+</html>

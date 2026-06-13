@@ -16179,6 +16179,156 @@ function LandingCardThumbShot({ projectId, version, src, title }) {
   `;
 }
 
+/* ────────── Share mode — landing "Shares" tab ──────────
+   Lists every shared prototype across the workspace with live tunnel
+   status (GET /__shares, polled while the tab is open), the public
+   *.trycloudflare.com URL (copy / open, with a "URL changed" warning when
+   a daemon restart minted a fresh quick-tunnel hostname), per-share
+   comment counts, and start / stop / delete / email-gate controls.
+   Server side: editor/shares.py. See docs/features/share-mode.md. */
+function SharesLanding({ onCountChange }) {
+  const [data, setData] = useState(null);       // {shares, cloudflared, gatePort}
+  const [busy, setBusy] = useState({});         // shareId → true while an op runs
+  const [err, setErr] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const reload = useCallback(() => {
+    fetch("/__shares")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
+      .then((j) => {
+        setData(j);
+        if (onCountChange) onCountChange((j.shares || []).length);
+      })
+      .catch(() => {});
+  }, [onCountChange]);
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 5000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  const flashErr = (msg) => { setErr(msg); setTimeout(() => setErr(null), 6000); };
+  const op = async (id, action, body) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    try {
+      const r = await fetch(`/__share/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      reload();
+    } catch (e) {
+      flashErr(String(e.message || e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+  const copyUrl = async (s) => {
+    if (!s.shareUrl) return;
+    try { await navigator.clipboard.writeText(s.shareUrl); } catch {}
+    setCopiedId(s.id);
+    setTimeout(() => setCopiedId((p) => (p === s.id ? null : p)), 1600);
+    // Copying the fresh URL acknowledges the "URL changed" warning.
+    if (s.urlChanged) op(s.id, "ack_url");
+  };
+
+  const shares = (data && data.shares) || [];
+  const cfMissing = data && data.cloudflared && !data.cloudflared.found;
+  const STATUS_META = {
+    "running":        { dot: "ok",    label: "Running" },
+    "starting":       { dot: "warn",  label: "Starting…" },
+    "stopped":        { dot: "idle",  label: "Stopped" },
+    "exited":         { dot: "err",   label: "Tunnel dropped" },
+    "error":          { dot: "err",   label: "Error" },
+    "no-cloudflared": { dot: "err",   label: "cloudflared missing" },
+  };
+
+  return html`
+    <div className="shares-landing">
+      ${err && html`<div className="shares-error-banner">${err}</div>`}
+      ${cfMissing && html`
+        <div className="shares-cf-hint">
+          <b>cloudflared is not installed.</b> Shares publish through Cloudflare quick
+          tunnels — install the binary once, then Start any share:
+          <code>brew install cloudflared</code>
+        </div>
+      `}
+      ${data && shares.length === 0 && html`
+        <div className="shares-empty">
+          <div className="shares-empty-glyph"><${Icon.Globe}/></div>
+          <b>No shared prototypes yet</b>
+          <p>
+            Open a project's workflow canvas, select a prototype node, and hit the
+            <b> Share</b> action. Woven publishes the live prototype through a Cloudflare
+            quick tunnel — anyone with the link can browse it and pin comments on
+            specific elements; those comments land back on the prototype node, ready
+            to send to the build agent.
+          </p>
+        </div>
+      `}
+      ${shares.map((s) => {
+        const st = STATUS_META[s.status] || STATUS_META.stopped;
+        const isBusy = !!busy[s.id];
+        const cc = s.commentCounts || {};
+        return html`
+          <div className="shares-row" key=${s.id}>
+            <div className="shares-row-main">
+              <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
+              <div className="shares-row-id">
+                <div className="shares-row-label">${s.label}</div>
+                <div className="shares-row-sub">
+                  <code>${s.project}</code> · <code>source/${s.prototype}/</code>
+                  <span className="shares-row-status">${st.label}</span>
+                  ${s.emailGate && html`<span className="shares-chip" title="Visitors must leave a name + email to comment">email gate</span>`}
+                </div>
+              </div>
+              <div className="shares-row-comments" title=${`${cc.open || 0} open · ${cc.done || 0} done · ${cc.archived || 0} archived`}>
+                <${Icon.Comment}/> ${cc.open || 0}<span className="shares-row-comments-total">/${cc.total || 0}</span>
+              </div>
+              <div className="shares-row-actions">
+                ${s.status === "running" || s.status === "starting"
+                  ? html`<button className="shares-btn" disabled=${isBusy}
+                      onClick=${() => op(s.id, "stop")} title="Stop the tunnel — the public URL goes dark">Stop</button>`
+                  : html`<button className="shares-btn shares-btn-primary" disabled=${isBusy || cfMissing}
+                      title=${cfMissing ? "Install cloudflared first" : "Start a quick tunnel (the URL will be new)"}
+                      onClick=${() => op(s.id, "start")}>Start</button>`}
+                <button className="shares-btn" disabled=${isBusy}
+                  title=${s.emailGate ? "Switch to open commenting (name only)" : "Require name + email to comment"}
+                  onClick=${() => op(s.id, "update", { emailGate: !s.emailGate })}
+                >${s.emailGate ? "Gate: email" : "Gate: open"}</button>
+                <button className="shares-btn shares-btn-danger" disabled=${isBusy}
+                  title="Delete the share — kills the tunnel and revokes the link (comments are kept in the project)"
+                  onClick=${() => { if (confirm(`Delete share "${s.label}"? The link stops working immediately.`)) op(s.id, "delete"); }}
+                >Delete</button>
+              </div>
+            </div>
+            <div className="shares-row-url">
+              ${s.shareUrl
+                ? html`
+                    <code key="url" className="shares-url" title=${s.shareUrl}>${s.shareUrl}</code>
+                    <button key="copy" className="shares-btn" onClick=${() => copyUrl(s)}>${copiedId === s.id ? "Copied ✓" : "Copy"}</button>
+                    <button key="open" className="shares-btn" onClick=${() => window.open(s.shareUrl, "_blank")}>Open</button>
+                  `
+                : html`<span className="shares-url-none">
+                    ${s.status === "starting" ? "Waiting for tunnel URL…"
+                      : s.status === "no-cloudflared" ? "Install cloudflared to publish"
+                      : "Not published — start the tunnel to get a link"}
+                  </span>`}
+              ${s.urlChanged && html`
+                <span className="shares-url-changed" title=${"Previous URL: " + (s.prevUrl || "—") + " — quick-tunnel URLs change on every restart. Copy + resend the new link."}>
+                  ⚠ URL changed
+                </span>
+              `}
+            </div>
+            ${s.error && s.status === "error" && html`<div className="shares-row-error">${s.error}</div>`}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -16190,6 +16340,14 @@ function ProjectsLanding({ info, projects, onReload }) {
   // v3.3 — Top-level landing tabs. "projects" is the legacy default; "orchestrators"
   // surfaces the orchestrator registry (per .claude/agents/*.manifest.json).
   const [activeTab, setActiveTab] = useState("projects");
+  // Share mode — count for the Shares tab chip. Seeded once on mount;
+  // SharesLanding keeps it fresh while that tab is open (onCountChange).
+  const [shareCount, setShareCount] = useState(null);
+  useEffect(() => {
+    fetch("/__shares").then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j) setShareCount((j.shares || []).length); })
+      .catch(() => {});
+  }, []);
   const mediaCfg = useMediaConfig();
   // v3.4.41 — Required local skills (rembg). The setup card stays open
   // until every required skill is installed, even after the model is
@@ -16473,6 +16631,15 @@ function ProjectsLanding({ info, projects, onReload }) {
                 <span className="landing-tab-count">${projects.length}</span>
               </button>
               <button
+                className=${"landing-tab" + (activeTab === "shares" ? " is-active" : "")}
+                onClick=${() => setActiveTab("shares")}
+                aria-pressed=${activeTab === "shares"}
+                title="Shared prototypes — live Cloudflare tunnels, links, and review comments."
+              >
+                <span className="landing-tab-label">Shares</span>
+                ${shareCount != null && shareCount > 0 && html`<span className="landing-tab-count">${shareCount}</span>`}
+              </button>
+              <button
                 className=${"landing-tab" + (activeTab === "system" ? " is-active" : "")}
                 onClick=${() => setActiveTab("system")}
                 aria-pressed=${activeTab === "system"}
@@ -16515,6 +16682,7 @@ function ProjectsLanding({ info, projects, onReload }) {
       <main className="landing-main">
         <div className="landing-main-inner">
 
+        ${activeTab === "shares" && html`<${SharesLanding} onCountChange=${setShareCount}/>`}
         ${activeTab === "system" && html`<${SystemLanding}/>`}
 
         ${activeTab === "projects" && creating && html`<${NewProjectWizard}
@@ -30341,6 +30509,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // surface every text file under source/<slug>/ as a tab strip.
   const [codePanelNodeId, setCodePanelNodeId] = useState(null);
 
+  // Share mode — which prototype node has its comments dock open. Docks to
+  // the node's LEFT edge (code panel + picked-element inspector own the
+  // right). See WorkflowCommentsPanel.
+  const [commentsPanelNodeId, setCommentsPanelNodeId] = useState(null);
+
   // Expose flow — replace any existing asset nodes bound to this prototype
   // with the new set, pin lockedState, persist via setData. Re-Expose at a
   // new screen is just calling this again with new lockedState + assets.
@@ -31597,6 +31770,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onZoom=${() => openZoomForPrototype(n)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
                 codeOpen=${codePanelNodeId === n.id}
+                onToggleComments=${() => setCommentsPanelNodeId(p => p === n.id ? null : n.id)}
+                commentsOpen=${commentsPanelNodeId === n.id}
                 hasPickedChild=${pickedElement?.nodeId === n.id}
                 onOpenCanvasFrames=${openCanvasFrames}
                 allNodes=${data.nodes || []}
@@ -31782,6 +31957,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${host}
                 zoom=${zoom}
                 onClose=${() => setCodePanelNodeId(null)}
+              />`;
+            })()}
+            ${commentsPanelNodeId && (() => {
+              // Share mode — comments dock. Resolve the host fresh from
+              // data (same pattern as the code panel) so the panel tracks
+              // node moves/resizes.
+              const host = (data.nodes || []).find(n => n.id === commentsPanelNodeId);
+              if (!host) return null;
+              return html`<${WorkflowCommentsPanel}
+                key=${"commentspanel-" + host.id}
+                node=${host}
+                zoom=${zoom}
+                onStartChatWithPrompt=${onStartChatWithPrompt}
+                onClose=${() => setCommentsPanelNodeId(null)}
               />`;
             })()}
             ${pickedElement && pickedElement.nodeId && (() => {
@@ -37585,6 +37774,351 @@ function isCodeViewableNode(node) {
 // with no gap, matching the user's "stick to it" requirement. Single-file
 // nodes show one body; prototypes enumerate every text file under
 // source/<slug>/ as tabs (default to index.html when present).
+/* ────────── Share mode — prototype node comments dock ──────────
+   Toggled by the 💬 top-action on a prototype node (same family as the
+   code-panel toggle). Docks to the node's LEFT edge — the code panel and
+   the picked-element inspector both dock right, so the two can coexist.
+
+   Three jobs:
+     1. Share controls — create / start / stop the Cloudflare quick tunnel
+        for THIS prototype (one share per project+prototype, idempotent),
+        copy the public URL.
+     2. The comment threads visitors left through the share viewer — same
+        store (share/comments.json), same ops (reply / done / archive /
+        delete), edited here as "Owner".
+     3. Select comments → "Send to agent": builds a structured prompt
+        (element anchors + pages + requests + replies) and dispatches it
+        through the workflow chat (onStartChatWithPrompt → triggerRun),
+        then stamps the comments processedAt.
+
+   Clicking a comment also flash-highlights its element inside the node's
+   live iframe when the iframe is currently showing that page. */
+function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
+  const slug = nodePrototype(node);
+  const projectId = useMemo(() => {
+    try { return new URL(window.location.href).searchParams.get("project") || ""; }
+    catch { return ""; }
+  }, []);
+  const [comments, setComments] = useState(null);   // null = loading
+  const [share, setShare] = useState(null);         // matching /__shares record
+  const [cloudflared, setCloudflared] = useState(true);
+  const [filter, setFilter] = useState("open");
+  const [sel, setSel] = useState({});               // commentId → true
+  const [busy, setBusy] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState({});
+  const [panelW] = useState(340);
+
+  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
+
+  const refetch = useCallback(() => {
+    fetch(apiUrl(`/__share_comments?prototype=${encodeURIComponent(slug)}`))
+      .then(r => r.ok ? r.json() : { comments: [] })
+      .then(j => setComments(j.comments || []))
+      .catch(() => setComments([]));
+    fetch("/__shares")
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j) return;
+        setCloudflared(!!(j.cloudflared && j.cloudflared.found));
+        const mine = (j.shares || []).find(s =>
+          s.prototype === slug && (!projectId || s.project === projectId));
+        setShare(mine || null);
+      })
+      .catch(() => {});
+  }, [slug, projectId]);
+  useEffect(() => {
+    refetch();
+    const t = setInterval(refetch, 6000);
+    return () => clearInterval(t);
+  }, [refetch]);
+
+  // ── Share controls ────────────────────────────────────────────────
+  const shareCreate = async () => {
+    setShareBusy(true);
+    try {
+      const r = await fetch(apiUrl("/__share/create"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prototype: slug }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "share failed");
+      if (j.tunnelError) flashErr(j.tunnelError);
+      refetch();
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setShareBusy(false); }
+  };
+  const shareOp = async (action) => {
+    if (!share) return;
+    setShareBusy(true);
+    try {
+      const r = await fetch(`/__share/${share.id}/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      refetch();
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setShareBusy(false); }
+  };
+  const copyShareUrl = async () => {
+    if (!share || !share.shareUrl) return;
+    try { await navigator.clipboard.writeText(share.shareUrl); } catch {}
+    setCopied(true); setTimeout(() => setCopied(false), 1500);
+    if (share.urlChanged) shareOp("ack_url");
+  };
+
+  // ── Comment ops (editor-side author = "Owner") ────────────────────
+  const cop = async (body) => {
+    try {
+      const r = await fetch(apiUrl("/__share_comments"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prototype: slug, ...body }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "comment op failed");
+      refetch();
+    } catch (e) { flashErr(String(e.message || e)); }
+  };
+
+  // ── Highlight a comment's element in the node's live iframe ──────
+  const highlightInNode = (c) => {
+    try {
+      const host = document.querySelector(`.workflow-node[data-node-id="${node.id}"] iframe`);
+      const doc = host && host.contentDocument;
+      if (!doc) return;
+      // Only when the iframe is on the comment's page (path part).
+      const pagePath = (c.page || "index.html").split("#")[0];
+      const curPath = (host.contentWindow.location.pathname.split("/").pop() || "index.html");
+      if (pagePath.split("/").pop() !== curPath) return;
+      let el = null;
+      if (c.anchor && c.anchor.selector) {
+        try { el = doc.querySelector(c.anchor.selector); } catch {}
+      }
+      if (!el && c.anchor && c.anchor.tag && c.anchor.text) {
+        for (const cand of doc.querySelectorAll(c.anchor.tag)) {
+          if ((cand.textContent || "").trim().slice(0, 200) === c.anchor.text) { el = cand; break; }
+        }
+      }
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const prevOutline = el.style.outline, prevOffset = el.style.outlineOffset;
+      el.style.outline = "3px solid #4f46e5";
+      el.style.outlineOffset = "2px";
+      setTimeout(() => { el.style.outline = prevOutline; el.style.outlineOffset = prevOffset; }, 1600);
+    } catch {}
+  };
+
+  // ── Send selected to agent ────────────────────────────────────────
+  const selectedIds = Object.keys(sel).filter(id => sel[id]);
+  const sendToAgent = async () => {
+    const chosen = (comments || []).filter(c => sel[c.id]);
+    if (!chosen.length || busy) return;
+    setBusy(true);
+    try {
+      const lines = [
+        `Process reviewer comments on the prototype rooted at \`source/${slug}/\`.`,
+        "",
+        "Each comment below was pinned to a SPECIFIC ELEMENT in the running prototype",
+        "by a reviewer (via the share link). For each one:",
+        "  • Locate the element — the CSS selector is relative to the listed page's DOM;",
+        "    the tag + text snippet are fallbacks if the selector has drifted.",
+        "  • Apply the requested change in place, scoped as tightly as possible.",
+        "  • Stay inside the design system vocabulary (no new tokens / primitive classes).",
+        "  • Do NOT edit share/comments.json — comment lifecycle belongs to the user.",
+        "",
+      ];
+      chosen.forEach((c, i) => {
+        lines.push(`COMMENT ${i + 1} — ${(c.author && c.author.name) || "Anonymous"} on \`${c.page}\``);
+        if (c.anchor && (c.anchor.selector || c.anchor.tag)) {
+          lines.push(`  Element: ${c.anchor.selector || "(selector unavailable)"}`
+            + (c.anchor.tag ? `  <${c.anchor.tag}>` : "")
+            + (c.anchor.text ? `  text: "${c.anchor.text.slice(0, 80)}"` : ""));
+        }
+        lines.push(`  Request: ${c.text}`);
+        (c.replies || []).forEach(r => {
+          lines.push(`  ↳ ${(r.author && r.author.name) || "Anonymous"}: ${r.text}`);
+        });
+        lines.push("");
+      });
+      lines.push("After every change is applied, summarize what was edited per comment.");
+      const body = lines.join("\n");
+      await cop({ op: "processed", commentIds: chosen.map(c => c.id) });
+      setSel({});
+      if (onStartChatWithPrompt) await onStartChatWithPrompt(body);
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  // ── Layout — mirror the code panel's node tracking, dock LEFT ────
+  const [hostRectH, setHostRectH] = useState(node.h || 360);
+  useEffect(() => {
+    const el = document.querySelector(`.workflow-node[data-node-id="${node.id}"]`);
+    if (!el) return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      setHostRectH(Math.round(r.height / (zoom || 1)));
+    };
+    sync();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(sync);
+      ro.observe(el);
+    }
+    return () => { if (ro) ro.disconnect(); };
+  }, [node.id, node.w, node.h, node.size, zoom]);
+  const left = (node.x || 0) - panelW - 18;
+  const top = (node.y || 0);
+  const height = Math.max(320, hostRectH);
+
+  const counts = useMemo(() => {
+    const c = { open: 0, done: 0, archived: 0 };
+    for (const x of (comments || [])) c[x.status || "open"] = (c[x.status || "open"] || 0) + 1;
+    return c;
+  }, [comments]);
+  const visible = useMemo(() => {
+    let list = comments || [];
+    if (filter !== "all") list = list.filter(c => (c.status || "open") === filter);
+    return [...list].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }, [comments, filter]);
+
+  const stMeta = !share ? null : ({
+    running:          ["ok", "Live"],
+    starting:         ["warn", "Starting…"],
+    stopped:          ["idle", "Stopped"],
+    exited:           ["err", "Tunnel dropped"],
+    error:            ["err", "Error"],
+    "no-cloudflared": ["err", "cloudflared missing"],
+  }[share.status] || ["idle", share.status || "—"]);
+
+  return html`
+    <div
+      className="workflow-comments-panel"
+      data-host-node-id=${node.id}
+      data-scroll-internally="true"
+      style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
+      onMouseDown=${(e) => e.stopPropagation()}
+      onWheel=${(e) => e.stopPropagation()}
+    >
+      <div className="workflow-comments-panel-bar">
+        <span className="workflow-comments-panel-glyph"><${Icon.Comment}/></span>
+        <span className="workflow-comments-panel-title">Comments · source/${slug}/</span>
+        <button className="workflow-comments-panel-close" title="Close" onClick=${onClose}>×</button>
+      </div>
+      <div className="workflow-comments-share">
+        ${!share && html`
+          <button key="cta" className="workflow-comments-share-cta" disabled=${shareBusy || !cloudflared}
+            title=${cloudflared
+              ? "Publish this prototype through a Cloudflare quick tunnel — anyone with the link can review + comment"
+              : "cloudflared not installed — brew install cloudflared, then retry"}
+            onClick=${shareCreate}
+          ><${Icon.Globe}/> ${shareBusy ? "Publishing…" : "Share via tunnel"}</button>
+          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">Needs <code>brew install cloudflared</code></div>`}
+        `}
+        ${share && html`
+          <div key="srow" className="workflow-comments-share-row">
+            <span className=${"shares-dot is-" + stMeta[0]}></span>
+            <span className="workflow-comments-share-status">${stMeta[1]}</span>
+            ${share.urlChanged && html`<span className="shares-url-changed" title="The tunnel URL changed since last copy — resend the link">⚠ URL changed</span>`}
+            <span style=${{ flex: 1 }}></span>
+            ${(share.status === "running" || share.status === "starting")
+              ? html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("stop")}>Stop</button>`
+              : html`<button className="shares-btn shares-btn-primary" disabled=${shareBusy || !cloudflared} onClick=${() => shareOp("start")}>Start</button>`}
+          </div>
+          ${share.shareUrl && html`
+            <div key="surl" className="workflow-comments-share-url">
+              <code title=${share.shareUrl}>${share.shareUrl}</code>
+              <button className="shares-btn" onClick=${copyShareUrl}>${copied ? "✓" : "Copy"}</button>
+              <button className="shares-btn" onClick=${() => window.open(share.shareUrl, "_blank")} title="Open the share link">↗</button>
+            </div>
+          `}
+        `}
+        ${err && html`<div className="workflow-comments-err">${err}</div>`}
+      </div>
+      <div className="workflow-comments-filters">
+        ${["open", "done", "archived", "all"].map(f => html`
+          <button key=${f}
+            className=${"sv-filter" + (filter === f ? " is-active" : "")}
+            onClick=${() => setFilter(f)}
+          >${f === "open" ? `Open ${counts.open}` : f === "done" ? `Done ${counts.done}` : f === "archived" ? "Archived" : "All"}</button>
+        `)}
+      </div>
+      <div className="workflow-comments-list">
+        ${comments === null && html`<div className="workflow-comments-empty">Loading…</div>`}
+        ${comments !== null && visible.length === 0 && html`
+          <div className="workflow-comments-empty">
+            ${counts.open + counts.done + counts.archived === 0
+              ? "No comments yet — share the prototype and reviewers can pin feedback on any element."
+              : "Nothing in this filter."}
+          </div>
+        `}
+        ${visible.map(c => {
+          const st = c.status || "open";
+          const draft = replyDrafts[c.id] || "";
+          return html`
+            <div key=${c.id} className=${"workflow-comment-card" + (st !== "open" ? " is-done" : "")}
+              onClick=${() => highlightInNode(c)}>
+              <div className="workflow-comment-card-head">
+                <input type="checkbox" checked=${!!sel[c.id]}
+                  onClick=${(e) => e.stopPropagation()}
+                  onChange=${(e) => setSel(s => ({ ...s, [c.id]: e.target.checked }))}
+                  title="Select for the agent"/>
+                <span className="workflow-comment-card-author">${(c.author && c.author.name) || "Anonymous"}</span>
+                ${st === "done" && html`<span className="sv-status-chip done">done</span>`}
+                ${st === "archived" && html`<span className="sv-status-chip archived">archived</span>`}
+                ${c.processedAt && html`<span className="sv-status-chip processed" title=${"Sent to agent " + c.processedAt}>processed</span>`}
+              </div>
+              <div className="workflow-comment-card-meta" title=${(c.anchor && c.anchor.selector) || ""}>
+                ${c.page}${c.anchor && c.anchor.selector ? " · " + c.anchor.selector : ""}
+              </div>
+              <div className="workflow-comment-card-text">${c.text}</div>
+              ${(c.replies || []).map(r => html`
+                <div key=${r.id} className="workflow-comment-card-reply">
+                  <b>${(r.author && r.author.name) || "Anonymous"}</b> ${r.text}
+                </div>
+              `)}
+              <div className="workflow-comment-card-actions" onClick=${(e) => e.stopPropagation()}>
+                <input className="workflow-comment-reply-input" placeholder="Reply…"
+                  value=${draft}
+                  onInput=${(e) => setReplyDrafts(d => ({ ...d, [c.id]: e.target.value }))}
+                  onKeyDown=${(e) => {
+                    if (e.key === "Enter" && draft.trim()) {
+                      cop({ op: "reply", commentId: c.id, text: draft.trim() });
+                      setReplyDrafts(d => ({ ...d, [c.id]: "" }));
+                    }
+                  }}/>
+                ${st !== "done" && html`<button className="sv-mini-btn" title="Mark resolved" onClick=${() => cop({ op: "status", commentId: c.id, status: "done" })}>✓</button>`}
+                ${st === "done" && html`<button className="sv-mini-btn" title="Reopen" onClick=${() => cop({ op: "status", commentId: c.id, status: "open" })}>↺</button>`}
+                ${st !== "archived" && html`<button className="sv-mini-btn" title="Archive" onClick=${() => cop({ op: "status", commentId: c.id, status: "archived" })}>🗄</button>`}
+                <button className="sv-mini-btn danger" title="Delete thread" onClick=${() => { if (confirm("Delete this comment thread?")) cop({ op: "delete", commentId: c.id }); }}>🗑</button>
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+      <div className="workflow-comments-footer">
+        <button className="sv-mini-btn"
+          onClick=${() => {
+            const opens = (comments || []).filter(c => (c.status || "open") === "open");
+            const all = opens.length > 0 && opens.every(c => sel[c.id]);
+            const next = {};
+            if (!all) opens.forEach(c => { next[c.id] = true; });
+            setSel(next);
+          }}
+        >Select open</button>
+        <span style=${{ flex: 1 }}></span>
+        <button className="shares-btn shares-btn-primary"
+          disabled=${selectedIds.length === 0 || busy}
+          title="Send the selected comments to the workflow agent — it applies each requested change to the prototype source"
+          onClick=${sendToAgent}
+        >${busy ? "Dispatching…" : `Send ${selectedIds.length || ""} to agent`}</button>
+      </div>
+    </div>
+  `;
+}
+
 function WorkflowCodePanel({ node, onClose, zoom }) {
   const [files, setFiles] = useState([]);          // [{ path, label }]
   const [activeIdx, setActiveIdx] = useState(0);
@@ -38944,7 +39478,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   `;
 }
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, lodVisible }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = nodePrototype(node);
@@ -39983,6 +40517,17 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             active: codeOpen,
             onClick: onToggleCode,
             className: "workflow-node-top-action-code",
+          },
+          onToggleComments && {
+            key: "comments",
+            icon: html`<${Icon.Comment}/>`,
+            tip: commentsOpen
+              ? "Hide comments — close the review-comments dock."
+              : "Comments & sharing — dock the review-comment threads for this prototype (share it via a Cloudflare tunnel, triage reviewer feedback, send selected comments to the agent).",
+            ariaLabel: "Show share comments",
+            active: commentsOpen,
+            onClick: onToggleComments,
+            className: "workflow-node-top-action-comments",
           },
           onOpenCanvasFrames && {
             key: "canvas-frames",
