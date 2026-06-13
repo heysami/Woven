@@ -14918,13 +14918,7 @@ function DsPaletteDropdown({ current, onApply }) {
   const activeRole = current ? DS_ROLE_PALETTES.find(p => p.name === current) : null;
   const activeCoolors = current ? DS_PALETTES.find(p => p.name === current) : null;
   const activeStrip = activeRole ? dsRolePaletteStrip(activeRole) : (activeCoolors ? activeCoolors.colors : null);
-  const item = (name, cols, roles) => html`
-    <button key=${name} type="button"
-      className=${"dscz-pal-item" + (current === name ? " is-active" : "")}
-      onClick=${() => { onApply(roles, name); setOpen(false); }}>
-      ${strip(cols)}
-      <span className="dscz-pal-name">${name}</span>
-    </button>`;
+  const item = (name, cols, roles) => html`<button key=${name} type="button" className=${"dscz-pal-item" + (current === name ? " is-active" : "")} onClick=${() => { onApply(roles, name); setOpen(false); }}>${strip(cols)}<span className="dscz-pal-name">${name}</span></button>`;
   return html`
     <div className="dscz-pal">
       <button type="button" className="dscz-pal-trigger" onClick=${() => setOpen(o => !o)} aria-expanded=${open}>
