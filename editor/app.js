@@ -52300,50 +52300,41 @@ function useWorkflowWorkingPaths() {
 //   prefers-reduced-motion (static row of squares).
 const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
-function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
+function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
   const canvasRef = useRef(null);    // inner face / sequence
-  const trailRef = useRef(null);     // fading trail behind the floating frame
-  const floaterRef = useRef(null);   // the diamond + face; drifts on a slow path
+  const trailRef = useRef(null);     // tether + trail, spans the whole node
+  const floaterRef = useRef(null);   // the diamond + face; roams the perimeter
+  // Geometry can change frame-to-frame (node resize / zoom) — keep the latest
+  // in a ref so the single rAF loop reads fresh values without re-subscribing.
+  const geomRef = useRef({ w, h, invZoom });
+  geomRef.current = { w, h, invZoom };
   useEffect(() => {
     const cv = canvasRef.current, tcv = trailRef.current, floater = floaterRef.current;
     if (!cv || !tcv || !floater) return;
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // 50px frame; the inner sequence lives within the fill square's inscribed
-    // circle (radius CLIP) and is hard-clipped to it. The frame FLOATS on a
-    // slow path inside an 88px STAGE (rest-centre SC), leaving a fading trail
-    // drawn on a sibling canvas behind it.
-    const W = 50, H = 50, CX = 25, CY = 25, N = 5, PITCH = 4.2, CLIP = 14;
-    const BAR_W = 2.4, SQ = 4, GH = 7, STAGE = 88, SC = STAGE / 2;
-    // Node's bottom-left corner in trail-canvas coords. MUST match the .aab-stage
-    // CSS offset (left:-62 / top:-26): corner = (-left, -top).
-    const CORNER_X = 62, CORNER_Y = 26;
+    // Inner face — UNCHANGED 50px morphing canvas (waveform → squares → ^_^ →
+    // ascii). Lives within the fill square's inscribed circle (radius CLIP).
+    const FW = 50, FH = 50, CX = 25, CY = 25, N = 5, PITCH = 4.2, CLIP = 14;
+    const BAR_W = 2.4, SQ = 4, GH = 7, STAGE = 88, SF = STAGE / 2;
     const slotX = (i) => CX + (i - (N - 1) / 2) * PITCH;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = W * dpr; cv.height = H * dpr;
+    cv.width = FW * dpr; cv.height = FH * dpr;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    tcv.width = STAGE * dpr; tcv.height = STAGE * dpr;
     const tctx = tcv.getContext("2d");
-    if (tctx) tctx.scale(dpr, dpr);
     const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
     // De-sync sibling badges + give each a stable per-slot glyph stream.
     const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
     const seed = (parseInt(hx, 16) % 997) / 997;
     const rnd = (a, b) => { const x = Math.sin(a * 97.13 + b * 41.7 + seed * 123.4) * 43758.5453; return x - Math.floor(x); };
     const glyphFor = (i, tick) => AAB_GLYPHS[Math.floor(rnd(i + 1, tick + 1) * AAB_GLYPHS.length) % AAB_GLYPHS.length];
-    // Phase plan (seconds): waveform · settle-to-squares · squares(travel) ·
-    // → ^_^ face · face bop · back-to-squares · → ascii · hold-ascii ·
-    // revert-one-by-one · grow-back-to-waveform. Three expressive states:
-    // waveform, face, characters — squares are the neutral hub between them.
-    // Squares are the hub; the face + ascii states hard-CUT in and out (no
-    // fade). Only the waveform keeps its grow/settle morph (W2S / S2W).
     const PH = { WAVE: 2.2, W2S: 0.5, SQ1: 1.6, FACE: 8.0, SQ2: 1.4, ASCII: 1.6, SQ3: 1.4, S2W: 0.5 };
     const ORDER = ["WAVE", "W2S", "SQ1", "FACE", "SQ2", "ASCII", "SQ3", "S2W"];
     const CYCLE = ORDER.reduce((s, k) => s + PH[k], 0);
     const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
     const lerp = (a, b, t) => a + (b - a) * t;
-    const fillRect = (x, y, w, h) => { ctx.fillStyle = hot; ctx.fillRect(x - w / 2, y - h / 2, w, h); };
+    const fillRect = (x, y, w2, h2) => { ctx.fillStyle = hot; ctx.fillRect(x - w2 / 2, y - h2 / 2, w2, h2); };
     const strokeRect = (x, y, s) => { ctx.strokeStyle = hot; ctx.lineWidth = 1; ctx.strokeRect(x - s / 2, y - s / 2, s, s); };
     const drawGlyph = (g, x, y, a) => {
       ctx.globalAlpha = a; ctx.fillStyle = hot;
@@ -52351,27 +52342,15 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(g, x, y); ctx.globalAlpha = 1;
     };
-    // Random-beat waveform: every BEAT all bars snap to a NEW random height
-    // — shared beat grid (same rhythm) but each bar a different height —
-    // easing over the first third of the beat, then holding.
     const BEAT = 0.2;
     const barH = (i, t) => {
       const b = Math.floor(t / BEAT), f = (t / BEAT) - b;
       const h0 = 3 + rnd(i + 3, b) * 11, h1 = 3 + rnd(i + 3, b + 1) * 11;
       return lerp(h0, h1, ease(Math.min(1, f / 0.34)));
     };
-    // ^_^ face: eyes at i1/i3 are "^", mouth at i2 is "_"; the outer i0/i4
-    // stay plain squares (no blush). "^" already sits high in its em box, so
-    // eyes only rise a hair.
     const EYE_Y = CY - 2, MOUTH_Y = CY + 2.5;
-    // Gentle float (lissajous) + comet trail. ph de-syncs siblings.
-    const FA = 7, FB = 5, FW1 = 0.8, FW2 = 0.55, ph = seed * Math.PI * 2;
-    const trail = [];   // flat [x0,y0, x1,y1, …] of recent float offsets
-    let raf = 0, t0 = 0, scrambleTick = 0, lastScramble = 0;
-    const frame = (ts) => {
-      if (!t0) t0 = ts;
-      const t = (ts - t0) / 1000;
-      ctx.clearRect(0, 0, W, H);
+    const drawFace = (t) => {
+      ctx.clearRect(0, 0, FW, FH);
       ctx.save();
       ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
       const lt = (t + seed * CYCLE) % CYCLE;
@@ -52383,92 +52362,163 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
         const e = ease(pp);
         for (let i = 0; i < N; i++) fillRect(slotX(i), CY, lerp(BAR_W, SQ, e), lerp(barH(i, t), SQ, e));
       } else if (phase === "SQ1" || phase === "SQ2" || phase === "SQ3") {
-        const cursor = Math.floor(pp * N * 3) % N;   // one outline square travels, loops ~3×
+        const cursor = Math.floor(pp * N * 3) % N;
         for (let i = 0; i < N; i++) (i === cursor ? strokeRect(slotX(i), CY, SQ) : fillRect(slotX(i), CY, SQ, SQ));
-      } else if (phase === "FACE") {                 // ^_^ bops happily — hard cut in/out, no fade
+      } else if (phase === "FACE") {
         const bop = -Math.abs(Math.sin(t * 4.5)) * 2.5;
         for (let i = 0; i < N; i++) {
           if (i === 1 || i === 3) drawGlyph("^", slotX(i), EYE_Y + bop, 1);
           else if (i === 2) drawGlyph("_", slotX(i), MOUTH_Y + bop, 1);
-          else fillRect(slotX(i), CY + bop, SQ, SQ);   // outer slots stay plain squares (no blush)
+          else fillRect(slotX(i), CY + bop, SQ, SQ);
         }
-      } else if (phase === "ASCII") {                // scrambling glyphs — hard cut in/out, no fade
+      } else if (phase === "ASCII") {
         if (t - lastScramble > 0.28) { scrambleTick++; lastScramble = t; }
         for (let i = 0; i < N; i++) drawGlyph(glyphFor(i, scrambleTick), slotX(i), CY, 1);
-      } else { // S2W — squares grow back into bars
+      } else {
         const e = ease(pp);
         for (let i = 0; i < N; i++) fillRect(slotX(i), CY, lerp(SQ, BAR_W, e), lerp(SQ, barH(i, t), e));
       }
       ctx.restore();
-      // ── float the whole badge on a slow path, leaving a fading trail ──
-      const fx = Math.sin(t * FW1 + ph) * FA;
-      const fy = Math.cos(t * FW2 + ph) * FB;
-      floater.style.transform = `translate(${fx.toFixed(2)}px, ${fy.toFixed(2)}px)`;
-      trail.push(fx, fy);
-      const MAX = 18;
+    };
+
+    // ── Trail/tether canvas — spans the whole node; backing capped for memory
+    //    (decorative thin lines, slight downscale is invisible). Drawn in node
+    //    coords via setTransform(sc,…). ──
+    let tcvW = 0, tcvH = 0, sc = 1;
+    const ensureTrailCanvas = (W, H) => {
+      const CAP = 1100;
+      const nsc = Math.min(1, CAP / Math.max(W, H, 1));
+      const bw = Math.max(1, Math.round(W * nsc)), bh = Math.max(1, Math.round(H * nsc));
+      if (bw !== tcv.width || bh !== tcv.height) { tcv.width = bw; tcv.height = bh; }
+      sc = nsc; tcvW = W; tcvH = H;
+    };
+    // Map a perimeter parameter s∈[0,peri) → a point on the node's edge,
+    // walking top L→R, right T→B, bottom R→L, left B→T.
+    const perimPoint = (s, W, H, peri) => {
+      s = ((s % peri) + peri) % peri;
+      if (s < W) return [s, 0];
+      s -= W; if (s < H) return [W, s];
+      s -= H; if (s < W) return [W - s, H];
+      s -= W; return [0, H - s];
+    };
+
+    // Roam state — the worker glides along the perimeter to random targets on
+    // (usually) a different side, dwells, then picks another.
+    let curS = 0, tgtS = 0, dwell = 0, inited = false;
+    const trail = [];   // flat [x,y, …] of recent worker points, in node coords
+    const MAX = 24;
+    let raf = 0, t0 = 0, prevTs = 0, scrambleTick = 0, lastScramble = 0;
+
+    const frame = (ts) => {
+      if (!t0) { t0 = ts; prevTs = ts; }
+      const t = (ts - t0) / 1000;
+      const dt = Math.min(0.05, Math.max(0, (ts - prevTs) / 1000)); prevTs = ts;
+      const g = geomRef.current;
+      const W = Math.max(40, g.w || 200), H = Math.max(40, g.h || 200), iz = g.invZoom || 1;
+      const peri = 2 * (W + H);
+      ensureTrailCanvas(W, H);
+      drawFace(t);
+
+      // advance the roam
+      if (!inited) { curS = (seed * peri) % peri; tgtS = ((seed * 0.37 + 0.5) * peri) % peri; inited = true; }
+      if (dwell > 0) {
+        dwell -= dt;
+      } else {
+        let d = tgtS - curS;
+        if (d > peri / 2) d -= peri; else if (d < -peri / 2) d += peri;   // shorter arc
+        const step = (peri / 13) * dt;   // ~13s per full lap
+        if (Math.abs(d) <= step) {
+          curS = tgtS;
+          dwell = 0.4 + rnd(7, Math.floor(t)) * 1.3;
+          const off = (0.28 + rnd(11, Math.floor(t) + 1) * 0.5) * peri;     // jump to another side
+          const dir = rnd(13, Math.floor(t) + 2) < 0.5 ? -1 : 1;
+          tgtS = (((curS + dir * off) % peri) + peri) % peri;
+        } else {
+          curS += Math.sign(d) * step;
+        }
+      }
+      let [px, py] = perimPoint(curS, W, H, peri);
+      const cx = W / 2, cy = H / 2;
+      // gentle inward bob for life (screen-constant amplitude)
+      const ivx = cx - px, ivy = cy - py, ilen = Math.hypot(ivx, ivy) || 1;
+      const bob = (Math.sin(t * 1.7 + seed * 6.28) * 0.5 + 0.5) * 7 * iz;
+      px += (ivx / ilen) * bob; py += (ivy / ilen) * bob;
+
+      // position the worker (counter-scaled, centered on px,py)
+      floater.style.transform = `translate(${(px - SF).toFixed(2)}px, ${(py - SF).toFixed(2)}px) scale(${iz})`;
+
+      trail.push(px, py);
       if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2);
+
       if (tctx) {
-        tctx.clearRect(0, 0, STAGE, STAGE);
-        // half-transparent dashed tether from the node corner to the floating
-        // badge — drawn first so it sits behind the trail echoes + the frame.
+        tctx.setTransform(sc, 0, 0, sc, 0, 0);   // node coords → backing px
+        tctx.clearRect(0, 0, tcvW, tcvH);
+        const lw = Math.max(0.4, iz);            // ≈1px on screen
+        const mk = 2.6 * iz;
+        // dashed tether: worker → node CENTER
         tctx.save();
-        tctx.globalAlpha = 0.5;
-        tctx.strokeStyle = hot; tctx.lineWidth = 1; tctx.setLineDash([3, 3]);
-        tctx.beginPath();
-        tctx.moveTo(CORNER_X, CORNER_Y);
-        tctx.lineTo(SC + fx, SC + fy);
-        tctx.stroke();
+        tctx.globalAlpha = 0.45; tctx.strokeStyle = hot; tctx.lineWidth = lw;
+        tctx.setLineDash([4 * iz, 4 * iz]);
+        tctx.beginPath(); tctx.moveTo(px, py); tctx.lineTo(cx, cy); tctx.stroke();
         tctx.restore();
-        // flow: small marks travel the tether from the badge → the node corner
-        // ("work flowing into the node"), fading in at the agent, absorbed at
-        // the corner. ax/ay = badge end, cx/cy = node corner.
-        const flowAx = SC + fx, flowAy = SC + fy;
-        const FLOW_N = 4, FLOW_SPEED = 0.5;
+        // flow marks travelling worker → center ("work flowing into the node")
+        const FLOW_N = 5, FLOW_SPEED = 0.45;
         for (let p = 0; p < FLOW_N; p++) {
-          const prog = ((t * FLOW_SPEED) + p / FLOW_N) % 1;   // 0 badge → 1 corner
-          const px = flowAx + (CORNER_X - flowAx) * prog;
-          const py = flowAy + (CORNER_Y - flowAy) * prog;
+          const prog = ((t * FLOW_SPEED) + p / FLOW_N) % 1;
+          const fx = px + (cx - px) * prog, fy = py + (cy - py) * prog;
           tctx.save();
-          tctx.globalAlpha = Math.sin(prog * Math.PI) * 0.85;  // fade in / out at the ends
+          tctx.globalAlpha = Math.sin(prog * Math.PI) * 0.8;
           tctx.fillStyle = hot;
-          tctx.translate(px, py); tctx.rotate(Math.PI / 4);
-          tctx.fillRect(-1.3, -1.3, 2.6, 2.6);                 // tiny diamond
+          tctx.translate(fx, fy); tctx.rotate(Math.PI / 4);
+          tctx.fillRect(-mk / 2, -mk / 2, mk, mk);
           tctx.restore();
         }
+        // fading comet trail behind the roaming worker
         const pts = trail.length / 2;
-        for (let k = 0; k < pts - 1; k++) {     // newest pair is the live frame — skip it
-          const f = k / pts;                    // 0 oldest … ~1 newest
-          const s = 3 + f * 6;
+        for (let k = 0; k < pts - 1; k++) {
+          const f = k / pts;
+          const s2 = (3 + f * 6) * iz;
           tctx.save();
-          tctx.globalAlpha = f * f * 0.30;
-          tctx.translate(SC + trail[k * 2], SC + trail[k * 2 + 1]);
-          tctx.rotate(Math.PI / 4);
-          tctx.strokeStyle = hot; tctx.lineWidth = 1;
-          tctx.strokeRect(-s / 2, -s / 2, s, s);
+          tctx.globalAlpha = f * f * 0.28;
+          tctx.translate(trail[k * 2], trail[k * 2 + 1]); tctx.rotate(Math.PI / 4);
+          tctx.strokeStyle = hot; tctx.lineWidth = lw;
+          tctx.strokeRect(-s2 / 2, -s2 / 2, s2, s2);
           tctx.restore();
         }
       }
       raf = requestAnimationFrame(frame);
     };
+
     if (reduce) {
+      // Static: face squares + worker parked on the top edge + one tether line.
       ctx.save(); ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
       for (let i = 0; i < N; i++) fillRect(slotX(i), CY, SQ, SQ);
       ctx.restore();
+      const g = geomRef.current;
+      const W = Math.max(40, g.w || 200), H = Math.max(40, g.h || 200), iz = g.invZoom || 1;
+      ensureTrailCanvas(W, H);
+      const px = W * 0.5, py = 0, cx = W / 2, cy = H / 2;
+      floater.style.transform = `translate(${(px - SF).toFixed(2)}px, ${(py - SF).toFixed(2)}px) scale(${iz})`;
+      if (tctx) {
+        tctx.setTransform(sc, 0, 0, sc, 0, 0);
+        tctx.clearRect(0, 0, tcvW, tcvH);
+        tctx.save(); tctx.globalAlpha = 0.4; tctx.strokeStyle = hot;
+        tctx.lineWidth = Math.max(0.4, iz); tctx.setLineDash([4 * iz, 4 * iz]);
+        tctx.beginPath(); tctx.moveTo(px, py); tctx.lineTo(cx, cy); tctx.stroke(); tctx.restore();
+      }
     } else { raf = requestAnimationFrame(frame); }
     return () => { if (raf) cancelAnimationFrame(raf); };
   }, [keyId]);
 
   return html`
     <div className="workflow-agent-badge"
-         style=${{ left: ax + "px", top: ay + "px", transform: `scale(${invZoom})`, transformOrigin: "0 100%" }}>
-      <div className="aab-stage">
-        <canvas ref=${trailRef} className="aab-trail" width="88" height="88"/>
-        <div ref=${floaterRef} className="aab-floater" title=${title}>
-          <span className="aab-square aab-square-out"/>
-          <span className="aab-square aab-square-fill"/>
-          <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
-          ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
-        </div>
+         style=${{ left: nx + "px", top: ny + "px", width: (w || 200) + "px", height: (h || 200) + "px" }}>
+      <canvas ref=${trailRef} className="aab-trail"/>
+      <div ref=${floaterRef} className="aab-floater" title=${title}>
+        <span className="aab-square aab-square-out"/>
+        <span className="aab-square aab-square-fill"/>
+        <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
+        ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
       </div>
     </div>
   `;
@@ -52494,13 +52544,14 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto, workingPa
     }
     if (!working) continue;
     const isSection = n.kind === "section";
+    const w = isSection ? Math.max(220, n.w || 560) : (n.w || 200);
     const h = isSection ? Math.max(180, n.h || 560) : (n.h || 200);
     const title = isSection
       ? `An agent is working inside this section${count > 1 ? ` — ${count} nodes` : ""}`
       : "An agent is working on this node";
     badges.push(html`<${WorkflowAgentBadge}
       key=${n.id} keyId=${n.id}
-      ax=${n.x || 0} ay=${(n.y || 0) + h} invZoom=${invZoom}
+      nx=${n.x || 0} ny=${n.y || 0} w=${w} h=${h} invZoom=${invZoom}
       count=${isSection ? count : 0} title=${title} />`);
   }
   if (!badges.length) return null;
