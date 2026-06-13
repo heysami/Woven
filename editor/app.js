@@ -23662,6 +23662,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     if (!marquee) return;
     const onMove = (e) => {
+      // Lost-mouseup guard: if the button is no longer held (the release was
+      // eaten by an iframe, or happened off-window), end the marquee NOW
+      // instead of letting the rubber band stick to the cursor forever.
+      if (isReleasedDuringMove(e)) { onUp(); return; }
       const wp = (() => {
         const el = wrapRef.current;
         if (!el) return { x: e.clientX, y: e.clientY };
@@ -23705,11 +23709,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       setMarquee(null);
     };
+    // Esc cancels an in-progress marquee outright (no commit) — the user's
+    // instinct when a drag feels stuck. blur ends it cleanly if the window
+    // loses focus mid-drag (alt-tab, devtools) where the mouseup goes elsewhere.
+    const onEsc = (e) => { if (e.key === "Escape") setMarquee(null); };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
+    window.addEventListener("keydown", onEsc, true);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+      window.removeEventListener("keydown", onEsc, true);
     };
   }, [marquee, nodesInMarquee, wbItemsInRect, wrapRef]);
 
@@ -32625,6 +32637,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           data-wb-mode=${wbMode ? "whiteboard" : "build"}
           data-wb-tool=${wbMode ? wbTool : "none"}
           data-wb-dragging=${wbDragging ? "true" : "false"}
+          data-marquee=${marquee ? "true" : "false"}
         >
           <div
             className="workflow-canvas"
