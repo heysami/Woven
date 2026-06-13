@@ -20,6 +20,15 @@
   const html = htm.bind(React.createElement);
   const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+  // Woven line-icon — mirrors editor's Icon.Comment (16-box, 1.5pt round
+  // stroke). `size` defaults to the editor's 14px glyph footprint.
+  const CommentIcon = ({ size = 14 }) => html`
+    <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" style=${{ display: "block" }}>
+      <path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v6a1 1 0 01-1 1H7l-3 3v-3a1 1 0 01-1-1z"/>
+    </svg>`;
+
   // ── URL plumbing ──────────────────────────────────────────────────────
   // location.pathname is /s/<token>/ (gate 301s the slash-less form).
   const BASE = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
@@ -97,8 +106,8 @@
     const st = doc.createElement("style");
     st.id = "__sv_styles";
     st.textContent = [
-      ".__sv-hover { outline: 2px solid #4f46e5 !important; outline-offset: 2px !important; cursor: crosshair !important; }",
-      ".__sv-flash { outline: 3px solid #4f46e5 !important; outline-offset: 3px !important; transition: outline-color .25s; }",
+      ".__sv-hover { outline: 2px solid #16a06b !important; outline-offset: 2px !important; cursor: crosshair !important; }",
+      ".__sv-flash { outline: 3px solid #16a06b !important; outline-offset: 3px !important; transition: outline-color .25s; }",
       ".__sv-flash-fade { outline-color: transparent !important; }",
     ].join("\n");
     (doc.head || doc.documentElement).appendChild(st);
@@ -531,7 +540,7 @@
               if (!commentMode && !requireIdentity("Add a name before commenting.")) return;
               setDraft(null); setCommentMode(!commentMode);
             }}
-          >💬 ${commentMode ? "Click an element…" : "Comment"}</button>
+          ><${CommentIcon}/> ${commentMode ? "Click an element…" : "Comment"}</button>
           <button
             className=${"sv-btn" + (sidebarOpen ? " is-active" : "")}
             onClick=${() => setSidebarOpen(!sidebarOpen)}
@@ -603,7 +612,7 @@
                 ${visibleComments.length === 0 && html`
                   <div className="sv-empty">
                     <b>${filter === "open" ? "No open comments" : "Nothing here"}</b>
-                    Use the 💬 Comment button, then click any element in the prototype to leave feedback.
+                    Use the Comment button above, then click any element in the prototype to leave feedback.
                   </div>
                 `}
                 ${visibleComments.map((c) => html`

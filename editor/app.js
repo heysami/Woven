@@ -37905,7 +37905,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
       if (!el) return;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       const prevOutline = el.style.outline, prevOffset = el.style.outlineOffset;
-      el.style.outline = "3px solid #4f46e5";
+      el.style.outline = "3px solid #16a06b";  /* Woven green; literal — el lives in the prototype iframe (no DS tokens) */
       el.style.outlineOffset = "2px";
       setTimeout(() => { el.style.outline = prevOutline; el.style.outlineOffset = prevOffset; }, 1600);
     } catch {}
