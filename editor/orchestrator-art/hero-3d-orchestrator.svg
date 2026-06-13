@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Hero 3D orchestrator — a friendly 3D box character under a studio glint">
+  <!-- spark -->
+  <path d="M30 28v9M25.5 32.5h9" stroke-width="2.5" stroke="oklch(72% 0.13 60)"/>
+  <!-- studio glint (shiny-material highlight) -->
+  <path d="M128 30l2 5.5 5.5 2-5.5 2-2 5.5-2-5.5-5.5-2 5.5-2z" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <!-- box: top + right faces (depth) -->
+  <path d="M58 54L72 40h44L102 54z" fill="oklch(94% 0.05 140)"/>
+  <path d="M102 54l14-14v44l-14 14z" fill="oklch(96% 0.03 140)"/>
+  <!-- material highlight on the top face -->
+  <circle cx="92" cy="47" r="3" fill="#fff" stroke="none"/>
+  <!-- box: front face (white body) -->
+  <path d="M58 54h44v44H58z" fill="#fff"/>
+  <!-- face -->
+  <circle cx="72" cy="72" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="88" cy="72" r="2.4" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M74 79q6 5 12 0"/>
+  <ellipse cx="63" cy="78" rx="3.5" ry="2" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="97" cy="78" rx="3.5" ry="2" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- legs -->
+  <path d="M70 98v7M70 105h6M90 98v7M90 105h6"/>
+</svg>
