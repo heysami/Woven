@@ -14359,13 +14359,21 @@ function buildDsDarkCss(s) {
   if (!rP || !rS || !rT) return "";
   const pf = dsPickDarkFill(rP), sf = dsPickDarkFill(rS), tf = dsPickDarkFill(rT);
   const pfg = dsPickDarkFg(rP);
+  // Gradient surfaces (sidebar / hero / CTA) read as a big vivid block in dark
+  // if they keep the brand ramp's 700→900. Instead anchor them on a DARK,
+  // low-saturation tint of the primary hue (surface-level lightness) so they
+  // feel like a primary-tinted PANEL — still recognisably the brand colour,
+  // but it recedes as a surface rather than shouting like a button.
+  const ph = dsRgbToHsl(dsHexToRgb(P) || [7, 78, 207]);
+  const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.52), 0.17));
+  const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.58), 0.10));
   const lines = [
     `--primary-surface:${pf.fill};`,
     `--on-primary:${pf.onText};`,
     `--primary-fg:${pfg};`, `--primary-fg-emphasis:${pfg};`,
     `--primary-hover:${rP["400"]};`, `--primary-active:${rP["600"]};`,
     `--primary-surface-subtle:${rP["950"]};`, `--primary-surface-muted:${rP["900"]};`,
-    `--primary-grad-from:${rP["700"]};`, `--primary-grad-to:${rP["900"]};`,
+    `--primary-grad-from:${gradFrom};`, `--primary-grad-to:${gradTo};`,
     `--secondary-surface:${sf.fill};`, `--on-secondary:${sf.onText};`,
     `--tertiary-surface:${tf.fill};`, `--on-tertiary:${tf.onText};`,
     `--chip-primary-fg:${rP["300"]};`, `--chip-secondary-fg:${rS["300"]};`, `--chip-tertiary-fg:${rT["300"]};`,
