@@ -1142,7 +1142,24 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
         // wheel event would bail here.
         if (letSelectedScroll) {
           const selEl = e.target.closest('[data-selected="true"]');
-          if (selEl && !selEl.hasAttribute('data-no-internal-scroll')) return;
+          if (selEl && !selEl.hasAttribute('data-no-internal-scroll')) {
+            // If the selected node holds a (same-origin) iframe and the wheel
+            // reached US instead of the iframe, forward the scroll into it.
+            // Chrome keeps the wheel target pinned to the element hit at the
+            // last pointer-MOVE — when the iframe was still pointer-events:none
+            // (unselected) — so after a click-select the iframe won't scroll
+            // until the pointer physically moves. This bridges that gap so a
+            // freshly-selected prototype / asset / gallery scrolls immediately.
+            const ifr = selEl.querySelector("iframe");
+            if (ifr && ifr.contentWindow) {
+              try {
+                const m = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? (ifr.clientHeight || 600) : 1);
+                ifr.contentWindow.scrollBy(e.deltaX * m, e.deltaY * m);
+                e.preventDefault();
+              } catch { /* cross-origin iframe — leave native handling */ }
+            }
+            return;
+          }
         }
       }
       e.preventDefault();
