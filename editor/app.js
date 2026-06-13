@@ -52455,7 +52455,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     // arcing perpendicular for float, the straight base path CROSSING the node.
     let mvInit = false, sFrom = 0, sTo = 0, pFrom = [0, 0], pTo = [0, 0];
     let legT = 0, legDur = 2.6, arcSign = 1, dwell = 0;
-    let lastPx = 0, lastPy = 0;
+    let lastPx = 0, lastPy = 0, lastPxPrev = null, tilt = 0;   // tilt = lean into horizontal motion
     const trail = [];   // flat [x,y, …] of recent worker points, in node coords
     const MAX = 24;
     const particles = [];   // {x,y,vx,vy,life}
@@ -52575,9 +52575,18 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
 
       drawFace(faceT, forced);
       floater.dataset.phase = phase;
+      // Lean the diamond into its horizontal motion — tilt toward the side it's
+      // moving, eased so it's not jittery. Frozen phases (bye/vanish) ease to 0.
+      if (lastPxPrev === null) lastPxPrev = lastPx;
+      const vxScreen = (lastPx - lastPxPrev) / Math.max(0.3, iz);   // ≈ screen px / frame
+      lastPxPrev = lastPx;
+      const tiltTarget = (phase === "work" || phase === "enter")
+        ? Math.max(-0.22, Math.min(0.22, vxScreen * 0.014))
+        : 0;
+      tilt += (tiltTarget - tilt) * 0.12;
       // floater is in the FRONT layer, node-local coords (overflow visible so it
       // shows outside the node box).
-      floater.style.transform = `translate(${(lastPx - SF).toFixed(2)}px, ${(lastPy - SF).toFixed(2)}px) scale(${(iz * scale).toFixed(3)})`;
+      floater.style.transform = `translate(${(lastPx - SF).toFixed(2)}px, ${(lastPy - SF).toFixed(2)}px) scale(${(iz * scale).toFixed(3)}) rotate(${tilt.toFixed(3)}rad)`;
       floater.style.opacity = (phase === "vanish") ? String(Math.max(0, scale)) : "1";
 
       if (doTrail) { trail.push(lastPx, lastPy); if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2); }

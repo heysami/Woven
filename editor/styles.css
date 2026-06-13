@@ -7360,14 +7360,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .aab-square-fill {
   width: 28px; height: 28px;
-  /* flat fill (no pattern) — a light tint of --hot so the solid-hot inner
-     animation reads against it */
-  background: color-mix(in oklch, var(--hot) 15%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--hot) 55%, transparent);
+  /* white fill (the solid-hot inner animation reads against it) + a light
+     orange outline */
+  background: var(--surface);
+  border: 1px solid color-mix(in oklch, var(--hot) 34%, transparent);
 }
 .aab-square-out {
   width: 38px; height: 38px;
-  border: 1.5px solid color-mix(in oklch, var(--hot) 60%, transparent);
+  border: 1.5px solid color-mix(in oklch, var(--hot) 40%, transparent);
   background: transparent;
   /* the outline FOLLOWS the fill's breathing — lagging, with a bigger swing */
   animation-name: aabPulseBig;
