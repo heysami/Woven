@@ -16557,8 +16557,20 @@ function SharesLanding({ onCountChange }) {
         const st = STATUS_META[s.status] || STATUS_META.stopped;
         const isBusy = !!busy[s.id];
         const cc = s.commentCounts || {};
+        // Per-share preview. URL carries the share's OWN project (the landing
+        // has no active project, so apiUrl() can't add it) + ?v=mtime so a
+        // re-capture busts the cache.
+        const thumbSrc = s.hasThumbnail
+          ? `/__share_thumbnail?project=${encodeURIComponent(s.project)}&prototype=${encodeURIComponent(s.prototype)}&v=${s.thumbnailV || 0}`
+          : null;
         return html`
           <div className="shares-row" key=${s.id}>
+            <div className="shares-row-thumb" title=${thumbSrc ? "Preview captured at share time — refreshes when the prototype updates" : "Preview will appear once captured"}>
+              ${thumbSrc
+                ? html`<img src=${thumbSrc} alt=${"Preview of " + s.label} loading="lazy"/>`
+                : html`<div className="shares-row-thumb-empty"><${Icon.Image}/></div>`}
+            </div>
+            <div className="shares-row-body">
             <div className="shares-row-main">
               <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
               <div className="shares-row-id">
@@ -16608,6 +16620,7 @@ function SharesLanding({ onCountChange }) {
               `}
             </div>
             ${s.error && s.status === "error" && html`<div className="shares-row-error">${s.error}</div>`}
+            </div>
           </div>
         `;
       })}

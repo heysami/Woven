@@ -117,6 +117,27 @@ Comment mutations broadcast `share-comments-changed` on the per-project
 `/__workflow/events` SSE channel; the editor panels also poll (5–6s) since
 visitors write through the gate at any time.
 
+## Preview thumbnails
+
+Each share carries a PNG preview (one per shared prototype) rendered in the
+Shares landing row. Capture path reuses the landing project-card mechanism
+(`_chrome_screenshot` → headless Chrome at 1280×720 of
+`source/<slug>/index.html`); the PNG lands at `<project>/share/thumb-<slug>.png`
+(path owned by `shares.py`). It refreshes at:
+
+- **share create** + **tunnel start** (the moment of sharing),
+- **source change** — the file-watcher's `asset-changed` hook recaptures any
+  shared prototype whose `source/<slug>/**` changed (debounced 20s so an agent
+  edit burst doesn't storm Chrome),
+- **boot backfill** — `_backfill_share_thumbnails()` captures any share missing
+  a PNG a few seconds after the daemon binds, so shares created before this
+  feature get a preview on the next restart with no manual step.
+
+Served by `GET /__share_thumbnail?project=&prototype=&v=<mtime>` (long-cache,
+`?v` busts on recapture). `share_summary` exposes `hasThumbnail` + `thumbnailV`.
+Manual recapture: `POST /__share/<id>/thumbnail`. No Chrome → the row shows a
+placeholder; everything else still works.
+
 ## Live source, not a snapshot
 
 The gate serves the project's CURRENT `source/<slug>/` tree. When the agent

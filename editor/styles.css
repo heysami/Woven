@@ -21641,8 +21641,43 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.55);
   display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 14px;
+}
+/* Per-share preview thumbnail — fixed 16:9 card on the row's left edge. */
+.shares-row-thumb {
+  flex: none;
+  width: 132px;
+  height: 76px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.shares-row-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+.shares-row-thumb-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.shares-row-thumb-empty svg { width: 22px; height: 22px; }
+.shares-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: 8px;
+  justify-content: center;
 }
 .shares-row-main {
   display: flex;

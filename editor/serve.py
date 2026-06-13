@@ -1645,30 +1645,23 @@ def _find_chrome_binary() -> "str | None":
     return None
 
 
-def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
-    """Screenshot the chosen thumbnail page (served by this daemon) to
-    <project>/.thumbnail.png — headless Chrome at the same 1280×720 viewport
-    the live-iframe fallback renders at, so the capture is pixel-equivalent
-    to what the iframe showed. Runs on a worker thread spawned by
-    /__thumbnail_prototype/set; failures only log and leave the landing on
-    its live-iframe fallback, never block or fail the set call."""
+def _chrome_screenshot(url: str, out_png: str) -> bool:
+    """Headless-Chrome capture of `url` → out_png at 1280×720. Returns True
+    on success. The shared core for the landing project thumbnail AND the
+    share thumbnails (see _capture_thumbnail_screenshot / share variant).
+    Missing Chrome / failed capture → False (callers degrade, never raise)."""
     import tempfile as _tempfile
-    out = os.path.join(project_root, ".thumbnail.png")
-    if not os.path.isfile(os.path.join(project_root, tp.replace("/", os.sep))):
-        return
     chrome = _find_chrome_binary()
     if not chrome:
-        print("[thumbnail] no Chrome/Chromium binary found — keeping live-iframe thumbnail", flush=True)
-        return
-    url = f"http://127.0.0.1:{PORT}/{urllib.parse.quote(tp)}"
-    if project_id:
-        url += "?project=" + urllib.parse.quote(project_id)
-    # Chrome's headless command handler validates the --screenshot extension
-    # (".tmp" → "Unsupported screenshot image file type"), so the staging
-    # file must itself end in .png.
-    tmp_png = os.path.join(project_root, ".thumbnail.tmp.png")
-    profile = _tempfile.mkdtemp(prefix="th-thumb-shot-")
+        print("[thumbnail] no Chrome/Chromium binary found", flush=True)
+        return False
+    # Chrome's headless handler validates the --screenshot extension, so the
+    # staging file must itself end in .png. Stage beside the output for an
+    # atomic same-filesystem os.replace.
+    tmp_png = out_png + ".tmp.png"
+    profile = _tempfile.mkdtemp(prefix="th-shot-")
     try:
+        os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
         cmd = [
             chrome,
             "--headless=new",
@@ -1701,20 +1694,94 @@ def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -
             proc.kill()
         proc.wait(timeout=15)
         if os.path.isfile(tmp_png) and os.path.getsize(tmp_png) > 0:
-            os.replace(tmp_png, out)
-            print(f"[thumbnail] captured {out}", flush=True)
-        else:
-            err = b""
-            with contextlib.suppress(Exception):
-                err = proc.stderr.read() if proc.stderr else b""
-            lines = err.decode("utf-8", "replace").strip().splitlines()
-            print(f"[thumbnail] capture produced no PNG for {url}" + (f" — {lines[-1]}" if lines else ""), flush=True)
+            os.replace(tmp_png, out_png)
+            return True
+        err = b""
+        with contextlib.suppress(Exception):
+            err = proc.stderr.read() if proc.stderr else b""
+        lines = err.decode("utf-8", "replace").strip().splitlines()
+        print(f"[thumbnail] capture produced no PNG for {url}" + (f" — {lines[-1]}" if lines else ""), flush=True)
+        return False
     except Exception as e:
         print(f"[thumbnail] capture failed for {url}: {e}", flush=True)
+        return False
     finally:
         with contextlib.suppress(OSError):
             os.remove(tmp_png)
         shutil.rmtree(profile, ignore_errors=True)
+
+
+def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
+    """Screenshot the chosen thumbnail page (served by this daemon) to
+    <project>/.thumbnail.png — headless Chrome at the same 1280×720 viewport
+    the live-iframe fallback renders at. Runs on a worker thread spawned by
+    /__thumbnail_prototype/set; failures only log and leave the landing on
+    its live-iframe fallback, never block or fail the set call."""
+    if not os.path.isfile(os.path.join(project_root, tp.replace("/", os.sep))):
+        return
+    url = f"http://127.0.0.1:{PORT}/{urllib.parse.quote(tp)}"
+    if project_id:
+        url += "?project=" + urllib.parse.quote(project_id)
+    if _chrome_screenshot(url, os.path.join(project_root, ".thumbnail.png")):
+        print(f"[thumbnail] captured {os.path.join(project_root, '.thumbnail.png')}", flush=True)
+
+
+# ── Share thumbnails ────────────────────────────────────────────────────
+# One PNG per shared prototype, captured from source/<slug>/index.html and
+# stored at <project>/share/thumb-<slug>.png (path owned by shares.py). The
+# Shares landing tab renders it; capture fires at share-create / start, on
+# source changes (debounced), and as a boot-time backfill for existing
+# shares. Debounced so a burst of agent edits doesn't spawn a Chrome storm.
+_SHARE_THUMB_LAST: dict = {}
+_SHARE_THUMB_LOCK = threading.Lock()
+
+
+def _capture_share_thumbnail(project_root: str, project_id: str, prototype: str) -> None:
+    entry = "source/" + "/".join(prototype.split("/")) + "/index.html"
+    if not os.path.isfile(os.path.join(project_root, entry.replace("/", os.sep))):
+        return
+    out = _shares.share_thumbnail_abspath(project_root, prototype)
+    url = f"http://127.0.0.1:{PORT}/{urllib.parse.quote(entry)}"
+    if project_id:
+        url += "?project=" + urllib.parse.quote(project_id)
+    if _chrome_screenshot(url, out):
+        print(f"[share] thumbnail captured {out}", flush=True)
+
+
+def _spawn_share_thumbnail(project_root: str, project_id: str, prototype: str,
+                           debounce_s: float = 0.0) -> None:
+    if debounce_s > 0:
+        key = (project_id, prototype)
+        now = time.time()
+        with _SHARE_THUMB_LOCK:
+            if now - _SHARE_THUMB_LAST.get(key, 0.0) < debounce_s:
+                return
+            _SHARE_THUMB_LAST[key] = now
+    threading.Thread(
+        target=_capture_share_thumbnail,
+        args=(project_root, project_id, prototype),
+        name="share-thumb", daemon=True,
+    ).start()
+
+
+def _backfill_share_thumbnails() -> None:
+    """Boot-time: capture a thumbnail for every share that lacks one. Runs
+    sequentially (one Chrome at a time) a few seconds after the server binds
+    so existing shares — including those created before this feature — get a
+    preview on the next daemon start without any manual step."""
+    time.sleep(4)  # give the listener time to bind + start serving source/
+    try:
+        shares = _shares.shares_load().get("shares", [])
+    except Exception:
+        return
+    for s in shares:
+        try:
+            proot = resolve_project_root({"project": s.get("project")})
+        except Exception:
+            continue
+        if os.path.isfile(_shares.share_thumbnail_abspath(proot, s.get("prototype"))):
+            continue
+        _capture_share_thumbnail(proot, s.get("project"), s.get("prototype"))
 
 
 def _spawn_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
@@ -3056,6 +3123,42 @@ def _broadcast_asset_change(project_id: str, paths) -> None:
     for w in waiters:
         try: w.push("asset-changed", {"paths": paths})
         except Exception: pass
+    # Share mode — keep a shared prototype's preview thumbnail current when
+    # its source changes (agent edits, manual writes). Debounced inside the
+    # spawn; only fires for prototypes that actually have a share.
+    try:
+        _refresh_share_thumbnails_for_changes(project_id, paths)
+    except Exception:
+        pass
+
+
+def _refresh_share_thumbnails_for_changes(project_id: str, paths) -> None:
+    src = [p for p in paths if isinstance(p, str) and p.startswith("source/")]
+    if not src:
+        return
+    try:
+        shares = _shares.shares_load().get("shares", [])
+    except Exception:
+        shares = []
+    if not shares:
+        return
+    try:
+        target = os.path.realpath(resolve_project_root({"project": project_id}))
+    except Exception:
+        return
+    for s in shares:
+        proto = s.get("prototype")
+        if not proto:
+            continue
+        try:
+            sroot = os.path.realpath(resolve_project_root({"project": s.get("project")}))
+        except Exception:
+            continue
+        if sroot != target:
+            continue
+        prefix = "source/" + proto + "/"
+        if any(p == prefix.rstrip("/") or p.startswith(prefix) for p in src):
+            _spawn_share_thumbnail(sroot, s.get("project"), proto, debounce_s=20.0)
 
 
 def _broadcast_share_comments_changed(project_id: str, prototype: str) -> None:
@@ -5765,7 +5868,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._export_asset(qs)
             if parsed.path == "/__share/create":
                 return self._share_create(qs)
-            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url)$", parsed.path)
+            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url|thumbnail)$", parsed.path)
             if m_share:
                 return self._share_op(m_share.group(1), m_share.group(2), qs)
             if parsed.path == "/__share_comments":
@@ -5981,6 +6084,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._export_check_name(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__shares":
             return self._shares_list()
+        if url_path == "/__share_thumbnail":
+            return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
             return self._share_comments_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ls_dirs":
@@ -11702,6 +11807,36 @@ class H(http.server.SimpleHTTPRequestHandler):
             "gatePort":    _shares.GATE_PORT,
         })
 
+    # GET /__share_thumbnail?project=<id>&prototype=<slug>[&v=<mtime>]
+    # Serves the per-share preview PNG (share/thumb-<slug>.png). The Shares
+    # landing <img> hits this with ?v=thumbnailV so a re-capture busts the
+    # browser cache. 404 when none exists yet (UI shows a placeholder).
+    def _share_thumbnail_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = (_qs_get(qs, "prototype") or "").strip()
+        if not proto:
+            return self._reply(400, {"error": "missing prototype"})
+        path = _shares.share_thumbnail_abspath(project_root, proto)
+        if not os.path.isfile(path):
+            return self._reply(404, {"error": "no thumbnail"})
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return self._reply(500, {"error": f"read failed: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        # Immutable per ?v= — the client always passes the mtime, so a long
+        # cache is safe and avoids re-downloading the PNG on every poll.
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
+
     # POST /__share/create?project=<id>  body {prototype, emailGate?, label?, start?}
     # Idempotent per (project, prototype) — re-creating returns the existing
     # share. start defaults true: create-and-tunnel is the one-click path.
@@ -11733,6 +11868,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _shares.tunnel_start(rec["id"])
             except Exception as e:
                 tunnel_error = str(e)
+        # Capture a fresh preview thumbnail (headless Chrome → share/thumb-
+        # <slug>.png). Async; the Shares tab picks it up on its next poll.
+        _spawn_share_thumbnail(project_root, pid, proto)
         out = {"ok": True, "created": created,
                "share": _shares.share_summary(_shares.share_get(rec["id"]) or rec)}
         if tunnel_error:
@@ -11752,6 +11890,21 @@ class H(http.server.SimpleHTTPRequestHandler):
         if op == "start":
             try:
                 _shares.tunnel_start(share_id)
+            except Exception as e:
+                return self._reply(500, {"error": str(e)})
+            # Refresh the preview when (re)publishing — the prototype may have
+            # changed since the share was created.
+            try:
+                proot = resolve_project_root({"project": rec.get("project")})
+                _spawn_share_thumbnail(proot, rec.get("project"), rec.get("prototype"))
+            except Exception:
+                pass
+        elif op == "thumbnail":
+            # Manual recapture (used by the boot backfill's manual twin + a UI
+            # refresh affordance). Synchronous-ish: spawn + report.
+            try:
+                proot = resolve_project_root({"project": rec.get("project")})
+                _spawn_share_thumbnail(proot, rec.get("project"), rec.get("prototype"))
             except Exception as e:
                 return self._reply(500, {"error": str(e)})
         elif op == "stop":
@@ -16223,6 +16376,10 @@ if __name__ == "__main__":
         _shares.start_gate_server(PORT)
         threading.Thread(target=_shares.restore_active_tunnels, daemon=True,
                          name="share-tunnel-restore").start()
+        # Backfill preview thumbnails for any existing shares that lack one
+        # (covers shares created before this feature). Sequential, post-bind.
+        threading.Thread(target=_backfill_share_thumbnails, daemon=True,
+                         name="share-thumb-backfill").start()
     except Exception as e:
         print(f"[share] boot failed (share mode disabled): {e}", flush=True)
     # v2.23 — auto-replace any stale serve.py holding our port. Without this,

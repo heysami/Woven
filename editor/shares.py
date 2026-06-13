@@ -187,11 +187,38 @@ def share_delete(share_id):
     with _REGISTRY_LOCK:
         data = shares_load()
         before = len(data["shares"])
+        rec = next((s for s in data["shares"] if s.get("id") == share_id), None)
         data["shares"] = [s for s in data["shares"] if s.get("id") != share_id]
         if len(data["shares"]) != before:
             _shares_save(data)
+            # Best-effort thumbnail cleanup so a re-created share for the same
+            # prototype doesn't show a stale preview.
+            if rec is not None:
+                try:
+                    root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
+                    tp = share_thumbnail_abspath(root, rec.get("prototype"))
+                    if os.path.isfile(tp):
+                        os.remove(tp)
+                except Exception:
+                    pass
             return True
     return False
+
+
+# ── Thumbnails — one PNG per shared prototype ────────────────────────────
+# Captured by the daemon (headless Chrome) at share-create / start / source
+# change, stored beside the comment store at <project_root>/share/thumb-
+# <safe-slug>.png. The daemon owns capture (it has the Chrome helpers); this
+# module only owns the canonical PATH so registry summaries + the capture
+# code agree on where the file lives.
+
+def share_thumbnail_relpath(prototype):
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", prototype or "main")
+    return os.path.join("share", f"thumb-{safe}.png")
+
+
+def share_thumbnail_abspath(project_root, prototype):
+    return os.path.join(project_root, share_thumbnail_relpath(prototype))
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -848,9 +875,17 @@ def share_summary(rec):
     out["localUrl"] = (f"http://127.0.0.1:{GATE_PORT}/s/{rec.get('token','')}/"
                        if GATE_PORT else "")
     out["urlChanged"] = bool(rec.get("prevUrl")) and rec.get("prevUrl") != rec.get("lastUrl")
+    out["hasThumbnail"] = False
+    out["thumbnailV"] = 0
     try:
         root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
         out["commentCounts"] = comment_counts(root, rec.get("prototype"))
+        try:
+            st = os.stat(share_thumbnail_abspath(root, rec.get("prototype")))
+            out["hasThumbnail"] = True
+            out["thumbnailV"] = int(st.st_mtime)   # cache-bust key for the <img>
+        except OSError:
+            pass
     except Exception:
         out["commentCounts"] = {"open": 0, "done": 0, "archived": 0, "total": 0}
     return out
