@@ -33343,7 +33343,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onAddOutputAsset=${addOutputAsset}
               />
             `)}
-            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
+            <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
             <${WorkflowWhiteboardLayer}
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
@@ -52300,14 +52300,21 @@ function useWorkflowWorkingPaths() {
 //   prefers-reduced-motion (static row of squares).
 const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
-function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
+function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, working, count, title, onExited }) {
   const canvasRef = useRef(null);    // inner face / sequence
   const trailRef = useRef(null);     // tether + trail, spans the whole node
   const floaterRef = useRef(null);   // the diamond + face; roams the perimeter
   // Geometry can change frame-to-frame (node resize / zoom) — keep the latest
   // in a ref so the single rAF loop reads fresh values without re-subscribing.
-  const geomRef = useRef({ w, h, invZoom });
-  geomRef.current = { w, h, invZoom };
+  const geomRef = useRef({ w, h, invZoom, zoom, pan });
+  geomRef.current = { w, h, invZoom, zoom, pan };
+  // `working` flips false when the run ends — the loop reads it to start the
+  // farewell (^_^ wave → scale out → particles), then calls onExited so the
+  // layer drops the badge. Read via refs so the rAF loop never re-subscribes.
+  const workingRef = useRef(working !== false);
+  useEffect(() => { workingRef.current = working !== false; }, [working]);
+  const onExitedRef = useRef(onExited);
+  onExitedRef.current = onExited;
   useEffect(() => {
     const cv = canvasRef.current, tcv = trailRef.current, floater = floaterRef.current;
     if (!cv || !tcv || !floater) return;
@@ -52333,6 +52340,8 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
     const ORDER = ["WAVE", "W2S", "SQ1", "FACE", "SQ2", "ASCII", "SQ3", "S2W"];
     const CYCLE = ORDER.reduce((s, k) => s + PH[k], 0);
     const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
+    const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+    const easeIn = (p) => p * p * p;
     const lerp = (a, b, t) => a + (b - a) * t;
     const fillRect = (x, y, w2, h2) => { ctx.fillStyle = hot; ctx.fillRect(x - w2 / 2, y - h2 / 2, w2, h2); };
     const strokeRect = (x, y, s) => { ctx.strokeStyle = hot; ctx.lineWidth = 1; ctx.strokeRect(x - s / 2, y - s / 2, s, s); };
@@ -52349,13 +52358,16 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
       return lerp(h0, h1, ease(Math.min(1, f / 0.34)));
     };
     const EYE_Y = CY - 2, MOUTH_Y = CY + 2.5;
-    const drawFace = (t) => {
+    const drawFace = (t, forced) => {
       ctx.clearRect(0, 0, FW, FH);
       ctx.save();
       ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
-      const lt = (t + seed * CYCLE) % CYCLE;
-      let acc = 0, phase = ORDER[0], pp = 0;
-      for (const k of ORDER) { if (lt < acc + PH[k]) { phase = k; pp = (lt - acc) / PH[k]; break; } acc += PH[k]; }
+      let phase = "FACE", pp = 0;
+      if (!forced) {
+        const lt = (t + seed * CYCLE) % CYCLE;
+        let acc = 0; phase = ORDER[0];
+        for (const k of ORDER) { if (lt < acc + PH[k]) { phase = k; pp = (lt - acc) / PH[k]; break; } acc += PH[k]; }
+      }
       if (phase === "WAVE") {
         for (let i = 0; i < N; i++) fillRect(slotX(i), CY, BAR_W, barH(i, t));
       } else if (phase === "W2S") {
@@ -52402,12 +52414,64 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
       s -= W; return [0, H - s];
     };
 
-    // Roam state — the worker glides along the perimeter to random targets on
-    // (usually) a different side, dwells, then picks another.
-    let curS = 0, tgtS = 0, dwell = 0, inited = false;
+    // Lifecycle phases: enter (fly in from the chat icon) → work (roam the
+    // perimeter) → bye (^_^ + waving hand, a few seconds) → vanish (scale out,
+    // burst into particles). `working` flipping false triggers bye from any
+    // active phase.
+    const ENTER_DUR = 0.8, BYE_DUR = 2.4, VANISH_DUR = 0.55, PART_LIFE = 0.75;
+    let phase = (workingRef.current ? "enter" : "bye"), phaseStart = 0, phaseInit = false;
+    let enterFrom = null, enterTo = null;
+    let curS = 0, tgtS = 0, dwell = 0, roamInit = false;
+    let lastPx = 0, lastPy = 0;
     const trail = [];   // flat [x,y, …] of recent worker points, in node coords
     const MAX = 24;
-    let raf = 0, t0 = 0, prevTs = 0, scrambleTick = 0, lastScramble = 0;
+    const particles = [];   // {x,y,vx,vy,life}
+    let raf = 0, t0 = 0, prevTs = 0, scrambleTick = 0, lastScramble = 0, exited = false;
+
+    // The chat icon (top-right RunsMenu button) in this badge's node-local
+    // coords — where the worker is "summoned" from. Mapped via the canvas
+    // pan/zoom; falls back to just above the node's top edge.
+    const computeEnterFrom = (W, H) => {
+      try {
+        const g = geomRef.current;
+        const btn = document.querySelector(".runs-trigger");
+        const cs = btn ? btn.getBoundingClientRect() : null;
+        const sx = cs ? cs.left + cs.width / 2 : (window.innerWidth - 60);
+        const sy = cs ? cs.top + cs.height / 2 : 52;
+        const wr = (wrapRef && wrapRef.current) ? wrapRef.current.getBoundingClientRect() : { left: 0, top: 0 };
+        const z = g.zoom || 1, p = g.pan || { x: 0, y: 0 };
+        return [(sx - wr.left - p.x) / z - nx, (sy - wr.top - p.y) / z - ny];
+      } catch { return [W * 0.5, -90]; }
+    };
+    const spawnParticles = (x, y, iz) => {
+      const NP = 16;
+      for (let i = 0; i < NP; i++) {
+        const a = (i / NP) * Math.PI * 2 + rnd(i, 9) * 0.7;
+        const sp = (24 + rnd(i, 3) * 46) * iz;
+        particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 12 * iz, life: 1 });
+      }
+    };
+    const advanceRoam = (t, dt, W, H, peri, iz) => {
+      if (!roamInit) { curS = (seed * peri) % peri; tgtS = ((seed * 0.37 + 0.5) * peri) % peri; roamInit = true; }
+      if (dwell > 0) { dwell -= dt; }
+      else {
+        let d = tgtS - curS;
+        if (d > peri / 2) d -= peri; else if (d < -peri / 2) d += peri;
+        const step = (peri / 13) * dt;
+        if (Math.abs(d) <= step) {
+          curS = tgtS;
+          dwell = 0.4 + rnd(7, Math.floor(t)) * 1.3;
+          const off = (0.28 + rnd(11, Math.floor(t) + 1) * 0.5) * peri;
+          const dir = rnd(13, Math.floor(t) + 2) < 0.5 ? -1 : 1;
+          tgtS = (((curS + dir * off) % peri) + peri) % peri;
+        } else { curS += Math.sign(d) * step; }
+      }
+      let [px, py] = perimPoint(curS, W, H, peri);
+      const cx = W / 2, cy = H / 2;
+      const ivx = cx - px, ivy = cy - py, ilen = Math.hypot(ivx, ivy) || 1;
+      const bob = (Math.sin(t * 1.7 + seed * 6.28) * 0.5 + 0.5) * 7 * iz;
+      return [px + (ivx / ilen) * bob, py + (ivy / ilen) * bob];
+    };
 
     const frame = (ts) => {
       if (!t0) { t0 = ts; prevTs = ts; }
@@ -52415,69 +52479,72 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
       const dt = Math.min(0.05, Math.max(0, (ts - prevTs) / 1000)); prevTs = ts;
       const g = geomRef.current;
       const W = Math.max(40, g.w || 200), H = Math.max(40, g.h || 200), iz = g.invZoom || 1;
-      const peri = 2 * (W + H);
+      const peri = 2 * (W + H), cx = W / 2, cy = H / 2;
       ensureTrailCanvas(W, H);
-      drawFace(t);
+      if (!phaseInit) { phaseStart = t; phaseInit = true; }
+      // run ended → start the farewell from whatever phase we're in
+      if (phase !== "bye" && phase !== "vanish" && !workingRef.current) { phase = "bye"; phaseStart = t; }
 
-      // advance the roam
-      if (!inited) { curS = (seed * peri) % peri; tgtS = ((seed * 0.37 + 0.5) * peri) % peri; inited = true; }
-      if (dwell > 0) {
-        dwell -= dt;
-      } else {
-        let d = tgtS - curS;
-        if (d > peri / 2) d -= peri; else if (d < -peri / 2) d += peri;   // shorter arc
-        const step = (peri / 13) * dt;   // ~13s per full lap
-        if (Math.abs(d) <= step) {
-          curS = tgtS;
-          dwell = 0.4 + rnd(7, Math.floor(t)) * 1.3;
-          const off = (0.28 + rnd(11, Math.floor(t) + 1) * 0.5) * peri;     // jump to another side
-          const dir = rnd(13, Math.floor(t) + 2) < 0.5 ? -1 : 1;
-          tgtS = (((curS + dir * off) % peri) + peri) % peri;
-        } else {
-          curS += Math.sign(d) * step;
+      let scale = 1, tetherA = 0.45, doTrail = true, forced = false, faceT = t;
+
+      if (phase === "enter") {
+        if (!enterFrom) {
+          if (!roamInit) { curS = (seed * peri) % peri; tgtS = ((seed * 0.37 + 0.5) * peri) % peri; roamInit = true; }
+          const tp = perimPoint(curS, W, H, peri); enterTo = [tp[0], tp[1]];
+          enterFrom = computeEnterFrom(W, H);
         }
+        const e = Math.min(1, (t - phaseStart) / ENTER_DUR), ee = easeOut(e);
+        lastPx = lerp(enterFrom[0], enterTo[0], ee); lastPy = lerp(enterFrom[1], enterTo[1], ee);
+        scale = Math.max(0.05, ee); tetherA = 0.45 * e;
+        if (e >= 1) { phase = "work"; phaseStart = t; }
+      } else if (phase === "work") {
+        const p2 = advanceRoam(t, dt, W, H, peri, iz); lastPx = p2[0]; lastPy = p2[1];
+      } else if (phase === "bye") {
+        forced = true; faceT = t - phaseStart;
+        tetherA = Math.max(0, 0.45 * (1 - (t - phaseStart) / BYE_DUR));
+        if ((t - phaseStart) >= BYE_DUR) { phase = "vanish"; phaseStart = t; spawnParticles(lastPx, lastPy, iz); }
+      } else { // vanish
+        forced = true; faceT = BYE_DUR;
+        const e = Math.min(1, (t - phaseStart) / VANISH_DUR);
+        scale = Math.max(0, 1 - easeIn(e)); tetherA = 0; doTrail = false;
+        if (e >= 1) exited = true;
       }
-      let [px, py] = perimPoint(curS, W, H, peri);
-      const cx = W / 2, cy = H / 2;
-      // gentle inward bob for life (screen-constant amplitude)
-      const ivx = cx - px, ivy = cy - py, ilen = Math.hypot(ivx, ivy) || 1;
-      const bob = (Math.sin(t * 1.7 + seed * 6.28) * 0.5 + 0.5) * 7 * iz;
-      px += (ivx / ilen) * bob; py += (ivy / ilen) * bob;
 
-      // position the worker (counter-scaled, centered on px,py)
-      floater.style.transform = `translate(${(px - SF).toFixed(2)}px, ${(py - SF).toFixed(2)}px) scale(${iz})`;
+      drawFace(faceT, forced);
+      floater.dataset.phase = phase;
+      floater.style.transform = `translate(${(lastPx - SF).toFixed(2)}px, ${(lastPy - SF).toFixed(2)}px) scale(${(iz * scale).toFixed(3)})`;
+      floater.style.opacity = (phase === "vanish") ? String(Math.max(0, scale)) : "1";
 
-      trail.push(px, py);
-      if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2);
+      if (doTrail) { trail.push(lastPx, lastPy); if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2); }
+      else if (trail.length) trail.length = 0;
 
       if (tctx) {
-        tctx.setTransform(sc, 0, 0, sc, 0, 0);   // node coords → backing px
+        tctx.setTransform(sc, 0, 0, sc, 0, 0);
         tctx.clearRect(0, 0, tcvW, tcvH);
-        const lw = Math.max(0.4, iz);            // ≈1px on screen
-        const mk = 2.6 * iz;
-        // dashed tether: worker → node CENTER
-        tctx.save();
-        tctx.globalAlpha = 0.45; tctx.strokeStyle = hot; tctx.lineWidth = lw;
-        tctx.setLineDash([4 * iz, 4 * iz]);
-        tctx.beginPath(); tctx.moveTo(px, py); tctx.lineTo(cx, cy); tctx.stroke();
-        tctx.restore();
-        // flow marks travelling worker → center ("work flowing into the node")
-        const FLOW_N = 5, FLOW_SPEED = 0.45;
-        for (let p = 0; p < FLOW_N; p++) {
-          const prog = ((t * FLOW_SPEED) + p / FLOW_N) % 1;
-          const fx = px + (cx - px) * prog, fy = py + (cy - py) * prog;
+        const lw = Math.max(0.4, iz), mk = 2.6 * iz;
+        if (tetherA > 0.01) {
           tctx.save();
-          tctx.globalAlpha = Math.sin(prog * Math.PI) * 0.8;
-          tctx.fillStyle = hot;
-          tctx.translate(fx, fy); tctx.rotate(Math.PI / 4);
-          tctx.fillRect(-mk / 2, -mk / 2, mk, mk);
+          tctx.globalAlpha = tetherA; tctx.strokeStyle = hot; tctx.lineWidth = lw;
+          tctx.setLineDash([4 * iz, 4 * iz]);
+          tctx.beginPath(); tctx.moveTo(lastPx, lastPy); tctx.lineTo(cx, cy); tctx.stroke();
           tctx.restore();
+          if (phase === "work" || phase === "enter") {
+            const FLOW_N = 5, FLOW_SPEED = 0.45;
+            for (let p = 0; p < FLOW_N; p++) {
+              const prog = ((t * FLOW_SPEED) + p / FLOW_N) % 1;
+              const fx = lastPx + (cx - lastPx) * prog, fy = lastPy + (cy - lastPy) * prog;
+              tctx.save();
+              tctx.globalAlpha = Math.sin(prog * Math.PI) * 0.8 * Math.min(1, tetherA / 0.45);
+              tctx.fillStyle = hot;
+              tctx.translate(fx, fy); tctx.rotate(Math.PI / 4);
+              tctx.fillRect(-mk / 2, -mk / 2, mk, mk);
+              tctx.restore();
+            }
+          }
         }
-        // fading comet trail behind the roaming worker
         const pts = trail.length / 2;
         for (let k = 0; k < pts - 1; k++) {
-          const f = k / pts;
-          const s2 = (3 + f * 6) * iz;
+          const f = k / pts, s2 = (3 + f * 6) * iz;
           tctx.save();
           tctx.globalAlpha = f * f * 0.28;
           tctx.translate(trail[k * 2], trail[k * 2 + 1]); tctx.rotate(Math.PI / 4);
@@ -52485,12 +52552,31 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
           tctx.strokeRect(-s2 / 2, -s2 / 2, s2, s2);
           tctx.restore();
         }
+        // celebration particles (during/after vanish)
+        for (const pt of particles) {
+          if (pt.life <= 0) continue;
+          pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 34 * iz * dt; pt.life -= dt / PART_LIFE;
+          const ps = Math.max(0, (2.6 * iz) * pt.life);
+          tctx.save();
+          tctx.globalAlpha = Math.max(0, pt.life) * 0.85; tctx.fillStyle = hot;
+          tctx.translate(pt.x, pt.y); tctx.rotate(Math.PI / 4);
+          tctx.fillRect(-ps / 2, -ps / 2, ps, ps);
+          tctx.restore();
+        }
+      }
+
+      if (exited && particles.every(p => p.life <= 0)) {
+        if (tctx) { tctx.setTransform(sc, 0, 0, sc, 0, 0); tctx.clearRect(0, 0, tcvW, tcvH); }
+        if (onExitedRef.current) onExitedRef.current(keyId);
+        return;   // stop the loop; layer unmounts us
       }
       raf = requestAnimationFrame(frame);
     };
 
     if (reduce) {
       // Static: face squares + worker parked on the top edge + one tether line.
+      // If we mounted already-ended, just exit immediately (no animation).
+      if (!workingRef.current) { if (onExitedRef.current) onExitedRef.current(keyId); return () => {}; }
       ctx.save(); ctx.beginPath(); ctx.arc(CX, CY, CLIP, 0, Math.PI * 2); ctx.clip();
       for (let i = 0; i < N; i++) fillRect(slotX(i), CY, SQ, SQ);
       ctx.restore();
@@ -52518,6 +52604,7 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
         <span className="aab-square aab-square-out"/>
         <span className="aab-square aab-square-fill"/>
         <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
+        <span className="aab-wave" aria-hidden="true">👋</span>
         ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
       </div>
     </div>
@@ -52528,17 +52615,16 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, count, title }) {
 // every node map, so one edit covers every node kind (incl. sections) and the
 // badges stack above the cards. pointer-events:none — pure decoration.
 // Counter-scaled by 1/zoom so the badge stays a constant on-screen size.
-function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto, workingPaths }) {
+function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, chatBusy, activeProto, workingPaths }) {
   const list = nodes || [];
   const invZoom = Math.max(0.3, Math.min(3, 1 / (zoom || 1)));
-  const badges = [];
+  // Currently-working entries.
+  const liveEntries = [];
   for (const n of list) {
-    let working = false;
-    let count = 0;
+    let working = false, count = 0;
     if (n.kind === "section") {
       const inside = workflowSectionContainedNodes(n, list).filter(x => workflowNodeIsWorking(x, chatBusy, activeProto, workingPaths));
-      count = inside.length;
-      working = count > 0;
+      count = inside.length; working = count > 0;
     } else {
       working = workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths);
     }
@@ -52549,13 +52635,63 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, chatBusy, activeProto, workingPa
     const title = isSection
       ? `An agent is working inside this section${count > 1 ? ` — ${count} nodes` : ""}`
       : "An agent is working on this node";
-    badges.push(html`<${WorkflowAgentBadge}
-      key=${n.id} keyId=${n.id}
-      nx=${n.x || 0} ny=${n.y || 0} w=${w} h=${h} invZoom=${invZoom}
-      count=${isSection ? count : 0} title=${title} />`);
+    liveEntries.push({ id: n.id, nx: n.x || 0, ny: n.y || 0, w, h, count: isSection ? count : 0, title });
   }
-  if (!badges.length) return null;
-  return html`<div className="workflow-agent-badge-layer">${badges}</div>`;
+  const liveIds = new Set(liveEntries.map(e => e.id));
+
+  // Keep a badge mounted for a beat AFTER its run ends so it can play the
+  // farewell (^_^ wave → vanish → particles). The badge calls onExited when
+  // done; a 6s safety timer covers a paused rAF (hidden tab). Reconciled in
+  // render via refs so the live→linger handoff has no unmount gap.
+  const lingerRef = useRef(new Map());   // id → geometry entry
+  const geomRef = useRef(new Map());     // id → last live geometry
+  const prevRef = useRef(new Set());
+  const timersRef = useRef(new Map());
+  const [, setTick] = useState(0);
+  const force = useCallback(() => setTick(t => (t + 1) | 0), []);
+  const onExited = useCallback((id) => {
+    lingerRef.current.delete(id);
+    const tm = timersRef.current.get(id);
+    if (tm) { clearTimeout(tm); timersRef.current.delete(id); }
+    force();
+  }, [force]);
+
+  for (const e of liveEntries) geomRef.current.set(e.id, e);
+  for (const id of prevRef.current) {
+    if (!liveIds.has(id) && !lingerRef.current.has(id)) {
+      const geo = geomRef.current.get(id);
+      if (geo) {
+        lingerRef.current.set(id, geo);
+        if (!timersRef.current.has(id)) {
+          timersRef.current.set(id, setTimeout(() => {
+            lingerRef.current.delete(id); timersRef.current.delete(id); force();
+          }, 6000));
+        }
+      }
+    }
+  }
+  for (const id of liveIds) {
+    if (lingerRef.current.has(id)) {
+      lingerRef.current.delete(id);
+      const tm = timersRef.current.get(id);
+      if (tm) { clearTimeout(tm); timersRef.current.delete(id); }
+    }
+  }
+  prevRef.current = new Set(liveIds);
+  useEffect(() => () => { for (const tm of timersRef.current.values()) clearTimeout(tm); timersRef.current.clear(); }, []);
+
+  const entries = [
+    ...liveEntries.map(e => ({ ...e, working: true })),
+    ...[...lingerRef.current.entries()].filter(([id]) => !liveIds.has(id)).map(([, geo]) => ({ ...geo, working: false })),
+  ];
+  if (!entries.length) return null;
+  return html`<div className="workflow-agent-badge-layer">
+    ${entries.map(e => html`<${WorkflowAgentBadge}
+      key=${e.id} keyId=${e.id}
+      nx=${e.nx} ny=${e.ny} w=${e.w} h=${e.h}
+      invZoom=${invZoom} zoom=${zoom} pan=${pan} wrapRef=${wrapRef}
+      working=${e.working} count=${e.count} title=${e.title} onExited=${onExited} />`)}
+  </div>`;
 }
 
 /* Edges layer — three kinds of connectors, stacked:

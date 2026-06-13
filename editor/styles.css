@@ -7331,6 +7331,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   transform-origin: 44px 44px;
   will-change: transform;
 }
+/* Waving hand shown only during the farewell (^_^) phase; the JS sets
+   data-phase on .aab-floater. The hand counter-scales with the floater so it
+   stays a constant ~18px on screen. */
+.aab-wave {
+  position: absolute; left: 56%; top: 4%;
+  font-size: 18px; line-height: 1;
+  display: none; transform-origin: 70% 90%;
+  pointer-events: none;
+}
+.aab-floater[data-phase="bye"] .aab-wave { display: block; animation: aab-wave 0.5s ease-in-out infinite; }
+@keyframes aab-wave { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
 .aab-square {
   position: absolute; left: 50%; top: 50%;
   border-radius: 0;   /* sharp diamond corners */
