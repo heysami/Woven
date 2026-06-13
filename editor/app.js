@@ -14957,6 +14957,12 @@ Restate your plan briefly; if anything is ambiguous, ask — otherwise proceed a
 // left, an optional primary action on the right, a one-line description below,
 // and optional `extra` (filter-relevant prose / category list) beneath that.
 function SystemSectionHead({ name, count, desc, action, extra }) {
+  // desc/extra arrive as htm template results — a multi-child template (text +
+  // <code> + …) is a bare array, which preact flags for missing keys when
+  // rendered directly. Key array children so the console stays clean.
+  const keyed = (x) => Array.isArray(x)
+    ? x.map((c, i) => (c && typeof c === "object" && c.key == null) ? { ...c, key: "k" + i } : c)
+    : x;
   return html`
     <header className="sys-shead">
       <div className="sys-shead-row">
@@ -14966,8 +14972,8 @@ function SystemSectionHead({ name, count, desc, action, extra }) {
         </div>
         ${action ? html`<div className="sys-shead-action">${action}</div>` : null}
       </div>
-      ${desc && html`<div className="sys-shead-desc">${desc}</div>`}
-      ${extra || null}
+      ${desc && html`<div className="sys-shead-desc">${keyed(desc)}</div>`}
+      ${keyed(extra) || null}
     </header>
   `;
 }
@@ -15841,7 +15847,7 @@ function McpLanding() {
         count=${servers.length}
         desc=${html`Optional MCP servers the harness exposes to spawned <code>claude</code> subprocesses via <code>--mcp-config</code>. Built-in <code>WebFetch</code> and <code>WebSearch</code> stay primary; these are escalation paths (Chrome for logged-in pages, Figma for design files). Runtime config: <code>${data.configPath}</code>${data.configured ? "" : " (not present — flag will be skipped at spawn-time)"}.`}
         action=${html`<button className="sysadd-bar-btn" type="button" onClick=${() => setAddOpen(o => !o)} aria-expanded=${addOpen}>
-          ${addOpen ? html`<${Icon.X}/><span>Cancel</span>` : html`<${Icon.Plus}/><span>Add server</span>`}</button>`}
+          <${addOpen ? Icon.X : Icon.Plus}/><span>${addOpen ? "Cancel" : "Add server"}</span></button>`}
         extra=${html`<div className="sys-shead-extra">${wiredCount} of ${servers.length} wired into the runtime config.</div>`}
       />
 
