@@ -14378,19 +14378,16 @@ function buildDsDarkCss(s) {
   emitRamp(s.tertiaryDark, Tl, rT, "tertiary");
   const pf = dsPickDarkFill(rP), sf = dsPickDarkFill(rS), tf = dsPickDarkFill(rT);
   const pfg = dsPickDarkFg(rP);
-  // Gradient surfaces (sidebar / hero / CTA): a DARK, low-saturation tint of the
-  // dark primary hue at surface-level lightness — a brand-tinted panel that
-  // recedes, not a vivid button.
+  // Dark surface scale is built DIRECTLY from the chosen dark base — what you
+  // pick IS the page. Elevations are just simple lighter shades of that exact
+  // colour; the gradient is darker shades of it. No hue / saturation remapping,
+  // no thresholds. Default (no override) = harmony with the dark primary.
   const ph = dsRgbToHsl(dsHexToRgb(Pd) || [7, 78, 207]);
-  const gradFrom = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.55), 0.115));
-  const gradTo = dsRgbToHex(dsHslToRgb(ph[0], Math.min(ph[1], 0.6), 0.06));
-  // Dark surfaces harmonise with the dark primary (warm→warm greys, cool→cool).
-  // The Neutral dark column (s.neutralDark) overrides the surface temperature.
-  const surfHsl = s.neutralDark ? dsRgbToHsl(dsHexToRgb(s.neutralDark) || [33, 36, 41]) : ph;
-  const hue = surfHsl[0];
-  const baseSat = Math.min(surfHsl[1] * (s.neutralDark ? 1.6 : 1), 0.18);
-  const surf = (L, sat) => dsRgbToHex(dsHslToRgb(hue, sat === undefined ? baseSat : sat, L));
-  const sTxt = Math.min(baseSat, 0.05);   // faint tint on light text so it gels
+  const pageRgb = dsHexToRgb(s.neutralDark || dsDarkSurfaceDefault(Pd)) || [34, 36, 40];
+  const lighten = (t) => dsRgbToHex(dsMix(pageRgb, [255, 255, 255], t));
+  const darken = (t) => dsRgbToHex(dsMix(pageRgb, [0, 0, 0], t));
+  const gradFrom = darken(0.14);
+  const gradTo = darken(0.42);
   lines.push(
     `--primary-surface:${pf.fill};`,
     `--on-primary:${pf.onText};`,
@@ -14401,15 +14398,15 @@ function buildDsDarkCss(s) {
     `--secondary-surface:${sf.fill};`, `--on-secondary:${sf.onText};`,
     `--tertiary-surface:${tf.fill};`, `--on-tertiary:${tf.onText};`,
     `--chip-primary-fg:${rP["300"]};`, `--chip-secondary-fg:${rS["300"]};`, `--chip-tertiary-fg:${rT["300"]};`,
-    // harmony surface scale (page → elevations) + lines + soft neutrals
-    `--surface:${surf(0.145)};`, `--surface-default:${surf(0.184)};`,
-    `--surface-medium:${surf(0.225)};`, `--surface-strong:${surf(0.275)};`,
-    `--fg-on-surface:${surf(0.145)};`,
-    `--border-subtle:${surf(0.225)};`, `--border-default:${surf(0.31, Math.min(baseSat, 0.12))};`,
-    `--interactive-hover:${surf(0.225)};`, `--interactive-active:${surf(0.31)};`,
-    `--neutral-50:${surf(0.184)};`, `--neutral-70:${surf(0.205)};`, `--neutral-80:${surf(0.225)};`,
-    `--neutral-100:${surf(0.31)};`, `--neutral-150:${surf(0.355)};`, `--neutral-200:${surf(0.42)};`,
-    `--fg-default:${surf(0.905, sTxt)};`, `--fg-muted:${surf(0.69, sTxt)};`, `--fg-subtle:${surf(0.51, sTxt)};`,
+    // surface scale = the picked dark base + simple lighter shades
+    `--surface:${lighten(0)};`, `--surface-default:${lighten(0.06)};`,
+    `--surface-medium:${lighten(0.13)};`, `--surface-strong:${lighten(0.22)};`,
+    `--fg-on-surface:${lighten(0)};`,
+    `--border-subtle:${lighten(0.13)};`, `--border-default:${lighten(0.30)};`,
+    `--interactive-hover:${lighten(0.13)};`, `--interactive-active:${lighten(0.30)};`,
+    `--neutral-50:${lighten(0.06)};`, `--neutral-70:${lighten(0.10)};`, `--neutral-80:${lighten(0.13)};`,
+    `--neutral-100:${lighten(0.30)};`, `--neutral-150:${lighten(0.40)};`, `--neutral-200:${lighten(0.52)};`,
+    `--fg-default:${lighten(0.85)};`, `--fg-muted:${lighten(0.60)};`, `--fg-subtle:${lighten(0.44)};`,
   );
   // Status colours: dark base defaults to the light status colour; the dark
   // steps (tinted dark chip + light label) derive from it.
