@@ -23750,6 +23750,38 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       console.error("[regenerate-canvas-frames]", err);
     }
   }, [onStartChatWithPrompt]);
+
+  // Prototype view nodes — spawn a read-only viewer for one of the editor's
+  // derived views (User flow / Information architecture / Timeline) on the
+  // workflow canvas, next to the prototype. Same shape as openCanvasFrames'
+  // spawnNode, but no generate gate: these views just render whatever
+  // model.* data exists (empty if the prototype hasn't been analysed yet),
+  // and they're view-only — the iframe is pointer-events: none, no agent
+  // dispatch, no regen. `kind` is one of the keys in PROTOTYPE_VIEW_NODE
+  // ("userflow" | "ia" | "timeline"); "frames" routes through
+  // openCanvasFrames instead (it has the generate-first flow).
+  const openPrototypeView = useCallback((protoNode, kind) => {
+    if (!protoNode || !PROTOTYPE_VIEW_NODE[kind]) return;
+    const branch = nodePrototype(protoNode);
+    const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const w = 800, h = 540;
+    const px = typeof protoNode.x === "number" ? protoNode.x : 0;
+    const py = typeof protoNode.y === "number" ? protoNode.y : 0;
+    const pw = typeof protoNode.w === "number" ? protoNode.w : 720;
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []), {
+        id,
+        kind,
+        x: Math.round(px + pw + 60),
+        y: Math.round(py),
+        w, h,
+        branch,
+        host: protoNode.id,
+      }],
+    }));
+  }, [setData]);
+
   const openZoomForAsset = useCallback((node) => {
     if (!node || node.assetKind !== "html") return;
     if (!node.path || node.path.startsWith("inline:")) return;
@@ -32348,11 +32380,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 commentsOpen=${commentsPanelNodeId === n.id}
                 hasPickedChild=${pickedElement?.nodeId === n.id}
                 onOpenCanvasFrames=${openCanvasFrames}
+                onOpenPrototypeView=${openPrototypeView}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
             `)}
-            ${(data.nodes || []).filter(n => n.kind === "frames").map(n => html`
+            ${(data.nodes || []).filter(n => PROTOTYPE_VIEW_KINDS.includes(n.kind)).map(n => html`
               <${WorkflowFramesNode}
                 key=${n.id}
                 node=${n}
@@ -32365,7 +32398,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onRemove=${() => removeNode(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
-                onRegenerate=${() => regenerateCanvasFrames(nodePrototype(n))}
+                onRegenerate=${n.kind === "frames" ? (() => regenerateCanvasFrames(nodePrototype(n))) : null}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "simulation").map(n => html`
@@ -39836,30 +39869,47 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
 }
 
 // ─── WorkflowFramesNode ───────────────────────────────────────────────
-// Spawned from the prototype-node's Canvas-frames button. Embeds the
-// editor's Canvas tab (view=canvas + embed=1) for the prototype's branch
-// inside an iframe. Read-only viewer — no ports, no agent dispatch, no
-// versioning. The frames + arrows the user sees are the same `model.frames`
-// / `model.arrows` the editor-mode Canvas tab reads ([app.js: CanvasView]).
+// Spawned from the prototype-node's view buttons (Canvas frames / User flow
+// / Information architecture / Timeline). Embeds one of the editor's read-
+// only views (embed=1 + view=<tab>) for the prototype's branch inside an
+// iframe. Read-only viewer — no ports, no agent dispatch, no versioning, no
+// pan/zoom/edit (the iframe is pointer-events: none). The data the user sees
+// is the same `model.*` the editor-mode tabs read.
 //
-// Title bar (left → right): drag handle, label `Canvas frames · <prototype>`,
-// Open-in-editor, Regenerate (dispatches the frames + arrows agent — the
-// prototype may have changed structurally), Refresh (passive iframe reload —
-// pulls a fresh editor/data.js from disk, no agent), Close.
-// Body: scale-to-fit iframe rendered at 1920×1200 native viewport. Resize
+// Which view a given node renders is keyed off `node.kind` via
+// PROTOTYPE_VIEW_NODE below — `frames` → Canvas, `userflow` → User flow,
+// `ia` → Information architecture, `timeline` → Timeline.
+//
+// Title bar (left → right): drag handle, label `<View> · <prototype>`,
+// Open-in-editor, Regenerate (frames node only — dispatches the frames +
+// arrows agent), Refresh (passive iframe reload — pulls a fresh
+// editor/data.js from disk, no agent), Close.
+// Body: native-size iframe; the workflow canvas transform scales it. Resize
 // corner at bottom-right.
+//
+// View config per node.kind. `view` is the editor tab the embed locks to;
+// `label` is the bar title + LOD veil text; `glyph` is the bar icon.
+const PROTOTYPE_VIEW_NODE = {
+  frames:   { view: "canvas",   label: "Canvas frames",           glyph: Icon.Canvas },
+  userflow: { view: "flow",     label: "User flow",               glyph: Icon.Flow },
+  ia:       { view: "ia",       label: "Information architecture", glyph: Icon.Tree },
+  timeline: { view: "timeline", label: "Timeline",                glyph: Icon.Clock },
+};
+const PROTOTYPE_VIEW_KINDS = Object.keys(PROTOTYPE_VIEW_NODE);
+
 function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
   const protoSlug = nodePrototype(node);
+  const cfg = PROTOTYPE_VIEW_NODE[node.kind] || PROTOTYPE_VIEW_NODE.frames;
   const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
 
   // Iframe URL: hits editor/index.html with embed=1 (skip toolbar/chat/
-  // edits panel) + view=canvas (lock first tab) + prototype=<slug> (point
-  // editor/data.js scope at the right prototype). apiUrl appends
+  // edits panel) + view=<cfg.view> (lock the right tab) + prototype=<slug>
+  // (point editor/data.js scope at the right prototype). apiUrl appends
   // ?project=... when in workspace mode.
-  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=canvas&prototype=${encodeURIComponent(protoSlug)}`);
+  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=${cfg.view}&prototype=${encodeURIComponent(protoSlug)}`);
   const iframeSrc = nonce === 0
     ? baseUrl
     : baseUrl + "&_n=" + nonce;
@@ -39955,8 +40005,8 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
       <div className="workflow-node-bar workflow-node-frames-bar" onMouseDown=${onHandleDown}>
-        <span className="workflow-node-glyph"><${Icon.Canvas}/></span>
-        <span className="workflow-node-label">Canvas frames · ${protoSlug}</span>
+        <span className="workflow-node-glyph"><${cfg.glyph}/></span>
+        <span className="workflow-node-label">${cfg.label} · ${protoSlug}</span>
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}
           className="workflow-node-action"
@@ -39969,7 +40019,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
             // apiUrl-aware construction so workspace projects keep the
             // ?project=… query that serve.py uses for routing.
             try {
-              const url = apiUrl(`/editor/index.html?view=canvas&prototype=${encodeURIComponent(protoSlug)}`);
+              const url = apiUrl(`/editor/index.html?view=${cfg.view}&prototype=${encodeURIComponent(protoSlug)}`);
               window.open(url, "_blank", "noopener");
             } catch {}
           }}
@@ -40005,7 +40055,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           ref=${iframeRef}
           className="workflow-node-iframe"
           src=${lodLive ? iframeSrc : undefined}
-          title=${"Canvas frames: " + protoSlug}
+          title=${cfg.label + ": " + protoSlug}
           style=${{
             /* v3.5 — render the embedded editor at native pixel size, no
                scale-to-fit. The workflow-canvas transform already scales
@@ -40039,7 +40089,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       ${lod !== "full" && html`<${WorkflowLodVeil}
         zoom=${zoom}
         glyph="▦"
-        label=${"Canvas frames · " + protoSlug}
+        label=${cfg.label + " · " + protoSlug}
       />`}
       <div
         className="workflow-node-resize-corner"
@@ -40050,7 +40100,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   `;
 }
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, lodVisible }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = nodePrototype(node);
@@ -41116,6 +41166,30 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             ariaLabel: "Open canvas frames",
             onClick: () => onOpenCanvasFrames(node),
             className: "workflow-node-top-action-canvas-frames",
+          },
+          onOpenPrototypeView && {
+            key: "userflow",
+            icon: html`<${Icon.Flow}/>`,
+            tip: "Open user flow — spawn a read-only node showing the editor's User flow view for this prototype.",
+            ariaLabel: "Open user flow",
+            onClick: () => onOpenPrototypeView(node, "userflow"),
+            className: "workflow-node-top-action-userflow",
+          },
+          onOpenPrototypeView && {
+            key: "ia",
+            icon: html`<${Icon.Tree}/>`,
+            tip: "Open information architecture — spawn a read-only node showing the editor's IA view for this prototype.",
+            ariaLabel: "Open information architecture",
+            onClick: () => onOpenPrototypeView(node, "ia"),
+            className: "workflow-node-top-action-ia",
+          },
+          onOpenPrototypeView && {
+            key: "timeline",
+            icon: html`<${Icon.Clock}/>`,
+            tip: "Open timeline — spawn a read-only node showing the editor's Timeline view for this prototype.",
+            ariaLabel: "Open timeline",
+            onClick: () => onOpenPrototypeView(node, "timeline"),
+            className: "workflow-node-top-action-timeline",
           },
           onZoom && {
             key: "zoom",
