@@ -15085,7 +15085,7 @@ function SystemLanding({ onSpawnSystemThread }) {
   return html`
     <div className="system-landing">
       <nav className="system-sidebar" aria-label="System sections">
-        <div className="system-sidebar-header">System reference</div>
+        <div className="system-sidebar-header">Capabilities</div>
         <div className="system-sidebar-subhead">What this app can do, what's available to dispatch, and what each piece is for.</div>
         ${sections.map(s => html`
           <button
@@ -17031,9 +17031,9 @@ function ProjectsLanding({ info, projects, onReload }) {
                 className=${"landing-tab" + (activeTab === "system" ? " is-active" : "")}
                 onClick=${() => setActiveTab("system")}
                 aria-pressed=${activeTab === "system"}
-                title="System reference — orchestrators, skills, subagents, and node kinds the app ships."
+                title="Capabilities — orchestrators, skills, subagents, and node kinds the app ships."
               >
-                <span className="landing-tab-label">System</span>
+                <span className="landing-tab-label">Capabilities</span>
               </button>
             </div>
             <div className="landing-titlebar-right">
