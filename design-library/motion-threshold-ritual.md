@@ -9,8 +9,10 @@ medium: hybrid
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, aesthetic-sculptural-minimal, recipe-brand-story-journey, shell-scroll-journey-scene, aesthetic-japanese-poster-layout]
 notForUseWhen: Conversion-critical or utility surfaces (anything a user visits to DO something — dashboards, docs, checkout, support), repeat-visit products (the ritual delights once and obstructs forever), or briefs where nothing behind the gate justifies the withholding.
 images:
-  - src: motion-threshold-ritual.png
-    reason: Representative technique still.
+  - src: motion-threshold-ritual-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-threshold-ritual-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Threshold ritual (entry gate as a designed moment)

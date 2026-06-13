@@ -4,6 +4,8 @@
 images:
   - src: recipe-brand-story-journey-ui.png
     reason: Full recipe UI mockup.
+  - src: recipe-brand-story-journey-isolated.png
+    reason: Signature scene, isolated.
 ---
 # Brand story journey (identity explainer as scroll film)
 

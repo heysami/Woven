@@ -9,8 +9,10 @@ medium: dom-svg
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-y2k-memphis-loud, style-doodle, aesthetic-zine-type-wall, recipe-neo-grotesque-portfolio]
 notForUseWhen: Touch-primary audiences (no cursor exists — the entire device evaporates on mobile), data-dense or form-heavy surfaces (precision pointing beats personality), or restrained registers where an expressive cursor is the loudest thing on the page.
 images:
-  - src: motion-cursor-character.png
-    reason: Representative technique still.
+  - src: motion-cursor-character-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-cursor-character-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # Cursor as character (velocity-deforming, identity-swapping pointer)

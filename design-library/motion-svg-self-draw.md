@@ -9,8 +9,10 @@ medium: dom-svg
 pairsPrototypes: [style-doodle, style-outline-wireframe, style-kinetic-line-accents, aesthetic-cottagecore, aesthetic-craft-sketchbook, recipe-editorial-magazine]
 notForUseWhen: The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth — kinetic-line-accents is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).
 images:
-  - src: motion-svg-self-draw.png
-    reason: Representative technique still.
+  - src: motion-svg-self-draw-ui.png
+    reason: Motion technique UI mockup.
+  - src: motion-svg-self-draw-isolated.png
+    reason: Signature technique, isolated.
 ---
 
 # SVG self-draw (hand-made marks draw themselves in on scroll)

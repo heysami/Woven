@@ -4,6 +4,8 @@
 images:
   - src: recipe-jp-corporate-recruit-ui.png
     reason: Full recipe UI mockup.
+  - src: recipe-jp-corporate-recruit-isolated.png
+    reason: Signature scene, isolated.
 ---
 # Japanese corporate recruit (white-pop hiring one-pager)
 
