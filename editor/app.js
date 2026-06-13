@@ -16477,6 +16477,8 @@ function SharesLanding({ onCountChange }) {
   const [busy, setBusy] = useState({});         // shareId → true while an op runs
   const [err, setErr] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [query, setQuery] = useState("");       // free-text filter
+  const [projectFilter, setProjectFilter] = useState("");  // "" = all projects
   const reload = useCallback(() => {
     fetch("/__shares")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
@@ -16521,6 +16523,14 @@ function SharesLanding({ onCountChange }) {
 
   const shares = (data && data.shares) || [];
   const cfMissing = data && data.cloudflared && !data.cloudflared.found;
+  // Distinct projects (for the filter dropdown) + the active text/project filter.
+  const projectIds = [...new Set(shares.map((s) => s.project))].sort();
+  const q = query.trim().toLowerCase();
+  const filteredShares = shares.filter((s) => {
+    if (projectFilter && s.project !== projectFilter) return false;
+    if (!q) return true;
+    return [s.label, s.project, s.prototype].some((v) => (v || "").toLowerCase().includes(q));
+  });
   const STATUS_META = {
     "running":        { dot: "ok",    label: "Running" },
     "starting":       { dot: "warn",  label: "Starting…" },
@@ -16533,6 +16543,29 @@ function SharesLanding({ onCountChange }) {
   return html`
     <div className="shares-landing">
       ${err && html`<div className="shares-error-banner">${err}</div>`}
+      <div className="shares-served-banner">
+        <span className="shares-served-dot"></span>
+        <span>Links are served from <b>this computer</b> — people can only open them while it's on and the share is running.</span>
+      </div>
+      ${shares.length > 0 && html`
+        <div className="shares-toolbar">
+          <input
+            className="shares-search"
+            type="search"
+            placeholder="Search shares…"
+            value=${query}
+            onInput=${(e) => setQuery(e.target.value)}
+          />
+          ${projectIds.length > 1 && html`
+            <select className="shares-project-filter" value=${projectFilter}
+              onChange=${(e) => setProjectFilter(e.target.value)}>
+              <option value="">All projects</option>
+              ${projectIds.map((p) => html`<option key=${p} value=${p}>${p}</option>`)}
+            </select>
+          `}
+          <span className="shares-toolbar-count">${filteredShares.length} of ${shares.length}</span>
+        </div>
+      `}
       ${cfMissing && html`
         <div className="shares-cf-hint">
           <b>cloudflared is not installed.</b> Shares publish through Cloudflare quick
@@ -16553,7 +16586,13 @@ function SharesLanding({ onCountChange }) {
           </p>
         </div>
       `}
-      ${shares.map((s) => {
+      ${shares.length > 0 && filteredShares.length === 0 && html`
+        <div className="shares-empty" style=${{ padding: "28px 16px" }}>
+          <b>No shares match</b>
+          <p>Try a different search${projectFilter ? " or clear the project filter" : ""}.</p>
+        </div>
+      `}
+      ${filteredShares.map((s) => {
         const st = STATUS_META[s.status] || STATUS_META.stopped;
         const isBusy = !!busy[s.id];
         const cc = s.commentCounts || {};

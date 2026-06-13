@@ -21600,6 +21600,64 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { top: 0; }
   padding: 8px 12px;
   font-size: 12.5px;
 }
+/* "Served from this machine" note — clear but unobtrusive (one slim line). */
+.shares-served-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklch, var(--accent) 28%, transparent);
+  color: var(--accent-text);
+  border-radius: 9px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.shares-served-banner b { font-weight: 650; }
+.shares-served-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+}
+.shares-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shares-search {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 11px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+.shares-search:focus { border-color: var(--accent); }
+.shares-project-filter {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+}
+.shares-project-filter:focus { border-color: var(--accent); outline: none; }
+.shares-toolbar-count {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
 .shares-cf-hint {
   background: #fffbeb;
   border: 1px solid #fde68a;
