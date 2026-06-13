@@ -14539,9 +14539,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "id": proj_id, "trashedTo": target})
 
     # GET /__file_stat?path=<project-relative>[&project=<id>]
-    #   Cheap content signature for a single project file. The canvas DS-gallery
-    #   node uses it to detect "gallery.html changed since I last acknowledged"
-    #   and surface the "remember to update the rest of the DS trio" banner.
+    #   Cheap content signature for a project file OR directory. The canvas
+    #   DS-gallery node uses it to detect "the design system changed since I
+    #   last acknowledged" and surface the "keep the DS trio in sync" banner.
+    #   - File path → sha1 of its bytes.
+    #   - Directory path → sha1 over the IMMEDIATE (non-recursive) regular
+    #     files' (name + bytes). For a design-systems/<id>/ dir that's exactly
+    #     the trio + meta.json (styles.css / gallery.html / DESIGN.md /
+    #     meta.json) and any other top-level file; subdirs (templates/,
+    #     shells/, fonts/, assets/) are intentionally NOT folded in.
     #   Path is resolved within the project root; traversal is rejected.
     def _file_stat(self, qs):
         try:
@@ -14555,9 +14561,27 @@ class H(http.server.SimpleHTTPRequestHandler):
         abs_path = os.path.normpath(os.path.join(root, rel))
         if abs_path != root and not abs_path.startswith(root + os.sep):
             return self._reply(400, {"error": "path escapes project"})
-        if not os.path.isfile(abs_path):
-            return self._reply(200, {"exists": False})
         try:
+            if os.path.isdir(abs_path):
+                h = hashlib.sha1()
+                names = sorted(n for n in os.listdir(abs_path)
+                               if os.path.isfile(os.path.join(abs_path, n)))
+                latest = 0.0
+                for n in names:
+                    fp = os.path.join(abs_path, n)
+                    h.update(n.encode("utf-8")); h.update(b"\0")
+                    st = os.stat(fp)
+                    latest = max(latest, st.st_mtime)
+                    with open(fp, "rb") as f:
+                        for chunk in iter(lambda: f.read(65536), b""):
+                            h.update(chunk)
+                    h.update(b"\0")
+                return self._reply(200, {
+                    "exists": True, "dir": True,
+                    "hash": h.hexdigest()[:16], "mtime": latest, "files": len(names),
+                })
+            if not os.path.isfile(abs_path):
+                return self._reply(200, {"exists": False})
             st = os.stat(abs_path)
             h = hashlib.sha1()
             with open(abs_path, "rb") as f:

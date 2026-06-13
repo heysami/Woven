@@ -7750,6 +7750,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .chat-composer-queue-body {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
   background: transparent;
   border: 0;
@@ -7759,15 +7762,31 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font-size: 11.5px;
   line-height: 1.35;
   cursor: pointer;
+  overflow: hidden;
+}
+.chat-composer-queue-preview {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chat-composer-queue-body:hover {
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+.chat-composer-queue-body:hover .chat-composer-queue-preview {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.chat-composer-queue-body:hover {
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+.chat-composer-queue-meta {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.chat-composer-queue-meta svg { width: 12px; height: 12px; }
 .chat-composer-queue-rm {
   width: 24px;
   border: 0;
@@ -9089,7 +9108,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   max-width: 100%;
 }
 .workflow-node-ds-attach-chip-link { color: var(--accent); }
-.workflow-node-ds-attach-icon { font-size: 11px; line-height: 1; }
+.workflow-node-ds-attach-icon { display: inline-flex; align-items: center; line-height: 1; color: var(--text-faint); }
+.workflow-node-ds-attach-icon svg { width: 12px; height: 12px; }
+.workflow-node-ds-attach-btn svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 2px; }
 .workflow-node-ds-attach-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -15908,16 +15929,19 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    neutral pill that doesn't compete with the accent Send button. */
 .chat-composer-stop {
   height: 32px;
-  padding: 0 12px;
+  width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--text);
-  font-weight: 600;
-  font-size: 12.5px;
   cursor: pointer;
   border: 1px solid var(--border-strong);
   flex-shrink: 0;
 }
+.chat-composer-stop svg { width: 13px; height: 13px; }
 .chat-composer-stop:hover { background: var(--surface-3); border-color: var(--text-faint); }
 .chat-composer-send:hover:not([disabled]) { filter: brightness(1.05); }
 .chat-composer-send[disabled] {

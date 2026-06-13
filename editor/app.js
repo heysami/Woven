@@ -632,6 +632,7 @@ const Icon = {
   Share:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="12" cy="3.8" r="1.9"/><circle cx="12" cy="12.2" r="1.9"/><circle cx="4" cy="8" r="1.9"/><path d="M5.7 7.1l4.6-2.4M5.7 8.9l4.6 2.4"/></svg>`,
   Check:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8.5l3.5 3.5L13 5"/></svg>`,
   Circle:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="5.5"/></svg>`,
+  Stop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3.5" y="3.5" width="9" height="9" rx="2" fill="currentColor"/></svg>`,
   Save:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 2.5h8.5L13.5 5v8.5a.5.5 0 01-.5.5H3a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"/><path d="M5 2.5v3.5h5V2.5M5.5 9.5h5"/></svg>`,
   // v2.51 — TE icon sweep, round 2: the last emoji holdouts in node chrome
   // (audit shield, zoom magnifier, strict lock, rembg scissors, eye preview).
@@ -10366,7 +10367,6 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         <div className="chat-composer-queue" role="list" aria-label=${`${queue.length} queued message${queue.length === 1 ? "" : "s"}`}>
           ${queue.map((q, i) => {
             const preview = (q.text || "").trim().replace(/\s+/g, " ").slice(0, 80) || (q.attachments.length || q.uploads.length ? "(attachments only)" : "(empty)");
-            const meta = (q.attachments.length ? ` · ${q.attachments.length}📎` : "") + (q.uploads.length ? ` · ${q.uploads.length}📁` : "");
             const titleParts = [
               `Queued message #${i + 1} — click to edit, × to drop`,
               q.text || "(no text)",
@@ -10381,7 +10381,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                   className="chat-composer-queue-body"
                   title=${titleParts.join("\n\n")}
                   onClick=${() => pullQueuedIntoComposer(q.id)}
-                >${preview}${meta}</button>
+                ><span className="chat-composer-queue-preview">${preview}</span>${q.attachments.length ? html`<span className="chat-composer-queue-meta"><${Icon.Clip}/>${q.attachments.length}</span>` : null}${q.uploads.length ? html`<span className="chat-composer-queue-meta"><${Icon.Folder}/>${q.uploads.length}</span>` : null}</button>
                 <button
                   type="button"
                   className="chat-composer-queue-rm"
@@ -10553,7 +10553,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           type="button"
           onClick=${onStop}
           title="Stop the agent"
-        >Stop</button>
+          aria-label="Stop the agent"
+        ><${Icon.Stop}/></button>
       `}
       <button
         className=${"chat-composer-send" + (wouldQueue ? " chat-composer-send-queue" : "")}
@@ -10578,7 +10579,6 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       >
         ${busy ? "…" : (wouldQueue ? "Queue" : "Send")}
         ${isNew && selectionCount > 0 && html`<span className="chat-composer-send-badge" aria-label=${`${selectionCount} selected nodes as context`}>· ${selectionCount}</span>`}
-        ${queue.length > 0 && html`<span className="chat-composer-send-badge" aria-label=${`${queue.length} queued`}>· ${queue.length} in queue</span>`}
       </button>
       ${error && html`<div className="chat-composer-error">${error}</div>`}
     </div>
@@ -43516,21 +43516,23 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     `;
   }
 
-  // DS-gallery reminder — when design-systems/<id>/gallery.html changes,
-  // nudge the user to also update the rest of the trio (styles.css /
-  // DESIGN.md / meta.json). Keyed on the file's content hash (via
-  // /__file_stat) so it re-appears on each genuine edit and survives reloads
-  // + edits made while the editor was closed. Dismissal stores the
-  // acknowledged hash on the node (node.dsGalleryAckHash), persisted in
-  // workflow.json; the banner returns only when the hash changes again.
+  // DS reminder — when ANY top-level design-system file changes (styles.css /
+  // gallery.html / DESIGN.md / meta.json), nudge the user to keep the trio in
+  // sync. Keyed on a content hash of the design-systems/<id>/ FOLDER (immediate
+  // files only — subdir templates/ etc. don't trigger it) via /__file_stat, so
+  // it re-appears on each genuine edit and survives reloads + edits made while
+  // the editor was closed. Dismissal stores the acknowledged hash on the node
+  // (node.dsGalleryAckHash), persisted in workflow.json; the banner returns
+  // only when the hash changes again.
   // (isDsGallery is declared earlier, alongside the path computation.)
+  const dsDir = isDsGallery ? (String(node.path).match(/^(.*?design-systems\/[^/]+)\//) || [])[1] : null;
   const [galleryHash, setGalleryHash] = useState(null);
   useEffect(() => {
-    if (!isDsGallery || !node.path) return;
+    if (!dsDir) return;
     let cancelled = false;
     const fetchSig = async () => {
       try {
-        const r = await fetch(apiUrl("/__file_stat?path=" + encodeURIComponent(node.path)));
+        const r = await fetch(apiUrl("/__file_stat?path=" + encodeURIComponent(dsDir)));
         if (!r.ok || cancelled) return;
         const j = await r.json();
         if (!cancelled && j && j.exists && j.hash) setGalleryHash(j.hash);
@@ -43539,13 +43541,14 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     fetchSig();
     const onRefresh = (e) => {
       const paths = (e.detail && e.detail.paths) || [];
-      if (!paths.length || paths.some(p => p && (p === node.path || p.endsWith(node.path) || node.path.endsWith(p)))) {
+      // Refetch when any changed path lives inside this DS folder.
+      if (!paths.length || paths.some(p => typeof p === "string" && p.includes(dsDir + "/"))) {
         fetchSig();
       }
     };
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => { cancelled = true; window.removeEventListener("th:asset-refresh", onRefresh); };
-  }, [isDsGallery, node.path]);
+  }, [dsDir]);
   const galleryReminderOpen = isDsGallery && !!galleryHash && galleryHash !== node.dsGalleryAckHash;
 
   return html`
@@ -43565,8 +43568,8 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       ${galleryReminderOpen && html`
         <div className="workflow-ds-reminder" onMouseDown=${(e) => e.stopPropagation()}>
           <div className="workflow-ds-reminder-body">
-            <strong>Gallery updated.</strong> Remember to update the rest of the design system —
-            <code>styles.css</code>, <code>DESIGN.md</code>, <code>meta.json</code>.
+            <strong>Design system changed.</strong> Keep the set in sync —
+            <code>styles.css</code>, <code>gallery.html</code>, <code>DESIGN.md</code>, <code>meta.json</code>.
           </div>
           <button
             className="workflow-ds-reminder-ok"
@@ -50323,7 +50326,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
             <div className="workflow-node-ds-attachments">
               ${attachments.map((a, i) => html`
                 <span key=${i} className=${"workflow-node-ds-attach-chip workflow-node-ds-attach-chip-" + a.kind} title=${a.kind === "file" ? (a.path || a.name) : a.url}>
-                  <span className="workflow-node-ds-attach-icon">${a.kind === "file" ? "📎" : "🔗"}</span>
+                  <span className="workflow-node-ds-attach-icon">${a.kind === "file" ? html`<${Icon.Clip}/>` : html`<${Icon.External}/>`}</span>
                   <span className="workflow-node-ds-attach-label">${a.kind === "file" ? (a.name || a.path) : a.url}</span>
                   <button
                     className="workflow-node-ds-attach-rm"
@@ -50351,7 +50354,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
               data-disabled=${attaching}
               onClick=${(e) => { e.stopPropagation(); fileInputRef.current && fileInputRef.current.click(); }}
               title="Pick one or more files. Each gets uploaded under source/<prototype>/_attachments/. Paths are surfaced in the Build prompt so the LLM/agent can decide whether to inline content."
-            >${attaching ? "Uploading…" : "📎 Attach files"}</button>
+            >${attaching ? "Uploading…" : html`<${Icon.Clip}/> Attach files`}</button>
             <input
               className="workflow-node-ds-input workflow-node-ds-attach-url"
               type="url"
@@ -50366,7 +50369,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
               data-disabled=${!linkDraft.trim()}
               onClick=${(e) => { e.stopPropagation(); onAddLink(); }}
               title="Add a URL the agent can WebFetch or pass to an MCP tool."
-            >🔗 Add link</button>
+            >${html`<${Icon.External}/> Add link`}</button>
           </div>
           ${attachError && html`
             <div className="workflow-node-ds-attach-err">${attachError}</div>
@@ -52068,7 +52071,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
             <div className="workflow-node-ds-attachments">
               ${attachments.map((a, i) => html`
                 <span key=${i} className=${"workflow-node-ds-attach-chip workflow-node-ds-attach-chip-" + a.kind} title=${a.kind === "file" ? (a.path || a.name) : a.url}>
-                  <span className="workflow-node-ds-attach-icon">${a.kind === "file" ? "📎" : "🔗"}</span>
+                  <span className="workflow-node-ds-attach-icon">${a.kind === "file" ? html`<${Icon.Clip}/>` : html`<${Icon.External}/>`}</span>
                   <span className="workflow-node-ds-attach-label">${a.kind === "file" ? (a.name || a.path) : a.url}</span>
                   <button
                     className="workflow-node-ds-attach-rm"
@@ -52096,7 +52099,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
               data-disabled=${attaching}
               onClick=${(e) => { e.stopPropagation(); fileInputRef.current && fileInputRef.current.click(); }}
               title="Pick one or more files. Each gets uploaded under source/<prototype>/_attachments/. The agent gets the paths in its prompt and decides whether to Read each one."
-            >${attaching ? "Uploading…" : "📎 Attach files"}</button>
+            >${attaching ? "Uploading…" : html`<${Icon.Clip}/> Attach files`}</button>
             <input
               className="workflow-node-ds-input workflow-node-ds-attach-url"
               type="url"
@@ -52111,7 +52114,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
               data-disabled=${!linkDraft.trim()}
               onClick=${(e) => { e.stopPropagation(); onAddLink(); }}
               title="Add a URL the agent can WebFetch or pass to an MCP tool."
-            >🔗 Add link</button>
+            >${html`<${Icon.External}/> Add link`}</button>
           </div>
           ${attachError && html`
             <div className="workflow-node-ds-attach-err">${attachError}</div>
@@ -52213,6 +52216,13 @@ function workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths) {
     const np = [n.path, ...(Array.isArray(n.paths) ? n.paths : []),
                 ...(Array.isArray(n.canonicalPaths) ? n.canonicalPaths : [])]
                .filter(p => typeof p === "string" && p);
+    // A design-system node owns its whole folder — editing ANY file under
+    // design-systems/<id>/ (styles.css, templates/*, gallery.html, …) counts
+    // as working on it, so also match the DS folder root, not just the file.
+    for (const p of [...np]) {
+      const m = p.match(/^(.*?design-systems\/[^/]+)\//);
+      if (m && !np.includes(m[1])) np.push(m[1]);
+    }
     for (const p of np) {
       for (const w of workingPaths) {
         if (w === p || w.startsWith(p + "/") || p.startsWith(w + "/")) return true;
