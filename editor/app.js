@@ -51744,10 +51744,6 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   `;
 }
 
-/* Phase 3.5d — Edges layer.
-   One SVG inside .workflow-canvas, so it shares the transform with every
-   node. Three layers, drawn in z-order:
-     1. Binding lines  — asset.center → closest point on bound prototype's
 // v3.9 — "Someone's working in here." An agent run on a node is signalled by
 // the data-run-status pulse + top-right spinner (record-LED language). This
 // adds an abstract, anthropomorphic read that peeks out of a node's
