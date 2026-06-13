@@ -14736,6 +14736,17 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
             </section>
 
             <section className="dscz-group">
+              <div className="dscz-group-label">Colour scheme</div>
+              <${DsSchemeCheck} label="Light mode" checked=${settings.schemeLight}
+                disabled=${settings.schemeLight && !settings.schemeDark}
+                onToggle=${() => set({ schemeLight: !settings.schemeLight })}/>
+              <${DsSchemeCheck} label="Dark mode" checked=${settings.schemeDark}
+                disabled=${settings.schemeDark && !settings.schemeLight}
+                onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
+              <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
+            </section>
+
+            <section className="dscz-group">
               <div className="dscz-group-label">Colour</div>
               <${DsPaletteDropdown}
                 current=${settings.paletteName}
@@ -14748,17 +14759,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 onChange=${(v) => set({ tertiary: v, paletteName: null })} onReset=${() => set({ tertiary: null, paletteName: null })}/>
               <${DsColorRow} label="Neutral (grey base)" value=${settings.neutral} fallback=${DS_DEFAULTS.neutral}
                 onChange=${(v) => set({ neutral: v })} onReset=${() => set({ neutral: null })}/>
-            </section>
-
-            <section className="dscz-group">
-              <div className="dscz-group-label">Colour scheme</div>
-              <${DsSchemeCheck} label="Light mode" checked=${settings.schemeLight}
-                disabled=${settings.schemeLight && !settings.schemeDark}
-                onToggle=${() => set({ schemeLight: !settings.schemeLight })}/>
-              <${DsSchemeCheck} label="Dark mode" checked=${settings.schemeDark}
-                disabled=${settings.schemeDark && !settings.schemeLight}
-                onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
-              <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
             </section>
 
             <section className="dscz-group">
@@ -14818,7 +14818,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
             </section>
           </div>
 
-          <div className="dscz-preview">
+          <div className="dscz-preview" style=${{ background: previewDark ? "#15181E" : "#ffffff" }}>
             <div className="dscz-preview-tabs" role="tablist">
               ${DS_PREVIEW_VIEWS.map(v => html`
                 <button
@@ -14848,8 +14848,9 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
               ref=${iframeRef}
               className="dscz-preview-frame"
               title="Design system preview"
+              style=${{ opacity: frameReady ? 1 : 0 }}
               src=${apiUrl("/__default_ds/" + previewFile)}
-              onLoad=${() => { setFrameReady(true); applyToFrame(); }}/>
+              onLoad=${() => { applyToFrame(); setFrameReady(true); }}/>
           </div>
         </div>
         ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
@@ -19611,7 +19612,7 @@ function workflowPortFlavor(node, side) {
     return null;
   }
   if (kind === "folder") return "folder";   // both sides — out feeds folder-read / source-read
-  if (kind === "browser") return "text";    // out carries extracted page text
+  if (kind === "browser") return "asset";   // out is a captured page asset (html / image snapshot)
   return null;
 }
 
@@ -20130,12 +20131,13 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Folder scope", tags: ["folder"] } },
     accepts:  {},
   },
-  // Browser node: embeds a public website; its out port carries the page's
-  // readable text (extracted daemon-side via /__web_text), so it slots in
-  // anywhere a prompt's text would — agent context, skill prompts.
+  // Browser node: embeds a public website; its out port is treated as a
+  // captured ASSET of the page (an html / image snapshot), so it slots in
+  // anywhere an asset would — composer layers, image-skill input, agent
+  // context, DS direction, remix / blend.
   "browser": {
     label: "Web browser",
-    provides: { out: { label: "Page text", tags: ["text"] } },
+    provides: { out: { label: "Page capture", tags: ["asset", "remixable", "blendable"] } },
     accepts:  {},
   },
   "asset": {
