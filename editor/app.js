@@ -14226,6 +14226,49 @@ function dsNeutralRamp(hex) {
   return out;
 }
 
+/* Assign DS roles to an arbitrary palette by analysing each colour rather than
+   taking them in order. "Computer-vision-lite": for each swatch we measure
+   absolute chroma ((max−min)/255 — a reliable greyness signal, unlike HSL
+   saturation which spikes for pale/dark colours), lightness, and hue.
+     • neutral  → a genuinely muted swatch (near-grey, or a light low-chroma
+                  cream); only assigned when one exists, else grey stays default.
+     • primary  → most "action-worthy": high chroma at a mid-dark lightness
+                  (reads as a filled button), via prominence = chroma·(1.15−|L−0.45|).
+     • secondary→ next prominent, biased toward a hue distinct from primary.
+     • tertiary → best of the rest.
+   Returns { primary, secondary, tertiary, neutral } (neutral may be null). */
+function dsColorMeta(hex) {
+  const rgb = dsHexToRgb(hex) || [0, 0, 0];
+  const [h, s, l] = dsRgbToHsl(rgb);
+  const chroma = (Math.max(...rgb) - Math.min(...rgb)) / 255;
+  return { hex, h, s, l, chroma };
+}
+function dsHueDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 1 - d); } // h in [0,1]
+function dsAssignRoles(colors) {
+  const info = (colors || []).map(dsColorMeta);
+  if (info.length < 3) {
+    return { primary: colors[0], secondary: colors[1] || colors[0], tertiary: colors[2] || colors[0], neutral: null };
+  }
+  // Neutral: a true grey (very low chroma) or a light, low-chroma cream.
+  const neutralCands = info.filter(c => c.chroma < 0.10 || (c.chroma < 0.22 && c.l > 0.6));
+  const neutral = neutralCands.length
+    ? neutralCands.reduce((a, b) => (b.chroma < a.chroma ? b : a))
+    : null;
+  const prom = c => c.chroma * (1.15 - Math.abs(c.l - 0.45));
+  const pool = info.filter(c => c !== neutral).sort((a, b) => prom(b) - prom(a));
+  const primary = pool[0];
+  const afterP = pool.slice(1).sort((a, b) =>
+    (prom(b) + 0.5 * dsHueDist(b.h, primary.h)) - (prom(a) + 0.5 * dsHueDist(a.h, primary.h)));
+  const secondary = afterP[0] || primary;
+  const tertiary = (afterP.slice(1).sort((a, b) => prom(b) - prom(a))[0]) || secondary;
+  return {
+    primary: primary.hex,
+    secondary: secondary.hex,
+    tertiary: tertiary.hex,
+    neutral: neutral ? neutral.hex : null,
+  };
+}
+
 /* Build the `:root{}` override CSS + font payload from the customizer state.
    `s` is the settings object; any field left null/default emits nothing for
    that dimension. Returns { overrideCss, font, dirty }. */
@@ -14663,7 +14706,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
               <div className="dscz-group-label">Colour</div>
               <${DsPaletteDropdown}
                 current=${settings.paletteName}
-                onPick=${(p) => set({ primary: p.colors[0], secondary: p.colors[1], tertiary: p.colors[2], paletteName: p.name })}/>
+                onPick=${(p) => { const r = dsAssignRoles(p.colors); set({ primary: r.primary, secondary: r.secondary, tertiary: r.tertiary, neutral: r.neutral, paletteName: p.name }); }}/>
               <${DsColorRow} label="Primary"   value=${settings.primary}   fallback=${DS_DEFAULTS.primary}
                 onChange=${(v) => set({ primary: v, paletteName: null })} onReset=${() => set({ primary: null, paletteName: null })}/>
               <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
