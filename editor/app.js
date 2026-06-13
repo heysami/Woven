@@ -51840,22 +51840,31 @@ function workflowNodeIsWorking(n, chatBusy, activeProto) {
 const AAB_GLYPHS = "01<>[]{}#$%&*+=/\\|?xy:;~^≡░▚▞◆".split("");
 
 function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
-  const canvasRef = useRef(null);
+  const canvasRef = useRef(null);    // inner face / sequence
+  const trailRef = useRef(null);     // fading trail behind the floating frame
+  const floaterRef = useRef(null);   // the diamond + face; drifts on a slow path
   useEffect(() => {
-    const cv = canvasRef.current;
-    if (!cv) return;
+    const cv = canvasRef.current, tcv = trailRef.current, floater = floaterRef.current;
+    if (!cv || !tcv || !floater) return;
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // 50px frame; the inner sequence lives within the fill square's inscribed
-    // circle (radius CLIP) and is hard-clipped to it, so it stays in the box
-    // at every rotation.
+    // circle (radius CLIP) and is hard-clipped to it. The frame FLOATS on a
+    // slow path inside an 88px STAGE (rest-centre SC), leaving a fading trail
+    // drawn on a sibling canvas behind it.
     const W = 50, H = 50, CX = 25, CY = 25, N = 5, PITCH = 4.2, CLIP = 14;
-    const BAR_W = 2.4, SQ = 4, GH = 7;
+    const BAR_W = 2.4, SQ = 4, GH = 7, STAGE = 88, SC = STAGE / 2;
+    // Node's bottom-left corner in trail-canvas coords. MUST match the .aab-stage
+    // CSS offset (left:-62 / top:-26): corner = (-left, -top).
+    const CORNER_X = 62, CORNER_Y = 26;
     const slotX = (i) => CX + (i - (N - 1) / 2) * PITCH;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
+    tcv.width = STAGE * dpr; tcv.height = STAGE * dpr;
+    const tctx = tcv.getContext("2d");
+    if (tctx) tctx.scale(dpr, dpr);
     const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
     // De-sync sibling badges + give each a stable per-slot glyph stream.
     const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
@@ -51894,6 +51903,9 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
     // stay plain squares (no blush). "^" already sits high in its em box, so
     // eyes only rise a hair.
     const EYE_Y = CY - 2, MOUTH_Y = CY + 2.5;
+    // Gentle float (lissajous) + comet trail. ph de-syncs siblings.
+    const FA = 7, FB = 5, FW1 = 0.8, FW2 = 0.55, ph = seed * Math.PI * 2;
+    const trail = [];   // flat [x0,y0, x1,y1, …] of recent float offsets
     let raf = 0, t0 = 0, scrambleTick = 0, lastScramble = 0;
     const frame = (ts) => {
       if (!t0) t0 = ts;
@@ -51927,6 +51939,54 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
         for (let i = 0; i < N; i++) fillRect(slotX(i), CY, lerp(SQ, BAR_W, e), lerp(SQ, barH(i, t), e));
       }
       ctx.restore();
+      // ── float the whole badge on a slow path, leaving a fading trail ──
+      const fx = Math.sin(t * FW1 + ph) * FA;
+      const fy = Math.cos(t * FW2 + ph) * FB;
+      floater.style.transform = `translate(${fx.toFixed(2)}px, ${fy.toFixed(2)}px)`;
+      trail.push(fx, fy);
+      const MAX = 18;
+      if (trail.length > MAX * 2) trail.splice(0, trail.length - MAX * 2);
+      if (tctx) {
+        tctx.clearRect(0, 0, STAGE, STAGE);
+        // half-transparent dashed tether from the node corner to the floating
+        // badge — drawn first so it sits behind the trail echoes + the frame.
+        tctx.save();
+        tctx.globalAlpha = 0.5;
+        tctx.strokeStyle = hot; tctx.lineWidth = 1; tctx.setLineDash([3, 3]);
+        tctx.beginPath();
+        tctx.moveTo(CORNER_X, CORNER_Y);
+        tctx.lineTo(SC + fx, SC + fy);
+        tctx.stroke();
+        tctx.restore();
+        // flow: small marks travel the tether from the badge → the node corner
+        // ("work flowing into the node"), fading in at the agent, absorbed at
+        // the corner. ax/ay = badge end, cx/cy = node corner.
+        const flowAx = SC + fx, flowAy = SC + fy;
+        const FLOW_N = 4, FLOW_SPEED = 0.5;
+        for (let p = 0; p < FLOW_N; p++) {
+          const prog = ((t * FLOW_SPEED) + p / FLOW_N) % 1;   // 0 badge → 1 corner
+          const px = flowAx + (CORNER_X - flowAx) * prog;
+          const py = flowAy + (CORNER_Y - flowAy) * prog;
+          tctx.save();
+          tctx.globalAlpha = Math.sin(prog * Math.PI) * 0.85;  // fade in / out at the ends
+          tctx.fillStyle = hot;
+          tctx.translate(px, py); tctx.rotate(Math.PI / 4);
+          tctx.fillRect(-1.3, -1.3, 2.6, 2.6);                 // tiny diamond
+          tctx.restore();
+        }
+        const pts = trail.length / 2;
+        for (let k = 0; k < pts - 1; k++) {     // newest pair is the live frame — skip it
+          const f = k / pts;                    // 0 oldest … ~1 newest
+          const s = 3 + f * 6;
+          tctx.save();
+          tctx.globalAlpha = f * f * 0.30;
+          tctx.translate(SC + trail[k * 2], SC + trail[k * 2 + 1]);
+          tctx.rotate(Math.PI / 4);
+          tctx.strokeStyle = hot; tctx.lineWidth = 1;
+          tctx.strokeRect(-s / 2, -s / 2, s, s);
+          tctx.restore();
+        }
+      }
       raf = requestAnimationFrame(frame);
     };
     if (reduce) {
@@ -51940,11 +52000,14 @@ function WorkflowAgentBadge({ keyId, ax, ay, invZoom, count, title }) {
   return html`
     <div className="workflow-agent-badge"
          style=${{ left: ax + "px", top: ay + "px", transform: `scale(${invZoom})`, transformOrigin: "0 100%" }}>
-      <div className="workflow-agent-frame" title=${title}>
-        <span className="aab-square aab-square-out"/>
-        <span className="aab-square aab-square-fill"/>
-        <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
-        ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
+      <div className="aab-stage">
+        <canvas ref=${trailRef} className="aab-trail" width="88" height="88"/>
+        <div ref=${floaterRef} className="aab-floater" title=${title}>
+          <span className="aab-square aab-square-out"/>
+          <span className="aab-square aab-square-fill"/>
+          <canvas ref=${canvasRef} className="aab-canvas" width="50" height="50"/>
+          ${count > 1 ? html`<span className="workflow-agent-count">${count}</span>` : null}
+        </div>
       </div>
     </div>
   `;

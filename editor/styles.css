@@ -7167,9 +7167,18 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    WorkflowAgentBadge. Tinted with --hot. Pure decoration. */
 .workflow-agent-badge-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 6; }
 .workflow-agent-badge { position: absolute; pointer-events: none; will-change: transform; }
-.workflow-agent-frame {
-  position: absolute; left: -7px; bottom: 2px;   /* peek just outside the corner */
-  width: 50px; height: 50px;
+/* The badge lives in an 88px STAGE placed mostly OUTSIDE the node's
+   bottom-left corner (centre ~18px down-left), so it only barely overlaps. */
+.aab-stage {
+  position: absolute; left: -62px; top: -26px;
+  width: 88px; height: 88px;
+}
+.aab-trail {            /* fading comet trail, behind the floater */
+  position: absolute; inset: 0; width: 88px; height: 88px;
+}
+.aab-floater {          /* diamonds + face; rAF translates this on a slow path */
+  position: absolute; inset: 0; width: 88px; height: 88px;
+  will-change: transform;
 }
 .aab-square {
   position: absolute; left: 50%; top: 50%;
@@ -7201,7 +7210,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--hot);       /* read by the canvas ctx for the glyph/square fill */
 }
 .workflow-agent-count {
-  position: absolute; top: -7px; right: -7px;
+  position: absolute; top: 22px; right: 22px;   /* near the diamond's upper-right, inside the 88px floater */
   min-width: 13px; height: 13px; padding: 0 3px;
   border-radius: 7px;
   background: oklch(30% 0.03 250); color: white;
