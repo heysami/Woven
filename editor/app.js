@@ -34111,20 +34111,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             onDragStart=${(e) => {
               e.dataTransfer.effectAllowed = "copy";
               e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "mermaid" }));
-            }}
-            title="Drag onto canvas — Mermaid diagram. Edit the source in the code panel; flowchart / sequence / class / state / ER / pie supported."
-          >
-            <span className="workflow-library-item-glyph">⇄</span>
-            <span className="workflow-library-item-label">Mermaid diagram</span>
-            <span className="workflow-library-item-id">diagram</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "vector-editor" }));
             }}
             title="Drag onto canvas — inline SVG drawing tool. Draw rects, ellipses, lines, paths, freehand strokes, text. Apply fill/stroke/gradient/shadow/blur, run boolean ops, convert text to outlines. Bake to a self-contained .svg file."
@@ -34250,6 +34236,20 @@ function WorkflowLibrary({ tab = "nodes" }) {
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Others</div>
         <div className="workflow-library-list">
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "mermaid" }));
+            }}
+            title="Drag onto canvas — Mermaid diagram. Edit the source in the code panel; flowchart / sequence / class / state / ER / pie supported."
+          >
+            <span className="workflow-library-item-glyph">⇄</span>
+            <span className="workflow-library-item-label">Mermaid diagram</span>
+            <span className="workflow-library-item-id">diagram</span>
+          </div>
           <div
             className="workflow-library-item"
             draggable=${true}
