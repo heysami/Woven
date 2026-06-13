@@ -3,14 +3,6 @@
   "label": "Default Design System",
   "genre": "restrained institutional product UI (neutral product, Plus Jakarta Sans, pill controls)",
   "font": "Plus Jakarta Sans (Google Fonts CDN)",
-  "brand": {
-    "brand-blue": "#074ECF",
-    "brand-red": "#E20E10",
-    "brand-grey": "#DADFE8",
-    "brand-gold": "#F5B301",
-    "brand-sky": "#7FB9EE",
-    "interaction-blue": "#074ECF"
-  },
   "builtFrom": {
     "method": "clean hand-authored CSS; self-contained single source of truth in this folder"
   },

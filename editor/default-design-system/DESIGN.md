@@ -4,13 +4,6 @@ id: default
 genre: restrained institutional product UI (neutral product, Plus Jakarta Sans, pill controls)
 method: clean hand-authored CSS — sane class names, semantic markup, inline-SVG icons; self-contained single source of truth in this folder
 font: Plus Jakarta Sans 300/400/500/600/700 (Google Fonts CDN)
-brand:
-  brand-blue: "#074ECF"
-  brand-red: "#E20E10"
-  brand-grey: "#DADFE8"
-  brand-gold: "#F5B301"
-  brand-sky: "#7FB9EE"
-interaction-blue: "#074ECF"
 ---
 
 # Default Design System
@@ -40,9 +33,8 @@ Do not invent new component classes — every pattern this DS needs already has 
 ## Tokens (`:root` in styles.css)
 
 ```
-Brand        --brand-blue #074ECF  --brand-red #E20E10  --brand-grey #DADFE8  --brand-gold #F5B301  --brand-sky #7FB9EE
 Ramps        --{primary|secondary|tertiary|error|success|attention|info|neutral}-{50…900}
-Semantic     --primary-500 (brand blue #074ECF) + -50 soft … per family
+Semantic     --primary-500 (identity) + -50 soft … per family
 Surfaces     --surface --surface-default --surface-medium --surface-strong --surface-inverse
              --primary-surface --primary-surface-muted --primary-surface-subtle
 Text         --fg-default #252628  --fg-muted  --fg-subtle  --fg-on-surface ; --primary-fg --primary-fg-emphasis

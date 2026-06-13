@@ -14094,6 +14094,19 @@ const DS_TYPE_RATIOS = [
   { v:1.500, label:"1.500 · Perfect Fifth" },
   { v:1.618, label:"1.618 · Golden Ratio" },
 ];
+// Preview surfaces — the gallery plus the template layouts, so the user can
+// see customizations land on real screens (the app-shell side-menu layout,
+// dashboards, auth, etc.), not just the component catalog.
+const DS_PREVIEW_VIEWS = [
+  { id: "gallery.html",                 label: "Components" },
+  { id: "templates/basic-form.html",    label: "App shell" },
+  { id: "templates/dashboard.html",     label: "Dashboard" },
+  { id: "templates/technical-logs.html", label: "Logs" },
+  { id: "templates/user-profile.html",  label: "Profile" },
+  { id: "templates/login.html",         label: "Login" },
+  { id: "templates/exception.html",     label: "Exception" },
+];
+
 const DS_SPACE_RATIOS = [
   { v:1.25, label:"1.25 · tight" },
   { v:1.333, label:"1.333" },
@@ -14145,7 +14158,6 @@ function buildDsCustomization(s) {
     const r = dsRamp(s.primary);
     if (r) {
       for (const k of Object.keys(r)) lines.push(`--primary-${k}:${r[k]};`);
-      lines.push(`--brand-blue:${r["500"]};`, `--interaction-blue:${r["500"]};`);
       lines.push(
         `--primary-surface:${r["500"]};`,
         `--primary-surface-muted:${r["100"]};`,
@@ -14163,7 +14175,6 @@ function buildDsCustomization(s) {
     const r = dsRamp(s.secondary);
     if (r) {
       for (const k of Object.keys(r)) lines.push(`--secondary-${k}:${r[k]};`);
-      lines.push(`--brand-red:${r["500"]};`);
     }
   }
   // ── Roundness (scale radii DOWN from the max baseline) ──
@@ -14447,6 +14458,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
 function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate }) {
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
+  const [previewFile, setPreviewFile] = useState("gallery.html");
   const set = (patch) => setSettings(s => ({ ...s, ...patch }));
 
   // Inject / refresh the override <style> + font <link> inside the iframe.
@@ -14587,11 +14599,24 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
           </div>
 
           <div className="dscz-preview">
+            <div className="dscz-preview-tabs" role="tablist">
+              ${DS_PREVIEW_VIEWS.map(v => html`
+                <button
+                  key=${v.id}
+                  type="button"
+                  role="tab"
+                  aria-selected=${previewFile === v.id}
+                  className=${"dscz-preview-tab" + (previewFile === v.id ? " is-active" : "")}
+                  onClick=${() => { if (previewFile !== v.id) { setFrameReady(false); setPreviewFile(v.id); } }}>
+                  ${v.label}
+                </button>
+              `)}
+            </div>
             <iframe
               ref=${iframeRef}
               className="dscz-preview-frame"
               title="Design system preview"
-              src=${apiUrl("/__default_ds/gallery.html")}
+              src=${apiUrl("/__default_ds/" + previewFile)}
               onLoad=${() => { setFrameReady(true); applyToFrame(); }}/>
           </div>
         </div>

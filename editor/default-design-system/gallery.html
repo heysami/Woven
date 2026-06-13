@@ -52,7 +52,7 @@
   .vcells--wide{grid-template-columns:repeat(auto-fill,minmax(280px,1fr));}
   .vcell{display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
   .vcell .lbl{font-size:11px;color:var(--fg-subtle);}
-  .vcell.dark{background:var(--brand-blue);padding:12px;border-radius:8px;}
+  .vcell.dark{background:var(--primary-surface);padding:12px;border-radius:8px;}
   /* variant × state matrix */
   .matrix{border-collapse:collapse;}
   .matrix th,.matrix td{padding:12px 18px;}
@@ -174,8 +174,7 @@
 <div class="layer__head"><h2>Foundations</h2></div>
 <p class="layer__intro">The token primitives every component is built from.</p>
 
-<section class="comp" id="f-color"><div class="comp__bar"><h3>Color</h3><code>--{family}-{step}</code><p>Brand identity, the 50–950 tonal ramps, and semantic roles. Production code references roles, never raw steps.</p></div>
-  <div class="vgroup"><h5>Brand</h5><div class="swatches" id="brand"></div></div>
+<section class="comp" id="f-color"><div class="comp__bar"><h3>Color</h3><code>--{family}-{step}</code><p>The 50–950 tonal ramps and semantic roles. Production code references roles, never raw steps.</p></div>
   <div class="vgroup"><h5>Tonal ramps — 50 (lightest) → 950 (darkest)</h5><div class="ramp-cols" id="ramps"></div></div>
 </section>
 
@@ -632,7 +631,7 @@
       <img class="topnav__wave" src="assets/sidebar-grid.svg" alt="" aria-hidden="true" style="right:0">
     </nav>
   </div>
-  <div class="vgroup"><h5>Side rail</h5><div style="display:inline-flex"><div style="width:216px;padding:8px;background:linear-gradient(var(--brand-blue),var(--primary-700));border-radius:var(--radius-m)">
+  <div class="vgroup"><h5>Side rail</h5><div style="display:inline-flex"><div style="width:216px;padding:8px;background:linear-gradient(var(--primary-surface),var(--primary-700));border-radius:var(--radius-m)">
     <div class="sidebar__section">Component Manager</div>
     <a class="nav-link is-active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h18"/></svg><span class="nav-label">Portfolios</span></a>
     <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="nav-label">Requests</span></a>
@@ -655,7 +654,6 @@
 <script>
   const V=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const sw=n=>`<div class="sw"><i style="background:${V(n)}"></i><div><div><code>${n}</code></div><span>${V(n)}</span></div></div>`;
-  document.getElementById('brand').innerHTML=['--brand-blue','--brand-red','--brand-grey','--brand-gold','--brand-sky'].map(sw).join('');
   // responsive: wrap every wide table/matrix so it scrolls within the column instead of widening the page
   (function(){
     [].slice.call(document.querySelectorAll('.matrix, .type-table, .comp table.table')).forEach(function(t){
