@@ -8377,10 +8377,25 @@ function ModelStatusIndicator({ onOpenSettings, compact }) {
    skill is installed, even after the agent model is configured. Listens
    for the th:local-skills-changed event the install rows dispatch so the
    landing re-evaluates immediately on install. */
+const LOCAL_SKILLS_CACHE_KEY = "th.editor.local-skills.v1";
+function loadLocalSkillsCache() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_SKILLS_CACHE_KEY) || "{}") || {}; }
+  catch { return {}; }
+}
+
 function useRequiredLocalSkills() {
   const required = LOCAL_PACKAGES.filter(p => p.required);
-  const [statuses, setStatuses] = useState({});
-  const [loaded, setLoaded] = useState(false);
+  // Seed from the last-known-good cache so a known-installed skill doesn't
+  // flash the "+ New project" button disabled on every landing mount. The
+  // server already memoises positive probes per daemon lifetime; this cache
+  // covers the cold case too (daemon just restarted, probe still in flight).
+  // If the cache is wrong (user uninstalled out-of-band) the background reload
+  // below corrects it — but that's the rare direction, not the common one.
+  const [statuses, setStatuses] = useState(() => loadLocalSkillsCache());
+  const [loaded, setLoaded] = useState(() => {
+    const cached = loadLocalSkillsCache();
+    return required.length > 0 && required.every(p => cached[p.id] && cached[p.id].installed);
+  });
   const reload = useCallback(async () => {
     if (!required.length) { setLoaded(true); return; }
     try {
@@ -8397,6 +8412,7 @@ function useRequiredLocalSkills() {
       const next = {};
       for (const [id, st] of results) next[id] = st;
       setStatuses(next);
+      try { localStorage.setItem(LOCAL_SKILLS_CACHE_KEY, JSON.stringify(next)); } catch {}
     } finally {
       setLoaded(true);
     }
@@ -14538,19 +14554,37 @@ function buildDsCustomization(s) {
   return { overrideCss, font, dirty: lines.length > 0, darkCss: buildDsDarkCss(s) };
 }
 
-/* ────────── New-project form (v3.5 — onboarding cut) ──────────
-   Simple modal: name input + Create button (Step 1). When the user opts into
-   the bundled design system, a second, wider step (DsCustomizerStep) lets
-   them retune colour / roundness / type / spacing against a live preview;
-   the computed override rides along in the /__projects/new POST. */
-function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
-  const [name, setName] = useState("");
-  const [exportFolder, setExportFolder] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const [useDefaultDs, setUseDefaultDs] = useState(false);
-  const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
-  const [dsSettings, setDsSettings] = useState({
+/* Build the design-system half of a bake payload from the customizer's
+   settings + computed customization. Shared by the new-project wizard (rides
+   in /__projects/new) and the DS-node "Use template design system" modal
+   (rides in /__seed_default_ds). `label` is the human DS label to bake into
+   meta.json. Returns the fields to spread onto the request body. */
+function dsBuildBakePayload(s, custom, label) {
+  const p = {
+    useDefaultDs: true,
+    dsOverrideCss: custom.overrideCss,
+    dsDarkCss: custom.darkCss,
+    dsFont: custom.font,
+    dsLabel: label || "Template Design System",
+  };
+  if (s.logo && s.logo.dataUrl) {
+    p.dsLogo = { dataUrl: s.logo.dataUrl, ext: s.logo.ext };
+  } else if (s.secondary) {
+    // No custom logo → bake the default "D" dot in the chosen secondary.
+    p.dsLogoDot = s.secondary;
+  }
+  p.dsSchemes = [
+    ...(s.schemeLight ? ["light"] : []),
+    ...(s.schemeDark ? ["dark"] : []),
+  ];
+  if (!p.dsSchemes.length) p.dsSchemes = ["light"];
+  return p;
+}
+
+/* Default customizer settings shape — shared seed for the new-project wizard
+   and the DS-node modal so both start from identical defaults. */
+function dsDefaultSettings() {
+  return {
     // light set
     primary: null, secondary: null, tertiary: null, neutral: null,
     successColor: null, attentionColor: null, errorColor: null, infoColor: null,
@@ -14564,7 +14598,22 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     spacingBasePx: null, spacingRatio: null, spacingTouched: false,
     logo: null,   // { dataUrl, ext, name } when the user uploads a sidebar logo
     schemeLight: true, schemeDark: false,   // which colour schemes the DS ships
-  });
+  };
+}
+
+/* ────────── New-project form (v3.5 — onboarding cut) ──────────
+   Simple modal: name input + Create button (Step 1). When the user opts into
+   the bundled design system, a second, wider step (DsCustomizerStep) lets
+   them retune colour / roundness / type / spacing against a live preview;
+   the computed override rides along in the /__projects/new POST. */
+function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [exportFolder, setExportFolder] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [useDefaultDs, setUseDefaultDs] = useState(false);
+  const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
+  const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
   const existingIds = useMemo(
@@ -14614,22 +14663,8 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     try {
       const payload = { id: slugId, label: name.trim() };
       if (useDefaultDs) {
-        payload.useDefaultDs = true;
-        payload.dsOverrideCss = dsCustom.overrideCss;
-        payload.dsDarkCss = dsCustom.darkCss;
-        payload.dsFont = dsCustom.font;
-        payload.dsLabel = name.trim() ? (name.trim() + " — design system") : "Default Design System";
-        if (dsSettings.logo && dsSettings.logo.dataUrl) {
-          payload.dsLogo = { dataUrl: dsSettings.logo.dataUrl, ext: dsSettings.logo.ext };
-        } else if (dsSettings.secondary) {
-          // No custom logo → bake the default "D" dot in the chosen secondary.
-          payload.dsLogoDot = dsSettings.secondary;
-        }
-        payload.dsSchemes = [
-          ...(dsSettings.schemeLight ? ["light"] : []),
-          ...(dsSettings.schemeDark ? ["dark"] : []),
-        ];
-        if (!payload.dsSchemes.length) payload.dsSchemes = ["light"];
+        const dsLabel = name.trim() ? (name.trim() + " — design system") : "Template Design System";
+        Object.assign(payload, dsBuildBakePayload(dsSettings, dsCustom, dsLabel));
       }
       const r = await fetch(apiUrl("/__projects/new"), {
         method: "POST",
@@ -14757,7 +14792,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
               ${useDefaultDs ? html`<${Icon.Check}/>` : null}
             </span>
             <span className="newproj-ds-toggle-text">
-              <span className="newproj-ds-toggle-title">Start from the default design system</span>
+              <span className="newproj-ds-toggle-title">Start from the template design system</span>
               <span className="newproj-ds-toggle-sub">Seed a tokenized component library you can recolour, round, and retype in the next step.</span>
             </span>
           </button>
@@ -14780,7 +14815,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
    a live preview of the bundled DS gallery (served at /__default_ds/) with
    the computed `:root{}` override + webfont injected into its iframe head,
    updated on every settings change (no reload, no flash). */
-function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate }) {
+function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate, confirmLabel, busyLabel }) {
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
   const [previewFile, setPreviewFile] = useState("gallery.html");
@@ -15034,19 +15069,71 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         </div>
         ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
         <footer className="dscz-foot">
-          <button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>
+          ${onBack
+            ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
+            : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>`}
           <div className="dscz-foot-right">
             ${dirty
               ? html`<span className="dscz-foot-note">Customized</span>`
               : html`<span className="dscz-foot-note dscz-foot-note-muted">Defaults</span>`}
             <button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
-              ${busy ? "Creating…" : "Create project"}
+              ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
             </button>
           </div>
         </footer>
       </div>
     </div>
   `, document.body);
+}
+
+/* ────────── DS-node "Use template design system" modal ──────────
+   Standalone wrapper that reuses DsCustomizerStep against an EXISTING project.
+   Same wide overlay + live preview as the new-project flow, but the confirm
+   button bakes the template DS into the open project (POST /__seed_default_ds)
+   instead of creating a new one. Opened from the design-system workflow node. */
+function DsTemplateModal({ projectId, dsId, dsLabel, onClose, onApplied }) {
+  const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
+
+  const apply = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const label = dsLabel || "Template Design System";
+      const payload = dsBuildBakePayload(dsSettings, dsCustom, label);
+      const url = apiUrl("/__seed_default_ds?project=" + encodeURIComponent(projectId)
+        + (dsId ? "&ds=" + encodeURIComponent(dsId) : ""));
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setErr(j && j.error ? String(j.error) : ("HTTP " + r.status));
+        setBusy(false);
+        return;
+      }
+      onApplied && onApplied(j);
+    } catch (e) {
+      setErr(String((e && e.message) || e));
+      setBusy(false);
+    }
+  };
+
+  return html`<${DsCustomizerStep}
+    settings=${dsSettings}
+    setSettings=${setDsSettings}
+    custom=${dsCustom}
+    busy=${busy}
+    err=${err}
+    onBack=${null}
+    onClose=${onClose}
+    onCreate=${apply}
+    confirmLabel="Apply template"
+    busyLabel="Applying…"/>`;
 }
 
 /* Logo uploader row: drop/pick an image, read it to a data URL for live
@@ -15409,10 +15496,10 @@ function OnboardingLocalToolRow({ pkg }) {
   const [busy, setBusy] = useState(false);
   const [rechecking, setRechecking] = useState(false);
   const [err, setErr] = useState(null);
-  const probe = useCallback(async () => {
+  const probe = useCallback(async (force = false) => {
     setErr(null);
     try {
-      const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}`));
+      const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}${force ? "&force=1" : ""}`));
       const j = await r.json();
       setStatus(prev => {
         // v3.4.48 — Don't let a flaky probe downgrade a state we already
@@ -15467,7 +15554,7 @@ function OnboardingLocalToolRow({ pkg }) {
   const recheck = async () => {
     setRechecking(true);
     try {
-      await probe();
+      await probe(true);
       try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
     } finally { setRechecking(false); }
   };
@@ -51055,6 +51142,9 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // context. Attachments below it stay as a secondary option for ad-hoc
   // one-off files.
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  // "Use template design system" modal — opens the same wide customizer as the
+  // new-project flow, but bakes the template DS straight into THIS project.
+  const [tplOpen, setTplOpen] = useState(false);
 
   // Single source of truth for attaching the SSE stream — both the fresh
   // build() dispatch and the page-refresh resume call this. Resets the
@@ -51442,6 +51532,13 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         >×<//>
       </div>
       <div className="workflow-node-ds-body" onMouseDown=${(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="workflow-node-ds-template-btn"
+          title="Skip the agent — bake the bundled template design system into this project, recoloured / rounded / retyped against a live preview."
+          onClick=${(e) => { e.stopPropagation(); setTplOpen(true); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><span className="workflow-node-ds-template-glyph">◐</span> Use template design system</button>
         <label className="workflow-node-ds-field">
           <span className="workflow-node-ds-field-label">Genre</span>
           <textarea
@@ -51657,6 +51754,17 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
 
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
       <${WorkflowNodeStagePill} nodeId=${node.id}/>
+      ${tplOpen && html`<${DsTemplateModal}
+        projectId=${activeProjectId()}
+        dsId=${dsId}
+        dsLabel="Template Design System"
+        onClose=${() => setTplOpen(false)}
+        onApplied=${() => {
+          setTplOpen(false);
+          window.dispatchEvent(new CustomEvent("th:ds-refresh"));
+          refresh();
+        }}
+      />`}
     </div>
   `;
 }
@@ -55527,10 +55635,10 @@ function WorkflowLocalPackageRow({ pkg }) {
   const [logOut, setLogOut] = useState(null);   // last install output (success or fail)
   const [err, setErr] = useState(null);
 
-  const probe = useCallback(async () => {
+  const probe = useCallback(async (force = false) => {
     setErr(null);
     try {
-      const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}`));
+      const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}${force ? "&force=1" : ""}`));
       const j = await r.json();
       // v3.4.48 — Don't let a flaky probe downgrade a state we already
       // confirmed via /__local_install's server-side verify. See the
@@ -55573,7 +55681,7 @@ function WorkflowLocalPackageRow({ pkg }) {
   const recheck = async () => {
     setRechecking(true);
     try {
-      await probe();
+      await probe(true);
       try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
     } finally { setRechecking(false); }
   };

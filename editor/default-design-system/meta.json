@@ -1,6 +1,6 @@
 {
   "id": "default",
-  "label": "Default Design System",
+  "label": "Template Design System",
   "schemes": ["light", "dark"],
   "defaultScheme": "light",
   "genre": "restrained institutional product UI (neutral product, Plus Jakarta Sans, pill controls)",

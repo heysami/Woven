@@ -5966,6 +5966,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._prompt_delete(qs, m.group(1))
             if parsed.path == "/__projects/new":
                 return self._project_create(qs)
+            if parsed.path == "/__seed_default_ds":
+                return self._seed_existing_ds(qs)
             if parsed.path == "/__projects/rename":
                 return self._project_rename(qs)
             if parsed.path == "/__projects/delete":
@@ -11573,6 +11575,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         "cloudflared": {"kind": "binary", "bin": "cloudflared", "brew": "cloudflared"},
     }
 
+    # Class-level memo of POSITIVE probe results, keyed by package id. Probing
+    # rembg means spawning `python -c "import rembg"`, which loads onnxruntime's
+    # native dylibs every time — 1-3 s, and the landing page re-probes on every
+    # mount. Once we've confirmed a package is installed it does not vanish
+    # mid-session, so we cache the success and return it instantly thereafter.
+    # Only positive results are cached: a `not installed` answer keeps re-probing
+    # so a fresh install is picked up on the next poll. The install handler
+    # primes this cache directly so the post-install probe never has to spawn.
+    _LOCAL_STATUS_CACHE = {}
+
     @staticmethod
     def _find_local_binary(name):
         """PATH first, then the usual Homebrew prefixes (Apple Silicon /
@@ -13010,17 +13022,28 @@ class H(http.server.SimpleHTTPRequestHandler):
         pkg = (_qs_get(qs, "package") or "").strip()
         if pkg not in self._LOCAL_PACKAGES:
             return self._reply(400, {"error": f"unknown local package: {pkg}", "known": list(self._LOCAL_PACKAGES.keys())})
+        # Cache hit — a package we've already confirmed installed. Skip the
+        # subprocess entirely so the landing page's re-probe is instant and the
+        # New-project button never flashes disabled on revisit. `force=1`
+        # bypasses the cache (the Re-check button passes it).
+        if (_qs_get(qs, "force") or "") != "1":
+            cached = type(self)._LOCAL_STATUS_CACHE.get(pkg)
+            if cached:
+                return self._reply(200, {**cached, "package": pkg, "cached": True})
         spec = self._LOCAL_PACKAGES[pkg]
         # Binary packages (cloudflared): installed = executable findable;
         # version from `<bin> --version`. No python subprocess involved.
         if spec.get("kind") == "binary":
             bin_path = self._find_local_binary(spec["bin"])
-            return self._reply(200, {
+            result = {
                 "package": pkg,
                 "installed": bool(bin_path),
                 "version": self._binary_version(bin_path) if bin_path else None,
                 "path": bin_path,
-            })
+            }
+            if bin_path:
+                type(self)._LOCAL_STATUS_CACHE[pkg] = result
+            return self._reply(200, result)
         import_name = spec["import"]
         try:
             r = subprocess.run(
@@ -13033,7 +13056,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, {"package": pkg, "installed": False, "version": None, "probe_timeout": True})
         except Exception as e:
             return self._reply(500, {"error": f"probe failed: {e}"})
-        return self._reply(200, {"package": pkg, "installed": installed, "version": version})
+        result = {"package": pkg, "installed": installed, "version": version}
+        if installed:
+            type(self)._LOCAL_STATUS_CACHE[pkg] = result
+        return self._reply(200, result)
 
     def _local_install(self):
         """POST /__local_install body: { package: "rembg" }.
@@ -13081,6 +13107,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                                          "error": f"brew spawn failed: {e}"})
             bin_path = self._find_local_binary(spec["bin"])
             installed = bool(bin_path)
+            if installed:
+                type(self)._LOCAL_STATUS_CACHE[pkg] = {
+                    "package": pkg, "installed": True,
+                    "version": self._binary_version(bin_path), "path": bin_path,
+                }
             return self._reply(200 if installed else 502, {
                 "ok": installed,
                 "package": pkg,
@@ -13138,6 +13169,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             verify_stderr = "verify subprocess timed out after 60 s"
         installed = (verify_rc == 0)
         version = verify_stdout.strip() if installed else None
+        if installed:
+            type(self)._LOCAL_STATUS_CACHE[pkg] = {"package": pkg, "installed": True, "version": version}
         return self._reply(200 if installed else 502, {
             "ok": installed,
             "package": pkg,
@@ -14509,6 +14542,28 @@ class H(http.server.SimpleHTTPRequestHandler):
             resp["dsWarning"] = ds_warning
         return self._reply(200, resp)
 
+    # POST /__seed_default_ds?project=<id>&ds=<dsId>
+    # Bakes the bundled template design system into an EXISTING project's
+    # design-systems/<dsId>/ (default ds = "default"), with the same customizer
+    # payload the new-project flow sends (dsOverrideCss / dsDarkCss / dsFont /
+    # dsLogo / dsLogoDot / dsSchemes / dsLabel). Drives the "Use template design
+    # system" button on the workflow DS-generator node — replaces whatever the
+    # node had on disk with the customized template, so its badge flips to Built.
+    def _seed_existing_ds(self, qs):
+        try:
+            root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body()
+        ds_id = (_qs_get(qs, "ds") or "default").strip().lower()
+        if not PROJECT_ID_OK.match(ds_id):
+            return self._reply(400, {"error": f"invalid ds id: {ds_id!r}"})
+        try:
+            ds_ref = self._seed_default_ds(root, body, ds_id)
+        except Exception as e:
+            return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "ds": ds_ref, "id": ds_id})
+
     # Seed <project>/design-systems/default/ from the bundled starter DS,
     # baking in the new-project customizer's tweaks. `body` carries:
     #   dsOverrideCss  — a ":root{…}" block (colours/radius/type/spacing) the
@@ -14520,12 +14575,19 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Also writes the editor/design-systems/default.js runtime mirror so the
     # editor's DS view + listDesignSystems() light up at first boot. Returns
     # the dsRef dict { id, version, pinned:false } for data.js meta.
-    def _seed_default_ds(self, dest, body):
+    def _seed_default_ds(self, dest, body, ds_id="default"):
         if not os.path.isdir(DEFAULT_DS_DIR):
             raise FileNotFoundError("bundled default-design-system/ is missing")
-        ds_id = "default"
+        ds_id = (ds_id or "default").strip().lower()
+        if not PROJECT_ID_OK.match(ds_id):
+            raise ValueError(f"invalid ds id: {ds_id!r}")
         ds_dir = _safe_join(dest, "design-systems", ds_id)
         # Copy the whole template tree (trio + shells + templates + assets).
+        # When seeding over an existing DS folder (the "Use template design
+        # system" button on an already-built node) the user is deliberately
+        # replacing it — clear the old tree first so copytree can land.
+        if os.path.isdir(ds_dir):
+            shutil.rmtree(ds_dir)
         shutil.copytree(DEFAULT_DS_DIR, ds_dir)
 
         override_css = (body.get("dsOverrideCss") or "").strip()
@@ -14738,7 +14800,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         h.update(b"\x00")
         h.update(gallery_html.encode("utf-8", errors="replace"))
         version = h.hexdigest()[:12]
-        ds_label = (body.get("dsLabel") or "").strip() or "Default Design System"
+        ds_label = (body.get("dsLabel") or "").strip() or "Template Design System"
         meta = {}
         meta_path = os.path.join(ds_dir, "meta.json")
         try:

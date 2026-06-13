@@ -1,12 +1,12 @@
 ---
-name: Default Design System
+name: Template Design System
 id: default
 genre: restrained institutional product UI (neutral product, Plus Jakarta Sans, pill controls)
 method: clean hand-authored CSS — sane class names, semantic markup, inline-SVG icons; self-contained single source of truth in this folder
 font: Plus Jakarta Sans 300/400/500/600/700 (Google Fonts CDN)
 ---
 
-# Default Design System
+# Template Design System
 
 A clean, hand-authored design system **without any vendor
 framework baggage**. Every value (colour, type scale, spacing, radii, shadows) and every component
