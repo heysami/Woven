@@ -604,6 +604,8 @@ const Icon = {
   Gear:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M9.5 1.7l.5 1.6 1.5.6 1.4-.7 1 1-.7 1.4.6 1.5 1.6.5v1.4l-1.6.5-.6 1.5.7 1.4-1 1-1.4-.7-1.5.6-.5 1.6H6.5l-.5-1.6-1.5-.6-1.4.7-1-1 .7-1.4-.6-1.5-1.6-.5V7.3l1.6-.5.6-1.5-.7-1.4 1-1 1.4.7 1.5-.6.5-1.6z"/><circle cx="8" cy="8" r="2.2"/></svg>`,
   User:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>`,
   Image:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><circle cx="6" cy="6.5" r="1"/><path d="M3 11l3-2.5 2.5 2 2-1.5L13 11.5"/></svg>`,
+  Sun:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>`,
+  Moon:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg>`,
   Film:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M2.5 6h11M2.5 10h11M6 3v10M10 3v10"/></svg>`,
   // Motion: keyframe diamonds on two timeline tracks (the After-Effects /
   // GSAP-timeline metaphor) — used by the motion-gen skill ("Motion (HTML)")
@@ -14250,6 +14252,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     baseFontPx: null, typeRatio: null, typeTouched: false,
     spacingBasePx: null, spacingRatio: null, spacingTouched: false,
     logo: null,   // { dataUrl, ext, name } when the user uploads a sidebar logo
+    schemeLight: true, schemeDark: false,   // which colour schemes the DS ships
   });
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
@@ -14307,6 +14310,11 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
         if (dsSettings.logo && dsSettings.logo.dataUrl) {
           payload.dsLogo = { dataUrl: dsSettings.logo.dataUrl, ext: dsSettings.logo.ext };
         }
+        payload.dsSchemes = [
+          ...(dsSettings.schemeLight ? ["light"] : []),
+          ...(dsSettings.schemeDark ? ["dark"] : []),
+        ];
+        if (!payload.dsSchemes.length) payload.dsSchemes = ["light"];
       }
       const r = await fetch(apiUrl("/__projects/new"), {
         method: "POST",
@@ -14461,6 +14469,14 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
   const [previewFile, setPreviewFile] = useState("gallery.html");
+  // Preview in dark when the DS includes dark — and default to dark when it's
+  // the ONLY scheme the user kept.
+  const darkOnly = settings.schemeDark && !settings.schemeLight;
+  const [previewDark, setPreviewDark] = useState(false);
+  useEffect(() => {
+    if (darkOnly && !previewDark) setPreviewDark(true);
+    if (!settings.schemeDark && previewDark) setPreviewDark(false);
+  }, [settings.schemeDark, settings.schemeLight]);
   const set = (patch) => setSettings(s => ({ ...s, ...patch }));
 
   // Inject / refresh the override <style> + font <link> inside the iframe.
@@ -14469,6 +14485,11 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     let doc;
     try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.head) return;
+    // Colour scheme — toggle the dark theme on the previewed document.
+    if (doc.documentElement) {
+      if (previewDark) doc.documentElement.setAttribute("data-theme", "dark");
+      else doc.documentElement.removeAttribute("data-theme");
+    }
     // Font webfont link
     let link = doc.getElementById("__ds_custom_font");
     if (custom.font && custom.font.googleFontsUrl) {
@@ -14492,6 +14513,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     }
     style.textContent = custom.overrideCss || "";
     doc.head.appendChild(style);   // re-append → keep it last
+    void previewDark;              // (in deps below — keeps theme in sync)
     // Logo — swap every sidebar / topnav logo <img> src to the uploaded
     // data URL (or restore the bundled default when cleared).
     const imgs = doc.querySelectorAll(".sidebar__logo img, .topnav__logo img, img.app-logo");
@@ -14503,7 +14525,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         img.setAttribute("src", img.dataset.dsOrigSrc);
       }
     });
-  }, [custom, settings.logo]);
+  }, [custom, settings.logo, previewDark]);
 
   useEffect(() => { if (frameReady) applyToFrame(); }, [frameReady, applyToFrame]);
 
@@ -14541,6 +14563,17 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 onChange=${(v) => set({ primary: v })} onReset=${() => set({ primary: null })}/>
               <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
                 onChange=${(v) => set({ secondary: v })} onReset=${() => set({ secondary: null })}/>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">Colour scheme</div>
+              <${DsSchemeCheck} label="Light mode" checked=${settings.schemeLight}
+                disabled=${settings.schemeLight && !settings.schemeDark}
+                onToggle=${() => set({ schemeLight: !settings.schemeLight })}/>
+              <${DsSchemeCheck} label="Dark mode" checked=${settings.schemeDark}
+                disabled=${settings.schemeDark && !settings.schemeLight}
+                onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
+              <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
             </section>
 
             <section className="dscz-group">
@@ -14613,6 +14646,18 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                   ${v.label}
                 </button>
               `)}
+              ${settings.schemeLight && settings.schemeDark && html`
+                <div className="dscz-scheme-switch" role="group" aria-label="Preview colour scheme">
+                  <button type="button" className=${"dscz-scheme-opt" + (!previewDark ? " is-active" : "")}
+                    onClick=${() => setPreviewDark(false)} title="Light preview" aria-label="Light preview">
+                    <${Icon.Sun}/>
+                  </button>
+                  <button type="button" className=${"dscz-scheme-opt" + (previewDark ? " is-active" : "")}
+                    onClick=${() => setPreviewDark(true)} title="Dark preview" aria-label="Dark preview">
+                    <${Icon.Moon}/>
+                  </button>
+                </div>
+              `}
             </div>
             <iframe
               ref=${iframeRef}
@@ -14674,6 +14719,23 @@ function DsLogoRow({ logo, onPick }) {
         onChange=${(e) => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
       ${err && html`<div className="newproj-error">${err}</div>`}
     </div>
+  `;
+}
+
+/* One scheme include-checkbox (Light / Dark). Disabled when it's the last
+   one checked so the DS always ships at least one scheme. */
+function DsSchemeCheck({ label, checked, disabled, onToggle }) {
+  return html`
+    <button type="button"
+      className=${"dscz-scheme-check" + (checked ? " is-on" : "")}
+      aria-pressed=${checked}
+      disabled=${disabled}
+      onClick=${onToggle}>
+      <span className=${"newproj-ds-check" + (checked ? " is-on" : "")} aria-hidden="true">
+        ${checked ? html`<${Icon.Check}/>` : null}
+      </span>
+      <span className="dscz-scheme-check-label">${label}</span>
+    </button>
   `;
 }
 

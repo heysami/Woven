@@ -14608,11 +14608,49 @@ class H(http.server.SimpleHTTPRequestHandler):
                         except OSError:
                             pass
 
+        # 1c) Colour schemes — the DS declares which schemes it ships. The
+        #     template carries a :root[data-theme="dark"] block; honour the
+        #     user's choice: light-only strips the dark block, dark-only also
+        #     stamps data-theme="dark" on every page so it renders dark by
+        #     default. Both keeps the block + light default.
+        schemes = body.get("dsSchemes")
+        if not isinstance(schemes, list):
+            schemes = []
+        schemes = [s for s in schemes if s in ("light", "dark")] or ["light"]
+        include_dark = "dark" in schemes
+        dark_only = include_dark and "light" not in schemes
+        styles_path = os.path.join(ds_dir, "styles.css")
+        if not include_dark:
+            try:
+                with open(styles_path, "r", encoding="utf-8") as f:
+                    _css = f.read()
+                _css = re.sub(r':root\[data-theme="dark"\]\s*\{[^}]*\}', "", _css)
+                _css = re.sub(r'/\*+[^*]*?Dark theme[\s\S]*?\*/', "", _css)
+                with open(styles_path, "w", encoding="utf-8") as f:
+                    f.write(_css)
+            except Exception:
+                pass
+        if dark_only:
+            for root, _dirs, files in os.walk(ds_dir):
+                for fn in files:
+                    if not fn.lower().endswith(".html"):
+                        continue
+                    fp = os.path.join(root, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8") as f:
+                            t = f.read()
+                    except Exception:
+                        continue
+                    if "<html" in t and "data-theme" not in t:
+                        nt = re.sub(r"(<html\b[^>]*)>", r'\1 data-theme="dark">', t, count=1)
+                        if nt != t:
+                            with open(fp, "w", encoding="utf-8") as f:
+                                f.write(nt)
+
         # 2) Token overrides — append the frontend-computed :root block to the
         #    end of styles.css. A later :root{} of equal specificity wins by
         #    source order, so this re-skins colours/radius/type/spacing without
         #    touching the carefully-authored component rules above.
-        styles_path = os.path.join(ds_dir, "styles.css")
         styles_css = ""
         try:
             with open(styles_path, "r", encoding="utf-8") as f:
@@ -14657,6 +14695,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         meta["id"] = ds_id
         meta["version"] = version
         meta["label"] = ds_label
+        meta["schemes"] = schemes
+        meta["defaultScheme"] = "dark" if dark_only else "light"
         try:
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)

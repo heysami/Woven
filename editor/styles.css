@@ -822,6 +822,23 @@ button {
 }
 .dscz-preview-tab:hover { opacity: 0.9; background: rgba(0,0,0,0.04); }
 .dscz-preview-tab.is-active { opacity: 1; background: var(--accent, #2c5fff); color: #fff; }
+.dscz-scheme-switch { margin-left: auto; flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: rgba(0,0,0,0.06); }
+.dscz-scheme-opt {
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 26px;
+  border: 0; border-radius: 5px; cursor: pointer; background: transparent; color: var(--text, #1a1a1a); opacity: 0.55;
+}
+.dscz-scheme-opt:hover { opacity: 0.85; }
+.dscz-scheme-opt.is-active { opacity: 1; background: var(--bg, #fff); color: var(--accent, #2c5fff); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
+/* Colour-scheme include checkbox (Light / Dark) */
+.dscz-scheme-check {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; cursor: pointer; text-align: left;
+  background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text, #1a1a1a);
+}
+.dscz-scheme-check:hover:not(:disabled) { background: rgba(0,0,0,0.04); }
+.dscz-scheme-check.is-on { border-color: color-mix(in srgb, var(--accent, #2c5fff) 35%, transparent); background: color-mix(in srgb, var(--accent, #2c5fff) 7%, transparent); }
+.dscz-scheme-check:disabled { cursor: default; }
+.dscz-scheme-check-label { font: 500 13px/1.2 var(--font-sans, system-ui, sans-serif); }
 .dscz-preview-frame { width: 100%; flex: 1 1 auto; min-height: 0; border: 0; display: block; background: #fff; }
 .dscz-err { margin: 0; padding: 8px 22px 0; }
 .dscz-foot {
