@@ -14059,6 +14059,33 @@ const DS_DEFAULTS = {
   radii: { xs:2, s:4, base:8, m:12, l:16, xl:24, "2xl":32, pill:100 },
 };
 
+// Popular Coolors palettes (most-saved on coolors.co). Picking one fills the
+// primary / secondary / tertiary swatches from the palette's first three
+// colours; the neutral grey base is left to its own control. Colours are the
+// canonical 5-stop strips.
+const DS_PALETTES = [
+  { name: "Sunset Terracotta", colors: ["#264653","#2A9D8F","#E9C46A","#F4A261","#E76F51"] },
+  { name: "Crimson & Sky",     colors: ["#880D1E","#DD2D4A","#F26A8D","#F49CBB","#CBEEF3"] },
+  { name: "Patriot",           colors: ["#003049","#D62828","#F77F00","#FCBF49","#EAE2B7"] },
+  { name: "Cotton Candy",      colors: ["#CDB4DB","#FFC8DD","#FFAFCC","#BDE0FE","#A2D2FF"] },
+  { name: "Coral Blush",       colors: ["#F08080","#F4978E","#F8AD9D","#FBC4AB","#FFDAB9"] },
+  { name: "Sage & Cream",      colors: ["#CCD5AE","#E9EDC9","#FEFAE0","#FAEDCD","#D4A373"] },
+  { name: "Slate Red",         colors: ["#2B2D42","#8D99AE","#EDF2F4","#EF233C","#D90429"] },
+  { name: "Olive Grove",       colors: ["#606C38","#283618","#FEFAE0","#DDA15E","#BC6C25"] },
+  { name: "Marine Gold",       colors: ["#8ECAE6","#219EBC","#023047","#FFB703","#FB8500"] },
+  { name: "Midnight Steel",    colors: ["#0D1B2A","#1B263B","#415A77","#778DA9","#E0E1DD"] },
+  { name: "Ocean Depth",       colors: ["#03045E","#0077B6","#00B4D8","#90E0EF","#CAF0F8"] },
+  { name: "Dusty Rose",        colors: ["#FFCDB2","#FFB4A2","#E5989B","#B5838D","#6D6875"] },
+  { name: "Muted Sunset",      colors: ["#355070","#6D597A","#B56576","#E56B6F","#EAAC8B"] },
+  { name: "Blush Mauve",       colors: ["#D8E2DC","#FFE5D9","#FFCAD4","#F4ACB7","#9D8189"] },
+  { name: "Mindful Teal",      colors: ["#1A535C","#4ECDC4","#F7FFF7","#FF6B6B","#FFE66D"] },
+  { name: "Flat Pop",          colors: ["#EF476F","#FFD166","#06D6A0","#118AB2","#073B4C"] },
+  { name: "Taupe Haze",        colors: ["#22223B","#4A4E69","#9A8C98","#C9ADA7","#F2E9E4"] },
+  { name: "Jewel Tones",       colors: ["#5F0F40","#9A031E","#FB8B24","#E36414","#0F4C5C"] },
+  { name: "Pastel Rainbow",    colors: ["#FFADAD","#FFD6A5","#FDFFB6","#CAFFBF","#9BF6FF"] },
+  { name: "Forest Pine",       colors: ["#2F3E46","#354F52","#52796F","#84A98C","#CAD2C5"] },
+];
+
 // Curated Google-Fonts catalog for the family picker. familyCss includes a
 // sensible system fallback; url is the css2 link the daemon swaps in.
 const DS_FONT_CATALOG = [
@@ -14321,6 +14348,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
   const [dsSettings, setDsSettings] = useState({
     primary: null, secondary: null, tertiary: null, neutral: null,
+    paletteName: null,   // label of the applied Coolors preset (display only)
     roundness: 1,
     fontKey: DS_DEFAULTS.fontKey,
     baseFontPx: null, typeRatio: null, typeTouched: false,
@@ -14633,12 +14661,15 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
 
             <section className="dscz-group">
               <div className="dscz-group-label">Colour</div>
+              <${DsPaletteDropdown}
+                current=${settings.paletteName}
+                onPick=${(p) => set({ primary: p.colors[0], secondary: p.colors[1], tertiary: p.colors[2], paletteName: p.name })}/>
               <${DsColorRow} label="Primary"   value=${settings.primary}   fallback=${DS_DEFAULTS.primary}
-                onChange=${(v) => set({ primary: v })} onReset=${() => set({ primary: null })}/>
+                onChange=${(v) => set({ primary: v, paletteName: null })} onReset=${() => set({ primary: null, paletteName: null })}/>
               <${DsColorRow} label="Secondary" value=${settings.secondary} fallback=${DS_DEFAULTS.secondary}
-                onChange=${(v) => set({ secondary: v })} onReset=${() => set({ secondary: null })}/>
+                onChange=${(v) => set({ secondary: v, paletteName: null })} onReset=${() => set({ secondary: null, paletteName: null })}/>
               <${DsColorRow} label="Tertiary" value=${settings.tertiary} fallback=${DS_DEFAULTS.tertiary}
-                onChange=${(v) => set({ tertiary: v })} onReset=${() => set({ tertiary: null })}/>
+                onChange=${(v) => set({ tertiary: v, paletteName: null })} onReset=${() => set({ tertiary: null, paletteName: null })}/>
               <${DsColorRow} label="Neutral (grey base)" value=${settings.neutral} fallback=${DS_DEFAULTS.neutral}
                 onChange=${(v) => set({ neutral: v })} onReset=${() => set({ neutral: null })}/>
             </section>
@@ -14796,6 +14827,40 @@ function DsLogoRow({ logo, onPick }) {
         style=${{ display: "none" }}
         onChange=${(e) => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
       ${err && html`<div className="newproj-error">${err}</div>`}
+    </div>
+  `;
+}
+
+/* Coolors-preset picker: a trigger that expands an inline list of popular
+   palettes (name + 5-swatch strip). Selecting one fills primary/secondary/
+   tertiary via onPick. Inline (not an overlay) so it never clips inside the
+   scrolling controls rail. */
+function DsPaletteDropdown({ current, onPick }) {
+  const [open, setOpen] = useState(false);
+  const active = current ? DS_PALETTES.find(p => p.name === current) : null;
+  const strip = (cols, cls) => html`<span className=${"dscz-pal-strip" + (cls ? " " + cls : "")}>
+    ${cols.map((c, i) => html`<span key=${i} style=${{ background: c }}/>`)}
+  </span>`;
+  return html`
+    <div className="dscz-pal">
+      <button type="button" className="dscz-pal-trigger" onClick=${() => setOpen(o => !o)} aria-expanded=${open}>
+        ${active
+          ? html`${strip(active.colors)}<span className="dscz-pal-name">${active.name}</span>`
+          : html`<span className="dscz-pal-name dscz-pal-name-empty">Pick a palette…</span>`}
+        <span className=${"dscz-pal-caret" + (open ? " is-open" : "")} aria-hidden="true">▾</span>
+      </button>
+      ${open && html`
+        <div className="dscz-pal-list">
+          ${DS_PALETTES.map(p => html`
+            <button key=${p.name} type="button"
+              className=${"dscz-pal-item" + (current === p.name ? " is-active" : "")}
+              onClick=${() => { onPick(p); setOpen(false); }}>
+              ${strip(p.colors)}
+              <span className="dscz-pal-name">${p.name}</span>
+            </button>
+          `)}
+        </div>
+      `}
     </div>
   `;
 }
