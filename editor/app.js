@@ -15544,12 +15544,20 @@ function PrototypeCatalogLanding({ data, onSpawnSystemThread }) {
   const [query, setQuery] = useState("");
   // Per-card image overlay (lightbox). Holds {src, reason, title} when open.
   const [zoom, setZoom] = useState(null);
+  // Progressive (infinite-scroll) render window. The catalog is ~500 cards
+  // each carrying a full-res sample PNG; mounting them all at once is what made
+  // this page heavy. Instead we mount the first BATCH and append the next BATCH
+  // whenever the bottom sentinel scrolls into view, so the first screen paints
+  // its images immediately and the rest stream in as the user scrolls.
+  const BATCH = 24;
+  const [renderLimit, setRenderLimit] = useState(BATCH);
+  const sentinelRef = useRef(null);
 
-  if (!data) {
-    return html`<div className="ref-loading">Loading design library…</div>`;
-  }
-  const groups = Array.isArray(data.groups) ? data.groups : [];
-  const total  = data.total || 0;
+  // NB: the `!data` early return lives below the hooks (after the effects), so
+  // hook order stays stable across the loading → loaded transition. Everything
+  // here is null-safe so it can compute before data lands.
+  const groups = data && Array.isArray(data.groups) ? data.groups : [];
+  const total  = (data && data.total) || 0;
 
   // Apply the text filter to every group's items (case-insensitive match
   // against title / slug / summary). Empty filter passes everything.
@@ -15564,6 +15572,41 @@ function PrototypeCatalogLanding({ data, onSpawnSystemThread }) {
     .map(g => ({ ...g, items: g.items.filter(filterItem) }))
     .filter(g => g.items.length > 0);
   const filteredTotal = visibleGroups.reduce((sum, g) => sum + g.items.length, 0);
+
+  // Walk groups in order and only mount cards up to renderLimit. Each capped
+  // group keeps its FULL count for the header badge while rendering a slice.
+  let budget = renderLimit;
+  const cappedGroups = [];
+  for (const g of visibleGroups) {
+    if (budget <= 0) break;
+    const slice = g.items.slice(0, budget);
+    budget -= slice.length;
+    cappedGroups.push({ ...g, items: slice, fullCount: g.items.length });
+  }
+  const renderedCount = cappedGroups.reduce((sum, g) => sum + g.items.length, 0);
+  const hasMore = renderedCount < filteredTotal;
+
+  // Reset the window to the top whenever the filter or query changes, so a
+  // narrowed result set doesn't inherit a deep scroll offset.
+  useEffect(() => { setRenderLimit(BATCH); }, [filterKey, q]);
+
+  // Append the next batch when the sentinel nears the viewport. rootMargin
+  // pre-loads ~600px early so scrolling feels continuous, not stop-start. The
+  // effect re-runs on renderedCount so the observer re-arms after each append.
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) setRenderLimit(l => l + BATCH);
+    }, { rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, renderedCount]);
+
+  if (!data) {
+    return html`<div className="ref-loading">Loading design library…</div>`;
+  }
 
   return html`
     <div className="ref-root">
@@ -15607,10 +15650,10 @@ function PrototypeCatalogLanding({ data, onSpawnSystemThread }) {
         <div className="ref-empty">No detail files match the current filter.</div>
       `}
 
-      ${visibleGroups.map(g => html`
+      ${cappedGroups.map(g => html`
         <div key=${g.key} className="ref-group proto-catalog-group" data-cat=${g.key}>
           <div className="ref-group-head">
-            <div className="ref-group-title">${g.label} <span className="ref-group-count">${g.items.length}</span></div>
+            <div className="ref-group-title">${g.label} <span className="ref-group-count">${g.fullCount}</span></div>
             <div className="ref-group-desc">${g.description}</div>
           </div>
           <div className="proto-catalog-grid">
@@ -15623,6 +15666,13 @@ function PrototypeCatalogLanding({ data, onSpawnSystemThread }) {
           </div>
         </div>
       `)}
+
+      ${hasMore && html`
+        <div ref=${sentinelRef} className="proto-catalog-sentinel" aria-hidden="true">
+          <span className="proto-catalog-sentinel-spinner"></span>
+          Loading more… ${renderedCount} of ${filteredTotal}
+        </div>
+      `}
 
       ${zoom && createPortal(html`
         <div className="proto-catalog-zoom" onClick=${() => setZoom(null)} role="dialog" aria-label="Image preview">
@@ -15673,16 +15723,6 @@ function PrototypeGenreCard({ item, category, onZoom }) {
         <div className="proto-catalog-card-summary">${item.summary}</div>
       `}
 
-      ${!open && hasImages && html`
-        <button
-          type="button"
-          className="proto-catalog-card-reveal"
-          onClick=${() => setOpen(true)}
-          title="Show reference images"
-        >Show ${item.images.length} reference image${item.images.length === 1 ? "" : "s"} ▾</button>
-      `}
-
-      ${open && html`
       <div className="proto-catalog-card-imgstrip" data-empty=${!hasImages}>
         ${hasImages
           ? item.images.map((img, i) => html`
@@ -15697,7 +15737,7 @@ function PrototypeGenreCard({ item, category, onZoom }) {
                   disabled=${!img.exists}
                 >
                   ${img.exists
-                    ? html`<img src=${apiUrl(img.src)} alt=${img.reason || item.title} loading="lazy"/>`
+                    ? html`<img src=${apiUrl(img.src)} alt=${img.reason || item.title} loading="lazy" decoding="async"/>`
                     : html`<span className="proto-catalog-thumb-placeholder">placeholder</span>`}
                 </button>
                 ${img.reason && html`<figcaption className="proto-catalog-thumb-caption">${img.reason}</figcaption>`}
@@ -15712,7 +15752,6 @@ function PrototypeGenreCard({ item, category, onZoom }) {
               </div>
             `}
       </div>
-      `}
 
       ${open && html`
         <div className="proto-catalog-card-meta">
