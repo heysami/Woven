@@ -865,19 +865,12 @@ def _serve_editor_static(h, rel):
 # pan, and can co-edit existing nodes (which now sync). Tighten/loosen here.
 _GUEST_LOCK_CSS = (
     "<style id=\"th-live-lock\">"
-    # Collapse the top bar + node rail IN FLOW (not display:none): they are grid
-    # tracks of .workflow-root/.workflow-body, so removing them collapses the
-    # canvas row/column and the whole canvas goes white. height/width:0 keeps
-    # the grid tracks intact so the canvas still fills.
+    # Hide ONLY the top bar (Projects nav / Settings / Exports live there).
+    # Collapse it IN FLOW (not display:none) so its grid row stays and the
+    # canvas still fills. The left node rail + editing tools STAY so guests can
+    # build collaboratively.
     ".workflow-bar{visibility:hidden!important;height:0!important;min-height:0!important;"
     "padding:0!important;border:0!important;overflow:hidden!important}"
-    ".workflow-nav-rail{visibility:hidden!important;width:0!important;min-width:0!important;"
-    "padding:0!important;border:0!important;overflow:hidden!important}"
-    # Reclaim the rail/library grid columns so the canvas fills full width.
-    ".workflow-body{grid-template-columns:0 0 0 minmax(0,1fr)!important}"
-    # These are not grid tracks - safe to remove outright.
-    ".proto-door-back,.workflow-toolbar-gear,[class*=\"workflow-library\"],"
-    "[class*=\"node-library\"],[class*=\"nodes-panel\"]{display:none!important}"
     "</style>"
 ).encode("utf-8")
 # Injected before </body> so live cursors mount on the real canvas.
