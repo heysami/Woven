@@ -742,7 +742,9 @@ def host_events_stream(h, project_id):
     h.send_header("Cache-Control", "no-store")
     h.send_header("Connection", "close")
     h.send_header("X-Accel-Buffering", "no")
+    h.send_header("Transfer-Encoding", "chunked")  # stream through cloudflared
     h.end_headers()
+    _sse_pad(h)  # fill proxy buffer so events start flowing over a tunnel
     waiter = _Waiter()
     with s.lock:
         s.waiters.add(waiter)
@@ -767,7 +769,7 @@ def host_events_stream(h, project_id):
                         return True
             else:
                 try:
-                    h.wfile.write(b": heartbeat\n\n"); h.wfile.flush()
+                    _sse_chunk(h, b": heartbeat\n\n")
                 except Exception:
                     return True
     finally:
@@ -949,24 +951,41 @@ def _proxy_daemon_read(h, path, query, project):
         return _json(h, 502, {"error": f"proxy failed: {e}"})
     ctype = resp.headers.get("Content-Type", "application/octet-stream")
     if "text/event-stream" in ctype:
+        # LONG-POLL — Cloudflare quick tunnels buffer a streaming body until the
+        # connection CLOSES (proven: 0 bytes over 19s of a held SSE). So we don't
+        # hold: forward daemon events until the FIRST real change (or a ~20s
+        # idle cap), then CLOSE so the proxy/edge flushes. The browser's
+        # EventSource auto-reconnects for the next poll. Latency ≈ RTT on a
+        # change; on localhost it behaves the same, just with a reconnect per
+        # change. The editor refetches /__workflow on each `*-changed` event.
+        import time as _t
         h.close_connection = True
         h.send_response(getattr(resp, "status", 200))
         h.send_header("Content-Type", ctype)
         h.send_header("Cache-Control", "no-store")
         h.send_header("Connection", "close")
-        h.send_header("X-Accel-Buffering", "no")  # don't let proxies buffer the stream
+        h.send_header("X-Accel-Buffering", "no")
         h.end_headers()
-        # Stream line-by-line, NOT read(N) — SSE messages are small + infrequent,
-        # and read(2048) blocks until the buffer fills, which would hold back
-        # every event (host edits never reach guests live). readline() forwards
-        # each `event:`/`data:`/blank line the instant it arrives.
+        try: h.wfile.write(b"retry: 250\n\n")  # fast EventSource reconnect between polls
+        except Exception: pass
+        start = _t.monotonic()
         try:
-            while True:
+            while _t.monotonic() - start < 20:
                 line = resp.readline()
-                if not line: break
-                h.wfile.write(line); h.wfile.flush()
+                if not line:
+                    break
+                try:
+                    h.wfile.write(line)
+                except Exception:
+                    break
+                if line.startswith(b"event:") and b"changed" in line:
+                    break  # a real change — close so Cloudflare flushes it
+            try: h.wfile.flush()
+            except Exception: pass
         except Exception:
             pass
+        try: resp.close()
+        except Exception: pass
         return True
     body = resp.read()
     h.send_response(getattr(resp, "status", 200))
@@ -1312,6 +1331,13 @@ def _events_stream(h, s):
     # SSE holds the socket open for the session's life; tell the keep-alive
     # handler to close it when we return rather than re-reading a dead socket
     # (avoids a spurious traceback in the gate console on client disconnect).
+    # LONG-POLL (same reason as the workflow stream: Cloudflare quick tunnels
+    # buffer a held SSE body until close). Each connection forwards the snapshot
+    # + any cursor/lock events for a short window, then CLOSES so the edge
+    # flushes the batch; the browser's EventSource reconnects. ~1.2s window =
+    # cursors update within ~1.2s over a tunnel (instant on localhost) without a
+    # reconnect-per-cursor-move storm.
+    import time as _t
     h.close_connection = True
     h.send_response(200)
     h.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -1319,47 +1345,76 @@ def _events_stream(h, s):
     h.send_header("Connection", "close")
     h.send_header("X-Accel-Buffering", "no")
     h.end_headers()
+    def _raw(evt, data):
+        try:
+            h.wfile.write(("event: %s\ndata: %s\n\n" % (
+                evt, json.dumps(data or {}, separators=(",", ":")))).encode("utf-8"))
+            return True
+        except Exception:
+            return False
     waiter = _Waiter()
     with s.lock:
         s.waiters.add(waiter)
         roster = _roster(s)
         leases = _leases_public(s)
     try:
-        # hello + initial snapshot
-        _sse_write(h, "live-connected", {"guestId": guest_id})
-        _sse_write(h, "roster", {"participants": roster})
-        _sse_write(h, "lock", {"leases": leases})
-        while True:
-            fired = waiter.wait(timeout=25)
-            # refresh lastSeen so the guest isn't reaped while only listening
+        try: h.wfile.write(b"retry: 250\n\n")  # fast EventSource reconnect between polls
+        except Exception: pass
+        _raw("live-connected", {"guestId": guest_id})
+        _raw("roster", {"participants": roster})
+        _raw("lock", {"leases": leases})
+        start = _t.monotonic()
+        while _t.monotonic() - start < 1.2:
+            waiter.wait(timeout=max(0.05, 1.2 - (_t.monotonic() - start)))
             with s.lock:
                 p = s.participants.get(guest_id)
                 if p is not None:
                     p["lastSeen"] = _now()
                 still_in = p is not None and s.active
             if not still_in:
-                _sse_write(h, "session-ended", {})
-                return True
-            if fired:
-                for evt_type, evt_data in waiter.drain():
-                    if not _sse_write(h, evt_type, evt_data):
-                        return True
-            else:
-                try:
-                    h.wfile.write(b": heartbeat\n\n")
-                    h.wfile.flush()
-                except Exception:
-                    return True
+                _raw("session-ended", {})
+                break
+            for evt_type, evt_data in waiter.drain():
+                _raw(evt_type, evt_data)
+        try: h.wfile.flush()
+        except Exception: pass
     finally:
         with s.lock:
             s.waiters.discard(waiter)
+    return True
 
+
+def _sse_chunk(h, payload):
+    """Write `payload` as ONE HTTP chunk (hex-length + CRLF framing) and flush.
+    Chunked transfer-encoding is what makes cloudflared (and other proxies)
+    stream each SSE event immediately instead of buffering a read-until-close
+    body — without this, host→guest mirror + cursors never arrive over a tunnel."""
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    h.wfile.write(f"{len(payload):X}\r\n".encode("ascii") + payload + b"\r\n")
+    h.wfile.flush()
+
+def _sse_chunk_end(h):
+    try:
+        h.wfile.write(b"0\r\n\r\n"); h.wfile.flush()
+    except Exception:
+        pass
+
+# Cloudflare (and other proxies) buffer a streaming response body until ~2KB has
+# accumulated before they start flushing to the client. Without this, the first
+# SSE events sit in the proxy's buffer and never arrive over a tunnel. An initial
+# padding comment fills that buffer so the stream starts flowing immediately.
+_SSE_PADDING = (":" + " " * 2049 + "\n\n")
+def _sse_pad(h):
+    try:
+        _sse_chunk(h, _SSE_PADDING)
+    except Exception:
+        pass
 
 def _sse_write(h, evt_type, data):
     try:
         payload = json.dumps(data or {}, separators=(",", ":"))
-        h.wfile.write(f"event: {evt_type}\ndata: {payload}\n\n".encode("utf-8"))
-        h.wfile.flush()
+        _sse_chunk(h, f"event: {evt_type}\ndata: {payload}\n\n")
         return True
     except Exception:
         return False
