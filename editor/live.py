@@ -871,6 +871,9 @@ _GUEST_LOCK_CSS = (
     # build collaboratively.
     ".workflow-bar{visibility:hidden!important;height:0!important;min-height:0!important;"
     "padding:0!important;border:0!important;overflow:hidden!important}"
+    # The bar lives in row 1 of .workflow-root's grid (~44px reserved); zero it
+    # so there's no empty band where the bar used to be.
+    ".workflow-root{grid-template-rows:0 minmax(0,1fr)!important}"
     "</style>"
 ).encode("utf-8")
 # Injected before </body> so live cursors mount on the real canvas.
@@ -951,6 +954,7 @@ def _proxy_daemon_read(h, path, query, project):
         h.send_header("Content-Type", ctype)
         h.send_header("Cache-Control", "no-store")
         h.send_header("Connection", "close")
+        h.send_header("X-Accel-Buffering", "no")  # don't let proxies buffer the stream
         h.end_headers()
         # Stream line-by-line, NOT read(N) — SSE messages are small + infrequent,
         # and read(2048) blocks until the buffer fills, which would hold back
