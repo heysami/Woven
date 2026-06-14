@@ -8858,12 +8858,7 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
                 title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
               >
                 <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
-                <span className="runs-row-body">
-                  <span className="runs-row-title">${r.title || r.kind}</span>
-                  <span className="runs-row-meta">
-                    ${r.branch}${r.turnsCompleted > 0 ? html` · ${r.turnsCompleted} turn${r.turnsCompleted === 1 ? "" : "s"}` : null}
-                  </span>
-                </span>
+                <span className="runs-row-title">${r.title || r.kind}</span>
                 <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
               </button>
             `;
@@ -9748,7 +9743,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <div className="chat-header">
         <div className="chat-title-group">
           <span className="chat-title">${run.title || "Agent run"}</span>
-          <span className="chat-meta">${run.agentId || "claude"}</span>
+          <span className="chat-meta">
+            ${run.branch || "main"}${run.turnsCompleted > 0 ? ` · ${run.turnsCompleted} turn${run.turnsCompleted === 1 ? "" : "s"}` : ""}
+          </span>
         </div>
         <div className="chat-status-group">
           <${ChatStatusChip} status=${status} error=${error}/>
@@ -54351,11 +54348,24 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         const cursor = Math.floor(pp * N * 3) % N;
         for (let i = 0; i < N; i++) (i === cursor ? strokeRect(slotX(i), CY, SQ) : fillRect(slotX(i), CY, SQ, SQ));
       } else if (phase === "FACE") {
-        // Just ^_^ — no flanking squares. Eyes at slots 1/3, mouth at slot 2.
-        const bop = -Math.abs(Math.sin(t * 4.5)) * 2.5;
-        drawGlyph("^", slotX(1), EYE_Y + bop, 1);
-        drawGlyph("_", slotX(2), MOUTH_Y + bop, 1);
-        drawGlyph("^", slotX(3), EYE_Y + bop, 1);
+        // A proper smiley — two round eyes + an upturned smile — drawn as
+        // vector paths so it FILLS the diamond, instead of the thin/tiny ^_^
+        // glyphs (font was 7px in a 28px circle → hairline + lots of dead
+        // space). Gentle vertical bob keeps it alive.
+        const bop = -Math.abs(Math.sin(t * 4.5)) * 2;
+        const fx = CX, fy = CY + bop;
+        ctx.fillStyle = ink; ctx.strokeStyle = ink;
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        // eyes
+        ctx.beginPath();
+        ctx.arc(fx - 6, fy - 4, 2.8, 0, Math.PI * 2);
+        ctx.arc(fx + 6, fy - 4, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+        // upturned smile (lower arc of a circle)
+        ctx.lineWidth = 2.8;
+        ctx.beginPath();
+        ctx.arc(fx, fy - 0.5, 7.5, 0.15 * Math.PI, 0.85 * Math.PI);
+        ctx.stroke();
       } else if (phase === "ASCII") {
         if (t - lastScramble > 0.28) { scrambleTick++; lastScramble = t; }
         for (let i = 0; i < N; i++) drawGlyph(glyphFor(i, scrambleTick), slotX(i), CY, 1);
