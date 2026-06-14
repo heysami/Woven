@@ -1,0 +1,71 @@
+{
+  "id": "scene-3d-orchestrator",
+  "label": "Scene 3D",
+  "tagline": "The shared WebGL render layer — splits a 3D scene per subsystem (each rendered standalone) and emits a drivable scene",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "subagentName": "scene-3d-orchestrator",
+  "playbookPath": ".claude/agents/scene-3d-orchestrator.md",
+
+  "description": "The SHARED 3D render orchestrator — symmetric to visual-orchestrator but for WebGL scenes. Builds ONE drivable three.js scene (one sceneId) by fanning the render work out into PARALLEL SUBSYSTEM teams: research is a single tech pass that ALSO emits a subsystems[] decomposition (one entry per heavy effect — hero object / grass / water / cloth / particle field / volumetric light), the orchestrator scaffolds one s3d_subsystem_ node per entry (N=1 for a one-object hero → degenerate), each subsystem owns its own {geometry+material+sim} and MUST paint a real frame STANDALONE before composition, then s3d-runtime-composer assembles them under one shared renderer/env/post-chain and exposes the drivable scene API window.__scene3d (self-driven rAF OR host-driven step()). Generalises + replaces the four bespoke 3D builders (h3d-scene-author / sim-3d-scene-builder / game-world-builder / im-output-3d). Used directly for the hero slot AND linked by simulation / narrative / game / interactive-media / motion-studio for their heavy-3D render (mode=host-driven, the caller's loop drives the handles). The plain `3d` drawer remains the right cost for a simple single-object slot; this is the escalation for Spline-grade material quality and/or multi-subsystem scenes.",
+
+  "triggers": [
+    {
+      "mode": "via-hero-3d-alias",
+      "title": "3d-hero slot escalation (through the hero-3d alias)",
+      "rule": "visual-orchestrator classifies a slot as `3d-hero`; the parent dispatches hero-3d-orchestrator, now a thin alias that translates the hero envelope to a scene-3d brief (mode=self-driven) and co-dispatches this orchestrator.",
+      "ruleSource": "docs/agents/subagents/1V-visual-orchestrator.md — '3d vs 3d-hero escalation rule'"
+    },
+    {
+      "mode": "linked-by-experience-orchestrator",
+      "title": "Heavy-3D render for a sim / narrative / game / interactive-media / motion-studio piece",
+      "rule": "When an experience orchestrator commits a `3d-environment` paradigm (or a 3d output medium / a real-time 3D scene), it does NOT hand-build the 3D world — it co-dispatches scene-3d-orchestrator with mode=host-driven and drivenHandles = the entities its loop/physics/spine/mapping moves, then drives the scene each frame via window.__scene3d.step(state, alpha).",
+      "ruleSource": "simulation / narrative / game / interactive-media / motion-studio orchestrator specs — '3d-environment → render via the shared layer'"
+    },
+    {
+      "mode": "chat",
+      "title": "Explicit Spline-grade / multi-subsystem scene request",
+      "rule": "User explicitly asks for a Spline-grade / cinematic / physically-lit 3D scene, or one with several heavy GPU subsystems (glass + grass + water + cloth + particles). Chat dispatches scene-3d-orchestrator directly with the §1 envelope; after hand-off, chat drives the build per simulation-orchestrator.md §5.1.0 shape.",
+      "ruleSource": "editor/kinds/capabilities.py — 'Image creation: dispatch visual-orchestrator FIRST'"
+    }
+  ],
+
+  "dispatches": {
+    "research": [
+      "s3d-research-technique"
+    ],
+    "components": [
+      "s3d-subsystem-author",
+      "s3d-interaction-author",
+      "s3d-runtime-composer"
+    ],
+    "lenses": [
+      "craft-lens",
+      "aesthetic-lens",
+      "concept-lens"
+    ]
+  },
+
+  "skills": [],
+
+  "nodeKinds": {
+    "container": [
+      "scene-3d"
+    ],
+    "agent_overrides": [
+      "s3d_research_*",
+      "s3d_subsystem_*",
+      "s3d_interaction_*",
+      "s3d_runtime_*",
+      "cp_s3d_subsystem_pick_*",
+      "cp_s3d_runtime_pick_*",
+      "cp_s3d_gate_*"
+    ]
+  },
+
+  "documents": {
+    "designDoc": "docs/research/spline-grade-3d-study.md",
+    "reference": "docs/research/prism-glass-reference/prism-hero.html",
+    "calibration": null
+  }
+}

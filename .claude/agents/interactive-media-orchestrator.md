@@ -126,7 +126,7 @@ Build order — each step is "scaffold + dispatch + wait for done" before moving
 
 1. **`im_research_<imId>`** — single drawer. Wait for `done`.
 2. **`im_input_<imId>_<modality>`** — one per declared input; can be scaffolded + dispatched in parallel after research commits. Wait for all done.
-3. **`im_output_<imId>_<medium>`** — one per declared output; parallel after research. Wait for all done.
+3. **`im_output_<imId>_<medium>`** — one per declared output; parallel after research. Wait for all done. **Exception — `medium: 3d`:** do NOT scaffold `im-output-3d` (deprecated). Co-dispatch `scene-3d-orchestrator` with `mode: host-driven`, exposing the handles the mapping output will drive; the runtime feeds `mapping.js`'s param vector each frame via `window.__scene3d.step(params, alpha)`. Shader / particle / audio outputs keep their own drawers. See `scene-3d-orchestrator.md`.
 4. **`im_mapping_<imId>`** — composes inputs + outputs. Wait for done.
 5. **`im_runtime_<imId>`** — composes everything. Wait for done.
 6. **`im_<imId>`** (container, kind: `interactive-media`) — scaffold ONLY now, with `runStatus: done` and the outputs the registry expects.

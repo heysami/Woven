@@ -1,8 +1,8 @@
 {
   "id": "hero-3d-orchestrator",
   "label": "Hero 3D",
-  "tagline": "Spline-grade 3D hero scenes — physical materials, studio light, damped choreography, UI in the quiet zone",
-  "version": "v1.0",
+  "tagline": "Thin hero-slot alias over scene-3d-orchestrator — translates a 3d-hero slot into a self-driven scene-3d brief",
+  "version": "v2.0",
   "defaultEnabled": true,
   "subagentName": "hero-3d-orchestrator",
   "playbookPath": ".claude/agents/hero-3d-orchestrator.md",
@@ -25,20 +25,12 @@
   ],
 
   "dispatches": {
-    "research": [
-      "h3d-research-technique"
+    "research": [],
+    "components": [],
+    "orchestrators": [
+      "scene-3d-orchestrator"
     ],
-    "components": [
-      "h3d-material-author",
-      "h3d-scene-author",
-      "h3d-interaction-author",
-      "h3d-runtime-composer"
-    ],
-    "lenses": [
-      "craft-lens",
-      "aesthetic-lens",
-      "concept-lens"
-    ]
+    "lenses": []
   },
 
   "skills": [],

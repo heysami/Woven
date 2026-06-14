@@ -18,15 +18,20 @@ A orchestrator is a top-level orchestrating agent that:
 - Is the right entry point for a particular kind of user request
   (image, simulation, interactive piece, future: 3D scene, document, etc.)
 
-Thirteen ship today: `visual-orchestrator`, `simulation-orchestrator`,
+Fourteen ship today: `visual-orchestrator`, `simulation-orchestrator`,
 `interactive-media-orchestrator`, `narrative-experience-orchestrator`,
 `game-experience-orchestrator`, `scrapbook-experience-orchestrator`,
 `interactive-polish-orchestrator`, `motion-studio-orchestrator`,
 `photography-orchestrator`, `illustration-orchestrator`,
-`material-orchestrator`, `creative-visual-orchestrator`, and
-`hero-3d-orchestrator` (the Spline-grade 3D escalation routed by
-visual-orchestrator's `3d-hero` classification — see
-`docs/research/spline-grade-3d-study.md`).
+`material-orchestrator`, `creative-visual-orchestrator`,
+`scene-3d-orchestrator` (the SHARED WebGL render layer — symmetric to
+visual-orchestrator but for 3D; fans render work out per subsystem,
+each subsystem rendering standalone, and emits a DRIVABLE scene; used
+directly for the hero slot and linked by simulation / narrative / game /
+interactive-media / motion-studio for their heavy 3D — see
+`docs/research/spline-grade-3d-study.md`), and `hero-3d-orchestrator`
+(now a thin hero-slot alias over `scene-3d-orchestrator`, kept as the
+target of visual-orchestrator's `3d-hero` classification).
 
 A subagent that just produces one file (a drawer, a researcher, a lens) is
 NOT a orchestrator — it's a component. Don't manifest it here.

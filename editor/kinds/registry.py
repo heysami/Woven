@@ -324,6 +324,65 @@ KINDS = {
                 "notes": "Composer + post chain + veil + harness. All three lenses.",
             },
 
+            # ── Scene-3d component drawers (the SHARED WebGL render layer) ─────
+            # scene-3d-orchestrator is to 3D what visual-orchestrator is to flat
+            # assets. It fans the render work out by SUBSYSTEM: research emits a
+            # subsystems[] decomposition, the orchestrator scaffolds one
+            # s3d_subsystem_ node per entry (dispatched in PARALLEL), and each
+            # one renders + is verified STANDALONE before composition. Generalises
+            # + replaces the four bespoke 3D builders (h3d-scene-author /
+            # sim-3d-scene-builder / game-world-builder / im-output-3d). Linked by
+            # simulation / narrative / game / interactive-media / motion-studio for
+            # their heavy-3D render; used directly for the hero slot. Output is a
+            # DRIVABLE scene (window.__scene3d) the caller's loop can step().
+            # Node-id convention: s3d_<component>_<sceneId>
+            #   s3d_subsystem_loom_hero_thread-graph  (sceneId + sysId)
+            "s3d_research_": {
+                "outputsRoot": "source/{prototype}/scene3d/{sceneId}/research.md",
+                "completion": {"requires": ["files: research.md exists, non-empty"]},
+                "notes": (
+                    "Committed stack + the subsystems[] decomposition: integration, "
+                    "drive mode, SHARED renderer config, post chain, camera grammar, "
+                    "quiet zone, perf rungs, and one subsystem entry per heavy effect."
+                ),
+            },
+            "s3d_subsystem_": {
+                "outputsRoot": "source/{prototype}/scene3d/{sceneId}/subsystems/{sysId}.js",
+                "completion": {"requires": [
+                    "files: subsystems/{sysId}.js exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "ONE effect's {geometry+material+sim}, rendered + verified "
+                    "STANDALONE on the shared renderer/env before composition. "
+                    "Dispatched in parallel, one per research subsystems[] entry. "
+                    "Lens-gated craft+aesthetic (+concept for the lead subsystem)."
+                ),
+            },
+            "s3d_interaction_": {
+                "outputsRoot": "source/{prototype}/scene3d/{sceneId}/interaction.js",
+                "completion": {"requires": [
+                    "files: interaction.js exists, non-empty",
+                ]},
+                "notes": (
+                    "Damped pointer parallax / orbit / scroll-scrub over the merged "
+                    "subsystem handles. Render-only ambient when host-driven. "
+                    "Lens-gated on craft (passive listeners, no scroll trap)."
+                ),
+            },
+            "s3d_runtime_": {
+                "outputsRoot": "source/{prototype}/scene3d/{sceneId}/runtime.html",
+                "completion": {"requires": [
+                    "files: runtime.html exists, non-empty",
+                    "outputs.lensVerdict in {pass}",
+                ]},
+                "notes": (
+                    "Composes all N subsystems under one renderer/env/post chain + "
+                    "veil + harness; exposes the drivable scene API window.__scene3d "
+                    "(self-driven rAF OR host-driven step()). All three lenses."
+                ),
+            },
+
             # ── Lens agents (wildcard — one dispatch per drawer iteration) ────
             "craft_lens_": {
                 "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
@@ -413,6 +472,20 @@ KINDS = {
                     "files: DECISION_cp_h3d_runtime_pick_{heroId}.json exists with non-empty values",
                 ]},
             },
+            "cp_s3d_subsystem_pick_": {
+                "outputsRoot": "DECISION_cp_s3d_subsystem_pick_{sceneId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_s3d_subsystem_pick_{sceneId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 lead-subsystem drafts (iterator-remix).",
+            },
+            "cp_s3d_runtime_pick_": {
+                "outputsRoot": "DECISION_cp_s3d_runtime_pick_{sceneId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_s3d_runtime_pick_{sceneId}.json exists with non-empty values",
+                ]},
+                "notes": "User picks 1 of 3 ambient-energy runtime drafts (iterator-remix).",
+            },
 
             # ── Family release gates (mirror cp_coherence_gate) ───────────────
             "cp_sim_gate_": {
@@ -441,6 +514,13 @@ KINDS = {
                     "files: DECISION_cp_h3d_gate_{heroId}.json exists with non-empty values",
                 ]},
                 "notes": "Same as cp_sim_gate_ for hero-3d family.",
+            },
+            "cp_s3d_gate_": {
+                "outputsRoot": "DECISION_cp_s3d_gate_{sceneId}.json",
+                "completion": {"requires": [
+                    "files: DECISION_cp_s3d_gate_{sceneId}.json exists with non-empty values",
+                ]},
+                "notes": "Same as cp_sim_gate_ for the shared scene-3d render layer.",
             },
 
             # ──────────────────────────────────────────────────────────────────
@@ -1827,6 +1907,57 @@ KINDS = {
             "design-library materialIds the scene wears. Component children "
             "own their files + lens verdicts; this container is marked done "
             "only when the orchestrator's commit carries lensVerdict='pass'."
+        ),
+    },
+
+    # ── scene-3d (v1.0 — the SHARED WebGL render layer) ──────────────────
+    # Symmetric to visual-orchestrator but for 3D. Built by
+    # scene-3d-orchestrator via a per-SUBSYSTEM fan-out (research → N parallel
+    # s3d_subsystem_ chunks each rendering standalone → interaction → runtime).
+    # Output is a DRIVABLE scene (window.__scene3d): self-driven for a hero
+    # slot, or host-driven so a linking orchestrator (simulation / narrative /
+    # game / interactive-media / motion-studio) drives the handles each frame
+    # from its own loop. Replaces the four bespoke 3D builders.
+    # See `scene-3d-orchestrator.md` + docs/research/spline-grade-3d-study.md.
+    "scene-3d": {
+        "title":        "Scene 3D (drivable WebGL render)",
+        "category":     "container",
+        "inputs": {
+            "sceneId":        {"type": "text",   "userEditable": False, "required": True},
+            "integration":    {"type": "enum",
+                                "values": ["full-bleed", "inline-object",
+                                           "scroll-scrubbed"],
+                                "userEditable": False},
+            "driveMode":      {"type": "enum",
+                                "values": ["self-driven", "host-driven"],
+                                "userEditable": False},
+            "subsystems":     {"type": "array",  "userEditable": False},
+            "handles":        {"type": "array",  "userEditable": False},
+            "exposedAssets":  {"type": "array",  "userEditable": False},
+            "lockedState":    {"type": "object", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "component children (research / subsystem ×N / interaction / runtime)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.lensVerdict in {pass}",
+            "outputs.iterationCount non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "The shared drivable-3D render container. Run re-builds via "
+            "re-dispatching scene-3d-orchestrator. subsystems lists the render "
+            "chunks; handles lists the entity/camera handles a host-driven "
+            "caller drives via window.__scene3d.step(). Component children own "
+            "their files + lens verdicts (each subsystem proves a standalone "
+            "frame); this container is marked done only when the orchestrator's "
+            "commit carries lensVerdict='pass'."
         ),
     },
 

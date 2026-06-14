@@ -114,6 +114,8 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ms_research_<msId>/run?project
 
 The researcher writes `source/<prototype>/motionscenes/<msId>/research.md` carrying: committed binding + assetPolicy (validated against provider availability) + hyperframesEligible (the Hyperframes HTML-animation rung is LAST in the degradation ladder and only enters on vector-native registers — flat / typographic / editorial-loud / neubrutalist / diagrammatic; immersive or photorealistic registers stop at raster + CSS motion), the per-scene technique candidates from the library index, scene-count recommendation, transition register, and the `## Multi-draft recommendation` block (storyboard scene-split axis / motion transition-register axis / runtime pacing axis — opt-in, ambiguity-justified only).
 
+**Real-time 3D scenes (`assetPolicy: scene-3d`).** Most motion-studio scenes are generated video or raster (composited per the concept plate). But when a scene's payload is a genuine real-time 3D object the visitor scrubs/orbits (Apple-product-page scroll-scrub rotation, moooi layered faux-3D done for real), the per-scene asset is NOT video — co-dispatch `scene-3d-orchestrator` for that scene: `mode: self-driven` for ambient + pointer, or `mode: host-driven` when `motion.js` scroll-scrubs the camera (it drives `window.__scene3d.step(progress)`). The concept-plate review gate still applies — the plate is the composition contract scene-3d's research obeys. Video/raster scenes are unchanged.
+
 ## 3. Phase B — User steerage interrupt (§12.5)
 
 After research, BEFORE any drawer fires, emit per slot:

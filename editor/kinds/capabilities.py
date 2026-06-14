@@ -1222,7 +1222,7 @@ Anti-patterns that earn block-severity findings from the lens trio:
 - ❌ Walkable scene where collision/boundary constraints are so tight the user can't actually move
 - ❌ Cinematic-fly that's a single 2-second loop with no pause/restart
 
-The scene drawer's craft-lens preview check runs these as automated probes (synthetic pointer-drag, synthetic WASD, light-position screenshot diffs). The full rule + self-tests live in `sim-3d-scene-builder.md §1.0`; narrative's 3d-environment paradigm inherits the same contract via the scene drawer dispatched by narrative-experience-orchestrator.
+The scene drawer's craft-lens preview check runs these as automated probes (synthetic pointer-drag, synthetic WASD, light-position screenshot diffs). 3D scenes are now built by the SHARED `scene-3d-orchestrator` (per-subsystem fan-out, each subsystem rendering standalone, drivable output) — linked by simulation / narrative / game / interactive-media for their `3d-environment` paradigm with `mode: host-driven`. This "3D must feel 3D" contract is enforced by scene-3d's lens gates (`scene-3d-orchestrator.md` + `s3d-runtime-composer.md`); `sim-3d-scene-builder` / `im-output-3d` are deprecated redirects to it.
 
 ### The other vocabulary the user might use (same answer — dispatch)
 

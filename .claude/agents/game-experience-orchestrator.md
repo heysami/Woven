@@ -41,7 +41,7 @@ The four sibling paradigms map onto game-experience naturally — pick the one t
 
 - **`2d-side`** — side-scrolling / platformer / pinball / arkanoid camera. Camera sideways or 3/4. Best for: traversal, momentum, gravity-driven mechanics.
 - **`2d-topdown`** — bird's-eye / orthographic / Zelda-camera. Best for: spatial puzzle, exploration, agentic creatures the user prods.
-- **`3d-environment`** — first-person, third-person, or fixed-angle 3D. Same inhabitation choices as nx (scripted-flythrough / hybrid / fully-walkable). Best for: spatial presence + agency.
+- **`3d-environment`** — first-person, third-person, or fixed-angle 3D. Same inhabitation choices as nx (scripted-flythrough / hybrid / fully-walkable). Best for: spatial presence + agency. **→ Render via the SHARED layer:** for this paradigm the `game_world_<gameId>` node does NOT hand-build the 3D world via `game-world-builder`; instead co-dispatch `scene-3d-orchestrator` with `mode: host-driven` and `drivenHandles` = the bodies `physics` moves, then the `loop` drives the scene via `window.__scene3d.step(state, alpha)` after the physics step. The 2D / iconographic-physics paradigms keep `game-world-builder`. See `scene-3d-orchestrator.md`. (A heavy 3D world may itself fan out into several subsystems — terrain, props, characters, water, particles — each rendered + verified standalone inside scene-3d.)
 - **`iconographic-physics`** — abstract / particle-systems / soft-bodies / fluid that the user pokes. Camera is locked or fluidly framing. Best for: toy-grade interaction where the medium IS the system (Soda Constructor, Powder, Cloth Toy, Lloopp).
 - **`hybrid`** — multi-paradigm composition (e.g. a 2D-side platformer with a 3D-environment puzzle inside it).
 
