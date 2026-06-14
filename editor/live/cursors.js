@@ -83,8 +83,8 @@
       const seen = new Set((d.participants || []).map((x) => x.guestId));
       for (const g of [...parts.keys()]) if (!seen.has(g)) drop(g);
     });
-    es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); });
-    es.addEventListener("kicked", (e) => { if (JSON.parse(e.data).guestId === GID) { for (const g of [...parts.keys()]) drop(g); es.close(); } });
+    es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); try { window.__thLiveActive = false; } catch (e) {} });
+    es.addEventListener("kicked", (e) => { if (JSON.parse(e.data).guestId === GID) { for (const g of [...parts.keys()]) drop(g); es.close(); try { window.__thLiveActive = false; } catch (e) {} } });
 
     let last = 0;
     window.addEventListener("pointermove", (ev) => {
@@ -118,7 +118,7 @@
       cid = localStorage.getItem("th-live-cid") || "";
       if (!cid) { cid = "c-" + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("th-live-cid", cid); }
     } catch (e) {}
-    try { const j = await api("api/join", { name, clientId: cid }); TOKEN = j.token; GID = j.guestId; COLOR = j.color; start(); } catch (e) {}
+    try { const j = await api("api/join", { name, clientId: cid }); TOKEN = j.token; GID = j.guestId; COLOR = j.color; try { window.__thLiveActive = true; } catch (e) {} start(); } catch (e) {}
   }
 
   // Wait for the canvas to mount, then boot.

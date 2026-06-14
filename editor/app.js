@@ -19760,6 +19760,19 @@ function WorkflowCanvas() {
             pendingDataRef.current = null;
             // Tiny delay so the success render commits before the next save.
             setTimeout(() => { try { setData(stash); } catch {} }, 0);
+          } else if (window.__thLiveActive) {
+            // Live Session convergence — after our write flushes, reconcile
+            // once against the server's authoritative state. A collaborator's
+            // write can broadcast DURING our in-flight save (while our fields
+            // are dirty), so the merge skipped it and no further broadcast
+            // re-delivers it. Now that our fields are clean again, this
+            // one-shot reload re-pulls any field that diverged on disk → host
+            // and guest converge even when both moved the SAME node. Only the
+            // truly-clean fields pull (a newer unsaved edit stays dirty and is
+            // preserved), so no in-progress drag is ever clobbered.
+            setTimeout(() => {
+              try { window.dispatchEvent(new CustomEvent("th:workflow-reload")); } catch {}
+            }, 60);
           }
         }).catch((err) => {
           // v2.50 — abort errors from G7 (SSE-disconnect abort): drop the

@@ -73,7 +73,7 @@
       const seen = new Set((JSON.parse(e.data).participants || []).map((x) => x.guestId));
       for (const g of [...parts.keys()]) if (!seen.has(g)) drop(g);
     });
-    es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); connected = false; });
+    es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); connected = false; try { window.__thLiveActive = false; } catch (e) {} });
     es.onerror = () => {};  // EventSource auto-reconnects
 
     let last = 0;
@@ -97,7 +97,7 @@
     if (connected) return;
     fetch("/__live_status?project=" + encodeURIComponent(PID))
       .then((r) => r.json())
-      .then((s) => { if (s && s.live && !connected) { connected = true; connect(); } })
+      .then((s) => { try { window.__thLiveActive = !!(s && s.live); } catch (e) {} if (s && s.live && !connected) { connected = true; connect(); } })
       .catch(() => {});
   }
   // Wait for the canvas, then poll for a live session and connect when one
