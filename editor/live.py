@@ -969,6 +969,7 @@ def _proxy_daemon_read(h, path, query, project):
         try: h.wfile.write(b"retry: 250\n\n")  # fast EventSource reconnect between polls
         except Exception: pass
         start = _t.monotonic()
+        saw_change = False
         try:
             while _t.monotonic() - start < 20:
                 line = resp.readline()
@@ -979,7 +980,9 @@ def _proxy_daemon_read(h, path, query, project):
                 except Exception:
                     break
                 if line.startswith(b"event:") and b"changed" in line:
-                    break  # a real change — close so Cloudflare flushes it
+                    saw_change = True            # mark; keep forwarding the event
+                elif saw_change and line in (b"\n", b"\r\n"):
+                    break  # event fully forwarded (terminating blank line) → close
             try: h.wfile.flush()
             except Exception: pass
         except Exception:
