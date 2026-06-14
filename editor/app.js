@@ -54279,6 +54279,11 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     const getTctx = () => { if (!tctx) { const el = trailRef.current; if (el) tctx = el.getContext("2d"); } return tctx; };
     const getFctx = () => { if (!fctx) { const el = frontRef.current; if (el) fctx = el.getContext("2d"); } return fctx; };
     const hot = (getComputedStyle(cv).color || "").trim() || "rgb(240,120,40)";
+    // The diamond is now hot/orange-filled, so the inner actor (face, bars,
+    // glyphs) is painted WHITE to read against it — reversed to white-on-orange.
+    // The tether/comet-trail/particles stay `hot` since they float over the
+    // pale app canvas + node cards, where white would vanish.
+    const ink = "#ffffff";
     // De-sync sibling badges + give each a stable per-slot glyph stream.
     const hx = (String(keyId).match(/[0-9a-f]/gi) || []).join("").slice(-4) || "0";
     const seed = (parseInt(hx, 16) % 997) / 997;
@@ -54291,10 +54296,10 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
     const easeOut = (p) => 1 - Math.pow(1 - p, 3);
     const easeIn = (p) => p * p * p;
     const lerp = (a, b, t) => a + (b - a) * t;
-    const fillRect = (x, y, w2, h2) => { ctx.fillStyle = hot; ctx.fillRect(x - w2 / 2, y - h2 / 2, w2, h2); };
-    const strokeRect = (x, y, s) => { ctx.strokeStyle = hot; ctx.lineWidth = 1; ctx.strokeRect(x - s / 2, y - s / 2, s, s); };
+    const fillRect = (x, y, w2, h2) => { ctx.fillStyle = ink; ctx.fillRect(x - w2 / 2, y - h2 / 2, w2, h2); };
+    const strokeRect = (x, y, s) => { ctx.strokeStyle = ink; ctx.lineWidth = 1; ctx.strokeRect(x - s / 2, y - s / 2, s, s); };
     const drawGlyph = (g, x, y, a) => {
-      ctx.globalAlpha = a; ctx.fillStyle = hot;
+      ctx.globalAlpha = a; ctx.fillStyle = ink;
       ctx.font = `${GH}px ui-monospace, "SF Mono", Menlo, monospace`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(g, x, y); ctx.globalAlpha = 1;

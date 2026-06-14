@@ -7735,12 +7735,12 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .aab-square-fill {
   width: 28px; height: 28px;
-  /* white fill (the solid-hot inner animation reads against it) + a light
-     orange outline + a soft light-orange glow (matches the running-node glow).
-     The glow breathes via the aabPulse keyframes below; this is the static
-     fallback (e.g. reduced-motion). */
-  background: var(--surface);
-  border: 1px solid color-mix(in oklch, var(--hot) 34%, transparent);
+  /* hot/orange fill (the white inner animation reads against it) + a soft
+     light-orange glow (matches the running-node glow). The glow breathes via
+     the aabPulse keyframes below; this is the static fallback (e.g.
+     reduced-motion). Reversed from white-on-orange → white-on-orange diamond. */
+  background: var(--hot);
+  border: 1px solid color-mix(in oklch, var(--surface) 34%, transparent);
   box-shadow: 0 0 12px color-mix(in oklch, var(--hot) 34%, transparent);
 }
 .aab-square-out {
