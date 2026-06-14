@@ -18144,6 +18144,64 @@ function SharesLanding({ onCountChange }) {
     // Copying the fresh URL acknowledges the "URL changed" warning.
     if (s.urlChanged) op(s.id, "ack_url");
   };
+  // Live Session ops — POST /__live/<id>/(start|stop|kick|role). start also
+  // (re)starts the tunnel, so "Go live" is one click from a stopped share.
+  const liveOp = async (id, action, body) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    try {
+      const r = await fetch(`/__live/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      reload();
+    } catch (e) {
+      flashErr(String(e.message || e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+  const copyLive = async (s) => {
+    if (!s.shareUrl) return;
+    const url = s.shareUrl + "live/";
+    try { await navigator.clipboard.writeText(url); } catch {}
+    setCopiedId("live-" + s.id);
+    setTimeout(() => setCopiedId((p) => (p === "live-" + s.id ? null : p)), 1600);
+  };
+  // Git backbone — deliberate commit (host chooses when) + publish. Commits
+  // credit in-session guests as Co-authored-by (server pulls them from the
+  // live session's accrued credits).
+  const gitOp = async (project, op, body) => {
+    const r = await fetch(`/__git/${op}?project=${encodeURIComponent(project)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `${op} failed`);
+    return j;
+  };
+  const doCommit = async (s) => {
+    try {
+      const st = await fetch(`/__git/status?project=${encodeURIComponent(s.project)}`).then((r) => r.json());
+      if (!st.gitAvailable) { flashErr("git is not installed on this computer"); return; }
+      if (!st.repo) {
+        const remote = prompt("Connect this project to GitHub.\nPaste the repo URL (https://github.com/owner/repo.git), or leave blank for a local-only repo:");
+        if (remote === null) return;
+        await gitOp(s.project, "connect", { remote: remote.trim() || null });
+      }
+      const fresh = await fetch(`/__git/status?project=${encodeURIComponent(s.project)}`).then((r) => r.json());
+      const msg = prompt("Commit message:", fresh.draftMessage || "Woven live session");
+      if (msg === null) return;
+      const res = await gitOp(s.project, "commit", { message: msg, shareId: s.id });
+      flashErr(res.empty ? "Nothing to commit." : `Committed ${res.sha ? res.sha.slice(0, 7) : "✓"}`);
+    } catch (e) { flashErr(String(e.message || e)); }
+  };
+  const doPublish = async (s) => {
+    try { await gitOp(s.project, "publish", {}); flashErr("Published to GitHub ✓"); }
+    catch (e) { flashErr(String(e.message || e)); }
+  };
 
   const shares = (data && data.shares) || [];
   const cfMissing = data && data.cloudflared && !data.cloudflared.found;
@@ -18281,6 +18339,42 @@ function SharesLanding({ onCountChange }) {
                   ⚠ URL changed
                 </span>
               `}
+            </div>
+            <div className="shares-row-live" style=${{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "7px", fontSize: "12px" }}>
+              ${(() => {
+                const live = s.live || {};
+                const running = s.status === "running";
+                const liveUrl = (s.shareUrl || "") + "live/";
+                if (live.active) {
+                  const people = live.participants || [];
+                  return html`
+                    <span style=${{ color: "#16A34A", fontWeight: 600 }} title="A live co-editing session is open">● Live</span>
+                    <span style=${{ color: "var(--text-dim, #888)" }}>${people.length} ${people.length === 1 ? "person" : "people"}</span>
+                    ${people.map((p) => html`<span key=${p.guestId}
+                      title=${p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)")}
+                      onClick=${() => liveOp(s.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
+                      style=${{ background: p.color, color: "#fff", width: "20px", height: "20px", borderRadius: "50%", display: "inline-grid", placeItems: "center", fontSize: "10px", fontWeight: 700, cursor: "pointer" }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
+                    ${s.shareUrl && html`<code className="shares-url" title=${liveUrl} style=${{ maxWidth: "260px" }}>${liveUrl}</code>`}
+                    ${s.shareUrl && html`<button className="shares-btn" onClick=${() => copyLive(s)}>${copiedId === "live-" + s.id ? "Copied ✓" : "Copy live link"}</button>`}
+                    ${s.shareUrl && html`<button className="shares-btn" onClick=${() => window.open(liveUrl, "_blank")}>Open</button>`}
+                    <button className="shares-btn" disabled=${isBusy}
+                      title="Commit the current state to git — you choose when. In-session guests are credited as Co-authored-by."
+                      onClick=${() => doCommit(s)}>Commit…</button>
+                    <button className="shares-btn" disabled=${isBusy}
+                      title="Push commits to the connected GitHub repo"
+                      onClick=${() => doPublish(s)}>Publish</button>
+                    <button className="shares-btn shares-btn-danger" disabled=${isBusy}
+                      title="End the live session — revokes all guests; the tunnel keeps running for comments"
+                      onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(s.id, "stop"); }}>End session</button>
+                  `;
+                }
+                return html`
+                  <button className="shares-btn shares-btn-primary" disabled=${isBusy || cfMissing}
+                    title=${cfMissing ? "Install cloudflared first" : (running ? "Open a live co-editing session" : "Starts the tunnel and opens a live session")}
+                    onClick=${() => liveOp(s.id, "start")}>Go live ▶</button>
+                  <span style=${{ color: "var(--text-dim, #888)" }}>guests co-edit in real time · all runs use your agent</span>
+                `;
+              })()}
             </div>
             ${s.error && s.status === "error" && html`<div className="shares-row-error">${s.error}</div>`}
             </div>

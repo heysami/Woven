@@ -14,6 +14,15 @@
         "TH_WORKSPACE_DIR": "/Users/sami/Documents/Woven IN USE"
       },
       "url": "/editor/?project=demo-inhouse"
+    },
+    {
+      "name": "live-demo",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "/Users/sami/Documents/Woven/editor/tests/live_demo_server.py"
+      ],
+      "cwd": ".",
+      "port": 8951
     }
   ]
 }

@@ -49,6 +49,8 @@ if _EDITOR_DIR not in sys.path:
 from prompts import node_agent_preambles as _node_preambles  # v2.1 — per-node agent preambles
 import exports as _exports  # per-asset export bundles (README + serve.* + files)
 import shares as _shares    # share mode — cloudflare quick tunnels + review comments
+import live as _live        # live session — host-authoritative multiplayer over the gate
+import git_ops as _gitops    # git/GitHub backbone — deliberate commit/publish + fork/PR
 
 
 def _pick_port() -> int:
@@ -3077,6 +3079,10 @@ def _broadcast_workflow_change(project_id: str) -> None:
     for w in waiters:
         try: w.push("workflow-changed", {})
         except Exception: pass
+    # Live session bridge — guests on this project see the host's (and each
+    # other's) committed canvas edits.
+    try: _live.notify_project_changed(project_id, "workflow-changed", {})
+    except Exception: pass
 
 # ── Whiteboard (`wb`) item sanitizer ─────────────────────────────────────
 # The workflow canvas's whiteboard layer stores its items in a top-level
@@ -3143,6 +3149,9 @@ def _broadcast_asset_change(project_id: str, paths) -> None:
     for w in waiters:
         try: w.push("asset-changed", {"paths": paths})
         except Exception: pass
+    # Live session bridge — guests' prototype iframes refresh when source changes.
+    try: _live.notify_project_changed(project_id, "asset-changed", {"paths": paths})
+    except Exception: pass
     # Share mode — keep a shared prototype's preview thumbnail current when
     # its source changes (agent edits, manual writes). Debounced inside the
     # spawn; only fires for prototypes that actually have a share.
@@ -3200,6 +3209,102 @@ def _broadcast_share_comments_changed(project_id: str, prototype: str) -> None:
     for w in waiters:
         try: w.push("share-comments-changed", {"prototype": prototype or ""})
         except Exception: pass
+
+
+# ── Live session callbacks (see editor/live.py) ──────────────────────────────
+# live.py never touches workflow.json directly; it calls these so every guest
+# write goes through the SAME per-project lock + broadcast path the editor uses.
+_LIVE_NODE_EDIT_FIELDS = {"title", "text", "label", "prompt", "note"}
+
+def _live_read_workflow(project_root):
+    """Return the canonical workflow dict for a guest client to render."""
+    p = os.path.join(project_root, "workflow", "workflow.json")
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def _live_apply_node_op(project_id, op, author):
+    """Apply ONE guest canvas op (move | setField) under the per-project lock,
+    then fire the normal workflow broadcast so host + every guest converge.
+    project_id here is the share's project field; normalize to the basename
+    lock key the editor save uses."""
+    root = resolve_project_root({"project": project_id})
+    canon = os.path.basename(root.rstrip("/"))
+    wf_path = os.path.join(root, "workflow", "workflow.json")
+    kind, _sep, tid = (op.get("target") or "").partition(":")
+    action = op.get("op")
+    _lk = _workflow_lock(canon)
+    if not _lk.acquire(timeout=2.0):
+        raise RuntimeError("workflow busy — retry")
+    try:
+        with open(wf_path, "r", encoding="utf-8") as f:
+            wf = json.load(f)
+        arr = (wf.get("nodes") if kind == "node"
+               else wf.get("wb") if kind == "wb" else None)
+        if not isinstance(arr, list):
+            raise ValueError("unsupported target kind")
+        target = next((n for n in arr if isinstance(n, dict) and n.get("id") == tid), None)
+        if target is None:
+            raise ValueError("target not found")
+        if action == "move":
+            for fld in ("x", "y", "w", "h", "x1", "y1", "x2", "y2"):
+                if fld in op:
+                    target[fld] = float(op[fld])
+        elif action == "setField":
+            field = op.get("field")
+            if kind != "node" or field not in _LIVE_NODE_EDIT_FIELDS:
+                raise ValueError("field not editable")
+            val = op.get("value")
+            if not isinstance(val, str):
+                raise ValueError("value must be a string")
+            target[field] = val[:20000]
+        else:
+            raise ValueError("unsupported op")
+        tmp = wf_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(wf, f, indent=2)
+        os.replace(tmp, wf_path)
+    finally:
+        _lk.release()
+    _broadcast_workflow_change(canon)
+    return {"target": op.get("target"), "op": action}
+
+def _git_resolve_prompt(files):
+    """Prompt for agent-assisted merge-conflict resolution — the §7 signature
+    move: don't mechanically keep both sides, reconcile the two intents."""
+    lst = "\n".join(f"- {f}" for f in files[:50])
+    return ("Resolve the git merge conflicts in these files. They are Woven "
+            "prototype files (HTML/CSS/JS often regenerated wholesale by an "
+            "agent), so do NOT mechanically keep both sides — read BOTH intents "
+            "and produce ONE coherent version, then remove every conflict marker "
+            "(<<<<<<<, =======, >>>>>>>). When done, the files must contain no "
+            "markers and render correctly. Conflicted files:\n" + lst)
+
+
+def _live_dispatch_run(project_id, node_id, author):
+    """Trigger the HOST agent on a node for a guest. Loops back to the daemon's
+    own /__workflow/node/<id>/run — identical to the host clicking Run, so the
+    run uses the host's machine + API key and rides every existing code path
+    (upstream/downstream context, completion hook, asset-versioning). The
+    daemon is threaded (ReusableThreadingTCP), so this self-request is safe.
+    `author` is carried in the body so phase-5 commits can credit the guest as
+    a Co-authored-by trailer."""
+    import urllib.request as _ur
+    pid = project_id or "default"
+    url = (f"http://127.0.0.1:{PORT}/__workflow/node/{urllib.parse.quote(node_id)}"
+           f"/run?project={urllib.parse.quote(pid)}")
+    payload = json.dumps({
+        "liveGuest":   (author or {}).get("name") or "",
+        "liveGuestId": (author or {}).get("guestId") or "",
+        "liveGithub":  (author or {}).get("github") or "",
+    }).encode("utf-8")
+    req = _ur.Request(url, data=payload, method="POST",
+                      headers={"Content-Type": "application/json"})
+    with _ur.urlopen(req, timeout=30) as resp:
+        raw = resp.read().decode("utf-8") or "{}"
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"ok": True}
 
 
 # v2.50 — File-system watcher (polling, no external `watchdog` dependency).
@@ -4622,6 +4727,9 @@ def _fire_node_completion_hook(state, *, exit_code):
              json.dump(wf, f, indent=2)
     # v2.30 — notify SSE subscribers that workflow.json changed (outside the lock)
     _broadcast_workflow_change(state.project_id)
+    # Live session — drop the agent lease on this node so guests can edit again.
+    try: _live.release_agent_lease(state.project_id or project_id, wf_node_id)
+    except Exception: pass
 
 
 def _drain_stdout(state: "RunState") -> None:
@@ -5937,6 +6045,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url|thumbnail)$", parsed.path)
             if m_share:
                 return self._share_op(m_share.group(1), m_share.group(2), qs)
+            m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
+            if m_live:
+                return self._live_op(m_live.group(1), m_live.group(2), qs)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve)$", parsed.path)
+            if m_git:
+                return self._git_op(m_git.group(1), qs)
             if parsed.path == "/__share_comments":
                 return self._share_comments_post(qs)
             if parsed.path == "/__mkdir":
@@ -5945,6 +6059,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._rmdir(qs)
             if parsed.path == "/__rename_dir":
                 return self._rename_dir(qs)
+            if parsed.path == "/__fs_open":
+                return self._fs_open(qs)
+            if parsed.path == "/__fs_reveal":
+                return self._fs_reveal(qs)
+            if parsed.path == "/__fs_rename":
+                return self._fs_rename(qs)
+            if parsed.path == "/__fs_delete":
+                return self._fs_delete(qs)
+            if parsed.path == "/__fs_upload":
+                return self._fs_upload(qs)
+            if parsed.path == "/__fs_mkdir":
+                return self._fs_mkdir(qs)
             if parsed.path == "/__screenshot":
                 return self._screenshot_create(qs)
             m_ss = re.match(r"^/__screenshot/jobs/([0-9a-f]{6,64})/result$", parsed.path)
@@ -6159,12 +6285,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._export_check_name(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__shares":
             return self._shares_list()
+        if url_path == "/__git/status":
+            return self._git_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_thumbnail":
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
             return self._share_comments_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ls_dirs":
             return self._ls_dirs(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__fs_list":
+            return self._fs_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__list_files":
             return self._list_files(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__source_prototypes":
@@ -11961,11 +12091,113 @@ class H(http.server.SimpleHTTPRequestHandler):
     # status + comment counts. The landing "Shares" tab polls this.
     def _shares_list(self):
         cf = _shares.find_cloudflared()
+        shares = _shares.shares_summary_all()
+        for s in shares:
+            try:
+                s["live"] = _live.session_summary(s.get("id"))
+            except Exception:
+                s["live"] = {"active": False, "participants": []}
         return self._reply(200, {
-            "shares":      _shares.shares_summary_all(),
+            "shares":      shares,
             "cloudflared": {"found": bool(cf), "path": cf or ""},
             "gatePort":    _shares.GATE_PORT,
         })
+
+    # POST /__live/<id>/(start|stop|kick|role)
+    #   start — open a live session (also (re)starts the tunnel so /live is reachable)
+    #   stop  — end the session (revokes guest tokens; tunnel left as-is)
+    #   kick  — body {guestId}: revoke one guest
+    #   role  — body {guestId, role}: editor|viewer
+    def _live_op(self, share_id, op, qs):
+        rec = _shares.share_get(share_id)
+        if rec is None:
+            return self._reply(404, {"error": f"unknown share: {share_id}"})
+        try:
+            if op == "start":
+                # A session needs a live tunnel; start it if not already up.
+                try:
+                    _shares.tunnel_start(share_id)
+                except Exception as e:
+                    return self._reply(500, {"error": f"tunnel failed: {e}"})
+                _live.session_start(share_id)
+            elif op == "stop":
+                _live.session_stop(share_id)
+            elif op == "kick":
+                body = self._read_json_body(max_bytes=8 * 1024)
+                _live.kick(share_id, (body or {}).get("guestId") or "")
+            elif op == "role":
+                body = self._read_json_body(max_bytes=8 * 1024)
+                _live.set_role(share_id, (body or {}).get("guestId") or "",
+                               (body or {}).get("role") or "")
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        fresh = _shares.share_get(share_id)
+        return self._reply(200, {
+            "ok": True,
+            "share": _shares.share_summary(fresh) if fresh else None,
+            "live": _live.session_summary(share_id),
+        })
+
+    # ── Git / GitHub backbone (host side) — see editor/git_ops.py ──────────
+    # GET /__git/status?project=<id>
+    def _git_status(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            st = _gitops.status(root)
+            st["draftMessage"] = _gitops.draft_message(root) if st.get("repo") else ""
+            st["githubConfigured"] = _gitops.oauth_configured()
+            st["gitAvailable"] = _gitops.git_available()
+            st["conflicts"] = _gitops.conflicted_files(root) if st.get("repo") else []
+            return self._reply(200, st)
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
+    # POST /__git/(connect|commit|publish|resolve)?project=<id>
+    def _git_op(self, op, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=32 * 1024)
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        try:
+            if op == "connect":
+                st = _gitops.connect(root, remote=(body.get("remote") or None),
+                                     name=(body.get("name") or None),
+                                     email=(body.get("email") or None))
+                return self._reply(200, {"ok": True, "status": st})
+            if op == "commit":
+                coauthors = []
+                sid = body.get("shareId")
+                if sid:
+                    try: coauthors = _live.take_credits(sid)
+                    except Exception: coauthors = []
+                res = _gitops.commit(root, body.get("message"), coauthors=coauthors,
+                                     name=body.get("name"), email=body.get("email"))
+                return self._reply(200, {"ok": True, **res})
+            if op == "publish":
+                res = _gitops.publish(root, token=body.get("token"))
+                return self._reply(200, {"ok": True, **res})
+            if op == "resolve":
+                # Agent-assisted conflict resolution: hand the conflicted files
+                # to the host agent (loops back to a chat run scoped to them).
+                files = _gitops.conflicted_files(root)
+                if not files:
+                    return self._reply(200, {"ok": True, "files": [], "note": "no conflicts"})
+                return self._reply(200, {"ok": True, "files": files,
+                                         "prompt": _git_resolve_prompt(files)})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        return self._reply(404, {"error": f"unknown git op: {op}"})
 
     # GET /__share_thumbnail?project=<id>&prototype=<slug>[&v=<mtime>]
     # Serves the per-share preview PNG (share/thumb-<slug>.png). The Shares
@@ -13007,6 +13239,284 @@ class H(http.server.SimpleHTTPRequestHandler):
         except OSError as e:
             return self._reply(500, {"error": f"rename failed: {e}"})
         return self._reply(200, {"ok": True, "from": src_rel, "to": dst_rel})
+
+    # ── Folder-node mini file-explorer (/__fs_*) ─────────────────────────
+    # General, root-scoped filesystem ops for the workflow folder node. Unlike
+    # /__mkdir,/__rmdir,/__rename_dir (locked to source/ + slug names — they
+    # back the agent-output picker and the slug constraint is load-bearing for
+    # /__run), this family operates on WHATEVER folder the node points at —
+    # including absolute paths anywhere on disk. The only guard is that every
+    # entry resolves UNDER the chosen root via _safe_join (which refuses any
+    # path resolving outside its base), so an explorer rooted at /Users/you/foo
+    # can never touch /Users/you/bar.
+
+    def _fs_resolve(self, raw):
+        """Resolve a rel-or-abs path the same way _ls_dirs resolves its root:
+        absolute → honored as-is; relative → _safe_join under the active
+        project root. Returns (abs_path, project_root) or raises ValueError."""
+        raw = (raw or "").strip()
+        if not raw:
+            raise ValueError("path is required")
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            project_root = resolve_project_root(qs)
+        except ValueError:
+            project_root = None
+        if os.path.isabs(raw):
+            return os.path.abspath(raw), project_root
+        if not project_root:
+            raise ValueError("relative path needs a project")
+        return _safe_join(project_root, raw), project_root
+
+    def _fs_list(self, qs):
+        """GET /__fs_list?root=<rel-or-abs> — immediate children (files + dirs).
+        Modeled on _ls_dirs but returns both kinds with size/mtime/ext so the
+        folder node can render a mini file explorer."""
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError:
+            project_root = None
+        root = (_qs_get(qs, "root") or "").strip()
+        if not root:
+            if not project_root:
+                return self._reply(400, {"error": "no project and no root specified"})
+            root = "source"
+        if os.path.isabs(root):
+            abs_root = os.path.abspath(root)
+        else:
+            if not project_root:
+                return self._reply(400, {"error": "relative root needs a project"})
+            try:
+                abs_root = _safe_join(project_root, root)
+            except Exception as e:
+                return self._reply(400, {"error": f"path resolution failed: {e}"})
+        if not os.path.isdir(abs_root):
+            return self._reply(404, {"error": f"not a directory: {root}"})
+        entries = []
+        try:
+            for name in os.listdir(abs_root):
+                if name.startswith("."):
+                    continue
+                full = os.path.join(abs_root, name)
+                is_dir = os.path.isdir(full)
+                try:
+                    st = os.stat(full)
+                    size, mtime = st.st_size, st.st_mtime
+                except OSError:
+                    size, mtime = 0, 0
+                entries.append({
+                    "name": name,
+                    "kind": "dir" if is_dir else "file",
+                    "abs":  full,
+                    "rel":  os.path.relpath(full, project_root).replace(os.sep, "/") if project_root and full.startswith(project_root) else None,
+                    "size": size,
+                    "mtime": mtime,
+                    "ext":  ("" if is_dir else (name.rsplit(".", 1)[-1].lower() if "." in name else "")),
+                })
+        except OSError as e:
+            return self._reply(500, {"error": f"listdir failed: {e}"})
+        # Dirs first, then files; alpha (case-insensitive) within each group.
+        entries.sort(key=lambda e: (e["kind"] != "dir", e["name"].lower()))
+        return self._reply(200, {
+            "ok": True,
+            "root_abs": abs_root,
+            "root_rel": os.path.relpath(abs_root, project_root).replace(os.sep, "/") if project_root and abs_root.startswith(project_root) else None,
+            "parent_abs": os.path.dirname(abs_root) if abs_root != "/" else None,
+            "entries": entries,
+        })
+
+    def _fs_open_path(self, qs, reveal):
+        """Shared body for /__fs_open + /__fs_reveal. macOS-only: `open <abs>`
+        (file → default app, dir → Finder) or `open -R <abs>` (reveal/select
+        in Finder)."""
+        if sys.platform != "darwin":
+            return self._reply(501, {"error": f"open not implemented on {sys.platform}"})
+        try:
+            body = self._read_json_body(max_bytes=8 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            abs_path, _ = self._fs_resolve(body.get("path"))
+        except (ValueError, Exception) as e:
+            return self._reply(400, {"error": f"path resolution failed: {e}"})
+        if not os.path.exists(abs_path):
+            return self._reply(404, {"error": "no such path", "path": abs_path})
+        cmd = ["open", "-R", abs_path] if reveal else ["open", abs_path]
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=15, check=False)
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {"error": "open timed out"})
+        except FileNotFoundError:
+            return self._reply(501, {"error": "open not on PATH"})
+        if r.returncode != 0:
+            return self._reply(500, {"error": r.stderr.decode("utf-8", "replace").strip() or "open failed"})
+        return self._reply(200, {"ok": True, "path": abs_path})
+
+    def _fs_open(self, qs):
+        """POST /__fs_open  body { path } — open in OS default app / Finder."""
+        return self._fs_open_path(qs, reveal=False)
+
+    def _fs_reveal(self, qs):
+        """POST /__fs_reveal  body { path } — reveal/select in Finder."""
+        return self._fs_open_path(qs, reveal=True)
+
+    def _fs_rename(self, qs):
+        """POST /__fs_rename  body { root, name, to } — rename one entry inside
+        root. `to` must be a single path segment (no separators)."""
+        try:
+            body = self._read_json_body(max_bytes=8 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        name = (body.get("name") or "").strip()
+        to   = (body.get("to")   or "").strip()
+        if not name:
+            return self._reply(400, {"error": "name is required"})
+        if not to or "/" in to or "\\" in to or to in (".", ".."):
+            return self._reply(400, {"error": "to must be a single path segment"})
+        try:
+            abs_root, _ = self._fs_resolve(body.get("root"))
+        except (ValueError, Exception) as e:
+            return self._reply(400, {"error": f"root resolution failed: {e}"})
+        if not os.path.isdir(abs_root):
+            return self._reply(404, {"error": "root is not a directory"})
+        try:
+            src = _safe_join(abs_root, name)
+            dst = _safe_join(abs_root, to)
+        except Exception as e:
+            return self._reply(400, {"error": f"path resolution failed: {e}"})
+        if not os.path.exists(src):
+            return self._reply(404, {"error": "no such entry", "name": name})
+        if os.path.exists(dst):
+            return self._reply(409, {"error": "target already exists", "name": to})
+        try:
+            os.rename(src, dst)
+        except OSError as e:
+            return self._reply(500, {"error": f"rename failed: {e}"})
+        return self._reply(200, {"ok": True, "name": name, "to": to})
+
+    def _fs_delete(self, qs):
+        """POST /__fs_delete  body { root, name } — delete one entry inside
+        root (file → unlink, dir → recursive). Refuses to delete the root."""
+        try:
+            body = self._read_json_body(max_bytes=8 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        name = (body.get("name") or "").strip()
+        if not name:
+            return self._reply(400, {"error": "name is required"})
+        try:
+            abs_root, _ = self._fs_resolve(body.get("root"))
+        except (ValueError, Exception) as e:
+            return self._reply(400, {"error": f"root resolution failed: {e}"})
+        try:
+            target = _safe_join(abs_root, name)
+        except Exception as e:
+            return self._reply(400, {"error": f"path resolution failed: {e}"})
+        if os.path.abspath(target) == os.path.abspath(abs_root):
+            return self._reply(400, {"error": "won't delete the root folder"})
+        if not os.path.exists(target):
+            return self._reply(404, {"error": "no such entry", "name": name})
+        import shutil
+        try:
+            if os.path.isdir(target) and not os.path.islink(target):
+                shutil.rmtree(target)
+            else:
+                os.remove(target)
+        except OSError as e:
+            return self._reply(500, {"error": f"delete failed: {e}"})
+        return self._reply(200, {"ok": True, "name": name})
+
+    def _fs_upload(self, qs):
+        """POST /__fs_upload?root=<rel-or-abs> — multipart upload into root.
+        Reuses the _upload_files multipart machinery; only the target dir
+        differs (the resolved root instead of source/<branch>/uploads)."""
+        root = (_qs_get(qs, "root") or "").strip()
+        try:
+            abs_root, _ = self._fs_resolve(root)
+        except (ValueError, Exception) as e:
+            return self._reply(400, {"error": f"root resolution failed: {e}"})
+        try:
+            os.makedirs(abs_root, exist_ok=True)
+        except OSError as e:
+            return self._reply(500, {"error": f"mkdir failed: {e}"})
+
+        ctype = self.headers.get("Content-Type", "")
+        if not ctype.lower().startswith("multipart/form-data"):
+            return self._reply(400, {"error": "expected multipart/form-data", "got": ctype[:120]})
+        m = re.search(r'boundary\s*=\s*"?([^";]+)"?', ctype)
+        if not m:
+            return self._reply(400, {"error": "missing multipart boundary"})
+        boundary = m.group(1).encode("latin-1", errors="replace")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except Exception:
+            length = 0
+        if length <= 0:
+            return self._reply(400, {"error": "missing Content-Length"})
+        if length > self._UPLOAD_MAX_TOTAL:
+            return self._reply(413, {"error": f"body too large: {length} > {self._UPLOAD_MAX_TOTAL}"})
+        body = self.rfile.read(length)
+        try:
+            parts = self._upload_parse_multipart(body, boundary)
+        except Exception as e:
+            return self._reply(400, {"error": f"multipart parse failed: {e}"})
+
+        written, skipped = [], []
+        for headers, payload in parts:
+            cd = headers.get("content-disposition", "")
+            name = self._upload_sanitize_filename(self._upload_extract_filename(cd))
+            if not name:
+                continue
+            if len(payload) > self._UPLOAD_MAX_PER_FILE:
+                skipped.append({"name": name, "reason": f"too large: {len(payload)} > {self._UPLOAD_MAX_PER_FILE}"})
+                continue
+            try:
+                abs_path = _safe_join(abs_root, name)
+            except ValueError:
+                skipped.append({"name": name, "reason": "path traversal blocked"})
+                continue
+            if os.path.exists(abs_path):
+                stem, dot, ext = name.rpartition(".")
+                ts = int(time.time() * 1000)
+                name = f"{stem}-{ts}.{ext}" if dot else f"{name}-{ts}"
+                abs_path = _safe_join(abs_root, name)
+            try:
+                with open(abs_path, "wb") as f:
+                    f.write(payload)
+            except OSError as e:
+                skipped.append({"name": name, "reason": f"write failed: {e}"})
+                continue
+            written.append({"name": name, "bytes": len(payload),
+                             "mime": headers.get("content-type", "") or "application/octet-stream"})
+
+        return self._reply(200, {"ok": bool(written), "files": written, "skipped": skipped})
+
+    def _fs_mkdir(self, qs):
+        """POST /__fs_mkdir  body { root, name } — create a subfolder inside
+        root. `name` must be a single path segment."""
+        try:
+            body = self._read_json_body(max_bytes=8 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        name = (body.get("name") or "").strip()
+        if not name or "/" in name or "\\" in name or name in (".", ".."):
+            return self._reply(400, {"error": "name must be a single path segment"})
+        try:
+            abs_root, _ = self._fs_resolve(body.get("root"))
+        except (ValueError, Exception) as e:
+            return self._reply(400, {"error": f"root resolution failed: {e}"})
+        try:
+            target = _safe_join(abs_root, name)
+        except Exception as e:
+            return self._reply(400, {"error": f"path resolution failed: {e}"})
+        if os.path.exists(target):
+            return self._reply(409, {"error": "already exists", "name": name})
+        try:
+            os.makedirs(target)
+        except OSError as e:
+            return self._reply(500, {"error": f"mkdir failed: {e}"})
+        return self._reply(200, {"ok": True, "name": name})
 
     def _local_status(self, qs):
         """GET /__local_status?package=rembg → {installed, version?}.
@@ -16967,6 +17477,14 @@ if __name__ == "__main__":
             on_comments_changed=_broadcast_share_comments_changed,
         )
         _shares.start_gate_server(PORT)
+        # Live Session — same gate, delegated /s/<token>/live* routes.
+        _live.init(
+            INSTALL_ROOT,
+            lambda pid: resolve_project_root({"project": pid}),
+            _live_read_workflow, _live_apply_node_op, _live_dispatch_run,
+            daemon_port=PORT,
+        )
+        _shares.register_live(_live.GATE)
         threading.Thread(target=_shares.restore_active_tunnels, daemon=True,
                          name="share-tunnel-restore").start()
         # Backfill preview thumbnails for any existing shares that lack one

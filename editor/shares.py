@@ -594,6 +594,16 @@ def _notify_comments_changed(project_id, prototype):
 
 _GATE_SERVER = None
 
+# Live Session — late-bound so live.py can import shares without a cycle.
+# serve.py calls register_live(live.GATE) at boot; the gate delegates any
+# /s/<token>/live* route to it. None → live session disabled (gate still
+# serves view+comment routes).
+_LIVE = None
+
+def register_live(gate):
+    global _LIVE
+    _LIVE = gate
+
 # File extensions the gate will serve out of a project. Everything a
 # build-less htm+React prototype legitimately uses; notably NO .py and no
 # dotfiles (filtered separately).
@@ -721,6 +731,14 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if os.path.isfile(abs_path):
                 return self._send_file(abs_path, cache=True)
             return self._send_json(404, {"error": "not found"})
+        # Live Session — the REAL editor (served at /s/<tok>/live/) makes
+        # root-absolute requests (/app.js, /__workflow, /__ds_bootstrap…).
+        # When the th_live cookie is present and this is NOT a /s/<tok>/ route,
+        # delegate to live.py's read-only, project-scoped proxy.
+        if _LIVE is not None and not parsed.path.startswith("/s/"):
+            tok = self._live_cookie()
+            if tok and _LIVE.handle_rooted(self, tok, parsed.path, parsed.query):
+                return
         rec, sub = self._route()
         if rec is None:
             return
@@ -732,6 +750,10 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        # Live Session routes (/s/<token>/live*) — delegated to live.py.
+        if _LIVE is not None and (sub == "/live" or sub.startswith("/live/")):
+            if _LIVE.handle_get(self, rec, sub):
+                return
         # Viewer shell + assets.
         if sub == "/":
             return self._send_file(os.path.join(INSTALL_ROOT, "editor", "share", "viewer.html"))
@@ -750,12 +772,16 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if root is None:
                 return self._send_json(500, {"error": "project unavailable"})
             return self._send_json(200, {"comments": comments_list(root, rec.get("prototype"))})
-        # Whitelisted project files.
-        if sub.startswith("/p/"):
+        # Whitelisted project files. /p/ is the share viewer's prefix; the live
+        # editor's prototype iframes load /source/… and /design-systems/…
+        # directly (resolved relative to /s/<tok>/live/) — serve both through
+        # the same realpath-contained, extension-whitelisted logic.
+        if sub.startswith("/p/") or sub.startswith("/source/") or sub.startswith("/design-systems/"):
             root = self._project_root(rec)
             if root is None:
                 return self._send_json(500, {"error": "project unavailable"})
-            rel = urllib.parse.unquote(sub[len("/p/"):])
+            raw = sub[len("/p/"):] if sub.startswith("/p/") else sub.lstrip("/")
+            rel = urllib.parse.unquote(raw)
             rel = rel.split("?")[0].split("#")[0].strip("/")
             if not rel or ".." in rel.split("/") or rel.startswith("."):
                 return self._send_json(404, {"error": "not found"})
@@ -777,11 +803,31 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             return self._send_file(abs_path, cache=is_media)
         return self._send_json(404, {"error": "not found"})
 
+    def _live_cookie(self):
+        """th_live=<token> cookie set when the editor index was served — scopes
+        the real editor's root-absolute requests to one share."""
+        raw = self.headers.get("Cookie") or ""
+        for part in raw.split(";"):
+            k, _eq, v = part.strip().partition("=")
+            if k == "th_live" and TOKEN_OK.match(v or ""):
+                return v
+        return None
+
     # ── POST ──────────────────────────────────────────────────────────
     def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        # Real-editor root-absolute writes (guest mode is read-only) → no-op.
+        if _LIVE is not None and not parsed.path.startswith("/s/"):
+            tok = self._live_cookie()
+            if tok and _LIVE.handle_rooted_post(self, tok, parsed.path):
+                return
         rec, sub = self._route()
         if rec is None:
             return
+        # Live Session routes (/s/<token>/live*) — delegated to live.py.
+        if _LIVE is not None and sub.startswith("/live/"):
+            if _LIVE.handle_post(self, rec, sub):
+                return
         root = self._project_root(rec)
         if root is None:
             return self._send_json(500, {"error": "project unavailable"})

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Woven · Live Session</title>
+  <link rel="stylesheet" href="client.css" />
+</head>
+<body>
+  <!-- Join gate -->
+  <div id="join" class="join">
+    <div class="join-card">
+      <div class="join-brand">woven<span>·live</span></div>
+      <div id="join-label" class="join-label">Live session</div>
+      <p id="join-sub" class="join-sub">Join to co-edit this prototype in real time.</p>
+      <label class="fld"><span>Your name</span><input id="join-name" type="text" maxlength="80" autocomplete="name" placeholder="e.g. Alex" /></label>
+      <label class="fld" id="join-email-wrap" hidden><span>Email</span><input id="join-email" type="email" maxlength="120" autocomplete="email" placeholder="you@example.com" /></label>
+      <button id="join-btn" class="btn-primary">Join session</button>
+      <div id="join-err" class="join-err" hidden></div>
+      <div id="diag" class="diag"></div>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="app" hidden>
+    <header id="bar" class="bar">
+      <div class="bar-l">
+        <span class="bar-brand">woven<span>·live</span></span>
+        <span id="bar-label" class="bar-label"></span>
+      </div>
+      <div class="bar-r">
+        <div id="roster" class="roster"></div>
+        <span id="role-chip" class="chip"></span>
+        <button id="fork-btn" class="btn-ghost" hidden title="Take a copy to your own GitHub">⑂ Fork</button>
+        <button id="toggle-proto" class="btn-ghost" title="Show / hide prototype preview">Preview</button>
+        <button id="leave" class="btn-ghost">Leave</button>
+      </div>
+    </header>
+
+    <main id="stage" class="stage">
+      <div id="world" class="world">
+        <div id="nodes" class="nodes"></div>
+        <div id="cursors" class="cursors"></div>
+      </div>
+      <div id="hint" class="hint">Drag the background to pan · click a node to claim &amp; edit it</div>
+    </main>
+
+    <aside id="proto" class="proto" hidden>
+      <div class="proto-head"><span>Prototype</span><button id="proto-reload" class="btn-ghost">Reload</button></div>
+      <iframe id="frame" title="prototype" referrerpolicy="no-referrer"></iframe>
+    </aside>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <div id="fork" class="modal" hidden>
+      <div class="modal-card">
+        <button id="fork-x" class="modal-x" title="Close">✕</button>
+        <div id="fork-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
