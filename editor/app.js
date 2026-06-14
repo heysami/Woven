@@ -54330,12 +54330,11 @@ function WorkflowAgentBadge({ keyId, nx, ny, w, h, invZoom, zoom, pan, wrapRef, 
         const cursor = Math.floor(pp * N * 3) % N;
         for (let i = 0; i < N; i++) (i === cursor ? strokeRect(slotX(i), CY, SQ) : fillRect(slotX(i), CY, SQ, SQ));
       } else if (phase === "FACE") {
+        // Just ^_^ — no flanking squares. Eyes at slots 1/3, mouth at slot 2.
         const bop = -Math.abs(Math.sin(t * 4.5)) * 2.5;
-        for (let i = 0; i < N; i++) {
-          if (i === 1 || i === 3) drawGlyph("^", slotX(i), EYE_Y + bop, 1);
-          else if (i === 2) drawGlyph("_", slotX(i), MOUTH_Y + bop, 1);
-          else fillRect(slotX(i), CY + bop, SQ, SQ);
-        }
+        drawGlyph("^", slotX(1), EYE_Y + bop, 1);
+        drawGlyph("_", slotX(2), MOUTH_Y + bop, 1);
+        drawGlyph("^", slotX(3), EYE_Y + bop, 1);
       } else if (phase === "ASCII") {
         if (t - lastScramble > 0.28) { scrambleTick++; lastScramble = t; }
         for (let i = 0; i < N; i++) drawGlyph(glyphFor(i, scrambleTick), slotX(i), CY, 1);

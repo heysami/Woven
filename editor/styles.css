@@ -5185,15 +5185,29 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section-bar {
   position: absolute;
   bottom: 100%;
-  left: 0;
+  /* -1px so the tab's left border lands on the section's true border-box edge
+     (the section wears a 1px transparent border, which otherwise insets an
+     absolute left:0 child by 1px) — keeps the title-tab edge flush + continuous
+     with the body's left edge. */
+  left: -1px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 4px 10px 4px 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  /* Match the body's whisper-faint warm ring instead of the neutral grey
+     --border, so the left edge reads as ONE continuous line where the title
+     tab meets the group body (was: 1px solid var(--border)). */
+  border: 1px solid color-mix(in oklch, var(--hot) 6%, transparent);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
+  /* The body wears a soft warm lift-glow (0 1px 5px / 0 6px 18px hot). Mirror
+     it UPWARD on the tab so the tab+body share one continuous orange halo
+     instead of the tab reading flat. Upward offsets keep the glow off the
+     junction so there's no seam where the tab meets the body. */
+  box-shadow:
+    0 -1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
+    0 -6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
