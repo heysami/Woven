@@ -19703,6 +19703,17 @@ function WorkflowCanvas() {
           ...Object.fromEntries(
             _editableFieldsForKind(n).map(f => [f, _stableClone(n[f])])
           ),
+          // Live Session — x/y are NOT kind "inputs" (so _editableFieldsForKind
+          // omits them) but they ARE user-editable via drag, and the merge
+          // dirty-tracks them so a collaborator's move pulls live. They MUST be
+          // snapshotted on save too: otherwise after YOU move a node its x/y
+          // snapshot never updates, the field stays dirty forever, and
+          // pullField("x"/"y") skips every reload — so once both host and guest
+          // move the SAME node neither ever accepts the other's position and
+          // they diverge permanently. Snapshotting here flips the field back to
+          // CLEAN once our move persists, so the next reload converges.
+          x: _stableClone(n.x),
+          y: _stableClone(n.y),
           // v3.4.8 — runStatus / runError participate in the snapshot so
           // dirty-tracking works for them too (Bug B). Once the save POST
           // returns 200, savedSnapshotRef gets bumped to the latest local
