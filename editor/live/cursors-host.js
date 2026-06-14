@@ -10,6 +10,7 @@
   if (!PID) return;
   const parts = new Map();          // guestId -> {name,color,x,y,el}
   let layer = null, geom = { left: 0, top: 0, scale: 1 };
+  let connected = false;
 
   function findLayer() {
     const node = document.querySelector('[class*="workflow-node"]');
@@ -72,7 +73,7 @@
       const seen = new Set((JSON.parse(e.data).participants || []).map((x) => x.guestId));
       for (const g of [...parts.keys()]) if (!seen.has(g)) drop(g);
     });
-    es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); });
+    es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); connected = false; });
     es.onerror = () => {};  // EventSource auto-reconnects
 
     let last = 0;
@@ -92,9 +93,20 @@
     setInterval(() => { if (!parts.size) return; readGeom(); for (const p of parts.values()) render(p); }, 120);
   }
 
+  function poll() {
+    if (connected) return;
+    fetch("/__live_status?project=" + encodeURIComponent(PID))
+      .then((r) => r.json())
+      .then((s) => { if (s && s.live && !connected) { connected = true; connect(); } })
+      .catch(() => {});
+  }
+  // Wait for the canvas, then poll for a live session and connect when one
+  // starts — so cursors appear even if you go live AFTER opening the editor.
   const t = setInterval(() => {
     if (document.querySelector('[class*="workflow-node"]') || document.querySelector(".workflow-canvas")) {
-      clearInterval(t); connect();
+      clearInterval(t);
+      poll();
+      setInterval(poll, 8000);
     }
   }, 400);
   setTimeout(() => clearInterval(t), 20000);

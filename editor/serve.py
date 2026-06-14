@@ -6246,6 +6246,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return _live.host_events_stream(self, _qs_get(urllib.parse.parse_qs(parsed.query), "project") or "")
         if url_path == "/__live_cursors.js":
             return self._serve_live_cursors_js()
+        if url_path == "/__live_status":
+            pid = _qs_get(urllib.parse.parse_qs(parsed.query), "project") or ""
+            return self._reply(200, {"live": _live.project_has_live_session(pid)})
         if url_path == "/__orchestrators":
             return self._orchestrators_registry(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__cc_skills":
@@ -6373,7 +6376,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         if url_path in ("/editor/", "/editor/index.html"):
             pid = _qs_get(urllib.parse.parse_qs(parsed.query), "project") or ""
             try:
-                if pid and _live.project_has_live_session(pid):
+                # Inject unconditionally when a project is set — the script polls
+                # /__live_status and only connects once a session is live, so
+                # cursors appear even if you go live AFTER opening the editor
+                # (no refresh needed). Idle cost when never live: one tiny poll.
+                if pid:
                     idx = os.path.join(INSTALL_ROOT, "editor", "index.html")
                     with open(idx, "rb") as f:
                         data = f.read()

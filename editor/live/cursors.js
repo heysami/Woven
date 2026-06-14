@@ -111,7 +111,14 @@
     let name = "";
     try { name = localStorage.getItem("th-live-name") || ""; } catch (e) {}
     if (!name) { name = (window.prompt("Your name for this live session:") || "Guest").slice(0, 40); try { localStorage.setItem("th-live-name", name); } catch (e) {} }
-    try { const j = await api("api/join", { name }); TOKEN = j.token; GID = j.guestId; COLOR = j.color; start(); } catch (e) {}
+    // Stable per-browser id so a refresh reuses the same participant instead of
+    // adding a duplicate user to the roster.
+    let cid = "";
+    try {
+      cid = localStorage.getItem("th-live-cid") || "";
+      if (!cid) { cid = "c-" + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("th-live-cid", cid); }
+    } catch (e) {}
+    try { const j = await api("api/join", { name, clientId: cid }); TOKEN = j.token; GID = j.guestId; COLOR = j.color; start(); } catch (e) {}
   }
 
   // Wait for the canvas to mount, then boot.

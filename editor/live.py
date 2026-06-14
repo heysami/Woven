@@ -312,9 +312,13 @@ def _clip(v, n):
     return v[:n] if isinstance(v, str) else ""
 
 
-def join(rec, name, email, github=None):
+def join(rec, name, email, github=None, client_id=None):
     """Issue a guest a session token. Always needs a display name; the share's
-    email gate additionally needs a plausible email (same policy as comments)."""
+    email gate additionally needs a plausible email (same policy as comments).
+
+    `client_id` is a stable per-browser id (localStorage) — when present, a
+    refresh REUSES the same participant instead of spawning a duplicate user
+    (the old one would otherwise linger until the TTL reap)."""
     share_id = rec.get("id")
     s = _session(share_id, rec.get("project") or "")
     if not s.active:
@@ -326,15 +330,29 @@ def join(rec, name, email, github=None):
     if rec.get("emailGate") and not _shares.EMAIL_OK.match(email or ""):
         raise PermissionError("this session requires an email address to join")
     role = rec.get("roleDefault") if rec.get("roleDefault") in ROLES else "editor"
+    client_id = _clip(client_id, 64).strip()
     with s.lock:
-        guest_id = "g-" + secrets.token_hex(4)
+        guest_id = None
+        # Reuse an existing participant for this browser (refresh-stable).
+        if client_id:
+            for gid, p in s.participants.items():
+                if p.get("clientId") == client_id:
+                    guest_id = gid
+                    break
+        if guest_id is None:
+            guest_id = "g-" + secrets.token_hex(4)
+            color = _COLORS[len(s.participants) % len(_COLORS)]
+            s.participants[guest_id] = {
+                "name": name, "email": email, "color": color, "role": role,
+                "github": _clip(github, 80).strip() or "", "lastSeen": _now(),
+                "cursor": None, "selection": None, "clientId": client_id,
+            }
+        else:
+            p = s.participants[guest_id]
+            p["name"] = name; p["lastSeen"] = _now()
+            if email: p["email"] = email
+            color = p["color"]; role = p["role"]
         token = secrets.token_hex(16)
-        color = _COLORS[len(s.participants) % len(_COLORS)]
-        s.participants[guest_id] = {
-            "name": name, "email": email, "color": color, "role": role,
-            "github": _clip(github, 80).strip() or "", "lastSeen": _now(),
-            "cursor": None, "selection": None,
-        }
         s.tokens[token] = guest_id
         roster = _roster(s)
     broadcast(share_id, "roster", {"participants": roster})
@@ -1178,7 +1196,8 @@ class _LiveGate:
         token = h.headers.get("X-Live-Token") or body.get("token") or ""
         try:
             if sub == "/live/api/join":
-                out = join(rec, body.get("name"), body.get("email"), body.get("github"))
+                out = join(rec, body.get("name"), body.get("email"), body.get("github"),
+                           client_id=body.get("clientId"))
                 return _json(h, 200, out)
             if sub == "/live/api/presence":
                 presence(s, token, body.get("cursor"), body.get("selection"))
