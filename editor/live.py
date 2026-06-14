@@ -941,11 +941,15 @@ def _proxy_daemon_read(h, path, query, project):
         h.send_header("Cache-Control", "no-store")
         h.send_header("Connection", "close")
         h.end_headers()
+        # Stream line-by-line, NOT read(N) — SSE messages are small + infrequent,
+        # and read(2048) blocks until the buffer fills, which would hold back
+        # every event (host edits never reach guests live). readline() forwards
+        # each `event:`/`data:`/blank line the instant it arrives.
         try:
             while True:
-                chunk = resp.read(2048)
-                if not chunk: break
-                h.wfile.write(chunk); h.wfile.flush()
+                line = resp.readline()
+                if not line: break
+                h.wfile.write(line); h.wfile.flush()
         except Exception:
             pass
         return True
