@@ -25060,6 +25060,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (el) el.setAttribute("data-connected", "true");
     }
   }, [connectedNodeIds]);
+  // Flag every connector port that is an endpoint of an edge with
+  // `data-port-connected="true"`, so CSS can keep CONNECTED ports' diamonds
+  // always-visible while UNCONNECTED ports stay quiet (revealed only on node /
+  // dot hover). Imperative + matched by reconstructing each zone's
+  // "<nodeId>.<port>" ref against the edge endpoints — avoids parsing dots out
+  // of the ref (node ids / port ids stay opaque). Reapplies on edge OR node
+  // changes (a new node mounts fresh port DOM).
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const ends = new Set();
+    for (const e of (data?.edges || [])) {
+      if (e.from) ends.add(e.from);
+      if (e.to)   ends.add(e.to);
+    }
+    for (const zone of wrap.querySelectorAll('.workflow-port-zone[data-port-node][data-port-side]')) {
+      const ref = zone.getAttribute("data-port-node") + "." + zone.getAttribute("data-port-side");
+      if (ends.has(ref)) zone.setAttribute("data-port-connected", "true");
+      else zone.removeAttribute("data-port-connected");
+    }
+  }, [data?.edges, data?.nodes]);
   // v2.9 — mirror selection + nodes into the parent's ref so chat-spawn
   // can read "what's selected right now" without re-plumbing state up.
   // The parent passes selectionRef only when it cares (workflow-mode chat

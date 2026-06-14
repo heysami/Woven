@@ -5222,8 +5222,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-section-bar:active { cursor: grabbing; }
 .workflow-node-section-title {
-  font-size: 13px;
-  font-weight: 600;
+  /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
+     uppercase. Color stays per-kind. */
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   line-height: 1.2;
 }
@@ -5231,13 +5234,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   padding: 0;
   min-width: 8ch;
   width: 22ch;
-  font-family: inherit;
 }
 .workflow-node-section-close {
   width: 18px;
@@ -7220,10 +7223,49 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-port-zone-in  .workflow-port-dot { transform: translateX(-50%); }
 .workflow-port-zone-out .workflow-port-dot { transform: translateX(50%); }
+/* Connector diamonds are quiet by default: an UNCONNECTED port's dot is hidden
+   and only surfaces while its node is hovered (so you can start a wire) or
+   while the dot itself is hovered (drop target mid-edge-drag). A CONNECTED port
+   (flagged data-port-connected by WorkflowSurface) keeps its diamond visible
+   always so existing wires stay legible. opacity (not display) so the 14×14
+   hit-box + edge-snap centre math never shift. NO opacity transition: the
+   surface re-renders constantly, which restarts a transition from 0 each time
+   and pins the dot invisible (same trap as the port labels above). */
+.workflow-port-dot { opacity: 0; }
+.workflow-node:hover .workflow-port-dot,
+.workflow-node-section:hover .workflow-port-dot,
+.workflow-port-zone:hover .workflow-port-dot,
+.workflow-port-zone[data-port-connected="true"] .workflow-port-dot {
+  opacity: 1;
+}
 .workflow-port-dot:hover {
   background: var(--accent-strong);
   filter: drop-shadow(0 0 4px var(--accent))
           drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
+}
+/* Port-diamond fill convention: RIGHT/out ports stay SOLID green (the default
+   .workflow-port-dot above). LEFT/in ports read as an OUTLINE diamond — green
+   edge, white interior. clip-path crops a real border raggedly at this size, so
+   the green dot stays the outer diamond and an inset ::after paints a smaller
+   white diamond on top, leaving a crisp green ring. Covers every left-side port
+   variant: standard in-port, prototype top/bottom-left, agent left ports. */
+.workflow-port-zone-in  .workflow-port-dot,
+.workflow-proto-port-tl .workflow-port-dot,
+.workflow-proto-port-bl .workflow-port-dot,
+.workflow-agent-port-l1 .workflow-port-dot,
+.workflow-agent-port-l2 .workflow-port-dot,
+.workflow-agent-port-l3 .workflow-port-dot { position: relative; }
+.workflow-port-zone-in  .workflow-port-dot::after,
+.workflow-proto-port-tl .workflow-port-dot::after,
+.workflow-proto-port-bl .workflow-port-dot::after,
+.workflow-agent-port-l1 .workflow-port-dot::after,
+.workflow-agent-port-l2 .workflow-port-dot::after,
+.workflow-agent-port-l3 .workflow-port-dot::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--surface);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
 
 /* Prototype gets 4 ports — left/right × top/bottom quarters of the body.
@@ -7410,8 +7452,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   text-align: center;
 }
 .workflow-node-agent-title {
-  font-size: 13px;
-  font-weight: 600;
+  /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
+     uppercase. Color stays per-kind. */
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9562,10 +9607,12 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-align: center;
 }
 .workflow-node-ds-title {
-  font-size: 12.5px;
-  font-weight: 600;
+  /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
+     uppercase. Color stays per-kind. */
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
-  font-family: var(--font-mono, ui-monospace, monospace);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -9864,7 +9911,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 8px;
 }
 .workflow-node-iter-glyph { font-size: 14px; color: oklch(48% 0.16 300); width: 18px; text-align: center; }
-.workflow-node-iter-title { font-size: 12.5px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-node-iter-title { font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-node-iter-body {
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 12px 0;             /* bottom padding moved onto the sticky action row */
@@ -10042,9 +10089,11 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-palette-name {
   border: 0;
   background: transparent;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
+     uppercase. Color stays per-kind. */
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   flex: 1 1 0;
   min-width: 0;
@@ -10134,9 +10183,11 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-typo-name {
   border: 0;
   background: transparent;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
+     uppercase. Color stays per-kind. */
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   flex: 1 1 0;
   min-width: 0;
@@ -10429,8 +10480,11 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-align: center;
 }
 .workflow-node-skill-title {
-  font-size: 13px;
-  font-weight: 600;
+  /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
+     uppercase. Color stays per-kind. */
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -21458,7 +21512,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  overflow: hidden;
+  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+     diamonds paint past the edge instead of being cropped. */
+  overflow: clip;
   display: flex;
   flex-direction: column;
 }
@@ -21897,7 +21953,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: 8px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+     diamonds paint past the edge instead of being cropped. */
+  overflow: clip;
 }
 .workflow-node-fmttext-tag {
   font: 10px var(--font-mono);
@@ -21991,7 +22049,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  overflow: hidden;
+  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+     diamonds paint past the edge instead of being cropped. */
+  overflow: clip;
   display: flex;
   flex-direction: column;
 }
@@ -22137,7 +22197,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  overflow: hidden;
+  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+     diamonds paint past the edge instead of being cropped. */
+  overflow: clip;
   display: flex;
   flex-direction: column;
 }
