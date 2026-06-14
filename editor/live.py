@@ -673,6 +673,90 @@ def github_pr(s, rec, token, body):
     return _git.open_pr(p["ghToken"], owner, repo, head, title, prbody, base)
 
 
+# ═════════════════════════════════════════════════════════════════════════
+# 7c. Host-side presence — so the HOST (in their own editor, on the daemon)
+# sees guests' cursors and broadcasts their own. The host editor loads
+# /__live_cursors.js (injected by serve.py) which talks to the daemon endpoints
+# below; no guest token (the host is trusted daemon-side).
+# ═════════════════════════════════════════════════════════════════════════
+
+HOST_GID = "host"
+
+def _active_sessions_for_project(project_id):
+    canon = _canon(project_id)
+    with _SESSIONS_LOCK:
+        return [s for s in _SESSIONS.values() if s.active and _canon(s.project_id) == canon]
+
+def project_has_live_session(project_id):
+    return bool(_active_sessions_for_project(project_id))
+
+def _ensure_host(s):
+    p = s.participants.get(HOST_GID)
+    if p is None:
+        p = {"name": "Host", "color": "#111827", "role": "editor", "github": "",
+             "lastSeen": _now(), "cursor": None, "selection": None}
+        s.participants[HOST_GID] = p
+    return p
+
+def host_presence(project_id, cursor):
+    for s in _active_sessions_for_project(project_id):
+        with s.lock:
+            p = _ensure_host(s)
+            p["lastSeen"] = _now()
+            if isinstance(cursor, dict):
+                p["cursor"] = {"x": _num(cursor.get("x")), "y": _num(cursor.get("y")),
+                               "page": _clip(cursor.get("page"), 200)}
+            name, color, cur = p["name"], p["color"], p["cursor"]
+        broadcast(s.share_id, "presence",
+                  {"guestId": HOST_GID, "name": name, "color": color, "cursor": cur, "selection": None})
+    return {"ok": True}
+
+def host_events_stream(h, project_id):
+    """Daemon-side SSE for the host editor: streams presence/lock/roster of the
+    project's live session. No token (host is trusted)."""
+    sessions = _active_sessions_for_project(project_id)
+    if not sessions:
+        return _json(h, 409, {"error": "no live session"})
+    s = sessions[0]
+    h.close_connection = True
+    h.send_response(200)
+    h.send_header("Content-Type", "text/event-stream; charset=utf-8")
+    h.send_header("Cache-Control", "no-store")
+    h.send_header("Connection", "close")
+    h.send_header("X-Accel-Buffering", "no")
+    h.end_headers()
+    waiter = _Waiter()
+    with s.lock:
+        s.waiters.add(waiter)
+        _ensure_host(s)
+        roster = _roster(s); leases = _leases_public(s)
+    try:
+        _sse_write(h, "live-connected", {"guestId": HOST_GID})
+        _sse_write(h, "roster", {"participants": roster})
+        _sse_write(h, "lock", {"leases": leases})
+        while True:
+            fired = waiter.wait(timeout=25)
+            with s.lock:
+                hp = s.participants.get(HOST_GID)
+                if hp is not None:
+                    hp["lastSeen"] = _now()
+                still = s.active
+            if not still:
+                _sse_write(h, "session-ended", {}); return True
+            if fired:
+                for et, ed in waiter.drain():
+                    if not _sse_write(h, et, ed):
+                        return True
+            else:
+                try:
+                    h.wfile.write(b": heartbeat\n\n"); h.wfile.flush()
+                except Exception:
+                    return True
+    finally:
+        with s.lock:
+            s.waiters.discard(waiter)
+
+
 def release_agent_lease(project_id, node_id):
     """Called by serve.py's node-finish hook: drop the agent lease so guests
     can edit the node again."""

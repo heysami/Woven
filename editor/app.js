@@ -19629,6 +19629,11 @@ function WorkflowCanvas() {
           // counts as dirty until the save flushes.
           savedSnapshotRef.current.set(dn.id + "|runStatus", _stableClone(dn.runStatus));
           savedSnapshotRef.current.set(dn.id + "|runError",  _stableClone(dn.runError));
+          // Live Session — seed node position so the reload-merge can pull a
+          // remote collaborator's move live (dirty-checked: skipped while YOU
+          // are dragging that node, so it never clobbers an in-flight drag).
+          savedSnapshotRef.current.set(dn.id + "|x", _stableClone(dn.x));
+          savedSnapshotRef.current.set(dn.id + "|y", _stableClone(dn.y));
         }
         // Whiteboard items are dirty-tracked as WHOLE items (key "wb:<id>"),
         // not per-field — they're small and have no daemon-owned fields.
@@ -19926,6 +19931,10 @@ function WorkflowCanvas() {
               savedSnapshotRef.current.set(disk.id + "|" + key, _stableClone(disk[key]));
             };
             for (const f of editableFields) pullField(f);
+            // Live Session — pull a collaborator's node move live. Same
+            // dirty-check: only when local x/y matches the last-saved snapshot
+            // (you're not mid-drag on this node), so it never stomps your drag.
+            pullField("x"); pullField("y");
             // v3.4.8 — Bug B: conditional pull for runStatus / runError.
             // Pull from disk ONLY when local matches the last-saved
             // snapshot (i.e. no client-side change is in flight). If local

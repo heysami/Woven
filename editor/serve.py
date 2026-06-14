@@ -6051,6 +6051,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_git = re.match(r"^/__git/(connect|commit|publish|resolve)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
+            if parsed.path == "/__live_presence":
+                try:
+                    body = self._read_json_body(max_bytes=8 * 1024)
+                except ValueError:
+                    body = {}
+                pid = _qs_get(qs, "project") or ""
+                return self._reply(200, _live.host_presence(pid, (body or {}).get("cursor")))
             if parsed.path == "/__share_comments":
                 return self._share_comments_post(qs)
             if parsed.path == "/__mkdir":
@@ -6233,6 +6240,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
             return self._capabilities()
+        # Live Session — host-side presence (the host's own editor sees guest
+        # cursors). SSE stream + the injected cursor script.
+        if url_path == "/__live_events":
+            return _live.host_events_stream(self, _qs_get(urllib.parse.parse_qs(parsed.query), "project") or "")
+        if url_path == "/__live_cursors.js":
+            return self._serve_live_cursors_js()
         if url_path == "/__orchestrators":
             return self._orchestrators_registry(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__cc_skills":
@@ -6353,6 +6366,29 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         project_id = ""
                 return self._serve_source_html(file_path, project_id)
+        # Live Session — inject the host-side live-cursors overlay into the
+        # editor shell when a live session is active for this project, so the
+        # host sees guests' cursors (guests get it via the gate). Plain editor
+        # otherwise; no overhead when not live.
+        if url_path in ("/editor/", "/editor/index.html"):
+            pid = _qs_get(urllib.parse.parse_qs(parsed.query), "project") or ""
+            try:
+                if pid and _live.project_has_live_session(pid):
+                    idx = os.path.join(INSTALL_ROOT, "editor", "index.html")
+                    with open(idx, "rb") as f:
+                        data = f.read()
+                    tag = b'<script src="/__live_cursors.js" defer></script>'
+                    if b"</body>" in data:
+                        data = data.replace(b"</body>", tag + b"</body>", 1)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            except Exception:
+                pass
         return super().do_GET()
 
     # Match `src="..."`, `href="..."`, `data-src="..."`, etc. — single-URL
@@ -12139,6 +12175,23 @@ class H(http.server.SimpleHTTPRequestHandler):
             "share": _shares.share_summary(fresh) if fresh else None,
             "live": _live.session_summary(share_id),
         })
+
+    # GET /__live_cursors.js — host-side live-cursors overlay (injected into the
+    # editor shell when a session is active). Served from editor/live/.
+    def _serve_live_cursors_js(self):
+        path = os.path.join(INSTALL_ROOT, "editor", "live", "cursors-host.js")
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError:
+            return self._reply(404, {"error": "not found"})
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
 
     # ── Git / GitHub backbone (host side) — see editor/git_ops.py ──────────
     # GET /__git/status?project=<id>
