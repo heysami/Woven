@@ -9302,6 +9302,10 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             }
           }
           setAnswers(nextAnswers);
+          // Carry a failure reason from the persisted transcript so a reopened
+          // historical chat still explains a context-overflow / errored turn.
+          const histErr = [...evs].reverse().map(chatErrorReason).find(Boolean);
+          if (histErr) setError(histErr);
           setStatus("done");
         } catch (e) {
           if (cancelled || e?.name === "AbortError") return;
@@ -9374,6 +9378,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             // the drawer on exactly the status it would have reached had it
             // watched the run live.
             setStatus(prev => (prev === "error" ? prev : evs.reduce(chatStatusReducer, prev)));
+            // Same reason-harvest as the live path: if the hydrated history
+            // ended on an error, label it (banner is gated on status==="error",
+            // so a reason set after a recovered turn stays harmlessly hidden).
+            const _histErr = [...evs].reverse().map(chatErrorReason).find(Boolean);
+            if (_histErr) setError(_histErr);
           }
         }
         }  // end of !cacheHit branch
@@ -9407,6 +9416,19 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         setStatus(prev => (prev === "error" ? prev : seed));
       }
       sseHadFirstOpenRef.current = true;
+      // v3.5.4 — auto-reconnect the live tail. A per-turn API failure
+      // (result.subtype=error_during_execution) makes Claude Code retry the
+      // turn IN-PROCESS: the daemon never sets state.done, so the run keeps
+      // producing under the same runId. But the browser's fetch/SSE can still
+      // drop on a long-lived tail (proxy idle cap, network blip, a 19MB turn).
+      // Before this loop, a dropped tail went sticky on "Stream error" and the
+      // drawer never re-subscribed — new events piled up server-side with no
+      // listener, so the UI froze until a manual refresh re-hydrated. Now, on
+      // an unexpected drop we confirm via /__runs that the run is still live
+      // and reconnect from lastIdRef (dedup via _seenSeqRef keeps it gapless).
+      let _reconnects = 0;
+      const _MAX_RECONNECTS = 8;
+      while (true) {
       try {
         await readSSE(apiUrl(`/__stream?runId=${encodeURIComponent(run.runId)}&after=${lastIdRef.current}`), {
           signal: ctl.signal,
@@ -9439,6 +9461,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
                 setAnswers(prev => prev[dec.key] ? prev : ({ ...prev, [dec.key]: dec.value }));
               }
             }
+            // Surface WHY a turn failed (context overflow / API subtype /
+            // explicit error message) so the banner + chip read the real
+            // reason instead of the generic "Stream error".
+            const _reason = chatErrorReason(ev);
+            if (_reason) setError(_reason);
             // Status transitions — see chatStatusReducer above (shared with
             // the hydrate-from-history fold so live and replayed transcripts
             // land on identical statuses).
@@ -9457,12 +9484,41 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         if (!cancelled) {
           setStatus(prev => (prev === "connecting" || prev === "streaming") ? "done" : prev);
         }
+        break;  // clean close = genuinely terminal; don't reconnect.
       } catch (e) {
         if (cancelled) return;
         if (e?.name === "AbortError") return;
+        // The tail dropped unexpectedly. Ask the daemon whether the run is
+        // actually finished; if it's still live, reconnect from lastIdRef
+        // instead of going sticky on a stale "Stream error".
+        let runStillLive = false;
+        try {
+          const rr = await fetch(apiUrl("/__runs"), { signal: ctl.signal });
+          if (rr.ok) {
+            const rj = await rr.json();
+            const me = (rj.runs || []).find(r => r && r.runId === run.runId);
+            runStillLive = !!me && me.done === false;
+          }
+        } catch (probeErr) {
+          if (probeErr?.name === "AbortError") return;
+        }
+        if (cancelled) return;
+        if (runStillLive && _reconnects < _MAX_RECONNECTS) {
+          _reconnects++;
+          // Run is alive — we're just re-attaching. Clear the transient error
+          // UI immediately (so the drawer un-freezes without a refresh), then
+          // back off briefly before re-opening the tail.
+          setStatus(prev => (prev === "done" || prev === "fail") ? prev : "streaming");
+          setError(null);
+          await new Promise(res => setTimeout(res, Math.min(2000, 250 * _reconnects)));
+          if (cancelled) return;
+          continue;
+        }
         setError(e?.message || String(e));
         setStatus(prev => (prev === "done" || prev === "fail" ? prev : "error"));
+        break;
       }
+      }  // end reconnect loop
     })();
     return () => { cancelled = true; ctl.abort(); };
   }, [run?.runId, sseEpoch]);
@@ -9685,7 +9741,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               <span/><span/><span/>
             </div>
           `}
-          ${status === "error" && html`<div className="chat-error">Stream error: ${error || "unknown"}</div>`}
+          ${status === "error" && html`<div className="chat-error">${error || "Stream error"}</div>`}
         </div>
       `}
       <${ChatComposer}
@@ -13071,6 +13127,45 @@ function fmtTokens(n) {
   return String(n);
 }
 
+// Full prompt/context size for one turn — input + BOTH cache tiers. Unlike
+// totalTokensFromUsage (billable in+out), this is what's measured against the
+// model's CONTEXT WINDOW, so it's the signal for "did this turn overflow".
+function contextInputTokensFromUsage(u) {
+  if (!u || typeof u !== "object") return null;
+  const t = (+u.input_tokens || 0)
+          + (+u.cache_read_input_tokens || 0)
+          + (+u.cache_creation_input_tokens || 0);
+  return t > 0 ? t : null;
+}
+
+// When an error turn's context size sits AT a known Anthropic ceiling (200K
+// standard, 1M beta), return a human reason; else null. Banded so a transient
+// mid-run API error (e.g. 600K of a 1M window) isn't mislabeled as an overflow
+// and a genuine 1M overflow isn't mistaken for the 200K one.
+function contextLimitReason(usage) {
+  const ctx = contextInputTokensFromUsage(usage);
+  if (ctx == null) return null;
+  let window = null;
+  if (ctx >= 950_000) window = "1M";
+  else if (ctx >= 180_000 && ctx <= 220_000) window = "200K";
+  if (!window) return null;
+  return `Context limit reached — this conversation filled the model's ${window}-token window (~${fmtTokens(ctx)} tokens). Start a new chat to continue.`;
+}
+
+// Human reason for any error-bearing chat event, or null when it carries none.
+// Used to label the error banner / chip with WHY a turn failed instead of the
+// misleading generic "Stream error". Context-overflow takes priority over the
+// raw subtype because it's the actionable case.
+function chatErrorReason(ev) {
+  if (!ev) return null;
+  const d = ev.data || {};
+  if (ev.event === "error") return d.message || null;
+  if (ev.event === "agent" && d.type === "status" && d.label === "error") {
+    return contextLimitReason(d.usage) || d.subtype || null;
+  }
+  return null;
+}
+
 /* v3.11 — Collapsed activity row for the "auto" chat view mode. Stands in
    for a contiguous run of FINISHED tool / agent-grid / thinking blocks.
    Click to expand the original blocks inline; the expanded flag lives in
@@ -13251,7 +13346,10 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       if (d.durationMs != null) bits.push(`${(d.durationMs/1000).toFixed(1)}s`);
       const t = totalTokensFromUsage(d.usage);
       if (t != null) bits.push(`${fmtTokens(t)} tok`);
-      return html`<div className="chat-row chat-status">${bits.join(" · ")}${d.promptPreview ? html` — ${d.promptPreview}` : ""}</div>`;
+      // On a failed turn, spell out WHY inline so it persists in scroll-back —
+      // context overflow gets the actionable "start a new chat" line.
+      const stReason = d.label === "error" ? (contextLimitReason(d.usage) || d.subtype) : null;
+      return html`<div className="chat-row chat-status" data-error=${d.label === "error"}>${bits.join(" · ")}${stReason ? html` — ${stReason}` : ""}${d.promptPreview ? html` — ${d.promptPreview}` : ""}</div>`;
     }
     case "usage": {
       const u = block.data.usage || {};
