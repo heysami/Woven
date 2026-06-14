@@ -7258,6 +7258,32 @@ function apiUrl(path) {
   return path + sep + "project=" + encodeURIComponent(proj);
 }
 
+// Human-readable label for the active project (the rename label from
+// /__projects), used in place of the generic "Workflow canvas" title. The one
+// fetch is shared via window.__TH_PROJECT_LABEL; until it lands we show the raw
+// project id so the title is never empty.
+function useActiveProjectLabel() {
+  const pid = activeProjectId();
+  const [label, setLabel] = useState(() => (typeof window !== "undefined" && window.__TH_PROJECT_LABEL) || pid || "");
+  useEffect(() => {
+    if (!pid) return;
+    if (typeof window !== "undefined" && window.__TH_PROJECT_LABEL) { setLabel(window.__TH_PROJECT_LABEL); return; }
+    let alive = true;
+    fetch(apiUrl("/__projects"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!alive || !d) return;
+        const me = (d.projects || []).find(p => p.id === pid);
+        const lbl = (me && (me.label || me.id)) || pid;
+        window.__TH_PROJECT_LABEL = lbl;
+        setLabel(lbl);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [pid]);
+  return label;
+}
+
 // v3.4.30 — Starred prototypes (cross-component cache + event bus).
 // One per-project list of prototype slugs the user has bookmarked. The
 // daemon owns persistence (<project>/.starred-prototypes.json); we
@@ -8541,7 +8567,7 @@ function PermissionModePicker({ value, onChange, compact, openUp }) {
    Persisted in localStorage — it's a sticky user preference, not per-thread
    state. */
 const CHAT_VIEW_MODE_OPTIONS = [
-  { value: "auto",   label: "Hide finished steps", short: "Steps: auto", hint: "Tool activity shows while the agent is working, then collapses to a compact \"n steps\" row when the turn finishes. Click a row to expand it." },
+  { value: "auto",   label: "Hide finished steps", short: "Steps: auto", hint: "Tool activity shows while the agent is working, then disappears once the turn finishes — leaving only the agent's reply." },
   { value: "always", label: "Always show steps",   short: "Steps: all",  hint: "Keep every tool card and thinking block visible after the turn finishes." },
 ];
 const CHAT_VIEW_MODE_KEY = "th-chat-view-mode";
@@ -8790,11 +8816,10 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
             <button
               className="runs-new-chat"
               onClick=${() => { onStartNewChat(); setOpen(false); }}
-              title="Start a free-form chat with the agent (no edits required)"
+              title="Start a new chat with the agent (no edits required)"
             >
               <span className="runs-new-chat-plus">+</span>
               <span className="runs-new-chat-label">New chat</span>
-              <span className="runs-new-chat-hint">free-form</span>
             </button>
           `}
           ${runs.length === 0 && html`
@@ -8832,15 +8857,14 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
                 onClick=${() => { onOpenRun(r); setOpen(false); }}
                 title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
               >
-                <span className="runs-row-dot" data-status=${status}/>
+                <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
                 <span className="runs-row-body">
                   <span className="runs-row-title">${r.title || r.kind}</span>
                   <span className="runs-row-meta">
-                    ${r.agentId} · ${r.branch} · ${formatRunAge(r.startedAt)}
-                    ${r.turnsCompleted > 0 ? html` · ${r.turnsCompleted} turn${r.turnsCompleted === 1 ? "" : "s"}` : null}
+                    ${r.branch}${r.turnsCompleted > 0 ? html` · ${r.turnsCompleted} turn${r.turnsCompleted === 1 ? "" : "s"}` : null}
                   </span>
                 </span>
-                <span className="runs-row-status">${statusLabel}</span>
+                <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
               </button>
             `;
           })}
@@ -9596,14 +9620,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const blocks = useMemo(() => buildBlocks(events), [events]);
 
   // v3.11 — Apply the chat view mode. In "auto", activity blocks (tool
-  // cards, agent grids, thinking) that belong to a FINISHED turn collapse
-  // into one "collapsed_steps" pseudo-block per contiguous run; the
-  // in-flight turn's activity stays live so the user can watch the agent
-  // read / write as it happens. A turn counts as finished once a turn
-  // delimiter (the turn-final status frame, a user message, or process
-  // end) appears after it — or once the run itself stops streaming.
-  // AskUserQuestion stays visible regardless: it's conversation (an
-  // interactive answer card), not activity.
+  // cards, agent grids, thinking) that belong to a FINISHED turn are DROPPED
+  // entirely — the finished turn shows only its conversational output (text,
+  // answer cards), not how the agent got there. The in-flight turn's activity
+  // stays live so the user can watch the agent read / write as it happens. A
+  // turn counts as finished once a turn delimiter (the turn-final status
+  // frame, a user message, or process end) appears after it — or once the run
+  // itself stops streaming. AskUserQuestion stays visible regardless: it's
+  // conversation (an interactive answer card), not activity.
   const displayBlocks = useMemo(() => {
     if (viewMode === "always") return blocks;
     const HIDEABLE = new Set(["tool", "agent_grid", "thinking"]);
@@ -9612,25 +9636,54 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     let lastDelim = -1;
     for (let i = 0; i < blocks.length; i++) if (DELIM.has(blocks[i].kind)) lastDelim = i;
     const out = [];
-    let group = null;
-    const closeGroup = () => { if (group) { out.push(group); group = null; } };
     for (let i = 0; i < blocks.length; i++) {
       const bl = blocks[i];
       const finished = runDone || i < lastDelim;
       const interactive = bl.kind === "tool" && bl.toolUse?.name === "AskUserQuestion";
-      if (finished && !interactive && HIDEABLE.has(bl.kind)) {
-        // Key by the FIRST member so the group identity (and its expanded
-        // state in CollapsedStepsRow) is stable as later blocks join.
-        if (!group) group = { kind: "collapsed_steps", items: [], key: `cs-${bl.key}` };
-        group.items.push(bl);
-        continue;
-      }
-      closeGroup();
+      if (finished && !interactive && HIDEABLE.has(bl.kind)) continue;
       out.push(bl);
     }
-    closeGroup();
     return out;
   }, [blocks, viewMode, status, processEnded]);
+
+  // v3.12 — Running subagents, surfaced in a sticky strip just above the
+  // composer so the user can watch live dispatches without scrolling up to
+  // find the agent_grid in the transcript. A subagent is "running" while its
+  // Agent tool_use has no paired tool_result yet; we only show the strip while
+  // the turn itself is live. The latest task_progress line per subagent (the
+  // SDK's "<subagent> is doing X" narration) rides along as the task text when
+  // present, falling back to the dispatch description.
+  const activeAgents = useMemo(() => {
+    if (status !== "streaming" && status !== "connecting") return [];
+    // Latest task_progress description keyed by the parent Agent tool_use id.
+    const actionById = new Map();
+    for (const ev of events) {
+      if (ev.event !== "agent") continue;
+      const d = ev.data;
+      if (!d) continue;
+      const isTP = (d.type === "system" && d.subtype === "task_progress")
+                 || (d.type === "raw"    && d.subtype === "task_progress");
+      if (!isTP) continue;
+      const id   = d.type === "system" ? d.toolUseId   : d.frame?.tool_use_id;
+      const desc = d.type === "system" ? d.description  : d.frame?.description;
+      if (id && desc) actionById.set(id, desc);
+    }
+    const out = [];
+    for (const bl of blocks) {
+      if (bl.kind !== "agent_grid") continue;
+      for (const c of (bl.calls || [])) {
+        if (c.toolResult) continue;  // finished — drop from the live strip
+        const inp = c.toolUse?.input || {};
+        const id = c.toolUse?.id;
+        out.push({
+          id: id || `a-${out.length}`,
+          type: inp.subagent_type || "subagent",
+          task: actionById.get(id) || inp.description || "Working…",
+        });
+      }
+    }
+    return out;
+  }, [blocks, events, status]);
 
   // Did the agent modify files this run? Drives the auto-reload-on-done
   // decision in App. We only check WRITE-flavoured tools (Write/Edit/
@@ -9719,16 +9772,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             </div>
           `}
           ${!isNew && events.length === 0 && status === "connecting" && html`<div className="chat-empty">Loading conversation…</div>`}
-          ${displayBlocks.map((bl) => bl.kind === "collapsed_steps"
-            ? html`<${CollapsedStepsRow}
-                key=${bl.key}
-                items=${bl.items}
-                runId=${run?.runId}
-                answers=${answers}
-                onAnswered=${(id, payload) => setAnswers(prev => ({ ...prev, [id]: payload }))}
-                processEnded=${processEnded}
-              />`
-            : html`<${ChatBlock}
+          ${displayBlocks.map((bl) => html`<${ChatBlock}
                 key=${bl.key}
                 block=${bl}
                 runId=${run?.runId}
@@ -9744,6 +9788,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           ${status === "error" && html`<div className="chat-error">${error || "Stream error"}</div>`}
         </div>
       `}
+      ${activeAgents.length > 0 && html`
+        <div className="chat-active-agents" aria-label=${`${activeAgents.length} subagent${activeAgents.length === 1 ? "" : "s"} running`}>
+          ${activeAgents.map(a => html`
+            <div className="chat-active-agent" key=${a.id} title=${`${a.type} — ${a.task}`}>
+              <span className="chat-active-agent-spin" aria-hidden="true"/>
+              <span className="chat-active-agent-type">${a.type}</span>
+              <span className="chat-active-agent-task">${a.task}</span>
+            </div>
+          `)}
+        </div>
+      `}
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
@@ -9752,6 +9807,29 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         selectionCount=${selectionCount}
         runStatus=${status}
         onStop=${stopRun}
+        toolbarLeft=${html`
+          <${PermissionModePicker}
+            value=${permissionMode}
+            onChange=${onPermissionModeChange}
+            compact=${true}
+            openUp=${true}
+          />
+        `}
+        toolbarRight=${html`
+          ${runModel && html`
+            <span className="chat-footer-model" title=${`Model in use: ${runModel}`}>${runModel}</span>
+          `}
+          ${runPermMode && runPermMode !== permissionMode && html`
+            <span className="chat-footer-note" title=${`This run was spawned with ${runPermMode}. The next run will use ${permissionMode}.`}>
+              this run: <strong>${permModeOption(runPermMode).short}</strong>
+            </span>
+          `}
+          <${ChatViewModePicker}
+            value=${viewMode}
+            onChange=${changeViewMode}
+            openUp=${true}
+          />
+        `}
         onStartNewChat=${onStartNewChat}
         onResumed=${() => {
           // /resume succeeded — bump sseEpoch so the SSE consumer re-opens
@@ -9781,27 +9859,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           completedRef.current = false;
         }}
       />
-      <div className="chat-footer">
-        <${PermissionModePicker}
-          value=${permissionMode}
-          onChange=${onPermissionModeChange}
-          compact=${false}
-          openUp=${true}
-        />
-        <${ChatViewModePicker}
-          value=${viewMode}
-          onChange=${changeViewMode}
-          openUp=${true}
-        />
-        ${runModel && html`
-          <span className="chat-footer-model" title=${`Model in use: ${runModel}`}>${runModel}</span>
-        `}
-        ${runPermMode && runPermMode !== permissionMode && html`
-          <span className="chat-footer-note" title=${`This run was spawned with ${runPermMode}. The next run will use ${permissionMode}.`}>
-            this run: <strong>${permModeOption(runPermMode).short}</strong>
-          </span>
-        `}
-      </div>
     </div>
   `;
 }
@@ -9920,7 +9977,7 @@ async function __loadSlashSkills() {
   return items;
 }
 
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -10559,21 +10616,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           e.target.value = "";
         }}
       />
-      <button
-        className="chat-composer-attach"
-        type="button"
-        onClick=${() => fileInputRef.current && fileInputRef.current.click()}
-        disabled=${attachBusy || busy}
-        title="Attach image for vision (drag, paste, or click) — single turn"
-      >${attachBusy ? "…" : html`<${Icon.Clip}/>`}</button>
-      <button
-        className="chat-composer-attach chat-composer-upload-btn"
-        type="button"
-        onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
-        disabled=${uploadBusy || busy}
-        title="Upload project files — multi-file, any type, lives in source/uploads/"
-      >${uploadBusy ? "…" : html`<${Icon.Folder}/>`}</button>
-      <div className="chat-composer-input-wrap" style=${{ position: "relative", flex: 1, minWidth: 0 }}>
+      <div className="chat-composer-input-wrap" style=${{ position: "relative", minWidth: 0 }}>
         <textarea
           ref=${taRef}
           className="chat-composer-input"
@@ -10661,40 +10704,64 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             <div className="chat-slash-empty">No skill, orchestrator, or library entry matches “${slashQuery}”. Esc to dismiss.</div>
           </div>
         `}
+        <div className="chat-composer-inbox-actions">
+          ${(runStatus === "streaming" || runStatus === "connecting") && onStop && html`
+            <button
+              className="chat-composer-stop"
+              type="button"
+              onClick=${onStop}
+              title="Stop the agent"
+              aria-label="Stop the agent"
+            ><${Icon.Stop}/></button>
+          `}
+          <button
+            className=${"chat-composer-send" + (wouldQueue ? " chat-composer-send-queue" : "")}
+            onClick=${send}
+            disabled=${!canSend}
+            aria-label=${wouldQueue ? "Queue message" : "Send message"}
+            title=${(() => {
+              const baseTitle = canSend
+                ? (wouldQueue
+                    ? "Agent is working — Send will queue this and fire it the moment the turn ends  ⌘/Ctrl+Enter"
+                    : (isNew
+                        ? "Start new chat  ⌘/Ctrl+Enter"
+                        : (isResuming ? "Resume conversation  ⌘/Ctrl+Enter" : "Send  ⌘/Ctrl+Enter")))
+                : "Type something first or attach an image";
+              // v2.9b — selection context only attaches on a new chat's first
+              // turn (spawnWorkflowChat path). Subsequent turns reuse the
+              // existing run, so the badge would be misleading.
+              if (isNew && selectionCount > 0) {
+                return `${baseTitle}\nIncludes ${selectionCount} selected node${selectionCount === 1 ? "" : "s"} as context.`;
+              }
+              return baseTitle;
+            })()}
+          >
+            ${busy ? "…" : html`<${Icon.ArrowUp}/>`}
+            ${isNew && selectionCount > 0 && html`<span className="chat-composer-send-badge" aria-label=${`${selectionCount} selected nodes as context`}>${selectionCount}</span>`}
+          </button>
+        </div>
       </div>
-      ${(runStatus === "streaming" || runStatus === "connecting") && onStop && html`
+      <div className="chat-composer-toolbar">
+        ${toolbarLeft}
         <button
-          className="chat-composer-stop"
+          className="chat-composer-attach"
           type="button"
-          onClick=${onStop}
-          title="Stop the agent"
-          aria-label="Stop the agent"
-        ><${Icon.Stop}/></button>
-      `}
-      <button
-        className=${"chat-composer-send" + (wouldQueue ? " chat-composer-send-queue" : "")}
-        onClick=${send}
-        disabled=${!canSend}
-        title=${(() => {
-          const baseTitle = canSend
-            ? (wouldQueue
-                ? "Agent is working — Send will queue this and fire it the moment the turn ends  ⌘/Ctrl+Enter"
-                : (isNew
-                    ? "Start new chat  ⌘/Ctrl+Enter"
-                    : (isResuming ? "Resume conversation  ⌘/Ctrl+Enter" : "Send  ⌘/Ctrl+Enter")))
-            : "Type something first or attach an image";
-          // v2.9b — selection context only attaches on a new chat's first
-          // turn (spawnWorkflowChat path). Subsequent turns reuse the
-          // existing run, so the badge would be misleading.
-          if (isNew && selectionCount > 0) {
-            return `${baseTitle}\nIncludes ${selectionCount} selected node${selectionCount === 1 ? "" : "s"} as context.`;
-          }
-          return baseTitle;
-        })()}
-      >
-        ${busy ? "…" : (wouldQueue ? "Queue" : "Send")}
-        ${isNew && selectionCount > 0 && html`<span className="chat-composer-send-badge" aria-label=${`${selectionCount} selected nodes as context`}>· ${selectionCount}</span>`}
-      </button>
+          onClick=${() => fileInputRef.current && fileInputRef.current.click()}
+          disabled=${attachBusy || busy}
+          title="Attach image for vision (drag, paste, or click) — single turn"
+          aria-label="Attach image"
+        >${attachBusy ? "…" : html`<${Icon.Clip}/>`}</button>
+        <button
+          className="chat-composer-attach chat-composer-upload-btn"
+          type="button"
+          onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
+          disabled=${uploadBusy || busy}
+          title="Upload project files — multi-file, any type, lives in source/uploads/"
+          aria-label="Upload files"
+        >${uploadBusy ? "…" : html`<${Icon.Folder}/>`}</button>
+        <span className="chat-composer-toolbar-spacer"/>
+        ${toolbarRight}
+      </div>
       ${error && html`<div className="chat-composer-error">${error}</div>`}
     </div>
   `;
@@ -13164,56 +13231,6 @@ function chatErrorReason(ev) {
     return contextLimitReason(d.usage) || d.subtype || null;
   }
   return null;
-}
-
-/* v3.11 — Collapsed activity row for the "auto" chat view mode. Stands in
-   for a contiguous run of FINISHED tool / agent-grid / thinking blocks.
-   Click to expand the original blocks inline; the expanded flag lives in
-   component state, so it survives re-renders (the group key is stable —
-   it's derived from the first member's key) and resets naturally when the
-   chat switches threads. */
-function CollapsedStepsRow({ items, runId, answers, onAnswered, processEnded }) {
-  const [openSteps, setOpenSteps] = useState(false);
-  const n = items.length;
-  // Scannable summary of what's inside — "Bash ×3 · Write · thinking" —
-  // so the row carries information without needing a click.
-  const label = useMemo(() => {
-    const counts = new Map();
-    for (const bl of items) {
-      const name = bl.kind === "thinking"   ? "thinking"
-                 : bl.kind === "agent_grid" ? `Agent ×${(bl.calls || []).length}`
-                 : (bl.toolUse?.name || "tool");
-      counts.set(name, (counts.get(name) || 0) + 1);
-    }
-    return [...counts.entries()]
-      .map(([k, c]) => (c > 1 ? `${k} ×${c}` : k))
-      .join(" · ");
-  }, [items]);
-  return html`
-    <div className="chat-row chat-assistant chat-collapsed-steps" data-open=${openSteps}>
-      <button
-        className="chat-collapsed-steps-toggle"
-        onClick=${() => setOpenSteps(o => !o)}
-        title=${openSteps ? "Hide steps" : `Show ${n} step${n === 1 ? "" : "s"}`}
-      >
-        <span className="chat-collapsed-steps-chev">${openSteps ? "▾" : "▸"}</span>
-        <span className="chat-collapsed-steps-count">${n} step${n === 1 ? "" : "s"}</span>
-        ${!openSteps && html`<span className="chat-collapsed-steps-names">${label}</span>`}
-      </button>
-      ${openSteps && html`
-        <div className="chat-collapsed-steps-body">
-          ${items.map(bl => html`<${ChatBlock}
-            key=${bl.key}
-            block=${bl}
-            runId=${runId}
-            answers=${answers}
-            onAnswered=${onAnswered}
-            processEnded=${processEnded}
-          />`)}
-        </div>
-      `}
-    </div>
-  `;
 }
 
 /* Final block dispatcher — replaces ChatEventRow for rendering. ChatEventRow
@@ -18892,6 +18909,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                 <div className="landing-card-head">
                   <span className="landing-card-anchor" aria-hidden="true"></span>
                   <div className="landing-card-label">${p.label || p.id}</div>
+                  <span className="landing-card-age" title=${"Last edited " + fmtActivity(p.lastActivity)}>${fmtActivity(p.lastActivity)}</span>
                   <div className="landing-card-actions">
                     <button
                       className="landing-card-action"
@@ -18907,11 +18925,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                     ><${Icon.Trash}/></button>
                   </div>
                 </div>
-                <div className="landing-card-id">${p.id}</div>
-                <div className="landing-card-stats">
-                  ${/* v3.1 — branch count removed (project branches deprecated). */ null}
-                  <span>edited ${fmtActivity(p.lastActivity)}</span>
-                </div>
+                ${p.label && p.label !== p.id ? html`<div className="landing-card-id">${p.id}</div>` : null}
                 ${(p.starredPrototypes || []).length > 0 && html`
                   <div className="landing-card-stars">
                     <div className="landing-card-stars-head">
@@ -20449,19 +20463,19 @@ const WORKFLOW_WB_FACTORY = {
     type: "text", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 260, h: p.h ?? 32,
     text: p.text || "", fontSize: p.fontSize || "md",
     bold: !!p.bold, italic: !!p.italic, align: p.align || "left",
-    color: p.color || "ink",
+    color: p.color || "ink", rotation: p.rotation ?? 0,
   }),
   "textbox": (p = {}) => ({
     type: "textbox", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 220, h: p.h ?? 120,
     text: p.text || "", color: p.color || "blue",
     radius: p.radius ?? 10, fontSize: p.fontSize || "md", align: p.align || "center",
-    bold: !!p.bold, italic: !!p.italic,
+    bold: !!p.bold, italic: !!p.italic, rotation: p.rotation ?? 0,
   }),
   "sticky": (p = {}) => ({
     type: "sticky", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 180, h: p.h ?? 180,
     text: p.text || "", color: p.color || "yellow",
     fontSize: p.fontSize || "sm", bold: !!p.bold, italic: !!p.italic,
-    align: p.align || "left",
+    align: p.align || "left", rotation: p.rotation ?? 0,
   }),
   "ink": (p = {}) => ({
     type: "ink", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 1, h: p.h ?? 1,
@@ -20472,7 +20486,7 @@ const WORKFLOW_WB_FACTORY = {
     type: "shape", shape: "rect", x: p.x ?? 0, y: p.y ?? 0,
     w: p.w ?? 200, h: p.h ?? 120,
     color: p.color || "gray", fill: p.fill || "none",
-    radius: p.radius ?? 6, size: p.size ?? 2,
+    radius: p.radius ?? 6, size: p.size ?? 2, rotation: p.rotation ?? 0,
   }),
   "arrow": (p = {}) => ({
     type: "arrow", x1: p.x1 ?? 0, y1: p.y1 ?? 0, x2: p.x2 ?? 140, y2: p.y2 ?? 0,
@@ -20483,6 +20497,7 @@ const WORKFLOW_WB_FACTORY = {
   "image": (p = {}) => ({
     type: "image", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 320, h: p.h ?? 240,
     path: p.path || "", naturalW: p.naturalW ?? null, naturalH: p.naturalH ?? null,
+    rotation: p.rotation ?? 0,
   }),
 };
 
@@ -20597,7 +20612,7 @@ const WORKFLOW_NODE_FACTORY = {
     text: p.text || "", title: p.title || "",
   }),
   "folder": (p) => ({
-    kind: "folder", w: 320, h: 130,
+    kind: "folder", w: 320, h: 340,
     path: p.path || "", title: p.title || "",
   }),
   "browser": (p) => ({
@@ -24715,6 +24730,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
   );
+  // Human label for the project — shown as the top-bar title.
+  const projectLabel = useActiveProjectLabel();
   // Files the live agent run is touching — tethers the worker badge onto the
   // node holding them (covers freeform chat runs that never flip runStatus).
   const workingPaths = useWorkflowWorkingPaths();
@@ -24814,18 +24831,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return next;
     });
   }, [setData, deletedWbIdsRef]);
-  // Group move — arrows shift endpoints, everything else shifts x/y.
-  const shiftWbItems = useCallback((ids, dx, dy) => {
+  // Group move — arrows shift endpoints, everything else shifts x/y. Optional
+  // `rotation` (degrees): when a number is passed, box-type items in the set
+  // also get their `rotation` set to it — used by the velocity-tilt drag so
+  // position + lean commit in a single setData per frame. Arrows + ink never
+  // take rotation (no single pivot box).
+  const shiftWbItems = useCallback((ids, dx, dy, rotation) => {
     const set = ids instanceof Set ? ids : new Set(ids);
     if (set.size === 0) return;
+    const setRot = typeof rotation === "number";
     setData(d => ({
       ...d,
       wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
         if (!set.has(it.id)) return it;
+        let next;
         if (it.type === "arrow") {
-          return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+          next = { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+        } else {
+          next = { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
         }
-        return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
+        if (setRot && it.type !== "arrow" && it.type !== "ink") next.rotation = rotation;
+        return next;
       }),
     }));
   }, [setData]);
@@ -25640,27 +25666,65 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
     }
     e.preventDefault();
-    // Drag-to-move for the whole set.
-    let lastX = e.clientX, lastY = e.clientY, moved = false;
-    const onMove = (ev) => {
-      const dx = (ev.clientX - lastX) / zoomNow();
-      const dy = (ev.clientY - lastY) / zoomNow();
-      lastX = ev.clientX; lastY = ev.clientY;
-      if (dx === 0 && dy === 0) return;
-      if (!moved) { moved = true; setWbDragging(true); setNodeDragging(nodeMoveIds.size > 0); }
-      shiftWbItems(moveIds, dx, dy);
-      shiftNodes(nodeMoveIds, dx, dy);
+    // Drag-to-move for the whole set, with velocity-driven lean physics on
+    // the wb items. A rAF loop (not the raw mousemove) drives both the
+    // position shift and the tilt so the lean eases on a wall-clock timeline:
+    //   • drag fast → the item leans in the direction of travel (toward WB_TILT_MAX)
+    //   • move slowly / pause → the lean eases back toward upright
+    //   • release → whatever lean it currently has is retained (already in data)
+    // Position is committed per frame via shiftWbItems(dx,dy,rotation); tilt is
+    // only applied to box-type items (arrows/ink ignore the rotation arg).
+    const WB_TILT_MAX = 14;     // degrees — clamp on the lean
+    const WB_TILT_SENS = 0.45;  // world-px/frame → degrees
+    const WB_TILT_TAU = 90;     // ms — ease time-constant toward the target
+    const startIt = (wbItemsRef.current || []).find(i => i.id === hitId);
+    let tilt = (startIt && startIt.type !== "arrow" && startIt.type !== "ink") ? (startIt.rotation || 0) : 0;
+    let appliedTilt = tilt;
+    let curX = e.clientX, curY = e.clientY;   // latest pointer (set by mousemove)
+    let prevX = e.clientX, prevY = e.clientY;  // pointer at last rAF frame
+    let lastT = (typeof performance !== "undefined" ? performance.now() : 0);
+    let moved = false, rafId = 0;
+    const onMove = (ev) => { curX = ev.clientX; curY = ev.clientY; };
+    const frame = (now) => {
+      const dt = Math.max(1, now - lastT); lastT = now;
+      const z = zoomNow();
+      const wdx = (curX - prevX) / z, wdy = (curY - prevY) / z;
+      prevX = curX; prevY = curY;
+      const movedNow = wdx !== 0 || wdy !== 0;
+      if (!moved) {
+        // Don't ease/commit until the first real movement — a bare click
+        // (grab + release) must never alter the item's existing rotation.
+        if (movedNow) { moved = true; setWbDragging(true); setNodeDragging(nodeMoveIds.size > 0); }
+        else { rafId = requestAnimationFrame(frame); return; }
+      }
+      // Horizontal velocity → target lean. Normalise dx to a per-16ms-frame
+      // amount so the feel is frame-rate independent.
+      const vx = wdx * (16 / dt);
+      const target = Math.max(-WB_TILT_MAX, Math.min(WB_TILT_MAX, vx * WB_TILT_SENS));
+      const k = 1 - Math.exp(-dt / WB_TILT_TAU);
+      tilt += (target - tilt) * k;
+      if (movedNow || Math.abs(tilt - appliedTilt) > 0.04) {
+        shiftWbItems(moveIds, wdx, wdy, tilt);
+        if (movedNow) shiftNodes(nodeMoveIds, wdx, wdy);
+        appliedTilt = tilt;
+      }
+      rafId = requestAnimationFrame(frame);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      if (rafId) cancelAnimationFrame(rafId);
       wbCancelGestureRef.current = null;
+      // Retain the final lean (commit once more in case the last frame's tilt
+      // hadn't been flushed).
+      if (moved && Math.abs(tilt - appliedTilt) > 0.001) shiftWbItems(moveIds, 0, 0, tilt);
       setWbDragging(false);
       setNodeDragging(false);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     wbCancelGestureRef.current = onUp;
+    rafId = requestAnimationFrame(frame);
   }, [shiftWbItems, shiftNodes]);
 
   // Geometric node hit-test (the wb layer swallows DOM events in whiteboard
@@ -33804,7 +33868,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           <span className="proto-door-back-arrow">←</span>
           <span>Projects</span>
         </button>
-        <div className="workflow-door-title">Workflow canvas</div>
+        <div className="workflow-door-title" title=${projectLabel}>${projectLabel || "Workflow canvas"}</div>
         <div className="workflow-bar-spacer"/>
         <${DaemonIndicator}/>
         <${CliIndicator}/>
@@ -33862,35 +33926,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                           : mainView === "canvas" && leftPanel ? leftPanel : "none"}
       >
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
-          <button
-            type="button"
+          <${HoverTip}
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "nodes" ? " is-active" : "")}
-            aria-pressed=${mainView === "canvas" && !wbMode && leftPanel === "nodes" ? "true" : "false"}
-            title="Nodes — the buildable-node library. Click again to collapse."
+            ariaLabel="Nodes"
+            tip="Nodes — buildable-node library"
             onClick=${() => onRailPanel("nodes")}
-          ><${Icon.Flow}/></button>
-          <button
-            type="button"
+          ><${Icon.Flow}/><//>
+          <${HoverTip}
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "outputs" ? " is-active" : "")}
-            aria-pressed=${mainView === "canvas" && !wbMode && leftPanel === "outputs" ? "true" : "false"}
-            title="Outputs — generated prototypes, pages + visual assets. Click again to collapse."
+            ariaLabel="Outputs"
+            tip="Outputs — prototypes, pages + assets"
             onClick=${() => onRailPanel("outputs")}
-          ><${Icon.Image}/></button>
-          <button
-            type="button"
+          ><${Icon.Image}/><//>
+          <${HoverTip}
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && wbMode ? " is-active" : "")}
-            aria-pressed=${mainView === "canvas" && wbMode ? "true" : "false"}
-            title="Whiteboard — draw, annotate, paste images as free-floating items. Click again to return to Build."
+            ariaLabel="Whiteboard"
+            tip="Whiteboard — draw, annotate, paste images"
             onClick=${onRailWhiteboard}
-          ><${Icon.Pen}/></button>
+          ><${Icon.Pen}/><//>
           <div className="workflow-nav-rail-sep"/>
-          <button
-            type="button"
+          <${HoverTip}
             className=${"workflow-nav-rail-btn" + (mainView === "proto" ? " is-active" : "")}
-            aria-pressed=${mainView === "proto" ? "true" : "false"}
-            title="Prototype viewer — browse prototypes in browser-style tabs. Click again to return to the canvas."
+            ariaLabel="Prototype viewer"
+            tip="Prototype viewer — browse in browser-style tabs"
             onClick=${onRailProto}
-          ><${Icon.Canvas}/></button>
+          ><${Icon.Canvas}/><//>
         </nav>
         <div className="workflow-library-col">
           ${wbMode ? html`
@@ -35018,6 +35078,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 selectedWbIds=${selectedWbIds}
                 zoom=${zoom}
                 onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
+                onStraighten=${() => patchWbItems(selectedWbIds, { rotation: 0 })}
               />
             `}
             ${(selectedNodeIds.size + selectedWbIds.size) > 1 && (() => {
@@ -35772,9 +35833,8 @@ function WorkflowLibrary({ tab = "nodes" }) {
 
   return html`
     <aside className="workflow-library">
+      ${tab === "outputs" && html`
       <div className="workflow-library-head">
-        <span className="workflow-library-head-title">${tab === "outputs" ? "Outputs" : "Nodes"}</span>
-        ${tab === "outputs" && html`
           <div className="workflow-library-viewtoggle" role="radiogroup" aria-label="View mode">
             <button
               role="radio"
@@ -35793,8 +35853,8 @@ function WorkflowLibrary({ tab = "nodes" }) {
               title="Thumbnail grid view"
             ><span className="workflow-library-viewtoggle-glyph">▦</span></button>
           </div>
-        `}
       </div>
+      `}
       ${tab === "nodes" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Basic tools</div>
@@ -45503,9 +45563,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           </div>
         `;
       })()}
-      ${node.boundTo ? html`
-        <div className="workflow-node-asset-foot" title=${path}>${path}</div>
-      ` : html`
+      ${node.boundTo ? null : html`
         <input
           className="workflow-node-asset-foot workflow-node-asset-foot-edit"
           value=${path}
@@ -45979,8 +46037,115 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
 function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Local view state — NOT persisted to the node. The wired node.path always
+  // stays the ROOT folder so downstream wiring is unaffected; subPath only
+  // drives the in-node explorer view.
+  const [subPath, setSubPath] = useState([]);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [reloadTick, setReloadTick] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+
   const path = (node.path || "").trim();
-  const headerTitle = (node.title || (path ? path.split("/").filter(Boolean).slice(-2).join("/") : "Folder")).slice(0, 40) || "Folder";
+  const rootName = path ? (path.split("/").filter(Boolean).slice(-1)[0] || path) : "";
+  // Path of the folder currently shown (root + any navigated-into subPath).
+  const curPath = path
+    ? (subPath.length ? path.replace(/\/+$/, "") + "/" + subPath.join("/") : path)
+    : "";
+  const headerTitle = (subPath.length ? subPath[subPath.length - 1] : rootName).slice(0, 40) || "Folder";
+
+  const refresh = useCallback(() => setReloadTick(t => t + 1), []);
+
+  // Load the current folder's children whenever the root, the navigated
+  // subPath, or an explicit refresh changes.
+  useEffect(() => {
+    if (!curPath) { setData(null); return; }
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    fetch(apiUrl(`/__fs_list?root=${encodeURIComponent(curPath)}`))
+      .then(r => r.json())
+      .then(j => { if (cancelled) return; if (j.error) { setErr(j.error); setData(null); } else setData(j); })
+      .catch(e => { if (cancelled) return; setErr(String(e?.message || e)); })
+      .finally(() => { if (!cancelled) setBusy(false); });
+    return () => { cancelled = true; };
+  }, [curPath, reloadTick]);
+
+  // Small POST helper for the mutating fs endpoints.
+  const fsPost = useCallback(async (endpoint, body) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl(endpoint), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      return j;
+    } catch (e) {
+      setErr(String(e?.message || e));
+      return null;
+    } finally { setBusy(false); }
+  }, []);
+
+  const uploadFiles = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length || !curPath) return;
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      files.forEach(f => fd.append("files", f, f.name));
+      const r = await fetch(apiUrl(`/__fs_upload?root=${encodeURIComponent(curPath)}`), {
+        method: "POST", body: fd,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      refresh();
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally { setBusy(false); }
+  }, [curPath, refresh]);
+
+  // Paste-to-add: when this node is selected, intercept clipboard file pastes.
+  useEffect(() => {
+    if (!selected || !path) return;
+    const onPaste = (e) => {
+      const files = e.clipboardData && e.clipboardData.files;
+      if (files && files.length) { e.preventDefault(); uploadFiles(files); }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [selected, path, uploadFiles]);
+
+  const openEntry = useCallback((entry) => {
+    if (entry.kind === "dir") { setSubPath(s => [...s, entry.name]); return; }
+    fsPost("/__fs_open", { path: entry.abs });
+  }, [fsPost]);
+
+  const revealPath = useCallback((p) => fsPost("/__fs_reveal", { path: p }), [fsPost]);
+
+  const renameEntry = useCallback(async (entry) => {
+    const next = (typeof window !== "undefined" && window.prompt) ? window.prompt("Rename to:", entry.name) : "";
+    if (!next || !next.trim() || next.trim() === entry.name) return;
+    const j = await fsPost("/__fs_rename", { root: curPath, name: entry.name, to: next.trim() });
+    if (j) refresh();
+  }, [curPath, fsPost, refresh]);
+
+  const deleteEntry = useCallback(async (entry) => {
+    const ok = (typeof window !== "undefined" && window.confirm)
+      ? window.confirm(`Delete "${entry.name}"${entry.kind === "dir" ? " and everything inside it" : ""}?\n\nThis is permanent.`)
+      : true;
+    if (!ok) return;
+    const j = await fsPost("/__fs_delete", { root: curPath, name: entry.name });
+    if (j) refresh();
+  }, [curPath, fsPost, refresh]);
+
+  const newFolder = useCallback(async () => {
+    const name = (typeof window !== "undefined" && window.prompt) ? window.prompt("New folder name:") : "";
+    if (!name || !name.trim()) return;
+    const j = await fsPost("/__fs_mkdir", { root: curPath, name: name.trim() });
+    if (j) refresh();
+  }, [curPath, fsPost, refresh]);
 
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -46027,7 +46192,24 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
   const w = node.w || 320;
-  const h = node.h || 130;
+  const h = node.h || 340;
+
+  const fmtSize = (n) => {
+    if (!n || n < 1024) return (n || 0) + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
+    return (n / (1024 * 1024 * 1024)).toFixed(1) + " GB";
+  };
+
+  const onBodyDrop = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragOver(false);
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      uploadFiles(e.dataTransfer.files);
+    }
+  }, [uploadFiles]);
+
+  const entries = (data && data.entries) || [];
 
   return html`
     <div
@@ -46043,44 +46225,107 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
         <${HoverTip}
           as="span"
           className="workflow-node-prompt-title"
-          tip=${path || "(no path set)"}
-          ariaLabel=${"Folder pointer: " + (path || "no path")}
+          tip=${curPath || "(no folder selected)"}
+          ariaLabel=${"Folder: " + (curPath || "none")}
         >${headerTitle}<//>
         <span className="workflow-node-bar-spacer"/>
+        ${path && html`
+          <${HoverTip}
+            className="workflow-node-folder-barbtn"
+            tip="Reveal this folder in Finder"
+            ariaLabel="Reveal in Finder"
+            onClick=${(e) => { e.stopPropagation(); revealPath(curPath); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.External}/><//>
+          <${HoverTip}
+            className="workflow-node-folder-barbtn"
+            tip="Pick a different folder"
+            ariaLabel="Reselect folder"
+            onClick=${(e) => { e.stopPropagation(); setPickerOpen(true); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Folder}/><//>
+        `}
         <${HoverTip}
           className="workflow-node-close"
-          tip="Remove this folder pointer from the canvas (does NOT delete the folder on disk)."
+          tip="Remove this folder node from the canvas (does NOT delete the folder on disk)."
           ariaLabel="Remove folder node"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         >×<//>
       </div>
-      <div className="workflow-node-ds-body" onMouseDown=${(e) => e.stopPropagation()}>
-        <div className="workflow-node-ds-field">
-          <span className="workflow-node-ds-field-label">Path <span style=${{ color: "var(--text-faint)", fontWeight: 400 }}>(project-relative or absolute)</span></span>
-          <div className="workflow-node-agent-output-control">
-            <input
-              className="workflow-node-ds-input"
-              type="text"
-              value=${path}
-              placeholder="e.g. design-systems/main/  or  /Users/you/Desktop/moodboard/"
-              onInput=${(e) => onChange({ path: e.target.value })}
-              onMouseDown=${(e) => e.stopPropagation()}
-              spellcheck=${false}
-            />
+
+      ${!path
+        ? html`
+          <div className="workflow-node-folder-empty" onMouseDown=${(e) => e.stopPropagation()}>
             <button
-              className="workflow-node-agent-output-browse"
-              title="Pick a folder — project tree or anywhere on disk"
+              className="workflow-node-folder-pick"
               onClick=${(e) => { e.stopPropagation(); setPickerOpen(true); }}
-              onMouseDown=${(e) => e.stopPropagation()}
-            ><${Icon.Folder}/></button>
-          </div>
-        </div>
-      </div>
+            ><${Icon.Folder}/> <span>Select a folder…</span></button>
+            <div className="workflow-node-folder-empty-hint">Project tree or anywhere on disk</div>
+          </div>`
+        : html`
+          <div
+            className="workflow-node-folder-explorer"
+            data-dragover=${dragOver ? "true" : "false"}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onDragOver=${(e) => { e.preventDefault(); e.stopPropagation(); if (!dragOver) setDragOver(true); }}
+            onDragLeave=${(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+            onDrop=${onBodyDrop}
+          >
+            <div className="workflow-node-folder-toolbar">
+              <button
+                className="workflow-node-folder-crumb"
+                disabled=${subPath.length === 0}
+                title="Back to the root folder"
+                onClick=${() => setSubPath([])}
+              >${rootName || "root"}</button>
+              ${subPath.map((seg, i) => html`
+                <span key=${i} className="workflow-node-folder-crumb-sep">/</span>
+                <button
+                  className="workflow-node-folder-crumb"
+                  disabled=${i === subPath.length - 1}
+                  title=${"Up to " + seg}
+                  onClick=${() => setSubPath(s => s.slice(0, i + 1))}
+                >${seg}</button>
+              `)}
+              <span className="workflow-node-bar-spacer"/>
+              <button className="workflow-node-folder-toolbtn" title="New folder here"
+                onClick=${newFolder}><${Icon.Plus}/></button>
+              <button className="workflow-node-folder-toolbtn" title="Refresh"
+                onClick=${refresh}><${Icon.Refresh}/></button>
+            </div>
+
+            <div className="workflow-node-folder-list">
+              ${busy && !data && html`<div className="workflow-node-folder-msg">Loading…</div>`}
+              ${err && html`<div className="workflow-node-folder-msg workflow-node-folder-err">${err}</div>`}
+              ${data && entries.length === 0 && !err && html`
+                <div className="workflow-node-folder-msg">Empty folder — drag files here to add them.</div>`}
+              ${entries.map(en => html`
+                <div className="workflow-node-folder-row" key=${en.name} data-kind=${en.kind}>
+                  <button className="workflow-node-folder-open"
+                    title=${en.kind === "dir" ? "Open folder" : "Open file in default app"}
+                    onClick=${() => openEntry(en)}>
+                    <span className="workflow-node-folder-glyph">${en.kind === "dir" ? html`<${Icon.Folder}/>` : html`<${Icon.NotesDoc}/>`}</span>
+                    <span className="workflow-node-folder-name">${en.name}</span>
+                    ${en.kind === "file" && html`<span className="workflow-node-folder-meta">${fmtSize(en.size)}</span>`}
+                  </button>
+                  <span className="workflow-node-folder-rowactions">
+                    <button className="workflow-node-folder-rowbtn" title="Reveal in Finder"
+                      onClick=${(e) => { e.stopPropagation(); revealPath(en.abs); }}><${Icon.External}/></button>
+                    <button className="workflow-node-folder-rowbtn" title="Rename"
+                      onClick=${(e) => { e.stopPropagation(); renameEntry(en); }}><${Icon.Pen}/></button>
+                    <button className="workflow-node-folder-rowbtn workflow-node-folder-rowbtn-danger" title="Delete"
+                      onClick=${(e) => { e.stopPropagation(); deleteEntry(en); }}><${Icon.Trash}/></button>
+                  </span>
+                </div>
+              `)}
+            </div>
+          </div>`}
+
       ${pickerOpen && html`<${WorkflowFolderPickerDialog}
         initialPath=${path}
         onClose=${() => setPickerOpen(false)}
-        onPick=${(p) => { onChange({ path: p }); setPickerOpen(false); }}
+        onPick=${(p) => { onChange({ path: p }); setSubPath([]); setPickerOpen(false); }}
       />`}
       <div
         className="workflow-port-zone workflow-port-zone-out"
@@ -46088,7 +46333,7 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
         data-port-side="out"
         title=${path
           ? "Wire this folder into: an Agent's folder-read port, a Prototype generator's read port, or a DS generator / DS brainstorm's input port. The downstream node will use " + path + " as its read scope."
-          : "Set a path above, then wire this into a downstream node's folder-read / input port."}
+          : "Select a folder above, then wire this into a downstream node's folder-read / input port."}
         onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}
       >
         <div className="workflow-port-dot"/>
@@ -54676,6 +54921,11 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
   const c = wbColorCSS(item.color);
   const z = Math.round(item.z || 0);
   const sel = selected ? "true" : "false";
+  // Lean/tilt — box-type items carry a `rotation` (degrees) set by the
+  // velocity-tilt drag gesture and reset by the straighten button. Rotate
+  // about the item's center. Arrows + ink opt out (no single pivot box).
+  const rot = (item.type === "arrow" || item.type === "ink") ? 0 : (item.rotation || 0);
+  const rotStyle = rot ? { transform: `rotate(${rot}deg)`, transformOrigin: "center center" } : null;
   // contentEditable plain-text editing for the three text-bearing types.
   // Mounted only while `editing`; commits on blur. isEditingTarget already
   // covers contentEditable so global canvas shortcuts auto-suppress.
@@ -54725,7 +54975,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
     const fs = wbFontPx(item.fontSize, WB_FONT_SIZES.md);
     return html`
       <div className="workflow-wb-item workflow-wb-text" data-wb-id=${item.id} data-selected=${sel}
-        style=${{ left: item.x + "px", top: item.y + "px", width: item.w + "px", zIndex: z }}>
+        style=${{ left: item.x + "px", top: item.y + "px", width: item.w + "px", zIndex: z, ...rotStyle }}>
         ${textBody("", {
           fontSize: fs + "px",
           fontWeight: item.bold ? 700 : 500,
@@ -54757,6 +55007,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
             : `color-mix(in oklch, ${fillC} ${fillPct}%, transparent)`,
           borderColor: strokeC,
           borderRadius: Math.max(0, item.radius ?? 10) + "px",
+          ...rotStyle,
         }}>
         ${textBody("", {
           fontSize: fs + "px",
@@ -54773,7 +55024,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
-          "--wb-c": c,
+          "--wb-c": c, ...rotStyle,
         }}>
         ${textBody("", {
           fontSize: wbFontPx(item.fontSize, 14) + "px",
@@ -54808,7 +55059,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px",
-          zIndex: z, overflow: "visible",
+          zIndex: z, overflow: "visible", ...rotStyle,
         }}>
         <rect x=${sw / 2} y=${sw / 2}
               width=${Math.max(1, item.w - sw)} height=${Math.max(1, item.h - sw)}
@@ -54843,7 +55094,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
       <div className="workflow-wb-item workflow-wb-image" data-wb-id=${item.id} data-selected=${sel}
         style=${{
           left: item.x + "px", top: item.y + "px",
-          width: item.w + "px", height: item.h + "px", zIndex: z,
+          width: item.w + "px", height: item.h + "px", zIndex: z, ...rotStyle,
         }}>
         <img src=${apiUrl("/" + String(item.path || "").replace(/^\/+/, ""))}
              alt="" draggable=${false}/>
@@ -54854,14 +55105,51 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
 
 // Selection outlines + resize handles for the whiteboard layer. Rendered
 // above all items. Outline width divides by zoom so it stays 1.5px visually.
-function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }) {
+function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown, onStraighten }) {
   const sel = (items || []).filter(it => selectedWbIds.has(it.id));
   if (sel.length === 0) return null;
   const bw = 1.5 / Math.max(zoom, 0.1);
   const hs = 8 / Math.max(zoom, 0.1); // handle size in world px
   const single = sel.length === 1 ? sel[0] : null;
+  // Show a Straighten affordance whenever any selected box-type item carries
+  // a lean — clicking resets every selected item's rotation to 0 (the CSS
+  // transition on .workflow-wb-item eases it upright since we're not dragging).
+  const tilted = sel.filter(it => it.type !== "arrow" && it.type !== "ink" && Math.abs(it.rotation || 0) > 0.5);
+  const s = 1 / Math.max(zoom, 0.1); // world px per screen px → keep chrome constant size
+  let straightenAnchor = null;
+  if (tilted.length && onStraighten) {
+    // Anchor above the union bbox of the tilted items, horizontally centered.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity;
+    for (const it of tilted) {
+      const bb = wbItemBBox(it);
+      minX = Math.min(minX, bb.x); minY = Math.min(minY, bb.y);
+      maxX = Math.max(maxX, bb.x + bb.w);
+    }
+    straightenAnchor = { cx: (minX + maxX) / 2, top: minY - 34 * s };
+  }
   return html`
     <div className="workflow-wb-overlay" style=${{ zIndex: 100000 }}>
+      ${straightenAnchor && html`
+        <button
+          className="workflow-wb-straighten"
+          title="Straighten — reset the lean to upright"
+          style=${{
+            left: straightenAnchor.cx + "px", top: straightenAnchor.top + "px",
+            transform: "translateX(-50%)",
+            height: (26 * s) + "px", padding: `0 ${10 * s}px`,
+            gap: (5 * s) + "px", fontSize: (12 * s) + "px",
+            borderRadius: (7 * s) + "px", borderWidth: (1 * s) + "px",
+          }}
+          onMouseDown=${(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onClick=${(e) => { e.preventDefault(); e.stopPropagation(); onStraighten(); }}
+        >
+          <svg viewBox="0 0 16 16" width=${12 * s} height=${12 * s} fill="none"
+               stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+            <path d="M2 11 L14 5"/><path d="M2.5 13.5h11"/>
+          </svg>
+          <span>Straighten</span>
+        </button>
+      `}
       ${sel.map(it => {
         const bb = wbItemBBox(it);
         return html`
@@ -54982,12 +55270,12 @@ const WB_TOOL_DEFS = [
 const WB_TOOL_GLYPHS = {
   select:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M4 2 L12 9 L8.4 9.6 L10.2 13.4 L8.4 14.2 L6.6 10.4 L4 12.6 Z" fill="currentColor"/></svg>`,
   text:    html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M3 3 H13 V5.4 H11.2 V4.8 H9 V12.2 H10.4 V14 H5.6 V12.2 H7 V4.8 H4.8 V5.4 H3 Z" fill="currentColor"/></svg>`,
-  textbox: html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.4 6 H10.6 M8 6 V11" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>`,
-  sticky:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5 H13.5 V9.5 L9.5 13.5 H2.5 Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.5 13.5 V9.5 H13.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`,
-  pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
-  shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`,
-  arrow:   html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L12 4 M12 4 H7.4 M12 4 V8.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
-  eyedropper: html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M9.6 3.1 12.9 6.4 M11.2 4.7 13.4 2.5 A1.4 1.4 0 0 0 11.4 0.5 L9.6 2.7 Z M10.4 5.5 4.6 11.3 A1.6 1.6 0 0 0 4.2 12 L3.6 13.8 A0.5 0.5 0 0 0 4.2 14.4 L6 13.8 A1.6 1.6 0 0 0 6.7 13.4 L12.5 7.6 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`,
+  textbox: html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.4" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M5.4 6 H10.6 M8 6 V11" stroke="currentColor" strokeWidth="1.4" fill="none"/></svg>`,
+  sticky:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5 H13.5 V9.5 L9.5 13.5 H2.5 Z" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M9.5 13.5 V9.5 H13.5" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
+  pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>`,
+  shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
+  arrow:   html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L12 4 M12 4 H7.4 M12 4 V8.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>`,
+  eyedropper: html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M9.6 3.1 12.9 6.4 M11.2 4.7 13.4 2.5 A1.4 1.4 0 0 0 11.4 0.5 L9.6 2.7 Z M10.4 5.5 4.6 11.3 A1.6 1.6 0 0 0 4.2 12 L3.6 13.8 A0.5 0.5 0 0 0 4.2 14.4 L6 13.8 A1.6 1.6 0 0 0 6.7 13.4 L12.5 7.6 Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>`,
 };
 
 function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt, eyedropFmt, onEyedropFmt, onEyedrop, lastEyedrop }) {
@@ -55056,7 +55344,6 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
   };
   return html`
     <div className="workflow-wb-tools">
-      <div className="workflow-wb-tools-title">Whiteboard</div>
       <div className="workflow-wb-tools-list">
         ${WB_TOOL_DEFS.map(t => html`
           <button

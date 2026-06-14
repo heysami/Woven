@@ -2659,6 +2659,25 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Take the row's slack so the project name has room and the age + actions
+     stay pinned right. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Last-edited, top-right on the title row (no "edited" prefix). Yields to the
+   hover actions: it fades out as they fade in so they never overlap. */
+.landing-card-age {
+  flex: 0 0 auto;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  transition: opacity 0.1s ease;
+}
+.landing-card:hover .landing-card-age,
+.landing-card:focus-within .landing-card-age {
+  opacity: 0;
+  pointer-events: none;
 }
 .landing-card-id {
   font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
@@ -2675,6 +2694,12 @@ button {
 }
 .landing-card-stat-sep { color: var(--text-faint); }
 .landing-card-actions {
+  /* Overlay the age at the row's right edge so the age can sit flush-right at
+     rest and the actions take its place on hover (no reserved gap, no shift). */
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -3197,6 +3222,56 @@ button {
   border-bottom: 1px solid var(--border);
 }
 .workflow-bar-spacer { margin-left: auto; }
+/* v3.12 — Quiet the top-bar chrome: the status chips + action buttons drop
+   their resting outline/fill and only reveal a hairline border + faint fill on
+   hover, and every one is pinned to the same 30px height so the row reads as a
+   clean strip. Warning/error states (CLI missing, daemon down, the no-model
+   alarm) keep their coloured borders — those are signal, not chrome — and the
+   runs trigger's open state keeps its accent fill (defined later, wins). */
+.workflow-bar .daemon-indicator,
+.workflow-bar .cli-indicator,
+.workflow-bar .runs-trigger,
+.workflow-bar .tbtn-history-group,
+.workflow-bar .workflow-bar-fullscreen,
+.workflow-bar .workflow-toolbar-gear,
+.workflow-bar .workflow-zoom {
+  height: 30px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.workflow-bar .daemon-indicator:hover,
+.workflow-bar .cli-indicator:hover,
+.workflow-bar .runs-trigger:hover,
+.workflow-bar .tbtn-history-group:hover,
+.workflow-bar .workflow-bar-fullscreen:hover,
+.workflow-bar .workflow-toolbar-gear:hover,
+.workflow-bar .workflow-zoom:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+/* History trio: hide the inner dividers at rest, restore them on hover so the
+   group reads as three bare icons until the box appears. */
+.workflow-bar .tbtn-history-group .tbtn-history-step + .tbtn-history-step,
+.workflow-bar .tbtn-history-group .tbtn-history-step + .tbtn-history {
+  border-left-color: transparent;
+}
+.workflow-bar .tbtn-history-group:hover .tbtn-history-step + .tbtn-history-step,
+.workflow-bar .tbtn-history-group:hover .tbtn-history-step + .tbtn-history {
+  border-left-color: var(--border);
+}
+/* Preserve the warning/error signal borders the de-outline above would erase. */
+.workflow-bar .cli-indicator-missing,
+.workflow-bar .cli-indicator-needs-login {
+  border-color: color-mix(in oklch, var(--warn, #b45309) 30%, var(--border));
+}
+.workflow-bar .daemon-indicator-down {
+  border-color: color-mix(in oklch, var(--danger, #dc2626) 40%, var(--border));
+  background: color-mix(in oklch, var(--danger, #dc2626) 6%, var(--surface));
+}
 .workflow-zoom {
   font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
   font-size: 11.5px;
@@ -3704,13 +3779,16 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-top: 1px solid var(--border);
 }
 .workflow-library-section-head {
-  padding: 8px 14px;
+  padding: 10px 14px 6px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
+  /* Category headers read as quiet section labels — same grey small-caps
+     treatment as the panel head, in the shared sans face. */
+  font: 600 11px/1.2 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
 }
 .workflow-library-section-tag {
   font-size: 10px;
@@ -5073,13 +5151,20 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    title bar and resize corner intercept pointer events. */
 .workflow-node-section {
   position: absolute;
-  border: 1.5px dashed color-mix(in oklch, var(--text-faint) 65%, transparent);
+  /* v3.x — sections wear the SAME chrome as a node card: white body, a
+     transparent border that reads as a whisper-faint warm ring, and a soft
+     warm (orange) lift — no dashed outline, no transparent fill. */
+  border: 1px solid transparent;
   /* top-left square so it merges flush with the title tab; other corners round */
   border-radius: 0 14px 14px 14px;
-  background: color-mix(in oklch, var(--surface-2) 35%, transparent);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--hot) 6%, transparent),
+    0 1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
+    0 6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
   box-sizing: border-box;
   pointer-events: none;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: box-shadow 0.12s ease;
   /* v3.x — same fix as .workflow-node: scope the section's connector
      port-zones (z-index:2) back inside the section so the green diamond
      ports don't paint OVER the regular nodes that sit in front of the
@@ -5088,12 +5173,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   isolation: isolate;
 }
 .workflow-node-section[data-selected="true"] {
-  border-color: var(--text);
-  border-style: solid;
-  background: color-mix(in oklch, var(--surface-2) 55%, transparent);
+  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline-offset: -2px;
 }
 .workflow-node-section[data-dragging="true"] {
-  background: color-mix(in oklch, var(--surface-2) 70%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--hot) 10%, transparent),
+    0 2px 8px color-mix(in oklch, var(--hot) 9%, transparent),
+    0 10px 26px color-mix(in oklch, var(--hot) 7%, transparent);
 }
 .workflow-node-section-bar {
   position: absolute;
@@ -5320,6 +5407,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   overflow: visible;
 }
 .workflow-wb-item { position: absolute; }
+/* Tilt transition — when NOT actively dragging, rotation changes (the
+   straighten button, or the settle after a release) ease smoothly. During a
+   drag the wrap carries data-wb-dragging="true" so the live velocity-tilt
+   follows the pointer instantly with no lag. Only `transform` transitions —
+   position (left/top) must stay instant so drag tracking is exact. */
+.workflow-canvas-wrap:not([data-wb-dragging="true"]) .workflow-wb-item {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 .workflow-wb-textbody {
   font-family: var(--font-sans);
   color: var(--text);
@@ -5405,6 +5500,22 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   pointer-events: auto;
 }
 .workflow-wb-handle-point { cursor: move; }
+/* Straighten button — floats above a tilted selection. Sizing comes inline
+   (divided by zoom) so it stays a constant on-screen size; this rule owns the
+   look + interactivity (the overlay itself is pointer-events:none). */
+.workflow-wb-straighten {
+  position: absolute;
+  display: inline-flex; align-items: center; white-space: nowrap;
+  border-style: solid; border-color: var(--border);
+  background: var(--surface); color: var(--text);
+  font-family: var(--font-sans); font-weight: 500; line-height: 1;
+  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.12);
+  cursor: pointer; pointer-events: auto;
+}
+.workflow-wb-straighten:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+}
 /* Tool cursors — guarded so space-pan / active-pan keep their grab cursors
    (those rules sit earlier in the file; equal specificity would lose to
    source order here). */
@@ -5452,10 +5563,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   overflow-y: auto;
 }
 .workflow-wb-tools-title {
-  font: 700 11px var(--font-mono);
+  font: 600 11px var(--font-sans);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 .workflow-wb-tools-list {
   display: flex;
@@ -5494,9 +5605,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-wb-tools-section { display: flex; flex-direction: column; gap: 6px; }
 .workflow-wb-tools-sublabel {
-  font: 600 10.5px var(--font-mono);
+  font: 600 11px var(--font-sans);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--text-faint);
 }
 .workflow-wb-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -5514,7 +5625,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   outline-offset: 1.5px;
 }
 .workflow-wb-tools-hint {
-  font: 11px/1.6 var(--font-mono);
+  font: 11px/1.6 var(--font-sans);
   color: var(--text-faint);
   margin-top: auto;
 }
@@ -5903,6 +6014,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
     0 4px 14px color-mix(in oklch, var(--hot) 20%, transparent),
     0 16px 40px color-mix(in oklch, var(--hot) 14%, transparent);
 }
+/* Crop full-bleed opaque bodies to the node's rounded bottom corners. The
+   node clips with `overflow-clip-margin: 64px` (so the connector ports' hover
+   labels can paint outside the card) — but that same margin stops the rounded
+   corners from cropping a square-cornered opaque body, so the white/checker
+   body would poke past the 10px radius and expose the canvas + shadow ring at
+   the corners. Rounding the body's bottom corners crops it flush; the node's
+   own rounded background already covers the rest. */
+.workflow-node-iframe-scale,
+.workflow-node-asset-body,
+.workflow-node-frames-body {
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
 .workflow-node-bar {
   display: flex;
   align-items: center;
@@ -5916,15 +6040,25 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   user-select: none;
 }
 .workflow-node-bar:active { cursor: grabbing; }
+/* Node-bar glyph — standardised icon box shared across every node header
+   (generic, asset, prompt/folder). Same 14px icon in a 16px box; only the
+   COLOR differs per node kind. */
 .workflow-node-glyph {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-faint);
-  width: 12px;
-  text-align: center;
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
+.workflow-node-glyph svg { width: 14px; height: 14px; }
+/* Node-bar title — standardised across node kinds: same mono face, size,
+   weight + uppercase. Color stays per-kind. */
 .workflow-node-label {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
-  font-size: 11px;
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6361,14 +6495,18 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   padding: 0 6px;
 }
 .workflow-node-asset-glyph {
-  font-size: 11px;
-  width: 14px;
-  text-align: center;
-  opacity: 0.8;
+  font-size: 12px;
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
+.workflow-node-asset-glyph svg { width: 14px; height: 14px; }
 .workflow-node-asset-name {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
-  font-size: 11px;
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7810,6 +7948,130 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   background: color-mix(in oklch, var(--accent) 10%, var(--surface));
 }
 
+/* ── Folder node mini file-explorer ──────────────────────────────────────
+   The folder node renders a rooted file explorer: an empty-state pick button
+   when no folder is set, otherwise a breadcrumb toolbar + scrollable list of
+   the current folder's children, with per-row open / rename / delete and
+   drag/paste-to-add. */
+.workflow-node-folder { display: flex; flex-direction: column; }
+
+/* Small square icon buttons in the title bar (reveal / reselect). */
+.workflow-node-folder-barbtn {
+  appearance: none; border: none; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border-radius: 4px;
+  color: var(--text-muted); cursor: pointer; flex-shrink: 0;
+}
+.workflow-node-folder-barbtn:hover {
+  color: var(--text); background: color-mix(in oklch, var(--text) 10%, transparent);
+}
+
+/* Empty state — centered "Select a folder…" call to action. */
+.workflow-node-folder-empty {
+  flex: 1 1 0; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 16px;
+}
+.workflow-node-folder-pick {
+  appearance: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px dashed var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  padding: 10px 16px; font: inherit; font-size: 12.5px; font-weight: 500;
+}
+.workflow-node-folder-pick:hover {
+  border-color: var(--accent); border-style: solid;
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+}
+.workflow-node-folder-empty-hint { font-size: 11px; color: var(--text-faint); }
+
+/* Populated state — explorer container. Fills the node below the bar. */
+.workflow-node-folder-explorer {
+  flex: 1 1 0; min-height: 0;
+  display: flex; flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.workflow-node-folder-explorer[data-dragover="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.workflow-node-folder-toolbar {
+  display: flex; align-items: center; gap: 2px;
+  padding: 5px 7px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.workflow-node-folder-crumb {
+  appearance: none; border: none; background: transparent;
+  padding: 2px 5px; border-radius: 4px;
+  font: inherit; font-size: 11.5px; color: var(--accent);
+  cursor: pointer; max-width: 120px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workflow-node-folder-crumb:hover { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.workflow-node-folder-crumb:disabled { color: var(--text); cursor: default; background: transparent; font-weight: 600; }
+.workflow-node-folder-crumb-sep { color: var(--text-faint); font-size: 11px; }
+.workflow-node-folder-toolbtn {
+  appearance: none; border: none; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border-radius: 4px;
+  color: var(--text-muted); cursor: pointer; flex-shrink: 0;
+}
+.workflow-node-folder-toolbtn:hover {
+  color: var(--text); background: color-mix(in oklch, var(--text) 10%, transparent);
+}
+
+.workflow-node-folder-list {
+  flex: 1 1 0; min-height: 0; overflow-y: auto;
+  padding: 3px 0;
+}
+.workflow-node-folder-msg {
+  padding: 12px 10px; font-size: 11.5px; color: var(--text-faint);
+  text-align: center;
+}
+.workflow-node-folder-err { color: var(--danger, #e5484d); text-align: left; white-space: pre-wrap; }
+
+.workflow-node-folder-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 6px 0 8px; min-height: 26px;
+}
+.workflow-node-folder-row:hover { background: color-mix(in oklch, var(--text) 6%, transparent); }
+.workflow-node-folder-open {
+  flex: 1 1 0; min-width: 0;
+  appearance: none; border: none; background: transparent;
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 0; font: inherit; font-size: 12px; color: var(--text);
+  cursor: pointer; text-align: left;
+}
+.workflow-node-folder-glyph {
+  display: inline-flex; flex-shrink: 0; color: var(--text-muted);
+}
+.workflow-node-folder-row[data-kind="dir"] .workflow-node-folder-glyph { color: var(--accent); }
+.workflow-node-folder-name {
+  flex: 1 1 0; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workflow-node-folder-meta { font-size: 10.5px; color: var(--text-faint); flex-shrink: 0; }
+
+.workflow-node-folder-rowactions {
+  display: flex; gap: 2px; align-items: center; flex-shrink: 0;
+  opacity: 0; transition: opacity 0.1s ease;
+}
+.workflow-node-folder-row:hover .workflow-node-folder-rowactions { opacity: 1; }
+.workflow-node-folder-rowbtn {
+  appearance: none; border: none; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border-radius: 4px;
+  color: var(--text-muted); cursor: pointer;
+}
+.workflow-node-folder-rowbtn:hover {
+  color: var(--text); background: color-mix(in oklch, var(--text) 12%, transparent);
+}
+.workflow-node-folder-rowbtn-danger:hover {
+  color: var(--danger, #e5484d);
+  background: color-mix(in oklch, var(--danger, #e5484d) 14%, transparent);
+}
+
 /* Folder-picker modal — overlays the editor surface, renders a sortable
    list of subfolders rooted at the project's source/ (or any path you
    navigate into) with an escape hatch to the OS-native picker. */
@@ -8115,35 +8377,59 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font-size: 13px; line-height: 1;
 }
 .chat-composer-attachment-rm:hover { background: var(--surface); color: var(--text); }
+/* v3.12 — attach/upload live in the borderless toolbar strip below the input
+   box now: small, no border, ghost-on-hover so they read as quiet affordances
+   rather than competing buttons. */
 .chat-composer-attach {
-  height: 32px;
-  width: 32px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  height: 24px;
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
   border-radius: 6px;
   color: var(--text-faint);
   cursor: pointer;
-  font-size: 14px;
-  align-self: end;
+  font-size: 13px;
+  flex-shrink: 0;
 }
+.chat-composer-attach svg { width: 15px; height: 15px; }
 .chat-composer-attach:hover:not([disabled]) { background: var(--surface-2); color: var(--text); }
 .chat-composer-attach[disabled] { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Slash-command menu over the chat composer ─────────────────────── */
-/* The wrapper sits in the `1fr` textarea column of .chat-composer's grid
-   (auto auto 1fr auto auto). Without these, the textarea inside collapses
-   to its intrinsic size and the placeholder wraps onto three lines. */
+/* v3.12 — the wrapper IS the input box now: it carries the border + rounding,
+   the textarea inside is borderless and transparent, and the send/stop
+   buttons float in the bottom-right via .chat-composer-inbox-actions. */
 .chat-composer-input-wrap {
   position: relative;
   display: flex;
   align-items: end;
   min-width: 0;
   width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.chat-composer-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .chat-composer-input-wrap > .chat-composer-input {
   flex: 1;
   min-width: 0;
   width: 100%;
+}
+/* Buttons that live INSIDE the input box, pinned to the bottom-right. */
+.chat-composer-inbox-actions {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 /* Two-pane: head spans the top; list (left) + detail card (right) below.
    Anchored to the composer's bottom-left so the popover can grow rightward
@@ -8612,12 +8898,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-prompt-glyph {
   font-size: 12px;
   color: var(--accent-text);
-  width: 14px;
-  text-align: center;
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
+.workflow-node-prompt-glyph svg { width: 14px; height: 14px; }
 .workflow-node-prompt-title {
-  font-size: 12.5px;
-  font-weight: 500;
+  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -16093,11 +16384,12 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.runs-row-status {
+.runs-row-age {
+  font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* === Chat drawer ========================================================
@@ -16263,26 +16555,72 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
 }
 
-/* Composer — reply input + send button, sits above the perm-mode footer */
-.chat-composer {
-  display: grid;
-  /* attach (image, 4d) · upload (multi-file, 5c) · textarea · stop · send.
-     v3.5.1 — the stop column is `auto` and only painted when the agent is
-     streaming (conditional render in ChatComposer), so it collapses to
-     zero width otherwise and the row reads as a clean four-column layout
-     in the idle state. */
-  grid-template-columns: auto auto 1fr auto auto;
+/* v3.12 — Sticky strip of running subagents, pinned just above the composer
+   so the user never has to scroll up to the agent_grid to see what's live.
+   Deliberately unboxed: one spinner + type + task per row, a single hairline
+   separating it from the scroll area above. */
+.chat-active-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  max-height: 96px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  animation: chat-active-agents-in 0.18s ease;
+}
+@keyframes chat-active-agents-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+.chat-active-agent {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  align-items: end;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.chat-active-agent-spin {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in oklch, var(--accent) 25%, var(--border));
+  border-top-color: var(--accent);
+  animation: chat-active-agent-spin 0.7s linear infinite;
+}
+@keyframes chat-active-agent-spin { to { transform: rotate(360deg); } }
+.chat-active-agent-type {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.chat-active-agent-task {
+  min-width: 0;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Composer — a full-width input box with an icon-only send button tucked
+   inside it, and a borderless control strip (perm mode · attach · model ·
+   steps) sitting UNDERNEATH. v3.12 — replaces the old single-row grid
+   (attach · upload · textarea · stop · send) which crowded the input. */
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 10px;
   border-top: 1px solid var(--border);
   background: var(--surface);
   position: relative;
 }
-/* The chip row spans every column above the input row. */
-.chat-composer-attachments {
-  grid-column: 1 / -1;
-}
+.chat-composer-attachments { order: -1; }
 /* Visual distinction between the two kinds of file chip — uploads (project-
    scoped, long-lived) get a folder tint so they don't read like an
    attachment from this single turn. */
@@ -16299,28 +16637,26 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .chat-composer[data-busy="true"] {
   background: color-mix(in oklch, var(--accent) 4%, var(--surface));
 }
-.chat-composer[data-busy="true"] .chat-composer-input {
+.chat-composer[data-busy="true"] .chat-composer-input-wrap {
   border-color: color-mix(in oklch, var(--accent) 25%, var(--border));
 }
 .chat-composer-input {
   resize: none;
-  min-height: 32px;
-  max-height: 140px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  min-height: 40px;
+  max-height: 160px;
+  /* Right padding clears the inner send button so typed text never slides
+     underneath it. */
+  padding: 9px 44px 9px 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 13px;
   line-height: 1.45;
   outline: none;
-  transition: border-color 0.12s;
 }
-.chat-composer-input:focus {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent-soft);
-}
+.chat-composer-input:focus { outline: none; }
 .chat-composer-input::placeholder {
   color: var(--text-faint);
   /* Keep the hint on a single line (clip with ellipsis if it overflows)
@@ -16332,22 +16668,26 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   text-overflow: ellipsis;
 }
 .chat-composer-input:disabled {
-  background: var(--surface-2);
+  background: transparent;
   color: var(--text-muted);
   cursor: not-allowed;
 }
+/* v3.12 — icon-only send, tucked inside the input box. */
 .chat-composer-send {
-  height: 32px;
-  padding: 0 14px;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius);
   background: var(--accent);
   color: var(--surface);
-  font-weight: 600;
-  font-size: 12.5px;
   cursor: pointer;
   border: 0;
   flex-shrink: 0;
 }
+.chat-composer-send svg { width: 15px; height: 15px; }
 /* Queue-mode Send — the agent is mid-turn; this click enqueues. Visually
    demote the Send button from solid accent to outlined-accent so the user
    reads it as "deferred" rather than "fire now." */
@@ -16365,8 +16705,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    user can interrupt the agent from the same spot they reply. Visually a
    neutral pill that doesn't compete with the accent Send button. */
 .chat-composer-stop {
-  height: 32px;
-  width: 32px;
+  height: 28px;
+  width: 28px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -16386,21 +16726,29 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   color: var(--text-faint);
   cursor: not-allowed;
 }
-/* v2.9b — selection-count badge appended inside the Send button when the
-   user has nodes selected on the workflow canvas. Visually subordinate to
-   the "Send" word so it reads as metadata, not an action label. */
+/* v2.9b — selection-count badge for when the user has nodes selected on the
+   workflow canvas. v3.12 — the send button is icon-only now, so the count
+   rides as a small numbered pip in its top-right corner instead of inline. */
+.chat-composer-send { position: relative; }
 .chat-composer-send-badge {
-  margin-left: 6px;
-  padding: 1px 6px;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 9px;
-  background: color-mix(in oklch, var(--surface) 18%, transparent);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  vertical-align: 1px;
+  background: var(--accent);
+  color: var(--surface);
+  border: 1.5px solid var(--surface);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 .chat-composer-error {
-  grid-column: 1 / -1;
   font-size: 11.5px;
   color: var(--danger);
   background: var(--danger-soft);
@@ -16408,6 +16756,29 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: var(--radius-sm);
   padding: 4px 8px;
 }
+
+/* v3.12 — borderless control strip beneath the input box: perm mode + attach
+   on the left, model + steps picker on the right. Deliberately quiet (small,
+   muted, no surrounding box) so it doesn't compete with the input. */
+.chat-composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 2px;
+}
+.chat-composer-toolbar-spacer { flex: 1 1 auto; min-width: 8px; }
+/* Model id — plain muted text in the strip (no pill), ellipsised on narrow
+   drawers so it never pushes the steps picker out. */
+.chat-composer-toolbar .chat-footer-model {
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  max-width: 200px;
+}
+.chat-composer-toolbar .chat-footer-note { margin-left: 0; }
 
 .chat-header {
   display: flex;
@@ -17101,21 +17472,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
   letter-spacing: 0.02em;
   color: var(--text-muted);
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--surface);
 }
-.tool-accessory {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* Simplified tool header — the right-side accessory (command / file path)
+   is dropped so a working tool reads as just "name  short-description". */
+.tool-accessory { display: none; }
 .tool-path {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -19949,7 +20309,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 /* Workflow bar — keep the group sized to match the other 30px-tall chrome
    (settings gear, etc.) and use the same border tone. */
 .workflow-bar .tbtn-history-group {
-  border-color: var(--border);
+  /* v3.12 — outline only on hover, like the rest of the top-bar chrome. */
+  border-color: transparent;
 }
 .workflow-bar .tbtn-history-group:hover {
   border-color: var(--border-strong);
@@ -20023,7 +20384,6 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .history-row {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
   cursor: default;
 }
 .history-row:last-child { border-bottom: 0; }
