@@ -75,6 +75,52 @@
     try { return btoa(JSON.stringify(m)); } catch (e) { return ""; }
   }
 
+  // ── Default model per capability — mirrors the host's Settings → "Default
+  // models per capability". Stored in the SAME localStorage key the editor
+  // reads (th.editor.default-providers.v1), so the editor's own default-aware
+  // paths (agent preamble, remix) pick it up; we ALSO rewrite generation
+  // request bodies below so skill nodes (e.g. the SVG node that otherwise
+  // hard-defaults to quiver) honour the guest's pick too. Choices are NOT
+  // synced to the daemon's shared default cache (that's the host's), so a guest
+  // never changes the host's or other guests' defaults.
+  const DEF_KEY = "th.editor.default-providers.v1";
+  const CAPS = [
+    ["agent", "Chat / agent"], ["image", "Image"], ["video", "Video"],
+    ["svg", "Vector / SVG"], ["3d", "3D"], ["lottie", "Lottie"],
+  ];
+  function loadDefs() { try { return JSON.parse(localStorage.getItem(DEF_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function saveDef(cap, provider, model) {
+    const d = loadDefs();
+    if (provider) d[cap] = { provider: provider, model: model || "" }; else delete d[cap];
+    try { localStorage.setItem(DEF_KEY, JSON.stringify(d)); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent("th:default-providers-changed", { detail: d })); } catch (e) {}
+  }
+  // Available provider+model rows per capability, read from the shared catalog
+  // (window.TH_MEDIA) exactly like the host UI's listModelsForCapability.
+  function modelsForCap(cap) {
+    const M = window.TH_MEDIA || {}, P = M.providers || {};
+    if (cap === "agent") return (M.textModels || []).filter(m => m.integrated !== false);
+    if (cap === "image") return (M.imageModels || []).filter(m => m.integrated !== false);
+    if (cap === "video") return (M.videoModels || []).filter(m => m.integrated !== false);
+    const byCap = { svg: ["quiver", "openai", "anthropic", "fal", "recraft"], "3d": ["meshy", "fal"], lottie: ["lottiefiles", "fal"] };
+    const allowed = new Set(byCap[cap] || []), out = [];
+    for (const pid of Object.keys(P)) { if (allowed.size && !allowed.has(pid)) continue; out.push({ id: "", provider: pid, label: (P[pid] || {}).label || pid }); }
+    return out;
+  }
+  // Which capability a generation request targets (so we can swap in the default).
+  function capForRequest(url, body) {
+    if (/\/__llm_run\b/.test(url)) return "agent";
+    if (/\/__asset_generate\b/.test(url)) {
+      const s = ((body && body.skill) || "") + " " + ((body && body.output) || "");
+      if (/svg/i.test(s)) return "svg";
+      if (/(video|veo|seedance|kling|runway|pika|luma)/i.test(s)) return "video";
+      if (/(3d|mesh|glb|gltf)/i.test(s)) return "3d";
+      if (/lottie/i.test(s)) return "lottie";
+      return "image";
+    }
+    return null;
+  }
+
   // AI / agent endpoints — kept in sync with live.py _LLM_WRITE_PREFIXES.
   const LLM_RE = /\/__(llm_run|asset_generate|run|runs|system_runs|orchestrators|orchestrator_models|stream)\b/;
 
@@ -103,6 +149,23 @@
     const blob = keysHeader();
     if (blob) headers.set("X-Th-Llm-Keys", blob);  // full multi-provider + CLI map
     init.headers = headers;
+    // Honour the guest's default-model pick: rewrite the generation request's
+    // provider/model to their chosen default for that capability. This is how
+    // skill nodes (e.g. the SVG node that hard-defaults to quiver) end up using
+    // a provider the guest actually has a key for. Only when a default is set
+    // ("Auto" leaves the request untouched).
+    try {
+      if (typeof init.body === "string" && init.body && /\/__(asset_generate|llm_run)\b/.test(url)) {
+        const parsed = JSON.parse(init.body);
+        const cap = capForRequest(url, parsed);
+        const def = cap && loadDefs()[cap];
+        if (def && def.provider) {
+          parsed.provider = def.provider;
+          if (def.model) parsed.model = def.model;
+          init.body = JSON.stringify(parsed);
+        }
+      }
+    } catch (e) {}
     return _origFetch(input, init);
   };
 
@@ -144,9 +207,10 @@
       "#th-ai-panel .th-ai-row label{flex:0 0 132px;font-size:12px;font-weight:500}" +
       "#th-ai-panel .th-ai-row .th-ai-dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#cbd5e1}" +
       "#th-ai-panel .th-ai-row .th-ai-dot.on{background:#10b981}" +
-      "#th-ai-panel input{flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border,#d1d5db);border-radius:8px;" +
+      "#th-ai-panel input,#th-ai-panel select{flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border,#d1d5db);border-radius:8px;" +
       "background:var(--bg,#fff);color:var(--text,#111827);font:inherit;font-size:12px}" +
-      "#th-ai-panel input:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}" +
+      "#th-ai-panel select{cursor:pointer}" +
+      "#th-ai-panel input:focus,#th-ai-panel select:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}" +
       "#th-ai-panel code{background:rgba(127,127,127,.14);padding:1px 5px;border-radius:5px;font-size:11px}" +
       "#th-ai-panel .th-ai-ft{padding:12px 18px;border-top:1px solid var(--border,#eef1f4);display:flex;gap:8px;align-items:center}" +
       "#th-ai-panel .th-ai-ft .th-ai-note{font-size:11px;color:var(--text-muted,#6b7280);flex:1}" +
@@ -212,6 +276,34 @@
     return wrap;
   }
 
+  // A capability → default-model dropdown row.
+  function defRow(cap, label) {
+    const wrap = document.createElement("div");
+    wrap.className = "th-ai-row";
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    const sel = document.createElement("select");
+    const cur = (loadDefs()[cap]) || {};
+    const auto = document.createElement("option");
+    auto.value = ""; auto.textContent = "Auto"; sel.appendChild(auto);
+    for (const m of modelsForCap(cap)) {
+      const opt = document.createElement("option");
+      opt.value = m.provider + "|" + (m.id || "");
+      const provLabel = ((window.TH_MEDIA || {}).providers || {})[m.provider];
+      opt.textContent = (provLabel && provLabel.label || m.provider) + (m.id ? " · " + (m.label || m.id) : "");
+      if (cur.provider === m.provider && (cur.model || "") === (m.id || "")) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    sel.addEventListener("change", () => {
+      const v = sel.value;
+      if (!v) { saveDef(cap, null); return; }
+      const i = v.indexOf("|");
+      saveDef(cap, v.slice(0, i), v.slice(i + 1));
+    });
+    wrap.appendChild(lab); wrap.appendChild(sel);
+    return wrap;
+  }
+
   function openPanel() {
     injectStyle();
     if (scrimEl) { scrimEl.remove(); scrimEl = null; }
@@ -262,6 +354,15 @@
     mediaSec.innerHTML = "<h4>Image · video · audio providers</h4>";
     for (const p of PROVIDERS) { if (!p.agent) mediaSec.appendChild(row(p.id, p.label, p.ph)); }
     panel.appendChild(mediaSec);
+
+    // Default model per capability (mirrors host Settings → Default models).
+    const defSec = document.createElement("div");
+    defSec.className = "th-ai-sec";
+    defSec.innerHTML = "<h4>Default models per capability</h4>" +
+      "<div class=\"th-ai-sub\" style=\"padding:0 0 6px\">Pick which provider each kind of generation uses — " +
+      "set one you have a key (or the CLI token) for. \"Auto\" keeps the project's built-in choice.</div>";
+    for (const [cap, label] of CAPS) defSec.appendChild(defRow(cap, label));
+    panel.appendChild(defSec);
 
     const ft = document.createElement("div");
     ft.className = "th-ai-ft";
