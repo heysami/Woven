@@ -71,17 +71,20 @@
     if (!held.has(target)) { try { cfg && cfg.acquire(target); } catch (e) {} }
     held.set(target, Date.now());
   }
-  function nodeFocused(target) {
-    const el = nodeEl(target.slice(5));
-    return !!(el && document.activeElement && el.contains(document.activeElement));
-  }
-  // Release any hold whose interaction has been idle past the grace AND isn't
-  // an open content edit (focused). Robust against any drag-end event we don't
-  // see, because it keys off "stopped interacting", not a specific event.
+  // Release any hold whose interaction has been idle past the grace. The lock
+  // models "I am actively editing", not "my cursor rests here" — so a node
+  // stays locked only while you keep typing/dragging, and unlocks GRACE_MS
+  // after you stop, EVEN IF the field is still focused. This is the contract:
+  // lock during the edit, unlock when the edit is done, then whoever edits next
+  // wins (last-writer). Keying release off focus (the old behaviour) pinned the
+  // lease for as long as a cursor sat in the textarea, so the previous editor
+  // hard-locked the next one out and the next one's write got silently dropped
+  // by the server lock — the "C reverts to B / never reaches the other side"
+  // bug. Resuming typing re-acquires via touch() in the input/keydown handlers.
   function sweep() {
     const now = Date.now();
     for (const [t, ts] of [...held]) {
-      if (now - ts > GRACE_MS && !nodeFocused(t)) {
+      if (now - ts > GRACE_MS) {
         held.delete(t);
         try { cfg && cfg.release(t); } catch (e) {}
       }
@@ -145,7 +148,11 @@
         for (const t of held.keys()) held.set(t, Date.now());
       }, true);
       window.addEventListener("focusin", (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); }, true);
-      const keep = (e) => { const n = nodeIdFromEl(e.target); if (n && held.has("node:" + n)) held.set("node:" + n, Date.now()); };
+      // Typing (re)acquires + keeps the hold alive. Using touch() rather than a
+      // bare restamp means that after the idle sweep releases a still-focused
+      // node, the next keystroke re-locks it — so an active edit is always
+      // protected, while an idle-but-focused node is free for the next editor.
+      const keep = (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); };
       window.addEventListener("input", keep, true);
       window.addEventListener("keydown", keep, true);
       setInterval(sweep, 600);                    // idle-based release (robust vs missed pointerup)
