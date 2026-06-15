@@ -1428,8 +1428,19 @@ def _events_stream(h, s):
             if not still_in:
                 _raw("session-ended", {})
                 break
+            # Lock/roster changes are RARE + IMPORTANT (someone grabbed/released
+            # a node, or joined/left). Forward them, then CLOSE immediately so
+            # the tunnel edge FLUSHES now — a held SSE body buffers until close
+            # over Cloudflare, which is what made locks lag ~1.2s. Cursors
+            # (presence) keep batching for the rest of the window so we don't
+            # reconnect on every pointer move.
+            flush_now = False
             for evt_type, evt_data in waiter.drain():
                 _raw(evt_type, evt_data)
+                if evt_type in ("lock", "roster"):
+                    flush_now = True
+            if flush_now:
+                break
         try: h.wfile.flush()
         except Exception: pass
     finally:
