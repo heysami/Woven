@@ -6541,15 +6541,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-body {
   border-radius: 10px;
 }
-/* Cutout asset at rest — drop the white CARD too (surface + shadow ring), not
-   just the checkerboard, so a transparent-bg image floats directly on the
-   canvas instead of sitting on a white tile. Hover/selection brings the card
-   (and chrome) back. Only fires when the image was detected transparent, so an
-   opaque image is never un-carded. */
-.workflow-node-asset[data-transparent-bg="true"]:not(:hover):not([data-selected="true"]) {
-  background: transparent;
-  box-shadow: none;
-}
+/* Cutout assets keep the white card surface at rest (they no longer float bare
+   on the canvas) — the transparent-bg image sits on the node's own white tile,
+   same as an opaque asset. The checkerboard is still dropped (rule below), so
+   it reads as a clean white background rather than a noisy checker. */
 
 /* Same chrome-on-hover treatment for prototype + canvas-frames nodes — they
    render a live iframe under a 32px title bar (and no foot). At rest the bar
