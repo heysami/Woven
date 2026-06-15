@@ -1349,6 +1349,15 @@ class _LiveGate:
                                       "leases": _leases_public(s)})
         if sub == "/live/events":
             return _events_stream(h, s)
+        # People-comments for THIS session's prototype — same store the public
+        # gate + host editor read. Lets a live guest see the review thread from
+        # inside the multiplayer editor. No token needed for read (any visitor
+        # on the live page can see the comments, same as the share viewer).
+        if sub == "/live/api/comments":
+            root = _proot(rec)
+            if root is None:
+                return _json(h, 500, {"error": "project unavailable"})
+            return _json(h, 200, {"comments": _shares.comments_list(root, rec.get("prototype"))})
         return _json(h, 404, {"error": "not found"})
 
     def handle_post(self, h, rec, sub):
@@ -1391,6 +1400,27 @@ class _LiveGate:
                 guest_id, _p = _auth(s, token)
                 kick(share_id, guest_id)
                 return _json(h, 200, {"ok": True})
+            # Guests may ADD + REPLY to people-comments on the session's
+            # prototype (status/delete stay host-only — they're not exposed
+            # here). Authored under the guest's joined name; viewers may comment.
+            if sub == "/live/api/comments":
+                guest_id, p = _auth(s, token)
+                root = _proot(rec)
+                if root is None:
+                    return _json(h, 500, {"error": "project unavailable"})
+                cop = (body.get("op") or "").strip()
+                author = {"name": (p.get("name") or "Guest"), "email": ""}
+                if cop == "add":
+                    c = _shares.comment_add(root, rec.get("prototype"),
+                                            page=body.get("page"), anchor=body.get("anchor"),
+                                            pin=body.get("pin"), text=body.get("text"),
+                                            author=author)
+                    return _json(h, 200, {"ok": True, "comment": c})
+                if cop == "reply":
+                    r = _shares.comment_reply(root, (body.get("commentId") or "").strip(),
+                                              text=body.get("text"), author=author)
+                    return _json(h, 200, {"ok": True, "reply": r})
+                return _json(h, 400, {"error": f"unknown comment op: {cop!r}"})
         except PermissionError as e:
             return _json(h, 403, {"error": str(e)})
         except ValueError as e:
