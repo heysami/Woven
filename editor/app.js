@@ -9085,24 +9085,6 @@ function toolGlyph(name) {
   }
 }
 
-// One-line, human-meaningful summary of a tool call for the sticky card — the
-// command for Bash, the path for file tools, the pattern for search, etc.
-// Whitespace-collapsed; CSS handles the visual single-line truncation.
-function toolPreviewLine(toolUse) {
-  const inp  = toolUse?.input || {};
-  const name = toolUse?.name;
-  let s = "";
-  if      (name === "Bash")                         s = inp.command || inp.description || "";
-  else if (name === "Read" || name === "Write")     s = inp.file_path || inp.notebook_path || "";
-  else if (name === "Edit" || name === "MultiEdit") s = inp.file_path || "";
-  else if (name === "Glob" || name === "Grep")      s = [inp.pattern, inp.path && ("in " + inp.path)].filter(Boolean).join(" ");
-  else if (name === "Task" || name === "Agent")     s = inp.description || inp.prompt || "";
-  else if (name === "WebFetch")                     s = inp.url || inp.prompt || "";
-  else if (name === "WebSearch")                    s = inp.query || "";
-  else                                              s = shortToolPreview(inp);
-  return String(s || "").replace(/\s+/g, " ").trim();
-}
-
 /* AskUserQuestion card — Phase 1 finish-touch (precursor to Phase 2's full
    tool-card suite). When Claude Code calls the AskUserQuestion tool, its
    tool_use.input has shape:
@@ -9846,7 +9828,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       if (bl.kind !== "tool") continue;
       const tu = bl.toolUse;
       if (!tu || tu.name === "AskUserQuestion") continue;
-      return { name: tu.name || "tool", preview: toolPreviewLine(tu), running: !bl.toolResult };
+      return { name: tu.name || "tool", running: !bl.toolResult };
     }
     return null;
   }, [blocks, viewMode, status]);
@@ -10089,12 +10071,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         </div>
       `}
       ${latestTool && html`
-        <div className="chat-active-tool" title=${`${latestTool.name}${latestTool.preview ? " — " + latestTool.preview : ""}`}>
+        <div className="chat-active-tool" title=${latestTool.name}>
           <span className="chat-active-tool-icon" data-running=${latestTool.running} aria-hidden="true">
             <${toolGlyph(latestTool.name)}/>
           </span>
           <span className="chat-active-tool-name">${latestTool.name}</span>
-          ${latestTool.preview && html`<span className="chat-active-tool-line">${latestTool.preview}</span>`}
         </div>
       `}
       ${(tasks.length > 0 || activeAgents.length > 0) && (() => {

@@ -16854,17 +16854,18 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .chat-active-task-mark[data-status="in_progress"] { color: var(--hot); }
 .chat-active-task-mark[data-status="completed"]  { color: var(--success); }
 
-/* v3.13 — "latest tool" card (auto view). Tool activity is hidden from the
-   transcript and surfaced here instead: ONE card, the most-recent call, shown
-   only while the turn is live. Vertical stack — glyph on top, tool name, then a
-   single truncated preview line (the command / path / pattern). */
+/* v3.13 — "latest tool" row (auto view). Tool activity is hidden from the
+   transcript and surfaced here instead: the most-recent call, shown only while
+   the turn is live. Single compact line — same register as the tasks/agents
+   strip: small glyph + tool name, no file path. */
 .chat-active-tool {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 12px;
   min-width: 0;
+  font-size: 12px;
+  line-height: 1.3;
   border-top: 1px solid var(--border);
   background: var(--surface);
   animation: chat-active-agents-in 0.18s ease;
@@ -16873,11 +16874,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  flex-shrink: 0;
   color: var(--accent-text);
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
 }
 .chat-active-tool-icon[data-running="true"] {
   animation: chat-active-tool-pulse 1.1s ease-in-out infinite;
@@ -16891,15 +16889,6 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 11px;
   font-weight: 600;
   color: var(--text);
-}
-.chat-active-tool-line {
-  max-width: 100%;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Composer — a full-width input box with an icon-only send button tucked
