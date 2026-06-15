@@ -6680,6 +6680,20 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   object-fit: contain;
   display: block;
 }
+/* Opaque raster images fill the frame (cover) rather than letterboxing with
+   the checkerboard showing in the side/letterbox bars — the checker only
+   makes sense for a genuinely transparent asset. Transparent ("cutout")
+   images keep `contain` so the subject isn't cropped. data-transparent-bg is
+   set on the node root once detection runs (defaults to false → cover until
+   the image is proven transparent). Scoped to data-kind="image" so SVG /
+   vector marks and html/lottie iframes are untouched. */
+.workflow-node-asset[data-kind="image"]:not([data-transparent-bg="true"]) .workflow-node-asset-thumb {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+}
 /* Pathway-B HTML output rendered as an iframe — needs explicit sizing
    because iframes don't honor object-fit. Fill the card body, hide chrome.
    Pointer-events follow the same selected-state rule as prototype iframes:
