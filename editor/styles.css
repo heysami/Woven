@@ -6509,7 +6509,52 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-asset {
   display: grid;
   grid-template-rows: 26px 1fr 22px;
-  transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease,
+    grid-template-rows 0.14s ease;
+}
+/* v3.x — chrome-on-hover. When the asset card is at rest (not hovered, not
+   selected) it reads as a single clean rounded thumbnail: the top bar, the
+   bottom path foot, the version strip and the lineage strip all collapse to
+   zero height and fade out, and the body rounds all four corners. Hovering
+   (or selecting) brings the chrome back so every control is reachable.
+   `grid-auto-rows: 0` also flattens the IMPLICIT rows that the version /
+   lineage / foot children land in once a versioned (html etc.) node carries
+   more than three rows — otherwise the version bar would stay visible. */
+.workflow-node-asset:not(:hover):not([data-selected="true"]) {
+  grid-template-rows: 0 1fr 0;
+  grid-auto-rows: 0;
+}
+.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-bar,
+.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-foot,
+.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-versions,
+.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-lineage {
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-body {
+  border-radius: 10px;
+}
+
+/* Same chrome-on-hover treatment for prototype + canvas-frames nodes — they
+   render a live iframe under a 32px title bar (and no foot). At rest the bar
+   collapses + fades so the embedded prototype reads as a clean rounded tile;
+   hover or selection brings the bar (back/forward, open-in-editor, etc.) back. */
+.workflow-node-proto:not(:hover):not([data-selected="true"]),
+.workflow-node-frames:not(:hover):not([data-selected="true"]) {
+  grid-template-rows: 0 1fr;
+  transition: grid-template-rows 0.14s ease;
+}
+.workflow-node-proto:not(:hover):not([data-selected="true"]) > .workflow-node-bar,
+.workflow-node-frames:not(:hover):not([data-selected="true"]) > .workflow-node-frames-bar {
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+.workflow-node-proto:not(:hover):not([data-selected="true"]) .workflow-node-iframe-scale,
+.workflow-node-frames:not(:hover):not([data-selected="true"]) .workflow-node-frames-body {
+  border-radius: 10px;
 }
 .workflow-node-asset[data-orphan="true"] {
   opacity: 0.45;
@@ -6557,6 +6602,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-asset-bar {
   height: 26px;
   padding: 0 6px;
+  transition: opacity 0.14s ease;
 }
 .workflow-node-asset-glyph {
   font-size: 12px;
@@ -6586,6 +6632,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+/* Cutout assets (transparent-background PNG / SVG) read cleaner WITHOUT the
+   checkerboard behind them — the checker is meant to signal "this region is
+   transparent", but for a full transparent-bg asset it's just noise. Detected
+   at load time (assetImageHasTransparentBg); drop the checker and let the
+   node's own surface show through. Higher specificity than the base rule, so
+   no !important needed; an explicit node.bgColor inline style still wins. */
+.workflow-node-asset-body[data-transparent-bg="true"] {
+  background: transparent;
 }
 .workflow-node-asset-thumb {
   max-width: 100%;
@@ -7131,6 +7186,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: opacity 0.14s ease;
 }
 /* Phase 4c — editable path for user-created (non-boundTo) image assets. */
 .workflow-node-asset-foot-edit {

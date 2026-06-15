@@ -44808,6 +44808,38 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   `;
 }
 
+// Decide whether a freshly-loaded asset image has a TRANSPARENT background —
+// i.e. it's a cutout (transparent PNG / SVG) rather than a full-bleed opaque
+// raster. We sample the border ring of the decoded image: if ~all edge pixels
+// are fully transparent, the asset has no background of its own and the card's
+// checkerboard is just noise — the body should show through transparent. Cheap
+// (≤64px scratch canvas) and best-effort: any failure (tainted canvas, no 2d
+// ctx, zero-size) returns false so we keep the safe checkerboard default.
+function assetImageHasTransparentBg(img) {
+  try {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return false;
+    const sw = Math.max(1, Math.min(64, w));
+    const sh = Math.max(1, Math.min(64, h));
+    const c = document.createElement("canvas");
+    c.width = sw; c.height = sh;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, sw, sh);
+    const data = ctx.getImageData(0, 0, sw, sh).data;
+    const alphaAt = (x, y) => data[(y * sw + x) * 4 + 3];
+    const step = Math.max(1, Math.floor(Math.min(sw, sh) / 16));
+    let border = 0, clear = 0;
+    for (let x = 0; x < sw; x += step) {
+      for (const y of [0, sh - 1]) { border++; if (alphaAt(x, y) === 0) clear++; }
+    }
+    for (let y = 0; y < sh; y += step) {
+      for (const x of [0, sw - 1]) { border++; if (alphaAt(x, y) === 0) clear++; }
+    }
+    return border > 0 && clear / border >= 0.9;
+  } catch { return false; }
+}
+
 function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   // Canvas LOD — embed kinds (live iframes) gate at the embed floor and get
@@ -45202,6 +45234,12 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // un-flags it automatically.
   const [thumbState, setThumbState] = useState("ok");
   useEffect(() => { setThumbState("ok"); }, [node.path, bust]);
+  // Transparent-background detection — flips to true once an image thumb loads
+  // and its border ring reads as fully transparent (a cutout). When true the
+  // body drops its checkerboard and shows the asset on a transparent ground.
+  // Reset on any source change so a re-Run re-detects from scratch.
+  const [bgTransparent, setBgTransparent] = useState(false);
+  useEffect(() => { setBgTransparent(false); }, [node.path, bust, node.src]);
   // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
   // overflow probe, then write the device class + natural aspect back to
   // node.size so the adaptive sizing block downstream picks the right
@@ -45777,7 +45815,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     `;
   } else if (isCanvasSnapshot && node.src) {
     bodyContent = html`
-      <img className="workflow-node-asset-thumb" src=${node.src} alt=${basename} loading="lazy"/>
+      <img
+        className="workflow-node-asset-thumb"
+        src=${node.src}
+        alt=${basename}
+        loading="lazy"
+        onLoad=${(e) => setBgTransparent(assetImageHasTransparentBg(e.target))}
+      />
     `;
   } else if (isStaleInline) {
     bodyContent = html`
@@ -45809,6 +45853,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         src=${fileSrc}
         alt=${basename}
         loading="lazy"
+        onLoad=${(e) => setBgTransparent(assetImageHasTransparentBg(e.target))}
         onError=${() => setThumbState("missing")}
       />
     `;
@@ -46104,6 +46149,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       </div>
       <div
         className="workflow-node-asset-body"
+        data-transparent-bg=${bgTransparent ? "true" : "false"}
         style=${node.bgColor ? { background: node.bgColor } : undefined}
       >
         ${bodyContent}
