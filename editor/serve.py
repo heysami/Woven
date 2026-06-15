@@ -2592,7 +2592,13 @@ HISTORY_AGENT_SCOPE_DIRS = [
     "editor/branches",
     "editor/design-systems",
     "design-systems",
-    "workflow",
+    # NOTE: workflow/ is deliberately NOT walked recursively. Its runs/ and
+    # views/ subdirs are generated, content-addressed agent output (a heavy
+    # project has 100k+ files / 4+ GB there). Copying them into a before/
+    # snapshot ran synchronously at every spawn (~150s warm, worse cold) and
+    # blocked the prompt from reaching the agent — the "slow first message".
+    # The only undoable thing in workflow/ is the graph itself, captured as a
+    # root file below; generated run/view assets are regenerable, not undoable.
 ]
 HISTORY_AGENT_SCOPE_ROOT_FILES = {
     # v3.1 — MERGES.md / FORK_REQUEST.md dropped with project-level branches.
@@ -2600,6 +2606,7 @@ HISTORY_AGENT_SCOPE_ROOT_FILES = {
     "DS_PROPOSAL.md", "DS_DEFERRED.md", "DS_ACCEPTED.json",
     "edits.json", "UPDATE_SOURCE.txt",
     "STATEMACHINE_REQUEST.md", "TIMELINE_REQUEST.md", "GRID_REQUEST.md",
+    "workflow/workflow.json",
 }
 # Subdir names skipped during scope enumeration. _attachments/ holds user
 # uploads (some are huge); .history/ is our own storage; the rest are obvious.

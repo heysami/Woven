@@ -19775,6 +19775,14 @@ function WorkflowCanvas() {
       es = new EventSource(url);
       es.addEventListener("workflow-events-connected", () => {
         refreshLiveness();
+        // Catch-up resync on every (re)connect. The guest's mirror runs as a
+        // long-poll through the gate that closes + reconnects on each change;
+        // a `workflow-changed` that lands during the reconnect gap is missed,
+        // and without this the editor would sit on a stale value until the
+        // NEXT event or a manual refresh — the "stops syncing after two people
+        // touch the same node" desync. A reload here is dirty-safe (it never
+        // clobbers in-flight edits) and a no-op when already in sync.
+        try { window.dispatchEvent(new CustomEvent("th:workflow-reload")); } catch {}
       });
       es.addEventListener("workflow-changed", () => {
         refreshLiveness();
