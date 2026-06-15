@@ -20103,6 +20103,11 @@ function WorkflowCanvas() {
           // CLEAN once our move persists, so the next reload converges.
           x: _stableClone(n.x),
           y: _stableClone(n.y),
+          // Same as x/y, for node RESIZE: snapshot w/h so a resize flips back
+          // to clean once it persists and the reload-merge converges live
+          // instead of leaving the size permanently dirty.
+          w: _stableClone(n.w),
+          h: _stableClone(n.h),
           // v3.4.8 — runStatus / runError participate in the snapshot so
           // dirty-tracking works for them too (Bug B). Once the save POST
           // returns 200, savedSnapshotRef gets bumped to the latest local
@@ -20388,10 +20393,13 @@ function WorkflowCanvas() {
               savedSnapshotRef.current.set(disk.id + "|" + key, _stableClone(disk[key]));
             };
             for (const f of editableFields) pullField(f);
-            // Live Session — pull a collaborator's node move live. Same
-            // dirty-check: only when local x/y matches the last-saved snapshot
-            // (you're not mid-drag on this node), so it never stomps your drag.
-            pullField("x"); pullField("y");
+            // Live Session — pull a collaborator's node MOVE (x/y) and RESIZE
+            // (w/h) live. Same dirty-check: only when local matches the
+            // last-saved snapshot (you're not mid-drag / mid-resize on this
+            // node), so it never stomps your own in-progress gesture. w/h are
+            // snapshotted on save (below) so a resize flips back to clean once
+            // it persists and the next reload converges — same contract as x/y.
+            pullField("x"); pullField("y"); pullField("w"); pullField("h");
             // v3.4.8 — Bug B: conditional pull for runStatus / runError.
             // Pull from disk ONLY when local matches the last-saved
             // snapshot (i.e. no client-side change is in flight). If local
@@ -34448,25 +34456,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       >
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
           <${HoverTip}
+            placement="right"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && wbMode ? " is-active" : "")}
+            ariaLabel="Whiteboard"
+            tip="Whiteboard — draw, annotate, paste images"
+            onClick=${onRailWhiteboard}
+          ><${Icon.Pen}/><//>
+          <${HoverTip}
+            placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "nodes" ? " is-active" : "")}
             ariaLabel="Nodes"
             tip="Nodes — buildable-node library"
             onClick=${() => onRailPanel("nodes")}
           ><${Icon.Flow}/><//>
           <${HoverTip}
+            placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "outputs" ? " is-active" : "")}
             ariaLabel="Outputs"
             tip="Outputs — prototypes, pages + assets"
             onClick=${() => onRailPanel("outputs")}
           ><${Icon.Image}/><//>
-          <${HoverTip}
-            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && wbMode ? " is-active" : "")}
-            ariaLabel="Whiteboard"
-            tip="Whiteboard — draw, annotate, paste images"
-            onClick=${onRailWhiteboard}
-          ><${Icon.Pen}/><//>
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
+            placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "proto" ? " is-active" : "")}
             ariaLabel="Prototype viewer"
             tip="Prototype viewer — browse in browser-style tabs"
@@ -43899,13 +43911,21 @@ async function captureAssetThumbnail(filePath, targetWidth = 320, kind = "html")
    ancestors. This wrapper renders the bubble at document.body via createPortal
    and positions it via the anchor's getBoundingClientRect, so it escapes any
    clipping context regardless of where the host button is mounted. */
-function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, as, style, children }) {
+function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, as, style, placement: placementProp, children }) {
   const anchorRef = useRef(null);
   const [pos, setPos] = useState(null);
   const place = () => {
     const el = anchorRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
+    // Right placement (opt-in) — bubble sits to the RIGHT of the anchor,
+    // vertically centered. Used by the left icon nav rail, whose buttons hug
+    // the viewport's left edge: a centered above/below bubble spills off the
+    // left side and gets clipped. Right keeps the full label on-screen.
+    if (placementProp === "right") {
+      setPos({ left: r.right + 8, top: r.top + r.height / 2, placement: "right" });
+      return;
+    }
     // v3.2 — Auto-flip to below the anchor when there's no room above
     // (e.g. top-nav buttons like HistoryButton at the top of the
     // viewport). Previously the bubble was always rendered with
@@ -43936,9 +43956,12 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
         top:  pos.top + "px",
         // Above: anchor by bottom edge (translate up by 100%).
         // Below: anchor by top edge (no Y translate).
+        // Right: anchor by left edge, vertically centered.
         transform: pos.placement === "above"
           ? "translate(-50%, -100%)"
-          : "translate(-50%, 0)",
+          : pos.placement === "right"
+            ? "translate(0, -50%)"
+            : "translate(-50%, 0)",
       }}>
       ${tip}
     </div>
