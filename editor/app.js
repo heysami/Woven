@@ -19826,6 +19826,27 @@ function WorkflowCanvas() {
     return () => { try { es && es.close(); } catch {} };
   }, [branch]);
 
+  // Live Session safety net. The SSE mirror is the fast path, but if it ever
+  // stalls — a `workflow-changed` missed during a guest's long-poll reconnect
+  // gap, or an EventSource that errored and didn't re-establish — a participant
+  // could otherwise sit on stale state until a manual refresh (the "after two
+  // people touch the same node it stops syncing until I refresh" report). While
+  // a live session is active, poll a dirty-safe reload every few seconds so the
+  // canvas always re-converges within a bounded window. The reload never
+  // clobbers in-flight edits and is a no-op when already in sync; it's inert
+  // outside live sessions, so single-user editing never polls (the v2.30
+  // poll-removal stays in effect for the solo case).
+  useEffect(() => {
+    const iv = setInterval(() => {
+      try {
+        if (window.__thLiveActive && loadedRef.current) {
+          window.dispatchEvent(new CustomEvent("th:workflow-reload"));
+        }
+      } catch {}
+    }, 4000);
+    return () => clearInterval(iv);
+  }, []);
+
   // v3.5 — onboarding cut. The auto-spawn-orchestrator-on-marker-presence
   // effect was deleted along with the guided new-project flow. Fresh
   // projects drop into an empty canvas; the user starts a chat by clicking
