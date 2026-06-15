@@ -1136,10 +1136,33 @@ def _rooted_get(h, token, path, query):
 # (node moves, content, runs, layout) land on the HOST's tree and sync to
 # everyone. project FORCED. Everything else (file writes, project/share/git
 # management, export) is refused.
-_PROXY_WRITE_PREFIXES = ("/__workflow", "/__layout")
+_PROXY_WRITE_PREFIXES = (
+    "/__workflow", "/__layout",
+    # Source / prototype editing — guests edit freely (the host's daemon is
+    # authoritative; project is forced to the share's project so a guest can't
+    # touch other projects). LLM / agent endpoints are intentionally EXCLUDED
+    # here — they require the guest's OWN API key (see _LLM_WRITE_PREFIXES) and
+    # are blocked until the guest connects one. Dangerous endpoints (git /
+    # projects / live / share / commit / workspace) are excluded by this
+    # whitelist entirely.
+    "/__html_save", "/__write_text", "/__copy_file", "/__rmdir",
+    "/__upload", "/__fs_upload", "/__attachment", "/__media_config",
+    "/__component_export", "/__thumbnail_prototype",
+    "/__rewrite_element_for_kind", "/__rewrite_img_src",
+)
+
+# LLM / agent endpoints — proxied ONLY when the guest supplies their own API key
+# (X-Th-Llm-Key, threaded to the daemon). Blocked otherwise.
+_LLM_WRITE_PREFIXES = (
+    "/__llm_run", "/__asset_generate", "/__run", "/__runs",
+    "/__system_runs", "/__orchestrators", "/__orchestrator_models", "/__stream",
+)
 
 def _proxy_write_ok(path):
     return any(path == p or path.startswith(p) for p in _PROXY_WRITE_PREFIXES)
+
+def _is_llm_write(path):
+    return any(path == p or path.startswith(p) for p in _LLM_WRITE_PREFIXES)
 
 def _drain(h):
     try:
@@ -1148,10 +1171,12 @@ def _drain(h):
     except Exception:
         return b""
 
-def _proxy_daemon_write(h, path, project, writer=None):
+def _proxy_daemon_write(h, path, project, writer=None, llm_key=None):
     """Forward a POST body to the daemon, project FORCED. Returns its response.
     `writer` (a guestId) is passed through as X-Th-Writer so the daemon can
-    enforce the hard node lock (reject edits to a node held by someone else)."""
+    enforce the hard node lock (reject edits to a node held by someone else).
+    `llm_key` (the guest's own API key) is passed as X-Th-Llm-Key so the daemon
+    spends the GUEST's credentials, never the host's, for that guest's run."""
     import urllib.request as _ur, urllib.error as _ue
     if DAEMON_PORT is None:
         _drain(h); return _json(h, 502, {"error": "daemon unavailable"})
@@ -1161,6 +1186,7 @@ def _proxy_daemon_write(h, path, project, writer=None):
     ct = h.headers.get("Content-Type")
     if ct: req.add_header("Content-Type", ct)
     if writer: req.add_header("X-Th-Writer", writer)
+    if llm_key: req.add_header("X-Th-Llm-Key", llm_key)
     try:
         resp = _ur.urlopen(req, timeout=60)
         out, status = resp.read(), getattr(resp, "status", 200)
@@ -1189,15 +1215,25 @@ def _rooted_post(h, token, path):
     s = _session(rec.get("id"), rec.get("project") or "")
     if not s.active:
         _drain(h); return _json(h, 409, {"error": "session not live"})
+    # Resolve the writing guest from their live token (sent by the editor as
+    # X-Live-Token) so the daemon can enforce the hard lock. Falls back to
+    # no-identity (last-writer) if the editor didn't send one.
+    writer = None
+    lt = h.headers.get("X-Live-Token")
+    if lt:
+        writer = s.tokens.get(lt)
     if path.startswith("/__") and _proxy_write_ok(path):
-        # Resolve the writing guest from their live token (sent by the editor as
-        # X-Live-Token) so the daemon can enforce the hard lock. Falls back to
-        # no-identity (last-writer) if the editor didn't send one.
-        writer = None
-        lt = h.headers.get("X-Live-Token")
-        if lt:
-            writer = s.tokens.get(lt)
         return _proxy_daemon_write(h, path, rec.get("project") or "", writer)
+    # LLM / agent runs — guests spend their OWN API key, never the host's. The
+    # editor sends it as X-Th-Llm-Key (from the key they pasted in the top bar).
+    # Without one, block with a clear signal so the UI prompts "Connect your AI".
+    if path.startswith("/__") and _is_llm_write(path):
+        llm_key = h.headers.get("X-Th-Llm-Key")
+        if not llm_key:
+            _drain(h)
+            return _json(h, 412, {"error": "llm-key-required",
+                                  "message": "Connect your own AI (API key) to run agents in this live session."})
+        return _proxy_daemon_write(h, path, rec.get("project") or "", writer, llm_key)
     _drain(h)
     return _json(h, 200, {"ok": True, "readOnly": True})
 
