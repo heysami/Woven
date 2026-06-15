@@ -37207,6 +37207,209 @@ function WorkflowLibraryHoverLottie({ fileUrl, alt }) {
   `;
 }
 
+/* ────────── Prototype viewer frame ──────────
+   One tab's iframe + browser-style Back / Forward history. This is a
+   verbatim port of the canvas prototype node's nav tracker (see the
+   PrototypeNode `navHistRef` block) so the viewer's chevrons behave
+   EXACTLY like the node's: URL changes are captured via patched
+   history.pushState / replaceState plus hashchange / popstate, with a
+   delayed click-capture pass so show/hide prototypes that never touch
+   the URL still get a "reset to initial state" Back. Each frame registers
+   its { goBack, goForward, canGoForward } up to the viewer so the shared
+   tabstrip toolbar can drive whichever tab is active. The only difference
+   from the node is the Back fallback: with no lockedState here, an
+   exhausted history reloads the current page (the node's reset gesture). */
+function ProtoViewerFrame({ tab, src, isActive, registerNav }) {
+  const iframeRef = useRef(null);
+  const navHistRef = useRef({ past: [], future: [], current: null });
+  const suppressNavTrackRef = useRef(false);
+  const NAV_HISTORY_LIMIT = 30;
+  const [navHistTick, setNavHistTick] = useState(0);
+  const bumpNavHistTick = useCallback(() => setNavHistTick(t => (t + 1) | 0), []);
+
+  useEffect(() => {
+    const f = iframeRef.current;
+    if (!f) return;
+    let trackedWin = null;
+    let clickCaptureTimer = 0;
+
+    const snapshotState = () => {
+      try {
+        if (!trackedWin || !trackedWin.document) return null;
+        const url    = trackedWin.location.href;
+        if (!url || url === "about:blank") return null;
+        const html   = trackedWin.document.body ? trackedWin.document.body.outerHTML : "";
+        const scroll = { x: trackedWin.scrollX || 0, y: trackedWin.scrollY || 0 };
+        return { url, html, scroll };
+      } catch { return null; }
+    };
+    const captureChange = () => {
+      const next = snapshotState();
+      if (!next) return;
+      const hist = navHistRef.current;
+      if (suppressNavTrackRef.current) {
+        suppressNavTrackRef.current = false;
+        hist.current = next;
+      } else if (!hist.current) {
+        hist.current = next;
+      } else if (hist.current.url !== next.url) {
+        hist.past.push(hist.current);
+        if (hist.past.length > NAV_HISTORY_LIMIT) hist.past.shift();
+        hist.future = [];
+        hist.current = next;
+      }
+      bumpNavHistTick();
+    };
+    const scheduleClickCapture = () => {
+      if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
+      clickCaptureTimer = setTimeout(() => {
+        clickCaptureTimer = 0;
+        captureChange();
+      }, 250);
+    };
+    const patchHistory = () => {
+      if (!trackedWin || !trackedWin.history) return;
+      const hist = trackedWin.history;
+      if (hist.__thNavPatched) return;
+      const localOrigPush    = hist.pushState;
+      const localOrigReplace = hist.replaceState;
+      hist.pushState = function(...args) {
+        const r = localOrigPush.apply(this, args);
+        try { trackedWin.dispatchEvent(new Event("thnav-push")); } catch {}
+        return r;
+      };
+      hist.replaceState = function(...args) {
+        const r = localOrigReplace.apply(this, args);
+        try { trackedWin.dispatchEvent(new Event("thnav-replace")); } catch {}
+        return r;
+      };
+      hist.__thNavPatched = true;
+    };
+    const wireWin = () => {
+      try { trackedWin = f.contentWindow; } catch { trackedWin = null; }
+      if (!trackedWin) return;
+      patchHistory();
+      captureChange();
+      try {
+        trackedWin.addEventListener("hashchange",     captureChange);
+        trackedWin.addEventListener("popstate",       captureChange);
+        trackedWin.addEventListener("thnav-push",     captureChange);
+        trackedWin.addEventListener("thnav-replace",  captureChange);
+        if (trackedWin.document) {
+          trackedWin.document.addEventListener("click", scheduleClickCapture, true);
+        }
+      } catch {}
+    };
+    const onLoad = () => {
+      try {
+        if (trackedWin) {
+          trackedWin.removeEventListener("hashchange",    captureChange);
+          trackedWin.removeEventListener("popstate",      captureChange);
+          trackedWin.removeEventListener("thnav-push",    captureChange);
+          trackedWin.removeEventListener("thnav-replace", captureChange);
+          if (trackedWin.document) trackedWin.document.removeEventListener("click", scheduleClickCapture, true);
+        }
+      } catch {}
+      wireWin();
+    };
+    f.addEventListener("load", onLoad);
+    if (f.contentWindow) wireWin();
+    return () => {
+      f.removeEventListener("load", onLoad);
+      if (clickCaptureTimer) clearTimeout(clickCaptureTimer);
+      try {
+        if (trackedWin) {
+          trackedWin.removeEventListener("hashchange",    captureChange);
+          trackedWin.removeEventListener("popstate",      captureChange);
+          trackedWin.removeEventListener("thnav-push",    captureChange);
+          trackedWin.removeEventListener("thnav-replace", captureChange);
+          if (trackedWin.document) trackedWin.document.removeEventListener("click", scheduleClickCapture, true);
+        }
+      } catch {}
+    };
+  }, [bumpNavHistTick]);
+
+  const restoreEntry = useCallback((entry) => {
+    if (!entry) return;
+    suppressNavTrackRef.current = true;
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (!win) { suppressNavTrackRef.current = false; return; }
+      if (win.location.href !== entry.url) {
+        win.location.replace(entry.url);
+      } else {
+        suppressNavTrackRef.current = false;
+      }
+    } catch {
+      suppressNavTrackRef.current = false;
+    }
+  }, []);
+
+  const goBack = useCallback(() => {
+    const hist = navHistRef.current;
+    const f = iframeRef.current;
+    const curUrl = (() => {
+      try { return f && f.contentWindow.location.href; } catch { return null; }
+    })();
+    while (hist.past.length) {
+      const prev = hist.past.pop();
+      if (hist.current) hist.future.push(hist.current);
+      hist.current = prev;
+      if (!curUrl || (prev.url !== curUrl && prev.url && prev.url !== "about:blank")) {
+        bumpNavHistTick();
+        restoreEntry(prev);
+        return;
+      }
+    }
+    bumpNavHistTick();
+    if (!f || !f.contentWindow) return;
+    try {
+      suppressNavTrackRef.current = true;
+      f.contentWindow.location.reload();
+    } catch {}
+  }, [restoreEntry, bumpNavHistTick]);
+  const goForward = useCallback(() => {
+    const hist = navHistRef.current;
+    const curUrl = (() => {
+      try { return iframeRef.current.contentWindow.location.href; } catch { return null; }
+    })();
+    while (hist.future.length) {
+      const next = hist.future.pop();
+      if (hist.current) hist.past.push(hist.current);
+      hist.current = next;
+      if (!curUrl || (next.url !== curUrl && next.url && next.url !== "about:blank")) {
+        bumpNavHistTick();
+        restoreEntry(next);
+        return;
+      }
+    }
+    bumpNavHistTick();
+  }, [restoreEntry, bumpNavHistTick]);
+
+  const _navTickDep = navHistTick; void _navTickDep;
+  const _curHrefForNav = (() => {
+    try { return iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.location.href; } catch { return null; }
+  })();
+  const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
+
+  // Push the active controls up so the shared toolbar can drive this tab.
+  // No null-on-unmount cleanup here — that would race a reloading frame's
+  // re-registration. The viewer prunes closed tabs in closeTab instead.
+  useEffect(() => {
+    registerNav(tab.id, { goBack, goForward, canGoForward });
+  }, [tab.id, goBack, goForward, canGoForward, registerNav]);
+
+  return html`
+    <iframe
+      ref=${iframeRef}
+      className="workflow-proto-frame"
+      data-active=${isActive ? "true" : "false"}
+      src=${src}
+      title=${tab.label}
+    />
+  `;
+}
+
 /* ────────── Prototype viewer (workflow nav rail, icon 3) ──────────
    A pseudo-browser that takes over the workflow canvas cell: browser-style
    tabs (add via a picker of prototypes + generated pages, close, reload,
@@ -37228,6 +37431,19 @@ function WorkflowProtoViewer({ active, onEditTab }) {
     return { tabs: [], activeId: null };
   });
   const { tabs, activeId } = state;
+  // Did the user already have a saved viewer session at mount? Captured
+  // synchronously on first render, BEFORE the save-effect below writes
+  // lsKey. A saved session — even one with zero tabs — means the user has
+  // been here and made a choice, so we must NOT force-reopen `main` on
+  // them (that's what blocked an intentionally-empty stage from sticking
+  // across reloads). Only a brand-new viewer with no prior session gets
+  // the first-run auto-open.
+  const hadSavedSessionRef = useRef(null);
+  if (hadSavedSessionRef.current === null) {
+    let had = false;
+    try { had = localStorage.getItem(lsKey) != null; } catch {}
+    hadSavedSessionRef.current = had;
+  }
   useEffect(() => {
     try { localStorage.setItem(lsKey, JSON.stringify(state)); } catch {}
   }, [state, lsKey]);
@@ -37236,6 +37452,12 @@ function WorkflowProtoViewer({ active, onEditTab }) {
   const [nonces, setNonces] = useState({});
   const bumpNonce = useCallback((id) => {
     setNonces(n => ({ ...n, [id]: (n[id] || 0) + 1 }));
+  }, []);
+  // Per-tab Back / Forward controls, registered by each ProtoViewerFrame.
+  // The shared tabstrip toolbar drives whichever tab is active.
+  const [navControls, setNavControls] = useState({});
+  const registerNav = useCallback((id, ctrl) => {
+    setNavControls(m => (m[id] === ctrl ? m : { ...m, [id]: ctrl }));
   }, []);
   // Auto-reload tabs whose backing file (or anything in its folder) changed
   // on disk — same SSE-driven freshness the canvas prototype nodes have.
@@ -37281,6 +37503,12 @@ function WorkflowProtoViewer({ active, onEditTab }) {
       }
       return { tabs: nextTabs, activeId: nextActive };
     });
+    setNavControls(m => {
+      if (!(id in m)) return m;
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
   }, []);
   // v3.6 — zoom-mode integration. Every zoom entry point (node 🔍 buttons,
   // viewer Edit button) routes through WorkflowSurface.openZoomAt, which
@@ -37325,11 +37553,14 @@ function WorkflowProtoViewer({ active, onEditTab }) {
       setPickList({ protos: [], htmls: [] });
     }
   }, []);
-  // First activation with no saved tabs: auto-open the main prototype so
-  // the view never lands on a blank stage when there's something to show.
+  // First activation, brand-new viewer (no prior session) with no saved
+  // tabs: auto-open the main prototype so a first-time user never lands on
+  // a blank stage when there's something to show. If the user has been here
+  // before — including having deliberately closed every tab — we leave the
+  // empty state alone (see hadSavedSessionRef).
   const autoOpenedRef = useRef(false);
   useEffect(() => {
-    if (!active || tabs.length > 0 || autoOpenedRef.current) return;
+    if (!active || tabs.length > 0 || autoOpenedRef.current || hadSavedSessionRef.current) return;
     autoOpenedRef.current = true;
     let cancelled = false;
     (async () => {
@@ -37345,6 +37576,7 @@ function WorkflowProtoViewer({ active, onEditTab }) {
     return () => { cancelled = true; };
   }, [active, tabs.length, addTab]);
   const activeTab = tabs.find(t => t.id === activeId) || null;
+  const activeNav = (activeId && navControls[activeId]) || null;
   const srcFor = (t) => apiUrl("/" + t.path);
   return html`
     <div className="workflow-proto-viewer" data-active=${active ? "true" : "false"}>
@@ -37377,6 +37609,23 @@ function WorkflowProtoViewer({ active, onEditTab }) {
           onClick=${openPicker}
         ><${Icon.Plus}/></button>
         <div className="workflow-proto-tabstrip-spacer"/>
+        ${activeTab && html`
+          <button
+            type="button"
+            className="workflow-proto-tool"
+            title="Back"
+            aria-label="Back"
+            onClick=${() => activeNav && activeNav.goBack()}
+          ><${Icon.Back}/></button>
+          <button
+            type="button"
+            className="workflow-proto-tool"
+            title="Forward"
+            aria-label="Forward"
+            disabled=${!activeNav || !activeNav.canGoForward}
+            onClick=${() => activeNav && activeNav.canGoForward && activeNav.goForward()}
+          ><${Icon.Forward}/></button>
+        `}
         ${activeTab && onEditTab && html`
           <button
             type="button"
@@ -37411,12 +37660,12 @@ function WorkflowProtoViewer({ active, onEditTab }) {
           </div>
         `}
         ${tabs.map(t => html`
-          <iframe
+          <${ProtoViewerFrame}
             key=${t.id + ":" + (nonces[t.id] || 0)}
-            className="workflow-proto-frame"
-            data-active=${t.id === activeId ? "true" : "false"}
+            tab=${t}
             src=${srcFor(t)}
-            title=${t.label}
+            isActive=${t.id === activeId}
+            registerNav=${registerNav}
           />
         `)}
       </div>

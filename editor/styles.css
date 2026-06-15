@@ -4122,6 +4122,12 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   background: var(--surface-2);
   color: var(--text);
 }
+.workflow-proto-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: var(--text-muted);
+}
 .workflow-proto-tabstrip-spacer { margin-left: auto; }
 
 /* Stage — one absolutely-positioned iframe per open tab; only the active
