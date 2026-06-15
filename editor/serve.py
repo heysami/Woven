@@ -222,7 +222,23 @@ _PROVIDER_ENV_KEYS = {
     "quiver":      "TH_QUIVER_API_KEY",
 }
 
+# Live Session — per-request guest API key. A guest editing through the gate
+# sends their OWN key as X-Th-Llm-Key; do_POST stamps it on this thread-local so
+# every credential path (CLI-spawn env via _build_child_env, direct API via
+# _resolve_provider_key) spends the GUEST's key for that request, never the
+# host's. Overwritten at the top of each POST, so it never leaks between requests.
+_REQ_LLM_KEY = threading.local()
+
+def _current_guest_llm_key():
+    k = getattr(_REQ_LLM_KEY, "value", None)
+    return k if (isinstance(k, str) and k.strip()) else None
+
+
 def _resolve_provider_key(provider):
+    # A guest's own key overrides the host's Anthropic credential for this run.
+    if provider == "anthropic":
+        gk = _current_guest_llm_key()
+        if gk: return gk
     env_name = _PROVIDER_ENV_KEYS.get(provider)
     if env_name:
         v = os.environ.get(env_name)
@@ -5793,6 +5809,15 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # we see at high build volumes. With it, the CLI sets
     # `Authorization: Bearer <key>` on every API call and uses pay-as-you-go.
     # Only injected for the claude agent; other agents have their own auth.
+    # Live Session — a guest's own key (X-Th-Llm-Key, on the request thread-local)
+    # is used for THIS run so the host's credentials are never spent. Overrides
+    # the host key + config fallback; drops any OAuth token so the CLI auths with
+    # the guest key alone.
+    _guest_key = _current_guest_llm_key()
+    if agent_id == "claude" and _guest_key:
+        env["ANTHROPIC_API_KEY"] = _guest_key
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        return env
     if agent_id == "claude" and not env.get("ANTHROPIC_API_KEY"):
         try:
             from_cfg = _resolve_provider_key("anthropic")
@@ -5987,6 +6012,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # an X-Request-Id header and a requestId field in the JSON body.
         self.request_id = _new_request_id()
         self._post_started_at = time.time()
+        # Live Session — stamp this request's guest API key (if any) onto the
+        # thread-local so LLM credential paths spend the guest's key, not the
+        # host's. Overwritten per POST so it never leaks between requests.
+        _REQ_LLM_KEY.value = self.headers.get("X-Th-Llm-Key")
         try:
             if parsed.path == "/__save":
                 return self._save(qs)
@@ -10584,9 +10613,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                     with open(wf_path, "r", encoding="utf-8") as f:
                         wf = json.load(f)
                     from kinds.versioning import snapshot_asset_by_output_path
+                    # Live Session — attribute this version to whoever generated
+                    # it (a guest's name via the gate, else "Host"). None when
+                    # not live, so the picker hides the "who" column.
+                    _v_author = None
+                    try:
+                        if _live.project_has_live_session(project_id):
+                            _v_author = self.headers.get("X-Th-Writer-Name") or "Host"
+                    except Exception:
+                        _v_author = None
                     snapshot_info = snapshot_asset_by_output_path(
                         project_root, wf, output,
                         run_id=getattr(self, "request_id", None),
+                        author=_v_author,
                     )
                     if snapshot_info:
                         with open(wf_path, "w", encoding="utf-8") as f:

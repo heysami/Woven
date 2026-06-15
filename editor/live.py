@@ -946,9 +946,12 @@ _GUEST_LOCK_CSS = (
     ".workflow-root{grid-template-rows:0 minmax(0,1fr)!important}"
     "</style>"
 ).encode("utf-8")
-# Injected before </body> so live cursors + locks mount on the real canvas.
-# locks.js MUST load first — it defines window.__thLocks that cursors.js wires.
-_GUEST_CURSORS_TAG = b'<script src="locks.js" defer></script><script src="cursors.js" defer></script>'
+# Injected before </body> so live cursors + locks + the guest AI bar mount on the
+# real editor. locks.js MUST load first — it defines window.__thLocks that
+# cursors.js wires. aikey.js adds the guest top bar + fetch key-injection.
+_GUEST_CURSORS_TAG = (b'<script src="locks.js" defer></script>'
+                      b'<script src="cursors.js" defer></script>'
+                      b'<script src="aikey.js" defer></script>')
 
 def _live_cookie_header(h, token):
     """th_live cookie. Adds Secure when behind the HTTPS tunnel (Cloudflare sets
@@ -1171,7 +1174,7 @@ def _drain(h):
     except Exception:
         return b""
 
-def _proxy_daemon_write(h, path, project, writer=None, llm_key=None):
+def _proxy_daemon_write(h, path, project, writer=None, llm_key=None, writer_name=None):
     """Forward a POST body to the daemon, project FORCED. Returns its response.
     `writer` (a guestId) is passed through as X-Th-Writer so the daemon can
     enforce the hard node lock (reject edits to a node held by someone else).
@@ -1186,6 +1189,7 @@ def _proxy_daemon_write(h, path, project, writer=None, llm_key=None):
     ct = h.headers.get("Content-Type")
     if ct: req.add_header("Content-Type", ct)
     if writer: req.add_header("X-Th-Writer", writer)
+    if writer_name: req.add_header("X-Th-Writer-Name", writer_name)
     if llm_key: req.add_header("X-Th-Llm-Key", llm_key)
     try:
         resp = _ur.urlopen(req, timeout=60)
@@ -1219,11 +1223,16 @@ def _rooted_post(h, token, path):
     # X-Live-Token) so the daemon can enforce the hard lock. Falls back to
     # no-identity (last-writer) if the editor didn't send one.
     writer = None
+    writer_name = None
     lt = h.headers.get("X-Live-Token")
     if lt:
         writer = s.tokens.get(lt)
+        if writer:
+            with s.lock:
+                p = s.participants.get(writer)
+            writer_name = (p or {}).get("name") if p else None
     if path.startswith("/__") and _proxy_write_ok(path):
-        return _proxy_daemon_write(h, path, rec.get("project") or "", writer)
+        return _proxy_daemon_write(h, path, rec.get("project") or "", writer, writer_name=writer_name)
     # LLM / agent runs — guests spend their OWN API key, never the host's. The
     # editor sends it as X-Th-Llm-Key (from the key they pasted in the top bar).
     # Without one, block with a clear signal so the UI prompts "Connect your AI".
@@ -1233,7 +1242,7 @@ def _rooted_post(h, token, path):
             _drain(h)
             return _json(h, 412, {"error": "llm-key-required",
                                   "message": "Connect your own AI (API key) to run agents in this live session."})
-        return _proxy_daemon_write(h, path, rec.get("project") or "", writer, llm_key)
+        return _proxy_daemon_write(h, path, rec.get("project") or "", writer, llm_key, writer_name=writer_name)
     _drain(h)
     return _json(h, 200, {"ok": True, "readOnly": True})
 
@@ -1281,6 +1290,8 @@ class _LiveGate:
             return _serve_client(h, "cursors.js")   # editor/live/cursors.js
         if sub == "/live/locks.js":
             return _serve_client(h, "locks.js")     # editor/live/locks.js
+        if sub == "/live/aikey.js":
+            return _serve_client(h, "aikey.js")     # editor/live/aikey.js
         if sub in ("/live/app.js", "/live/styles.css", "/live/landing-shaders.js") \
                 or sub.startswith("/live/prompts/"):
             return _serve_editor_static(h, sub[len("/live/"):])

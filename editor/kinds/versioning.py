@@ -329,6 +329,7 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
                    sub_asset_pins: Optional[Dict[str, str]] = None,
                    sub_asset_mounts: Optional[Dict[str, str]] = None,
                    run_id: Optional[str] = None,
+                   author: Optional[str] = None,
                    manifest: Optional[Dict[str, Any]] = None,
                    max_unpinned_versions: int = DEFAULT_MAX_UNPINNED_VERSIONS,
                    max_unpinned_compositions: int = DEFAULT_MAX_UNPINNED_COMPOSITIONS,
@@ -419,6 +420,9 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
         "id":              vid,
         "createdAt":       now_iso,
         "runId":           run_id,
+        # Live Session — who created this version (a collaborator's display name,
+        # or "Host"). None outside a live session; the picker hides it then.
+        "author":          author,
         "files":           snap_files,
         "canonicalPaths":  canonical_paths,
         "thumbPath":       f"{WORKFLOW_DIRNAME}/{RUNS_DIRNAME}/{node_id}/{vid}/thumb.png",
@@ -1034,6 +1038,7 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
 def snapshot_asset_by_output_path(project_root: str, workflow: Dict[str, Any],
                                    output_path: str,
                                    run_id: Optional[str] = None,
+                                   author: Optional[str] = None,
                                    ) -> Optional[Dict[str, Any]]:
     """Find a workflow asset node whose declared path (or paths[]) matches
     `output_path` and snapshot it. Used by file-writing endpoints that
@@ -1075,7 +1080,7 @@ def snapshot_asset_by_output_path(project_root: str, workflow: Dict[str, Any],
                        consumed_versions=consumed,
                        sub_asset_pins=sub_pins or None,
                        sub_asset_mounts=sub_mounts or None,
-                       run_id=run_id)
+                       run_id=run_id, author=author)
     if not v: return None
     return {"nodeId": target.get("id"), "versionId": v["id"]}
 

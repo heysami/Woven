@@ -43955,6 +43955,10 @@ function VersionRow({ version, node, seq, isActive, isSelected, onSelect, onChan
             ${relativeTime(version.createdAt)}
           </span>
           ${comps.length > 1 && html`<span> · ${comps.length} combos</span>`}
+          ${/* Live Session — who created this version. Hidden when not live or
+              when the version predates attribution (no author recorded). */
+            (typeof window !== "undefined" && window.__thLiveActive && version.author)
+              && html`<span className="workflow-version-row-author"> · by ${version.author}</span>`}
         </div>
       </div>
       <div className="workflow-version-row-actions" onClick=${(e) => e.stopPropagation()}>
