@@ -7452,6 +7452,34 @@ async function setProjectThumbnail(target) {
   }
 }
 
+// Duplicate a prototype locally — NO LLM. The daemon copies source/<slug>/ to
+// source/<newslug>/, clones editor/<slug>.data.js, and rewrites every reference
+// to the old prototype name (sourceRoot, the source/<slug>/ path prefix, and the
+// branch|prototype + *Label identifier fields). Prompts for the new name, fires
+// th:library-refresh so the Prototypes list picks up the clone. Depth-1 only.
+async function duplicatePrototype(proto) {
+  if (!proto || !proto.id) return null;
+  const name = proto.label || proto.id;
+  const newLabel = window.prompt(`Duplicate prototype "${name}" as:`, name + " copy");
+  if (newLabel === null) return null;                 // cancelled
+  const trimmed = newLabel.trim();
+  if (!trimmed) return null;
+  try {
+    const r = await fetch(apiUrl("/__prototypes/duplicate"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: proto.id, label: trimmed }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
+    return j;
+  } catch (e) {
+    alert("Duplicate failed: " + (e.message || e));
+    return null;
+  }
+}
+
 // Derive the prototype slug ("main", "main/sketches", ...) for a
 // workflow prototype node. The node carries `branch` (level-1 dir) plus
 // an optional `subpath` for deep prototypes; if neither is present the
@@ -36561,6 +36589,16 @@ function WorkflowLibrary({ tab = "nodes" }) {
                         draggable=${false}
                         onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
                       ><${Icon.Star}/></button>
+                      ${!isDeep && html`<button
+                        type="button"
+                        className="workflow-library-dup-btn"
+                        title="Duplicate this prototype — local copy, no LLM, renames all references"
+                        aria-label="Duplicate prototype"
+                        onClick=${(e) => { e.stopPropagation(); duplicatePrototype(p); }}
+                        onMouseDown=${(e) => e.stopPropagation()}
+                        draggable=${false}
+                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      ><${Icon.Copy}/></button>`}
                     </div>
                   `;
                 })}
@@ -36614,6 +36652,16 @@ function WorkflowLibrary({ tab = "nodes" }) {
                           draggable=${false}
                           onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
                         ><${Icon.Star}/></button>
+                        ${!isDeep && html`<button
+                          type="button"
+                          className="workflow-library-dup-btn workflow-library-dup-btn-corner"
+                          title="Duplicate this prototype — local copy, no LLM, renames all references"
+                          aria-label="Duplicate prototype"
+                          onClick=${(e) => { e.stopPropagation(); duplicatePrototype(p); }}
+                          onMouseDown=${(e) => e.stopPropagation()}
+                          draggable=${false}
+                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        ><${Icon.Copy}/></button>`}
                       </div>
                       <div className="workflow-library-card-label">${p.label}</div>
                     </div>

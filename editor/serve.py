@@ -6177,6 +6177,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._project_delete(qs)
             if parsed.path == "/__projects/duplicate":
                 return self._project_duplicate(qs)
+            if parsed.path == "/__prototypes/duplicate":
+                return self._prototype_duplicate(qs)
             if parsed.path == "/__history/undo":
                 return self._history_step(qs, "undo")
             if parsed.path == "/__history/redo":
@@ -12605,6 +12607,107 @@ class H(http.server.SimpleHTTPRequestHandler):
         except OSError as e:
             return self._reply(500, {"error": f"scan failed: {e}"})
         return self._reply(200, {"prototypes": found})
+
+    # POST /__prototypes/duplicate?project=<id>  body: { id, newId?, label? }
+    # Clones a prototype WITHOUT the LLM, rewriting every reference to the old
+    # prototype name so the copy stands alone:
+    #   • source/<slug>/        → source/<newslug>/        (the actual files)
+    #   • editor/<slug>.data.js → editor/<newslug>.data.js (canvas/frames data),
+    #     with sourceRoot, the source/<slug>/ path prefix, and the
+    #     branch|prototype + *Label identifier fields repointed at <newslug>.
+    # The on-disk slug IS the prototype's name — both the ?prototype=<slug> URL
+    # param and the source/ subtree key off it — so the slug rewrite is what
+    # actually re-points the clone. New prototypes are auto-discovered by the
+    # source/ scan (/__source_prototypes), so there's no registry to update.
+    # Depth-1 prototypes only (source/<slug>/index.html); nested <name>/<sub>
+    # prototypes are out of scope.
+    def _prototype_duplicate(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body() or {}
+        slug = (body.get("id") or body.get("prototype") or "").strip()
+        flat = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+        if not slug or not flat.match(slug):
+            return self._reply(400, {"error": "invalid or nested prototype id (depth-1 slugs only)", "id": slug})
+        src_root = os.path.join(project_root, "source")
+        src_dir = os.path.join(src_root, slug)
+        if not os.path.isfile(os.path.join(src_dir, "index.html")):
+            return self._reply(404, {"error": "no such prototype (source/<slug>/index.html not found)", "id": slug})
+
+        editor_dir = _safe_join(project_root, "editor")
+
+        def _taken(s):
+            return os.path.exists(os.path.join(src_root, s)) or \
+                   os.path.isfile(os.path.join(editor_dir, f"{s}.data.js"))
+
+        new_slug = (body.get("newId") or body.get("newPrototype") or "").strip()
+        if new_slug:
+            if not flat.match(new_slug):
+                return self._reply(400, {"error": "invalid new prototype id (alphanumeric + ._- only, 1..80 chars)", "id": new_slug})
+            if _taken(new_slug):
+                return self._reply(409, {"error": "prototype already exists", "id": new_slug})
+        else:
+            base = (slug + "-copy")[:80]
+            new_slug = base
+            n = 2
+            while _taken(new_slug):
+                suffix = f"-{n}"
+                new_slug = base[:80 - len(suffix)] + suffix
+                n += 1
+        new_label = (body.get("label") or new_slug).strip() or new_slug
+
+        # 1) Copy the source subtree — the actual prototype HTML/CSS/JS/assets.
+        dest_dir = os.path.join(src_root, new_slug)
+        _SKIP = {".history", ".trash", ".git", "__pycache__", ".DS_Store"}
+        try:
+            shutil.copytree(src_dir, dest_dir, ignore=shutil.ignore_patterns(*_SKIP), symlinks=True)
+        except Exception as e:
+            try: shutil.rmtree(dest_dir, ignore_errors=True)
+            except Exception: pass
+            return self._reply(500, {"error": f"copy failed: {type(e).__name__}: {e}"})
+
+        # 2) Clone the per-prototype editor data file, repointing references.
+        #    Source: editor/<slug>.data.js, or editor/data.js for the legacy
+        #    single-prototype "main" (which carries window.EDITOR_DATA directly).
+        per_proto = os.path.join(editor_dir, f"{slug}.data.js")
+        legacy = os.path.join(editor_dir, "data.js")
+        data_src = per_proto if os.path.isfile(per_proto) else (legacy if os.path.isfile(legacy) else None)
+        data_written = None
+        if data_src:
+            try:
+                with open(data_src, "r", encoding="utf-8") as f:
+                    text = f.read()
+            except (OSError, UnicodeDecodeError):
+                text = None
+            if text is not None:
+                # a) path prefix source/<slug>/ → source/<newslug>/ — covers the
+                #    sourceRoot value AND any comment / nested path reference.
+                text = text.replace(f"source/{slug}/", f"source/{new_slug}/")
+                # b) sourceRoot value — belt-and-braces for a custom root that
+                #    didn't contain the slug literally.
+                text = re.sub(r'(["\']?sourceRoot["\']?\s*:\s*)"[^"]*"',
+                              lambda m: m.group(1) + json.dumps(f"../source/{new_slug}/"), text)
+                # c) identifier fields: branch | prototype → new slug.
+                text = re.sub(r'(["\']?(?:branch|prototype)["\']?\s*:\s*)"[^"]*"',
+                              lambda m: m.group(1) + json.dumps(new_slug), text)
+                # d) label fields: branchLabel | prototypeLabel → new label.
+                text = re.sub(r'(["\']?(?:branchLabel|prototypeLabel)["\']?\s*:\s*)"[^"]*"',
+                              lambda m: m.group(1) + json.dumps(new_label), text)
+                data_dest = os.path.join(editor_dir, f"{new_slug}.data.js")
+                try:
+                    with open(data_dest, "w", encoding="utf-8") as f:
+                        f.write(text)
+                    data_written = f"editor/{new_slug}.data.js"
+                except OSError as e:
+                    return self._reply(500, {"error": f"editor data write failed: {type(e).__name__}: {e}"})
+
+        return self._reply(200, {
+            "ok": True, "id": new_slug, "label": new_label,
+            "from": slug, "path": f"source/{new_slug}/index.html",
+            "editorData": data_written,
+        })
 
     # ─────────────────────────────────────────────────────────────────────
     # Starred prototypes — per-project bookmarks of specific prototype slugs
