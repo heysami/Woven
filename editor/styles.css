@@ -6556,6 +6556,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-frames:not(:hover):not([data-selected="true"]) .workflow-node-frames-body {
   border-radius: 10px;
 }
+/* Version + lineage strips (NodeVersioningChrome) mount on asset, prototype AND
+   design-system nodes — so hide the whole "version bar" at rest universally,
+   keyed off ANY node not hovered/selected. `display: none` (not opacity) so the
+   strip's grid row is removed entirely and the body rounds flush to the bottom;
+   hover or selection brings the dot strip back. */
+.workflow-node:not(:hover):not([data-selected="true"]) .workflow-node-asset-versions,
+.workflow-node:not(:hover):not([data-selected="true"]) .workflow-node-asset-lineage {
+  display: none;
+}
 .workflow-node-asset[data-orphan="true"] {
   opacity: 0.45;
   filter: grayscale(0.4);
