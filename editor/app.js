@@ -25039,27 +25039,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return next;
     });
   }, [setData, deletedWbIdsRef]);
-  // Group move — arrows shift endpoints, everything else shifts x/y. Optional
-  // `rotation` (degrees): when a number is passed, box-type items in the set
-  // also get their `rotation` set to it — used by the velocity-tilt drag so
-  // position + lean commit in a single setData per frame. Arrows + ink never
-  // take rotation (no single pivot box).
-  const shiftWbItems = useCallback((ids, dx, dy, rotation) => {
+  // Group move — arrows shift endpoints, everything else shifts x/y.
+  const shiftWbItems = useCallback((ids, dx, dy) => {
     const set = ids instanceof Set ? ids : new Set(ids);
     if (set.size === 0) return;
-    const setRot = typeof rotation === "number";
     setData(d => ({
       ...d,
       wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
         if (!set.has(it.id)) return it;
-        let next;
         if (it.type === "arrow") {
-          next = { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
-        } else {
-          next = { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
+          return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
         }
-        if (setRot && it.type !== "arrow" && it.type !== "ink") next.rotation = rotation;
-        return next;
+        return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
       }),
     }));
   }, [setData]);
@@ -25940,47 +25931,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
     }
     e.preventDefault();
-    // Drag-to-move for the whole set, with velocity-driven lean physics on
-    // the wb items. A rAF loop (not the raw mousemove) drives both the
-    // position shift and the tilt so the lean eases on a wall-clock timeline:
-    //   • drag fast → the item leans in the direction of travel (toward WB_TILT_MAX)
-    //   • move slowly / pause → the lean eases back toward upright
-    //   • release → whatever lean it currently has is retained (already in data)
-    // Position is committed per frame via shiftWbItems(dx,dy,rotation); tilt is
-    // only applied to box-type items (arrows/ink ignore the rotation arg).
-    const WB_TILT_MAX = 14;     // degrees — clamp on the lean
-    const WB_TILT_SENS = 0.45;  // world-px/frame → degrees
-    const WB_TILT_TAU = 90;     // ms — ease time-constant toward the target
-    const startIt = (wbItemsRef.current || []).find(i => i.id === hitId);
-    let tilt = (startIt && startIt.type !== "arrow" && startIt.type !== "ink") ? (startIt.rotation || 0) : 0;
-    let appliedTilt = tilt;
+    // Drag-to-move for the whole set. A rAF loop (not the raw mousemove)
+    // drives the position shift so tracking stays smooth under load.
     let curX = e.clientX, curY = e.clientY;   // latest pointer (set by mousemove)
     let prevX = e.clientX, prevY = e.clientY;  // pointer at last rAF frame
-    let lastT = (typeof performance !== "undefined" ? performance.now() : 0);
     let moved = false, rafId = 0;
     const onMove = (ev) => { curX = ev.clientX; curY = ev.clientY; };
-    const frame = (now) => {
-      const dt = Math.max(1, now - lastT); lastT = now;
+    const frame = () => {
       const z = zoomNow();
       const wdx = (curX - prevX) / z, wdy = (curY - prevY) / z;
       prevX = curX; prevY = curY;
-      const movedNow = wdx !== 0 || wdy !== 0;
-      if (!moved) {
-        // Don't ease/commit until the first real movement — a bare click
-        // (grab + release) must never alter the item's existing rotation.
-        if (movedNow) { moved = true; setWbDragging(true); setNodeDragging(nodeMoveIds.size > 0); }
-        else { rafId = requestAnimationFrame(frame); return; }
-      }
-      // Horizontal velocity → target lean. Normalise dx to a per-16ms-frame
-      // amount so the feel is frame-rate independent.
-      const vx = wdx * (16 / dt);
-      const target = Math.max(-WB_TILT_MAX, Math.min(WB_TILT_MAX, vx * WB_TILT_SENS));
-      const k = 1 - Math.exp(-dt / WB_TILT_TAU);
-      tilt += (target - tilt) * k;
-      if (movedNow || Math.abs(tilt - appliedTilt) > 0.04) {
-        shiftWbItems(moveIds, wdx, wdy, tilt);
-        if (movedNow) shiftNodes(nodeMoveIds, wdx, wdy);
-        appliedTilt = tilt;
+      if (wdx !== 0 || wdy !== 0) {
+        // First real movement — a bare click (grab + release) must not start a drag.
+        if (!moved) { moved = true; setWbDragging(true); setNodeDragging(nodeMoveIds.size > 0); }
+        shiftWbItems(moveIds, wdx, wdy);
+        shiftNodes(nodeMoveIds, wdx, wdy);
       }
       rafId = requestAnimationFrame(frame);
     };
@@ -25989,9 +25954,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       window.removeEventListener("mouseup", onUp);
       if (rafId) cancelAnimationFrame(rafId);
       wbCancelGestureRef.current = null;
-      // Retain the final lean (commit once more in case the last frame's tilt
-      // hadn't been flushed).
-      if (moved && Math.abs(tilt - appliedTilt) > 0.001) shiftWbItems(moveIds, 0, 0, tilt);
       setWbDragging(false);
       setNodeDragging(false);
     };
@@ -35352,7 +35314,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 selectedWbIds=${selectedWbIds}
                 zoom=${zoom}
                 onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
-                onStraighten=${() => patchWbItems(selectedWbIds, { rotation: 0 })}
               />
             `}
             ${(selectedNodeIds.size + selectedWbIds.size) > 1 && (() => {
@@ -55289,11 +55250,8 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
   const c = wbColorCSS(item.color);
   const z = Math.round(item.z || 0);
   const sel = selected ? "true" : "false";
-  // Lean/tilt — box-type items carry a `rotation` (degrees) set by the
-  // velocity-tilt drag gesture and reset by the straighten button. Rotate
-  // about the item's center. Arrows + ink opt out (no single pivot box).
-  const rot = (item.type === "arrow" || item.type === "ink") ? 0 : (item.rotation || 0);
-  const rotStyle = rot ? { transform: `rotate(${rot}deg)`, transformOrigin: "center center" } : null;
+  // Whiteboard items always render upright (no lean/tilt).
+  const rotStyle = null;
   // contentEditable plain-text editing for the three text-bearing types.
   // Mounted only while `editing`; commits on blur. isEditingTarget already
   // covers contentEditable so global canvas shortcuts auto-suppress.
@@ -55473,51 +55431,14 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
 
 // Selection outlines + resize handles for the whiteboard layer. Rendered
 // above all items. Outline width divides by zoom so it stays 1.5px visually.
-function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown, onStraighten }) {
+function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }) {
   const sel = (items || []).filter(it => selectedWbIds.has(it.id));
   if (sel.length === 0) return null;
   const bw = 1.5 / Math.max(zoom, 0.1);
   const hs = 8 / Math.max(zoom, 0.1); // handle size in world px
   const single = sel.length === 1 ? sel[0] : null;
-  // Show a Straighten affordance whenever any selected box-type item carries
-  // a lean — clicking resets every selected item's rotation to 0 (the CSS
-  // transition on .workflow-wb-item eases it upright since we're not dragging).
-  const tilted = sel.filter(it => it.type !== "arrow" && it.type !== "ink" && Math.abs(it.rotation || 0) > 0.5);
-  const s = 1 / Math.max(zoom, 0.1); // world px per screen px → keep chrome constant size
-  let straightenAnchor = null;
-  if (tilted.length && onStraighten) {
-    // Anchor above the union bbox of the tilted items, horizontally centered.
-    let minX = Infinity, minY = Infinity, maxX = -Infinity;
-    for (const it of tilted) {
-      const bb = wbItemBBox(it);
-      minX = Math.min(minX, bb.x); minY = Math.min(minY, bb.y);
-      maxX = Math.max(maxX, bb.x + bb.w);
-    }
-    straightenAnchor = { cx: (minX + maxX) / 2, top: minY - 34 * s };
-  }
   return html`
     <div className="workflow-wb-overlay" style=${{ zIndex: 100000 }}>
-      ${straightenAnchor && html`
-        <button
-          className="workflow-wb-straighten"
-          title="Straighten — reset the lean to upright"
-          style=${{
-            left: straightenAnchor.cx + "px", top: straightenAnchor.top + "px",
-            transform: "translateX(-50%)",
-            height: (26 * s) + "px", padding: `0 ${10 * s}px`,
-            gap: (5 * s) + "px", fontSize: (12 * s) + "px",
-            borderRadius: (7 * s) + "px", borderWidth: (1 * s) + "px",
-          }}
-          onMouseDown=${(e) => { e.preventDefault(); e.stopPropagation(); }}
-          onClick=${(e) => { e.preventDefault(); e.stopPropagation(); onStraighten(); }}
-        >
-          <svg viewBox="0 0 16 16" width=${12 * s} height=${12 * s} fill="none"
-               stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M2 11 L14 5"/><path d="M2.5 13.5h11"/>
-          </svg>
-          <span>Straighten</span>
-        </button>
-      `}
       ${sel.map(it => {
         const bb = wbItemBBox(it);
         return html`

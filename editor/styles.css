@@ -5424,14 +5424,6 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   overflow: visible;
 }
 .workflow-wb-item { position: absolute; }
-/* Tilt transition — when NOT actively dragging, rotation changes (the
-   straighten button, or the settle after a release) ease smoothly. During a
-   drag the wrap carries data-wb-dragging="true" so the live velocity-tilt
-   follows the pointer instantly with no lag. Only `transform` transitions —
-   position (left/top) must stay instant so drag tracking is exact. */
-.workflow-canvas-wrap:not([data-wb-dragging="true"]) .workflow-wb-item {
-  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
 .workflow-wb-textbody {
   font-family: var(--font-sans);
   color: var(--text);
@@ -5517,22 +5509,6 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   pointer-events: auto;
 }
 .workflow-wb-handle-point { cursor: move; }
-/* Straighten button — floats above a tilted selection. Sizing comes inline
-   (divided by zoom) so it stays a constant on-screen size; this rule owns the
-   look + interactivity (the overlay itself is pointer-events:none). */
-.workflow-wb-straighten {
-  position: absolute;
-  display: inline-flex; align-items: center; white-space: nowrap;
-  border-style: solid; border-color: var(--border);
-  background: var(--surface); color: var(--text);
-  font-family: var(--font-sans); font-weight: 500; line-height: 1;
-  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.12);
-  cursor: pointer; pointer-events: auto;
-}
-.workflow-wb-straighten:hover {
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
-}
 /* Tool cursors — guarded so space-pan / active-pan keep their grab cursors
    (those rules sit earlier in the file; equal specificity would lose to
    source order here). */
