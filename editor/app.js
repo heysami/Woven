@@ -19725,6 +19725,28 @@ function WorkflowCanvas() {
       .then(reg => {
         if (cancelled || !reg) return;
         window.__thKindRegistry = reg;
+        // The snapshot seed in the /__workflow load effect may have run BEFORE
+        // this registry fetch resolved. In that case _editableFieldsForKind
+        // fell back to the legacy list, so content fields (text / title / …)
+        // were never seeded — their snapshot stayed undefined, the reload-merge
+        // judged them permanently DIRTY, and a collaborator's edit to those
+        // fields never merged live (it took a manual refresh — the
+        // "only updates after refresh" desync). Now that the contract is known,
+        // backfill the baseline for any field still MISSING a snapshot, from the
+        // raw disk values captured at load. Missing-only, so a field that was
+        // edited + saved during the gap (which already set its own snapshot) is
+        // never overwritten. The next reload then converges it live.
+        try {
+          for (const dn of (_rawDiskNodesRef.current || [])) {
+            if (!dn || typeof dn.id !== "string") continue;
+            for (const f of _editableFieldsForKind(dn)) {
+              const k = dn.id + "|" + f;
+              if (!savedSnapshotRef.current.has(k)) {
+                savedSnapshotRef.current.set(k, _stableClone(dn[f]));
+              }
+            }
+          }
+        } catch {}
       })
       .catch(() => { /* fall back to legacy list inside _editableFieldsForKind */ });
     return () => { cancelled = true; };
@@ -19914,6 +19936,10 @@ function WorkflowCanvas() {
         // and clobber the in-memory upgrades. Seeding with disk's pre-change
         // values makes the upgrade properly dirty until it persists.
         const _diskNodes = j.nodes || [];
+        // Capture the raw disk nodes so the kinds-registry load effect can
+        // backfill any content-field snapshot baseline this seed misses when
+        // it runs before window.__thKindRegistry has loaded (see that effect).
+        _rawDiskNodesRef.current = _diskNodes;
         savedSnapshotRef.current.clear();
         for (const dn of _diskNodes) {
           for (const f of _editableFieldsForKind(dn)) {
@@ -19950,6 +19976,12 @@ function WorkflowCanvas() {
   // save updates the snapshot AFTER the POST returns 200, so the dirty
   // state clears causally — not based on time. No race, no window.
   const savedSnapshotRef = useRef(new Map());
+  // Raw disk nodes from the most recent /__workflow load. Captured so the
+  // kinds-registry load effect can backfill content-field snapshot baselines
+  // (text/title/…) that _editableFieldsForKind couldn't enumerate if the seed
+  // ran before the registry resolved — without which those fields stay
+  // permanently "dirty" and a collaborator's edit only appears after a refresh.
+  const _rawDiskNodesRef = useRef([]);
 
   // Debounced disk write on every data change after the initial fetch.
   // Tombstones for the most recent user deletions, populated by
