@@ -18698,6 +18698,32 @@ function ProjectsLanding({ info, projects, onReload }) {
     }
   };
 
+  const duplicateProject = async (pid, label) => {
+    // Local copy — no LLM. Server clones the tree and rewrites every reference
+    // to the old project name (id slug + meta.project label) to the new one.
+    const suggested = (label || pid) + " copy";
+    const newLabel = window.prompt(`Duplicate "${label || pid}" as:`, suggested);
+    if (newLabel === null) return;            // user cancelled
+    const trimmed = newLabel.trim();
+    if (!trimmed) { setErr("label required"); return; }
+    setErr(null);
+    setBusyId(pid);
+    try {
+      const r = await fetch(apiUrl("/__projects/duplicate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: pid, label: trimmed }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      await onReload();
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const deleteProject = async (pid, label) => {
     if (!confirm(`Delete project "${label || pid}"?\n\nMoved to .trash/${pid}-<timestamp>/ inside the workspace — recoverable, not hard-deleted.`)) return;
     setErr(null);
@@ -19056,6 +19082,12 @@ function ProjectsLanding({ info, projects, onReload }) {
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); setEditingId(p.id); setEditLabel(p.label || p.id); setErr(null); }}
                     ><${Icon.Pen}/></button>
+                    <button
+                      className="landing-card-action"
+                      title="Duplicate (local copy — no LLM, renames all references)"
+                      disabled=${busyId === p.id}
+                      onClick=${(e) => { e.stopPropagation(); duplicateProject(p.id, p.label); }}
+                    ><${Icon.Copy}/></button>
                     <button
                       className="landing-card-action landing-card-action-danger"
                       title="Delete (moves to .trash/)"

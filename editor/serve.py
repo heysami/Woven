@@ -6175,6 +6175,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._project_rename(qs)
             if parsed.path == "/__projects/delete":
                 return self._project_delete(qs)
+            if parsed.path == "/__projects/duplicate":
+                return self._project_duplicate(qs)
             if parsed.path == "/__history/undo":
                 return self._history_step(qs, "undo")
             if parsed.path == "/__history/redo":
@@ -15627,6 +15629,169 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
         return self._reply(200, {"ok": True, "id": proj_id, "trashedTo": target})
 
+    # POST /__projects/duplicate  body: { id, newId?, label? }
+    # Copies <WORKSPACE_DIR>/projects/<id>/ to projects/<newId>/ WITHOUT touching
+    # the LLM, then rewrites every reference to the source project's name so the
+    # clone reads as its own project rather than a carbon copy:
+    #   • meta.project in editor/data.js + editor/branches/*.js  → new label
+    #   • whole-token occurrences of the old id slug              → new id
+    #     (in editor/*.js, workflow/*.json, and *.md content files)
+    # The on-disk slug `id` IS the project's true name here — resolve_project_root
+    # keys off it — so the id rewrite is what actually re-points internal
+    # references; the label rewrite keeps the editor's display honest.
+    # Transient/heavy dirs (.history undo stack, .trash, .git) are NOT copied.
+    # Workspace-mode only.
+    def _project_duplicate(self, qs):
+        if not WORKSPACE_DIR:
+            return self._reply(400, {"error": "workspace mode not enabled"})
+        body = self._read_json_body()
+        src_id = (body.get("id") or "").strip()
+        if not src_id or not PROJECT_ID_OK.match(src_id):
+            return self._reply(400, {"error": "invalid source project id", "id": src_id})
+        # Locate the source (projects/<id>/ first, root-level legacy fallback).
+        src = None
+        for c in _project_dir_candidates(src_id):
+            if os.path.isdir(c): src = c; break
+        if not src:
+            return self._reply(404, {"error": "no such project", "id": src_id})
+
+        # Source label: prefer the workspace.json entry, else fall back to id.
+        ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
+        cfg = {}
+        if os.path.isfile(ws_json):
+            try:
+                with open(ws_json, "r", encoding="utf-8") as f:
+                    cfg = json.load(f) or {}
+            except Exception:
+                cfg = {}
+        src_label = src_id
+        for e in (cfg.get("projects") or []):
+            if (e.get("id") or "").strip() == src_id:
+                src_label = (e.get("label") or src_id).strip() or src_id
+                break
+
+        # Target id — caller-supplied or auto-derived "<id>-copy[-N]" that doesn't
+        # collide with an existing project (under projects/ or legacy root).
+        def _taken(pid):
+            if os.path.exists(_safe_join(PROJECTS_DIR, pid)):
+                return True
+            legacy = os.path.join(WORKSPACE_DIR, pid)
+            return os.path.isdir(legacy) and os.path.isdir(os.path.join(legacy, "source"))
+        new_id = (body.get("newId") or "").strip()
+        if new_id:
+            if not PROJECT_ID_OK.match(new_id):
+                return self._reply(400, {"error": "invalid new project id (alphanumeric + ._- only, 1..64 chars)", "id": new_id})
+            if _taken(new_id):
+                return self._reply(409, {"error": "project already exists", "id": new_id})
+        else:
+            base = (src_id + "-copy")[:64]
+            new_id = base
+            n = 2
+            while _taken(new_id):
+                suffix = f"-{n}"
+                new_id = (base[:64 - len(suffix)] + suffix)
+                n += 1
+        new_label = (body.get("label") or (src_label + " copy")).strip() or new_id
+
+        os.makedirs(PROJECTS_DIR, exist_ok=True)
+        dest = _safe_join(PROJECTS_DIR, new_id)
+        # Skip transient/heavy state — the clone earns a fresh undo history, and
+        # copying .git/.trash would be wrong or wasteful.
+        _SKIP_DIRS = {".history", ".trash", ".git", "__pycache__"}
+        ignore = shutil.ignore_patterns(*_SKIP_DIRS)
+        try:
+            shutil.copytree(src, dest, ignore=ignore, symlinks=True)
+        except Exception as e:
+            # Best-effort cleanup of a half-written tree so a retry can land.
+            try: shutil.rmtree(dest, ignore_errors=True)
+            except Exception: pass
+            return self._reply(500, {"error": f"copy failed: {type(e).__name__}: {e}"})
+
+        # ── Rewrite references to the source project's name ──────────────────
+        # id rewrite: match the slug only when NOT adjacent to a word char or
+        # hyphen, so "demo-tc" never clobbers the "demo-tc" inside "demo-inhouse".
+        files_touched = 0
+        if new_id != src_id:
+            id_re = re.compile(r"(?<![\w-])" + re.escape(src_id) + r"(?![\w-])")
+            for root_dir, dirs, files in os.walk(dest):
+                dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+                for fn in files:
+                    ext = os.path.splitext(fn)[1].lower()
+                    rel = os.path.relpath(os.path.join(root_dir, fn), dest)
+                    in_editor = rel.split(os.sep)[0] == "editor"
+                    in_workflow = rel.split(os.sep)[0] == "workflow"
+                    # editor/*.js + workflow/*.json carry structural references;
+                    # *.md files carry brand-spec / research prose that names the
+                    # project. Leave prototype source (html/css/js) alone — its
+                    # references use the human app name, not the slug, and a stray
+                    # rewrite there could break code.
+                    eligible = (
+                        (in_editor and ext == ".js")
+                        or (in_workflow and ext == ".json")
+                        or ext == ".md"
+                    )
+                    if not eligible:
+                        continue
+                    fp = os.path.join(root_dir, fn)
+                    try:
+                        if os.path.getsize(fp) > 4_000_000:
+                            continue
+                        with open(fp, "r", encoding="utf-8") as f:
+                            text = f.read()
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    new_text, n_sub = id_re.subn(new_id, text)
+                    if n_sub:
+                        try:
+                            with open(fp, "w", encoding="utf-8") as f:
+                                f.write(new_text)
+                            files_touched += 1
+                        except OSError:
+                            pass
+
+        # meta.project label rewrite — always, so the editor's display matches
+        # the clone even when id == src_id (caller renamed only the label) or the
+        # label held something other than the id. Targets the `project: "..."`
+        # field in data.js + every branch file.
+        proj_re = re.compile(r'project:\s*"(?:[^"\\]|\\.)*"')
+        editor_dir = os.path.join(dest, "editor")
+        meta_targets = [os.path.join(editor_dir, "data.js")]
+        branches_dir = os.path.join(editor_dir, "branches")
+        if os.path.isdir(branches_dir):
+            for fn in os.listdir(branches_dir):
+                if fn.endswith(".js"):
+                    meta_targets.append(os.path.join(branches_dir, fn))
+        for fp in meta_targets:
+            if not os.path.isfile(fp):
+                continue
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    text = f.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            new_text = proj_re.sub(lambda m: 'project: ' + json.dumps(new_label), text)
+            if new_text != text:
+                try:
+                    with open(fp, "w", encoding="utf-8") as f:
+                        f.write(new_text)
+                except OSError:
+                    pass
+
+        # Register the clone in workspace.json so /__projects reports its label.
+        try:
+            entries = cfg.setdefault("projects", [])
+            if not any((e.get("id") or "").strip() == new_id for e in entries):
+                entries.append({"id": new_id, "label": new_label})
+            with open(ws_json, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception:
+            pass  # auto-discovery still picks the clone up via folder scan
+
+        return self._reply(200, {
+            "ok": True, "id": new_id, "label": new_label,
+            "from": src_id, "path": dest, "filesRewritten": files_touched,
+        })
+
     # GET /__file_stat?path=<project-relative>[&project=<id>]
     #   Cheap content signature for a project file OR directory. The canvas
     #   DS-gallery node uses it to detect "the design system changed since I
@@ -17574,7 +17739,7 @@ if __name__ == "__main__":
     print(
         "  endpoints: /__save  /__layout  /__workflow\n"
         "             /__agents  /__run  /__runs  /__stream\n"
-        "             /__workspace  /__projects  /__projects/new  /__projects/rename  /__projects/delete",
+        "             /__workspace  /__projects  /__projects/new  /__projects/rename  /__projects/delete  /__projects/duplicate",
         flush=True,
     )
     # v3.1 — Skill isolation. Spawned `claude` gets `--disable-slash-commands`
