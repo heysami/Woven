@@ -9458,24 +9458,26 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
               ${people.length > 0 && html`
                 <div className="th-live-people">
                   ${people.map(p => html`<span key=${p.guestId}
-                    title=${p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)")}
-                    onClick=${() => liveOp(session.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
+                    title=${isGuest ? (p.name + " · " + p.role) : (p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)"))}
+                    onClick=${isGuest ? undefined : () => liveOp(session.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
                     className="th-live-avatar"
                     style=${{ background: p.color }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
                 </div>
               `}
               ${session.shareUrl && linkRow("live", liveUrl)}
-              <div className="th-live-actions">
-                <button className="th-live-end" disabled=${isBusy}
-                  title="End the live session — guests are disconnected; the tunnel keeps running for comments"
-                  onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
-                  <${Icon.Stop}/> End session
-                </button>
-              </div>
+              ${!isGuest && html`
+                <div className="th-live-actions">
+                  <button className="th-live-end" disabled=${isBusy}
+                    title="End the live session — guests are disconnected; the tunnel keeps running for comments"
+                    onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
+                    <${Icon.Stop}/> End session
+                  </button>
+                </div>
+              `}
             `;
           })() : html`
             <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
-            ${startShare ? html`
+            ${!isGuest && (startShare ? html`
               <button className="go-live-cta"
                 disabled=${cfMissing || !!busy[startShare.id]}
                 title=${cfMissing ? "Install cloudflared first" : "Start a project live session — guests co-edit in real time, all runs use your agent"}
@@ -9483,7 +9485,7 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
               <div className="th-live-hint">Guests co-edit the project in real time · all runs use your agent.</div>
             ` : html`
               <div className="th-live-hint">Share a prototype below first — a live session needs a published tunnel to host on.</div>
-            `}
+            `)}
           `}
         </div>
 
@@ -9502,11 +9504,13 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
                 <div className="th-share-row-top">
                   <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
                   <span className="th-share-row-label" title=${"source/" + s.prototype + "/ · " + st.label}>${s.label}</span>
-                  <button className=${"th-icon-btn" + (running ? " is-danger" : " is-primary")} disabled=${isBusy || (cfMissing && !running)}
-                    title=${running ? "Stop the tunnel — the public URL goes dark" : (cfMissing ? "Install cloudflared first" : "Start the tunnel")}
-                    onClick=${() => tunnelOp(s.id, running ? "stop" : "start")}>
-                    <${running ? Icon.Stop : Icon.Play}/>
-                  </button>
+                  ${!isGuest && html`
+                    <button className=${"th-icon-btn" + (running ? " is-danger" : " is-primary")} disabled=${isBusy || (cfMissing && !running)}
+                      title=${running ? "Stop the tunnel — the public URL goes dark" : (cfMissing ? "Install cloudflared first" : "Start the tunnel")}
+                      onClick=${() => tunnelOp(s.id, running ? "stop" : "start")}>
+                      <${running ? Icon.Stop : Icon.Play}/>
+                    </button>
+                  `}
                 </div>
                 ${s.shareUrl && linkRow(s.id, s.shareUrl)}
               </div>
