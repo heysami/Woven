@@ -6309,7 +6309,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
-            m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo)$", parsed.path)
+            m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token)$", parsed.path)
             if m_gh:
                 return self._github_op(m_gh.group(1), qs)
             if parsed.path == "/__live_presence":
@@ -12655,6 +12655,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(200, {"status": "pending", "slowDown": err == "slow_down"})
                 return self._reply(200, {"status": "error",
                                          "error": out.get("error_description") or err or "unknown"})
+            if op == "token":
+                # Easiest sign-in: paste a Personal Access Token (scope: repo).
+                # No OAuth app / device flow needed. Validate against /user, then
+                # store it host-side exactly like a device-flow token.
+                tok = (body.get("token") or "").strip()
+                if not tok:
+                    return self._reply(400, {"error": "paste a GitHub token first"})
+                try:
+                    u = _gitops.gh_user(tok)
+                except Exception as e:
+                    return self._reply(400, {"error": "token rejected by GitHub: " + str(e)})
+                _gitops.save_token(tok, u.get("login") or "", u.get("avatar") or "")
+                return self._reply(200, {"ok": True, "login": u.get("login") or "",
+                                         "avatar": u.get("avatar") or ""})
             if op == "signout":
                 _gitops.clear_token()
                 return self._reply(200, {"ok": True})
