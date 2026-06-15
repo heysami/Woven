@@ -18881,7 +18881,7 @@ function ProjectsLanding({ info, projects, onReload }) {
     url.searchParams.delete("branch");
     if (view) url.searchParams.set("view", view);
     else url.searchParams.delete("view");
-    window.location.href = url.toString();
+    thNavigate(url.toString());
   };
 
   const onWizardCreated = ({ id }) => {
@@ -19391,6 +19391,63 @@ function ProjectsLanding({ info, projects, onReload }) {
   `;
 }
 
+/* ───────────────────────── Client-side navigation ─────────────────────────
+   The list↔project round trip used to be a full `window.location.href`
+   document reload every time, which produced the flash → wait → open beat:
+   the browser blanks #root (flash), re-fetches the whole boot chain — 7 CDN
+   scripts + the 61k-line app.js + the blocking data.js / layout / ds_bootstrap
+   loads (wait) — then re-mounts React (open).
+
+   We can skip ALL of that for the views that don't read the boot-captured
+   `const D = window.EDITOR_DATA` — the projects landing (fetches /__workspace)
+   and the workflow canvas (fetches workflow.json). For those we just push the
+   new URL and let <Root> re-render in place. The editor + prototype views DO
+   read `D` (captured once at script-eval and never reassignable), so any
+   navigation whose DESTINATION is one of those still does a real reload, which
+   re-runs data.js and refreshes `D`. */
+function thReadNav() {
+  try {
+    const sp = new URL(window.location.href).searchParams;
+    return {
+      project: sp.get("project") || null,
+      hasProject: !!sp.get("project"),
+      view: sp.get("view") || null,
+    };
+  } catch {
+    return { project: null, hasProject: false, view: null };
+  }
+}
+
+// A destination is client-nav-safe iff it lands on the projects gallery
+// (no ?project=) or the workflow canvas (?view=workflow) — the two surfaces
+// that don't depend on the boot-captured `D`. Editor (project, no view) and
+// prototype (?view=prototype) need a fresh `D` → full reload.
+function thIsClientNavSafe(url) {
+  try {
+    const sp = new URL(url, window.location.href).searchParams;
+    if (!sp.get("project")) return true;            // landing
+    return (sp.get("view") || null) === "workflow"; // workflow canvas
+  } catch {
+    return false;
+  }
+}
+
+// Swap a client-nav-safe view in place: reset the per-project caches that were
+// latched at boot, push the URL, and fire `th:navigate` so <Root> re-derives
+// the view. Anything else falls back to a real document load.
+function thNavigate(url) {
+  const target = new URL(url, window.location.href).toString();
+  if (!thIsClientNavSafe(target)) { window.location.href = target; return; }
+  window.history.pushState({}, "", target);
+  // activeProjectId() memoises ?project= on window.__TH_PROJECT — an UNkeyed
+  // global latched to the project we're leaving — so clear it and let the
+  // helper re-derive against the URL we just pushed. (The __TH_STARRED /
+  // __TH_THUMB caches are keyed by project id, so they stay valid and are
+  // left intact for reuse.)
+  try { delete window.__TH_PROJECT; } catch { window.__TH_PROJECT = undefined; }
+  try { window.dispatchEvent(new CustomEvent("th:navigate")); } catch {}
+}
+
 /* Back-to-landing helper. Clears every per-project URL bit (?project=,
    ?prototype=, ?view=) so the workspace boots back into the gallery.
    Single source of truth for "leave this project" — used by every
@@ -19402,7 +19459,7 @@ function backToProjects() {
   url.searchParams.delete("branch");
   url.searchParams.delete("view");
   url.searchParams.delete("from");
-  window.location.href = url.toString();
+  thNavigate(url.toString());
 }
 
 // Return to the workflow canvas for the active project — used when the editor
@@ -19414,7 +19471,7 @@ function backToWorkflow() {
   url.searchParams.delete("branch");
   url.searchParams.delete("from");
   url.searchParams.set("view", "workflow");
-  window.location.href = url.toString();
+  thNavigate(url.toString());
 }
 
 // True when the editor was reached from the workflow canvas (the open stamps
@@ -61314,12 +61371,32 @@ function ChatImageLightbox() {
    toolbar / canvas / chat. */
 function Root() {
   const { info, projects, reload, loading } = useWorkspace();
-  const { hasProject, view } = useMemo(() => {
-    try {
-      const sp = new URL(window.location.href).searchParams;
-      return { hasProject: !!sp.get("project"), view: sp.get("view") || null };
-    } catch { return { hasProject: false, view: null }; }
+  // Re-derive the active view from the URL on every navigation. backToProjects
+  // / backToWorkflow / openProject push the URL via thNavigate (client-side
+  // swap) and fire `th:navigate`; the browser back/forward buttons fire
+  // `popstate`. Both re-read here so the landing↔workflow round trip never
+  // pays the full document reload — see the thNavigate block for why that's
+  // safe (those views don't read the boot-captured `D`).
+  const [nav, setNav] = useState(thReadNav);
+  useEffect(() => {
+    const onNav = () => setNav(thReadNav());
+    window.addEventListener("popstate", onNav);
+    window.addEventListener("th:navigate", onNav);
+    return () => {
+      window.removeEventListener("popstate", onNav);
+      window.removeEventListener("th:navigate", onNav);
+    };
   }, []);
+  const { project, hasProject, view } = nav;
+  // Whenever a client-side nav lands us back on the gallery, refresh the
+  // project list (thumbnails, freshly-created projects) the way the old full
+  // reload implicitly did. Skips the very first render (initial useWorkspace
+  // fetch already covers it).
+  const firstNavRef = useRef(true);
+  useEffect(() => {
+    if (firstNavRef.current) { firstNavRef.current = false; return; }
+    if (!hasProject) reload();
+  }, [hasProject, project, reload]);
   // Workspace info still loading — show nothing briefly to avoid a flash of
   // the wrong view. /__workspace is a single small JSON GET, sub-100ms locally.
   if (loading) return null;
@@ -61333,8 +61410,11 @@ function Root() {
     <${PrototypeDoor}/>
     <${ExportPromptHost}/>
   <//>`;
+  // key on the project id so a client-side switch to a different project's
+  // workflow remounts the canvas with fresh internal state (data, history,
+  // chat) instead of React reusing the previous project's instance.
   if (hasProject && view === "workflow")  return html`<${React.Fragment}>
-    <${WorkflowCanvas}/>
+    <${WorkflowCanvas} key=${"wf:" + (project || "")}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
   <//>`;
