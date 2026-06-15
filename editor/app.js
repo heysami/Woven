@@ -8837,10 +8837,8 @@ function AgentPicker({ agents, value, onChange, disabled }) {
   `;
 }
 
-/* RunsMenu — always-visible toolbar button. Lists every run the daemon knows
-   about (live + finished, this session). Click a row to mount it in the chat
-   drawer. Empty state guides the user toward Submit. Polls /__runs while open
-   so live runs update their status dots without manual refresh. */
+/* formatRunAge — relative-time label for agent-run rows (used by AgentRunsRail
+   and the chat header). */
 function formatRunAge(ts) {
   if (!ts) return "";
   const sec = Math.max(0, Math.floor(Date.now() / 1000 - ts));
@@ -8849,30 +8847,41 @@ function formatRunAge(ts) {
   if (sec < 86400) return `${Math.floor(sec/3600)}h ago`;
   return `${Math.floor(sec/86400)}d ago`;
 }
-function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
-  const [open, setOpen] = useState(false);
+/* AgentRunsRail — right-edge icon nav rail (the mirror of the left workflow
+   nav rail). Icon-only buttons with tooltips that open to their LEFT; clicking
+   an icon opens a FULL-HEIGHT panel that docks just left of the rail. For now
+   the rail carries a single entry — Agent runs (the chat-history list that used
+   to live as a dropdown in the top bar) — but it's shaped to hold more entries
+   later (just add another <HoverTip> + panel case).
+
+   Lists every run the daemon knows about (live + finished, this session). Click
+   a row to mount it in the chat drawer. Polls /__runs while the panel is open so
+   live runs update their status dots; a slower background poll keeps the live
+   pulse on the icon fresh while the panel is closed.
+
+   Pass `hidden` (workflow fullscreen) to unmount the rail + its panel entirely. */
+function AgentRunsRail({ onOpenRun, onStartNewChat, hidden }) {
+  // Which panel is open ("runs" | null). The single-string shape generalises to
+  // future rail entries without a refactor.
+  const [active, setActive] = useState(null);
   const [runs, setRuns] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const ref = useRef(null);
+  // Measured top of the rail so the fixed full-height panel aligns with it even
+  // when something (e.g. the DS-proposal banner) pushes the toolbar down. Falls
+  // back to the CSS top (var(--toolbar-h)) until measured.
+  const [railTop, setRailTop] = useState(null);
+  const railRef = useRef(null);
   const panelRef = useRef(null);
-  // Trigger rect — recomputed each frame while the panel is open so the
-  // portaled dropdown stays glued to the button when the user scrolls /
-  // resizes / toggles fullscreen. Portaling is necessary because the panel
-  // would otherwise sit inside .workflow-bar (which lives inside the z-auto
-  // workflow-root stacking context), where the body-portaled floating node
-  // chrome (z 40) would paint over it.
-  const [triggerRect, setTriggerRect] = useState(null);
 
   const reload = useCallback(async () => {
     try {
       const r = await fetch(apiUrl("/__runs"));
       if (!r.ok) throw new Error("runs endpoint unavailable");
       const j = await r.json();
-      // Filter to the active project so the menu only shows what's relevant
-      // for the current view. The daemon returns runs from every project.
+      // Filter to the active project — the daemon returns runs from every one.
       const proj = activeProjectId();
-      const runs = (j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj);
-      setRuns(runs);
+      const list = (j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj);
+      setRuns(list);
     } catch {
       setRuns([]);
     } finally {
@@ -8880,150 +8889,144 @@ function RunsMenu({ onOpenRun, onStartNewChat, compact }) {
     }
   }, []);
 
-  // Lazy first load + polling while open so live runs update their dots.
+  // Fast poll while the panel is open so live dots tick without manual refresh.
   useEffect(() => {
-    if (!open) return;
+    if (active !== "runs") return;
     reload();
     const t = setInterval(reload, 2000);
     return () => clearInterval(t);
-  }, [open, reload]);
+  }, [active, reload]);
 
-  // Always do one initial fetch so the button can show a live count even
-  // before the user clicks. Cheap (empty list when no runs).
-  useEffect(() => { reload(); }, [reload]);
-
+  // Slow background poll (+ one initial fetch) so the icon's live pulse stays
+  // accurate even with the panel closed — the rail is always on screen.
   useEffect(() => {
-    if (!open) return;
-    // Panel is portaled to body; the off-click handler must accept clicks
-    // both inside the trigger (toggles) and inside the portaled panel
-    // (rows, refresh) as "inside" so a click on a row doesn't immediately
-    // close the panel before the row's onClick fires.
+    reload();
+    const t = setInterval(reload, 6000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  // Off-click closes the open panel. Clicks inside the rail (toggles) or the
+  // portaled panel (rows, refresh) count as "inside" so a row click fires
+  // before the panel tears down.
+  useEffect(() => {
+    if (!active) return;
     const off = (e) => {
-      const insideTrigger = ref.current && ref.current.contains(e.target);
-      const insidePanel   = panelRef.current && panelRef.current.contains(e.target);
-      if (!insideTrigger && !insidePanel) setOpen(false);
+      const inRail  = railRef.current  && railRef.current.contains(e.target);
+      const inPanel = panelRef.current && panelRef.current.contains(e.target);
+      if (!inRail && !inPanel) setActive(null);
     };
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
-  }, [open]);
-  // rAF-tracked trigger rect — the portaled panel reads it to anchor itself
-  // just below the button. Only runs while open so the menu has zero cost
-  // when closed.
+  }, [active]);
+
+  // Esc closes the panel (matches the rest of the editor's popover convention).
   useEffect(() => {
-    if (!open) { setTriggerRect(null); return; }
+    if (!active) return;
+    const onKey = (e) => { if (e.key === "Escape") setActive(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
+
+  // rAF-track the rail's top while the panel is open so it stays glued to the
+  // rail through banner show/hide, resize, scroll. Cheap (no-op when closed).
+  useEffect(() => {
+    if (!active) { setRailTop(null); return; }
     let raf = 0; let last = null;
     const tick = () => {
-      const el = ref.current;
+      const el = railRef.current;
       if (el) {
-        const r = el.getBoundingClientRect();
-        if (!last || last.bottom !== r.bottom || last.right !== r.right) {
-          last = { top: r.top, right: r.right, bottom: r.bottom, left: r.left };
-          setTriggerRect(last);
-        }
+        const t = Math.round(el.getBoundingClientRect().top);
+        if (last !== t) { last = t; setRailTop(t); }
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [open]);
+  }, [active]);
 
-  // "Live" = an agent process that's actively processing (not done with its
-  // turn). Once turnDone, the agent is dormant waiting for a follow-up — not
-  // worth pulsing the toolbar. The hard `done` flag (process exited) is also
-  // a non-live state. So liveCount = processes that are mid-turn.
+  if (hidden) return null;
+
+  // "Live" = an agent process actively processing (not done with its turn).
   const liveCount = runs.filter(r => !r.done && !r.turnDone).length;
 
+  const panel = active === "runs" ? createPortal(html`
+    <div
+      className="th-rail-panel"
+      ref=${panelRef}
+      style=${railTop != null ? { top: railTop + "px" } : null}>
+      <div className="runs-panel-head">
+        <span>Agent runs</span>
+        <button className="runs-refresh" onClick=${reload} title="Refresh">↻</button>
+      </div>
+      <div className="th-rail-panel-body">
+        ${onStartNewChat && html`
+          <button
+            className="runs-new-chat"
+            onClick=${() => { onStartNewChat(); setActive(null); }}
+            title="Start a new chat with the agent (no edits required)"
+          >
+            <span className="runs-new-chat-plus">+</span>
+            <span className="runs-new-chat-label">New chat</span>
+          </button>
+        `}
+        ${runs.length === 0 && html`
+          <div className="runs-empty">
+            ${loaded
+              ? "No runs yet. Click + New chat above, or Submit on a pending edit."
+              : "Loading…"}
+          </div>
+        `}
+        ${runs.map(r => {
+          // Three visual states: live (mid-turn), waiting (turn done, agent
+          // dormant on stdin), ended (subprocess exited).
+          const isLive    = !r.done && !r.turnDone;
+          const isWaiting = !r.done &&  r.turnDone;
+          const intentionalStop = r.stopReason === "completed-orchestrator"
+                                || r.stopReason === "user-stop";
+          const succeeded = r.exitCode === 0 || r.exitCode == null || intentionalStop;
+          const status = isLive    ? "live"
+                       : isWaiting ? "waiting"
+                       : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
+                       : "fail";
+          const statusLabel = isLive ? "live"
+                            : isWaiting ? "ready"
+                            : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
+                            : "fail";
+          return html`
+            <button
+              key=${r.runId}
+              className="runs-row"
+              onClick=${() => { onOpenRun(r); setActive(null); }}
+              title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
+            >
+              <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
+              <span className="runs-row-title">${r.title || r.kind}</span>
+              <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
+            </button>
+          `;
+        })}
+      </div>
+    </div>
+  `, document.body) : null;
+
   return html`
-    <div className="runs-menu" ref=${ref}>
-      <button
-        className=${"runs-trigger" + (compact ? " is-compact" : "")}
-        data-open=${open}
-        data-live=${liveCount > 0}
-        data-tip-host=${compact ? "true" : null}
-        aria-label=${liveCount > 0 ? `${liveCount} run${liveCount===1?'':'s'} active — open runs panel` : "Open runs panel"}
-        title=${liveCount > 0
-          ? `${liveCount} run${liveCount===1?'':'s'} active · ${runs.length} total — click to open chat history`
-          : (runs.length > 0 ? `${runs.length} run${runs.length===1?'':'s'} — click to open chat history` : "Chat history — no runs yet")}
-        onClick=${() => setOpen(o => !o)}
+    <nav className="th-right-rail" ref=${railRef} aria-label="Panels">
+      <${HoverTip}
+        placement="left"
+        className=${"th-right-rail-btn" + (active === "runs" ? " is-active" : "")}
+        ariaLabel=${liveCount > 0 ? `${liveCount} run${liveCount===1?'':'s'} active — open agent runs` : "Open agent runs"}
+        tip=${liveCount > 0
+          ? `Agent runs — ${liveCount} active · ${runs.length} total`
+          : (runs.length > 0 ? `Agent runs — ${runs.length} in this session` : "Agent runs — chat history")}
+        onClick=${() => setActive(a => a === "runs" ? null : "runs")}
       >
-        <span className="runs-icon-wrap">
+        <span className="th-right-rail-icon-wrap">
           <${Icon.Comment}/>
           ${liveCount > 0 && html`<span className="runs-pulse" aria-label="${liveCount} live"/>`}
         </span>
-        ${!compact && html`<span className="runs-label">Runs</span>`}
-        ${compact && html`<span className="tab-tip">${liveCount > 0 ? `${liveCount} active` : "Runs"}</span>`}
-      </button>
-      ${open && triggerRect && createPortal(html`
-        <div
-          className="runs-panel"
-          ref=${panelRef}
-          style=${{
-            position: "fixed",
-            top: (triggerRect.bottom + 6) + "px",
-            right: (window.innerWidth - triggerRect.right) + "px",
-            // z 70 sits above the floating node chrome (40-50), the chat
-            // drawer (60), and matches the busy banner — the toolbar
-            // popover should never be painted over by canvas chrome.
-            zIndex: 70,
-          }}>
-          <div className="runs-panel-head">
-            <span>Agent runs</span>
-            <button className="runs-refresh" onClick=${reload} title="Refresh">↻</button>
-          </div>
-          ${onStartNewChat && html`
-            <button
-              className="runs-new-chat"
-              onClick=${() => { onStartNewChat(); setOpen(false); }}
-              title="Start a new chat with the agent (no edits required)"
-            >
-              <span className="runs-new-chat-plus">+</span>
-              <span className="runs-new-chat-label">New chat</span>
-            </button>
-          `}
-          ${runs.length === 0 && html`
-            <div className="runs-empty">
-              ${loaded
-                ? "No runs yet. Click + New chat above, or Submit on a pending edit."
-                : "Loading…"}
-            </div>
-          `}
-          ${runs.map(r => {
-            // Three visual states: live (mid-turn), waiting (turn done,
-            // agent dormant on stdin), ended (subprocess exited).
-            const isLive    = !r.done && !r.turnDone;
-            const isWaiting = !r.done &&  r.turnDone;
-            const isEnded   =  r.done;
-            // v2.28 — `stopReason` set by the daemon when SIGTERM was
-            // intentional (orchestrator completing a node-agent dispatch,
-            // user clicking Stop). Treat both as NOT a failure — the
-            // subprocess exited with 143 by design.
-            const intentionalStop = r.stopReason === "completed-orchestrator"
-                                  || r.stopReason === "user-stop";
-            const succeeded = r.exitCode === 0 || r.exitCode == null || intentionalStop;
-            const status = isLive    ? "live"
-                         : isWaiting ? "waiting"
-                         : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
-                         : "fail";
-            const statusLabel = isLive ? "live"
-                              : isWaiting ? "ready"
-                              : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
-                              : "fail";
-            return html`
-              <button
-                key=${r.runId}
-                className="runs-row"
-                onClick=${() => { onOpenRun(r); setOpen(false); }}
-                title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
-              >
-                <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
-                <span className="runs-row-title">${r.title || r.kind}</span>
-                <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
-              </button>
-            `;
-          })}
-        </div>
-      `, document.body)}
-    </div>
+      <//>
+    </nav>
+    ${panel}
   `;
 }
 
@@ -34992,12 +34995,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <${DaemonIndicator}/>
         <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
-        ${onOpenNewChat && html`
-          <${RunsMenu}
-            onOpenRun=${onReopenRun}
-            onStartNewChat=${onOpenNewChat}
-            compact=${true}/>
-        `}
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <button
           className="workflow-bar-fullscreen"
@@ -36289,6 +36286,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           `}
         </div>
         ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} onEditTab=${openZoomForViewerTab}/>`}
+        <${AgentRunsRail}
+          onOpenRun=${onReopenRun}
+          onStartNewChat=${onOpenNewChat}
+          hidden=${fullscreen}/>
       </div>
       ${zoomTarget && html`
         <${ZoomOverlay}
@@ -44691,6 +44692,14 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
       setPos({ left: r.right + 8, top: r.top + r.height / 2, placement: "right" });
       return;
     }
+    // Left placement (opt-in) — bubble sits to the LEFT of the anchor,
+    // vertically centered. Used by the right-edge icon nav rail, whose buttons
+    // hug the viewport's right edge: a centered above/below bubble would spill
+    // off the right side and get clipped. Left keeps the full label on-screen.
+    if (placementProp === "left") {
+      setPos({ left: r.left - 8, top: r.top + r.height / 2, placement: "left" });
+      return;
+    }
     // v3.2 — Auto-flip to below the anchor when there's no room above
     // (e.g. top-nav buttons like HistoryButton at the top of the
     // viewport). Previously the bubble was always rendered with
@@ -44726,7 +44735,9 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
           ? "translate(-50%, -100%)"
           : pos.placement === "right"
             ? "translate(0, -50%)"
-            : "translate(-50%, 0)",
+            : pos.placement === "left"
+              ? "translate(-100%, -50%)"
+              : "translate(-50%, 0)",
       }}>
       ${tip}
     </div>
@@ -60517,7 +60528,6 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="toolbar-gear"/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
-        <${RunsMenu} onOpenRun=${onReopenRun} onStartNewChat=${onStartNewChat} compact=${true}/>
         <${AgentPicker}
           agents=${agents}
           value=${agentId}
@@ -61232,6 +61242,20 @@ function App() {
         historyOpen=${historyOpen}
         onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
         onCloseHistory=${() => setHistoryOpen(false)}
+      />`}
+      ${!embedMode && html`<${AgentRunsRail}
+        onStartNewChat=${openNewChat}
+        onOpenRun=${(run) => {
+          if (run) {
+            setChatRun(run);
+            setLastRun(run);
+            setRunFinished(!!run.done);
+            saveSettings({ lastRunId: run.runId });
+          } else if (lastRun) {
+            setChatRun(lastRun);
+            setRunFinished(!!lastRun.done);
+          }
+        }}
       />`}
       ${!embedMode && historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
       ${!embedMode && html`<${ScreenshotWorker}

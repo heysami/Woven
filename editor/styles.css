@@ -76,6 +76,11 @@
   /* Toolbar height */
   --toolbar-h: 44px;
   --side-w:    240px;
+
+  /* Right-edge icon nav rail (agent runs + future panels). Shared by both
+     workflow + editor modes so the chat drawer / edits panel can dock to its
+     left and the views never render under it. */
+  --th-right-rail-w: 44px;
 }
 
 * { box-sizing: border-box; }
@@ -110,15 +115,20 @@ button {
    on whether they used height:100%, flex, or absolute positioning. */
 .app {
   display: grid;
+  /* Right column holds the icon nav rail (AgentRunsRail) below the toolbar; it
+     is `auto`, so it collapses to 0 when the rail isn't rendered (embed mode).
+     banner + toolbar span both columns. */
+  grid-template-columns: 1fr auto;
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
-    "banner"
-    "toolbar"
-    "view";
+    "banner  banner"
+    "toolbar toolbar"
+    "view    rightrail";
   height: 100vh;
 }
 .app > .ds-proposal-banner { grid-area: banner; }
 .app > .toolbar             { grid-area: toolbar; min-height: var(--toolbar-h); }
+.app > .th-right-rail       { grid-area: rightrail; }
 /* Every view-root sits in the same `view` cell so we don't need to know
    which view is active to place it correctly. EditsPanel/ChatDrawer/
    HistoryPanel/agent-busy-banner are all position:absolute|fixed, so they
@@ -135,14 +145,17 @@ button {
 .app > .empty-view {
   grid-area: view;
   min-height: 0;
+  /* min-width:0 so a wide view can't blow out the 1fr track and shove the
+     right nav rail off-screen (grid items default to min-width:auto). */
+  min-width: 0;
 }
 
 /* When the daemon reports any run is mid-turn, freeze the workspace so the
    user can't edit elements the agent is currently modifying (Figma/Linear-
-   style multiplayer awareness). The toolbar, chat drawer, and busy banner
-   stay live so the user can still navigate views, open the runs menu, or
-   send a follow-up message in the composer. */
-.app[data-agent-busy="true"] > *:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner) {
+   style multiplayer awareness). The toolbar, right nav rail, chat drawer, and
+   busy banner stay live so the user can still navigate views, open the runs
+   panel, or send a follow-up message in the composer. */
+.app[data-agent-busy="true"] > *:not(.toolbar):not(.th-right-rail):not(.chat-drawer):not(.agent-busy-banner) {
   pointer-events: none;
   filter: saturate(0.8);
   opacity: 0.78;
@@ -3363,20 +3376,21 @@ button {
 }
 .workflow-body {
   display: grid;
-  /* v3.6 — Icon nav rail · library column · 4px drag handle · canvas.
-     Library width is driven by --workflow-lib-width set on :root (240px
-     default). The rail is always visible (except fullscreen); the library
-     column collapses to 0 when no rail panel is active. */
-  grid-template-columns: 48px var(--workflow-lib-width, 240px) 4px 1fr;
+  /* v3.6 — Icon nav rail · library column · 4px drag handle · canvas ·
+     right icon nav rail. Library width is driven by --workflow-lib-width set on
+     :root (240px default). The rails are always visible (except fullscreen); the
+     library column collapses to 0 when no rail panel is active. */
+  grid-template-columns: 48px var(--workflow-lib-width, 240px) 4px 1fr var(--th-right-rail-w, 44px);
   min-height: 0;
 }
+.workflow-body > .th-right-rail { grid-column: 5; grid-row: 1; }
 /* Collapsed library (rail icon toggled off, or prototype view active).
    IMPORTANT: same technique as the fullscreen rules below — keep the
    library + handle in DOM flow (visibility:hidden + zero size) instead of
    display:none, which would remove them from grid auto-placement and slide
    the canvas into the wrong column. */
 .workflow-body[data-left-panel="none"] {
-  grid-template-columns: 48px 0 0 1fr;
+  grid-template-columns: 48px 0 0 1fr var(--th-right-rail-w, 44px);
 }
 .workflow-body[data-left-panel="none"] .workflow-library-col,
 .workflow-body[data-left-panel="none"] .workflow-resize-handle-lib {
@@ -3431,6 +3445,89 @@ button {
   margin: 2px 0;
   flex: 0 0 auto;
 }
+
+/* ── Right-edge icon nav rail (AgentRunsRail) ──────────────────────────────
+   The mirror of the left workflow nav rail, shared by workflow + editor modes.
+   It lives in the layout flow (a grid column on the right) so views never
+   render under it; its panel is a fixed full-height overlay that docks just to
+   its left. Buttons are icon-only with tooltips that open LEFT. */
+.th-right-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  width: var(--th-right-rail-w, 44px);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+  /* Keep the rail above the fixed chat drawer (z 60) so its buttons stay
+     clickable; the drawer docks to its left so they never actually overlap. */
+  position: relative;
+  z-index: 61;
+}
+.th-right-rail-btn {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.th-right-rail-btn svg { width: 16px; height: 16px; }
+.th-right-rail-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.th-right-rail-btn.is-active {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  color: var(--text);
+}
+.th-right-rail-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+/* Full-height panel that opens just left of the rail. Fixed so it starts below
+   the top bar and runs to the viewport bottom regardless of the host layout. */
+.th-rail-panel {
+  position: fixed;
+  top: var(--toolbar-h, 44px);
+  right: var(--th-right-rail-w, 44px);
+  bottom: 0;
+  width: 320px;
+  max-width: calc(100vw - var(--th-right-rail-w, 44px));
+  z-index: 63;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.06);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+}
+.th-rail-panel .runs-panel-head {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+.th-rail-panel-body {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+
 /* Drag handles — left edge of canvas + left edge of chat panel. Subtle
    neutral idle, accent-tinted on hover so the affordance is discoverable. */
 .workflow-resize-handle {
@@ -7149,6 +7246,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    rail), so the arrow points left from the bubble's left edge. */
 .th-portal-tip-right::before {
   left: -3px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(45deg);
+}
+/* Left placement — bubble sits to the left of the anchor (right icon nav
+   rail), so the arrow points right from the bubble's right edge. */
+.th-portal-tip-left::before {
+  left: auto;
+  right: -3px;
   top: 50%;
   bottom: auto;
   transform: translateY(-50%) rotate(45deg);
@@ -13520,7 +13626,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* === Edit list panel === */
 .edits-panel {
   position: absolute;
-  right: 12px;
+  /* Clear the right icon nav rail so the panel doesn't tuck under it. */
+  right: calc(var(--th-right-rail-w, 44px) + 12px);
   bottom: 12px;
   width: 320px;
   max-height: 60vh;
@@ -16623,10 +16730,12 @@ a.ds-badge:hover, button.ds-badge:hover {
      its right-edge chrome (close ×, Send) lands off-screen. */
   position: fixed;
   top: 0;
-  right: 0;
+  /* Dock to the LEFT of the right icon nav rail so the rail's buttons (and the
+     drawer's own right-edge chrome — close ×, Send) never sit under each other. */
+  right: var(--th-right-rail-w, 44px);
   bottom: 0;
-  width: min(var(--workflow-chat-width, 644px), 100vw);
-  max-width: 100vw;
+  width: min(var(--workflow-chat-width, 644px), calc(100vw - var(--th-right-rail-w, 44px)));
+  max-width: calc(100vw - var(--th-right-rail-w, 44px));
   display: grid;
   grid-template-rows: auto 1fr auto auto;   /* header · body · composer · footer */
   background: var(--surface);
