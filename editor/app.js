@@ -54643,6 +54643,14 @@ function workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths) {
     const np = [n.path, ...(Array.isArray(n.paths) ? n.paths : []),
                 ...(Array.isArray(n.canonicalPaths) ? n.canonicalPaths : [])]
                .filter(p => typeof p === "string" && p);
+    // A prototype node carries no `path` on disk, but it OWNS source/<slug>/.
+    // Tether it to that folder so the agent's touchedPaths pick out the ONE
+    // prototype actually being edited — without this, prototype nodes can only
+    // match via the chatBusy fallback below, which lit every sibling at once.
+    if (n.kind === "prototype") {
+      const slug = prototypeSlugForNode(n);
+      if (slug) np.push("source/" + slug);
+    }
     // A design-system node owns its whole folder — editing ANY file under
     // design-systems/<id>/ (styles.css, templates/*, gallery.html, …) counts
     // as working on it, so also match the DS folder root, not just the file.
@@ -54658,10 +54666,14 @@ function workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths) {
   }
   // Fallback for prototypes when no touched path matched yet (e.g. the agent
   // is still reading, or wrote via a tool the daemon doesn't path-track):
-  // while a chat run STREAMS (chatBusy), treat the active prototype as working.
-  if (chatBusy && n.kind === "prototype") {
-    const slug = prototypeSlugForNode(n);
-    if (!activeProto || slug === activeProto) return true;
+  // while a chat run STREAMS (chatBusy), light the ACTIVE prototype only.
+  // Guard on a KNOWN activeProto — in WORKFLOW mode it's empty (workflow.json
+  // has no meta.activePrototype), and `!activeProto` there lit every prototype
+  // node, not just the one being edited. With the source/<slug>/ tether above,
+  // the right node already lights from touchedPaths, so an unknown active
+  // prototype should light NOTHING here rather than everything.
+  if (chatBusy && n.kind === "prototype" && activeProto) {
+    if (prototypeSlugForNode(n) === activeProto) return true;
   }
   return false;
 }
