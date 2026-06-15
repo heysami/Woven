@@ -7460,15 +7460,25 @@ async function setProjectThumbnail(target) {
 async function duplicatePrototype(proto) {
   if (!proto || !proto.id) return null;
   const name = proto.label || proto.id;
-  const newLabel = window.prompt(`Duplicate prototype "${name}" as:`, name + " copy");
-  if (newLabel === null) return null;                 // cancelled
-  const trimmed = newLabel.trim();
+  const newName = window.prompt(`Duplicate prototype "${name}" as:`, name + "-copy");
+  if (newName === null) return null;                  // cancelled
+  const trimmed = newName.trim();
   if (!trimmed) return null;
+  // The Prototypes list shows each prototype by its folder slug (source/<slug>/),
+  // so the typed name must drive the slug — not just the stored meta label.
+  // Slugify to a valid dir name: spaces → hyphens, drop unsupported chars,
+  // collapse repeats, trim leading/trailing separators.
+  const slug = trimmed
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9._-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
+  if (!slug) { alert("That name has no usable letters or numbers — try another."); return null; }
   try {
     const r = await fetch(apiUrl("/__prototypes/duplicate"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: proto.id, label: trimmed }),
+      body: JSON.stringify({ id: proto.id, newId: slug, label: trimmed }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
