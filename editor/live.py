@@ -886,6 +886,11 @@ _PROXY_READ_PREFIXES = (
     "/__workflow", "/__ds_bootstrap", "/__source", "/__asset",
     "/__preview", "/__layout", "/__starred_prototypes", "/__media",
     "/__local_status", "/__fonts", "/__global_fonts",
+    # /__kinds/registry — the node-kind contract. Without it the guest editor
+    # falls back to a tiny legacy field list, so _editableFieldsForKind returns
+    # [] for most kinds and the reload-merge never pulls a collaborator's
+    # content edits (input/select/textarea). Proxy it so content syncs too.
+    "/__kinds",
 )
 
 def _proxy_read_ok(path):

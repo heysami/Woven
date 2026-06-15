@@ -9703,6 +9703,99 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return out;
   }, [blocks, events, status]);
 
+  // Tasks the user has already cleared (archived on a prior close) — hidden
+  // from the strip so a reopened chat starts clean. Persisted per (project,
+  // run) in localStorage; ids are stable within a run. Loaded fresh whenever
+  // the run changes so one run's cleared set never leaks into another.
+  const clearedTasksKey = run?.runId
+    ? `th:clearedTasks:${activeProjectId() || ""}:${run.runId}` : null;
+  const [clearedTaskIds, setClearedTaskIds] = useState(() => new Set());
+  useEffect(() => {
+    if (!clearedTasksKey) { setClearedTaskIds(new Set()); return; }
+    try {
+      const raw = JSON.parse(localStorage.getItem(clearedTasksKey) || "[]");
+      setClearedTaskIds(new Set(Array.isArray(raw) ? raw.map(String) : []));
+    } catch { setClearedTaskIds(new Set()); }
+  }, [clearedTasksKey]);
+
+  // Companion to activeAgents: the harness Task list (TaskCreate / TaskUpdate).
+  // Unlike subagents, a task carries a persistent status across the whole turn,
+  // so we surface tasks whenever ANY exist — not just while streaming. The id
+  // comes back in the TaskCreate result ("Task #N created…"); fall back to
+  // creation order (which mirrors the harness's sequential numbering) when the
+  // result hasn't landed yet. TaskUpdate({taskId,status}) patches status.
+  // Tasks the user already cleared are filtered out (see clearedTaskIds).
+  const tasks = useMemo(() => {
+    const resultById = new Map();
+    for (const ev of events) {
+      const d = ev?.data;
+      if (ev?.event === "agent" && d?.type === "tool_result" && d.toolUseId) {
+        resultById.set(d.toolUseId, d);
+      }
+    }
+    const resultText = (r) => {
+      if (!r) return "";
+      const c = r.content;
+      if (typeof c === "string") return c;
+      if (Array.isArray(c)) return c.map(p => typeof p === "string" ? p : (p?.text || "")).join(" ");
+      return "";
+    };
+    const byId = new Map();
+    const order = [];
+    let seq = 0;
+    for (const ev of events) {
+      if (ev?.event !== "agent") continue;
+      const d = ev.data;
+      if (d?.type !== "tool_use") continue;
+      if (d.name === "TaskCreate") {
+        seq += 1;
+        const inp = d.input || {};
+        const m = resultText(resultById.get(d.id)).match(/Task #(\d+)/);
+        const id = m ? m[1] : String(seq);
+        const t = { id, subject: inp.subject || inp.description || "Task",
+                    activeForm: inp.activeForm || "", status: "pending", seq };
+        if (!byId.has(id)) order.push(id);
+        byId.set(id, t);
+      } else if (d.name === "TaskUpdate") {
+        const inp = d.input || {};
+        const id = inp.taskId != null ? String(inp.taskId) : null;
+        if (id && byId.has(id) && inp.status) byId.get(id).status = inp.status;
+      }
+    }
+    return order.map(id => byId.get(id)).filter(t => !clearedTaskIds.has(t.id));
+  }, [events, clearedTaskIds]);
+
+  // Close → archive the COMPLETED tasks durably (workflow/tasks-archive.jsonl,
+  // for the user to collate later) and add them to the cleared set so they
+  // drop off the strip on reopen. Pending / in-progress tasks are left alone.
+  // The archive POST is fire-and-forget; the local clear happens regardless.
+  const handleClose = useCallback(() => {
+    const done = tasks.filter(t => t.status === "completed" && !clearedTaskIds.has(t.id));
+    if (done.length && clearedTasksKey) {
+      fetch(apiUrl("/__tasks/archive"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project:   activeProjectId(),
+          runId:     run?.runId || "",
+          chatTitle: run?.title || "",
+          tasks: done.map(t => ({ id: t.id, subject: t.subject,
+                                  activeForm: t.activeForm, status: t.status })),
+        }),
+      }).catch(() => {});
+      const next = new Set(clearedTaskIds);
+      done.forEach(t => next.add(t.id));
+      setClearedTaskIds(next);
+      try { localStorage.setItem(clearedTasksKey, JSON.stringify([...next])); } catch {}
+    }
+    if (onClose) onClose();
+  }, [tasks, clearedTaskIds, clearedTasksKey, run?.runId, run?.title, onClose]);
+
+  // Which list the sticky strip shows when BOTH tasks + agents are present.
+  // null = follow the default (agents while live, else tasks); a user click
+  // pins the choice as long as that tab still has content.
+  const [stripTab, setStripTab] = useState(null);
+
   // Did the agent modify files this run? Drives the auto-reload-on-done
   // decision in App. We only check WRITE-flavoured tools (Write/Edit/
   // MultiEdit/NotebookEdit) — Read/Glob/Grep are read-only, Bash is opaque
@@ -9777,7 +9870,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             onClick=${() => setFullscreen(f => !f)}
             title=${fullscreen ? "Exit fullscreen" : "Fullscreen"}
           >${fullscreen ? "⤡" : "⤢"}</button>
-          <button className="chat-action chat-action-close" onClick=${onClose} title="Close (run keeps going)">×</button>
+          <button className="chat-action chat-action-close" onClick=${handleClose} title="Close (run keeps going)">×</button>
         </div>
       </div>
       ${!collapsed && html`
@@ -9808,17 +9901,43 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           ${status === "error" && html`<div className="chat-error">${error || "Stream error"}</div>`}
         </div>
       `}
-      ${activeAgents.length > 0 && html`
-        <div className="chat-active-agents" aria-label=${`${activeAgents.length} subagent${activeAgents.length === 1 ? "" : "s"} running`}>
-          ${activeAgents.map(a => html`
-            <div className="chat-active-agent" key=${a.id} title=${`${a.type} — ${a.task}`}>
-              <span className="chat-active-agent-spin" aria-hidden="true"/>
-              <span className="chat-active-agent-type">${a.type}</span>
-              <span className="chat-active-agent-task">${a.task}</span>
+      ${(tasks.length > 0 || activeAgents.length > 0) && (() => {
+        const showTasks  = tasks.length > 0;
+        const showAgents = activeAgents.length > 0;
+        const both = showTasks && showAgents;
+        const eff = (stripTab === "tasks" && showTasks) || (stripTab === "agents" && showAgents)
+          ? stripTab
+          : (showAgents ? "agents" : "tasks");
+        const taskMark = (s) => s === "completed" ? "✓" : s === "in_progress" ? "▸"
+                              : s === "cancelled" ? "✕" : "○";
+        return html`
+        <div className="chat-active-agents">
+          ${both && html`
+            <div className="chat-active-tabs" role="tablist">
+              <button type="button" role="tab" className="chat-active-tab" data-active=${eff === "tasks"}
+                aria-selected=${eff === "tasks"} onClick=${() => setStripTab("tasks")}>Tasks ${tasks.length}</button>
+              <button type="button" role="tab" className="chat-active-tab" data-active=${eff === "agents"}
+                aria-selected=${eff === "agents"} onClick=${() => setStripTab("agents")}>Agents ${activeAgents.length}</button>
             </div>
-          `)}
-        </div>
-      `}
+          `}
+          <div className="chat-active-list" aria-label=${eff === "agents"
+            ? `${activeAgents.length} subagent${activeAgents.length === 1 ? "" : "s"} running`
+            : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}>
+            ${eff === "agents"
+              ? activeAgents.map(a => html`
+                <div className="chat-active-agent" key=${a.id} title=${`${a.type} — ${a.task}`}>
+                  <span className="chat-active-agent-spin" aria-hidden="true"/>
+                  <span className="chat-active-agent-type">${a.type}</span>
+                  <span className="chat-active-agent-task">${a.task}</span>
+                </div>`)
+              : tasks.map(t => html`
+                <div className="chat-active-agent" key=${t.id} data-status=${t.status} title=${t.subject}>
+                  <span className="chat-active-task-mark" data-status=${t.status} aria-hidden="true">${taskMark(t.status)}</span>
+                  <span className="chat-active-agent-task">${t.status === "in_progress" && t.activeForm ? t.activeForm : t.subject}</span>
+                </div>`)}
+          </div>
+        </div>`;
+      })()}
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
@@ -19915,9 +20034,31 @@ function WorkflowCanvas() {
           // version that didn't know about output.
           const freshById = new Map((fresh.nodes || []).map(n => [n.id, n]));
           let statusChanged = false;
+          // Every node we've loaded/saved gets at least an "id|x" snapshot key.
+          // So a node in memory that is ALSO absent from disk falls into two
+          // cases: (a) it has a snapshot → it was previously persisted, so its
+          // absence means a collaborator DELETED it → drop it locally; (b) it
+          // has no snapshot → it's a brand-new local node not yet saved → keep.
+          const savedNodeIds = new Set();
+          for (const k of savedSnapshotRef.current.keys()) {
+            if (k.indexOf("wb:") === 0) continue;
+            const bar = k.indexOf("|");
+            if (bar > 0) savedNodeIds.add(k.slice(0, bar));
+          }
+          const removedIds = new Set();   // nodes a collaborator deleted
           const mergedNodes = (prev.nodes || []).map(local => {
             const disk = freshById.get(local.id);
-            if (!disk) return local;
+            if (!disk) {
+              // Remote delete — a collaborator removed this node. Drop it
+              // unless WE are mid-deleting it (deletedSet) or it's a brand-new
+              // local node we haven't persisted yet (no snapshot).
+              if (savedNodeIds.has(local.id) && !deletedSet.has(local.id)) {
+                statusChanged = true;
+                removedIds.add(local.id);
+                return null;
+              }
+              return local;
+            }
             // v3.4.8 — Bug B: runStatus / runError are written by BOTH the
             // daemon (orchestrator agent runs flipping to "running" / "error")
             // AND the client (runRemix / runRepeater / quick-action spawns
@@ -20015,7 +20156,7 @@ function WorkflowCanvas() {
             if (allMatch) return local;
             statusChanged = true;
             return { ...local, ...dDaemon };
-          });
+          }).filter(Boolean);  // drop nodes a collaborator deleted
           // ── Whiteboard merge — whole-item clean/dirty via "wb:<id>"
           // snapshots (wb items are small and have no daemon-owned fields,
           // so per-field tracking would be overkill). Three moves:
@@ -20055,10 +20196,19 @@ function WorkflowCanvas() {
             wbChanged = true;
           }
           if (!addedNodes.length && !addedEdges.length && !statusChanged && !wbChanged) return prev;
+          // Drop edges that referenced a collaborator-deleted node so they
+          // don't dangle (the deleter's save already removed them on disk).
+          const keptEdges = removedIds.size
+            ? (prev.edges || []).filter(e => {
+                const f = (e.from || "").split(".", 1)[0];
+                const t = (e.to   || "").split(".", 1)[0];
+                return !removedIds.has(f) && !removedIds.has(t);
+              })
+            : (prev.edges || []);
           return {
             ...prev,
             nodes: [...mergedNodes, ...addedNodes],
-            edges: [...(prev.edges || []), ...addedEdges],
+            edges: [...keptEdges, ...addedEdges],
             wb: [...mergedWb, ...addedWb],
           };
         });
