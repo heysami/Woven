@@ -144,15 +144,20 @@ function buildFramesRegenPrompt(branch) {
     "Target data file: editor/data.js (window.EDITOR_DATA)",
     "",
     "SCOPE — produce ONLY:",
-    "  • frames[]   — one per HTML page under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry",
+    "  • frames[]   — one per distinct SCREEN/STATE under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry AND setupScript",
     "  • arrows[]   — connections between frames (from/to/action) derived from in-source navigation (links, programmatic routing, hash changes)",
+    "",
+    "setupScript is REQUIRED, not optional — it is the per-frame state-driver the editor evals on iframe load (Subagent 3 / Prototype owns it; see 3-prototype.md). Many prototypes are SINGLE-PAGE: every screen is the same entry (e.g. index.html) with NO hash routing, and the visible screen is chosen by a React useState (a `view`/`tab`/`active`/`step` variable). For those, entry+hash CANNOT differentiate the frames — without setupScript every frame renders the SAME default screen. Author one per frame that needs a non-default state:",
+    "  • Drive state via the server-injected helpers (always available — serve.py POKE_HELPER): `window.__pokeBy(\"<Component>\",\"<stateName>\",<value>)` flips the named useState; `window.__poke(\"<Component>\",<hookIndex>,<value>)` by index. Name the component that actually OWNS the state — often a child (e.g. a card with the tabs), not App.",
+    "  • Drill-down/detail frames usually need TWO pokes — set the selection state, then the view (e.g. `window.__pokeBy(\"App\",\"sel\",{students:\"S1\"});window.__pokeBy(\"App\",\"view\",\"students\")`). Use a real id from the source data.",
+    "  • setupScript: null ONLY for the frame that IS the default render (the initial useState values). Do NOT leave it null because the helper was hard to find — read editor/serve.py to confirm injection. An all-null setupScripts result on a single-page app is the anomaly flagged at playbook step 4g.",
     "",
     "DO NOT regenerate / DO NOT touch:",
     "  • primitives[] · entities[] · stateMachines · timelines · grids · links · lanes",
     "  • design-systems/ · meta.dsRef",
     "  • any source/ file — this is a one-way derivation from source → editor/data.js",
     "",
-    "Read docs/agents/workflows/1-regenerate.md (frames + arrows subagents only) for the playbook. Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written editor/data.js, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
+    "Read docs/agents/workflows/1-regenerate.md (Canvas #2 for col/row, Prototype #3 for entry/hash/setupScript/w/h, User-flow #4 for arrows) for the playbook, plus the setupScript ↔ arrow consistency check (step 4d). Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label, and preserve a frame's existing setupScript if it still drives the right state. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written editor/data.js, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
     "",
     "Gate check: meta.dsRef should already be set (this is a frames-only regen, not a fresh project bootstrap). If it isn't, ignore and proceed — frames don't depend on DS.",
   ].join("\n");
@@ -25507,16 +25512,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // event scoped to `editor/data.js` bumps the iframe nonce so the canvas
   // surface populates without a manual reload. Fired from the
   // prototype-node's top-bar Canvas-frames button.
-  const openCanvasFrames = useCallback((protoNode) => {
+  const openCanvasFrames = useCallback(async (protoNode) => {
     if (!protoNode) return;
     const branch = nodePrototype(protoNode);
-    // Best-effort existence check: window.EDITOR_DATA is loaded once per
-    // project, frames + arrows live on D directly. A genuinely missing
-    // data file or a freshly forked branch shows up as `D.frames.length
-    // === 0`. We trust the in-memory data — fetching editor/data.js a
-    // second time would just race the page load.
-    const hasFrames = Array.isArray(D && D.frames) && D.frames.length > 0;
-
+    // Existence check. window.EDITOR_DATA is loaded ONCE at page load; if the
+    // page happened to load while editor/data.js was mid-write (a regen
+    // write-race, or the daemon briefly 404'ing during a mirror sync), D got
+    // the empty stub (`frames: []`) and STAYS empty until a full reload — so
+    // every click here falsely reported "no frames exist" even though they're
+    // on disk. So: a positive in-memory read is always real (a stub never
+    // carries frames) and we trust it; a NEGATIVE read is re-verified against
+    // disk before we prompt to regenerate. See bug: "click canvas-frames →
+    // 'doesn't exist' even though the editor shows them created."
     const spawnNode = () => {
       const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       const w = 800, h = 540;
@@ -25540,9 +25547,44 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }));
     };
 
-    if (hasFrames) {
+    // Trust a positive in-memory read immediately.
+    if (Array.isArray(D && D.frames) && D.frames.length > 0) {
       spawnNode();
       return;
+    }
+
+    // In-memory says "no frames" — but that snapshot may be a stale empty
+    // stub from a load-time write-race. Re-verify against disk before we
+    // prompt to regenerate. Request the SAME file the frames iframe loads:
+    // editor/data.js?prototype=<branch> (the daemon serves editor/<branch>.
+    // data.js when it exists, else the project-level file — serve.py ~5888).
+    try {
+      let url = apiUrl("/editor/data.js");
+      url += (url.includes("?") ? "&" : "?") + "prototype=" + encodeURIComponent(branch);
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.ok) {
+        const txt = await res.text();
+        // data.js is `window.EDITOR_DATA = {…}` (JS, not JSON). Evaluate it
+        // against a throwaway `window` so we read the real frames without
+        // touching the page's own D. A partial/mid-write file throws here →
+        // caught → falls through to the regenerate prompt (correct: there's
+        // nothing usable to show yet).
+        const sandbox = {};
+        new Function("window", txt)(sandbox);
+        const fresh = sandbox.EDITOR_DATA;
+        if (fresh && Array.isArray(fresh.frames) && fresh.frames.length > 0) {
+          // Patch the in-memory snapshot so subsequent clicks are fast and
+          // the rest of the app sees the recovered data.
+          try {
+            D.frames = fresh.frames;
+            if (Array.isArray(fresh.arrows)) D.arrows = fresh.arrows;
+          } catch {}
+          spawnNode();
+          return;
+        }
+      }
+    } catch (err) {
+      console.error("[open-canvas-frames] disk re-check failed", err);
     }
 
     // No frames data — confirm + dispatch a frames-only generation. The
@@ -41834,7 +41876,39 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
+  const loadRetryRef = useRef(0);
   const protoSlug = nodePrototype(node);
+
+  // Self-heal a white embed. The frames node loads the full editor in an
+  // iframe; if the daemon serves a 404/partial for editor/data.js during a
+  // regen write-race (or a mirror sync), the embed boots without EDITOR_DATA
+  // and paints white — and only a manual Reload fixed it. On each load we
+  // peek at the embed's EDITOR_DATA (same-origin, so readable); a missing
+  // `meta` means the data didn't evaluate → bump the nonce to reload, capped
+  // with backoff so we don't hammer the daemon or loop forever on a project
+  // that legitimately has no frames yet (valid data with `frames: []` still
+  // carries `meta`, so it's treated as a successful load — no retry).
+  const MAX_FRAMES_LOAD_RETRIES = 4;
+  const onIframeLoad = useCallback(() => {
+    const fr = iframeRef.current;
+    if (!fr) return;
+    // Zoomed-out LOD renders the iframe with no src (an about:blank load) —
+    // nothing to heal, and retrying would remount it for no reason.
+    if (!fr.getAttribute("src")) return;
+    let loaded = false;
+    try {
+      const ed = fr.contentWindow && fr.contentWindow.EDITOR_DATA;
+      loaded = !!(ed && ed.meta && ed.meta.project);
+    } catch {
+      // Cross-origin or not-yet-evaluated — let the retry budget decide.
+      loaded = false;
+    }
+    if (loaded) { loadRetryRef.current = 0; return; }
+    if (loadRetryRef.current >= MAX_FRAMES_LOAD_RETRIES) return;
+    loadRetryRef.current += 1;
+    const delay = 400 * loadRetryRef.current; // 400ms, 800ms, 1.2s, 1.6s
+    setTimeout(() => setNonce(n => n + 1), delay);
+  }, []);
   const cfg = PROTOTYPE_VIEW_NODE[node.kind] || PROTOTYPE_VIEW_NODE.frames;
   const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
 
@@ -41862,6 +41936,9 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         p === editorData || p === perProtoData ||
         p.endsWith("/editor/data.js") || p.endsWith(`/editor/${protoSlug}.data.js`)
       ))) {
+        // Fresh data landed — give the reload a clean retry budget so the
+        // self-heal can recover even if this write also lands mid-flight.
+        loadRetryRef.current = 0;
         setNonce(n => n + 1);
       }
     };
@@ -41988,6 +42065,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           ref=${iframeRef}
           className="workflow-node-iframe"
           src=${lodLive ? iframeSrc : undefined}
+          onLoad=${onIframeLoad}
           title=${cfg.label + ": " + protoSlug}
           style=${{
             /* v3.5 — render the embedded editor at native pixel size, no
