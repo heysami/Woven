@@ -7084,9 +7084,31 @@ class H(http.server.SimpleHTTPRequestHandler):
                         n.get("id"): n for n in (_existing.get("nodes") or [])
                         if isinstance(n, dict) and isinstance(n.get("id"), str)
                     }
+                    # Live Session HARD LOCK — when a live session is active,
+                    # reject changes to any node currently leased by someone
+                    # OTHER than this writer (keep the canonical node verbatim).
+                    # This is what turns the "locked by <name>" badge into a real
+                    # lock: a collaborator's concurrent edit can no longer clobber
+                    # the holder's work (the revert the host kept hitting). The
+                    # writer is the guest's id (threaded by the gate as
+                    # X-Th-Writer) or "host" for the host's direct write.
+                    _lease_writer = None
+                    _lock_holders = {}
+                    try:
+                        if _live.project_has_live_session(project_id):
+                            _lease_writer = self.headers.get("X-Th-Writer") or "host"
+                            _lock_holders = _live.lease_holders(project_id)
+                    except Exception:
+                        _lease_writer = None
                     for n in clean_nodes:
                         disk_n = _disk_by_id.get(n.get("id"))
                         if not disk_n: continue
+                        if _lease_writer is not None:
+                            _holder = _lock_holders.get("node:" + str(n.get("id")))
+                            if _holder and _holder != _lease_writer:
+                                # held by someone else — drop this writer's edits
+                                n.clear(); n.update(disk_n)
+                                continue
                         # Always preserve daemon-owned status fields if disk has them.
                         # v2.20 — `runId` added alongside `runRunId` so the chat
                         # transcript pointer survives the editor's debounced save.

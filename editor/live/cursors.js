@@ -143,7 +143,7 @@
       cid = localStorage.getItem("th-live-cid") || "";
       if (!cid) { cid = "c-" + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("th-live-cid", cid); }
     } catch (e) {}
-    try { const j = await api("api/join", { name, clientId: cid }); TOKEN = j.token; GID = j.guestId; COLOR = j.color; try { window.__thLiveActive = true; } catch (e) {} start(); } catch (e) {}
+    try { const j = await api("api/join", { name, clientId: cid }); TOKEN = j.token; GID = j.guestId; COLOR = j.color; try { window.__thLiveActive = true; window.__thLiveToken = TOKEN; } catch (e) {} start(); } catch (e) {}
   }
 
   // Wait for the canvas to mount, then boot.

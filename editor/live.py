@@ -777,6 +777,21 @@ def host_events_stream(h, project_id):
             s.waiters.discard(waiter)
 
 
+def lease_holders(project_id):
+    """{target -> holder guestId} of all UNEXPIRED leases for the project's live
+    session(s). Used by serve.py's /__workflow save to enforce the hard lock:
+    a write that changes a node held by someone other than the writer is
+    rejected (canonical kept). Empty dict when no live session."""
+    now = _now()
+    out = {}
+    for s in _active_sessions_for_project(project_id):
+        with s.lock:
+            for t, l in s.leases.items():
+                if now <= l.get("expiresAt", 0):
+                    out[t] = l.get("holder")
+    return out
+
+
 def host_lease_acquire(project_id, target, name="Host"):
     """Host-side counterpart of lease_acquire (no token — host is trusted).
     Soft lock: first holder wins; if a guest already holds it the host does
@@ -1128,8 +1143,10 @@ def _drain(h):
     except Exception:
         return b""
 
-def _proxy_daemon_write(h, path, project):
-    """Forward a POST body to the daemon, project FORCED. Returns its response."""
+def _proxy_daemon_write(h, path, project, writer=None):
+    """Forward a POST body to the daemon, project FORCED. Returns its response.
+    `writer` (a guestId) is passed through as X-Th-Writer so the daemon can
+    enforce the hard node lock (reject edits to a node held by someone else)."""
     import urllib.request as _ur, urllib.error as _ue
     if DAEMON_PORT is None:
         _drain(h); return _json(h, 502, {"error": "daemon unavailable"})
@@ -1138,6 +1155,7 @@ def _proxy_daemon_write(h, path, project):
     req = _ur.Request(url, data=body, method="POST")
     ct = h.headers.get("Content-Type")
     if ct: req.add_header("Content-Type", ct)
+    if writer: req.add_header("X-Th-Writer", writer)
     try:
         resp = _ur.urlopen(req, timeout=60)
         out, status = resp.read(), getattr(resp, "status", 200)
@@ -1167,7 +1185,14 @@ def _rooted_post(h, token, path):
     if not s.active:
         _drain(h); return _json(h, 409, {"error": "session not live"})
     if path.startswith("/__") and _proxy_write_ok(path):
-        return _proxy_daemon_write(h, path, rec.get("project") or "")
+        # Resolve the writing guest from their live token (sent by the editor as
+        # X-Live-Token) so the daemon can enforce the hard lock. Falls back to
+        # no-identity (last-writer) if the editor didn't send one.
+        writer = None
+        lt = h.headers.get("X-Live-Token")
+        if lt:
+            writer = s.tokens.get(lt)
+        return _proxy_daemon_write(h, path, rec.get("project") or "", writer)
     _drain(h)
     return _json(h, 200, {"ok": True, "readOnly": True})
 

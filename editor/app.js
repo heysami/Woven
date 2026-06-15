@@ -19732,9 +19732,14 @@ function WorkflowCanvas() {
       const attemptSave = (attemptNum) => {
         inFlightRef.current = true;
         const signal = saveAbortRef.current && saveAbortRef.current.signal;
+        // Live Session — when a guest is editing through the gate, send their
+        // live token so the daemon can attribute this write to them and enforce
+        // the hard node lock (a write to a node someone else holds is dropped).
+        const _saveHeaders = { "Content-Type": "application/json" };
+        try { if (window.__thLiveToken) _saveHeaders["X-Live-Token"] = window.__thLiveToken; } catch {}
         return fetch(apiUrl("/__workflow"), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: _saveHeaders,
           body: JSON.stringify(payload),
           signal,
         }).then(r => {
