@@ -18335,6 +18335,15 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   overflow: hidden;
   user-select: text;
 }
+/* Brief pulse when the panel is opened pointed at a specific line
+   (double-click-on-data-text), so the eye lands on the revealed source. */
+.workflow-code-panel.is-focusing {
+  animation: workflow-code-panel-focus 0.9s ease-out;
+}
+@keyframes workflow-code-panel-focus {
+  0%   { box-shadow: 0 0 0 2px var(--accent), 4px 4px 16px rgba(0, 0, 0, 0.08); }
+  100% { box-shadow: 4px 4px 16px rgba(0, 0, 0, 0.08); }
+}
 
 /* v3.4.x — Workflow-mode property inspector dock. Docks to the right of
    the host node like .workflow-code-panel. Inner body uses the shared

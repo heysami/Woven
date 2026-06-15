@@ -33692,6 +33692,114 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // (HTML / SVG / JSON / CSS / JS / text) show one body; prototypes
   // surface every text file under source/<slug>/ as a tab strip.
   const [codePanelNodeId, setCodePanelNodeId] = useState(null);
+  // Programmatic focus for the code panel: { token, nodeId, path, needle }.
+  // Set alongside codePanelNodeId by the double-click-on-data-text feature so
+  // the panel switches to the right file tab and scrolls/selects the match.
+  const [codePanelFocus, setCodePanelFocus] = useState(null);
+  const codeFocusTokenRef = useRef(0);
+  const openCodePanelAt = useCallback((nodeId, path, needle) => {
+    setCodePanelNodeId(nodeId);
+    setCodePanelFocus({ token: ++codeFocusTokenRef.current, nodeId, path, needle });
+  }, []);
+
+  // ── Double-click data-bound text → code panel (workflow canvas) ──────────
+  // While a prototype/asset node is selected its iframe is interactive
+  // (pointer-events:auto). Double-clicking text there checks whether the
+  // string lives in the prototype's data.js: if so we open the code panel
+  // focused on that line; otherwise the literal is edited inline and staged
+  // like any inspector text edit. Whiteboard mode keeps its own dbl-edit, so
+  // this no-ops there. Reads live state through a ref so the listener can
+  // attach once and survive selection / data changes.
+  const dblTextRef = useRef({});
+  dblTextRef.current = {
+    openCodePanelAt, stageInspectorEdit, flashPickOp,
+    findNode: (id) => (data.nodes || []).find(n => n.id === id),
+  };
+  useEffect(() => {
+    let cancelled = false;
+    const attached = new Map(); // iframe → teardown
+    const findEligible = () => Array.from(
+      document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id]')
+    );
+    const handlerFor = (ifr) => {
+      let doc; try { doc = ifr.contentDocument; } catch { return null; }
+      if (!doc) return null;
+      const onDbl = async (e) => {
+        if (wbModeRef.current) return; // whiteboard items handle their own dbl
+        const nodeId = ifr.getAttribute("data-prototype-id")
+                    || ifr.getAttribute("data-asset-id") || "";
+        // Only the selected (interactive) node — matches the iframe's
+        // pointer-events:auto gate so we never fire on a stray hover.
+        if (!nodeId || !selectedNodeIdsRef.current.has(nodeId)) return;
+        let el; try { el = doc.elementFromPoint(e.clientX, e.clientY); } catch { el = e.target; }
+        if (!el || el.tagName === "HTML" || el.tagName === "BODY" || el.tagName === "IFRAME") return;
+        const needle = thNeedleFor(el);
+        if (!needle || needle.length < 2) return;
+        e.preventDefault(); e.stopPropagation();
+        const api = dblTextRef.current;
+        const node = api.findNode(nodeId);
+        const branch = nodePrototype(node);
+        let res;
+        try { res = await thDetectDataText(branch, needle); }
+        catch { res = { found: false }; }
+        if (cancelled) return;
+        if (res.found) {
+          api.openCodePanelAt(nodeId, res.path, needle);
+        } else {
+          // Hardcoded literal → inline edit, staged so React-managed
+          // prototypes replay it after reload (best-effort; see
+          // stageInspectorEdit). Identity meta captured pre-edit.
+          let preMeta, preSel;
+          try { preMeta = _patchTargetMeta(el); preSel = elementPatchSelector(el); } catch {}
+          zoomBeginInlineEdit(el, () => {
+            try {
+              api.stageInspectorEdit(ifr, doc, Object.assign({
+                type: "text", selector: preSel, text: el.textContent || "",
+              }, preMeta || {}));
+              api.flashPickOp && api.flashPickOp("ok", "Text edited — Save to persist");
+            } catch {}
+          });
+        }
+      };
+      doc.addEventListener("dblclick", onDbl, true);
+      return () => { try { doc.removeEventListener("dblclick", onDbl, true); } catch {} };
+    };
+    const installOn = (ifr) => {
+      if (cancelled || attached.has(ifr)) return;
+      const reinstall = () => {
+        const prev = attached.get(ifr);
+        if (prev) { try { prev(); } catch {} attached.delete(ifr); }
+        const td = handlerFor(ifr);
+        if (td) attached.set(ifr, td);
+      };
+      ifr.addEventListener("load", reinstall);
+      ifr.__thDblTextOnLoad = reinstall;
+      reinstall();
+    };
+    findEligible().forEach(installOn);
+    // Catch iframes that mount after this effect (new cards, reloads).
+    const iv = setInterval(() => {
+      if (cancelled) { clearInterval(iv); return; }
+      const cur = new Set(findEligible());
+      for (const ifr of cur) if (!attached.has(ifr)) installOn(ifr);
+      for (const [ifr, td] of attached) {
+        if (!cur.has(ifr)) {
+          try { td(); } catch {}
+          attached.delete(ifr);
+          try { if (ifr.__thDblTextOnLoad) { ifr.removeEventListener("load", ifr.__thDblTextOnLoad); delete ifr.__thDblTextOnLoad; } } catch {}
+        }
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      for (const [ifr, td] of attached) {
+        try { td(); } catch {}
+        try { if (ifr.__thDblTextOnLoad) { ifr.removeEventListener("load", ifr.__thDblTextOnLoad); delete ifr.__thDblTextOnLoad; } } catch {}
+      }
+      attached.clear();
+    };
+  }, []); // attach once; live state read via dblTextRef / *Ref
 
   // Share mode — which prototype node has its comments dock open. Docks to
   // the node's LEFT edge (code panel + picked-element inspector own the
@@ -35148,7 +35256,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${"codepanel-" + host.id}
                 node=${host}
                 zoom=${zoom}
-                onClose=${() => setCodePanelNodeId(null)}
+                focus=${codePanelFocus && codePanelFocus.nodeId === host.id ? codePanelFocus : null}
+                onClose=${() => { setCodePanelNodeId(null); setCodePanelFocus(null); }}
               />`;
             })()}
             ${commentsPanelNodeId && (() => {
@@ -35834,6 +35943,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           data=${data}
           setData=${setData}
           onClose=${() => setZoomTarget(null)}
+          onRevealInCode=${(path, needle) => {
+            // Double-click on data-bound text in zoom mode: there's no code
+            // panel inside the overlay, so exit to the canvas and open the
+            // host node's code panel focused on the match. Viewer-tab zooms
+            // have no host node — fall back to leaving the overlay open.
+            const nid = zoomTarget && zoomTarget.nodeId;
+            if (!nid) return;
+            setZoomTarget(null);
+            openCodePanelAt(nid, path, needle);
+          }}
           onSwitchTarget=${(filePath, branch) => {
             // Drill-into-component keeps the viewer in sync: the new target
             // opens as a tab too, so closing the overlay lands on it.
@@ -38272,7 +38391,7 @@ function ZoomSlotPopover({ at, picked, onPick, onClose }) {
   `;
 }
 
-function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onSwitchTarget }) {
+function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onRevealInCode, onSwitchTarget }) {
   const [tool, setTool] = useState("select");
   const [ready, setReady] = useState(false);
   const [isReactPage, setIsReactPage] = useState(false);
@@ -38807,13 +38926,42 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onS
         setHoverRect(zoomRectFor(el, iframeRef.current));
       };
       const onLeave = () => setHoverRect(null);
+      // Double-click (Select tool) → data-bound text routes to the code panel
+      // on the canvas; a hardcoded literal is edited inline in place. Mirrors
+      // the workflow-canvas double-click feature; "inline edit always" for the
+      // non-data case (no React-managed block) per the chosen UX.
+      const onDbl = async (e) => {
+        if (tool !== "select") return;
+        let el = doc.elementFromPoint(e.clientX, e.clientY);
+        if (!el || el.tagName === "HTML" || el.tagName === "BODY" || el.tagName === "IFRAME") return;
+        const needle = thNeedleFor(el);
+        if (!needle || needle.length < 2) return;
+        e.preventDefault(); e.stopPropagation();
+        let res; try { res = await thDetectDataText(branch, needle); } catch { res = { found: false }; }
+        if (res.found) {
+          if (onRevealInCode) onRevealInCode(res.path, needle);
+          else showToast("This text comes from data.js — edit it in the code panel");
+          return;
+        }
+        if (!el.getAttribute(ZOOM_ID_ATTR)) el.setAttribute(ZOOM_ID_ATTR, zoomMakeId());
+        const editSnap = snapshotBefore();
+        const preMeta = _patchTargetMeta(el);
+        const preSel  = elementPatchSelector(el);
+        zoomBeginInlineEdit(el, () => {
+          recordOp("Updated text (unsaved)", editSnap, Object.assign({
+            type: "text", selector: preSel, text: el.textContent || "",
+          }, preMeta));
+        });
+      };
       doc.addEventListener("click", onClick, true);
       doc.addEventListener("mousemove", onMove, true);
       doc.addEventListener("mouseleave", onLeave, true);
+      doc.addEventListener("dblclick", onDbl, true);
       return () => {
         doc.removeEventListener("click", onClick, true);
         doc.removeEventListener("mousemove", onMove, true);
         doc.removeEventListener("mouseleave", onLeave, true);
+        doc.removeEventListener("dblclick", onDbl, true);
       };
     };
     const docs = zoomCollectDocs(rootDoc);
@@ -40386,6 +40534,60 @@ function zoomBeginInlineEdit(el, onCommitSave) {
   el.addEventListener("keydown", onKey);
 }
 
+/* ───── Double-click "is this text data-bound?" detection ─────────────────
+   Shared by the workflow canvas + zoom-mode double-click feature. Prototype
+   content lives in the prototype's data.js (the window.DEMO blob); components
+   render it via DEMO.xxx references. So "this text comes from data" reduces to
+   "this string appears in data.js". When it does, the caller routes the user
+   to the code panel focused on that line (editing the rendered DOM would be
+   reverted on the next React render). When it doesn't, the text is a hardcoded
+   literal and the caller drops into inline contenteditable. */
+function thNormText(s) { return (s || "").replace(/\s+/g, " ").trim(); }
+function thEscapeRegExp(s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+// Tightest meaningful text for the clicked element — prefer the element's own
+// direct text nodes (so clicking a heading inside a card grabs the heading,
+// not the whole card), falling back to a clipped textContent.
+function thNeedleFor(el) {
+  if (!el) return "";
+  let direct = "";
+  try { for (const n of el.childNodes) if (n.nodeType === 3) direct += n.nodeValue; } catch {}
+  direct = thNormText(direct);
+  if (direct.length >= 2) return direct;
+  return thNormText(el.textContent).slice(0, 240);
+}
+
+// First index of `needle` in `text`, tolerant of whitespace differences
+// between the rendered DOM (collapsed) and the source literal. -1 if absent.
+function thFindNeedle(text, needle) {
+  const n = thNormText(needle);
+  if (!text || n.length < 2) return -1;
+  let i = text.indexOf(n);
+  if (i >= 0) return i;
+  try {
+    const rx = new RegExp(n.split(/\s+/).map(thEscapeRegExp).join("\\s+"));
+    const m = rx.exec(text);
+    if (m) return m.index;
+  } catch {}
+  return -1;
+}
+
+// Does `needle` live in the prototype's data.js? Resolves to
+// { found, path }. A network/parse failure resolves to found:false so a
+// double-click still falls through to inline editing rather than dying. */
+async function thDetectDataText(branch, needle) {
+  const path = `source/${(branch || "main").split("/").map(encodeURIComponent).join("/")}/data.js`;
+  const n = thNormText(needle);
+  if (n.length < 2) return { found: false, path };
+  let src = "";
+  try {
+    const u = apiUrl("/" + path);
+    const r = await fetch(u + (u.includes("?") ? "&" : "?") + "_c=" + Date.now());
+    src = r.ok ? await r.text() : "";
+  } catch { src = ""; }
+  return { found: thFindNeedle(src, n) >= 0, path };
+}
+
 /* Popover anchored to a clicked element for adding a comment. Positioned
    below+left of the element when possible, flips above if it would clip. */
 function ZoomCommentPopover({ rect, label, onCancel, onSave }) {
@@ -41379,9 +41581,10 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
   `;
 }
 
-function WorkflowCodePanel({ node, onClose, zoom }) {
+function WorkflowCodePanel({ node, onClose, zoom, focus }) {
   const [files, setFiles] = useState([]);          // [{ path, label }]
   const [activeIdx, setActiveIdx] = useState(0);
+  const [focusFlash, setFocusFlash] = useState(false); // brief pulse on programmatic focus
   const [bodies, setBodies] = useState({});        // path → { text, loading, error }
   const [panelW, setPanelW] = useState(480);
   const [drafts, setDrafts] = useState({});        // path → string (unsaved edit), absent = clean
@@ -41631,9 +41834,41 @@ function WorkflowCodePanel({ node, onClose, zoom }) {
     }
   };
 
+  // Programmatic focus (double-click-on-data-text). When the caller opens the
+  // panel pointed at a specific file, switch to that tab…
+  useEffect(() => {
+    if (!focus || !focus.path) return;
+    const idx = files.findIndex(f => f.path === focus.path || f.savePath === focus.path);
+    if (idx >= 0 && idx !== activeIdx) setActiveIdx(idx);
+  }, [focus && focus.token, files]);
+  // …then, once that tab's bytes are loaded, select + scroll to the match and
+  // flash the panel so the user sees where the string lives in the source.
+  useEffect(() => {
+    if (!focus || !focus.path || !focus.needle) return;
+    if (activePath !== focus.path) return;
+    if (!cur || cur.loading || cur.error) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const i = thFindNeedle(displayText, focus.needle);
+    if (i < 0) return;
+    const len = thNormText(focus.needle).length;
+    const raf = requestAnimationFrame(() => {
+      try {
+        ta.focus();
+        ta.setSelectionRange(i, i + len);
+        const line = displayText.slice(0, i).split("\n").length;
+        const lineH = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+        ta.scrollTop = Math.max(0, (line - 4) * lineH);
+      } catch {}
+    });
+    setFocusFlash(true);
+    const t = setTimeout(() => setFocusFlash(false), 900);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [focus && focus.token, activePath, cur && cur.loading, cur && cur.error]);
+
   return html`
     <div
-      className="workflow-code-panel"
+      className=${"workflow-code-panel" + (focusFlash ? " is-focusing" : "")}
       data-host-node-id=${node.id}
       data-scroll-internally="true"
       style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
