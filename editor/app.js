@@ -36001,10 +36001,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <button
           className="workflow-bar-fullscreen"
-          title="Fullscreen canvas (⌘.) — hides the top bar + library so only the canvas is visible. Press Esc or ⌘. to exit."
-          aria-label="Enter fullscreen"
+          data-tip-host="true"
+          aria-label="Enter fullscreen — hides the top bar + library so only the canvas is visible. Press Esc or ⌘. to exit."
           onClick=${() => setFullscreen(true)}
-        >⛶</button>
+        >⛶<span className="tab-tip">Fullscreen canvas <kbd>⌘.</kbd></span></button>
         <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)}/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
         <button
@@ -45950,7 +45950,14 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
     // hug the viewport's right edge: a centered above/below bubble would spill
     // off the right side and get clipped. Left keeps the full label on-screen.
     if (placementProp === "left") {
-      setPos({ left: r.left - 8, top: r.top + r.height / 2, placement: "left" });
+      // Anchor by the RIGHT edge (distance from viewport right to the button's
+      // left, +8 gap) rather than `left` + translateX(-100%). A fixed element
+      // with only `left` set gets a containing block running from that left to
+      // the viewport's right edge — and since this button hugs the right edge,
+      // that's only a few px, so the bubble shrink-to-fits to ~1 word/line and
+      // the 40ch max-width never applies. Anchoring by `right` gives the bubble
+      // the full viewport width to lay out in before max-width clamps it.
+      setPos({ right: window.innerWidth - r.left + 8, top: r.top + r.height / 2, placement: "left" });
       return;
     }
     // v3.2 — Auto-flip to below the anchor when there's no room above
@@ -45979,17 +45986,22 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
       className=${"th-portal-tip th-portal-tip-" + pos.placement}
       style=${{
         position: "fixed",
-        left: pos.left + "px",
+        // Left placement anchors by the RIGHT edge (see place()); everything
+        // else anchors by `left`.
+        ...(pos.placement === "left"
+          ? { right: pos.right + "px" }
+          : { left: pos.left + "px" }),
         top:  pos.top + "px",
         // Above: anchor by bottom edge (translate up by 100%).
         // Below: anchor by top edge (no Y translate).
         // Right: anchor by left edge, vertically centered.
+        // Left: anchored by `right` already, so only center vertically.
         transform: pos.placement === "above"
           ? "translate(-50%, -100%)"
           : pos.placement === "right"
             ? "translate(0, -50%)"
             : pos.placement === "left"
-              ? "translate(-100%, -50%)"
+              ? "translate(0, -50%)"
               : "translate(-50%, 0)",
       }}>
       ${tip}
