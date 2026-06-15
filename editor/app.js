@@ -129,6 +129,37 @@ function viewIsEmbed() {
   catch { return false; }
 }
 
+// The prototype slug the editor is CURRENTLY scoped to. Prefer the explicit
+// boot stamp (set from ?prototype= above); else parse it back out of the
+// served data file's sourceRoot ("../source/<slug>/"), which is correct in
+// BOTH the per-prototype and the default/no-param cases; else fall back to the
+// legacy "main". Centralised so every "regen this prototype" call site agrees
+// on which prototype "this" is.
+function activePrototypeSlug() {
+  if (D && D.meta && D.meta.activePrototype) return D.meta.activePrototype;
+  const m = /(?:^|\/)source\/([A-Za-z0-9_.-]+)\//.exec((D && D.meta && D.meta.sourceRoot) || "");
+  return (m && m[1]) || (D && D.meta && D.meta.activeBranch) || "main";
+}
+
+// Resolve the editor data file the daemon serves back for a given prototype
+// slug, expressed as an agent instruction. The daemon (serve.py do_GET) serves
+// editor/<slug>.data.js when it exists, else falls back to editor/data.js (the
+// project's DEFAULT prototype). A regen MUST write whichever file the daemon
+// will serve for ?prototype=<slug> — otherwise the editor reloads stale data
+// (write went to editor/data.js while the daemon serves a per-proto file) or
+// corrupts a different prototype (writing editor/data.js for a NON-default
+// prototype). The agent has fs access, so we hand it the slug + the daemon's
+// rule and let it pick (or create) the right file.
+function editorDataTargetInstruction(slug) {
+  const s = (slug || "main").trim();
+  return [
+    `Target editor data file (window.EDITOR_DATA) for prototype \`${s}\` — resolve it the SAME way the daemon serves it back for ?prototype=${s}:`,
+    `  • If \`editor/${s}.data.js\` exists → write THAT (multi-prototype project).`,
+    `  • Else if \`${s}\` is the project DEFAULT (the slug \`editor/data.js\`'s meta.sourceRoot points at, i.e. \`../source/${s}/\`) → write \`editor/data.js\`.`,
+    `  • Else (NON-default prototype with no data file yet) → CREATE \`editor/${s}.data.js\`. Do NOT write \`editor/data.js\` — that belongs to the default prototype and overwriting it would strand the prototype you're editing.`,
+  ].join("\n");
+}
+
 // Workflow-1 frames-only regen prompt. Shared by two call sites: the
 // auto-dispatch in `openCanvasFrames` (fires when no frames exist yet) and
 // the manual Regenerate button on the canvas-frames node title bar (fires
@@ -141,7 +172,7 @@ function buildFramesRegenPrompt(branch) {
     "Workflow 1 — regenerate ONLY canvas frames + arrows for source/" + branch + "/.",
     "",
     "Source root: source/" + branch + "/",
-    "Target data file: editor/data.js (window.EDITOR_DATA)",
+    editorDataTargetInstruction(branch),
     "",
     "SCOPE — produce ONLY:",
     "  • frames[]   — one per distinct SCREEN/STATE under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry AND setupScript",
@@ -155,9 +186,9 @@ function buildFramesRegenPrompt(branch) {
     "DO NOT regenerate / DO NOT touch:",
     "  • primitives[] · entities[] · stateMachines · timelines · grids · links · lanes",
     "  • design-systems/ · meta.dsRef",
-    "  • any source/ file — this is a one-way derivation from source → editor/data.js",
+    "  • any source/ file — this is a one-way derivation from source/" + branch + "/ → the prototype's editor data file (resolved above)",
     "",
-    "Read docs/agents/workflows/1-regenerate.md (Canvas #2 for col/row, Prototype #3 for entry/hash/setupScript/w/h, User-flow #4 for arrows) for the playbook, plus the setupScript ↔ arrow consistency check (step 4d). Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label, and preserve a frame's existing setupScript if it still drives the right state. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written editor/data.js, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
+    "Read docs/agents/workflows/1-regenerate.md (Canvas #2 for col/row, Prototype #3 for entry/hash/setupScript/w/h, User-flow #4 for arrows) for the playbook, plus the setupScript ↔ arrow consistency check (step 4d). Preserve any existing frames the regen would otherwise duplicate — match on `entry` path + label, and preserve a frame's existing setupScript if it still drives the right state. Stream progress so the user can watch frames land in the workflow-mode chat drawer; once you've written the prototype's editor data file, the spawned `frames` node will auto-load the new data via the asset-refresh broadcast.",
     "",
     "Gate check: meta.dsRef should already be set (this is a frames-only regen, not a fresh project bootstrap). If it isn't, ignore and proceed — frames don't depend on DS.",
   ].join("\n");
@@ -9034,6 +9065,44 @@ function shortToolPreview(input) {
   return s;
 }
 
+// Pick a glyph for the sticky "latest tool" card (auto view). Falls back to a
+// generic bolt for tools we don't special-case.
+function toolGlyph(name) {
+  switch (name) {
+    case "Bash":      return Icon.Code;
+    case "Read":      return Icon.Eye;
+    case "Write":
+    case "Edit":
+    case "MultiEdit": return Icon.Pen;
+    case "Glob":      return Icon.Folder;
+    case "Grep":      return Icon.Search;
+    case "WebFetch":
+    case "WebSearch": return Icon.Globe;
+    case "TodoWrite": return Icon.List;
+    case "Task":
+    case "Agent":     return Icon.Bot;
+    default:          return Icon.Bolt;
+  }
+}
+
+// One-line, human-meaningful summary of a tool call for the sticky card — the
+// command for Bash, the path for file tools, the pattern for search, etc.
+// Whitespace-collapsed; CSS handles the visual single-line truncation.
+function toolPreviewLine(toolUse) {
+  const inp  = toolUse?.input || {};
+  const name = toolUse?.name;
+  let s = "";
+  if      (name === "Bash")                         s = inp.command || inp.description || "";
+  else if (name === "Read" || name === "Write")     s = inp.file_path || inp.notebook_path || "";
+  else if (name === "Edit" || name === "MultiEdit") s = inp.file_path || "";
+  else if (name === "Glob" || name === "Grep")      s = [inp.pattern, inp.path && ("in " + inp.path)].filter(Boolean).join(" ");
+  else if (name === "Task" || name === "Agent")     s = inp.description || inp.prompt || "";
+  else if (name === "WebFetch")                     s = inp.url || inp.prompt || "";
+  else if (name === "WebSearch")                    s = inp.query || "";
+  else                                              s = shortToolPreview(inp);
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+
 /* AskUserQuestion card — Phase 1 finish-touch (precursor to Phase 2's full
    tool-card suite). When Claude Code calls the AskUserQuestion tool, its
    tool_use.input has shape:
@@ -9753,11 +9822,34 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       const bl = blocks[i];
       const finished = runDone || i < lastDelim;
       const interactive = bl.kind === "tool" && bl.toolUse?.name === "AskUserQuestion";
+      // Tool activity (Bash, Read, Edit, …) is hidden from the transcript
+      // ENTIRELY in auto mode — finished OR in-flight — and surfaced instead as
+      // the temporary sticky "latest tool" card above the composer. The tools
+      // aren't removed (switch the view to "always" to see them inline);
+      // AskUserQuestion stays — it's interactive conversation, not activity.
+      if (bl.kind === "tool" && !interactive) continue;
       if (finished && !interactive && HIDEABLE.has(bl.kind)) continue;
       out.push(bl);
     }
     return out;
   }, [blocks, viewMode, status, processEnded]);
+
+  // The single most-recent tool call, surfaced as a temporary card above the
+  // composer in auto view (it replaces the now-hidden inline tool cards). Only
+  // while the turn is live; vanishes when the run goes quiet. AskUserQuestion is
+  // skipped — it renders as its own interactive card in the transcript.
+  const latestTool = useMemo(() => {
+    if (viewMode === "always") return null;
+    if (status !== "streaming" && status !== "connecting") return null;
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const bl = blocks[i];
+      if (bl.kind !== "tool") continue;
+      const tu = bl.toolUse;
+      if (!tu || tu.name === "AskUserQuestion") continue;
+      return { name: tu.name || "tool", preview: toolPreviewLine(tu), running: !bl.toolResult };
+    }
+    return null;
+  }, [blocks, viewMode, status]);
 
   // v3.12 — Running subagents, surfaced in a sticky strip just above the
   // composer so the user can watch live dispatches without scrolling up to
@@ -9994,6 +10086,15 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             </div>
           `}
           ${status === "error" && html`<div className="chat-error">${error || "Stream error"}</div>`}
+        </div>
+      `}
+      ${latestTool && html`
+        <div className="chat-active-tool" title=${`${latestTool.name}${latestTool.preview ? " — " + latestTool.preview : ""}`}>
+          <span className="chat-active-tool-icon" data-running=${latestTool.running} aria-hidden="true">
+            <${toolGlyph(latestTool.name)}/>
+          </span>
+          <span className="chat-active-tool-name">${latestTool.name}</span>
+          ${latestTool.preview && html`<span className="chat-active-tool-line">${latestTool.preview}</span>`}
         </div>
       `}
       ${(tasks.length > 0 || activeAgents.length > 0) && (() => {
@@ -13485,6 +13586,22 @@ function chatErrorReason(ev) {
   return null;
 }
 
+/* Hide (do NOT remove) the mode-aware context paragraph that
+   composeModeAwarePrompt() folds into the FIRST user message. The agent still
+   receives the full envelope — it's sent at spawn — but the user shouldn't have
+   to read it back in their own bubble. Matches the "[Context: you're chatting
+   from …MODE…]" envelope and strips through the blank line that precedes the
+   real text. Non-matching messages (typed replies, per-node composed prompts)
+   pass through untouched. */
+function stripChatPreamble(text) {
+  if (typeof text !== "string") return text;
+  if (/^\[Context: you're chatting from (?:WORKFLOW|EDITOR) MODE/.test(text)) {
+    const idx = text.indexOf("\n\n");
+    if (idx !== -1) return text.slice(idx + 2);
+  }
+  return text;
+}
+
 /* Final block dispatcher — replaces ChatEventRow for rendering. ChatEventRow
    stays in the file as the fallback / debug renderer for unrecognised events. */
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
@@ -13597,7 +13714,7 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "agent_grid":
       return html`<div className="chat-row chat-assistant chat-agent-grid"><${AgentGridCard} block=${block}/></div>`;
     case "user_message":
-      return html`<div className="chat-bubble chat-bubble-user"><${Markdown} text=${block.data.text} inline=${true}/></div>`;
+      return html`<div className="chat-bubble chat-bubble-user"><${Markdown} text=${stripChatPreamble(block.data.text)} inline=${true}/></div>`;
     case "tool_answer": {
       let preview = block.data.content;
       try { preview = JSON.parse(block.data.content).answers?.map(a => a.answer).filter(Boolean).join(", ") || preview; } catch {}
@@ -13699,7 +13816,7 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
     return html`<div className="chat-row chat-raw">${JSON.stringify(data)}</div>`;
   }
   if (ev.event === "user_message" && data) {
-    return html`<div className="chat-row chat-user-msg"><span className="chat-row-tag">you</span> ${data.text}</div>`;
+    return html`<div className="chat-row chat-user-msg"><span className="chat-row-tag">you</span> ${stripChatPreamble(data.text)}</div>`;
   }
   if (ev.event === "tool_answer" && data) {
     // Compact echo so the chat keeps a clear "you answered X" trail.
@@ -58953,7 +59070,13 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
   // of an empty chat shell. Each role gets its own bubble style.
   const storedConvo = Array.isArray(node.conversation) ? node.conversation : [];
   const hasStored = storedConvo.length > 0 && !node.runId;
-  const showPreamble = chatRun?.isNew && (previewLines.length > 0 || hasStored);
+  // Hide (do NOT remove) the wired-context preview card. The folding still
+  // happens on Send via workflowComposeAgentPrompt() — the agent gets the full
+  // scope/inputs envelope — we just no longer surface the preview bubble. Flip
+  // SHOW_WIRED_CONTEXT_PREAMBLE back to true to restore it.
+  const SHOW_WIRED_CONTEXT_PREAMBLE = false;
+  const showPreamble = SHOW_WIRED_CONTEXT_PREAMBLE
+    && chatRun?.isNew && (previewLines.length > 0 || hasStored);
   const preamble = showPreamble ? html`
     <div className="workflow-agent-preamble">
       <div className="workflow-agent-preamble-role">
@@ -60106,31 +60229,39 @@ function App() {
       alert("An agent run is already active. Wait for it to finish (or stop it from the chat drawer) before triggering Update from source.");
       return null;
     }
+    // Scope the regen to the prototype the editor is CURRENTLY viewing — NOT a
+    // blanket source/ pass. A project can host many prototypes (source/<slug>/),
+    // each with its own editor data file; "Update from source" must re-derive
+    // the one the user entered (via ?prototype=) and write the matching data
+    // file, or the refresh serves stale per-prototype data.
+    const slug = activePrototypeSlug();
+    const srcRoot = `source/${slug}/`;
     const ok = confirm(
-      `Trigger Workflow 1 (regenerate) against source/?\n\n` +
-      `The agent will read your source files and rewrite editor/data.js. ` +
+      `Trigger Workflow 1 (regenerate) against ${srcRoot}?\n\n` +
+      `The agent will read prototype "${slug}" and rewrite its editor data file. ` +
       `Existing edits.json and unsubmitted changes are preserved on disk; only the editor data is regenerated.\n\n` +
       `You'll see streaming progress in the chat drawer.`
     );
     if (!ok) return null;
     const prompt = [
-      `Workflow 1 — regenerate editor data from source.`,
+      `Workflow 1 — regenerate editor data from source for prototype "${slug}".`,
       ``,
-      `Source root: source/`,
-      `Target data file: editor/data.js (window.EDITOR_DATA)`,
+      `Source root: ${srcRoot}`,
+      editorDataTargetInstruction(slug),
       ``,
       `Read docs/agents/workflows/1-regenerate.md (under TH_PROTOCOL_ROOT in workspace mode, or repo root in single-project mode) for the full playbook, then run it. Coordinate via docs/agents/orchestrator.md — spawn the regenerate subagents per the dispatch table, each with a strict slice of the data file.`,
       ``,
-      `The user clicked the "Update from source" button on the editor view's toolbar, so they want a fresh pass over the current source/ tree. Re-derive frames, primitives, entities, arrows, and (where appropriate) the state machines / timelines / grids sidecars from the source HTML/JSX. Honor source/prototype.json and source/entities.json if they exist — those are declarative sources of truth that should shape the regen rather than being overwritten.`,
+      `The user clicked the "Update from source" button while editing prototype "${slug}", so they want a fresh pass over ${srcRoot} ONLY (do not touch other prototypes' source/ trees or data files). Re-derive frames, primitives, entities, arrows, and (where appropriate) the state machines / timelines / grids sidecars from that prototype's source HTML/JSX. Honor ${srcRoot}prototype.json and ${srcRoot}entities.json if they exist — those are declarative sources of truth that should shape the regen rather than being overwritten.`,
       ``,
       `Gate check: meta.dsRef must be set. If it isn't, run Workflow 0 first to build a DS, then Workflow 1.`,
       ``,
       `Stream progress as you go so the user can watch updates land in the chat drawer.`,
     ].join("\n");
-    const title = `Update editor data from source/`;
+    const title = `Update editor data — ${slug}`;
     let run = null;
     try {
       run = await triggerRun({
+        branch: activeBranchIdForChat,
         agentId,
         kind: "freeform",
         prompt,
