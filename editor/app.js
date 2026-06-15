@@ -35582,24 +35582,40 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     } else if (up.kind === "design-system") {
                       summary.inputs.push({ kind: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, dsRefVersion: up.version });
                     } else if (up.kind === "section") {
-                      // Expand the frame's CONTENTS into one text block — same
-                      // containment rule + flattening the skill walk uses
-                      // (app.js:32218), so "what flows through a section's
-                      // connector" is identical whether it feeds a skill or an
-                      // agent. Previously a section wired into an agent was
-                      // silently dropped (no branch here) even though the ⊕
-                      // menu offered the wire.
+                      // A section is a BUNDLE of typed node references — expand
+                      // each contained node into its OWN typed input (image as
+                      // an image reference, prompt as text, palette as palette,
+                      // type scale as typography, DS as DS), exactly the shapes
+                      // a directly-wired node produces. NOT one flattened text
+                      // blob: the agent should see the html file / image /
+                      // prompt as the distinct references they are. Same
+                      // containment rule as the skill walk (app.js:32218); each
+                      // input is labelled with the frame so their origin is
+                      // clear. (Previously a section wired into an agent was
+                      // silently dropped, then collapsed to one text block.)
                       const inside = workflowSectionContainedNodes(up, data.nodes || []);
-                      const bits = [];
+                      const secName = up.title || "Section";
                       for (const cn of inside) {
-                        if (cn.kind === "prompt" && (cn.text || "").trim()) bits.push((cn.title ? cn.title + ": " : "") + cn.text.trim());
-                        else if (cn.kind === "skill" && (cn.output || "").trim()) bits.push(cn.output.trim());
-                        else if (cn.kind === "color-palette") { const sl = (cn.swatches || []).map(s => `${s.name}=${s.value}`).join(", "); if (sl) bits.push("Color palette '" + (cn.name || "Palette") + "': " + sl + "."); }
-                        else if (cn.kind === "typography") { const lv = (cn.levels || []).map(l => `${l.name} ${l.size}px/${l.weight}`).join(", "); bits.push("Typography '" + (cn.name || "Type scale") + "': sans=" + (cn.fontFamily || "") + ", mono=" + (cn.monoFamily || "") + (lv ? ". Scale: " + lv : "") + "."); }
-                        else if (cn.kind === "design-system") bits.push("Design system reference: id=" + (cn.dsId || "main") + " version=" + (cn.version || "?") + ".");
-                        else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) bits.push("Asset (" + (cn.assetKind || "file") + "): " + cn.path);
+                        if (cn.kind === "prompt" && (cn.text || "").trim()) {
+                          summary.inputs.push({ kind: "text", label: secName + " · " + (cn.name || cn.title || "prompt"), text: cn.text });
+                        } else if (cn.kind === "skill" && (cn.output || "").trim()) {
+                          summary.inputs.push({ kind: "text", label: secName + " · skill output", text: cn.output });
+                        } else if (cn.kind === "color-palette") {
+                          summary.inputs.push({ kind: "color-palette", label: secName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
+                        } else if (cn.kind === "typography") {
+                          summary.inputs.push({ kind: "typography", label: secName + " · " + (cn.name || "type scale"), fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
+                        } else if (cn.kind === "design-system") {
+                          summary.inputs.push({ kind: "design-system", label: secName + " · DS " + (cn.dsId || "main"), dsId: cn.dsId, dsRefVersion: cn.version });
+                        } else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) {
+                          summary.inputs.push({ kind: "asset", label: secName + " · " + (cn.path.split("/").pop() || "asset"), path: cn.path, assetKind: cn.assetKind });
+                        } else if (cn.kind === "composer" && cn.bakedPath) {
+                          summary.inputs.push({ kind: "asset", label: secName + " · composer", path: cn.bakedPath, assetKind: "html" });
+                        } else if (cn.kind === "vector-editor" && cn.bakedPath) {
+                          summary.inputs.push({ kind: "asset", label: secName + " · vector", path: cn.bakedPath, assetKind: "svg" });
+                        } else if (cn.kind === "formatted-text" && cn.bakedPath) {
+                          summary.inputs.push({ kind: "asset", label: secName + " · formatted text", path: cn.bakedPath, assetKind: "html" });
+                        }
                       }
-                      summary.inputs.push({ kind: "text", label: "section '" + (up.title || "Section") + "' contents", text: bits.join("\n\n") });
                     } else if (up.kind === "browser" && (up.url || "").trim()) {
                       // Web-browser node wired in → hand the agent the URL; it
                       // can WebFetch the page itself. (Was offered by the ⊕ menu
