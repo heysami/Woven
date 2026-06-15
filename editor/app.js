@@ -21940,28 +21940,47 @@ function workflowSectionContainedNodes(section, nodes) {
 }
 
 // v3.8 — Capture "whatever is seen inside" a section as a PNG data URI.
-// html2canvas on the nodes layer (.workflow-canvas inside the workflow
-// wrap), cropped to the section's WORLD rect — valid because nodes are
-// positioned at world coords inside that layer and html2canvas ignores the
-// capture root's own pan/zoom transform. Limitation inherited from
-// html2canvas: iframe-backed cards (html assets, prototypes) paint blank;
-// <img>-backed cards (image / svg assets) paint fine.
+// html2canvas on the nodes layer (.workflow-canvas inside the workflow wrap),
+// cropped to the section's rect. CONTRARY to an earlier assumption here,
+// html2canvas does NOT ignore the capture root's pan/zoom transform: it
+// derives the crop frame from getBoundingClientRect, which bakes in the
+// layer's CSS transform, so its crop coordinates live in the *rendered*
+// (post-zoom) space — not world space. Passing the raw world rect therefore
+// over-captures at any zoom ≠ 1 (the crop ends up `1/zoom` too large and
+// drags in neighbouring nodes), which is the "image isn't bounded to the
+// section" bug. Fix: scale the crop by the current zoom so it lands on the
+// right pixels, then render at `scale: 1/zoom` (clamped) so the PNG keeps a
+// stable world-resolution regardless of how far the user is zoomed.
+// Limitation inherited from html2canvas: iframe-backed cards (html assets,
+// prototypes) paint blank; <img>-backed cards (image / svg assets) paint fine.
 async function workflowCaptureSectionRaster(section) {
   if (typeof window === "undefined" || typeof window.html2canvas !== "function") {
     throw new Error("html2canvas-pro not loaded — can't capture section raster");
   }
   const layer = document.querySelector(".workflow-canvas-wrap .workflow-canvas");
   if (!layer) throw new Error("workflow canvas layer not on screen");
+  // Read the live zoom straight off the layer's transform matrix (m.a is the
+  // x-scale) so this stays correct no matter how pan/zoom was committed.
+  let zoom = 1;
+  try {
+    const tf = getComputedStyle(layer).transform;
+    if (tf && tf !== "none") {
+      const m = new DOMMatrix(tf);
+      if (Number.isFinite(m.a) && m.a > 0) zoom = m.a;
+    }
+  } catch {}
+  const w = Math.max(40, section.w || 880);
+  const h = Math.max(40, section.h || 560);
   const canvas = await window.html2canvas(layer, {
-    x: section.x,
-    y: section.y,
-    width: Math.max(40, section.w || 880),
-    height: Math.max(40, section.h || 560),
+    x: section.x * zoom,
+    y: section.y * zoom,
+    width: w * zoom,
+    height: h * zoom,
     useCORS: true,
     allowTaint: false,
     backgroundColor: "#ffffff",
     logging: false,
-    scale: 1,
+    scale: Math.min(4, Math.max(0.5, 1 / zoom)),
   });
   if (!canvas || !canvas.toDataURL) throw new Error("html2canvas returned no canvas");
   const dataUri = canvas.toDataURL("image/png");
