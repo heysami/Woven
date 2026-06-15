@@ -3383,6 +3383,26 @@ def _file_watcher_scan_one(project_root: str) -> dict:
                     continue
     except Exception:
         pass
+    # editor/*.data.js — the canvas data file(s). The editor/ dir is NOT in
+    # the recursive walk above (it holds large/churny files like chat.jsonl
+    # and a design-systems mirror), but editor/data.js (and per-prototype
+    # editor/<slug>.data.js) is exactly what a frames/arrows regen writes —
+    # and the Canvas-frames node needs an asset-changed broadcast to auto-
+    # reload once it lands. Stat just those files (top-level only) so the
+    # broadcast fires without pulling the whole editor/ tree into the watch.
+    try:
+        editor_dir = os.path.join(project_root, "editor")
+        for entry in os.scandir(editor_dir):
+            if not entry.is_file():
+                continue
+            name = entry.name
+            if name == "data.js" or name.endswith(".data.js"):
+                try:
+                    out[os.path.join("editor", name)] = entry.stat().st_mtime
+                except Exception:
+                    continue
+    except Exception:
+        pass
     return out
 
 def _file_watcher_known_projects():
