@@ -22,6 +22,25 @@
 </head>
 <body>
   <div id="root"></div>
+  <!-- Boot veil. Painted from static HTML the instant the document loads —
+       before app.js parses, data.js evaluates, or React mounts — so a full
+       reload (the only path left for editor / prototype entry, which depend
+       on the boot-captured window.EDITOR_DATA) shows a continuous loading
+       state instead of a white #root flash. Removed by hideBootVeil() once
+       <Root> has a concrete view to render (and by the early data.js error
+       handler so the failure overlay isn't hidden behind it). thNavigate
+       re-raises it on the OUTGOING page just before a full reload so the
+       transition is seamless across the navigation. -->
+  <style>
+    #boot-veil{position:fixed;inset:0;z-index:99999;background:oklch(98.6% 0.003 70);
+      display:flex;align-items:center;justify-content:center;transition:opacity .18s ease;}
+    #boot-veil.boot-veil-hide{opacity:0;pointer-events:none;}
+    #boot-veil .boot-veil-spinner{width:22px;height:22px;border-radius:50%;
+      border:2px solid oklch(90% 0.004 70);border-top-color:oklch(62% 0.02 250);
+      animation:boot-veil-spin .7s linear infinite;}
+    @keyframes boot-veil-spin{to{transform:rotate(360deg);}}
+  </style>
+  <div id="boot-veil" aria-hidden="true"><div class="boot-veil-spinner"></div></div>
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>

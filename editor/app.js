@@ -38,6 +38,7 @@ if (!window.EDITOR_DATA || !window.EDITOR_DATA.meta) {
     document.addEventListener("DOMContentLoaded", () => {
       const root = document.getElementById("root");
       if (!root) return;
+      try { const _bv = document.getElementById("boot-veil"); if (_bv) _bv.remove(); } catch {}
       root.innerHTML = `<div style="max-width:560px;margin:80px auto;padding:24px;border:1px solid oklch(91% 0.004 250);border-radius:8px;font:14px/1.5 Inter,system-ui;background:#fff;color:oklch(20% 0.01 250)"><h2 style="margin:0 0 8px;font-size:18px">Project data file failed to load</h2><p style="margin:0 0 12px;color:oklch(48% 0.008 250)">The script at <code style="font-family:JetBrains Mono;font-size:11.5px;background:oklch(97.2% 0.003 250);padding:1px 5px;border-radius:3px">editor/data.js</code> for project <strong>${_qs.get("project")}</strong> didn't set <code style="font-family:JetBrains Mono;font-size:11.5px;background:oklch(97.2% 0.003 250);padding:1px 5px;border-radius:3px">window.EDITOR_DATA</code>. Most common causes:</p><ul style="margin:0 0 12px 20px;padding:0;color:oklch(48% 0.008 250)"><li>The daemon hasn't been restarted after a v3.1 upgrade — restart it so the migration shim runs.</li><li>JS syntax error in editor/data.js — check DevTools console.</li><li>404 on editor/data.js — confirm the project's editor/ folder exists.</li></ul><p style="margin:0;color:oklch(48% 0.008 250)"><a href="${location.pathname}" style="color:oklch(45% 0.13 250);text-decoration:none">← Back to projects</a></p></div>`;
     });
     throw new Error("window.EDITOR_DATA is missing — editor/data.js didn't evaluate. See DevTools console.");
@@ -19366,7 +19367,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                               url.searchParams.set("prototype", sp.id);
                               url.searchParams.delete("branch");
                               url.searchParams.delete("view");
-                              window.location.href = url.toString();
+                              thNavigate(url.toString());
                             }}
                           ><${Icon.Canvas}/></button>
                         </li>
@@ -19432,12 +19433,48 @@ function thIsClientNavSafe(url) {
   }
 }
 
+// Boot veil — see index.html. Raised over the current document just before a
+// full-reload navigation (so the last frame the user sees is a loading state,
+// not a white blank), and on the freshly-loaded document until <Root> renders.
+function showBootVeil() {
+  try {
+    let v = document.getElementById("boot-veil");
+    if (!v) {
+      v = document.createElement("div");
+      v.id = "boot-veil";
+      v.setAttribute("aria-hidden", "true");
+      v.innerHTML = '<div class="boot-veil-spinner"></div>';
+      document.body.appendChild(v);
+    }
+    v.classList.remove("boot-veil-hide");
+  } catch {}
+}
+function hideBootVeil() {
+  try {
+    const v = document.getElementById("boot-veil");
+    if (!v) return;
+    v.classList.add("boot-veil-hide");
+    // Drop it from the DOM after the fade so it never traps pointer events and
+    // a later showBootVeil() rebuilds a clean one.
+    setTimeout(() => { try { v.remove(); } catch {} }, 240);
+  } catch {}
+}
+
 // Swap a client-nav-safe view in place: reset the per-project caches that were
 // latched at boot, push the URL, and fire `th:navigate` so <Root> re-derives
-// the view. Anything else falls back to a real document load.
+// the view. Anything else falls back to a real document load — masked by the
+// boot veil so editor / prototype entry reads as a continuous loading state
+// rather than the old flash → blank → open beat.
 function thNavigate(url) {
   const target = new URL(url, window.location.href).toString();
-  if (!thIsClientNavSafe(target)) { window.location.href = target; return; }
+  if (!thIsClientNavSafe(target)) {
+    showBootVeil();
+    // Yield one frame so the veil actually paints on this document before the
+    // browser tears it down; the new document shows the same veil immediately.
+    try { requestAnimationFrame(() => { window.location.href = target; }); }
+    catch { window.location.href = target; }
+    return;
+  }
   window.history.pushState({}, "", target);
   // activeProjectId() memoises ?project= on window.__TH_PROJECT — an UNkeyed
   // global latched to the project we're leaving — so clear it and let the
@@ -61397,6 +61434,11 @@ function Root() {
     if (firstNavRef.current) { firstNavRef.current = false; return; }
     if (!hasProject) reload();
   }, [hasProject, project, reload]);
+  // Drop the boot veil (index.html) once we have a concrete view to render —
+  // loading just flipped false, so this pass paints a real surface under the
+  // veil and we can fade it out. No-op on client-side navs (already removed
+  // after the first mount).
+  useEffect(() => { if (!loading) hideBootVeil(); }, [loading]);
   // Workspace info still loading — show nothing briefly to avoid a flash of
   // the wrong view. /__workspace is a single small JSON GET, sub-100ms locally.
   if (loading) return null;
