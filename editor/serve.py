@@ -6144,6 +6144,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._attachment_upload(qs)
             if parsed.path == "/__workflow/wb":
                 return self._workflow_wb_op(qs)
+            if parsed.path == "/__tasks/archive":
+                return self._tasks_archive(qs)
             if parsed.path == "/__write_text":
                 return self._write_text(qs)
             if parsed.path == "/__html_save":
@@ -11431,6 +11433,55 @@ class H(http.server.SimpleHTTPRequestHandler):
                                source="asset", extra={"branch": branch, "mime": mime}):
             with open(abs_path, "wb") as f: f.write(raw)
         return self._reply(200, {"ok": True, "path": rel, "size": len(raw), "mime": mime})
+
+    # ── POST /__tasks/archive?project=<id> ──────────────────────────────
+    # Durable record of harness Task lists when a chat window is closed. The
+    # editor POSTs the COMPLETED tasks it is about to clear from the live
+    # strip; we append one JSON line per batch to workflow/tasks-archive.jsonl
+    # so the user can collate finished work later. Append-only, newest last —
+    # never rewrites prior lines, so it's safe to tail/grep externally.
+    # Body: { runId, chatTitle, tasks: [{id, subject, activeForm, status}] }
+    def _tasks_archive(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=256 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        tasks = body.get("tasks")
+        if not isinstance(tasks, list) or not tasks:
+            return self._reply(400, {"error": "tasks must be a non-empty array"})
+        clean = []
+        for t in tasks:
+            if not isinstance(t, dict):
+                continue
+            clean.append({
+                "id":         str(t.get("id") or ""),
+                "subject":    str(t.get("subject") or "")[:2000],
+                "activeForm": str(t.get("activeForm") or "")[:2000],
+                "status":     str(t.get("status") or ""),
+            })
+        if not clean:
+            return self._reply(400, {"error": "no valid tasks"})
+        entry = {
+            "archivedAt": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "runId":      str(body.get("runId") or ""),
+            "chatTitle":  str(body.get("chatTitle") or "")[:2000],
+            "tasks":      clean,
+        }
+        wf_dir = os.path.join(project_root, "workflow")
+        try:
+            os.makedirs(wf_dir, exist_ok=True)
+            path = os.path.join(wf_dir, "tasks-archive.jsonl")
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception as e:
+            return self._reply(500, {"error": f"could not write tasks-archive: {e}"})
+        return self._reply(200, {"ok": True, "archived": len(clean)})
 
     # ── POST /__workflow/wb?project=<id> ────────────────────────────────
     # The AGENT-facing write path for the whiteboard layer (`wb: []` in

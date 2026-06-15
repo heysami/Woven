@@ -16699,8 +16699,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   height: 12px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1.5px solid color-mix(in oklch, var(--accent) 25%, var(--border));
-  border-top-color: var(--accent);
+  border: 1.5px solid color-mix(in oklch, var(--hot) 25%, var(--border));
+  border-top-color: var(--hot);
   animation: chat-active-agent-spin 0.7s linear infinite;
 }
 @keyframes chat-active-agent-spin { to { transform: rotate(360deg); } }
@@ -16718,6 +16718,45 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* v3.13 — the strip now carries two lists (harness Tasks + running Agents).
+   Same row appearance for both; a small tab row switches between them, shown
+   only when both lists are non-empty. */
+.chat-active-tabs {
+  display: flex;
+  gap: 4px;
+}
+.chat-active-tab {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-active-tab[data-active="true"] {
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+}
+.chat-active-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.chat-active-task-mark {
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.chat-active-task-mark[data-status="in_progress"] { color: var(--hot); }
+.chat-active-task-mark[data-status="completed"]  { color: var(--success); }
 
 /* Composer — a full-width input box with an icon-only send button tucked
    inside it, and a borderless control strip (perm mode · attach · model ·
