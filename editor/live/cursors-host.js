@@ -73,7 +73,25 @@
       const seen = new Set((JSON.parse(e.data).participants || []).map((x) => x.guestId));
       for (const g of [...parts.keys()]) if (!seen.has(g)) drop(g);
     });
+    es.addEventListener("lock", (e) => {
+      try { window.__thLocks && window.__thLocks.setLeases(JSON.parse(e.data).leases); } catch (_) {}
+    });
     es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); connected = false; try { window.__thLiveActive = false; } catch (e) {} });
+
+    // Soft node locks — host side. Acquire/release via the daemon's /__live_lease.
+    if (window.__thLocks) {
+      const lease = (action, extra) => fetch("/__live_lease?project=" + encodeURIComponent(PID), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ action: action, name: "Host" }, extra || {})),
+      }).catch(() => {});
+      window.__thLocks.config({
+        myGid: MY_GID,
+        acquire:  (t)  => lease("acquire",   { target: t }),
+        release:  (t)  => lease("release",   { target: t }),
+        heartbeat:(ts) => lease("heartbeat", { targets: ts }),
+        colorFor: (gid) => { const p = parts.get(gid); return p && p.color; },
+      });
+    }
     es.onerror = () => {};  // EventSource auto-reconnects
 
     let last = 0;

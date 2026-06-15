@@ -6058,6 +6058,27 @@ class H(http.server.SimpleHTTPRequestHandler):
                     body = {}
                 pid = _qs_get(qs, "project") or ""
                 return self._reply(200, _live.host_presence(pid, (body or {}).get("cursor")))
+            if parsed.path == "/__live_lease":
+                # Host-side node lock (acquire/release/heartbeat). Mirrors the
+                # guest gate's /live/api/lease/* so the host editor participates
+                # in the soft "locked by <name>" overlay.
+                try:
+                    body = self._read_json_body(max_bytes=8 * 1024)
+                except ValueError:
+                    body = {}
+                pid = _qs_get(qs, "project") or ""
+                action = ((body or {}).get("action") or "").strip()
+                try:
+                    if action == "acquire":
+                        return self._reply(200, _live.host_lease_acquire(
+                            pid, (body or {}).get("target"), (body or {}).get("name") or "Host"))
+                    if action == "release":
+                        return self._reply(200, _live.host_lease_release(pid, (body or {}).get("target")))
+                    if action == "heartbeat":
+                        return self._reply(200, _live.host_lease_heartbeat(pid, (body or {}).get("targets")))
+                except Exception as e:
+                    return self._reply(400, {"error": str(e)})
+                return self._reply(400, {"error": "unknown lease action"})
             if parsed.path == "/__share_comments":
                 return self._share_comments_post(qs)
             if parsed.path == "/__mkdir":
@@ -12186,10 +12207,13 @@ class H(http.server.SimpleHTTPRequestHandler):
     # GET /__live_cursors.js — host-side live-cursors overlay (injected into the
     # editor shell when a session is active). Served from editor/live/.
     def _serve_live_cursors_js(self):
-        path = os.path.join(INSTALL_ROOT, "editor", "live", "cursors-host.js")
+        # locks.js first (defines window.__thLocks) + cursors-host.js (wires it).
+        live_dir = os.path.join(INSTALL_ROOT, "editor", "live")
         try:
-            with open(path, "rb") as f:
-                data = f.read()
+            with open(os.path.join(live_dir, "locks.js"), "rb") as f:
+                locks = f.read()
+            with open(os.path.join(live_dir, "cursors-host.js"), "rb") as f:
+                data = locks + b"\n;\n" + f.read()
         except OSError:
             return self._reply(404, {"error": "not found"})
         self.send_response(200)

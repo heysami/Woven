@@ -83,6 +83,9 @@
       const seen = new Set((d.participants || []).map((x) => x.guestId));
       for (const g of [...parts.keys()]) if (!seen.has(g)) drop(g);
     });
+    es.addEventListener("lock", (e) => {
+      try { window.__thLocks && window.__thLocks.setLeases(JSON.parse(e.data).leases); } catch (_) {}
+    });
     es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); try { window.__thLiveActive = false; } catch (e) {} });
     es.addEventListener("kicked", (e) => { if (JSON.parse(e.data).guestId === GID) { for (const g of [...parts.keys()]) drop(g); es.close(); try { window.__thLiveActive = false; } catch (e) {} } });
 
@@ -96,6 +99,17 @@
       const y = (ev.clientY - geom.top) / geom.scale;
       api("api/presence", { cursor: { x, y, page: "canvas" } }).catch(() => {});
     }, { passive: true });
+
+    // Soft node locks — show "locked by <name>" as collaborators grab nodes.
+    if (window.__thLocks) {
+      window.__thLocks.config({
+        myGid: GID,
+        acquire:  (t)  => api("api/lease/acquire",  { target: t }).catch(() => {}),
+        release:  (t)  => api("api/lease/release",  { target: t }).catch(() => {}),
+        heartbeat:(ts) => api("api/lease/heartbeat", { targets: ts }).catch(() => {}),
+        colorFor: (gid) => { const p = parts.get(gid); return p && p.color; },
+      });
+    }
 
     // Re-place cursors periodically so they stay glued to nodes while *I* pan/
     // zoom (idle remote guests send no presence). 120ms — not per-frame.

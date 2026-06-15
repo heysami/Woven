@@ -777,6 +777,54 @@ def host_events_stream(h, project_id):
             s.waiters.discard(waiter)
 
 
+def host_lease_acquire(project_id, target, name="Host"):
+    """Host-side counterpart of lease_acquire (no token — host is trusted).
+    Soft lock: first holder wins; if a guest already holds it the host does
+    NOT steal it, just learns the holder so the editor can show 'locked by X'.
+    Broadcasts a `lock` frame so every participant's overlay updates."""
+    if not isinstance(target, str) or not TARGET_OK.match(target):
+        raise ValueError("invalid lease target")
+    now = _now()
+    result = {"ok": True}
+    for s in _active_sessions_for_project(project_id):
+        with s.lock:
+            _ensure_host(s)
+            cur = s.leases.get(target)
+            if cur and cur.get("holder") != HOST_GID and now <= cur.get("expiresAt", 0):
+                result = {"ok": False, "held": True, "holder": cur["holder"],
+                          "holderName": cur.get("holderName", "")}
+            else:
+                s.leases[target] = {"holder": HOST_GID, "holderName": name or "Host",
+                                    "expiresAt": now + LEASE_TTL_S, "kind": target.split(":", 1)[0]}
+            leases = _leases_public(s)
+        broadcast(s.share_id, "lock", {"leases": leases})
+    return result
+
+
+def host_lease_release(project_id, target):
+    for s in _active_sessions_for_project(project_id):
+        with s.lock:
+            cur = s.leases.get(target)
+            if cur and cur.get("holder") == HOST_GID:
+                s.leases.pop(target, None)
+            leases = _leases_public(s)
+        broadcast(s.share_id, "lock", {"leases": leases})
+    return {"ok": True}
+
+
+def host_lease_heartbeat(project_id, targets):
+    now = _now()
+    if not isinstance(targets, list):
+        targets = []
+    for s in _active_sessions_for_project(project_id):
+        with s.lock:
+            for t in targets:
+                cur = s.leases.get(t)
+                if cur and cur.get("holder") == HOST_GID:
+                    cur["expiresAt"] = now + LEASE_TTL_S
+    return {"ok": True}
+
+
 def release_agent_lease(project_id, node_id):
     """Called by serve.py's node-finish hook: drop the agent lease so guests
     can edit the node again."""
@@ -878,8 +926,9 @@ _GUEST_LOCK_CSS = (
     ".workflow-root{grid-template-rows:0 minmax(0,1fr)!important}"
     "</style>"
 ).encode("utf-8")
-# Injected before </body> so live cursors mount on the real canvas.
-_GUEST_CURSORS_TAG = b'<script src="cursors.js" defer></script>'
+# Injected before </body> so live cursors + locks mount on the real canvas.
+# locks.js MUST load first — it defines window.__thLocks that cursors.js wires.
+_GUEST_CURSORS_TAG = b'<script src="locks.js" defer></script><script src="cursors.js" defer></script>'
 
 def _live_cookie_header(h, token):
     """th_live cookie. Adds Secure when behind the HTTPS tunnel (Cloudflare sets
@@ -1164,6 +1213,8 @@ class _LiveGate:
             return _serve_editor_index(h, rec.get("token"))
         if sub == "/live/cursors.js":
             return _serve_client(h, "cursors.js")   # editor/live/cursors.js
+        if sub == "/live/locks.js":
+            return _serve_client(h, "locks.js")     # editor/live/locks.js
         if sub in ("/live/app.js", "/live/styles.css", "/live/landing-shaders.js") \
                 or sub.startswith("/live/prompts/"):
             return _serve_editor_static(h, sub[len("/live/"):])
