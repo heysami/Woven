@@ -21486,27 +21486,76 @@ const WORKFLOW_CONNECT_DEFS = {
   },
   "skill": {
     label: "Skill",
+    // The EFFECTIVE ports for an existing skill node are derived from its REAL
+    // capability (TH_MEDIA.skills[].inputs / output), not a 2-way text/image
+    // guess. This keeps the ⊕ menu honest: a prompt-input skill accepts text
+    // (and a Section's flattened text contents); an asset-input skill (rembg /
+    // upscale / describe) accepts an asset (and a Section rasterised by the
+    // Run executor); a text-output skill produces text-gen, everything else a
+    // generatable asset. The old code mapped EVERY non-text skill to the
+    // generate-image preset, so rembg/upscale/describe nodes advertised the
+    // wrong ports (prompt-in / asset-gen-out) and the menu offered wires the
+    // executor ignored.
     resolve(node) {
       const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
       const spec = skills.find(s => s.id === node.skill);
-      const textOut = spec ? spec.output === "text" : node.skill === "llm";
-      return this.presets[textOut ? 0 : 1];
+      const inputs = (spec && Array.isArray(spec.inputs)) ? spec.inputs : ["prompt"];
+      const output = (spec && spec.output) || (node.skill === "llm" ? "text" : "image");
+      const wantsPrompt = inputs.includes("prompt");
+      const wantsAsset  = inputs.includes("asset");
+      // A Section's connector can satisfy EITHER input shape — its text
+      // contents flow as a prompt, or the Run executor rasterises the frame
+      // for an asset input — so "section" rides along with whichever the
+      // skill actually consumes.
+      const inTags = [];
+      if (wantsPrompt) inTags.push("text", "section");
+      if (wantsAsset)  inTags.push("asset", "section");
+      const accepts = inTags.length
+        ? { in: { label: (wantsAsset && !wantsPrompt) ? "Input image" : "Prompt / input", tags: Array.from(new Set(inTags)) } }
+        : {};
+      const provides = output === "text"
+        ? { out: { label: "Generated text", tags: ["text-gen"] } }
+        : { out: { label: "Generated " + output, tags: ["asset-gen", "runnable"] } };
+      return { label: (spec && spec.label) || "Skill", provides, accepts };
     },
+    // Spawn candidates (what the ⊕ menu can CREATE). Each preset's tags must
+    // match what its skill actually consumes/produces — resolve() above keeps
+    // the placed node consistent with these.
     presets: [
-      // Any text-output skill is treated as a PROMPT ADJUSTER in the connector
-      // graph: it takes a prompt's text and produces text that fills another
-      // prompt. Narrowed to text-in / text-gen-out so it only wires
-      // prompt → adjuster → prompt (no longer offered as a generic text source
-      // for agents/skills/sections/repeaters).
+      // Text-output skill = PROMPT ADJUSTER: takes a prompt's text, produces
+      // text that fills another prompt. text-in / text-gen-out only, so it
+      // only wires prompt → adjuster → prompt.
       {
         id: "skill-llm", label: "Prompt adjuster", payload: { skill: "llm" },
         provides: { out: { label: "Adjusted prompt", tags: ["text-gen"] } },
         accepts:  { in:  { label: "Prompt to adjust", tags: ["text"] } },
       },
+      // generate-image is text-to-image (inputs:["prompt"]) — it does NOT
+      // consume an input image, so accepts is text (+ a Section's text
+      // contents as prompt context), NOT "asset". Offering "asset" here wired
+      // an image in that the executor silently ignored (wantsAsset=false).
       {
         id: "skill-image", label: "Image skill", payload: { skill: "generate-image" },
         provides: { out: { label: "Generated image", tags: ["asset-gen", "runnable"] } },
-        accepts:  { in:  { label: "Prompt / input image", tags: ["text", "asset", "section"] } },
+        accepts:  { in:  { label: "Prompt / context", tags: ["text", "section"] } },
+      },
+      // Asset-editing skills (inputs:["asset"]) — reachable from the ⊕ on an
+      // image / section so "remove background / upscale / describe THIS image"
+      // is one click. These were previously unspawnable via the connector.
+      {
+        id: "skill-rembg", label: "Remove background", payload: { skill: "rembg" },
+        provides: { out: { label: "Cutout", tags: ["asset-gen", "runnable"] } },
+        accepts:  { in:  { label: "Image to cut out", tags: ["asset", "section"] } },
+      },
+      {
+        id: "skill-upscale", label: "Upscale image", payload: { skill: "upscale" },
+        provides: { out: { label: "Upscaled image", tags: ["asset-gen", "runnable"] } },
+        accepts:  { in:  { label: "Image to upscale", tags: ["asset", "section"] } },
+      },
+      {
+        id: "skill-describe", label: "Describe image", payload: { skill: "describe" },
+        provides: { out: { label: "Description", tags: ["text-gen"] } },
+        accepts:  { in:  { label: "Image to describe", tags: ["asset", "section"] } },
       },
     ],
   },
@@ -21549,7 +21598,11 @@ const WORKFLOW_CONNECT_DEFS = {
   },
   "iterator-refiner": {
     label: "Refiner",
-    provides: { out: { label: "Refined prompt", tags: ["text", "text-gen"] } },
+    // text-gen ONLY (a runtime producer), not the static "text" tag — a
+    // refiner has no fixed text until it runs, so offering it into static-text
+    // inputs (agent / skill-llm / formatted-text) wired a no-op. It still
+    // feeds prompt.in via text-gen.
+    provides: { out: { label: "Refined prompt", tags: ["text-gen"] } },
     accepts:  { in:  { label: "Prompt to refine", tags: ["text"] } },
   },
   "composer": {
@@ -35367,6 +35420,38 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       }
                     } else if (up.kind === "design-system") {
                       summary.inputs.push({ kind: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, dsRefVersion: up.version });
+                    } else if (up.kind === "section") {
+                      // Expand the frame's CONTENTS into one text block — same
+                      // containment rule + flattening the skill walk uses
+                      // (app.js:32218), so "what flows through a section's
+                      // connector" is identical whether it feeds a skill or an
+                      // agent. Previously a section wired into an agent was
+                      // silently dropped (no branch here) even though the ⊕
+                      // menu offered the wire.
+                      const inside = workflowSectionContainedNodes(up, data.nodes || []);
+                      const bits = [];
+                      for (const cn of inside) {
+                        if (cn.kind === "prompt" && (cn.text || "").trim()) bits.push((cn.title ? cn.title + ": " : "") + cn.text.trim());
+                        else if (cn.kind === "skill" && (cn.output || "").trim()) bits.push(cn.output.trim());
+                        else if (cn.kind === "color-palette") { const sl = (cn.swatches || []).map(s => `${s.name}=${s.value}`).join(", "); if (sl) bits.push("Color palette '" + (cn.name || "Palette") + "': " + sl + "."); }
+                        else if (cn.kind === "typography") { const lv = (cn.levels || []).map(l => `${l.name} ${l.size}px/${l.weight}`).join(", "); bits.push("Typography '" + (cn.name || "Type scale") + "': sans=" + (cn.fontFamily || "") + ", mono=" + (cn.monoFamily || "") + (lv ? ". Scale: " + lv : "") + "."); }
+                        else if (cn.kind === "design-system") bits.push("Design system reference: id=" + (cn.dsId || "main") + " version=" + (cn.version || "?") + ".");
+                        else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) bits.push("Asset (" + (cn.assetKind || "file") + "): " + cn.path);
+                      }
+                      summary.inputs.push({ kind: "text", label: "section '" + (up.title || "Section") + "' contents", text: bits.join("\n\n") });
+                    } else if (up.kind === "browser" && (up.url || "").trim()) {
+                      // Web-browser node wired in → hand the agent the URL; it
+                      // can WebFetch the page itself. (Was offered by the ⊕ menu
+                      // via the "asset" tag but dropped here.)
+                      summary.inputs.push({ kind: "text", label: "web page", text: "Web page reference: " + up.url.trim() + "\n(Use WebFetch to read its content if you need it.)" });
+                    } else if (up.kind === "formatted-text") {
+                      // Mirror composer/vector-editor: a baked .html file is a
+                      // visual reference; unbaked → hint to bake first.
+                      if (up.bakedPath) {
+                        summary.inputs.push({ kind: "asset", label: "formatted text (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "html" });
+                      } else {
+                        summary.inputs.push({ kind: "text", label: "formatted-text (UNBAKED — click Bake on the upstream Formatted text node first)", text: "" });
+                      }
                     }
                   }
                   if (t.port === "folder-read" && up.kind === "prototype") { summary.folderRead = `source/${nodePrototype(up)}/`; summary.folderReadWired = true; }
