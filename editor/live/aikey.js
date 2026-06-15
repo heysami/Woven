@@ -84,9 +84,13 @@
     let url = "";
     try { url = (typeof input === "string") ? input : (input && input.url) || ""; } catch (e) {}
     if (url.indexOf("/__") !== 0) return _origFetch(input, init);
-    // Block AI runs with no credential at all — open the panel instead of failing.
+    // Block AI runs with no credential at all — flash the pill to draw the eye.
+    // NB: do NOT auto-open the panel here — the editor fires background AI
+    // calls (model lists, run polls) that also hit this block, and opening on
+    // each one made the panel reopen the instant you closed it. The flash is
+    // enough of a nudge; the user opens the panel by clicking the pill.
     if (LLM_RE.test(url) && !anyKey()) {
-      flash(); openPanel();
+      flash();
       return Promise.resolve(new Response(
         JSON.stringify({ error: "llm-key-required", message: "Connect your own AI (API key or Claude subscription) to run agents." }),
         { status: 412, headers: { "Content-Type": "application/json" } }));
