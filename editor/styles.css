@@ -7104,6 +7104,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .th-portal-tip-above::before { bottom: -3px; }
 .th-portal-tip-below::before { top:    -3px; }
+/* Right placement — bubble sits to the right of the anchor (left icon nav
+   rail), so the arrow points left from the bubble's left edge. */
+.th-portal-tip-right::before {
+  left: -3px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(45deg);
+}
 /* v3.2 — Disabled HoverTip wrapper. The span carries the original button's
    className (so layout / appearance still match the surrounding row); the
    inner button is stripped of all visual chrome and just exists to keep the
@@ -16846,6 +16854,12 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .chat-composer[data-busy="true"] .chat-composer-input-wrap {
   border-color: color-mix(in oklch, var(--accent) 25%, var(--border));
+}
+/* Mid-turn the Stop button joins Send inside the box (two 28px buttons +
+   6px gap + 7px inset). The default 44px right padding only clears one, so
+   typed text slid under Stop — widen the gutter to clear both. */
+.chat-composer[data-busy="true"] .chat-composer-input {
+  padding-right: 78px;
 }
 .chat-composer-input {
   resize: none;

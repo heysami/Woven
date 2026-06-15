@@ -10591,6 +10591,24 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     if (ok) { setText(""); setAttachments([]); setUploads([]); }
   };
 
+  // External programmatic send — a Refine / Fork / regen action targeting the
+  // ALREADY-OPEN conversation rather than spawning a new chat. Routes through
+  // the SAME path as a user-typed Send: agent mid-turn → enqueue (drains when
+  // the turn ends), agent idle → dispatch immediately (resume/user-message).
+  // The isNew shell composer ignores it — there's no run to continue yet, so
+  // the parent's spawn path seeds the first turn instead.
+  useEffect(() => {
+    const onInject = (e) => {
+      const t = (((e && e.detail) || {}).text || "").trim();
+      if (!t || isNew || !runId) return;
+      const env = { id: ++queueIdRef.current, text: t, attachments: [], uploads: [] };
+      if (disabled) { setQueue(prev => [...prev, env]); return; }
+      dispatchRef.current(env);
+    };
+    window.addEventListener("th:chat-inject", onInject);
+    return () => window.removeEventListener("th:chat-inject", onInject);
+  }, [isNew, runId, disabled]);
+
   // Drain effect — fire-once-per-turn-end. When `disabled` falls from
   // true → false (any of done / fail / error, per policy B), shift the head
   // off the queue and dispatch it. The dispatch path's own fallback handles
@@ -20562,6 +20580,17 @@ function WorkflowCanvas() {
         // preamble baked in.
         const txt = (text || "").trim();
         if (!txt) return;
+        // If a real conversation is already open in the drawer, CONTINUE it
+        // there instead of spawning a fresh chat — a Refine / Fork / regen
+        // prompt becomes the next turn of the thread the user is already in
+        // (queued if the agent is mid-turn, sent if idle). An empty "new
+        // chat" shell (runId still null) falls through to the spawn path so
+        // the prompt seeds that shell's first turn.
+        if (chatRun && chatRun.runId && !chatRun.isNew) {
+          try { window.dispatchEvent(new CustomEvent("th:chat-inject", { detail: { text: txt } })); }
+          catch (e) { console.error("[continue-open-chat] inject failed:", e); }
+          return;
+        }
         openWorkflowChat();
         try { await spawnWorkflowChat(txt); } catch (e) {
           console.error("[empty-state quick-start] spawn failed:", e);
@@ -26417,8 +26446,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return;
     }
 
-    // ── shape / textbox / arrow — drag-to-size ghost ──
-    if (tool === "shape" || tool === "textbox" || tool === "arrow") {
+    // ── shape / textbox / arrow / section — drag-to-size ghost ──
+    // `section` is the odd one out: it draws the same drag box, but on release
+    // it commits a SECTION NODE (kind: "section") onto the workflow canvas
+    // instead of a whiteboard item — a quick way to frame a region while
+    // whiteboarding. Sections stay visible in both modes, so it lands live.
+    if (tool === "shape" || tool === "textbox" || tool === "arrow" || tool === "section") {
       e.preventDefault();
       const color = wbToolColor(tool);
       const x0 = wp.x, y0 = wp.y;
@@ -26443,6 +26476,30 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const dragged = Math.hypot(lastWp.x - x0, lastWp.y - y0) >= 4;
         const F = wbFmtRef.current;
         let item;
+        if (tool === "section") {
+          // Commit a real section node sized to the drawn box (default to the
+          // factory's 880×560 if it was just a click, not a drag).
+          const gx = dragged ? Math.min(x0, lastWp.x) : x0;
+          const gy = dragged ? Math.min(y0, lastWp.y) : y0;
+          const body = workflowMakeNodeOfKind("section", {});
+          if (body) {
+            const gw = dragged ? Math.max(200, Math.abs(lastWp.x - x0)) : (body.w || 880);
+            const gh = dragged ? Math.max(140, Math.abs(lastWp.y - y0)) : (body.h || 560);
+            const id = workflowNewNodeId();
+            setData(d => ({
+              ...d,
+              nodes: [...(d.nodes || []), {
+                id, ...body,
+                x: Math.round(gx), y: Math.round(gy),
+                w: Math.round(gw), h: Math.round(gh),
+              }],
+            }));
+            setSelectedWbIds(new Set());
+            setSelectedNodeIds(new Set([id]));
+          }
+          wbAfterCommit("section");
+          return;
+        }
         if (tool === "arrow") {
           const arrowProps = {
             color, size: F.size || 3,
@@ -26491,7 +26548,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       };
       return;
     }
-  }, [screenToWorld, shiftWbItems, addWbItem, wbToolColor, wbAfterCommit, wbSelectPointerDown, nodeSelectPointerDown]);
+  }, [screenToWorld, shiftWbItems, addWbItem, wbToolColor, wbAfterCommit, wbSelectPointerDown, nodeSelectPointerDown, setData]);
   const wbPointerDownRef = useRef(wbPointerDown); wbPointerDownRef.current = wbPointerDown;
 
   // Resize / endpoint handles (bound through the early-declared ref so the
@@ -26572,7 +26629,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (isEditingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", l: "arrow", i: "eyedropper" };
+      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", f: "section", l: "arrow", i: "eyedropper" };
       const tool = map[(e.key || "").toLowerCase()];
       if (tool) { setWbTool(tool); e.preventDefault(); }
     };
@@ -55978,6 +56035,7 @@ const WB_TOOL_DEFS = [
   { id: "sticky",  label: "Sticky note", hotkey: "S" },
   { id: "pen",     label: "Pen",         hotkey: "P" },
   { id: "shape",   label: "Box",         hotkey: "R" },
+  { id: "section", label: "Section",     hotkey: "F" },
   { id: "arrow",   label: "Arrow",       hotkey: "L" },
   { id: "eyedropper", label: "Eyedropper", hotkey: "I" },
 ];
@@ -55989,6 +56047,7 @@ const WB_TOOL_GLYPHS = {
   sticky:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5 H13.5 V9.5 L9.5 13.5 H2.5 Z" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M9.5 13.5 V9.5 H13.5" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
   pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>`,
   shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
+  section: html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="2.4" width="12" height="11.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M2 6 H14" stroke="currentColor" strokeWidth="1.4" fill="none"/><path d="M3.6 4.2 H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none"/></svg>`,
   arrow:   html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L12 4 M12 4 H7.4 M12 4 V8.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>`,
   eyedropper: html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M9.6 3.1 12.9 6.4 M11.2 4.7 13.4 2.5 A1.4 1.4 0 0 0 11.4 0.5 L9.6 2.7 Z M10.4 5.5 4.6 11.3 A1.6 1.6 0 0 0 4.2 12 L3.6 13.8 A0.5 0.5 0 0 0 4.2 14.4 L6 13.8 A1.6 1.6 0 0 0 6.7 13.4 L12.5 7.6 Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>`,
 };
