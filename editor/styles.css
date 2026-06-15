@@ -3686,7 +3686,25 @@ button {
   font-size: 10.5px;
   color: var(--text-muted);
 }
-.th-live-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 6px 2px; }
+.th-live-actions { display: flex; align-items: center; gap: 6px; padding: 6px 6px 2px; }
+.th-live-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.th-live-end svg { width: 14px; height: 14px; }
+.th-live-end:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+.th-live-end:disabled { opacity: 0.5; cursor: default; }
 .th-live-go { margin: 4px 6px 2px; }
 .th-live-hint {
   font-size: 11px;
@@ -3700,6 +3718,10 @@ button {
 }
 .th-share-row:hover { background: var(--surface-2); }
 .th-share-row-top { display: flex; align-items: center; gap: 8px; }
+/* Inside a share row the link sub-row must share the row's horizontal inset so
+   its Open button lines up directly under the Start/Stop button above it (the
+   stand-alone link row in the Multiplayer section keeps its own 6px padding). */
+.th-share-row .th-live-link { padding-left: 0; padding-right: 0; }
 .th-share-row-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -3710,7 +3732,9 @@ button {
   white-space: nowrap;
 }
 
-/* Top-bar Go Live button (project multiplayer) — green primary CTA. */
+/* Top-bar Go Live — green PRIMARY button, far top-right. Solid green when idle
+   (the call to action); calmer light-green status pill once a session has people
+   in it. */
 .go-live-btn {
   display: inline-flex;
   align-items: center;
@@ -3718,23 +3742,21 @@ button {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--success, #16A34A);
-  border-radius: var(--radius, 6px);
+  border-radius: 6px;
   background: var(--success, #16A34A);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: filter 0.12s, background 0.12s, border-color 0.12s, color 0.12s;
+  transition: filter 0.12s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 .go-live-btn:hover { filter: brightness(0.94); }
-.go-live-btn:disabled { opacity: 0.55; cursor: default; }
 .go-live-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(255, 255, 255, 0.9);
+  flex: 0 0 auto;
 }
-/* Live state — calmer: the session is already running, so it reads as a
-   green status pill (light fill, pulsing dot) rather than a loud CTA. */
 .go-live-btn.is-live {
   background: color-mix(in oklch, var(--success, #16A34A) 12%, var(--surface));
   border-color: color-mix(in oklch, var(--success, #16A34A) 45%, var(--border));
@@ -3743,9 +3765,57 @@ button {
 .go-live-btn.is-live:hover { filter: none; background: color-mix(in oklch, var(--success, #16A34A) 18%, var(--surface)); }
 .go-live-dot.is-live {
   background: var(--success, #16A34A);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--success, #16A34A) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--success, #16A34A) 28%, transparent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }
+
+/* Compact ghost icon button — reused across the Live & shares panel for
+   copy / open / start / stop / end / refresh so the panel reads as aligned
+   icon affordances, not a scatter of text buttons. */
+.th-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.th-icon-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+.th-icon-btn:disabled { opacity: 0.45; cursor: default; }
+.th-icon-btn svg { width: 15px; height: 15px; }
+.th-icon-btn.is-primary { color: var(--success, #16A34A); }
+.th-icon-btn.is-primary:hover {
+  background: color-mix(in oklch, var(--success, #16A34A) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--success, #16A34A) 35%, var(--border));
+}
+.th-icon-btn.is-danger:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+
+/* The one hero CTA in the panel — labelled green button (not a willy-nilly
+   text button). */
+.go-live-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 4px 6px 2px;
+  padding: 0 14px;
+  border: 1px solid var(--success, #16A34A);
+  border-radius: 6px;
+  background: var(--success, #16A34A);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.go-live-cta:hover { filter: brightness(0.94); }
+.go-live-cta:disabled { opacity: 0.55; cursor: default; }
+.go-live-cta svg { width: 14px; height: 14px; }
 /* Drag handles — left edge of canvas + left edge of chat panel. Subtle
    neutral idle, accent-tinted on hover so the affordance is discoverable. */
 .workflow-resize-handle {
