@@ -9332,21 +9332,17 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun }) {
   `, document.body);
 }
 
-/* LiveSharesPanel — third right-rail panel, scoped to the ACTIVE project. Two
-   sections:
-     1. Multiplayer — the project's live co-editing session (Go Live / End,
-        participants, live link, Commit / Publish). This is the "go live"
-        surface lifted out of the landing Shares tab (its wrong home). A live
-        session is project-level: it rides ANY of the project's share tunnels
-        for transport, but co-editing covers the whole project canvas.
-     2. Shared prototypes — the project's published Cloudflare tunnels, so you
-        can see + open what's currently shared without leaving the editor.
-   Read-only over existing endpoints (/__shares, /__live/<id>/…) — no daemon
-   change required. */
+/* LiveSharesPanel — third right-rail panel, scoped to the ACTIVE project.
+   View-only: it SHOWS state and exposes copyable links, but drives no
+   start/stop controls (no Go Live / End session, no per-share tunnel
+   start/stop, no participant role toggle). Two sections:
+     1. Multiplayer — the project's live co-editing session: live/waiting/
+        not-live status, participants, and the copyable live link.
+     2. Shared prototypes — the project's published Cloudflare tunnels, with
+        their status dot + copyable/openable share URL.
+   Pure GET over /__shares (polled) — no mutating endpoints called. */
 function LiveSharesPanel({ railTop, panelRef, onClose }) {
   const [data, setData] = useState(null);   // { shares, cloudflared }
-  const [busy, setBusy] = useState({});
-  const [err, setErr] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   // A live session dies with the daemon — if /__shares stops answering, don't
   // keep reporting a stale "Live" state.
@@ -9365,33 +9361,6 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
     return () => clearInterval(t);
   }, [reload]);
 
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
-  const liveOp = async (id, action, body) => {
-    setBusy(b => ({ ...b, [id]: true }));
-    try {
-      const r = await fetch(`/__live/${id}/${action}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `${action} failed`);
-      reload();
-    } catch (e) { flashErr(String(e.message || e)); }
-    finally { setBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
-  };
-  const tunnelOp = async (id, action, body) => {
-    setBusy(b => ({ ...b, [id]: true }));
-    try {
-      const r = await fetch(`/__share/${id}/${action}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `${action} failed`);
-      reload();
-    } catch (e) { flashErr(String(e.message || e)); }
-    finally { setBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
-  };
   const copy = async (key, text) => {
     try { await navigator.clipboard.writeText(text); } catch {}
     setCopiedId(key);
@@ -9406,10 +9375,6 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
   const session = findLiveShare(shares, reachable);
   const people = (session && session.live && session.live.participants) || [];
   const isLive = !!session && people.length > 0;
-  // Pick a tunnel to host a NEW session: prefer one already running, else any.
-  const startShare = session
-    || shares.find(s => s.status === "running" || s.status === "starting")
-    || shares[0] || null;
   const STATUS_META = {
     running: { dot: "ok", label: "Running" }, starting: { dot: "warn", label: "Starting…" },
     stopped: { dot: "idle", label: "Stopped" }, exited: { dot: "err", label: "Tunnel dropped" },
@@ -9439,13 +9404,10 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
         <button className="th-icon-btn" onClick=${reload} title="Refresh"><${Icon.Refresh}/></button>
       </div>
       <div className="th-rail-panel-body">
-        ${err && html`<div className="shares-error-banner">${err}</div>`}
-
         <div className="th-live-section">
           <div className="th-live-section-head">Multiplayer</div>
           ${session ? (() => {
             const liveUrl = (session.shareUrl || "") + "live/";
-            const isBusy = !!busy[session.id];
             return html`
               <div className=${"th-live-status" + (isLive ? " is-live" : "")}>
                 <span className="th-live-dot"/>
@@ -9454,32 +9416,15 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
               ${people.length > 0 && html`
                 <div className="th-live-people">
                   ${people.map(p => html`<span key=${p.guestId}
-                    title=${p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)")}
-                    onClick=${() => liveOp(session.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
+                    title=${p.name + " · " + p.role}
                     className="th-live-avatar"
                     style=${{ background: p.color }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
                 </div>
               `}
               ${session.shareUrl && linkRow("live", liveUrl)}
-              <div className="th-live-actions">
-                <button className="th-live-end" disabled=${isBusy}
-                  title="End the live session — guests are disconnected; the tunnel keeps running for comments"
-                  onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
-                  <${Icon.Stop}/> End session
-                </button>
-              </div>
             `;
           })() : html`
             <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
-            ${startShare ? html`
-              <button className="go-live-cta"
-                disabled=${cfMissing || !!busy[startShare.id]}
-                title=${cfMissing ? "Install cloudflared first" : "Start a project live session — guests co-edit in real time, all runs use your agent"}
-                onClick=${() => liveOp(startShare.id, "start")}><${Icon.Globe}/> Go Live</button>
-              <div className="th-live-hint">Guests co-edit the project in real time · all runs use your agent.</div>
-            ` : html`
-              <div className="th-live-hint">Share a prototype below first — a live session needs a published tunnel to host on.</div>
-            `}
           `}
         </div>
 
@@ -9491,18 +9436,11 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
           `}
           ${shares.map(s => {
             const st = STATUS_META[s.status] || STATUS_META.stopped;
-            const isBusy = !!busy[s.id];
-            const running = s.status === "running" || s.status === "starting";
             return html`
               <div className="th-share-row" key=${s.id}>
                 <div className="th-share-row-top">
                   <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
                   <span className="th-share-row-label" title=${"source/" + s.prototype + "/ · " + st.label}>${s.label}</span>
-                  <button className=${"th-icon-btn" + (running ? " is-danger" : " is-primary")} disabled=${isBusy || (cfMissing && !running)}
-                    title=${running ? "Stop the tunnel — the public URL goes dark" : (cfMissing ? "Install cloudflared first" : "Start the tunnel")}
-                    onClick=${() => tunnelOp(s.id, running ? "stop" : "start")}>
-                    <${running ? Icon.Stop : Icon.Play}/>
-                  </button>
                 </div>
                 ${s.shareUrl && linkRow(s.id, s.shareUrl)}
               </div>
@@ -9525,13 +9463,11 @@ function findLiveShare(shares, reachable) {
 }
 
 /* GoLiveButton — top-bar ICON button mirroring the project's multiplayer state.
-   Green when a session has people in it; click opens the Live & shares rail
-   panel (and, when idle with a hostable tunnel, starts the session first).
-   Project-scoped (not per-prototype). */
+   Green when a session has people in it. View-only: click just opens the Live &
+   shares rail panel — it never starts or stops a session (the only action in
+   that surface is copying the link). Project-scoped (not per-prototype). */
 function GoLiveButton() {
   const [shares, setShares] = useState([]);
-  const [cfMissing, setCfMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [reachable, setReachable] = useState(true);
   const proj = activeProjectId();
   const reload = useCallback(() => {
@@ -9540,7 +9476,6 @@ function GoLiveButton() {
       .then(j => {
         setReachable(true);
         setShares((j.shares || []).filter(s => !proj || s.project === proj));
-        setCfMissing(!!(j.cloudflared && !j.cloudflared.found));
       })
       .catch(() => setReachable(false));
   }, [proj]);
@@ -9555,41 +9490,24 @@ function GoLiveButton() {
   // "Live" reads as green only with at least one participant — a host-only,
   // nobody-joined session is not what the user means by live.
   const isLive = !!session && people.length > 0;
-  const startShare = session
-    || shares.find(s => s.status === "running" || s.status === "starting")
-    || shares[0] || null;
   const openPanel = () => {
     try { window.dispatchEvent(new CustomEvent("th:open-rail-panel", { detail: { panel: "live" } })); } catch {}
-  };
-  const onClick = async () => {
-    // A session already exists (even if empty) → just open the panel to manage.
-    if (session || !startShare || cfMissing) { openPanel(); return; }
-    setBusy(true);
-    try {
-      await fetch(`/__live/${startShare.id}/start`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-      });
-    } catch {}
-    setBusy(false);
-    reload();
-    openPanel();
   };
   const tip = isLive
     ? `Live · ${people.length} ${people.length === 1 ? "person" : "people"} — open Live & shares`
     : session
       ? "Live session open · waiting for people — open Live & shares"
-      : (startShare ? "Go Live — start a project multiplayer session"
-                    : "Go Live — share a prototype first to host a session");
+      : "Open Live & shares";
   return html`
     <button
       type="button"
       className=${"go-live-btn" + (isLive ? " is-live" : "")}
-      aria-label=${isLive ? `Live, ${people.length} people` : "Go Live"}
+      aria-label=${isLive ? `Live, ${people.length} people` : "Open Live & shares"}
       title=${tip}
-      onClick=${onClick}
+      onClick=${openPanel}
     >
       <span className=${"go-live-dot" + (isLive ? " is-live" : "")}/>
-      <span className="go-live-label">${isLive ? `Live · ${people.length}` : "Go Live"}</span>
+      <span className="go-live-label">${isLive ? `Live · ${people.length}` : "Live & shares"}</span>
     </button>
   `;
 }
@@ -9783,13 +9701,12 @@ function CommentsPanel({ railTop, panelRef }) {
 }
 
 /* GitPanel — fifth (bottom-most) right-rail panel: local git + GitHub for the
-   active project. Commit / push / pull / connect over the existing /__git/*
-   daemon routes (status, commit, publish, connect, resolve) plus the new
-   /__git/log (history) and /__git/pull (guarded). Pull is host-authoritative —
-   the daemon refuses it while the tree is dirty or a live session is active, so
-   we never merge remote history on top of in-flight edits. Commits credit any
-   active live-session guests as Co-authored-by via the share's id. Available in
-   both editor + workflow modes through the shared rail. */
+   active project. Read-only for sync — it shows which repo the project is
+   linked to (connect / change remote + repo picker) and the commit history
+   (/__git/log), but deliberately exposes NO commit / push / pull actions. The
+   mutating /__git/commit · /__git/publish · /__git/pull daemon routes still
+   exist; this surface just doesn't drive them. Available in both editor +
+   workflow modes through the shared rail. */
 function GitPanel({ railTop, panelRef }) {
   const [st, setSt] = useState(null);        // /__git/status, null = loading
   const [gh, setGh] = useState(null);        // /__github/status {configured,signedIn,login,avatar}
@@ -9797,13 +9714,12 @@ function GitPanel({ railTop, panelRef }) {
   const [err, setErr] = useState(null);
   const [note, setNote] = useState(null);    // transient success line
   const [busy, setBusy] = useState("");       // current in-flight op key
-  const [msg, setMsg] = useState("");         // commit message (seeded from draft)
   const [remote, setRemote] = useState("");   // manual remote URL (OAuth-less path)
   const [device, setDevice] = useState(null); // active device-flow {user_code,verification_uri,…}
   const [picking, setPicking] = useState(false);
   const [repos, setRepos] = useState(null);   // repo picker list, null = loading
   const [newRepo, setNewRepo] = useState(""); // new-repo name field
-  const msgTouched = useRef(false);           // stop the poll clobbering typed text
+  const [editingRemote, setEditingRemote] = useState(false); // manual remote URL editor
   const devTimer = useRef(0);
 
   const loadGh = useCallback(() => {
@@ -9815,10 +9731,7 @@ function GitPanel({ railTop, panelRef }) {
   const reload = useCallback(() => {
     fetch(apiUrl("/__git/status"))
       .then(r => (r.ok ? r.json() : null))
-      .then(j => {
-        setSt(j || { repo: false });
-        if (j && !msgTouched.current) setMsg(j.draftMessage || "");
-      })
+      .then(j => setSt(j || { repo: false }))
       .catch(() => setSt({ repo: false }));
     fetch(apiUrl("/__git/log") + "&limit=40")
       .then(r => (r.ok ? r.json() : { commits: [] }))
@@ -9833,17 +9746,6 @@ function GitPanel({ railTop, panelRef }) {
 
   const flashErr = (m) => { setErr(String(m)); setTimeout(() => setErr(null), 6000); };
   const flashNote = (m) => { setNote(String(m)); setTimeout(() => setNote(null), 4000); };
-
-  // Find an active live session so commits credit guests as Co-authored-by.
-  const activeShareId = async () => {
-    try {
-      const r = await fetch("/__shares");
-      const j = r.ok ? await r.json() : {};
-      const shares = Array.isArray(j) ? j : (j.shares || []);
-      const live = shares.find(s => s && s.live && (s.live.participants || []).length > 0);
-      return live ? live.id : null;
-    } catch { return null; }
-  };
 
   // POST against /__git/* (kind) or /__github/* (when base==="github").
   const post = async (base, kind, body) => {
@@ -9864,30 +9766,10 @@ function GitPanel({ railTop, panelRef }) {
 
   const doConnect = async () => {
     const j = await op("connect", { remote: remote.trim() || undefined });
-    if (j) { flashNote("Connected"); msgTouched.current = false; reload(); }
+    if (j) { flashNote(remote.trim() ? "Remote set" : "Connected"); setEditingRemote(false); reload(); }
   };
-  const doCommit = async () => {
-    const shareId = await activeShareId();
-    const j = await op("commit", { message: msg, shareId });
-    if (j) {
-      flashNote(j.empty ? "Nothing to commit" : "Committed " + (j.sha || "").slice(0, 7));
-      msgTouched.current = false; reload();
-    }
-  };
-  const doPush = async () => {
-    const j = await op("publish", {});
-    if (j) { flashNote("Pushed to origin/" + (j.branch || "")); reload(); }
-  };
-  const doPull = async () => {
-    const j = await op("pull", {});
-    if (j) {
-      if (j.conflicts && j.conflicts.length)
-        flashErr(j.conflicts.length + " file(s) conflicted — resolve before continuing");
-      else flashNote("Pulled — up to date");
-      reload();
-    }
-  };
-
+  // Reveal the manual remote-URL editor, pre-filled with the current remote.
+  const startManualEdit = () => { setRemote(st && st.remote ? st.remote : ""); setPicking(false); setEditingRemote(true); };
   // ── GitHub account: device-flow sign-in ──────────────────────────────────
   const pollDevice = (interval) => {
     devTimer.current = setTimeout(async () => {
@@ -9994,18 +9876,29 @@ function GitPanel({ railTop, panelRef }) {
               <div className="th-git-repo-row">
                 <${Icon.Branch}/>
                 <span className="th-git-repo-name" title=${st.remote}>${repoLabel(st.remote)}</span>
-                ${signedIn && html`<button className="th-git-link" onClick=${openPicker}>Change</button>`}
+                ${signedIn
+                  ? html`<button className="th-git-link" onClick=${openPicker}>Change</button>`
+                  : html`<button className="th-git-link" onClick=${startManualEdit}>Change</button>`}
               </div>`}
             ${!hasRemote && signedIn && html`
-              <button className="th-git-btn is-primary" onClick=${openPicker}>
-                <${Icon.Branch}/> Choose a repo for this project</button>`}
-            ${!hasRemote && !signedIn && html`
+              <div className="th-git-repo-row">
+                <button className="th-git-btn is-primary" onClick=${openPicker}>
+                  <${Icon.Branch}/> Choose a repo for this project</button>
+                <button className="th-git-link" onClick=${startManualEdit}>URL…</button>
+              </div>`}
+
+            ${(editingRemote || (!hasRemote && !signedIn)) && html`
               <div className="th-git-connect">
-                <div className="th-live-hint">No GitHub repo connected to this project yet${configured ? " — sign in above to pick one, or" : "."}${configured ? "" : ""} set a remote URL manually:</div>
-                <input className="th-git-input" placeholder="https://github.com/you/repo.git (optional)"
-                  value=${remote} onInput=${e => setRemote(e.target.value)} />
-                <button className="th-git-btn" disabled=${busy === "connect"} onClick=${doConnect}>
-                  <${Icon.Branch}/> ${busy === "connect" ? "Connecting…" : (repo ? "Set remote" : "Connect git")}</button>
+                ${!hasRemote && !signedIn && !editingRemote && html`
+                  <div className="th-live-hint">No GitHub repo connected to this project yet${configured ? " — sign in above to pick one, or set a remote URL manually:" : " — set a remote URL manually:"}</div>`}
+                <input className="th-git-input" placeholder="https://github.com/you/repo.git"
+                  value=${remote} onInput=${e => setRemote(e.target.value)}
+                  onKeyDown=${e => { if (e.key === "Enter") doConnect(); }} />
+                <div className="th-git-actions">
+                  <button className="th-git-btn is-primary" disabled=${busy === "connect"} onClick=${doConnect}>
+                    <${Icon.Branch}/> ${busy === "connect" ? "Saving…" : (hasRemote ? "Set remote" : (repo ? "Set remote" : "Connect git"))}</button>
+                  ${editingRemote && html`<button className="th-git-link" onClick=${() => setEditingRemote(false)}>Cancel</button>`}
+                </div>
               </div>`}
 
             ${picking && html`
@@ -10041,26 +9934,12 @@ function GitPanel({ railTop, panelRef }) {
               ${st.behind > 0 && html`<span className="th-git-pill is-behind">↓ ${st.behind}</span>`}
             </div>
 
-            <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
-              onInput=${e => { msgTouched.current = true; setMsg(e.target.value); }}></textarea>
-
-            <div className="th-git-actions">
-              <button className="th-git-btn is-primary" disabled=${!st.dirty || busy === "commit"} onClick=${doCommit}>
-                <${Icon.Check}/> ${busy === "commit" ? "Committing…" : "Commit"}</button>
-              <button className="th-git-btn" disabled=${!hasRemote || busy === "publish"} onClick=${doPush}
-                title=${hasRemote ? "Push commits to origin" : "Connect a repo first"}>
-                <${Icon.ArrowUp}/> ${busy === "publish" ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
-              <button className="th-git-btn" disabled=${!hasRemote || busy === "pull"} onClick=${doPull}
-                title=${hasRemote ? "Pull from origin — blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
-                <${Icon.Download}/> ${busy === "pull" ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
-            </div>
-
             ${st.conflicts && st.conflicts.length > 0 && html`
               <div className="shares-error-banner">${st.conflicts.length} unresolved conflict(s): ${st.conflicts.slice(0, 5).join(", ")}</div>`}
 
             <div className="th-git-history-head">History</div>
             ${commits === null && html`<div className="runs-empty">Loading…</div>`}
-            ${commits !== null && commits.length === 0 && html`<div className="runs-empty">No commits yet — make your first commit above.</div>`}
+            ${commits !== null && commits.length === 0 && html`<div className="runs-empty">No commits yet.</div>`}
             ${(commits || []).map(c => html`
               <div className="th-git-commit" key=${c.sha}>
                 <div className="th-git-commit-subj">${c.subject}</div>
@@ -19624,7 +19503,7 @@ function SharesLanding({ onCountChange }) {
         <div className="shares-cf-hint">
           <b>cloudflared is not installed.</b> Shares publish through Cloudflare quick
           tunnels — install it once via <b>Settings ⚙ → Local skills → Install cloudflared</b>
-          (or <code>brew install cloudflared</code>), then Start any share.
+          (or <code>brew install cloudflared</code>).
         </div>
       `}
       ${data && shares.length === 0 && html`
@@ -19632,11 +19511,10 @@ function SharesLanding({ onCountChange }) {
           <div className="shares-empty-glyph"><${Icon.Globe}/></div>
           <b>No shared prototypes yet</b>
           <p>
-            Open a project's workflow canvas, select a prototype node, and hit the
-            <b> Share</b> action. Woven publishes the live prototype through a Cloudflare
-            quick tunnel — anyone with the link can browse it and pin comments on
-            specific elements; those comments land back on the prototype node, ready
-            to send to the build agent.
+            Published prototypes appear here with their Cloudflare quick-tunnel link
+            to copy and open. Visitors with the link can browse the prototype and pin
+            comments on specific elements; those comments land back on the prototype
+            node, ready to send to the build agent.
           </p>
         </div>
       `}
@@ -19648,7 +19526,6 @@ function SharesLanding({ onCountChange }) {
       `}
       ${filteredShares.map((s) => {
         const st = STATUS_META[s.status] || STATUS_META.stopped;
-        const isBusy = !!busy[s.id];
         const cc = s.commentCounts || {};
         // Per-share preview. URL carries the share's OWN project (the landing
         // has no active project, so apiUrl() can't add it) + ?v=mtime so a
@@ -19677,22 +19554,6 @@ function SharesLanding({ onCountChange }) {
               <div className="shares-row-comments" title=${`${cc.open || 0} open · ${cc.done || 0} done · ${cc.archived || 0} archived`}>
                 <${Icon.Comment}/> ${cc.open || 0}<span className="shares-row-comments-total">/${cc.total || 0}</span>
               </div>
-              <div className="shares-row-actions">
-                ${s.status === "running" || s.status === "starting"
-                  ? html`<button className="shares-btn" disabled=${isBusy}
-                      onClick=${() => op(s.id, "stop")} title="Stop the tunnel — the public URL goes dark">Stop</button>`
-                  : html`<button className="shares-btn shares-btn-primary" disabled=${isBusy || cfMissing}
-                      title=${cfMissing ? "Install cloudflared first" : "Start a quick tunnel (the URL will be new)"}
-                      onClick=${() => op(s.id, "start")}>Start</button>`}
-                <button className="shares-btn" disabled=${isBusy}
-                  title=${s.emailGate ? "Switch to open commenting (name only)" : "Require name + email to comment"}
-                  onClick=${() => op(s.id, "update", { emailGate: !s.emailGate })}
-                >${s.emailGate ? "Gate: email" : "Gate: open"}</button>
-                <button className="shares-btn shares-btn-danger" disabled=${isBusy}
-                  title="Delete the share — kills the tunnel and revokes the link (comments are kept in the project)"
-                  onClick=${() => { if (confirm(`Delete share "${s.label}"? The link stops working immediately.`)) op(s.id, "delete"); }}
-                >Delete</button>
-              </div>
             </div>
             <div className="shares-row-url">
               ${s.shareUrl
@@ -19703,8 +19564,8 @@ function SharesLanding({ onCountChange }) {
                   `
                 : html`<span className="shares-url-none">
                     ${s.status === "starting" ? "Waiting for tunnel URL…"
-                      : s.status === "no-cloudflared" ? "Install cloudflared to publish"
-                      : "Not published — start the tunnel to get a link"}
+                      : s.status === "no-cloudflared" ? "cloudflared not installed"
+                      : "Not published yet"}
                   </span>`}
               ${s.urlChanged && html`
                 <span className="shares-url-changed" title=${"Previous URL: " + (s.prevUrl || "—") + " — quick-tunnel URLs change on every restart. Copy + resend the new link."}>
@@ -42797,9 +42658,9 @@ function isCodeViewableNode(node) {
    the picked-element inspector both dock right, so the two can coexist.
 
    Three jobs:
-     1. Share controls — create / start / stop the Cloudflare quick tunnel
-        for THIS prototype (one share per project+prototype, idempotent),
-        copy the public URL.
+     1. Share status — shows THIS prototype's Cloudflare quick-tunnel state
+        and lets you copy / open the public URL. View-only: no create /
+        start / stop (the only action is copying the link).
      2. The comment threads visitors left through the share viewer — same
         store (share/comments.json), same ops (reply / done / archive /
         delete), edited here as "Owner".
@@ -42818,11 +42679,9 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
   }, []);
   const [comments, setComments] = useState(null);   // null = loading
   const [share, setShare] = useState(null);         // matching /__shares record
-  const [cloudflared, setCloudflared] = useState(true);
   const [filter, setFilter] = useState("open");
   const [sel, setSel] = useState({});               // commentId → true
   const [busy, setBusy] = useState(false);
-  const [shareBusy, setShareBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState({});
@@ -42839,7 +42698,6 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (!j) return;
-        setCloudflared(!!(j.cloudflared && j.cloudflared.found));
         const mine = (j.shares || []).find(s =>
           s.prototype === slug && (!projectId || s.project === projectId));
         setShare(mine || null);
@@ -42852,24 +42710,10 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
     return () => clearInterval(t);
   }, [refetch]);
 
-  // ── Share controls ────────────────────────────────────────────────
-  const shareCreate = async () => {
-    setShareBusy(true);
-    try {
-      const r = await fetch(apiUrl("/__share/create"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prototype: slug }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || "share failed");
-      if (j.tunnelError) flashErr(j.tunnelError);
-      refetch();
-    } catch (e) { flashErr(String(e.message || e)); }
-    finally { setShareBusy(false); }
-  };
+  // ── Share controls (view + copy only — no create/start/stop) ──────
+  // shareOp survives solely to ack a changed URL when the link is copied.
   const shareOp = async (action) => {
     if (!share) return;
-    setShareBusy(true);
     try {
       const r = await fetch(`/__share/${share.id}/${action}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
@@ -42878,7 +42722,6 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
       if (!r.ok) throw new Error(j.error || `${action} failed`);
       refetch();
     } catch (e) { flashErr(String(e.message || e)); }
-    finally { setShareBusy(false); }
   };
   const copyShareUrl = async () => {
     if (!share || !share.shareUrl) return;
@@ -43027,18 +42870,11 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
       ${!share && html`
         <div className="workflow-comments-share-first">
           <div className="workflow-comments-share-first-glyph"><${Icon.Share}/></div>
-          <div className="workflow-comments-share-first-title">Share this prototype</div>
+          <div className="workflow-comments-share-first-title">Not shared yet</div>
           <div className="workflow-comments-share-first-body">
-            Publish <code>source/${slug}/</code> through a Cloudflare quick tunnel.
-            Anyone with the link can open it and pin feedback — their comments show up right here.
+            <code>source/${slug}/</code> hasn't been published. Once it has a
+            Cloudflare quick-tunnel link, it'll appear here to copy and open.
           </div>
-          <button key="cta" className="workflow-comments-share-cta" disabled=${shareBusy || !cloudflared}
-            title=${cloudflared
-              ? "Publish this prototype through a Cloudflare quick tunnel — anyone with the link can review + comment"
-              : "cloudflared not installed — brew install cloudflared, then retry"}
-            onClick=${shareCreate}
-          ><${Icon.Globe}/> ${shareBusy ? "Publishing…" : "Share via tunnel"}</button>
-          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">cloudflared not installed — set it up via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>)</div>`}
           ${err && html`<div className="workflow-comments-err">${err}</div>`}
         </div>
       `}
@@ -43049,9 +42885,6 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
             <span className="workflow-comments-share-status">${stMeta[1]}</span>
             ${share.urlChanged && html`<span className="shares-url-changed" title="The tunnel URL changed since last copy — resend the link">⚠ URL changed</span>`}
             <span style=${{ flex: 1 }}></span>
-            ${(share.status === "running" || share.status === "starting")
-              ? html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("stop")}>Stop</button>`
-              : html`<button className="shares-btn shares-btn-primary" disabled=${shareBusy || !cloudflared} onClick=${() => shareOp("start")}>Start</button>`}
           </div>
           ${share.shareUrl && html`
             <div key="surl" className="workflow-comments-share-url">

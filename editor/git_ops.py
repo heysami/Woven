@@ -64,8 +64,20 @@ def git_available():
 # ═════════════════════════════════════════════════════════════════════════
 
 def is_repo(root):
-    code, out, _e = _git(root, "rev-parse", "--is-inside-work-tree", timeout=8)
-    return code == 0 and out.strip() == "true"
+    """True ONLY when `root` is the TOPLEVEL of its own git repo — not when it
+    merely sits INSIDE an enclosing repo. This matters because a Woven project
+    folder (projects/<id>/) is nested inside the Woven APP's repo: a plain
+    --is-inside-work-tree check would walk up, find the app's .git, and make the
+    panel show the APP's remote + history (and skip `git init` for the project).
+    Requiring toplevel == root keeps git scoped to THIS project and lets
+    connect() create a dedicated repo when there isn't one yet."""
+    code, out, _e = _git(root, "rev-parse", "--show-toplevel", timeout=8)
+    if code != 0 or not out.strip():
+        return False
+    try:
+        return os.path.realpath(out.strip()) == os.path.realpath(root)
+    except Exception:
+        return False
 
 
 def connect(root, remote=None, name=None, email=None, default_branch="main"):
