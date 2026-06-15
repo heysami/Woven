@@ -5593,6 +5593,12 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-wb-tool="sticky"]:not([data-space="true"]):not([data-panning="true"]) {
   cursor: copy;
 }
+/* Section draws a box but commits a NODE, not a wb item — give it its own
+   region-framing cursor (`cell`) so it reads as distinct from the Box tool's
+   crosshair, making clear a different tool is armed. */
+.workflow-canvas-wrap[data-wb-tool="section"]:not([data-space="true"]):not([data-panning="true"]) {
+  cursor: cell;
+}
 .workflow-canvas-wrap[data-wb-dragging="true"]:not([data-space="true"]):not([data-panning="true"]) {
   cursor: grabbing;
 }
