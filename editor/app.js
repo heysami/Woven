@@ -8927,6 +8927,17 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [active]);
 
+  // Let the top-bar Go Live button (and any future caller) open a rail panel
+  // by name via a CustomEvent, without lifting this state up.
+  useEffect(() => {
+    const onOpen = (e) => {
+      const which = e?.detail?.panel;
+      if (which === "runs" || which === "tasks" || which === "live") setActive(which);
+    };
+    window.addEventListener("th:open-rail-panel", onOpen);
+    return () => window.removeEventListener("th:open-rail-panel", onOpen);
+  }, []);
+
   // rAF-track the rail's top while the panel is open so it stays glued to the
   // rail through banner show/hide, resize, scroll. Cheap (no-op when closed).
   useEffect(() => {
@@ -9036,6 +9047,17 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
           <${Icon.Bot}/>
         </span>
       <//>
+      <${HoverTip}
+        placement="left"
+        className=${"th-right-rail-btn" + (active === "live" ? " is-active" : "")}
+        ariaLabel="Open live & shares"
+        tip="Live & shares — multiplayer session + this project's shared prototypes"
+        onClick=${() => setActive(a => a === "live" ? null : "live")}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.Globe}/>
+        </span>
+      <//>
     </nav>
     ${panel}
     ${active === "tasks" && html`<${TasksSubagentsPanel}
@@ -9043,6 +9065,11 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
       railTop=${railTop}
       panelRef=${panelRef}
       onOpenRun=${(r) => { onOpenRun(r); setActive(null); }}
+    />`}
+    ${active === "live" && html`<${LiveSharesPanel}
+      railTop=${railTop}
+      panelRef=${panelRef}
+      onClose=${() => setActive(null)}
     />`}
   `;
 }
@@ -9267,6 +9294,242 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun }) {
       </div>
     </div>
   `, document.body);
+}
+
+/* LiveSharesPanel — third right-rail panel, scoped to the ACTIVE project. Two
+   sections:
+     1. Multiplayer — the project's live co-editing session (Go Live / End,
+        participants, live link, Commit / Publish). This is the "go live"
+        surface lifted out of the landing Shares tab (its wrong home). A live
+        session is project-level: it rides ANY of the project's share tunnels
+        for transport, but co-editing covers the whole project canvas.
+     2. Shared prototypes — the project's published Cloudflare tunnels, so you
+        can see + open what's currently shared without leaving the editor.
+   Read-only over existing endpoints (/__shares, /__live/<id>/…) — no daemon
+   change required. */
+function LiveSharesPanel({ railTop, panelRef, onClose }) {
+  const [data, setData] = useState(null);   // { shares, cloudflared }
+  const [busy, setBusy] = useState({});
+  const [err, setErr] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  // A live session dies with the daemon — if /__shares stops answering, don't
+  // keep reporting a stale "Live" state.
+  const [reachable, setReachable] = useState(true);
+  const proj = activeProjectId();
+
+  const reload = useCallback(() => {
+    fetch("/__shares")
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
+      .then(j => { setReachable(true); setData(j); })
+      .catch(() => setReachable(false));
+  }, []);
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 4000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
+  const liveOp = async (id, action, body) => {
+    setBusy(b => ({ ...b, [id]: true }));
+    try {
+      const r = await fetch(`/__live/${id}/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      reload();
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
+  };
+  const tunnelOp = async (id, action, body) => {
+    setBusy(b => ({ ...b, [id]: true }));
+    try {
+      const r = await fetch(`/__share/${id}/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      reload();
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
+  };
+  const copy = async (key, text) => {
+    try { await navigator.clipboard.writeText(text); } catch {}
+    setCopiedId(key);
+    setTimeout(() => setCopiedId(p => (p === key ? null : p)), 1600);
+  };
+
+  const allShares = (data && data.shares) || [];
+  const shares = allShares.filter(s => !proj || s.project === proj);
+  const cfMissing = !!(data && data.cloudflared && !data.cloudflared.found);
+  const liveShare = reachable ? (shares.find(s => s.live && s.live.active) || null) : null;
+  // Pick a tunnel to host a NEW session: prefer one already running, else any.
+  const startShare = liveShare
+    || shares.find(s => s.status === "running" || s.status === "starting")
+    || shares[0] || null;
+  const STATUS_META = {
+    running: { dot: "ok", label: "Running" }, starting: { dot: "warn", label: "Starting…" },
+    stopped: { dot: "idle", label: "Stopped" }, exited: { dot: "err", label: "Tunnel dropped" },
+    error: { dot: "err", label: "Error" }, "no-cloudflared": { dot: "err", label: "cloudflared missing" },
+  };
+
+  return createPortal(html`
+    <div
+      className="th-rail-panel th-live-panel"
+      ref=${panelRef}
+      style=${railTop != null ? { top: railTop + "px" } : null}>
+      <div className="runs-panel-head">
+        <span>Live & shares</span>
+        <button className="runs-refresh" onClick=${reload} title="Refresh">↻</button>
+      </div>
+      <div className="th-rail-panel-body">
+        ${err && html`<div className="shares-error-banner">${err}</div>`}
+
+        <div className="th-live-section">
+          <div className="th-live-section-head">Multiplayer</div>
+          ${liveShare ? (() => {
+            const people = (liveShare.live && liveShare.live.participants) || [];
+            const liveUrl = (liveShare.shareUrl || "") + "live/";
+            const isBusy = !!busy[liveShare.id];
+            return html`
+              <div className="th-live-status is-live"><span className="th-live-dot"/>Live · ${people.length} ${people.length === 1 ? "person" : "people"}</div>
+              ${people.length > 0 && html`
+                <div className="th-live-people">
+                  ${people.map(p => html`<span key=${p.guestId}
+                    title=${p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)")}
+                    onClick=${() => liveOp(liveShare.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
+                    className="th-live-avatar"
+                    style=${{ background: p.color }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
+                </div>
+              `}
+              ${liveShare.shareUrl && html`
+                <div className="th-live-link">
+                  <code title=${liveUrl}>${liveUrl}</code>
+                  <button className="shares-btn" onClick=${() => copy("live", liveUrl)}>${copiedId === "live" ? "Copied ✓" : "Copy"}</button>
+                  <button className="shares-btn" onClick=${() => window.open(liveUrl, "_blank")}>Open</button>
+                </div>
+              `}
+              <div className="th-live-actions">
+                <button className="shares-btn shares-btn-danger" disabled=${isBusy}
+                  title="End the live session — guests are disconnected; the tunnel keeps running for comments"
+                  onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(liveShare.id, "stop"); }}>End session</button>
+              </div>
+            `;
+          })() : html`
+            <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
+            ${startShare ? html`
+              <button className="shares-btn shares-btn-primary th-live-go"
+                disabled=${cfMissing || !!busy[startShare.id]}
+                title=${cfMissing ? "Install cloudflared first" : "Start a project live session — guests co-edit in real time, all runs use your agent"}
+                onClick=${() => liveOp(startShare.id, "start")}>Go Live ▶</button>
+              <div className="th-live-hint">Guests co-edit the project in real time · all runs use your agent.</div>
+            ` : html`
+              <div className="th-live-hint">Share a prototype below first — a live session needs a published tunnel to host on.</div>
+            `}
+          `}
+        </div>
+
+        <div className="th-live-section">
+          <div className="th-live-section-head">Shared prototypes${shares.length ? html` · ${shares.length}` : ""}</div>
+          ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed — install it (Settings ⚙ → Local skills) to publish links.</div>`}
+          ${shares.length === 0 && html`
+            <div className="runs-empty">No shared prototypes in this project yet. Select a prototype node on the canvas and hit Share to publish one.</div>
+          `}
+          ${shares.map(s => {
+            const st = STATUS_META[s.status] || STATUS_META.stopped;
+            const isBusy = !!busy[s.id];
+            const running = s.status === "running" || s.status === "starting";
+            return html`
+              <div className="th-share-row" key=${s.id}>
+                <div className="th-share-row-top">
+                  <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
+                  <span className="th-share-row-label" title=${"source/" + s.prototype + "/"}>${s.label}</span>
+                  <button className=${"shares-btn" + (running ? "" : " shares-btn-primary")} disabled=${isBusy || (cfMissing && !running)}
+                    title=${running ? "Stop the tunnel — the public URL goes dark" : (cfMissing ? "Install cloudflared first" : "Start a quick tunnel")}
+                    onClick=${() => tunnelOp(s.id, running ? "stop" : "start")}>${running ? "Stop" : "Start"}</button>
+                </div>
+                ${s.shareUrl && html`
+                  <div className="th-live-link">
+                    <code title=${s.shareUrl}>${s.shareUrl}</code>
+                    <button className="shares-btn" onClick=${() => copy(s.id, s.shareUrl)}>${copiedId === s.id ? "Copied ✓" : "Copy"}</button>
+                    <button className="shares-btn" onClick=${() => window.open(s.shareUrl, "_blank")}>Open</button>
+                  </div>
+                `}
+              </div>
+            `;
+          })}
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
+/* GoLiveButton — top-bar control mirroring the project's multiplayer state.
+   Click: if live, open the Live panel to manage; if not live and the project
+   has a shareable tunnel, start a project live session (and open the panel);
+   otherwise open the panel so the user can publish a prototype first. Project-
+   scoped (not per-prototype). */
+function GoLiveButton({ compact }) {
+  const [shares, setShares] = useState([]);
+  const [cfMissing, setCfMissing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Daemon reachability — a live session can't outlive the daemon that hosts
+  // it, so when /__shares stops answering we must NOT keep claiming "Live".
+  const [reachable, setReachable] = useState(true);
+  const proj = activeProjectId();
+  const reload = useCallback(() => {
+    fetch("/__shares")
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("unreachable"))))
+      .then(j => {
+        setReachable(true);
+        setShares((j.shares || []).filter(s => !proj || s.project === proj));
+        setCfMissing(!!(j.cloudflared && !j.cloudflared.found));
+      })
+      .catch(() => setReachable(false));
+  }, [proj]);
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 4000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  const liveShare = reachable ? (shares.find(s => s.live && s.live.active) || null) : null;
+  const people = (liveShare && liveShare.live && liveShare.live.participants) || [];
+  const startShare = liveShare
+    || shares.find(s => s.status === "running" || s.status === "starting")
+    || shares[0] || null;
+  const openPanel = () => {
+    try { window.dispatchEvent(new CustomEvent("th:open-rail-panel", { detail: { panel: "live" } })); } catch {}
+  };
+  const onClick = async () => {
+    if (liveShare || !startShare || cfMissing) { openPanel(); return; }
+    // Not live + has a hostable tunnel → start the project session, reveal panel.
+    setBusy(true);
+    try {
+      await fetch(`/__live/${startShare.id}/start`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      });
+    } catch {}
+    setBusy(false);
+    reload();
+    openPanel();
+  };
+  return html`
+    <button
+      className=${"go-live-btn" + (liveShare ? " is-live" : "") + (compact ? " is-compact" : "")}
+      disabled=${busy}
+      title=${liveShare
+        ? `Live · ${people.length} ${people.length === 1 ? "person" : "people"} — open the Live & shares panel`
+        : (startShare ? "Go Live — start a project multiplayer session" : "Go Live — share a prototype first to host a session")}
+      onClick=${onClick}
+    >
+      <span className=${"go-live-dot" + (liveShare ? " is-live" : "")}/>
+      <span className="go-live-label">${liveShare ? `Live · ${people.length}` : "Go Live"}</span>
+    </button>
+  `;
 }
 
 /* SSE consumer — fetch + getReader pattern from open-design's
@@ -18762,64 +19025,10 @@ function SharesLanding({ onCountChange }) {
     // Copying the fresh URL acknowledges the "URL changed" warning.
     if (s.urlChanged) op(s.id, "ack_url");
   };
-  // Live Session ops — POST /__live/<id>/(start|stop|kick|role). start also
-  // (re)starts the tunnel, so "Go live" is one click from a stopped share.
-  const liveOp = async (id, action, body) => {
-    setBusy((b) => ({ ...b, [id]: true }));
-    try {
-      const r = await fetch(`/__live/${id}/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `${action} failed`);
-      reload();
-    } catch (e) {
-      flashErr(String(e.message || e));
-    } finally {
-      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
-    }
-  };
-  const copyLive = async (s) => {
-    if (!s.shareUrl) return;
-    const url = s.shareUrl + "live/";
-    try { await navigator.clipboard.writeText(url); } catch {}
-    setCopiedId("live-" + s.id);
-    setTimeout(() => setCopiedId((p) => (p === "live-" + s.id ? null : p)), 1600);
-  };
-  // Git backbone — deliberate commit (host chooses when) + publish. Commits
-  // credit in-session guests as Co-authored-by (server pulls them from the
-  // live session's accrued credits).
-  const gitOp = async (project, op, body) => {
-    const r = await fetch(`/__git/${op}?project=${encodeURIComponent(project)}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || `${op} failed`);
-    return j;
-  };
-  const doCommit = async (s) => {
-    try {
-      const st = await fetch(`/__git/status?project=${encodeURIComponent(s.project)}`).then((r) => r.json());
-      if (!st.gitAvailable) { flashErr("git is not installed on this computer"); return; }
-      if (!st.repo) {
-        const remote = prompt("Connect this project to GitHub.\nPaste the repo URL (https://github.com/owner/repo.git), or leave blank for a local-only repo:");
-        if (remote === null) return;
-        await gitOp(s.project, "connect", { remote: remote.trim() || null });
-      }
-      const fresh = await fetch(`/__git/status?project=${encodeURIComponent(s.project)}`).then((r) => r.json());
-      const msg = prompt("Commit message:", fresh.draftMessage || "Woven live session");
-      if (msg === null) return;
-      const res = await gitOp(s.project, "commit", { message: msg, shareId: s.id });
-      flashErr(res.empty ? "Nothing to commit." : `Committed ${res.sha ? res.sha.slice(0, 7) : "✓"}`);
-    } catch (e) { flashErr(String(e.message || e)); }
-  };
-  const doPublish = async (s) => {
-    try { await gitOp(s.project, "publish", {}); flashErr("Published to GitHub ✓"); }
-    catch (e) { flashErr(String(e.message || e)); }
-  };
+  // Live-session / Go-Live management moved OUT of this landing tab into the
+  // editor's right-rail "Live & shares" panel (LiveSharesPanel) — its old home
+  // here was the wrong location. This tab now only manages the tunnels +
+  // links + comments for shared prototypes.
 
   const shares = (data && data.shares) || [];
   const cfMissing = data && data.cloudflared && !data.cloudflared.found;
@@ -18957,42 +19166,6 @@ function SharesLanding({ onCountChange }) {
                   ⚠ URL changed
                 </span>
               `}
-            </div>
-            <div className="shares-row-live" style=${{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "7px", fontSize: "12px" }}>
-              ${(() => {
-                const live = s.live || {};
-                const running = s.status === "running";
-                const liveUrl = (s.shareUrl || "") + "live/";
-                if (live.active) {
-                  const people = live.participants || [];
-                  return html`
-                    <span style=${{ color: "#16A34A", fontWeight: 600 }} title="A live co-editing session is open">● Live</span>
-                    <span style=${{ color: "var(--text-dim, #888)" }}>${people.length} ${people.length === 1 ? "person" : "people"}</span>
-                    ${people.map((p) => html`<span key=${p.guestId}
-                      title=${p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)")}
-                      onClick=${() => liveOp(s.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
-                      style=${{ background: p.color, color: "#fff", width: "20px", height: "20px", borderRadius: "50%", display: "inline-grid", placeItems: "center", fontSize: "10px", fontWeight: 700, cursor: "pointer" }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
-                    ${s.shareUrl && html`<code className="shares-url" title=${liveUrl} style=${{ maxWidth: "260px" }}>${liveUrl}</code>`}
-                    ${s.shareUrl && html`<button className="shares-btn" onClick=${() => copyLive(s)}>${copiedId === "live-" + s.id ? "Copied ✓" : "Copy live link"}</button>`}
-                    ${s.shareUrl && html`<button className="shares-btn" onClick=${() => window.open(liveUrl, "_blank")}>Open</button>`}
-                    <button className="shares-btn" disabled=${isBusy}
-                      title="Commit the current state to git — you choose when. In-session guests are credited as Co-authored-by."
-                      onClick=${() => doCommit(s)}>Commit…</button>
-                    <button className="shares-btn" disabled=${isBusy}
-                      title="Push commits to the connected GitHub repo"
-                      onClick=${() => doPublish(s)}>Publish</button>
-                    <button className="shares-btn shares-btn-danger" disabled=${isBusy}
-                      title="End the live session — revokes all guests; the tunnel keeps running for comments"
-                      onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(s.id, "stop"); }}>End session</button>
-                  `;
-                }
-                return html`
-                  <button className="shares-btn shares-btn-primary" disabled=${isBusy || cfMissing}
-                    title=${cfMissing ? "Install cloudflared first" : (running ? "Open a live co-editing session" : "Starts the tunnel and opens a live session")}
-                    onClick=${() => liveOp(s.id, "start")}>Go live ▶</button>
-                  <span style=${{ color: "var(--text-dim, #888)" }}>guests co-edit in real time · all runs use your agent</span>
-                `;
-              })()}
             </div>
             ${s.error && s.status === "error" && html`<div className="shares-row-error">${s.error}</div>`}
             </div>
@@ -35253,6 +35426,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ${Math.round(zoom * 100)}%
           <span className="tab-tip">${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}</span>
         </button>
+        <${GoLiveButton}/>
       </div>
       ${fullscreen && html`
         <button
@@ -60791,6 +60965,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
             <${Icon.Send}/> ${runActive ? "Running…" : "Submit"}
           </button>
         </div>
+        <${GoLiveButton} compact=${true}/>
       </div>
     </div>
   `;

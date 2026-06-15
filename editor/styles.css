@@ -3633,6 +3633,119 @@ button {
   padding: 8px;
 }
 
+/* Live & shares panel (third rail entry). */
+.th-live-section { padding: 4px 4px 12px; }
+.th-live-section + .th-live-section { border-top: 1px solid var(--border); padding-top: 12px; }
+.th-live-section-head {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 2px 6px 8px;
+}
+.th-live-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 6px;
+}
+.th-live-status.is-live { color: var(--success, #16A34A); }
+.th-live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-faint);
+}
+.th-live-status.is-live .th-live-dot {
+  background: var(--success, #16A34A);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success, #16A34A) 25%, transparent);
+  animation: chat-pulse 1.4s ease-in-out infinite;
+}
+.th-live-people { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px; }
+.th-live-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: inline-grid; place-items: center;
+  color: #fff; font-size: 10px; font-weight: 700;
+  cursor: pointer;
+}
+.th-live-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  min-width: 0;
+}
+.th-live-link code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.th-live-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 6px 2px; }
+.th-live-go { margin: 4px 6px 2px; }
+.th-live-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 4px 6px;
+  line-height: 1.4;
+}
+.th-share-row {
+  padding: 6px 6px;
+  border-radius: var(--radius-sm);
+}
+.th-share-row:hover { background: var(--surface-2); }
+.th-share-row-top { display: flex; align-items: center; gap: 8px; }
+.th-share-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Top-bar Go Live button (project multiplayer) — green primary CTA. */
+.go-live-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--success, #16A34A);
+  border-radius: var(--radius, 6px);
+  background: var(--success, #16A34A);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.12s, background 0.12s, border-color 0.12s, color 0.12s;
+}
+.go-live-btn:hover { filter: brightness(0.94); }
+.go-live-btn:disabled { opacity: 0.55; cursor: default; }
+.go-live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+}
+/* Live state — calmer: the session is already running, so it reads as a
+   green status pill (light fill, pulsing dot) rather than a loud CTA. */
+.go-live-btn.is-live {
+  background: color-mix(in oklch, var(--success, #16A34A) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--success, #16A34A) 45%, var(--border));
+  color: var(--success, #16A34A);
+}
+.go-live-btn.is-live:hover { filter: none; background: color-mix(in oklch, var(--success, #16A34A) 18%, var(--surface)); }
+.go-live-dot.is-live {
+  background: var(--success, #16A34A);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--success, #16A34A) 30%, transparent);
+  animation: chat-pulse 1.4s ease-in-out infinite;
+}
 /* Drag handles — left edge of canvas + left edge of chat panel. Subtle
    neutral idle, accent-tinted on hover so the affordance is discoverable. */
 .workflow-resize-handle {
