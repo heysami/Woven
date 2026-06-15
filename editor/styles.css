@@ -3809,6 +3809,26 @@ button {
 }
 .th-comment-send:hover { filter: brightness(0.95); }
 .th-comment-send:disabled { opacity: 0.5; cursor: default; }
+/* New-comment composer at the top of the panel body. */
+.th-comment-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.th-comment-proto {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 8px;
+}
+.th-comment-proto:focus { outline: none; border-color: var(--accent); }
 
 /* Git panel (fifth, bottom-most rail entry) — commit / push / pull / history. */
 .th-git-note {
@@ -3898,6 +3918,33 @@ button {
 .th-git-sha { font-family: var(--font-mono); color: var(--text-muted); }
 .th-git-commit-author { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .th-git-commit-age { margin-left: auto; font-family: var(--font-mono); flex: 0 0 auto; }
+
+/* GitHub account + per-project repo picker (top of the Git panel). */
+.th-git-account { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.th-git-signedin { display: flex; align-items: center; gap: 8px; }
+.th-git-avatar { width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto; object-fit: cover; }
+.th-git-avatar-ph { display: inline-grid; place-items: center; background: var(--surface-3, var(--surface-2)); color: var(--text-muted); font-size: 11px; font-weight: 700; }
+.th-git-login { font-size: 12.5px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-git-link { margin-left: auto; background: none; border: none; padding: 2px 4px; font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer; flex: 0 0 auto; }
+.th-git-link:hover { text-decoration: underline; }
+.th-git-device { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.th-git-device-label { font-size: 11.5px; color: var(--text-muted); }
+.th-git-code { font-family: var(--font-mono); font-size: 20px; font-weight: 700; letter-spacing: 0.12em; text-align: center; color: var(--text); padding: 6px 0; user-select: all; }
+.th-git-device-actions { display: flex; align-items: center; gap: 8px; }
+.th-git-repo { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.th-git-repo-row { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text); }
+.th-git-repo-row svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--text-muted); }
+.th-git-repo-name { font-family: var(--font-mono); font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-git-picker { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.th-git-picker-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.th-git-picker-head .th-git-link { margin-left: 0; }
+.th-git-create { display: flex; gap: 6px; }
+.th-git-create .th-git-input { flex: 1 1 auto; }
+.th-git-repo-list { display: flex; flex-direction: column; max-height: 200px; overflow-y: auto; }
+.th-git-repo-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: none; border-radius: var(--radius-sm); padding: 6px 8px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
+.th-git-repo-item:hover { background: var(--surface); }
+.th-git-repo-item:disabled { opacity: 0.5; cursor: default; }
+.th-git-repo-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11.5px; }
 
 /* Top-bar Go Live — green PRIMARY button, far top-right. Solid green when idle
    (the call to action); calmer light-green status pill once a session has people

@@ -1988,8 +1988,14 @@ function SlotPopover({ at, picked, onPick, onClose }) {
   const isGrid = picked?.parent?.layout?.display === "grid" || picked?.parent?.layout?.display === "inline-grid";
   const unit = isGrid ? "column" : "element";
   const menuTitle = isReplace ? `Replace ${unit}` : `Add ${unit} to ${at.side}`;
-  const primitiveOptions = D.primitives.flatMap(p =>
-    p.variants.map(v => ({ id: `${p.name}.${v}`, label: `${p.name} · ${v}`, from: p.name }))
+  // Defensive: a project's data.js may omit `primitives` / `library` entirely
+  // (e.g. source-only prototypes with no committed design system). These run on
+  // EVERY popover render — including comment / text modes that never read them —
+  // so an undefined here throws and, with no error boundary, blanks the whole
+  // editor. Mirror the already-hardened zoom-editor popover.
+  const library = D.library || [];
+  const primitiveOptions = (D.primitives || []).flatMap(p =>
+    (p.variants || []).map(v => ({ id: `${p.name}.${v}`, label: `${p.name} · ${v}`, from: p.name }))
   );
   const matches = (item) => {
     const q = query.trim().toLowerCase();
@@ -1997,7 +2003,7 @@ function SlotPopover({ at, picked, onPick, onClose }) {
     return (item.label || "").toLowerCase().includes(q) || (item.from || "").toLowerCase().includes(q) || (item.id || "").toLowerCase().includes(q);
   };
   const filteredPrimitives = primitiveOptions.filter(matches);
-  const filteredLibrary    = D.library.filter(matches);
+  const filteredLibrary    = library.filter(matches);
   const back = () => { setQuery(""); return direct ? onClose() : setMode("menu"); };
   return html`
     <div
@@ -2069,7 +2075,7 @@ function SlotPopover({ at, picked, onPick, onClose }) {
           <input
             className="popover-search"
             type="text" autoFocus
-            placeholder="Search ${D.library.length} components…"
+            placeholder="Search ${library.length} components…"
             value=${query}
             onChange=${e => setQuery(e.target.value)}
           />
@@ -9614,13 +9620,37 @@ function CommentsPanel({ railTop, panelRef }) {
   const [err, setErr] = useState(null);
   const [replyFor, setReplyFor] = useState(null);   // commentId with an open composer
   const [replyText, setReplyText] = useState("");
+  // New-comment composer.
+  const [protos, setProtos] = useState([]);         // host: prototypes to target
+  const [draftProto, setDraftProto] = useState("");
+  const [draft, setDraft] = useState("");
+  // Live mode — when the editor runs as a guest under /live/, the guest's
+  // session token (set by cursors.js after join) routes comment ops through the
+  // live gate instead of the host-only /__share_comments endpoint.
+  const liveMode = typeof window !== "undefined" && !!window.__thLiveActive;
+  const liveHeaders = () => ({ "Content-Type": "application/json", "X-Live-Token": (typeof window !== "undefined" && window.__thLiveToken) || "" });
 
   const reload = useCallback(() => {
-    // apiUrl injects ?project=; no prototype filter → every comment in the project.
-    fetch(apiUrl("/__share_comments"))
+    const live = typeof window !== "undefined" && !!window.__thLiveActive;
+    const url = live ? "/live/api/comments" : apiUrl("/__share_comments");
+    const opts = live ? { headers: { "X-Live-Token": (window.__thLiveToken) || "" } } : undefined;
+    fetch(url, opts)
       .then(r => (r.ok ? r.json() : { comments: [] }))
       .then(j => setComments(j.comments || []))
       .catch(() => setComments([]));
+    // Host only — list the project's shared prototypes as compose targets.
+    if (!live) {
+      fetch("/__shares")
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => {
+          if (!j) return;
+          const pid = activeProjectId();
+          const ps = [...new Set((j.shares || []).filter(s => !pid || s.project === pid).map(s => s.prototype))].sort();
+          setProtos(ps);
+          setDraftProto(prev => prev || ps[0] || "");
+        })
+        .catch(() => {});
+    }
   }, []);
   useEffect(() => {
     reload();
@@ -9631,8 +9661,10 @@ function CommentsPanel({ railTop, panelRef }) {
   const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 5000); };
   const cop = async (body) => {
     try {
-      const r = await fetch(apiUrl("/__share_comments"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
+      const url = liveMode ? "/live/api/comments" : apiUrl("/__share_comments");
+      const r = await fetch(url, {
+        method: "POST",
+        headers: liveMode ? liveHeaders() : { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const j = await r.json().catch(() => ({}));
@@ -9648,6 +9680,15 @@ function CommentsPanel({ railTop, panelRef }) {
     if (!t) return;
     cop({ op: "reply", prototype: c.prototype, commentId: c.id, text: t });
     setReplyText(""); setReplyFor(null);
+  };
+  const addComment = () => {
+    const t = draft.trim();
+    if (!t) return;
+    if (!liveMode && !draftProto) { flashErr("Pick a prototype to comment on."); return; }
+    // Live guests post against the session prototype (server infers it); the
+    // host picks a target prototype.
+    cop(liveMode ? { op: "add", text: t } : { op: "add", prototype: draftProto, text: t });
+    setDraft("");
   };
 
   const list = comments || [];
@@ -9680,6 +9721,19 @@ function CommentsPanel({ railTop, panelRef }) {
       </div>
       <div className="th-rail-panel-body">
         ${err && html`<div className="shares-error-banner">${err}</div>`}
+        <div className="th-comment-compose">
+          ${!liveMode && (protos.length > 0
+            ? html`<select className="th-comment-proto" value=${draftProto} onChange=${(e) => setDraftProto(e.target.value)}>
+                ${protos.map(p => html`<option key=${p} value=${p}>source/${p}/</option>`)}
+              </select>`
+            : html`<div className="th-live-hint">Share a prototype first to leave a comment on it.</div>`)}
+          <textarea className="th-comment-replyinput"
+            placeholder=${liveMode ? "Add a comment…" : "Add a comment for the team…"}
+            value=${draft}
+            onInput=${(e) => setDraft(e.target.value)}
+            onKeyDown=${(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addComment(); }}/>
+          <button className="th-comment-send" disabled=${!draft.trim() || (!liveMode && !draftProto)} onClick=${addComment}>Add comment</button>
+        </div>
         ${comments === null && html`<div className="runs-empty">Loading…</div>`}
         ${comments !== null && visible.length === 0 && html`
           <div className="runs-empty">No ${filter === "all" ? "" : filter + " "}comments yet. Reviewers on a shared prototype (and guests in a live session) leave comments here — they're for people, not the AI.</div>
@@ -9706,8 +9760,10 @@ function CommentsPanel({ railTop, panelRef }) {
                 `)}
                 <div className="th-comment-actions">
                   <button className="th-icon-btn" title="Reply" onClick=${() => { setReplyFor(replyFor === c.id ? null : c.id); setReplyText(""); }}><${Icon.Forward}/></button>
-                  <button className=${"th-icon-btn" + (isResolved(c) ? "" : " is-primary")} title=${isResolved(c) ? "Reopen" : "Mark resolved"} onClick=${() => toggleResolve(c)}><${Icon.Check}/></button>
-                  <button className="th-icon-btn is-danger" title="Delete comment" onClick=${() => del(c)}><${Icon.Trash}/></button>
+                  ${!liveMode && html`
+                    <button className=${"th-icon-btn" + (isResolved(c) ? "" : " is-primary")} title=${isResolved(c) ? "Reopen" : "Mark resolved"} onClick=${() => toggleResolve(c)}><${Icon.Check}/></button>
+                    <button className="th-icon-btn is-danger" title="Delete comment" onClick=${() => del(c)}><${Icon.Trash}/></button>
+                  `}
                 </div>
                 ${replyFor === c.id && html`
                   <div className="th-comment-replybox">
@@ -9736,14 +9792,26 @@ function CommentsPanel({ railTop, panelRef }) {
    both editor + workflow modes through the shared rail. */
 function GitPanel({ railTop, panelRef }) {
   const [st, setSt] = useState(null);        // /__git/status, null = loading
+  const [gh, setGh] = useState(null);        // /__github/status {configured,signedIn,login,avatar}
   const [commits, setCommits] = useState(null);
   const [err, setErr] = useState(null);
   const [note, setNote] = useState(null);    // transient success line
-  const [busy, setBusy] = useState("");       // "commit"|"push"|"pull"|"connect"
+  const [busy, setBusy] = useState("");       // current in-flight op key
   const [msg, setMsg] = useState("");         // commit message (seeded from draft)
-  const [remote, setRemote] = useState("");
+  const [remote, setRemote] = useState("");   // manual remote URL (OAuth-less path)
+  const [device, setDevice] = useState(null); // active device-flow {user_code,verification_uri,…}
+  const [picking, setPicking] = useState(false);
+  const [repos, setRepos] = useState(null);   // repo picker list, null = loading
+  const [newRepo, setNewRepo] = useState(""); // new-repo name field
   const msgTouched = useRef(false);           // stop the poll clobbering typed text
+  const devTimer = useRef(0);
 
+  const loadGh = useCallback(() => {
+    fetch(apiUrl("/__github/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => setGh(j || {}))
+      .catch(() => setGh({}));
+  }, []);
   const reload = useCallback(() => {
     fetch(apiUrl("/__git/status"))
       .then(r => (r.ok ? r.json() : null))
@@ -9758,10 +9826,10 @@ function GitPanel({ railTop, panelRef }) {
       .catch(() => setCommits([]));
   }, []);
   useEffect(() => {
-    reload();
+    reload(); loadGh();
     const t = setInterval(reload, 8000);
-    return () => clearInterval(t);
-  }, [reload]);
+    return () => { clearInterval(t); if (devTimer.current) clearTimeout(devTimer.current); };
+  }, [reload, loadGh]);
 
   const flashErr = (m) => { setErr(String(m)); setTimeout(() => setErr(null), 6000); };
   const flashNote = (m) => { setNote(String(m)); setTimeout(() => setNote(null), 4000); };
@@ -9777,10 +9845,11 @@ function GitPanel({ railTop, panelRef }) {
     } catch { return null; }
   };
 
-  const op = async (kind, body) => {
+  // POST against /__git/* (kind) or /__github/* (when base==="github").
+  const post = async (base, kind, body) => {
     setBusy(kind); setErr(null);
     try {
-      const r = await fetch(apiUrl("/__git/" + kind), {
+      const r = await fetch(apiUrl("/__" + base + "/" + kind), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body || {}),
       });
@@ -9790,6 +9859,8 @@ function GitPanel({ railTop, panelRef }) {
     } catch (e) { flashErr(e.message || e); return null; }
     finally { setBusy(""); }
   };
+  const op = (kind, body) => post("git", kind, body);
+  const ghOp = (kind, body) => post("github", kind, body);
 
   const doConnect = async () => {
     const j = await op("connect", { remote: remote.trim() || undefined });
@@ -9817,16 +9888,70 @@ function GitPanel({ railTop, panelRef }) {
     }
   };
 
+  // ── GitHub account: device-flow sign-in ──────────────────────────────────
+  const pollDevice = (interval) => {
+    devTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(apiUrl("/__github/device/poll"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const j = await r.json().catch(() => ({}));
+        if (j.status === "ok") { setDevice(null); flashNote("Signed in as " + j.login); loadGh(); return; }
+        if (j.status === "pending") { pollDevice(j.slowDown ? interval + 5 : interval); return; }
+        flashErr(j.error || "authorization failed"); setDevice(null);
+      } catch (e) { flashErr(e.message || e); setDevice(null); }
+    }, Math.max(2, interval) * 1000);
+  };
+  const startDevice = async () => {
+    const j = await ghOp("device/start", {});
+    if (j) { setDevice(j); pollDevice(j.interval || 5); }
+  };
+  const cancelDevice = () => {
+    if (devTimer.current) { clearTimeout(devTimer.current); devTimer.current = 0; }
+    setDevice(null);
+  };
+  const signOut = async () => {
+    if (devTimer.current) clearTimeout(devTimer.current);
+    const j = await ghOp("signout", {});
+    if (j) { setDevice(null); flashNote("Signed out"); loadGh(); }
+  };
+
+  // ── Repo picker (per-project remote) ─────────────────────────────────────
+  const openPicker = async () => {
+    setPicking(true); setRepos(null); setNewRepo("");
+    try {
+      const r = await fetch(apiUrl("/__github/repos"));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "could not list repos");
+      setRepos(j.repos || []);
+    } catch (e) { flashErr(e.message || e); setRepos([]); }
+  };
+  const chooseRepo = async (r) => {
+    const j = await ghOp("connect_repo", { clone_url: r.clone_url });
+    if (j) { flashNote("Connected to " + r.full_name); setPicking(false); reload(); }
+  };
+  const createRepo = async () => {
+    const name = newRepo.trim(); if (!name) return;
+    const j = await ghOp("create_repo", { name, private: true });
+    if (j) { flashNote("Created " + ((j.repo && j.repo.full_name) || name)); setPicking(false); setNewRepo(""); reload(); }
+  };
+
   const loading = st === null;
   const repo = !!(st && st.repo);
   const hasRemote = repo && !!st.remote;
+  const signedIn = !!(gh && gh.signedIn);
+  const configured = !!(gh && gh.configured);
+  const repoLabel = (rem) => {
+    if (!rem) return "";
+    const m = rem.replace(/\.git$/, "").match(/github\.com[/:]([^/]+\/[^/]+)$/);
+    return m ? m[1] : rem;
+  };
 
   return createPortal(html`
     <div className="th-rail-panel th-git-panel" ref=${panelRef}
       style=${railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
         <span>Git${repo && st.branch ? " · " + st.branch : ""}</span>
-        <button className="th-icon-btn" onClick=${reload} title="Refresh"><${Icon.Refresh}/></button>
+        <button className="th-icon-btn" onClick=${() => { reload(); loadGh(); }} title="Refresh"><${Icon.Refresh}/></button>
       </div>
       <div className="th-rail-panel-body">
         ${err && html`<div className="shares-error-banner">${err}</div>`}
@@ -9836,13 +9961,76 @@ function GitPanel({ railTop, panelRef }) {
         ${!loading && st.gitAvailable === false && html`
           <div className="runs-empty">git isn't installed on this machine. Install git to use version control here.</div>`}
 
-        ${!loading && st.gitAvailable !== false && !repo && html`
-          <div className="th-git-connect">
-            <div className="th-live-hint">This project isn't a git repo yet. Connect it to start versioning — optionally point it at a GitHub remote now (you can add one later).</div>
-            <input className="th-git-input" placeholder="https://github.com/you/repo.git (optional)"
-              value=${remote} onInput=${e => setRemote(e.target.value)} />
-            <button className="th-git-btn is-primary" disabled=${busy === "connect"} onClick=${doConnect}>
-              <${Icon.Branch}/> ${busy === "connect" ? "Connecting…" : "Connect git"}</button>
+        ${!loading && st.gitAvailable !== false && html`
+          <div className="th-git-account">
+            ${gh && !configured && html`
+              <div className="th-live-hint">GitHub sign-in isn't set up on this host — local git still works. To push to github.com, add an OAuth app config at <span style=${{ fontFamily: "var(--font-mono)" }}>~/.woven/github-oauth.json</span>.</div>`}
+            ${configured && !signedIn && !device && html`
+              <button className="th-git-btn is-primary" disabled=${busy === "device/start"} onClick=${startDevice}>
+                <${Icon.Fork}/> ${busy === "device/start" ? "Starting…" : "Sign in to GitHub"}</button>`}
+            ${device && html`
+              <div className="th-git-device">
+                <div className="th-git-device-label">Enter this code at GitHub to authorize Woven:</div>
+                <div className="th-git-code">${device.user_code}</div>
+                <div className="th-git-device-actions">
+                  <button className="th-git-btn is-primary" onClick=${() => window.open(device.verification_uri || "https://github.com/login/device", "_blank")}>
+                    <${Icon.External}/> Open GitHub</button>
+                  <button className="th-git-link" onClick=${cancelDevice}>Cancel</button>
+                </div>
+                <div className="th-live-hint">Waiting for authorization… keep this panel open.</div>
+              </div>`}
+            ${signedIn && html`
+              <div className="th-git-signedin">
+                ${gh.avatar
+                  ? html`<img className="th-git-avatar" src=${gh.avatar} alt="" />`
+                  : html`<span className="th-git-avatar th-git-avatar-ph">${(gh.login || "?").slice(0, 1).toUpperCase()}</span>`}
+                <span className="th-git-login">${gh.login || "GitHub"}</span>
+                <button className="th-git-link" title="Sign out of GitHub" onClick=${signOut}>Sign out</button>
+              </div>`}
+          </div>
+
+          <div className="th-git-repo">
+            ${hasRemote && html`
+              <div className="th-git-repo-row">
+                <${Icon.Branch}/>
+                <span className="th-git-repo-name" title=${st.remote}>${repoLabel(st.remote)}</span>
+                ${signedIn && html`<button className="th-git-link" onClick=${openPicker}>Change</button>`}
+              </div>`}
+            ${!hasRemote && signedIn && html`
+              <button className="th-git-btn is-primary" onClick=${openPicker}>
+                <${Icon.Branch}/> Choose a repo for this project</button>`}
+            ${!hasRemote && !signedIn && html`
+              <div className="th-git-connect">
+                <div className="th-live-hint">No GitHub repo connected to this project yet${configured ? " — sign in above to pick one, or" : "."}${configured ? "" : ""} set a remote URL manually:</div>
+                <input className="th-git-input" placeholder="https://github.com/you/repo.git (optional)"
+                  value=${remote} onInput=${e => setRemote(e.target.value)} />
+                <button className="th-git-btn" disabled=${busy === "connect"} onClick=${doConnect}>
+                  <${Icon.Branch}/> ${busy === "connect" ? "Connecting…" : (repo ? "Set remote" : "Connect git")}</button>
+              </div>`}
+
+            ${picking && html`
+              <div className="th-git-picker">
+                <div className="th-git-picker-head">
+                  <span>Pick a repo for this project</span>
+                  <button className="th-git-link" onClick=${() => setPicking(false)}>Close</button>
+                </div>
+                <div className="th-git-create">
+                  <input className="th-git-input" placeholder="new-repo-name (creates private)"
+                    value=${newRepo} onInput=${e => setNewRepo(e.target.value)}
+                    onKeyDown=${e => { if (e.key === "Enter") createRepo(); }} />
+                  <button className="th-git-btn is-primary" disabled=${!newRepo.trim() || busy === "create_repo"} onClick=${createRepo}>
+                    ${busy === "create_repo" ? "Creating…" : "Create"}</button>
+                </div>
+                ${repos === null && html`<div className="runs-empty">Loading repos…</div>`}
+                ${repos !== null && repos.length === 0 && html`<div className="runs-empty">No repos on this account yet — create one above.</div>`}
+                <div className="th-git-repo-list">
+                  ${(repos || []).map(r => html`
+                    <button className="th-git-repo-item" key=${r.full_name} disabled=${busy === "connect_repo"} onClick=${() => chooseRepo(r)}>
+                      <span className="th-git-repo-item-name">${r.full_name}</span>
+                      ${r.private && html`<span className="th-git-pill">private</span>`}
+                    </button>`)}
+                </div>
+              </div>`}
           </div>`}
 
         ${!loading && repo && html`
@@ -9851,7 +10039,6 @@ function GitPanel({ railTop, panelRef }) {
               <span className="th-git-pill">${st.dirty ? (st.changedCount + " changed") : "clean"}</span>
               ${st.ahead > 0 && html`<span className="th-git-pill is-ahead">↑ ${st.ahead}</span>`}
               ${st.behind > 0 && html`<span className="th-git-pill is-behind">↓ ${st.behind}</span>`}
-              ${!hasRemote && html`<span className="th-git-pill">no remote</span>`}
             </div>
 
             <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
@@ -9860,18 +10047,16 @@ function GitPanel({ railTop, panelRef }) {
             <div className="th-git-actions">
               <button className="th-git-btn is-primary" disabled=${!st.dirty || busy === "commit"} onClick=${doCommit}>
                 <${Icon.Check}/> ${busy === "commit" ? "Committing…" : "Commit"}</button>
-              <button className="th-git-btn" disabled=${!hasRemote || busy === "push"} onClick=${doPush}
-                title=${hasRemote ? "Push commits to origin" : "Connect a remote first"}>
-                <${Icon.ArrowUp}/> ${busy === "push" ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
+              <button className="th-git-btn" disabled=${!hasRemote || busy === "publish"} onClick=${doPush}
+                title=${hasRemote ? "Push commits to origin" : "Connect a repo first"}>
+                <${Icon.ArrowUp}/> ${busy === "publish" ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
               <button className="th-git-btn" disabled=${!hasRemote || busy === "pull"} onClick=${doPull}
-                title=${hasRemote ? "Pull from origin — blocked while the tree is dirty or a live session is running" : "Connect a remote first"}>
+                title=${hasRemote ? "Pull from origin — blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
                 <${Icon.Download}/> ${busy === "pull" ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
             </div>
 
             ${st.conflicts && st.conflicts.length > 0 && html`
               <div className="shares-error-banner">${st.conflicts.length} unresolved conflict(s): ${st.conflicts.slice(0, 5).join(", ")}</div>`}
-
-            ${hasRemote && html`<div className="th-git-remote" title=${st.remote}>${st.remote}</div>`}
 
             <div className="th-git-history-head">History</div>
             ${commits === null && html`<div className="runs-empty">Loading…</div>`}

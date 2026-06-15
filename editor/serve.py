@@ -3467,6 +3467,12 @@ def _live_apply_node_op(project_id, op, author):
     _broadcast_workflow_change(canon)
     return {"target": op.get("target"), "op": action}
 
+# Host GitHub device-flow state — the in-flight device_code between
+# /__github/device/start and /__github/device/poll. Single host, so a module
+# global is enough (no per-request keying).
+_GH_DEVICE = {"code": None}
+
+
 def _git_resolve_prompt(files):
     """Prompt for agent-assisted merge-conflict resolution — the §7 signature
     move: don't mechanically keep both sides, reconcile the two intents."""
@@ -6303,6 +6309,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
+            m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo)$", parsed.path)
+            if m_gh:
+                return self._github_op(m_gh.group(1), qs)
             if parsed.path == "/__live_presence":
                 try:
                     body = self._read_json_body(max_bytes=8 * 1024)
@@ -6586,6 +6595,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._git_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/log":
             return self._git_log(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__github/status":
+            return self._github_status(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__github/repos":
+            return self._github_repos(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_thumbnail":
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
@@ -12584,6 +12597,98 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
+    # ── GitHub account (host side) — sign in ONCE, reused across projects ──
+    # GET /__github/status  → {configured, signedIn, login, avatar}. Never the token.
+    def _github_status(self, qs):
+        tok = _gitops.load_token()
+        return self._reply(200, {
+            "configured": _gitops.oauth_configured(),
+            "signedIn": bool(tok.get("access_token")),
+            "login": tok.get("login") or "",
+            "avatar": tok.get("avatar") or "",
+        })
+
+    # GET /__github/repos  → {repos:[…]} for the per-project picker.
+    def _github_repos(self, qs):
+        tok = _gitops.host_token()
+        if not tok:
+            return self._reply(401, {"error": "not signed in to GitHub"})
+        try:
+            return self._reply(200, {"repos": _gitops.list_repos(tok)})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
+    # POST /__github/(device/start|device/poll|signout|connect_repo|create_repo)?project=<id>
+    def _github_op(self, op, qs):
+        try:
+            body = self._read_json_body(max_bytes=32 * 1024)
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        try:
+            if op == "device/start":
+                out = _gitops.device_start()
+                _GH_DEVICE["code"] = out.get("device_code")
+                return self._reply(200, {
+                    "user_code": out.get("user_code"),
+                    "verification_uri": out.get("verification_uri"),
+                    "interval": out.get("interval", 5),
+                    "expires_in": out.get("expires_in", 900)})
+            if op == "device/poll":
+                dc = _GH_DEVICE.get("code")
+                if not dc:
+                    return self._reply(400, {"error": "start the device flow first"})
+                out = _gitops.device_poll(dc)
+                if out.get("access_token"):
+                    tok = out["access_token"]
+                    try:
+                        u = _gitops.gh_user(tok)
+                    except Exception:
+                        u = {"login": "", "avatar": ""}
+                    _gitops.save_token(tok, u.get("login") or "", u.get("avatar") or "")
+                    _GH_DEVICE["code"] = None
+                    return self._reply(200, {"status": "ok", "login": u.get("login") or "",
+                                             "avatar": u.get("avatar") or ""})
+                err = out.get("error")
+                if err in ("authorization_pending", "slow_down"):
+                    return self._reply(200, {"status": "pending", "slowDown": err == "slow_down"})
+                return self._reply(200, {"status": "error",
+                                         "error": out.get("error_description") or err or "unknown"})
+            if op == "signout":
+                _gitops.clear_token()
+                return self._reply(200, {"ok": True})
+            if op == "connect_repo":
+                # Point THIS project's origin at an existing repo (per-project remote).
+                try:
+                    root = resolve_project_root(qs, require_explicit=True)
+                except ValueError as e:
+                    return self._reply(400, {"error": str(e)})
+                remote = (body.get("clone_url") or body.get("remote") or "").strip()
+                if not remote:
+                    return self._reply(400, {"error": "missing repo clone_url"})
+                st = _gitops.connect(root, remote=remote,
+                                     name=body.get("name"), email=body.get("email"))
+                return self._reply(200, {"ok": True, "status": st})
+            if op == "create_repo":
+                try:
+                    root = resolve_project_root(qs, require_explicit=True)
+                except ValueError as e:
+                    return self._reply(400, {"error": str(e)})
+                tok = _gitops.host_token()
+                if not tok:
+                    return self._reply(401, {"error": "not signed in to GitHub"})
+                name = (body.get("name") or "").strip()
+                if not name:
+                    return self._reply(400, {"error": "repo name required"})
+                repo = _gitops.create_repo(tok, name, private=body.get("private", True),
+                                           description=body.get("description") or "")
+                st = _gitops.connect(root, remote=repo["clone_url"])
+                return self._reply(200, {"ok": True, "repo": repo, "status": st})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        return self._reply(404, {"error": f"unknown github op: {op}"})
+
     # GET /__git/log?project=<id>&limit=<n>
     def _git_log(self, qs):
         try:
@@ -12628,7 +12733,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                      name=body.get("name"), email=body.get("email"))
                 return self._reply(200, {"ok": True, **res})
             if op == "publish":
-                res = _gitops.publish(root, token=body.get("token"))
+                res = _gitops.publish(root, token=(body.get("token") or _gitops.host_token()))
                 return self._reply(200, {"ok": True, **res})
             if op == "pull":
                 # Guard (host-authoritative): refuse to merge remote history on
@@ -12643,7 +12748,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(409, {"error": "working tree has uncommitted changes — commit them before pulling"})
                 if pid and _live.project_has_live_session(pid):
                     return self._reply(409, {"error": "a live session is active — end it before pulling remote changes"})
-                res = _gitops.pull(root, token=body.get("token"))
+                res = _gitops.pull(root, token=(body.get("token") or _gitops.host_token()))
                 # Surface the merged state to the editor (and any guests) exactly
                 # like any other edit, so the canvas reloads to the new HEAD.
                 if pid:

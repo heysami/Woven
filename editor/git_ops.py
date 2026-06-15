@@ -366,6 +366,81 @@ def gh_user(token):
     return {"login": j.get("login"), "name": j.get("name"), "avatar": j.get("avatar_url")}
 
 
+# ── Host token store ─────────────────────────────────────────────────────────
+# The editor host signs in ONCE with their GitHub account; the token is reused
+# for repo listing + push/pull across ALL of the host's projects. The ACCOUNT is
+# per-host, the REPO is per-project (set as that project's origin remote). The
+# token lives OUTSIDE any repo at ~/.woven/github-token.json, mode 0600, and is
+# never sent to the browser — only the login + avatar are surfaced.
+_TOKEN_PATH = os.path.expanduser("~/.woven/github-token.json")
+
+
+def save_token(access_token, login="", avatar=""):
+    os.makedirs(os.path.dirname(_TOKEN_PATH), exist_ok=True)
+    with open(_TOKEN_PATH, "w", encoding="utf-8") as f:
+        json.dump({"access_token": access_token, "login": login, "avatar": avatar}, f)
+    try:
+        os.chmod(_TOKEN_PATH, 0o600)
+    except OSError:
+        pass
+    return {"login": login, "avatar": avatar}
+
+
+def load_token():
+    try:
+        with open(_TOKEN_PATH, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def clear_token():
+    try:
+        os.remove(_TOKEN_PATH)
+    except OSError:
+        pass
+    return {"ok": True}
+
+
+def host_token():
+    """The stored access token, or None — what push/pull/list reach for."""
+    return (load_token() or {}).get("access_token") or None
+
+
+def list_repos(token, limit=100):
+    """The signed-in account's repos, most-recently-pushed first, that the user
+    owns or collaborates on. For the per-project repo picker."""
+    repos, page = [], 1
+    while len(repos) < limit and page <= 5:
+        code, j = _gh_api("GET", f"/user/repos?per_page=50&page={page}"
+                          "&sort=pushed&affiliation=owner,collaborator", token=token)
+        if code != 200 or not isinstance(j, list) or not j:
+            break
+        for r in j:
+            repos.append({"full_name": r.get("full_name"), "clone_url": r.get("clone_url"),
+                          "private": bool(r.get("private")),
+                          "pushed_at": r.get("pushed_at"),
+                          "default_branch": r.get("default_branch") or "main"})
+        if len(j) < 50:
+            break
+        page += 1
+    return repos[:limit]
+
+
+def create_repo(token, name, private=True, description=""):
+    """Create a new repo under the signed-in account (no auto-init, so the
+    project's existing history pushes cleanly). Returns {full_name, clone_url,
+    html_url, default_branch}."""
+    body = {"name": name, "private": bool(private), "auto_init": False}
+    if description:
+        body["description"] = description[:300]
+    code, j = _gh_api("POST", "/user/repos", token=token, body=body)
+    if code not in (200, 201):
+        raise RuntimeError(j.get("message") or f"create repo failed ({code})")
+    return {"full_name": j.get("full_name"), "clone_url": j.get("clone_url"),
+            "html_url": j.get("html_url"), "default_branch": j.get("default_branch") or "main"}
+
+
 def parse_owner_repo(remote_url):
     """github.com/owner/repo(.git) → (owner, repo)."""
     u = (remote_url or "").strip()
