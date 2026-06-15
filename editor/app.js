@@ -21992,6 +21992,87 @@ function workflowSectionContainedNodes(section, nodes) {
   });
 }
 
+// v3.9 — Eager raster cache for iframe-backed cards (html assets / prototypes).
+// html2canvas rasterises a LIVE React/JS card UNRELIABLY when fired on-demand
+// at Run time: it clones the doc but the clone can be mid-paint, so the same
+// card captures rich one moment and near-blank the next (and a heavy page can
+// take seconds / time out). The fix is to capture each card ONCE it has
+// settled — idle, fully painted, off the Run's hot path — and cache the best
+// result by node id, so a later section-raster / asset-input read is both
+// instant AND reliable. Keyed by node id + a content-version key so an edited
+// card re-warms. We keep the highest-content capture seen for a version.
+const WORKFLOW_CARD_RASTER_CACHE = new Map();   // nodeId → { canvas, score, key, ts }
+const WORKFLOW_CARD_RASTER_CAP = 48;            // LRU-ish bound on cached canvases
+
+// Fraction of sampled pixels that are opaque AND not near-white — a cheap
+// "did this actually paint content?" score used to keep the richest capture.
+function workflowRasterContentScore(cv) {
+  try {
+    const ctx = cv.getContext("2d");
+    const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    let nw = 0, t = 0;
+    for (let i = 0; i < d.length; i += 4 * 97) {
+      t++;
+      const a = d[i + 3];
+      if (a > 10 && Math.abs(d[i] - 255) + Math.abs(d[i + 1] - 255) + Math.abs(d[i + 2] - 255) > 40) nw++;
+    }
+    return t ? nw / t : 0;
+  } catch { return 0; }
+}
+
+function workflowCardNodeId(iframe) {
+  const host = iframe && iframe.closest && iframe.closest("[data-node-id]");
+  return (host && host.getAttribute("data-node-id"))
+      || (iframe && (iframe.getAttribute("data-asset-id") || iframe.getAttribute("data-prototype-id")))
+      || null;
+}
+
+// Capture ONE iframe-backed card's content and cache it if it's richer than
+// what we already hold for this content version. Safe to call repeatedly.
+async function workflowWarmCardRaster(iframe, key) {
+  if (!iframe || typeof window === "undefined" || typeof window.html2canvas !== "function") return;
+  const nodeId = workflowCardNodeId(iframe);
+  if (!nodeId) return;
+  const cur = WORKFLOW_CARD_RASTER_CACHE.get(nodeId);
+  if (cur && cur.key === key && cur.score > 0.04) return;   // already good for this version
+  let doc;
+  try { doc = iframe.contentDocument; } catch { return; }   // cross-origin → can't
+  if (!doc || !doc.body) return;
+  let cv;
+  try {
+    cv = await window.html2canvas(doc.body, { useCORS: true, allowTaint: false, backgroundColor: null, logging: false, scale: 1 });
+  } catch { return; }
+  if (!cv || !cv.width) return;
+  const score = workflowRasterContentScore(cv);
+  const prev = WORKFLOW_CARD_RASTER_CACHE.get(nodeId);
+  if (prev && prev.key === key && prev.score >= score) return;   // not an improvement
+  WORKFLOW_CARD_RASTER_CACHE.set(nodeId, { canvas: cv, score, key, ts: Date.now() });
+  // Bound the cache — evict the oldest entries beyond the cap.
+  if (WORKFLOW_CARD_RASTER_CACHE.size > WORKFLOW_CARD_RASTER_CAP) {
+    const oldest = [...WORKFLOW_CARD_RASTER_CACHE.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    for (let i = 0; i < oldest.length - WORKFLOW_CARD_RASTER_CAP; i++) WORKFLOW_CARD_RASTER_CACHE.delete(oldest[i][0]);
+  }
+}
+
+// Warm a card progressively after it loads: client-rendered content paints
+// late, so retry at widening delays and STOP once a rich capture is cached.
+function workflowScheduleCardWarm(iframe, key) {
+  if (!iframe) return;
+  const delays = [400, 1500, 4000];
+  let i = 0;
+  const tick = () => {
+    if (i >= delays.length) return;
+    const d = delays[i++];
+    setTimeout(async () => {
+      try { await workflowWarmCardRaster(iframe, key); } catch {}
+      const nodeId = workflowCardNodeId(iframe);
+      const c = nodeId && WORKFLOW_CARD_RASTER_CACHE.get(nodeId);
+      if (!(c && c.key === key && c.score > 0.04)) tick();   // still thin → try again later
+    }, d);
+  };
+  tick();
+}
+
 // v3.8 — Capture "whatever is seen inside" a section as a PNG data URI.
 // html2canvas on the nodes layer (.workflow-canvas inside the workflow wrap),
 // cropped to the section's rect. CONTRARY to an earlier assumption here,
@@ -22004,8 +22085,13 @@ function workflowSectionContainedNodes(section, nodes) {
 // section" bug. Fix: scale the crop by the current zoom so it lands on the
 // right pixels, then render at `scale: 1/zoom` (clamped) so the PNG keeps a
 // stable world-resolution regardless of how far the user is zoomed.
-// Limitation inherited from html2canvas: iframe-backed cards (html assets,
-// prototypes) paint blank; <img>-backed cards (image / svg assets) paint fine.
+// html2canvas paints <iframe> elements BLANK (it can't reach into a nested
+// browsing context), and the workflow's html-asset + prototype cards are
+// iframe-backed — so a section containing one would otherwise rasterise to an
+// empty rectangle (the "describe got a placeholder, no actual image" bug).
+// After the base capture we composite each contained same-origin iframe's
+// rendered contentDocument onto the canvas at its world position. <img>-backed
+// cards (image / svg assets) already paint fine in the base pass.
 async function workflowCaptureSectionRaster(section) {
   if (typeof window === "undefined" || typeof window.html2canvas !== "function") {
     throw new Error("html2canvas-pro not loaded — can't capture section raster");
@@ -22036,6 +22122,60 @@ async function workflowCaptureSectionRaster(section) {
     scale: Math.min(4, Math.max(0.5, 1 / zoom)),
   });
   if (!canvas || !canvas.toDataURL) throw new Error("html2canvas returned no canvas");
+
+  // Composite iframe-backed cards (blank in the base pass) onto the canvas.
+  // BEST-EFFORT: html2canvas can't reliably rasterise a live React/JS app
+  // running in an iframe (it clones the DOM but the clone's content may be
+  // mid-paint), and a heavy page can take many seconds — so each capture is
+  // raced against a timeout and skipped on failure rather than hanging the
+  // whole skill run. Static html snippets + simple prototype frames composite
+  // fine; a heavy client-rendered card may still come through partial/blank.
+  try {
+    const ctx = canvas.getContext("2d");
+    const outScale = canvas.width / w;   // base-canvas px per world px
+    const lr = layer.getBoundingClientRect();
+    const x0 = lr.left + section.x * zoom, y0 = lr.top + section.y * zoom;
+    const x1 = x0 + w * zoom, y1 = y0 + h * zoom;
+    const withTimeout = (p, ms) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(() => rej(new Error("iframe capture timed out")), ms)),
+    ]);
+    for (const ifr of Array.from(layer.querySelectorAll("iframe"))) {
+      const b = ifr.getBoundingClientRect();
+      if (!b.width || !b.height) continue;
+      const cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
+      if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;   // center outside the frame
+      // Prefer the eagerly-warmed cache (captured when the card was idle, so
+      // it's reliable + instant); only live-capture a card that was never
+      // warmed, and guard that against a hang.
+      let sub = null;
+      const nodeId = workflowCardNodeId(ifr);
+      const cached = nodeId && WORKFLOW_CARD_RASTER_CACHE.get(nodeId);
+      if (cached && cached.canvas && cached.score > 0.01) sub = cached.canvas;
+      if (!sub) {
+        let doc;
+        try { doc = ifr.contentDocument; } catch { doc = null; }   // cross-origin → skip
+        if (!doc || !doc.body) continue;
+        try {
+          sub = await withTimeout(window.html2canvas(doc.body, {
+            useCORS: true, allowTaint: false, backgroundColor: null, logging: false, scale: 1,
+          }), 4000);
+        } catch { continue; }   // timed out or threw → leave the base pass as-is
+        // Opportunistically seed the cache from a successful live capture.
+        if (sub && sub.width && nodeId) {
+          try { WORKFLOW_CARD_RASTER_CACHE.set(nodeId, { canvas: sub, score: workflowRasterContentScore(sub), key: "live", ts: Date.now() }); } catch {}
+        }
+      }
+      if (!sub || !sub.width) continue;
+      // Map the iframe's on-screen rect back to world px, then onto the base
+      // canvas (which is `w` world px wide → outScale px per world px).
+      const dx = ((b.left - x0) / zoom) * outScale;
+      const dy = ((b.top  - y0) / zoom) * outScale;
+      const dw = (b.width  / zoom) * outScale;
+      const dh = (b.height / zoom) * outScale;
+      try { ctx.drawImage(sub, dx, dy, dw, dh); } catch {}
+    }
+  } catch {}
+
   const dataUri = canvas.toDataURL("image/png");
   if (!dataUri || dataUri.length < 200) throw new Error("captured section raster was empty");
   return dataUri;
@@ -32287,9 +32427,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // Only claim the asset as the skill's image input when the
               // skill actually WANTS one; text-only skills get it described
               // in the contents block instead.
-              if (wantsAsset && !assetInputPath && !assetInputDataUri
-                  && (cn.assetKind === "image" || cn.assetKind === "svg" || !cn.assetKind)) {
+              const isFileImage = (cn.assetKind === "image" || cn.assetKind === "svg" || !cn.assetKind);
+              if (wantsAsset && !assetInputPath && !assetInputDataUri && isFileImage) {
                 assetInputPath = cn.path;
+              } else if (wantsAsset && !assetInputPath && !assetInputDataUri) {
+                // Non-image asset (html / prototype card) — pass the card's
+                // EAGERLY-WARMED raster directly so an image-consuming skill
+                // (describe / rembg / upscale) gets the card's rendered pixels.
+                // This is reliable where a whole-section html2canvas is not:
+                // the card was captured when idle + fully painted, and we hand
+                // its own image straight through (no positioning / no live
+                // capture racing a half-painted clone).
+                const cached = WORKFLOW_CARD_RASTER_CACHE.get(cn.id);
+                if (cached && cached.canvas && cached.score > 0.005) {
+                  try { assetInputDataUri = cached.canvas.toDataURL("image/png"); } catch {}
+                }
+                if (!assetInputDataUri) parts.push("Asset (" + (cn.assetKind || "file") + "): " + cn.path);
               } else {
                 parts.push("Asset (" + (cn.assetKind || "file") + "): " + cn.path);
               }
@@ -45746,6 +45899,14 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     let doc;
     try { doc = ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.documentElement) return;
+    // v3.9 — warm the raster cache so this card is ready to be consumed as an
+    // image (section connector → describe / rembg / upscale) the instant it's
+    // linked, instead of racing an unreliable on-demand capture at Run time.
+    // Keyed by content version so an edited / re-Run card re-warms.
+    try {
+      const warmKey = String(node.activeVersionId || node.path || node.id || "");
+      workflowScheduleCardWarm(ifr, warmKey);
+    } catch {}
     // Standard reference sizes — match the iPhone-14 / 1440x900 design
     // breakpoints designers reach for. Mobile aspect is height-over-width
     // (a tall card); desktop aspect is width-over-height.
