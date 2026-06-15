@@ -1064,24 +1064,32 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       canvasEl.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
     }
   }, [pan, zoom]);
-  // Embed scroll-lock. In a non-interactive embed (the Canvas-frames node),
-  // the canvas pans via CSS transform and the wrap is overflow:hidden, so it
-  // must NEVER hold a native scroll offset. But overflow:hidden does NOT stop
-  // PROGRAMMATIC scrolling — a frame's setupScript that clicks/focuses an
-  // element triggers the browser's focus→scrollIntoView, which scrolls the
-  // wrap and shifts the whole composition off its top-left origin (the user
-  // sees the frames node "scrolled to a random place"). The inner frames keep
-  // firing setupScripts as they load, so a one-shot reset isn't enough: clamp
-  // every scroll back to 0 for as long as the embed lives. Only active when
-  // interactive:false, so the real editor canvas is untouched.
+  // Canvas scroll-lock. EVERY endless-canvas wrap pans via CSS transform (see
+  // the layout-effect above) and is overflow:hidden, so it must NEVER hold a
+  // native scroll offset — `scrollLeft/Top` are logically always 0. But
+  // overflow:hidden does NOT stop PROGRAMMATIC scrolling, and the zoom-to-
+  // cursor math below reads `el.getBoundingClientRect()` (the wrap box, which
+  // does NOT move when the wrap scrolls) — so a stray scroll offset silently
+  // shifts the `.canvas` child under the cursor and zoom anchors to the wrong
+  // model point ("the center of zooming shifted").
+  //
+  // The trigger: a Canvas-frames node embeds prototype frames as iframes, and
+  // each frame's setupScript is eval'd on load (runSetupScriptWithRetry). When
+  // that script clicks/focuses an element, the browser's focus→scrollIntoView
+  // walks up EVERY scrollable ancestor ACROSS iframe boundaries — past the
+  // embed's own wrap and into the REAL editor's canvas-wrap, scrolling it. The
+  // inner frames keep firing setupScripts as they load, so a one-shot reset
+  // isn't enough: clamp every scroll back to 0 for as long as the canvas lives.
+  // Applies to interactive AND embedded canvases — both are transform-panned,
+  // so 0 is the correct invariant in both, and the embed is no longer the only
+  // surface a nested setupScript can scroll.
   useEffect(() => {
-    if (interactive) return;
     const el = wrapRef.current; if (!el) return;
     const clamp = () => { if (el.scrollLeft || el.scrollTop) { el.scrollLeft = 0; el.scrollTop = 0; } };
     el.addEventListener("scroll", clamp, { passive: true });
     clamp();
     return () => el.removeEventListener("scroll", clamp, { passive: true });
-  }, [interactive]);
+  }, []);
   // v3.4.2 — Expose pan/zoom-in-progress as a global flag + body attribute
   // so portaled chrome (asset action bar, picked-element bar, select
   // badge) can skip its per-frame `getBoundingClientRect` polling during
