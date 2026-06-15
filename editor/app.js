@@ -32392,7 +32392,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // doesn't have the provider's key, the daemon returns 502 and we
         // fall through to the regular Pathway-B agent dispatch below.
         const fallback = skillSpec.pathwayAFallback;
-        if (fallback && fallback.provider && wantsPrompt && prompt && prompt.trim()) {
+        let _usePathwayA = !!(fallback && fallback.provider && wantsPrompt && prompt && prompt.trim());
+        // Live Session — a GUEST's generation should default to THEIR main
+        // thinking LLM (the agent they connected — e.g. the Claude CLI), not the
+        // host-domain pathway-A provider (quiver / fal). Skip pathway A for a
+        // guest UNLESS they explicitly chose that exact provider for this
+        // capability in the live "Default models" panel; otherwise fall straight
+        // through to the pathway-B agent run, which spawns on the guest's own
+        // credentials. Gate on __thLiveToken (guest-only) — __thLiveActive is
+        // also true for the HOST during a session, and the host keeps pathway A.
+        if (_usePathwayA && typeof window !== "undefined" && window.__thLiveToken) {
+          let _pick = null;
+          try {
+            const _defs = JSON.parse(localStorage.getItem("th.editor.default-providers.v1") || "{}") || {};
+            const _capMap = { svg: "svg", mp4: "video", json: "lottie", glb: "3d", gltf: "3d" };
+            _pick = _defs[_capMap[fallback.ext] || "image"] || null;
+          } catch (e) {}
+          if (!(_pick && _pick.provider === fallback.provider)) _usePathwayA = false;
+        }
+        if (_usePathwayA) {
           try {
             const r = await fetch(apiUrl("/__asset_generate"), {
               method: "POST", headers: { "Content-Type": "application/json" },

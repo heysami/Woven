@@ -360,7 +360,8 @@
     defSec.className = "th-ai-sec";
     defSec.innerHTML = "<h4>Default models per capability</h4>" +
       "<div class=\"th-ai-sub\" style=\"padding:0 0 6px\">Pick which provider each kind of generation uses — " +
-      "set one you have a key (or the CLI token) for. \"Auto\" keeps the project's built-in choice.</div>";
+      "one you have a key for. <b>Auto</b> runs it on your connected agent (your Claude subscription / CLI) " +
+      "where possible, so it never falls back to the host's providers.</div>";
     for (const [cap, label] of CAPS) defSec.appendChild(defRow(cap, label));
     panel.appendChild(defSec);
 
