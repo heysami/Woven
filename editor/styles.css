@@ -3511,21 +3511,126 @@ button {
   background: var(--surface);
   border-left: 1px solid var(--border-strong);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.06);
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 .th-rail-panel .runs-panel-head {
   border-bottom: 1px solid var(--border);
   padding: 10px 12px;
+  flex: 0 0 auto;
 }
 .th-rail-panel-body {
+  flex: 1 1 auto;
   overflow-y: auto;
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
+}
+
+/* Tasks & subagents panel (second rail entry). */
+.th-tasks-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.th-tasks-filter {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.th-tasks-filter-btn {
+  flex: 1;
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.th-tasks-filter-btn:hover { background: var(--surface-2); color: var(--text); }
+.th-tasks-filter-btn.is-active {
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  color: var(--text);
+}
+.th-tasks-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
+.th-tasks-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 4px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.th-tasks-group-head:hover { color: var(--text); }
+.th-tasks-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-tasks-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.th-tasks-row:hover { background: var(--surface-2); }
+.th-tasks-row > svg { width: 13px; height: 13px; color: var(--text-faint); flex: 0 0 auto; }
+.th-tasks-row-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.th-tasks-row-type {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+}
+.th-tasks-row-label {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-tasks-row-state {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.th-tasks-overflow {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+  text-align: center;
+  padding: 8px;
 }
 
 /* Drag handles — left edge of canvas + left edge of chat panel. Subtle

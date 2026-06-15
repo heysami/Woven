@@ -8837,7 +8837,7 @@ function AgentPicker({ agents, value, onChange, disabled }) {
   `;
 }
 
-/* formatRunAge — relative-time label for agent-run rows (used by AgentRunsRail
+/* formatRunAge — relative-time label for agent-run rows (used by RightNavRail
    and the chat header). */
 function formatRunAge(ts) {
   if (!ts) return "";
@@ -8847,22 +8847,22 @@ function formatRunAge(ts) {
   if (sec < 86400) return `${Math.floor(sec/3600)}h ago`;
   return `${Math.floor(sec/86400)}d ago`;
 }
-/* AgentRunsRail — right-edge icon nav rail (the mirror of the left workflow
+/* RightNavRail — right-edge icon nav rail (the mirror of the left workflow
    nav rail). Icon-only buttons with tooltips that open to their LEFT; clicking
-   an icon opens a FULL-HEIGHT panel that docks just left of the rail. For now
-   the rail carries a single entry — Agent runs (the chat-history list that used
-   to live as a dropdown in the top bar) — but it's shaped to hold more entries
-   later (just add another <HoverTip> + panel case).
+   an icon opens a FULL-HEIGHT panel that docks just left of the rail. Two
+   entries today — Agent runs (the chat-history list that used to live as a
+   dropdown in the top bar) and Tasks & subagents (every subagent dispatch +
+   harness task across all runs, finished ones included) — and shaped to hold
+   more later (add another <HoverTip> + panel case).
 
-   Lists every run the daemon knows about (live + finished, this session). Click
-   a row to mount it in the chat drawer. Polls /__runs while the panel is open so
-   live runs update their status dots; a slower background poll keeps the live
-   pulse on the icon fresh while the panel is closed.
+   Polls /__runs while the runs panel is open so live runs update their status
+   dots; a slower background poll keeps the live pulse on the icon fresh while
+   the panel is closed. The tasks panel mounts lazily (TasksSubagentsPanel) and
+   reads each run's transcript on open.
 
    Pass `hidden` (workflow fullscreen) to unmount the rail + its panel entirely. */
-function AgentRunsRail({ onOpenRun, onStartNewChat, hidden }) {
-  // Which panel is open ("runs" | null). The single-string shape generalises to
-  // future rail entries without a refactor.
+function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
+  // Which panel is open ("runs" | "tasks" | null).
   const [active, setActive] = useState(null);
   const [runs, setRuns] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -9025,9 +9025,248 @@ function AgentRunsRail({ onOpenRun, onStartNewChat, hidden }) {
           ${liveCount > 0 && html`<span className="runs-pulse" aria-label="${liveCount} live"/>`}
         </span>
       <//>
+      <${HoverTip}
+        placement="left"
+        className=${"th-right-rail-btn" + (active === "tasks" ? " is-active" : "")}
+        ariaLabel="Open tasks & subagents"
+        tip="Tasks & subagents — every dispatch + to-do across runs, finished included"
+        onClick=${() => setActive(a => a === "tasks" ? null : "tasks")}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.Bot}/>
+        </span>
+      <//>
     </nav>
     ${panel}
+    ${active === "tasks" && html`<${TasksSubagentsPanel}
+      runs=${runs}
+      railTop=${railTop}
+      panelRef=${panelRef}
+      onOpenRun=${(r) => { onOpenRun(r); setActive(null); }}
+    />`}
   `;
+}
+
+/* extractRunSubagents / extractRunTasks — pull the subagent dispatches and the
+   harness Task list out of ONE run's transcript (events mapped from /__chat or
+   the live SSE: { event, data }). Mirrors the live-strip logic in ChatDrawer,
+   but keeps FINISHED items (no streaming filter, no clearedTaskIds) — the whole
+   point of the panel is to review work after it's done. */
+function extractRunSubagents(events) {
+  const resultById = new Map();
+  for (const ev of events || []) {
+    const d = ev?.data;
+    if (ev?.event === "agent" && d?.type === "tool_result" && d.toolUseId) {
+      resultById.set(d.toolUseId, d);
+    }
+  }
+  const out = [];
+  for (const ev of events || []) {
+    if (ev?.event !== "agent") continue;
+    const d = ev.data;
+    if (d?.type !== "tool_use" || d.name !== "Agent") continue;
+    const inp = d.input || {};
+    const result = resultById.get(d.id) || null;
+    out.push({
+      id: d.id || `a-${out.length}`,
+      type: inp.subagent_type || "subagent",
+      label: inp.description || "Subagent task",
+      done: !!result,
+      error: !!(result && (result.isError || result.is_error)),
+    });
+  }
+  return out;
+}
+function extractRunTasks(events) {
+  const resultById = new Map();
+  for (const ev of events || []) {
+    const d = ev?.data;
+    if (ev?.event === "agent" && d?.type === "tool_result" && d.toolUseId) {
+      resultById.set(d.toolUseId, d);
+    }
+  }
+  const resultText = (r) => {
+    if (!r) return "";
+    const c = r.content;
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) return c.map(p => typeof p === "string" ? p : (p?.text || "")).join(" ");
+    return "";
+  };
+  const byId = new Map();
+  const order = [];
+  let seq = 0;
+  for (const ev of events || []) {
+    if (ev?.event !== "agent") continue;
+    const d = ev.data;
+    if (d?.type !== "tool_use") continue;
+    if (d.name === "TaskCreate") {
+      seq += 1;
+      const inp = d.input || {};
+      const m = resultText(resultById.get(d.id)).match(/Task #(\d+)/);
+      const id = m ? m[1] : String(seq);
+      const t = { id, subject: inp.subject || inp.description || "Task",
+                  activeForm: inp.activeForm || "", status: "pending" };
+      if (!byId.has(id)) order.push(id);
+      byId.set(id, t);
+    } else if (d.name === "TaskUpdate") {
+      const inp = d.input || {};
+      const id = inp.taskId != null ? String(inp.taskId) : null;
+      if (id && byId.has(id) && inp.status) byId.get(id).status = inp.status;
+    }
+  }
+  // Drop tasks the agent deleted outright — they were created in error.
+  return order.map(id => byId.get(id)).filter(t => t.status !== "deleted");
+}
+
+/* Map a /__chat response's JSONL rows into the { event, data } shape the
+   extractors above expect (same mapping the ChatDrawer hydrate path uses). */
+function chatRowsToEvents(rows) {
+  const evs = [];
+  for (const row of rows || []) {
+    if (!row?.type) continue;
+    if (row.type === "__finish") { evs.push({ event: "end", data: row.data || {} }); continue; }
+    evs.push({ event: row.type, data: row.data });
+  }
+  return evs;
+}
+
+// Cap on how many runs' transcripts we hydrate for the tasks panel — newest
+// first. Keeps the open cost bounded; anything beyond is reported, not hidden.
+const TASKS_PANEL_RUN_CAP = 40;
+
+/* TasksSubagentsPanel — the second right-rail panel. On open it hydrates each
+   run's transcript (/__chat?runId=…) and lists every subagent dispatch + Task,
+   grouped by run, newest first, FINISHED ones included. Runs with neither are
+   omitted. Read-only over existing endpoints (no daemon change needed). */
+function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun }) {
+  // Per-run extracted { subagents, tasks }, keyed by runId.
+  const [byRun, setByRun] = useState({});
+  const [loading, setLoading] = useState(true);
+  // "all" | "subagents" | "tasks" — which kinds to show.
+  const [filter, setFilter] = useState("all");
+
+  const capped = (runs || []).slice(0, TASKS_PANEL_RUN_CAP);
+  const overflow = Math.max(0, (runs || []).length - capped.length);
+  // Stable signature so the hydrate effect re-runs when the run set changes
+  // (new run appears / live run advances) but not on every parent render.
+  const sig = capped.map(r => `${r.runId}:${r.lastSeq ?? ""}:${r.done ? 1 : 0}`).join("|");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        // One fetch: all chat history collapses to a single editor/chat.jsonl,
+        // and every row carries its runId, so we group client-side instead of
+        // hitting /__chat once per run.
+        const resp = await fetch(apiUrl("/__chat"));
+        const j = resp.ok ? await resp.json() : { events: [] };
+        const rows = Array.isArray(j.events) ? j.events : [];
+        const rowsByRun = new Map();
+        for (const row of rows) {
+          const rid = row?.runId;
+          if (!rid) continue;
+          if (!rowsByRun.has(rid)) rowsByRun.set(rid, []);
+          rowsByRun.get(rid).push(row);
+        }
+        const map = {};
+        for (const [rid, rrows] of rowsByRun) {
+          const evs = chatRowsToEvents(rrows);
+          map[rid] = { subagents: extractRunSubagents(evs), tasks: extractRunTasks(evs) };
+        }
+        if (cancelled) return;
+        setByRun(map);
+        setLoading(false);
+      } catch {
+        if (cancelled) return;
+        setByRun({});
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sig]);
+
+  // Map a task status to the shared runs-row-dot data-status vocabulary.
+  const taskDot = (s) => s === "completed" ? "done"
+                       : s === "in_progress" ? "live"
+                       : "waiting";
+
+  const groups = capped
+    .map(r => ({ run: r, ...(byRun[r.runId] || { subagents: [], tasks: [] }) }))
+    .map(g => ({
+      ...g,
+      subagents: filter === "tasks" ? [] : g.subagents,
+      tasks:     filter === "subagents" ? [] : g.tasks,
+    }))
+    .filter(g => g.subagents.length || g.tasks.length);
+
+  // Totals are unfiltered so the header count stays stable as the user toggles
+  // the filter tabs.
+  const totalAgents = capped.reduce((n, r) => n + ((byRun[r.runId]?.subagents.length) || 0), 0);
+  const totalTasks  = capped.reduce((n, r) => n + ((byRun[r.runId]?.tasks.length) || 0), 0);
+
+  return createPortal(html`
+    <div
+      className="th-rail-panel"
+      ref=${panelRef}
+      style=${railTop != null ? { top: railTop + "px" } : null}>
+      <div className="runs-panel-head">
+        <span>Tasks & subagents</span>
+        <span className="th-tasks-count">${totalAgents} agent${totalAgents===1?'':'s'} · ${totalTasks} task${totalTasks===1?'':'s'}</span>
+      </div>
+      <div className="th-tasks-filter" role="tablist" aria-label="Filter">
+        ${[["all","All"],["subagents","Subagents"],["tasks","Tasks"]].map(([k, lbl]) => html`
+          <button
+            key=${k}
+            role="tab"
+            aria-selected=${filter === k}
+            className=${"th-tasks-filter-btn" + (filter === k ? " is-active" : "")}
+            onClick=${() => setFilter(k)}
+          >${lbl}</button>
+        `)}
+      </div>
+      <div className="th-rail-panel-body">
+        ${loading && groups.length === 0 && html`<div className="runs-empty">Loading…</div>`}
+        ${!loading && groups.length === 0 && html`
+          <div className="runs-empty">No ${filter === "all" ? "subagents or tasks" : filter} yet. They appear here once an agent dispatches a subagent or creates a task.</div>
+        `}
+        ${groups.map(g => html`
+          <div className="th-tasks-group" key=${g.run.runId}>
+            <button
+              className="th-tasks-group-head"
+              onClick=${() => onOpenRun(g.run)}
+              title=${`Open this run\n${g.run.runId}`}
+            >
+              <span className="th-tasks-group-title">${g.run.title || g.run.kind}</span>
+              <span className="runs-row-age">${formatRunAge(g.run.startedAt)}</span>
+            </button>
+            ${g.subagents.map(a => html`
+              <div className="th-tasks-row" key=${a.id} title=${a.label}>
+                <span className="runs-row-dot" data-status=${a.error ? "fail" : a.done ? "done" : "live"}/>
+                <${Icon.Bot}/>
+                <span className="th-tasks-row-main">
+                  <span className="th-tasks-row-type">${a.type}</span>
+                  <span className="th-tasks-row-label">${a.label}</span>
+                </span>
+                <span className="th-tasks-row-state">${a.error ? "failed" : a.done ? "done" : "running"}</span>
+              </div>
+            `)}
+            ${g.tasks.map(t => html`
+              <div className="th-tasks-row" key=${t.id} title=${t.subject}>
+                <span className="runs-row-dot" data-status=${taskDot(t.status)}/>
+                <${Icon.Check}/>
+                <span className="th-tasks-row-main">
+                  <span className="th-tasks-row-label">${t.subject}</span>
+                </span>
+                <span className="th-tasks-row-state">${t.status || "pending"}</span>
+              </div>
+            `)}
+          </div>
+        `)}
+        ${overflow > 0 && html`<div className="th-tasks-overflow">+ ${overflow} older run${overflow===1?'':'s'} not shown</div>`}
+      </div>
+    </div>
+  `, document.body);
 }
 
 /* SSE consumer — fetch + getReader pattern from open-design's
@@ -36286,7 +36525,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           `}
         </div>
         ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} onEditTab=${openZoomForViewerTab}/>`}
-        <${AgentRunsRail}
+        <${RightNavRail}
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
           hidden=${fullscreen}/>
@@ -61243,7 +61482,7 @@ function App() {
         onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
         onCloseHistory=${() => setHistoryOpen(false)}
       />`}
-      ${!embedMode && html`<${AgentRunsRail}
+      ${!embedMode && html`<${RightNavRail}
         onStartNewChat=${openNewChat}
         onOpenRun=${(run) => {
           if (run) {
