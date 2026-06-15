@@ -6541,6 +6541,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-body {
   border-radius: 10px;
 }
+/* Cutout asset at rest — drop the white CARD too (surface + shadow ring), not
+   just the checkerboard, so a transparent-bg image floats directly on the
+   canvas instead of sitting on a white tile. Hover/selection brings the card
+   (and chrome) back. Only fires when the image was detected transparent, so an
+   opaque image is never un-carded. */
+.workflow-node-asset[data-transparent-bg="true"]:not(:hover):not([data-selected="true"]) {
+  background: transparent;
+  box-shadow: none;
+}
 
 /* Same chrome-on-hover treatment for prototype + canvas-frames nodes — they
    render a live iframe under a 32px title bar (and no foot). At rest the bar
@@ -6549,7 +6558,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-proto:not(:hover):not([data-selected="true"]),
 .workflow-node-frames:not(:hover):not([data-selected="true"]) {
   grid-template-rows: 0 1fr;
-  transition: grid-template-rows 0.14s ease;
+  /* The body grows by the bar's 32px when the bar collapses, but the iframe
+     content is sized for the WITH-bar height — so that extra 32px reads as an
+     awkward empty strip at the bottom. We can't shrink node.h (edge/port
+     anchors are computed from it — workflowPortPosition), so instead CLIP the
+     bottom 32px away: the box stays full height (edges stay aligned) while the
+     minimised card visually ends flush with the content, bottom corners
+     re-rounded at the clip. */
+  clip-path: inset(0 0 32px 0 round 10px);
+  transition: grid-template-rows 0.14s ease, clip-path 0.14s ease;
 }
 .workflow-node-proto:not(:hover):not([data-selected="true"]) > .workflow-node-bar,
 .workflow-node-frames:not(:hover):not([data-selected="true"]) > .workflow-node-frames-bar {

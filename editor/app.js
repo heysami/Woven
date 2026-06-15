@@ -46177,6 +46177,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       data-selected=${selected ? "true" : "false"}
       data-kind=${kind}
       data-lod=${lod}
+      data-transparent-bg=${bgTransparent ? "true" : "false"}
       data-animated=${node.animated ? "true" : "false"}
       data-run-status=${node.runStatus || ""}
       onMouseDownCapture=${() => onSelect && onSelect()}
