@@ -7452,6 +7452,19 @@ async function setProjectThumbnail(target) {
   }
 }
 
+// The Prototypes list shows each prototype by its folder slug (source/<slug>/),
+// so a typed name must be slugified to a valid dir name before it becomes the
+// new id: spaces → hyphens, drop unsupported chars, collapse repeats, trim
+// leading/trailing separators. Returns "" when nothing usable survives.
+function protoSlugify(name) {
+  return (name || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9._-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
+}
+
 // Duplicate a prototype locally — NO LLM. The daemon copies source/<slug>/ to
 // source/<newslug>/, clones editor/<slug>.data.js, and rewrites every reference
 // to the old prototype name (sourceRoot, the source/<slug>/ path prefix, and the
@@ -7462,23 +7475,13 @@ async function duplicatePrototype(proto) {
   const name = proto.label || proto.id;
   const newName = window.prompt(`Duplicate prototype "${name}" as:`, name + "-copy");
   if (newName === null) return null;                  // cancelled
-  const trimmed = newName.trim();
-  if (!trimmed) return null;
-  // The Prototypes list shows each prototype by its folder slug (source/<slug>/),
-  // so the typed name must drive the slug — not just the stored meta label.
-  // Slugify to a valid dir name: spaces → hyphens, drop unsupported chars,
-  // collapse repeats, trim leading/trailing separators.
-  const slug = trimmed
-    .replace(/\s+/g, "-")
-    .replace(/[^A-Za-z0-9._-]/g, "")
-    .replace(/-{2,}/g, "-")
-    .replace(/^[-.]+|[-.]+$/g, "");
-  if (!slug) { alert("That name has no usable letters or numbers — try another."); return null; }
+  const slug = protoSlugify(newName);
+  if (!slug) { if (newName.trim()) alert("That name has no usable letters or numbers — try another."); return null; }
   try {
     const r = await fetch(apiUrl("/__prototypes/duplicate"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: proto.id, newId: slug, label: trimmed }),
+      body: JSON.stringify({ id: proto.id, newId: slug, label: newName.trim() }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -7486,6 +7489,60 @@ async function duplicatePrototype(proto) {
     return j;
   } catch (e) {
     alert("Duplicate failed: " + (e.message || e));
+    return null;
+  }
+}
+
+// Rename a prototype — NOT a simple folder move. The daemon repoints every
+// pathway the slug is baked into (source dir, editor/<slug>.data.js sourceRoot,
+// layout sidecar, workflow.json node fields, starred + thumbnail bookmarks,
+// absolute source/<slug>/ asset refs). Prompts for the new name, slugifies it
+// to the new id, fires th:library-refresh. Depth-1 only.
+async function renamePrototype(proto) {
+  if (!proto || !proto.id) return null;
+  const cur = proto.label || proto.id;
+  const newName = window.prompt(
+    `Rename prototype "${cur}" to:\n\n(Repoints its folder, canvas data, stars, thumbnail, and workflow nodes.)`,
+    cur);
+  if (newName === null) return null;                  // cancelled
+  const slug = protoSlugify(newName);
+  if (!slug) { if (newName.trim()) alert("That name has no usable letters or numbers — try another."); return null; }
+  if (slug === proto.id) return null;                 // no change
+  try {
+    const r = await fetch(apiUrl("/__prototypes/rename"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: proto.id, newId: slug, label: newName.trim() }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
+    return j;
+  } catch (e) {
+    alert("Rename failed: " + (e.message || e));
+    return null;
+  }
+}
+
+// Delete a prototype — moves source/<slug>/ (+ its editor sidecars) to
+// source/.trash/ (recoverable) and clears its star / thumbnail bookmarks.
+// The daemon refuses to delete the only prototype or the project default.
+async function deletePrototype(proto) {
+  if (!proto || !proto.id) return null;
+  const name = proto.label || proto.id;
+  if (!window.confirm(`Delete prototype "${name}"?\n\nMoved to source/.trash/${proto.id}-<timestamp>/ — recoverable, not hard-deleted.`)) return null;
+  try {
+    const r = await fetch(apiUrl("/__prototypes/delete"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: proto.id }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
+    return j;
+  } catch (e) {
+    alert("Delete failed: " + (e.message || e));
     return null;
   }
 }
@@ -36609,6 +36666,26 @@ function WorkflowLibrary({ tab = "nodes" }) {
                         draggable=${false}
                         onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
                       ><${Icon.Copy}/></button>`}
+                      ${!isDeep && html`<button
+                        type="button"
+                        className="workflow-library-rename-btn"
+                        title="Rename this prototype — repoints its folder, canvas data, stars, and workflow nodes"
+                        aria-label="Rename prototype"
+                        onClick=${(e) => { e.stopPropagation(); renamePrototype(p); }}
+                        onMouseDown=${(e) => e.stopPropagation()}
+                        draggable=${false}
+                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      ><${Icon.Pen}/></button>`}
+                      ${!isDeep && html`<button
+                        type="button"
+                        className="workflow-library-del-btn"
+                        title="Delete this prototype — moves to source/.trash/ (recoverable)"
+                        aria-label="Delete prototype"
+                        onClick=${(e) => { e.stopPropagation(); deletePrototype(p); }}
+                        onMouseDown=${(e) => e.stopPropagation()}
+                        draggable=${false}
+                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                      ><${Icon.Trash}/></button>`}
                     </div>
                   `;
                 })}
@@ -36672,6 +36749,26 @@ function WorkflowLibrary({ tab = "nodes" }) {
                           draggable=${false}
                           onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
                         ><${Icon.Copy}/></button>`}
+                        ${!isDeep && html`<button
+                          type="button"
+                          className="workflow-library-rename-btn workflow-library-rename-btn-corner"
+                          title="Rename this prototype — repoints its folder, canvas data, stars, and workflow nodes"
+                          aria-label="Rename prototype"
+                          onClick=${(e) => { e.stopPropagation(); renamePrototype(p); }}
+                          onMouseDown=${(e) => e.stopPropagation()}
+                          draggable=${false}
+                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        ><${Icon.Pen}/></button>`}
+                        ${!isDeep && html`<button
+                          type="button"
+                          className="workflow-library-del-btn workflow-library-del-btn-corner"
+                          title="Delete this prototype — moves to source/.trash/ (recoverable)"
+                          aria-label="Delete prototype"
+                          onClick=${(e) => { e.stopPropagation(); deletePrototype(p); }}
+                          onMouseDown=${(e) => e.stopPropagation()}
+                          draggable=${false}
+                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        ><${Icon.Trash}/></button>`}
                       </div>
                       <div className="workflow-library-card-label">${p.label}</div>
                     </div>

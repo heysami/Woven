@@ -6179,6 +6179,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._project_duplicate(qs)
             if parsed.path == "/__prototypes/duplicate":
                 return self._prototype_duplicate(qs)
+            if parsed.path == "/__prototypes/rename":
+                return self._prototype_rename(qs)
+            if parsed.path == "/__prototypes/delete":
+                return self._prototype_delete(qs)
             if parsed.path == "/__history/undo":
                 return self._history_step(qs, "undo")
             if parsed.path == "/__history/redo":
@@ -12708,6 +12712,268 @@ class H(http.server.SimpleHTTPRequestHandler):
             "from": slug, "path": f"source/{new_slug}/index.html",
             "editorData": data_written,
         })
+
+    # Default prototype slug for a project — the one editor/data.js (the
+    # fallback served when no ?prototype=<slug> is present) points at, parsed
+    # from its meta.sourceRoot ("../source/<slug>/"). Returns None if unknown.
+    def _default_prototype_slug(self, project_root):
+        legacy = os.path.join(project_root, "editor", "data.js")
+        if not os.path.isfile(legacy):
+            return None
+        try:
+            with open(legacy, "r", encoding="utf-8") as f:
+                head = f.read(20000)
+        except (OSError, UnicodeDecodeError):
+            return None
+        m = re.search(r'sourceRoot["\']?\s*:\s*["\']\.\./source/([A-Za-z0-9_.-]+)/', head)
+        return m.group(1) if m else None
+
+    # POST /__prototypes/rename?project=<id>  body: { id, newId, label? }
+    # Renames a prototype's slug — NOT a simple folder move. The slug is baked
+    # into pathways across the project, so this repoints ALL of them atomically:
+    #   • source/<slug>/        → source/<newslug>/
+    #   • editor/<slug>.data.js → editor/<newslug>.data.js (or rewrites the
+    #     fallback editor/data.js in place when <slug> is the default proto),
+    #     with sourceRoot + branch|prototype + *Label fields repointed
+    #   • editor/<slug>.layout.js → editor/<newslug>.layout.js (position sidecar)
+    #   • workflow/workflow.json   — every node's branch|prototype == <slug> field
+    #     + any source/<slug>/ path reference
+    #   • .starred-prototypes.json — bookmark id <slug> (and <slug>/<sub>)
+    #   • .thumbnail-prototype.json — path / id pointing at <slug>
+    #   • source/<newslug>/**      — any absolute source/<slug>/ asset reference
+    # Depth-1 prototypes only.
+    def _prototype_rename(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body() or {}
+        flat = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+        old = (body.get("id") or body.get("prototype") or "").strip()
+        new = (body.get("newId") or body.get("newPrototype") or "").strip()
+        if not old or not flat.match(old):
+            return self._reply(400, {"error": "invalid or nested prototype id (depth-1 slugs only)", "id": old})
+        if not new or not flat.match(new):
+            return self._reply(400, {"error": "invalid new prototype id (alphanumeric + ._- only, 1..80 chars)", "id": new})
+        if new == old:
+            return self._reply(400, {"error": "new id is the same as the old id", "id": new})
+        new_label = (body.get("label") or new).strip() or new
+
+        src_root = os.path.join(project_root, "source")
+        old_dir = os.path.join(src_root, old)
+        new_dir = os.path.join(src_root, new)
+        editor_dir = _safe_join(project_root, "editor")
+        if not os.path.isfile(os.path.join(old_dir, "index.html")):
+            return self._reply(404, {"error": "no such prototype (source/<slug>/index.html not found)", "id": old})
+        if os.path.exists(new_dir) or os.path.isfile(os.path.join(editor_dir, f"{new}.data.js")):
+            return self._reply(409, {"error": "a prototype with that name already exists", "id": new})
+
+        touched = []
+        # 1) Move the source subtree (relative asset refs ride along untouched).
+        try:
+            shutil.move(old_dir, new_dir)
+        except OSError as e:
+            return self._reply(500, {"error": f"source move failed: {type(e).__name__}: {e}"})
+        touched.append(f"source/{new}/")
+
+        def _rewrite_data(text):
+            text = text.replace(f"source/{old}/", f"source/{new}/")
+            text = re.sub(r'(["\']?sourceRoot["\']?\s*:\s*)"[^"]*"',
+                          lambda m: m.group(1) + json.dumps(f"../source/{new}/"), text)
+            text = re.sub(r'(["\']?(?:branch|prototype)["\']?\s*:\s*)"' + re.escape(old) + r'"',
+                          lambda m: m.group(1) + json.dumps(new), text)
+            text = re.sub(r'(["\']?(?:branchLabel|prototypeLabel)["\']?\s*:\s*)"[^"]*"',
+                          lambda m: m.group(1) + json.dumps(new_label), text)
+            return text
+
+        # 2) Editor data file. A per-prototype editor/<old>.data.js becomes
+        #    editor/<new>.data.js; the default proto (served via the fallback
+        #    editor/data.js) is rewritten in place so it keeps being the default.
+        per_old = os.path.join(editor_dir, f"{old}.data.js")
+        legacy = os.path.join(editor_dir, "data.js")
+        try:
+            if os.path.isfile(per_old):
+                with open(per_old, "r", encoding="utf-8") as f:
+                    text = f.read()
+                with open(os.path.join(editor_dir, f"{new}.data.js"), "w", encoding="utf-8") as f:
+                    f.write(_rewrite_data(text))
+                os.remove(per_old)
+                touched.append(f"editor/{new}.data.js")
+            elif os.path.isfile(legacy):
+                with open(legacy, "r", encoding="utf-8") as f:
+                    text = f.read()
+                with open(legacy, "w", encoding="utf-8") as f:
+                    f.write(_rewrite_data(text))
+                touched.append("editor/data.js")
+        except (OSError, UnicodeDecodeError) as e:
+            return self._reply(500, {"error": f"editor data rewrite failed: {type(e).__name__}: {e}"})
+
+        # 3) Per-prototype layout sidecar.
+        lay_old = os.path.join(editor_dir, f"{old}.layout.js")
+        if os.path.isfile(lay_old):
+            try:
+                shutil.move(lay_old, os.path.join(editor_dir, f"{new}.layout.js"))
+                touched.append(f"editor/{new}.layout.js")
+            except OSError:
+                pass
+
+        # 4) Source files — repoint any ABSOLUTE source/<old>/ asset reference.
+        #    (Relative refs already survived the folder move; this only catches
+        #    HTML/CSS/JS that hard-coded the project-rooted source path.)
+        for root_dir, dirs, files in os.walk(new_dir):
+            for fn in files:
+                if os.path.splitext(fn)[1].lower() not in (".html", ".htm", ".css", ".js", ".json", ".md", ".svg"):
+                    continue
+                fp = os.path.join(root_dir, fn)
+                try:
+                    if os.path.getsize(fp) > 4_000_000:
+                        continue
+                    with open(fp, "r", encoding="utf-8") as f:
+                        t = f.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if f"source/{old}/" in t:
+                    try:
+                        with open(fp, "w", encoding="utf-8") as f:
+                            f.write(t.replace(f"source/{old}/", f"source/{new}/"))
+                    except OSError:
+                        pass
+
+        # 5) workflow.json — node branch|prototype fields == <old> + path refs.
+        wf = os.path.join(project_root, "workflow", "workflow.json")
+        if os.path.isfile(wf):
+            try:
+                with open(wf, "r", encoding="utf-8") as f:
+                    t = f.read()
+                nt = t.replace(f"source/{old}/", f"source/{new}/")
+                nt = re.sub(r'("(?:branch|prototype)"\s*:\s*)"' + re.escape(old) + r'"',
+                            lambda m: m.group(1) + json.dumps(new), nt)
+                if nt != t:
+                    with open(wf, "w", encoding="utf-8") as f:
+                        f.write(nt)
+                    touched.append("workflow/workflow.json")
+            except (OSError, UnicodeDecodeError):
+                pass
+
+        # 6) Starred bookmarks — remap <old> and <old>/<sub> ids.
+        try:
+            ids = self._read_starred_ids(project_root)
+            remapped, changed = [], False
+            for sid in ids:
+                if sid == old:
+                    remapped.append(new); changed = True
+                elif sid.startswith(old + "/"):
+                    remapped.append(new + sid[len(old):]); changed = True
+                else:
+                    remapped.append(sid)
+            if changed:
+                self._write_starred_ids(project_root, remapped)
+                touched.append(".starred-prototypes.json")
+        except Exception:
+            pass
+
+        # 7) Thumbnail pointer — path under source/<old>/ or id == <old>.
+        thumb = os.path.join(project_root, ".thumbnail-prototype.json")
+        if os.path.isfile(thumb):
+            try:
+                with open(thumb, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+                ch = False
+                if isinstance(data.get("path"), str) and f"source/{old}/" in data["path"]:
+                    data["path"] = data["path"].replace(f"source/{old}/", f"source/{new}/"); ch = True
+                if (data.get("id") or "").strip() == old:
+                    data["id"] = new; ch = True
+                if ch:
+                    with open(thumb, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+                    touched.append(".thumbnail-prototype.json")
+            except Exception:
+                pass
+
+        return self._reply(200, {
+            "ok": True, "id": new, "label": new_label, "from": old,
+            "path": f"source/{new}/index.html", "rewrote": touched,
+        })
+
+    # POST /__prototypes/delete?project=<id>  body: { id }
+    # Moves source/<slug>/ (+ its editor/<slug>.data.js / .layout.js) to
+    # source/.trash/<slug>-<timestamp>/ — recoverable, no hard-rm — and clears
+    # the prototype from .starred-prototypes.json + .thumbnail-prototype.json so
+    # no broken bookmark lingers. Refuses to delete the LAST prototype or the
+    # project's DEFAULT (the one editor/data.js falls back to), since either
+    # would strand the editor. Depth-1 prototypes only.
+    def _prototype_delete(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body() or {}
+        slug = (body.get("id") or body.get("prototype") or "").strip()
+        if not slug or not re.match(r"^[A-Za-z0-9_.-]{1,80}$", slug):
+            return self._reply(400, {"error": "invalid or nested prototype id (depth-1 slugs only)", "id": slug})
+        src_root = os.path.join(project_root, "source")
+        src_dir = os.path.join(src_root, slug)
+        editor_dir = _safe_join(project_root, "editor")
+        if not os.path.isfile(os.path.join(src_dir, "index.html")):
+            return self._reply(404, {"error": "no such prototype (source/<slug>/index.html not found)", "id": slug})
+
+        # Guard: never empty the project.
+        try:
+            roots = [n for n in os.listdir(src_root)
+                     if not n.startswith(".") and os.path.isfile(os.path.join(src_root, n, "index.html"))]
+        except OSError:
+            roots = [slug]
+        if len(roots) <= 1:
+            return self._reply(409, {"error": "can't delete the only prototype in the project", "id": slug})
+        # Guard: don't strand the fallback editor/data.js (the default proto)
+        # unless this prototype has its OWN per-proto data file.
+        if slug == self._default_prototype_slug(project_root) and \
+           not os.path.isfile(os.path.join(editor_dir, f"{slug}.data.js")):
+            return self._reply(409, {
+                "error": "this is the project's default prototype — rename it or make another the default first",
+                "id": slug,
+            })
+
+        trash_dir = os.path.join(src_root, ".trash")
+        os.makedirs(trash_dir, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        target = os.path.join(trash_dir, f"{slug}-{stamp}")
+        try:
+            os.makedirs(target, exist_ok=False)
+            shutil.move(src_dir, os.path.join(target, "source"))
+        except OSError as e:
+            return self._reply(500, {"error": f"trash move failed: {type(e).__name__}: {e}"})
+        # Sweep the per-prototype editor sidecars into the same trash folder.
+        for suffix in (".data.js", ".layout.js"):
+            sidecar = os.path.join(editor_dir, f"{slug}{suffix}")
+            if os.path.isfile(sidecar):
+                try:
+                    shutil.move(sidecar, os.path.join(target, f"{slug}{suffix}"))
+                except OSError:
+                    pass
+
+        # Drop any star bookmark for this slug (or its sub-prototypes).
+        try:
+            ids = self._read_starred_ids(project_root)
+            kept = [s for s in ids if not (s == slug or s.startswith(slug + "/"))]
+            if len(kept) != len(ids):
+                self._write_starred_ids(project_root, kept)
+        except Exception:
+            pass
+        # Clear the thumbnail pointer if it referenced this prototype.
+        thumb = os.path.join(project_root, ".thumbnail-prototype.json")
+        if os.path.isfile(thumb):
+            try:
+                with open(thumb, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+                pth = data.get("path") if isinstance(data.get("path"), str) else ""
+                if (data.get("id") or "").strip() == slug or f"source/{slug}/" in (pth or ""):
+                    with open(thumb, "w", encoding="utf-8") as f:
+                        json.dump({"path": ""}, f, indent=2)
+            except Exception:
+                pass
+
+        return self._reply(200, {"ok": True, "id": slug, "trashedTo": f"source/.trash/{slug}-{stamp}/"})
 
     # ─────────────────────────────────────────────────────────────────────
     # Starred prototypes — per-project bookmarks of specific prototype slugs

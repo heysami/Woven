@@ -3079,10 +3079,14 @@ button {
   opacity: 1;
 }
 
-/* Duplicate-prototype button — local clone, no LLM. Mirrors the star/thumb
-   toggles' look (inline in list rows, floating corner pill in grid cards).
-   Never has a persistent "on" state, so it only shows on hover/focus. */
-.workflow-library-dup-btn {
+/* Prototype management buttons — Duplicate / Rename / Delete (all local, no
+   LLM). Mirror the star/thumb toggles' look (inline in list rows; floating
+   corner pills in grid cards). None has a persistent "on" state, so they only
+   show on hover/focus. In grid cards they cluster at the TOP-LEFT so they don't
+   crowd the thumbnail/star toggles at the top-right. */
+.workflow-library-dup-btn,
+.workflow-library-rename-btn,
+.workflow-library-del-btn {
   appearance: none;
   background: transparent;
   border: 0;
@@ -3097,29 +3101,52 @@ button {
   line-height: 0;
   flex: 0 0 auto;
 }
-.workflow-library-dup-btn:hover { color: var(--text); background: var(--surface-2); }
-.workflow-library-dup-btn svg { display: block; }
-.workflow-library-dup-btn-corner {
+.workflow-library-dup-btn:hover,
+.workflow-library-rename-btn:hover { color: var(--text); background: var(--surface-2); }
+.workflow-library-del-btn:hover { color: var(--danger, #c0392b); background: var(--surface-2); }
+.workflow-library-dup-btn svg,
+.workflow-library-rename-btn svg,
+.workflow-library-del-btn svg { display: block; }
+.workflow-library-dup-btn-corner,
+.workflow-library-rename-btn-corner,
+.workflow-library-del-btn-corner {
   position: absolute;
   top: 4px;
-  right: 56px; /* sits left of the thumb (30px) + star (4px) corners */
   padding: 3px;
+  margin: 0;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(2px);
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   z-index: 2;
 }
-.workflow-library-dup-btn-corner:hover { background: #fff; }
+.workflow-library-dup-btn-corner    { left: 4px; }
+.workflow-library-rename-btn-corner { left: 30px; }
+.workflow-library-del-btn-corner    { left: 56px; }
+.workflow-library-dup-btn-corner:hover,
+.workflow-library-rename-btn-corner:hover { background: #fff; }
+.workflow-library-del-btn-corner:hover { background: #fff; border-color: var(--danger, #c0392b); }
 .workflow-library-item-generated .workflow-library-dup-btn,
-.workflow-library-card-generated .workflow-library-dup-btn {
+.workflow-library-item-generated .workflow-library-rename-btn,
+.workflow-library-item-generated .workflow-library-del-btn,
+.workflow-library-card-generated .workflow-library-dup-btn,
+.workflow-library-card-generated .workflow-library-rename-btn,
+.workflow-library-card-generated .workflow-library-del-btn {
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 .workflow-library-item-generated:hover .workflow-library-dup-btn,
+.workflow-library-item-generated:hover .workflow-library-rename-btn,
+.workflow-library-item-generated:hover .workflow-library-del-btn,
 .workflow-library-item-generated:focus-within .workflow-library-dup-btn,
+.workflow-library-item-generated:focus-within .workflow-library-rename-btn,
+.workflow-library-item-generated:focus-within .workflow-library-del-btn,
 .workflow-library-card-generated:hover .workflow-library-dup-btn,
-.workflow-library-card-generated:focus-within .workflow-library-dup-btn {
+.workflow-library-card-generated:hover .workflow-library-rename-btn,
+.workflow-library-card-generated:hover .workflow-library-del-btn,
+.workflow-library-card-generated:focus-within .workflow-library-dup-btn,
+.workflow-library-card-generated:focus-within .workflow-library-rename-btn,
+.workflow-library-card-generated:focus-within .workflow-library-del-btn {
   opacity: 1;
 }
 
