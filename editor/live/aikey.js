@@ -182,10 +182,18 @@
       "gap:10px;padding:0 14px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);" +
       "font:500 13px -apple-system,system-ui,sans-serif;color:var(--text,#111827)}" +
       "body>#root,#root>.workflow-door,.workflow-root{margin-top:40px!important}" +
-      "#th-live-bar .th-ai-pill{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;" +
+      "#th-live-bar .th-ai-right{margin-left:auto;display:flex;align-items:center;gap:8px}" +
+      "#th-live-bar .th-ai-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;" +
       "border-radius:999px;font-weight:600;font-size:12px;cursor:pointer;border:1px solid transparent}" +
       "#th-live-bar .th-ai-on{background:rgba(16,185,129,.12);color:#059669;border-color:rgba(16,185,129,.3)}" +
       "#th-live-bar .th-ai-off{background:rgba(245,23,42,.10);color:#dc2626;border-color:rgba(245,23,42,.3)}" +
+      "#th-live-bar .th-ai-refresh{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;" +
+      "font:600 12px -apple-system,system-ui,sans-serif;cursor:pointer;color:var(--text,#374151);" +
+      "background:var(--bg,#fff);border:1px solid var(--border,#e5e7eb)}" +
+      "#th-live-bar .th-ai-refresh:hover{background:rgba(127,127,127,.08)}" +
+      "#th-live-bar .th-ai-refresh svg{display:block}" +
+      "@keyframes th-ai-spin{to{transform:rotate(360deg)}}" +
+      "#th-live-bar .th-ai-refresh.spin svg{animation:th-ai-spin .6s linear}" +
       "@keyframes th-ai-flash{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}" +
       "#th-live-bar .th-ai-flash{animation:th-ai-flash .35s ease 2}" +
       // panel
@@ -227,13 +235,49 @@
     const title = document.createElement("div");
     let proj = ""; try { proj = new URLSearchParams(location.search).get("project") || ""; } catch (e) {}
     title.innerHTML = '<span style="opacity:.6">Live session</span>' + (proj ? ' · <b>' + esc(proj) + "</b>" : "");
+    const right = document.createElement("div");
+    right.className = "th-ai-right";
+    const refreshBtn = document.createElement("button");
+    refreshBtn.className = "th-ai-refresh";
+    refreshBtn.title = "Refresh assets + canvas from the host (manual — assets don't auto-update)";
+    refreshBtn.innerHTML =
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg><span>Refresh</span>';
+    refreshBtn.onclick = () => { refreshBtn.classList.remove("spin"); void refreshBtn.offsetWidth; refreshBtn.classList.add("spin"); refreshAll(); };
     pillEl = document.createElement("button");
     pillEl.className = "th-ai-pill";
     pillEl.onclick = openPanel;
+    right.appendChild(refreshBtn);
+    right.appendChild(pillEl);
     barEl.appendChild(title);
-    barEl.appendChild(pillEl);
+    barEl.appendChild(right);
     document.body.appendChild(barEl);
     renderPill();
+  }
+
+  // Manual refresh — assets intentionally do NOT auto-reflect in a live session
+  // (no daemon push), so this pulls the latest on demand: re-merge the workflow
+  // (node paths / sizes / versions) AND reload every asset preview by handing
+  // the existing th:asset-refresh path the concrete asset paths from disk (the
+  // same signal a real asset-changed event carries). No daemon change needed.
+  async function refreshAll() {
+    try { window.dispatchEvent(new CustomEvent("th:workflow-reload")); } catch (e) {}
+    try {
+      const proj = new URLSearchParams(location.search).get("project") || "";
+      const wf = await fetch("/__workflow?project=" + encodeURIComponent(proj), { cache: "no-store" }).then(r => r.json());
+      const paths = new Set(["source/"]);
+      for (const n of (wf.nodes || [])) {
+        if (typeof n.path === "string" && n.path) paths.add(n.path);
+        if (Array.isArray(n.paths)) n.paths.forEach(p => { if (typeof p === "string" && p) paths.add(p); });
+        if (typeof n.branch === "string" && n.branch) paths.add("source/" + n.branch + "/");
+        if (Array.isArray(n.exposedAssets)) n.exposedAssets.forEach(a => {
+          const p = typeof a === "string" ? a : (a && a.path); if (p) paths.add(p);
+        });
+      }
+      window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [...paths] } }));
+    } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent("th:library-refresh")); } catch (e) {}
   }
 
   function renderPill() {
