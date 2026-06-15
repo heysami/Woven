@@ -17,10 +17,9 @@
 
   let cfg = null;                 // transport adapter set by the cursor script
   let leases = [];                // [{target, holder, holderName}]
-  const held = new Set();         // targets I currently hold
-  const relTimers = new Map();    // target -> release-timeout id
+  const held = new Map();         // target -> last-interaction timestamp
   const badges = new Map();       // target -> { box, tag }
-  const GRACE_MS = 1500;          // keep the lock this long after let-go
+  const GRACE_MS = 1500;          // release a hold this long after interaction goes idle
 
   const LOCK_SVG =
     '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
@@ -63,22 +62,30 @@
     return null;
   }
 
-  function acquire(target) {
-    const t = relTimers.get(target);
-    if (t) { clearTimeout(t); relTimers.delete(target); }   // cancel a pending release
-    if (held.has(target)) return;
-    held.add(target);
-    try { cfg && cfg.acquire(target); } catch (e) {}
+  // Mark a node as actively interacted-with: acquire its lease on first touch,
+  // and (re)stamp its idle timer. Release is driven by a SWEEP on idleness, not
+  // by catching a pointerup — a drag that ends with pointercancel / a missed
+  // pointerup would otherwise leave us holding the lease forever (heartbeated
+  // every 10s), which blocks the other side's edits to that node until refresh.
+  function touch(target) {
+    if (!held.has(target)) { try { cfg && cfg.acquire(target); } catch (e) {} }
+    held.set(target, Date.now());
   }
-  function scheduleRelease(target) {
-    if (!held.has(target)) return;
-    const ex = relTimers.get(target);
-    if (ex) clearTimeout(ex);
-    relTimers.set(target, setTimeout(() => {
-      held.delete(target);
-      relTimers.delete(target);
-      try { cfg && cfg.release(target); } catch (e) {}
-    }, GRACE_MS));
+  function nodeFocused(target) {
+    const el = nodeEl(target.slice(5));
+    return !!(el && document.activeElement && el.contains(document.activeElement));
+  }
+  // Release any hold whose interaction has been idle past the grace AND isn't
+  // an open content edit (focused). Robust against any drag-end event we don't
+  // see, because it keys off "stopped interacting", not a specific event.
+  function sweep() {
+    const now = Date.now();
+    for (const [t, ts] of [...held]) {
+      if (now - ts > GRACE_MS && !nodeFocused(t)) {
+        held.delete(t);
+        try { cfg && cfg.release(t); } catch (e) {}
+      }
+    }
   }
 
   // Render badges over every node held by SOMEONE ELSE. Called on lock frames
@@ -128,13 +135,21 @@
   window.__thLocks = {
     config(adapter) {
       cfg = adapter;
-      // Acquire on grab/focus, release (after grace) on let-go/blur. Capture
-      // phase so we see the interaction before the editor's own handlers.
-      window.addEventListener("pointerdown", (e) => { const n = nodeIdFromEl(e.target); if (n) acquire("node:" + n); }, true);
-      window.addEventListener("pointerup",   ()  => { for (const t of [...held]) scheduleRelease(t); }, true);
-      window.addEventListener("focusin",     (e) => { const n = nodeIdFromEl(e.target); if (n) acquire("node:" + n); }, true);
-      window.addEventListener("focusout",    (e) => { const n = nodeIdFromEl(e.target); if (n) scheduleRelease("node:" + n); }, true);
-      setInterval(() => { if (held.size) { try { cfg.heartbeat([...held]); } catch (e) {} } }, 10000);
+      // Capture phase so we see the interaction before the editor's handlers.
+      // Acquire on grab/focus; keep the hold alive while the drag is MOVING
+      // (buttons down) or the field is being typed in; the sweep releases it
+      // ~GRACE after interaction goes idle — no reliance on catching pointerup.
+      window.addEventListener("pointerdown", (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); }, true);
+      window.addEventListener("pointermove", (e) => {
+        if (e.buttons === 0) return;              // only an active drag keeps a hold alive
+        for (const t of held.keys()) held.set(t, Date.now());
+      }, true);
+      window.addEventListener("focusin", (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); }, true);
+      const keep = (e) => { const n = nodeIdFromEl(e.target); if (n && held.has("node:" + n)) held.set("node:" + n, Date.now()); };
+      window.addEventListener("input", keep, true);
+      window.addEventListener("keydown", keep, true);
+      setInterval(sweep, 600);                    // idle-based release (robust vs missed pointerup)
+      setInterval(() => { if (held.size) { try { cfg.heartbeat([...held.keys()]); } catch (e) {} } }, 10000);
       setInterval(render, 150);
     },
     setLeases(ls) { leases = Array.isArray(ls) ? ls : []; render(); },
