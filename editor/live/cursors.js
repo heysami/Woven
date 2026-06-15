@@ -27,7 +27,7 @@
       if (t && t !== "none" && t !== "matrix(1, 0, 0, 1, 0, 0)") return el;
       el = el.parentElement;
     }
-    return document.querySelector(".workflow-canvas") || document.body;
+    return document.querySelector(".workflow-canvas-wrap") || document.body;
   }
   // Read layer geometry sparingly (never per-frame — see canvas-rect memory).
   function readGeom() {
@@ -52,7 +52,7 @@
   // viewport-covering overlay to the canvas rect so a remote cursor mapping
   // into a panel column is hidden behind it (panels are separate grid columns).
   function clipToCanvas(o) {
-    const c = document.querySelector(".workflow-canvas");
+    const c = document.querySelector(".workflow-canvas-wrap");
     if (!c) { o.style.clipPath = ""; return; }
     const r = c.getBoundingClientRect();
     o.style.clipPath = "inset(" + Math.max(0, r.top) + "px " + Math.max(0, innerWidth - r.right) +
@@ -148,7 +148,7 @@
 
   // Wait for the canvas to mount, then boot.
   const t = setInterval(() => {
-    if (document.querySelector('[class*="workflow-node"]') || document.querySelector(".workflow-canvas")) {
+    if (document.querySelector('[class*="workflow-node"]') || document.querySelector(".workflow-canvas-wrap")) {
       clearInterval(t); boot();
     }
   }, 400);

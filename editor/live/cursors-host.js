@@ -20,7 +20,7 @@
       if (t && t !== "none" && t !== "matrix(1, 0, 0, 1, 0, 0)") return el;
       el = el.parentElement;
     }
-    return document.querySelector(".workflow-canvas") || document.body;
+    return document.querySelector(".workflow-canvas-wrap") || document.body;
   }
   function readGeom() {
     if (!layer || !layer.isConnected) layer = findLayer();
@@ -43,7 +43,7 @@
   // Cursors live on the CANVAS, not above the panels — clip to the canvas rect
   // so a cursor mapping into a panel column is hidden behind it.
   function clipToCanvas(o) {
-    const c = document.querySelector(".workflow-canvas");
+    const c = document.querySelector(".workflow-canvas-wrap");
     if (!c) { o.style.clipPath = ""; return; }
     const r = c.getBoundingClientRect();
     o.style.clipPath = "inset(" + Math.max(0, r.top) + "px " + Math.max(0, innerWidth - r.right) +
@@ -131,7 +131,7 @@
   // Wait for the canvas, then poll for a live session and connect when one
   // starts — so cursors appear even if you go live AFTER opening the editor.
   const t = setInterval(() => {
-    if (document.querySelector('[class*="workflow-node"]') || document.querySelector(".workflow-canvas")) {
+    if (document.querySelector('[class*="workflow-node"]') || document.querySelector(".workflow-canvas-wrap")) {
       clearInterval(t);
       poll();
       setInterval(poll, 8000);
