@@ -45,7 +45,18 @@
       o.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:99998";
       document.body.appendChild(o);
     }
+    clipToCanvas(o);
     return o;
+  }
+  // Cursors live on the CANVAS, not above the side panels — clip the
+  // viewport-covering overlay to the canvas rect so a remote cursor mapping
+  // into a panel column is hidden behind it (panels are separate grid columns).
+  function clipToCanvas(o) {
+    const c = document.querySelector(".workflow-canvas");
+    if (!c) { o.style.clipPath = ""; return; }
+    const r = c.getBoundingClientRect();
+    o.style.clipPath = "inset(" + Math.max(0, r.top) + "px " + Math.max(0, innerWidth - r.right) +
+      "px " + Math.max(0, innerHeight - r.bottom) + "px " + Math.max(0, r.left) + "px)";
   }
   function render(p) {
     if (p.gid === GID) return;

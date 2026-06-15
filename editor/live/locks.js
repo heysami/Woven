@@ -39,6 +39,15 @@
       o.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:99997";
       document.body.appendChild(o);
     }
+    // Lock badges live on the CANVAS — clip to the canvas rect so a badge for a
+    // node panned under a side panel is hidden behind it (panels are separate
+    // grid columns), instead of floating over the panel.
+    const c = document.querySelector(".workflow-canvas");
+    if (c) {
+      const r = c.getBoundingClientRect();
+      o.style.clipPath = "inset(" + Math.max(0, r.top) + "px " + Math.max(0, innerWidth - r.right) +
+        "px " + Math.max(0, innerHeight - r.bottom) + "px " + Math.max(0, r.left) + "px)";
+    }
     return o;
   }
   function nodeEl(nid) {
