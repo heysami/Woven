@@ -3304,12 +3304,6 @@ button {
   padding: 0 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  /* Own stacking layer above the canvas row. The bar's .tab-tip chips fly
-     DOWN out of the 44px top row into the canvas row below; without this the
-     canvas-wrap (position:relative, grid row 2) paints over them and the
-     tooltip body is hidden behind the diamond lattice. */
-  position: relative;
-  z-index: 5;
 }
 .workflow-bar-spacer { margin-left: auto; }
 /* v3.12 — Quiet the top-bar chrome: the status chips + action buttons drop

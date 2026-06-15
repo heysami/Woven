@@ -8636,13 +8636,15 @@ function useRequiredLocalSkills() {
    dialog itself (WorkflowSettingsDialog) is rendered as a sibling at the
    consumer site so it portals over whatever surface is active. */
 function SettingsGearButton({ onClick, className }) {
-  return html`<button
+  // HoverTip portals its bubble to document.body, so the tip escapes the
+  // canvas's `will-change: transform` stacking context (an in-flow .tab-tip
+  // chip gets painted under the canvas and only its arrow peeks out).
+  return html`<${HoverTip}
     className=${"workflow-toolbar-gear " + (className || "")}
-    title="Settings · API keys"
-    data-tip-host="true"
-    aria-label="Settings"
+    ariaLabel="Settings"
+    tip="Settings · API keys"
     onClick=${onClick}
-  ><${Icon.Gear}/><span className="tab-tip">Settings</span></button>`;
+  ><${Icon.Gear}/><//>`;
 }
 
 /* Top-bar Exports button — sibling of SettingsGearButton. Mounted
@@ -8653,13 +8655,12 @@ function SettingsGearButton({ onClick, className }) {
    ⤓ glyph so the connection reads visually: "this is where the
    destination for that button comes from." */
 function WorkflowExportsButton({ onClick, className }) {
-  return html`<button
+  return html`<${HoverTip}
     className=${"workflow-toolbar-gear " + (className || "")}
-    title="Exports · per-project folder"
-    data-tip-host="true"
-    aria-label="Exports"
+    ariaLabel="Exports"
+    tip="Exports · per-project folder"
     onClick=${onClick}
-  ><${Icon.FolderUp}/><span className="tab-tip">Exports</span></button>`;
+  ><${Icon.FolderUp}/><//>`;
 }
 
 
@@ -35999,24 +36000,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
-        <button
+        <${HoverTip}
           className="workflow-bar-fullscreen"
-          data-tip-host="true"
-          aria-label="Enter fullscreen — hides the top bar + library so only the canvas is visible. Press Esc or ⌘. to exit."
+          ariaLabel="Enter fullscreen — hides the top bar + library so only the canvas is visible. Press Esc or ⌘. to exit."
+          tip="Fullscreen canvas · ⌘."
           onClick=${() => setFullscreen(true)}
-        >⛶<span className="tab-tip">Fullscreen canvas <kbd>⌘.</kbd></span></button>
+        >⛶<//>
         <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)}/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
-        <button
-          type="button"
+        <${HoverTip}
           className="workflow-zoom"
-          title=${zoom === 1 ? "Canvas zoom — ⌘+wheel to zoom, Space+drag to pan" : "Canvas zoom " + Math.round(zoom * 100) + "% — click to reset to 100%"}
-          data-tip-host="true"
+          ariaLabel="Canvas zoom"
+          tip=${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}
           onClick=${() => { if (zoom !== 1) setZoom(1); }}
-        >
-          ${Math.round(zoom * 100)}%
-          <span className="tab-tip">${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}</span>
-        </button>
+        >${Math.round(zoom * 100)}%<//>
         <${GoLiveButton}/>
       </div>
       ${fullscreen && html`
