@@ -1033,6 +1033,24 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       canvasEl.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
     }
   }, [pan, zoom]);
+  // Embed scroll-lock. In a non-interactive embed (the Canvas-frames node),
+  // the canvas pans via CSS transform and the wrap is overflow:hidden, so it
+  // must NEVER hold a native scroll offset. But overflow:hidden does NOT stop
+  // PROGRAMMATIC scrolling — a frame's setupScript that clicks/focuses an
+  // element triggers the browser's focus→scrollIntoView, which scrolls the
+  // wrap and shifts the whole composition off its top-left origin (the user
+  // sees the frames node "scrolled to a random place"). The inner frames keep
+  // firing setupScripts as they load, so a one-shot reset isn't enough: clamp
+  // every scroll back to 0 for as long as the embed lives. Only active when
+  // interactive:false, so the real editor canvas is untouched.
+  useEffect(() => {
+    if (interactive) return;
+    const el = wrapRef.current; if (!el) return;
+    const clamp = () => { if (el.scrollLeft || el.scrollTop) { el.scrollLeft = 0; el.scrollTop = 0; } };
+    el.addEventListener("scroll", clamp, { passive: true });
+    clamp();
+    return () => el.removeEventListener("scroll", clamp, { passive: true });
+  }, [interactive]);
   // v3.4.2 — Expose pan/zoom-in-progress as a global flag + body attribute
   // so portaled chrome (asset action bar, picked-element bar, select
   // badge) can skip its per-frame `getBoundingClientRect` polling during
@@ -25529,7 +25547,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // carries frames) and we trust it; a NEGATIVE read is re-verified against
     // disk before we prompt to regenerate. See bug: "click canvas-frames →
     // 'doesn't exist' even though the editor shows them created."
-    const spawnNode = () => {
+    const spawnNode = (awaiting) => {
       const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       const w = 800, h = 540;
       const px = typeof protoNode.x === "number" ? protoNode.x : 0;
@@ -25538,6 +25556,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // Place to the RIGHT of the prototype with a 60px gutter. If it'd
       // collide with another node, the user can drag it after spawn —
       // we don't try to be clever about collision avoidance here.
+      // `awaitFrames` marks a node spawned BEFORE its data exists (the
+      // generate path): the daemon's file watcher doesn't watch editor/, so
+      // writing editor/data.js fires no asset-changed broadcast and the embed
+      // would sit empty until a manual re-click. The node polls for frames
+      // and reloads itself once they land (WorkflowFramesNode).
       setData(d => ({
         ...d,
         nodes: [...(d.nodes || []), {
@@ -25548,6 +25571,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           w, h,
           branch,
           host: protoNode.id,
+          ...(awaiting ? { awaitFrames: true } : {}),
         }],
       }));
     };
@@ -25606,7 +25630,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
     // Spawn the node first so the user sees it pulsing while generation
     // runs (matches the eager-spawn pattern used by skill runs elsewhere).
-    spawnNode();
+    // awaiting=true → the node polls for frames and self-reloads when the
+    // generation writes editor/data.js (no asset-changed event covers it).
+    spawnNode(true);
 
     // Dispatch the frames-only regen prompt. We piggyback on the
     // workflow-mode chat surface via onStartChatWithPrompt — same path
@@ -41950,6 +41976,43 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);
   }, [protoSlug]);
+
+  // Await-generation poll. A node spawned via the generate path (awaitFrames)
+  // loads its embed BEFORE editor/data.js exists, so it boots empty. The
+  // daemon's file watcher doesn't watch editor/, so no asset-changed event
+  // fires when the generation writes editor/data.js — without this the embed
+  // would sit empty until a manual re-click. Poll the SAME file the embed
+  // loads until frames appear, then reload the embed once. Lightweight (a JS
+  // file eval'd in a throwaway window), capped so a cancelled/failed run
+  // doesn't poll forever.
+  useEffect(() => {
+    if (!node.awaitFrames) return;
+    let stop = false, tries = 0;
+    const MAX_TRIES = 120; // ~6 min at 3s — generation can be slow
+    const tick = async () => {
+      if (stop) return;
+      tries++;
+      try {
+        let url = apiUrl(`/editor/data.js`);
+        url += (url.includes("?") ? "&" : "?") + "prototype=" + encodeURIComponent(protoSlug);
+        const res = await fetch(url, { cache: "no-store" });
+        if (res.ok) {
+          const sandbox = {};
+          new Function("window", await res.text())(sandbox);
+          const fr = sandbox.EDITOR_DATA && sandbox.EDITOR_DATA.frames;
+          if (Array.isArray(fr) && fr.length > 0) {
+            stop = true;
+            loadRetryRef.current = 0;
+            setNonce(n => n + 1); // reload the embed against the new data
+            return;
+          }
+        }
+      } catch (_) { /* mid-write / parse error — keep polling */ }
+      if (!stop && tries < MAX_TRIES) timer = setTimeout(tick, 3000);
+    };
+    let timer = setTimeout(tick, 1500);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [node.awaitFrames, protoSlug]);
 
   // Drag + resize — relative-delta helpers shared with every other node.
   const onHandleDown = useCallback((e) => {
