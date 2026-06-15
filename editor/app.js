@@ -19942,7 +19942,18 @@ function WorkflowCanvas() {
         _rawDiskNodesRef.current = _diskNodes;
         savedSnapshotRef.current.clear();
         for (const dn of _diskNodes) {
-          for (const f of _editableFieldsForKind(dn)) {
+          if (!dn || typeof dn.id !== "string") continue;
+          // Seed a baseline for EVERY field on the node — not only the ones
+          // _editableFieldsForKind enumerates right now. That function consults
+          // window.__thKindRegistry, fetched in a SEPARATE async effect; if it
+          // hasn't landed yet, content fields (text/title/…) would be skipped
+          // here, left with an undefined snapshot, judged permanently DIRTY by
+          // the reload-merge, and never pull a collaborator's edit until a
+          // manual refresh (the "only updates after refresh" desync). Seeding
+          // all keys makes the baseline independent of registry timing — the
+          // merge still only PULLS editable fields, but every one now has a
+          // baseline the moment the registry resolves.
+          for (const f of Object.keys(dn)) {
             savedSnapshotRef.current.set(dn.id + "|" + f, _stableClone(dn[f]));
           }
           // v3.4.8 — runStatus / runError are dirty-tracked too (Bug B).
