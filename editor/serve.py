@@ -6300,7 +6300,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
             if m_live:
                 return self._live_op(m_live.group(1), m_live.group(2), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
             if parsed.path == "/__live_presence":
@@ -6584,6 +6584,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._shares_list()
         if url_path == "/__git/status":
             return self._git_status(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__git/log":
+            return self._git_log(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_thumbnail":
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
@@ -12582,7 +12584,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
-    # POST /__git/(connect|commit|publish|resolve)?project=<id>
+    # GET /__git/log?project=<id>&limit=<n>
+    def _git_log(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            limit = int(_qs_get(qs, "limit") or "30")
+        except Exception:
+            limit = 30
+        limit = max(1, min(limit, 200))
+        try:
+            return self._reply(200, {"commits": _gitops.log(root, limit=limit)})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
+    # POST /__git/(connect|commit|publish|resolve|pull)?project=<id>
     def _git_op(self, op, qs):
         try:
             root = resolve_project_root(qs, require_explicit=True)
@@ -12611,6 +12629,26 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(200, {"ok": True, **res})
             if op == "publish":
                 res = _gitops.publish(root, token=body.get("token"))
+                return self._reply(200, {"ok": True, **res})
+            if op == "pull":
+                # Guard (host-authoritative): refuse to merge remote history on
+                # top of uncommitted work or an active live session — either
+                # would clobber in-flight host/guest edits. The host commits /
+                # ends the session first, then pulls.
+                pid = (_qs_get(qs, "project") or "").strip()
+                st = _gitops.status(root)
+                if not st.get("repo"):
+                    return self._reply(400, {"error": "project is not a git repo — connect it first"})
+                if st.get("dirty"):
+                    return self._reply(409, {"error": "working tree has uncommitted changes — commit them before pulling"})
+                if pid and _live.project_has_live_session(pid):
+                    return self._reply(409, {"error": "a live session is active — end it before pulling remote changes"})
+                res = _gitops.pull(root, token=body.get("token"))
+                # Surface the merged state to the editor (and any guests) exactly
+                # like any other edit, so the canvas reloads to the new HEAD.
+                if pid:
+                    try: _broadcast_workflow_change(pid)
+                    except Exception: pass
                 return self._reply(200, {"ok": True, **res})
             if op == "resolve":
                 # Agent-assisted conflict resolution: hand the conflicted files

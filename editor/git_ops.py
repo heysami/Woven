@@ -194,6 +194,56 @@ def publish(root, token=None):
     return {"ok": True, "branch": branch, "detail": (err or out).strip()[:400]}
 
 
+def pull(root, token=None):
+    """Fetch + merge origin into the current branch. GUARDED by the caller:
+    serve.py only invokes this on a clean tree with no active live session, so
+    we never merge remote history on top of in-flight host/guest edits (Live is
+    host-authoritative). On conflict we leave the tree mid-merge and report the
+    conflicted paths so the existing resolve() flow picks them up. If a token is
+    given, use it for this fetch only (https remote) so we never persist creds.
+    Returns {ok, branch, detail, conflicts}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    code, remote, _e = _git(root, "remote", "get-url", "origin")
+    if code != 0 or not remote.strip():
+        raise RuntimeError("no 'origin' remote — connect the project to GitHub first")
+    _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    branch = branch.strip() or "main"
+    pull_args = ["pull", "--no-edit", "origin", branch]
+    if token and remote.strip().startswith("https://"):
+        # one-shot authenticated URL; not written to config
+        env_remote = remote.strip().replace("https://", f"https://x-access-token:{token}@", 1)
+        pull_args = ["pull", "--no-edit", env_remote, branch]
+    code, out, err = _git(root, *pull_args, timeout=120)
+    conflicts = conflicted_files(root)
+    if code != 0 and not conflicts:
+        raise RuntimeError(f"git pull failed: {(err or out).strip()[:400]}")
+    return {"ok": not conflicts, "branch": branch,
+            "detail": (out or err).strip()[:400], "conflicts": conflicts}
+
+
+def log(root, limit=30):
+    """Recent commit history for the panel's history view. Returns a list of
+    {sha, short, subject, author, relative, iso}, newest first. \\x1f field +
+    \\n record separators so subjects with spaces/pipes survive the split."""
+    if not is_repo(root):
+        return []
+    fmt = "%H%x1f%h%x1f%s%x1f%an%x1f%ar%x1f%aI"
+    code, out, _e = _git(root, "log", f"-{int(limit)}", f"--pretty=format:{fmt}")
+    if code != 0:
+        return []
+    rows = []
+    for ln in out.splitlines():
+        if not ln.strip():
+            continue
+        parts = ln.split("\x1f")
+        if len(parts) < 6:
+            continue
+        rows.append({"sha": parts[0], "short": parts[1], "subject": parts[2],
+                     "author": parts[3], "relative": parts[4], "iso": parts[5]})
+    return rows
+
+
 def conflicted_files(root):
     """Paths with merge conflicts (for agent-assisted resolution)."""
     if not is_repo(root):

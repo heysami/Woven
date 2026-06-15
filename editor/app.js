@@ -8932,7 +8932,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
   useEffect(() => {
     const onOpen = (e) => {
       const which = e?.detail?.panel;
-      if (which === "runs" || which === "tasks" || which === "live") setActive(which);
+      if (which === "runs" || which === "tasks" || which === "live" || which === "comments") setActive(which);
     };
     window.addEventListener("th:open-rail-panel", onOpen);
     return () => window.removeEventListener("th:open-rail-panel", onOpen);
@@ -9058,6 +9058,28 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
           <${Icon.Globe}/>
         </span>
       <//>
+      <${HoverTip}
+        placement="left"
+        className=${"th-right-rail-btn" + (active === "comments" ? " is-active" : "")}
+        ariaLabel="Open comments"
+        tip="Comments — reviewer & live-guest feedback across the project (not AI build comments)"
+        onClick=${() => setActive(a => a === "comments" ? null : "comments")}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.User}/>
+        </span>
+      <//>
+      <${HoverTip}
+        placement="left"
+        className=${"th-right-rail-btn th-right-rail-btn-git" + (active === "git" ? " is-active" : "")}
+        ariaLabel="Open git & GitHub"
+        tip="Git — commit, push, pull & history for this project"
+        onClick=${() => setActive(a => a === "git" ? null : "git")}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.Branch}/>
+        </span>
+      <//>
     </nav>
     ${panel}
     ${active === "tasks" && html`<${TasksSubagentsPanel}
@@ -9070,6 +9092,14 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
       railTop=${railTop}
       panelRef=${panelRef}
       onClose=${() => setActive(null)}
+    />`}
+    ${active === "comments" && html`<${CommentsPanel}
+      railTop=${railTop}
+      panelRef=${panelRef}
+    />`}
+    ${active === "git" && html`<${GitPanel}
+      railTop=${railTop}
+      panelRef=${panelRef}
     />`}
   `;
 }
@@ -9556,6 +9586,310 @@ function GoLiveButton() {
       <span className="go-live-label">${isLive ? `Live · ${people.length}` : "Go Live"}</span>
     </button>
   `;
+}
+
+// Relative "x ago" for an ISO timestamp (share comments store createdAt).
+function formatIsoAge(iso) {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60)    return `${sec}s ago`;
+  if (sec < 3600)  return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+/* CommentsPanel — fourth right-rail panel: a project-wide inbox of PEOPLE
+   comments (reviewers on shared prototypes + live-session guests), distinct
+   from the editor's AI build-comments. Reads the same store the public gate
+   writes (GET /__share_comments with no prototype filter = every comment in the
+   project), grouped by prototype, with reply / resolve / delete using the
+   existing POST ops. Available in both editor + workflow modes via the rail, so
+   the editor finally has access to the people-comment stream. Read-only over
+   existing endpoints — no daemon change needed. */
+function CommentsPanel({ railTop, panelRef }) {
+  const [comments, setComments] = useState(null);   // null = loading
+  const [filter, setFilter] = useState("open");
+  const [err, setErr] = useState(null);
+  const [replyFor, setReplyFor] = useState(null);   // commentId with an open composer
+  const [replyText, setReplyText] = useState("");
+
+  const reload = useCallback(() => {
+    // apiUrl injects ?project=; no prototype filter → every comment in the project.
+    fetch(apiUrl("/__share_comments"))
+      .then(r => (r.ok ? r.json() : { comments: [] }))
+      .then(j => setComments(j.comments || []))
+      .catch(() => setComments([]));
+  }, []);
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 6000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 5000); };
+  const cop = async (body) => {
+    try {
+      const r = await fetch(apiUrl("/__share_comments"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "comment op failed");
+      reload();
+    } catch (e) { flashErr(String(e.message || e)); }
+  };
+  const isResolved = (c) => c.status === "done" || c.status === "archived";
+  const toggleResolve = (c) => cop({ op: "status", prototype: c.prototype, commentId: c.id, status: isResolved(c) ? "open" : "done" });
+  const del = (c) => { if (confirm("Delete this comment? This can't be undone.")) cop({ op: "delete", prototype: c.prototype, commentId: c.id }); };
+  const sendReply = (c) => {
+    const t = replyText.trim();
+    if (!t) return;
+    cop({ op: "reply", prototype: c.prototype, commentId: c.id, text: t });
+    setReplyText(""); setReplyFor(null);
+  };
+
+  const list = comments || [];
+  const visible = list.filter(c => filter === "all" ? true : filter === "resolved" ? isResolved(c) : !isResolved(c));
+  // Group by prototype, newest comment first within each group.
+  const groups = {};
+  for (const c of visible) (groups[c.prototype || "—"] = groups[c.prototype || "—"] || []).push(c);
+  const groupKeys = Object.keys(groups).sort();
+  for (const k of groupKeys) groups[k].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+  const openCount = list.filter(c => !isResolved(c)).length;
+
+  const authorName = (a) => (a && a.name) || "Someone";
+
+  return createPortal(html`
+    <div
+      className="th-rail-panel th-comments-panel"
+      ref=${panelRef}
+      style=${railTop != null ? { top: railTop + "px" } : null}>
+      <div className="runs-panel-head">
+        <span>Comments${openCount ? " · " + openCount : ""}</span>
+        <button className="th-icon-btn" onClick=${reload} title="Refresh"><${Icon.Refresh}/></button>
+      </div>
+      <div className="th-comments-sub">From reviewers &amp; live-session guests — separate from the editor's AI build comments.</div>
+      <div className="th-tasks-filter" role="tablist" aria-label="Filter">
+        ${[["open", "Open"], ["resolved", "Resolved"], ["all", "All"]].map(([k, lbl]) => html`
+          <button key=${k} role="tab" aria-selected=${filter === k}
+            className=${"th-tasks-filter-btn" + (filter === k ? " is-active" : "")}
+            onClick=${() => setFilter(k)}>${lbl}</button>
+        `)}
+      </div>
+      <div className="th-rail-panel-body">
+        ${err && html`<div className="shares-error-banner">${err}</div>`}
+        ${comments === null && html`<div className="runs-empty">Loading…</div>`}
+        ${comments !== null && visible.length === 0 && html`
+          <div className="runs-empty">No ${filter === "all" ? "" : filter + " "}comments yet. Reviewers on a shared prototype (and guests in a live session) leave comments here — they're for people, not the AI.</div>
+        `}
+        ${groupKeys.map(slug => html`
+          <div className="th-comments-group" key=${slug}>
+            <div className="th-comments-group-head">source/${slug}/</div>
+            ${groups[slug].map(c => html`
+              <div className=${"th-comment" + (isResolved(c) ? " is-resolved" : "")} key=${c.id}>
+                <div className="th-comment-head">
+                  <span className="th-comment-avatar">${authorName(c.author).slice(0, 1).toUpperCase()}</span>
+                  <span className="th-comment-author">${authorName(c.author)}</span>
+                  <span className="th-comment-age">${formatIsoAge(c.createdAt)}</span>
+                </div>
+                <div className="th-comment-text">${c.text}</div>
+                ${(c.page || (c.anchor && c.anchor.text)) && html`
+                  <div className="th-comment-loc">${c.page || ""}${c.anchor && c.anchor.text ? " · “" + c.anchor.text.slice(0, 40) + "”" : ""}</div>
+                `}
+                ${(c.replies || []).map(r => html`
+                  <div className="th-comment-reply" key=${r.id}>
+                    <span className="th-comment-reply-author">${authorName(r.author)}</span>
+                    <span className="th-comment-reply-text">${r.text}</span>
+                  </div>
+                `)}
+                <div className="th-comment-actions">
+                  <button className="th-icon-btn" title="Reply" onClick=${() => { setReplyFor(replyFor === c.id ? null : c.id); setReplyText(""); }}><${Icon.Forward}/></button>
+                  <button className=${"th-icon-btn" + (isResolved(c) ? "" : " is-primary")} title=${isResolved(c) ? "Reopen" : "Mark resolved"} onClick=${() => toggleResolve(c)}><${Icon.Check}/></button>
+                  <button className="th-icon-btn is-danger" title="Delete comment" onClick=${() => del(c)}><${Icon.Trash}/></button>
+                </div>
+                ${replyFor === c.id && html`
+                  <div className="th-comment-replybox">
+                    <textarea className="th-comment-replyinput" placeholder="Reply…" value=${replyText}
+                      onInput=${(e) => setReplyText(e.target.value)}
+                      onKeyDown=${(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply(c); }}/>
+                    <button className="th-comment-send" disabled=${!replyText.trim()} onClick=${() => sendReply(c)}>Reply</button>
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        `)}
+      </div>
+    </div>
+  `, document.body);
+}
+
+/* GitPanel — fifth (bottom-most) right-rail panel: local git + GitHub for the
+   active project. Commit / push / pull / connect over the existing /__git/*
+   daemon routes (status, commit, publish, connect, resolve) plus the new
+   /__git/log (history) and /__git/pull (guarded). Pull is host-authoritative —
+   the daemon refuses it while the tree is dirty or a live session is active, so
+   we never merge remote history on top of in-flight edits. Commits credit any
+   active live-session guests as Co-authored-by via the share's id. Available in
+   both editor + workflow modes through the shared rail. */
+function GitPanel({ railTop, panelRef }) {
+  const [st, setSt] = useState(null);        // /__git/status, null = loading
+  const [commits, setCommits] = useState(null);
+  const [err, setErr] = useState(null);
+  const [note, setNote] = useState(null);    // transient success line
+  const [busy, setBusy] = useState("");       // "commit"|"push"|"pull"|"connect"
+  const [msg, setMsg] = useState("");         // commit message (seeded from draft)
+  const [remote, setRemote] = useState("");
+  const msgTouched = useRef(false);           // stop the poll clobbering typed text
+
+  const reload = useCallback(() => {
+    fetch(apiUrl("/__git/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        setSt(j || { repo: false });
+        if (j && !msgTouched.current) setMsg(j.draftMessage || "");
+      })
+      .catch(() => setSt({ repo: false }));
+    fetch(apiUrl("/__git/log") + "&limit=40")
+      .then(r => (r.ok ? r.json() : { commits: [] }))
+      .then(j => setCommits(j.commits || []))
+      .catch(() => setCommits([]));
+  }, []);
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 8000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  const flashErr = (m) => { setErr(String(m)); setTimeout(() => setErr(null), 6000); };
+  const flashNote = (m) => { setNote(String(m)); setTimeout(() => setNote(null), 4000); };
+
+  // Find an active live session so commits credit guests as Co-authored-by.
+  const activeShareId = async () => {
+    try {
+      const r = await fetch("/__shares");
+      const j = r.ok ? await r.json() : {};
+      const shares = Array.isArray(j) ? j : (j.shares || []);
+      const live = shares.find(s => s && s.live && (s.live.participants || []).length > 0);
+      return live ? live.id : null;
+    } catch { return null; }
+  };
+
+  const op = async (kind, body) => {
+    setBusy(kind); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__git/" + kind), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || (kind + " failed"));
+      return j;
+    } catch (e) { flashErr(e.message || e); return null; }
+    finally { setBusy(""); }
+  };
+
+  const doConnect = async () => {
+    const j = await op("connect", { remote: remote.trim() || undefined });
+    if (j) { flashNote("Connected"); msgTouched.current = false; reload(); }
+  };
+  const doCommit = async () => {
+    const shareId = await activeShareId();
+    const j = await op("commit", { message: msg, shareId });
+    if (j) {
+      flashNote(j.empty ? "Nothing to commit" : "Committed " + (j.sha || "").slice(0, 7));
+      msgTouched.current = false; reload();
+    }
+  };
+  const doPush = async () => {
+    const j = await op("publish", {});
+    if (j) { flashNote("Pushed to origin/" + (j.branch || "")); reload(); }
+  };
+  const doPull = async () => {
+    const j = await op("pull", {});
+    if (j) {
+      if (j.conflicts && j.conflicts.length)
+        flashErr(j.conflicts.length + " file(s) conflicted — resolve before continuing");
+      else flashNote("Pulled — up to date");
+      reload();
+    }
+  };
+
+  const loading = st === null;
+  const repo = !!(st && st.repo);
+  const hasRemote = repo && !!st.remote;
+
+  return createPortal(html`
+    <div className="th-rail-panel th-git-panel" ref=${panelRef}
+      style=${railTop != null ? { top: railTop + "px" } : null}>
+      <div className="runs-panel-head">
+        <span>Git${repo && st.branch ? " · " + st.branch : ""}</span>
+        <button className="th-icon-btn" onClick=${reload} title="Refresh"><${Icon.Refresh}/></button>
+      </div>
+      <div className="th-rail-panel-body">
+        ${err && html`<div className="shares-error-banner">${err}</div>`}
+        ${note && html`<div className="th-git-note">${note}</div>`}
+        ${loading && html`<div className="runs-empty">Loading…</div>`}
+
+        ${!loading && st.gitAvailable === false && html`
+          <div className="runs-empty">git isn't installed on this machine. Install git to use version control here.</div>`}
+
+        ${!loading && st.gitAvailable !== false && !repo && html`
+          <div className="th-git-connect">
+            <div className="th-live-hint">This project isn't a git repo yet. Connect it to start versioning — optionally point it at a GitHub remote now (you can add one later).</div>
+            <input className="th-git-input" placeholder="https://github.com/you/repo.git (optional)"
+              value=${remote} onInput=${e => setRemote(e.target.value)} />
+            <button className="th-git-btn is-primary" disabled=${busy === "connect"} onClick=${doConnect}>
+              <${Icon.Branch}/> ${busy === "connect" ? "Connecting…" : "Connect git"}</button>
+          </div>`}
+
+        ${!loading && repo && html`
+          <div className="th-git-status">
+            <div className="th-git-stat-row">
+              <span className="th-git-pill">${st.dirty ? (st.changedCount + " changed") : "clean"}</span>
+              ${st.ahead > 0 && html`<span className="th-git-pill is-ahead">↑ ${st.ahead}</span>`}
+              ${st.behind > 0 && html`<span className="th-git-pill is-behind">↓ ${st.behind}</span>`}
+              ${!hasRemote && html`<span className="th-git-pill">no remote</span>`}
+            </div>
+
+            <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
+              onInput=${e => { msgTouched.current = true; setMsg(e.target.value); }}></textarea>
+
+            <div className="th-git-actions">
+              <button className="th-git-btn is-primary" disabled=${!st.dirty || busy === "commit"} onClick=${doCommit}>
+                <${Icon.Check}/> ${busy === "commit" ? "Committing…" : "Commit"}</button>
+              <button className="th-git-btn" disabled=${!hasRemote || busy === "push"} onClick=${doPush}
+                title=${hasRemote ? "Push commits to origin" : "Connect a remote first"}>
+                <${Icon.ArrowUp}/> ${busy === "push" ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
+              <button className="th-git-btn" disabled=${!hasRemote || busy === "pull"} onClick=${doPull}
+                title=${hasRemote ? "Pull from origin — blocked while the tree is dirty or a live session is running" : "Connect a remote first"}>
+                <${Icon.Download}/> ${busy === "pull" ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
+            </div>
+
+            ${st.conflicts && st.conflicts.length > 0 && html`
+              <div className="shares-error-banner">${st.conflicts.length} unresolved conflict(s): ${st.conflicts.slice(0, 5).join(", ")}</div>`}
+
+            ${hasRemote && html`<div className="th-git-remote" title=${st.remote}>${st.remote}</div>`}
+
+            <div className="th-git-history-head">History</div>
+            ${commits === null && html`<div className="runs-empty">Loading…</div>`}
+            ${commits !== null && commits.length === 0 && html`<div className="runs-empty">No commits yet — make your first commit above.</div>`}
+            ${(commits || []).map(c => html`
+              <div className="th-git-commit" key=${c.sha}>
+                <div className="th-git-commit-subj">${c.subject}</div>
+                <div className="th-git-commit-meta">
+                  <span className="th-git-sha">${c.short}</span>
+                  <span className="th-git-commit-author">${c.author}</span>
+                  <span className="th-git-commit-age">${c.relative}</span>
+                </div>
+              </div>
+            `)}
+          </div>`}
+      </div>
+    </div>
+  `, document.body);
 }
 
 /* SSE consumer — fetch + getReader pattern from open-design's
