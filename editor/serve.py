@@ -13308,9 +13308,11 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Moves source/<slug>/ (+ its editor/<slug>.data.js / .layout.js) to
     # source/.trash/<slug>-<timestamp>/ — recoverable, no hard-rm — and clears
     # the prototype from .starred-prototypes.json + .thumbnail-prototype.json so
-    # no broken bookmark lingers. Refuses to delete the LAST prototype or the
-    # project's DEFAULT (the one editor/data.js falls back to), since either
-    # would strand the editor. Depth-1 prototypes only.
+    # no broken bookmark lingers. Refuses to delete the LAST prototype only.
+    # There is NO privileged, undeletable "default" prototype: deleting the one
+    # the legacy fallback editor/data.js happens to represent PROMOTES a
+    # surviving prototype's sidecar into editor/data.js so nothing is stranded.
+    # Depth-1 prototypes only.
     def _prototype_delete(self, qs):
         try:
             project_root = resolve_project_root(qs)
@@ -13334,14 +13336,28 @@ class H(http.server.SimpleHTTPRequestHandler):
             roots = [slug]
         if len(roots) <= 1:
             return self._reply(409, {"error": "can't delete the only prototype in the project", "id": slug})
-        # Guard: don't strand the fallback editor/data.js (the default proto)
-        # unless this prototype has its OWN per-proto data file.
-        if slug == self._default_prototype_slug(project_root) and \
-           not os.path.isfile(os.path.join(editor_dir, f"{slug}.data.js")):
-            return self._reply(409, {
-                "error": "this is the project's default prototype — rename it or make another the default first",
-                "id": slug,
-            })
+
+        # The legacy fallback editor/data.js is the file served for the bare
+        # no-?prototype= URL and for any prototype lacking its own
+        # editor/<slug>.data.js sidecar. If THIS prototype is the one that
+        # fallback currently represents, deleting its source would 404 the
+        # fallback — so PROMOTE a surviving prototype's sidecar into
+        # editor/data.js in its place (done after the trash move, below).
+        # Every other prototype in a multi-prototype project carries its own
+        # sidecar, so a promotion target effectively always exists; the narrow
+        # 409 below only fires for a malformed project where none does.
+        promote = None
+        if slug == self._default_prototype_slug(project_root):
+            for n in sorted(roots):
+                if n != slug and os.path.isfile(os.path.join(editor_dir, f"{n}.data.js")):
+                    promote = n
+                    break
+            if not promote:
+                return self._reply(409, {
+                    "error": "can't delete this prototype: it owns the fallback editor/data.js "
+                             "and no sibling prototype has its own data file to take its place",
+                    "id": slug,
+                })
 
         trash_dir = os.path.join(src_root, ".trash")
         os.makedirs(trash_dir, exist_ok=True)
@@ -13360,6 +13376,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                     shutil.move(sidecar, os.path.join(target, f"{slug}{suffix}"))
                 except OSError:
                     pass
+
+        # Promote a survivor into the fallback editor/data.js slot when the
+        # deleted prototype was the one it represented. The outgoing data.js
+        # (the deleted prototype's editor data, which lives in the shared file
+        # rather than a <slug>.data.js sidecar) rides into the same trash
+        # folder, keeping the delete fully recoverable. The promoted survivor
+        # then resolves through the fallback exactly as it did via its sidecar.
+        promoted = None
+        if promote:
+            legacy = os.path.join(editor_dir, "data.js")
+            promoted_sidecar = os.path.join(editor_dir, f"{promote}.data.js")
+            try:
+                if os.path.isfile(legacy):
+                    shutil.move(legacy, os.path.join(target, "data.js"))
+                shutil.move(promoted_sidecar, legacy)
+                promoted = promote
+            except OSError:
+                pass
 
         # Drop any star bookmark for this slug (or its sub-prototypes).
         try:
@@ -13382,7 +13416,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
-        return self._reply(200, {"ok": True, "id": slug, "trashedTo": f"source/.trash/{slug}-{stamp}/"})
+        return self._reply(200, {
+            "ok": True, "id": slug, "trashedTo": f"source/.trash/{slug}-{stamp}/",
+            **({"promotedDefault": promoted} if promoted else {}),
+        })
 
     # ─────────────────────────────────────────────────────────────────────
     # Starred prototypes — per-project bookmarks of specific prototype slugs
