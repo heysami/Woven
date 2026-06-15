@@ -19773,6 +19773,23 @@ function WorkflowCanvas() {
   // history entry — which prunes the redo tail beyond it. User reported:
   // "undo works fine but redo stops midway."
   const skipNextSaveRef = useRef(false);
+  // Live Session — JSON of {nodes,edges,wb} as last seen ON DISK (seeded at
+  // load, refreshed on every reload-fetch + successful save). The debounced
+  // save compares against this and SKIPS when nothing diverges, so PULLING a
+  // collaborator's change (which calls setData) never re-POSTs the identical
+  // doc back. Those redundant "echo-saves" were the engine of a feedback storm
+  // — every pull rewrote workflow.json, which fanned an SSE reload to everyone,
+  // which reset their 350ms save debounce, so a real edit's save never fired,
+  // its snapshot never advanced, and the field was judged permanently dirty →
+  // the merge stopped pulling and the node only updated after a manual refresh.
+  const lastPersistedDocRef = useRef(null);
+  // Live Session — bumped to re-run the debounced save as a self-heal. A
+  // guest's proxied SSE closes on every change and es.onerror ABORTS the
+  // in-flight save (AbortError → no retry), so an edit POSTed at that instant
+  // is dropped and the field stays dirty until the NEXT manual edit. A periodic
+  // bump re-attempts the save; the echo-save guard makes it a no-op when the
+  // doc already matches disk, so it only actually POSTs when something is dirty.
+  const [forceSaveTick, setForceSaveTick] = useState(0);
   if (!saveAbortRef.current && typeof AbortController !== "undefined") {
     saveAbortRef.current = new AbortController();
   }
@@ -19830,11 +19847,18 @@ function WorkflowCanvas() {
       es.onerror = () => {
         // v2.50 — G7: SSE just disconnected. Abort any in-flight save so it
         // doesn't sit waiting on a dead connection (which would otherwise
-        // hang for fetch's full timeout and false-positive as "daemon down"
-        // when the user's next edit hits a frozen save queue). The next
-        // SSE reconnect refreshes the liveness probe; the next user edit
-        // triggers a fresh save with a new abort controller. EventSource
-        // auto-reconnects on its own.
+        // hang for fetch's full timeout and false-positive as "daemon down").
+        //
+        // BUT NOT during a live session. The save runs on a SEPARATE connection
+        // from the SSE, and the guest's proxied SSE (long-poll) closes on EVERY
+        // change and reconnects — a normal, healthy event, not a dead daemon.
+        // Aborting here killed saves whose write had ALREADY reached the server,
+        // so the client never ran its success handler and its saved-snapshot
+        // stayed behind the local value → the field was judged permanently
+        // dirty → the merge stopped pulling → the node only updated after a
+        // manual refresh. In a live session, leave in-flight saves alone; the
+        // fetch timeout + retry ladder still covers a genuinely dead connection.
+        if (window.__thLiveActive) return;
         try {
           if (saveAbortRef.current) {
             try { saveAbortRef.current.abort(); } catch {}
@@ -19863,6 +19887,9 @@ function WorkflowCanvas() {
       try {
         if (window.__thLiveActive && loadedRef.current) {
           window.dispatchEvent(new CustomEvent("th:workflow-reload"));
+          // Self-heal any dirty edit whose save was aborted by an SSE reconnect
+          // (guest long-poll). No-op when clean (echo-save guard skips it).
+          setForceSaveTick(t => t + 1);
         }
       } catch {}
     }, 4000);
@@ -19974,6 +20001,12 @@ function WorkflowCanvas() {
             savedSnapshotRef.current.set("wb:" + it.id, _stableClone(it));
           }
         }
+        // Baseline for the echo-save guard (see lastPersistedDocRef).
+        try {
+          lastPersistedDocRef.current = JSON.stringify({
+            nodes: _diskNodes, edges: j.edges || [], wb: Array.isArray(j.wb) ? j.wb : [],
+          });
+        } catch { lastPersistedDocRef.current = null; }
       })
       .catch(e => { if (!cancelled) setErr(String(e?.message || e)); });
     return () => { cancelled = true; };
@@ -20026,6 +20059,21 @@ function WorkflowCanvas() {
       return;
     }
     const t = setTimeout(() => {
+      // Live Session — skip the redundant "echo-save" of state we just PULLED
+      // from disk. Without this, a merge's setData re-POSTs the identical doc,
+      // churning workflow.json → SSE reload to everyone → their save debounce
+      // resets → real edits never flush → permanently-dirty fields → the
+      // "only updates after refresh" desync. Only fires in a live session;
+      // solo editing has no other writer, so it saves normally (pan/zoom too).
+      if (window.__thLiveActive && lastPersistedDocRef.current !== null
+          && !deletedIdsRef.current.size && !deletedWbIdsRef.current.size) {
+        try {
+          const coreStr = JSON.stringify({
+            nodes: data.nodes || [], edges: data.edges || [], wb: data.wb || [],
+          });
+          if (coreStr === lastPersistedDocRef.current) return;  // nothing diverges from disk
+        } catch {}
+      }
       // G2 single-flight: if a save is already in flight, stash the latest
       // data and let the in-flight one's completion handler trigger a
       // follow-up. Never let two POSTs race for the workflow lock.
@@ -20106,6 +20154,13 @@ function WorkflowCanvas() {
           for (const { id, snap } of wbSnapshotPayload) {
             savedSnapshotRef.current.set("wb:" + id, snap);
           }
+          // Disk now holds what we just POSTed — advance the echo-save baseline
+          // so the inevitable post-save reload doesn't re-POST it back.
+          try {
+            lastPersistedDocRef.current = JSON.stringify({
+              nodes: data.nodes || [], edges: data.edges || [], wb: data.wb || [],
+            });
+          } catch {}
           if (saveFailedAt) setSaveFailedAt(null);
           saveAttemptRef.current = 0;
           inFlightRef.current = false;
@@ -20132,11 +20187,15 @@ function WorkflowCanvas() {
             }, 60);
           }
         }).catch((err) => {
-          // v2.50 — abort errors from G7 (SSE-disconnect abort): drop the
-          // attempt silently; the SSE reconnect handler will fire a fresh
-          // save from the next user edit. No banner, no retry storm.
+          // v2.50 — abort errors from G7 (SSE-disconnect abort). In a live
+          // session the guest's proxied SSE reconnects on every change, so
+          // "wait for the next user edit" stranded the just-aborted edit
+          // (dirty forever until a manual edit/refresh). Re-attempt promptly
+          // instead — the connection is fine again after the reconnect, and
+          // the echo-save guard makes it a no-op if nothing is actually dirty.
           if (err && err.name === "AbortError") {
             inFlightRef.current = false;
+            if (window.__thLiveActive) setTimeout(() => setForceSaveTick(t => t + 1), 300);
             return;
           }
           // v2.34 — exponential backoff: 1s, 2s, 5s, 10s, then surface
@@ -20164,7 +20223,7 @@ function WorkflowCanvas() {
       attemptSave(0);
     }, 350);
     return () => clearTimeout(t);
-  }, [data]);
+  }, [data, forceSaveTick]);
 
   // After an agent run finishes, the visual-orchestrator subagent may have
   // appended new nodes + edges to workflow.json (prompt + skill + asset
@@ -20181,6 +20240,15 @@ function WorkflowCanvas() {
         const r = await fetch(apiUrl("/__workflow"));
         if (!r.ok) return;
         const fresh = await r.json();
+        // Refresh the echo-save baseline to what's now on disk, BEFORE the
+        // merge preserves any local-dirty fields. A pure pull then matches
+        // this baseline and won't echo-save; a real local edit diverges from
+        // it and still saves normally.
+        try {
+          lastPersistedDocRef.current = JSON.stringify({
+            nodes: fresh.nodes || [], edges: fresh.edges || [], wb: fresh.wb || [],
+          });
+        } catch {}
         setData(prev => {
           if (!prev) return fresh;
           // v3.2 — When the caller requests a full replace (history undo/
