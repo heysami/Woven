@@ -2637,12 +2637,84 @@ def _history_agent_scope_paths(project_root: str) -> list:
                                HISTORY_AGENT_SCOPE_DIRS,
                                HISTORY_AGENT_SCOPE_ROOT_FILES)
 
+# Orphan sweep. A before/ snapshot is written to .history/<id>/ at run SPAWN,
+# but the entry is only registered in index.json at run FINISH (after the
+# after-diff is committed). If a run never finishes — daemon restart, killed
+# run, crash, or a still-pending run that's abandoned — its <id>/ dir is left
+# on disk yet is invisible to the HISTORY_MAX_ENTRIES pruner, which only ever
+# deletes ids it finds IN the index. These leak forever, and with a heavy scope
+# (generated workflow assets) a single orphan can be gigabytes. This sweep GCs
+# any .history/<id> dir that is neither in the index nor protected.
+HISTORY_ORPHAN_MIN_AGE_S = 300  # never touch a dir younger than this (may be in-flight)
+
+def _history_active_pending_ids(project_root: str) -> set:
+    """before/-snapshot ids of runs currently in flight for this project. These
+    aren't in the index yet (they register at finish) but must NOT be swept."""
+    out = set()
+    try:
+        with RUNS_LOCK:
+            states = list(RUNS.values())
+    except Exception:
+        return out
+    for st in states:
+        try:
+            if getattr(st, "project_root", None) != project_root:
+                continue
+            pid = getattr(st, "history_pending_id", None)
+            if pid:
+                out.add(pid)
+        except Exception:
+            continue
+    return out
+
+def _history_sweep_orphans(project_root: str) -> int:
+    """Delete .history/<id> dirs that are neither in the index nor protected
+    (in-flight run, or created in the last HISTORY_ORPHAN_MIN_AGE_S seconds).
+    Returns the number removed. Best-effort; never raises."""
+    try:
+        hdir = _history_dir(project_root)
+        idx = _history_load_index(project_root)
+    except Exception:
+        return 0
+    keep = {e.get("id") for e in idx.get("entries", []) if e.get("id")}
+    keep |= _history_active_pending_ids(project_root)
+    now = time.time()
+    removed = 0
+    try:
+        names = os.listdir(hdir)
+    except OSError:
+        return 0
+    for name in names:
+        if name in keep or name.startswith("index.json"):
+            continue
+        d = os.path.join(hdir, name)
+        if not os.path.isdir(d):
+            continue
+        # Age guard: skip freshly-created dirs — an in-flight before/ snapshot
+        # may not have registered its pending id yet when a concurrent run sweeps.
+        try:
+            if now - os.path.getmtime(d) < HISTORY_ORPHAN_MIN_AGE_S:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(d, ignore_errors=True)
+        removed += 1
+    return removed
+
 def _history_run_snapshot_before(project_root: str):
     """Snapshot the bounded scope to .history/<id>/before/. Returns the
     pending entry id + the captured rows (for diffing on finish).
     Idempotent: if the snapshot fails partway (disk full, permission), the
     partial entry dir is cleaned up and the spawn proceeds without history.
     """
+    # GC any orphaned before/ snapshots leaked by prior crashed/killed runs
+    # before we add our own. Self-healing: the next run after a restart cleans up.
+    try:
+        n = _history_sweep_orphans(project_root)
+        if n:
+            print(f"[history] swept {n} orphaned snapshot dir(s) in {project_root}", flush=True)
+    except Exception:
+        pass
     eid = _history_new_id()
     try:
         edir = _safe_join(_history_dir(project_root), eid)
