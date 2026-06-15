@@ -228,17 +228,109 @@ _PROVIDER_ENV_KEYS = {
 # _resolve_provider_key) spends the GUEST's key for that request, never the
 # host's. Overwritten at the top of each POST, so it never leaks between requests.
 _REQ_LLM_KEY = threading.local()
+# Live Session — per-request MAP of the guest's own credentials, keyed by
+# provider id (anthropic/openai/nanobanana/fal/…) PLUS the special "claudeCli"
+# entry: a Claude Code subscription token from `claude setup-token` (sk-ant-oat…)
+# that runs the agent on the GUEST's subscription via CLAUDE_CODE_OAUTH_TOKEN.
+# Sent base64(JSON) in the X-Th-Llm-Keys header so multiple providers + the CLI
+# token travel together. Stamped per-POST; never leaks between requests.
+_REQ_LLM_KEYS = threading.local()
+
+def _parse_guest_keys(blob):
+    """Decode the X-Th-Llm-Keys header (base64 of a JSON {provider: key}) into a
+    clean {str: str} map. Tolerant: bad/missing input → {}."""
+    if not blob or not isinstance(blob, str):
+        return {}
+    try:
+        import base64 as _b64
+        raw = _b64.b64decode(blob.encode("ascii"), validate=False)
+        obj = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(obj, dict):
+        return {}
+    out = {}
+    for k, v in obj.items():
+        if isinstance(k, str) and isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+    return out
+
+def _current_guest_keys():
+    m = getattr(_REQ_LLM_KEYS, "value", None)
+    return m if isinstance(m, dict) else {}
 
 def _current_guest_llm_key():
+    # Back-compat single-key accessor (Anthropic): the dedicated X-Th-Llm-Key
+    # header OR the "anthropic" entry of the X-Th-Llm-Keys map.
     k = getattr(_REQ_LLM_KEY, "value", None)
-    return k if (isinstance(k, str) and k.strip()) else None
+    if isinstance(k, str) and k.strip():
+        return k.strip()
+    gk = _current_guest_keys().get("anthropic")
+    return gk if (isinstance(gk, str) and gk.strip()) else None
+
+
+def _guest_cli_env(agent_id):
+    """Env for a one-shot CLI completion (_claude_cli_complete/_codex_cli_complete).
+    HOST request → None (inherit the daemon env, i.e. the host's CLI auth).
+    GUEST request → an env carrying ONLY the guest's own credential (Claude
+    subscription token or API key), so a guest never spends the host's CLI
+    session; raises if the guest brought no usable credential for that agent."""
+    gmap = _current_guest_keys()
+    is_guest = bool(gmap) or bool(getattr(_REQ_LLM_KEY, "value", None))
+    if not is_guest:
+        return None
+    env = dict(os.environ)
+    env.pop("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", None)
+    if agent_id == "claude":
+        oauth = (gmap.get("claudeCli") or "").strip()
+        akey = _current_guest_llm_key()
+        if not (oauth or akey):
+            raise RuntimeError("connect your Anthropic API key or Claude subscription to run agents in this live session")
+        # Isolate CLAUDE_CONFIG_DIR to a throwaway dir so the CLI CANNOT reach
+        # the host's keychain / ~/.claude credentials and silently auth as the
+        # host. With the host creds unreachable, the CLI must use the guest's
+        # token/key from the env below — an invalid one fails (correct) instead
+        # of falling back to the host's session.
+        try:
+            import tempfile
+            cfg = os.path.join(tempfile.gettempdir(), "th-guest-claude-cfg")
+            os.makedirs(cfg, exist_ok=True)
+            env["CLAUDE_CONFIG_DIR"] = cfg
+        except Exception:
+            pass
+        if oauth:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth
+            env.pop("ANTHROPIC_API_KEY", None); env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        else:
+            env["ANTHROPIC_API_KEY"] = akey
+            env.pop("ANTHROPIC_AUTH_TOKEN", None); env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        return env
+    if agent_id == "codex":
+        okey = (gmap.get("openai") or "").strip()
+        if okey:
+            env["OPENAI_API_KEY"] = okey
+            return env
+        raise RuntimeError("connect your OpenAI API key to use Codex in this live session")
+    return env
 
 
 def _resolve_provider_key(provider):
-    # A guest's own key overrides the host's Anthropic credential for this run.
+    # A guest's own key (for ANY provider) overrides the host's credential for
+    # this request, so a guest never spends the host's keys.
+    gmap = _current_guest_keys()
+    gk = gmap.get(provider)
+    if isinstance(gk, str) and gk.strip():
+        return gk.strip()
     if provider == "anthropic":
-        gk = _current_guest_llm_key()
-        if gk: return gk
+        sk = _current_guest_llm_key()
+        if sk: return sk
+    # SECURITY — a guest request that lacks its OWN key for this provider must
+    # NOT fall through to the host's env/config credential (that would silently
+    # spend the host's account). Returning None makes the run surface a
+    # missing-key error instead. The host's own requests (no guest context)
+    # continue to the env/config fallback below.
+    if gmap or getattr(_REQ_LLM_KEY, "value", None):
+        return None
     env_name = _PROVIDER_ENV_KEYS.get(provider)
     if env_name:
         v = os.environ.get(env_name)
@@ -1076,6 +1168,12 @@ def _claude_cli_complete(messages, model=None, timeout=600):
         elif "opus" in m:    args.extend(["--model", "opus"])
         elif "haiku" in m:   args.extend(["--model", "haiku"])
     args.append(flat)
+    # Live Session — a guest's /__llm_run must spend the GUEST's credentials,
+    # never the host's logged-in CLI. If this is a guest request, run the CLI
+    # with the guest's Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN) or
+    # their Anthropic API key; if they have neither, REFUSE (don't silently use
+    # the host's session). Host requests keep the inherited env (host CLI auth).
+    _cli_env = _guest_cli_env("claude")
     # stdin=DEVNULL is mandatory: the CLI waits up to 3s for stdin (warning
     # then proceed) when invoked under `subprocess.run` because the inherited
     # stdin is a pipe. Closing it explicitly skips the warning + the wait.
@@ -1085,6 +1183,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
         text=True,
         timeout=timeout,
         stdin=subprocess.DEVNULL,
+        env=_cli_env,
     )
     if result.returncode != 0:
         # CLI prints helpful errors to stderr (auth failures, model unavailable, etc.)
@@ -1136,12 +1235,17 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     if model:
         args.extend(["--model", model])
     args.append(flat)
+    # Live Session — a guest must spend their OWN OpenAI credential, never the
+    # host's `codex login`. Guest request → env with the guest's OpenAI key (or
+    # refuse); host request → inherited env (host's Codex auth).
+    _cli_env = _guest_cli_env("codex")
     result = subprocess.run(
         args,
         capture_output=True,
         text=True,
         timeout=timeout,
         stdin=subprocess.DEVNULL,
+        env=_cli_env,
     )
     if result.returncode != 0:
         msg = (result.stderr or f"exit {result.returncode}").strip()[:600]
@@ -5892,12 +5996,29 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # is used for THIS run so the host's credentials are never spent. Overrides
     # the host key + config fallback; drops any OAuth token so the CLI auths with
     # the guest key alone.
+    # Guest "local CLI" — a Claude Code subscription token (`claude setup-token`
+    # → sk-ant-oat…) the guest pasted in the live bar. Run the CLI on the
+    # GUEST's subscription via CLAUDE_CODE_OAUTH_TOKEN (not an API key, not the
+    # host's login). Takes precedence over a pasted API key; we drop the other
+    # auth vars so the CLI authenticates with the guest's token alone.
+    _guest_oauth = (_current_guest_keys().get("claudeCli") or "").strip()
+    if agent_id == "claude" and _guest_oauth:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = _guest_oauth
+        env.pop("ANTHROPIC_API_KEY", None)
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        return env
     _guest_key = _current_guest_llm_key()
     if agent_id == "claude" and _guest_key:
         env["ANTHROPIC_API_KEY"] = _guest_key
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         return env
-    if agent_id == "claude" and not env.get("ANTHROPIC_API_KEY"):
+    # Host config fallback — ONLY for the host's own runs. A guest request that
+    # reached here lacked a usable Claude credential (no oauth token, no
+    # Anthropic key); it must NOT borrow the host's configured key, so leave the
+    # env without one and let the run surface a missing-credential error.
+    _is_guest_req = bool(_current_guest_keys()) or bool(getattr(_REQ_LLM_KEY, "value", None))
+    if agent_id == "claude" and not env.get("ANTHROPIC_API_KEY") and not _is_guest_req:
         try:
             from_cfg = _resolve_provider_key("anthropic")
         except Exception:
@@ -6095,6 +6216,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # thread-local so LLM credential paths spend the guest's key, not the
         # host's. Overwritten per POST so it never leaks between requests.
         _REQ_LLM_KEY.value = self.headers.get("X-Th-Llm-Key")
+        _REQ_LLM_KEYS.value = _parse_guest_keys(self.headers.get("X-Th-Llm-Keys"))
         try:
             if parsed.path == "/__save":
                 return self._save(qs)

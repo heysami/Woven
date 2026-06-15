@@ -1167,6 +1167,19 @@ def _proxy_write_ok(path):
 def _is_llm_write(path):
     return any(path == p or path.startswith(p) for p in _LLM_WRITE_PREFIXES)
 
+def _keys_blob_has_cred(blob):
+    """True if the X-Th-Llm-Keys header (base64 of a JSON {provider: key} map,
+    incl. the special "claudeCli" subscription token) carries at least one
+    non-empty credential. Tolerant of junk/missing input."""
+    if not blob or not isinstance(blob, str):
+        return False
+    try:
+        import base64, json as _json2
+        obj = _json2.loads(base64.b64decode(blob.encode("ascii"), validate=False).decode("utf-8"))
+    except Exception:
+        return False
+    return isinstance(obj, dict) and any(isinstance(v, str) and v.strip() for v in obj.values())
+
 def _drain(h):
     try:
         n = int(h.headers.get("Content-Length") or 0)
@@ -1174,12 +1187,14 @@ def _drain(h):
     except Exception:
         return b""
 
-def _proxy_daemon_write(h, path, project, writer=None, llm_key=None, writer_name=None):
+def _proxy_daemon_write(h, path, project, writer=None, llm_key=None, writer_name=None, llm_keys=None):
     """Forward a POST body to the daemon, project FORCED. Returns its response.
     `writer` (a guestId) is passed through as X-Th-Writer so the daemon can
     enforce the hard node lock (reject edits to a node held by someone else).
     `llm_key` (the guest's own API key) is passed as X-Th-Llm-Key so the daemon
-    spends the GUEST's credentials, never the host's, for that guest's run."""
+    spends the GUEST's credentials, never the host's, for that guest's run.
+    `llm_keys` (base64-JSON map of the guest's per-provider keys + an optional
+    Claude subscription token) is passed as X-Th-Llm-Keys for the same reason."""
     import urllib.request as _ur, urllib.error as _ue
     if DAEMON_PORT is None:
         _drain(h); return _json(h, 502, {"error": "daemon unavailable"})
@@ -1191,6 +1206,7 @@ def _proxy_daemon_write(h, path, project, writer=None, llm_key=None, writer_name
     if writer: req.add_header("X-Th-Writer", writer)
     if writer_name: req.add_header("X-Th-Writer-Name", writer_name)
     if llm_key: req.add_header("X-Th-Llm-Key", llm_key)
+    if llm_keys: req.add_header("X-Th-Llm-Keys", llm_keys)
     try:
         resp = _ur.urlopen(req, timeout=60)
         out, status = resp.read(), getattr(resp, "status", 200)
@@ -1233,16 +1249,20 @@ def _rooted_post(h, token, path):
             writer_name = (p or {}).get("name") if p else None
     if path.startswith("/__") and _proxy_write_ok(path):
         return _proxy_daemon_write(h, path, rec.get("project") or "", writer, writer_name=writer_name)
-    # LLM / agent runs — guests spend their OWN API key, never the host's. The
-    # editor sends it as X-Th-Llm-Key (from the key they pasted in the top bar).
-    # Without one, block with a clear signal so the UI prompts "Connect your AI".
+    # LLM / agent runs — guests spend their OWN credentials, never the host's.
+    # The editor sends them in the live bar's "Connect your AI" panel as either
+    # X-Th-Llm-Key (legacy single Anthropic key), X-Th-Llm-Keys (base64-JSON map
+    # of per-provider keys), and/or a Claude subscription token inside that map.
+    # Without ANY credential, block with a clear signal so the UI prompts.
     if path.startswith("/__") and _is_llm_write(path):
         llm_key = h.headers.get("X-Th-Llm-Key")
-        if not llm_key:
+        llm_keys = h.headers.get("X-Th-Llm-Keys")
+        if not llm_key and not _keys_blob_has_cred(llm_keys):
             _drain(h)
             return _json(h, 412, {"error": "llm-key-required",
-                                  "message": "Connect your own AI (API key) to run agents in this live session."})
-        return _proxy_daemon_write(h, path, rec.get("project") or "", writer, llm_key, writer_name=writer_name)
+                                  "message": "Connect your own AI (API key or Claude subscription) to run agents in this live session."})
+        return _proxy_daemon_write(h, path, rec.get("project") or "", writer, llm_key,
+                                   writer_name=writer_name, llm_keys=llm_keys)
     _drain(h)
     return _json(h, 200, {"ok": True, "readOnly": True})
 
