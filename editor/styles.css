@@ -16876,13 +16876,19 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   justify-content: center;
   flex-shrink: 0;
   color: var(--accent-text);
-}
-.chat-active-tool-icon[data-running="true"] {
+  /* The row only shows while the turn is live, so the glyph always animates —
+     a "breathing" scale + opacity pulse that reads as active work. */
   animation: chat-active-tool-pulse 1.1s ease-in-out infinite;
+  transform-origin: center;
+}
+/* Running (no tool_result yet) breathes a touch faster so the row never reads
+   as frozen. */
+.chat-active-tool-icon[data-running="true"] {
+  animation-duration: 0.9s;
 }
 @keyframes chat-active-tool-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.45; }
+  0%, 100% { opacity: 0.5; transform: scale(0.86); }
+  50%      { opacity: 1;   transform: scale(1.12); }
 }
 .chat-active-tool-name {
   font-family: var(--font-mono);
