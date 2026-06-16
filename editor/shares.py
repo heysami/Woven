@@ -45,6 +45,7 @@ serve.py wiring (see "share mode" section there):
                                               their URLs will have changed)
      stop_all_tunnels()        from the shutdown hooks
 """
+from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
 import http.server
 import json

@@ -37,6 +37,7 @@ serve.py wiring (see "live session" section there):
      notify_project_changed(pid, ev, data)  from _broadcast_workflow_change /
                                             _broadcast_asset_change
 """
+from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
 import json
 import re
