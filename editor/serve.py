@@ -691,6 +691,126 @@ def _fal_generate_lottie(api_key, prompt, model, aspect, options):
     return _download_bytes(lottie_url)
 
 
+# ── Meshy 3D (text-to-3D / image-to-3D) ────────────────────────────────────
+# Unlike fal's sync fal.run endpoints, Meshy is ASYNC: POST creates a task and
+# returns {"result": "<task_id>"}, then you poll GET /<endpoint>/<task_id>
+# until status == SUCCEEDED and read model_urls.glb. Text-to-3D is a two-stage
+# flow — a `preview` task (geometry) followed by a `refine` task (textures),
+# the refine referencing the preview's id. Image-to-3D is single-stage.
+# Docs: https://docs.meshy.ai/  Auth: `Authorization: Bearer <key>`.
+def _meshy_request(api_key, path, body, method="POST", timeout=60):
+    """One HTTP call to api.meshy.ai. body=None for GET polls."""
+    url = f"https://api.meshy.ai{path}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url, method=method,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        data=data,
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _meshy_poll(api_key, path, task_id, timeout_total=600, interval=5):
+    """Poll a Meshy task until SUCCEEDED; return the task payload. Raises on
+    FAILED / CANCELED or overall timeout."""
+    deadline = time.time() + timeout_total
+    last = None
+    while time.time() < deadline:
+        last = _meshy_request(api_key, f"{path}/{task_id}", None, method="GET", timeout=60)
+        status = (last.get("status") or "").upper() if isinstance(last, dict) else ""
+        if status == "SUCCEEDED":
+            return last
+        if status in ("FAILED", "CANCELED"):
+            raise RuntimeError(f"meshy task {status}: {last.get('task_error') or last}")
+        time.sleep(interval)
+    raise RuntimeError(
+        f"meshy task timed out after {timeout_total}s "
+        f"(last status: {(last or {}).get('status') if isinstance(last, dict) else '?'})")
+
+
+def _meshy_extract_glb(payload):
+    """Meshy success payloads carry model_urls: { glb, fbx, obj, usdz, ... }."""
+    urls = payload.get("model_urls") if isinstance(payload, dict) else None
+    if isinstance(urls, dict):
+        for key in ("glb", "gltf", "fbx", "obj", "usdz"):
+            v = urls.get(key)
+            if isinstance(v, str) and v:
+                return v
+    raise RuntimeError(
+        f"meshy: no model url in task (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
+
+
+def _meshy_generate_3d(api_key, prompt, model, aspect, options):
+    """Meshy text-to-3D (preview → refine) or image-to-3D. Async create+poll;
+    returns raw .glb bytes. `model` selects the endpoint family:
+    'meshy/image-to-3d' (or an options.image_url being present) routes to
+    image-to-3d; anything else routes to text-to-3d. Aspect is meaningless for
+    3D and ignored. Knobs (ai_model, should_texture, enable_pbr, art_style,
+    target_polycount, …) ride in via the skill node's options."""
+    opts = options if isinstance(options, dict) else {}
+    ai_model = opts.get("ai_model") or "meshy-5"
+    is_image = "image-to-3d" in (model or "") or bool(opts.get("image_url"))
+
+    if is_image:
+        image_url = opts.get("image_url")
+        if not image_url:
+            raise RuntimeError("meshy image-to-3d needs an input image (options.image_url)")
+        body = {
+            "image_url":      image_url,
+            "ai_model":       ai_model,
+            "should_texture": opts.get("should_texture", True),
+            "enable_pbr":     opts.get("enable_pbr", False),
+            "target_formats": ["glb"],
+        }
+        for k in ("topology", "target_polycount", "should_remesh", "symmetry_mode"):
+            if opts.get(k) is not None: body[k] = opts[k]
+        created = _meshy_request(api_key, "/openapi/v2/image-to-3d", body)
+        task_id = created.get("result") if isinstance(created, dict) else None
+        if not task_id:
+            raise RuntimeError(f"meshy: no task id (image-to-3d) — {created}")
+        done = _meshy_poll(api_key, "/openapi/v2/image-to-3d", task_id)
+        return _download_bytes(_meshy_extract_glb(done), timeout=120)
+
+    # Text-to-3D — stage 1: preview (geometry only).
+    pbody = {
+        "mode":           "preview",
+        "prompt":         (prompt or "")[:600],
+        "ai_model":       ai_model,
+        "should_remesh":  opts.get("should_remesh", True),
+        "target_formats": ["glb"],
+    }
+    for k in ("model_type", "target_polycount", "pose_mode", "negative_prompt", "seed", "topology"):
+        if opts.get(k) is not None: pbody[k] = opts[k]
+    created = _meshy_request(api_key, "/openapi/v2/text-to-3d", pbody)
+    preview_id = created.get("result") if isinstance(created, dict) else None
+    if not preview_id:
+        raise RuntimeError(f"meshy: no task id (text-to-3d preview) — {created}")
+    preview = _meshy_poll(api_key, "/openapi/v2/text-to-3d", preview_id)
+
+    # Untextured geometry only? Return the preview mesh as-is.
+    if opts.get("should_texture", True) is False:
+        return _download_bytes(_meshy_extract_glb(preview), timeout=120)
+
+    # Stage 2: refine (textures) referencing the preview task id.
+    rbody = {
+        "mode":            "refine",
+        "preview_task_id": preview_id,
+        "enable_pbr":      opts.get("enable_pbr", True),
+        "target_formats":  ["glb"],
+    }
+    for k in ("texture_prompt", "texture_image_url", "hd_texture"):
+        if opts.get(k) is not None: rbody[k] = opts[k]
+    created2 = _meshy_request(api_key, "/openapi/v2/text-to-3d", rbody)
+    refine_id = created2.get("result") if isinstance(created2, dict) else None
+    if not refine_id:
+        # Refine failed to enqueue — fall back to the untextured preview mesh
+        # rather than failing the whole run.
+        return _download_bytes(_meshy_extract_glb(preview), timeout=120)
+    refined = _meshy_poll(api_key, "/openapi/v2/text-to-3d", refine_id)
+    return _download_bytes(_meshy_extract_glb(refined), timeout=120)
+
+
 def _fal_generate_image(api_key, prompt, model, aspect, options):
     """fal.ai text-to-image. Works for fal-ai/flux/*, recraft-v3, ideogram, SD3.5."""
     body = {
@@ -955,6 +1075,9 @@ _GENERATE_DISPATCH = {
     # this entry the orchestrator's 3D drawer got `no renderer for
     # skill='3d-gen'` 400s with no provider hint.
     ("3d-gen",         "fal"):    "fal_3d",
+    # Meshy 3D — async create+poll (preview→refine for text, single-stage for
+    # image). Bytes are a textured .glb. Requires TH_MESHY_API_KEY.
+    ("3d-gen",         "meshy"):  "meshy_3d",
     # v3.5 — Lottie generation via fal. Sparse model coverage today, but
     # the dispatch entry makes the skill discoverable and routes to a
     # real renderer instead of returning the generic "no renderer" 400.
@@ -10812,6 +10935,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # v3.5 — 3D model generation. Bytes are .glb / .gltf.
                     # Long timeout (up to 10min for some models).
                     bytes_ = _fal_generate_3d(api_key, prompt, model, aspect, options)
+                elif provider == "meshy" and skill == "3d-gen":
+                    # Meshy 3D — async create+poll (the helper does the long
+                    # waiting internally), returns textured .glb bytes.
+                    bytes_ = _meshy_generate_3d(api_key, prompt, model, aspect, options)
                 elif provider == "fal" and skill == "lottie-gen":
                     # v3.5 — Lottie generation. Bytes are raw .json.
                     bytes_ = _fal_generate_lottie(api_key, prompt, model, aspect, options)

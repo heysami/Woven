@@ -18276,7 +18276,8 @@ function SkillsLanding() {
   const imageModels = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
   const textModels  = (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
   const videoModels = (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
-  const allModels = [...imageModels, ...textModels, ...videoModels];
+  const models3d    = (window.TH_MEDIA && window.TH_MEDIA.models3d) || [];
+  const allModels = [...imageModels, ...textModels, ...videoModels, ...models3d];
 
   // Harness-local skills: fetched from daemon on mount. The daemon walks
   // the workspace-scoped <workspace>/.harness-skills/ dir (or install-root
@@ -34057,7 +34058,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         ? (window.TH_MEDIA && window.TH_MEDIA.textModels) || []
         : (skillSpec.output === "video"
             ? (window.TH_MEDIA && window.TH_MEDIA.videoModels) || []
-            : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || []);
+            : (skillSpec.output === "3d"
+                ? (window.TH_MEDIA && window.TH_MEDIA.models3d) || []
+                : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || []));
       // v3.4.10 — dispatch the LIVE model (deprecated → current via the
       // _DEPRECATED_MODEL_MIGRATIONS map). The saved node.model is never
       // sent directly; the catalog is the source of truth.
@@ -47084,9 +47087,10 @@ function WorkflowAssetModelChip({ node, allNodes, allEdges, onChange }) {
     if (!skillSpec) return [];
     if (skillSpec.modelKind === "text") return (M.textModels || []).filter(m => m.integrated !== false);
     if (skillSpec.output === "video")   return (M.videoModels || []).filter(m => m.integrated !== false);
+    if (skillSpec.output === "3d")      return (M.models3d || []).filter(m => m.integrated !== false);
     if (skillSpec.output === "image")   return (M.imageModels || []).filter(m => m.integrated !== false);
     return [];
-  }, [skillSpec, M.textModels, M.imageModels, M.videoModels]);
+  }, [skillSpec, M.textModels, M.imageModels, M.videoModels, M.models3d]);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -59864,11 +59868,13 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   const skillSpec = ((window.TH_MEDIA && window.TH_MEDIA.skills) || []).find(s => s.id === skillId);
   const aspects   = (window.TH_MEDIA && window.TH_MEDIA.aspects) || [];
   // Pick model list by skill kind. modelKind "text" → textModels,
-  // output "video" → videoModels (v3.4.1), otherwise imageModels.
+  // output "video" → videoModels (v3.4.1), output "3d" → models3d, otherwise
+  // imageModels.
   const allModels = (() => {
     if (!skillSpec) return [];
     if (skillSpec.modelKind === "text") return (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
     if (skillSpec.output === "video") return (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
+    if (skillSpec.output === "3d") return (window.TH_MEDIA && window.TH_MEDIA.models3d) || [];
     return (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
   })();
 

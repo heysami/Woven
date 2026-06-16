@@ -96,11 +96,11 @@
     meshy: {
       id: "meshy",
       label: "Meshy",
-      hint: "3D mesh (.glb) generation",
+      hint: "text→3D · image→3D · textured .glb (async)",
       envKey: "TH_MESHY_API_KEY",
       docsUrl: "https://docs.meshy.ai/",
-      integrated: false,
-      testable: false,
+      integrated: true,
+      testable: false, // Meshy has no free test endpoint; first real Run validates the key
     },
     elevenlabs: {
       id: "elevenlabs",
@@ -233,6 +233,20 @@
     { id: "fal-ai/seedance-2.0",                                   provider: "fal", label: "seedance-2.0",       hint: "fal · ByteDance Seedance 2.0",                  caps: ["t2v", "i2v"], integrated: true },
     // Pika — v2 Turbo still current.
     { id: "fal-ai/pika/v2/turbo/text-to-video",                    provider: "fal", label: "pika-v2",            hint: "fal · Pika v2 (animated)",                      caps: ["t2v"],         integrated: true },
+  ];
+
+  // 3D-model generators. caps: `t23d` = text→3D, `i23d` = image→3D. Bytes are
+  // a textured `.glb`. Meshy is async (create task → poll → download) and is
+  // handled by serve.py's _meshy_generate_3d; the fal rows go through the sync
+  // fal.run pipeline (_fal_generate_3d). Both dispatch under the `3d-gen` skill.
+  const MODELS_3D = [
+    // Meshy — the dedicated 3D provider. Default.
+    { id: "meshy/text-to-3d",     provider: "meshy", label: "Meshy 5 (text→3D)",  hint: "Meshy · prompt → textured .glb (preview+refine)", caps: ["t23d"],         integrated: true, default: true },
+    { id: "meshy/image-to-3d",    provider: "meshy", label: "Meshy 5 (image→3D)", hint: "Meshy · image → textured .glb",                   caps: ["i23d"],         integrated: true },
+    // fal — sync 3D endpoints (already wired in serve.py).
+    { id: "fal-ai/hyper3d/rodin", provider: "fal",   label: "Rodin (Hyper3D)",    hint: "fal · text/image → 3D (PBR)",                     caps: ["t23d", "i23d"], integrated: true },
+    { id: "fal-ai/hunyuan3d-v2",  provider: "fal",   label: "Hunyuan3D v2",       hint: "fal · Tencent Hunyuan3D v2",                      caps: ["t23d", "i23d"], integrated: true },
+    { id: "fal-ai/triposr",       provider: "fal",   label: "TripoSR",            hint: "fal · fast image → 3D",                           caps: ["i23d"],         integrated: true },
   ];
 
   // Skill catalog — each entry is a draggable in the Library's Skills section
@@ -453,6 +467,28 @@
         "Output the file with Write to the path the user specifies (.json extension). Validate that your JSON parses — Lottie is strict. If the animation is complex enough that you can't hand-author it cleanly, simplify to a single hero motion (one path morph + one transform) rather than producing invalid JSON.",
     },
     {
+      // 3D-model generation → a textured `.glb` written under
+      // source/<branch>/models3d/. Pathway A: dispatches to Meshy (async
+      // create+poll, preview→refine) or fal (sync) per the picked model's
+      // provider. The iframe renders .glb via the existing 3d/<model-viewer>
+      // asset card. defaultModel is REQUIRED (see the video-gen note below for
+      // why an empty default silently breaks Run).
+      id: "3d-gen",
+      label: "3D model",
+      hint: "prompt → .glb 3D mesh (requires a 3D-gen API key — Meshy / fal)",
+      glyph: "⬢",
+      pathway: "A",
+      defaultModel: "meshy/text-to-3d",
+      provider: "meshy",  // belt-and-suspenders: provider resolves even if MODELS_3D isn't loaded yet
+      pathwayAFallback: { provider: "meshy", model: "meshy/text-to-3d", ext: "glb" },
+      inputs: ["prompt"],
+      output: "3d",
+      hasModelDropdown: true,
+      modelKind: "3d",
+      modelsFilter: (m) => m.caps && (m.caps.includes("t23d") || m.caps.includes("i23d")) && m.integrated,
+      hasAspect: false,
+    },
+    {
       // v3.4.1 — Real video output. The previous "video-gen" definition
       // silently produced HTML motion pieces because no video API was
       // wired in; that was misleading — picking a skill called "Video"
@@ -585,5 +621,5 @@
     { value: "9:16", label: "9:16" },
   ];
 
-  window.TH_MEDIA = { providers: PROVIDERS, imageModels: IMAGE_MODELS, textModels: TEXT_MODELS, videoModels: VIDEO_MODELS, skills: SKILLS, aspects: ASPECTS };
+  window.TH_MEDIA = { providers: PROVIDERS, imageModels: IMAGE_MODELS, textModels: TEXT_MODELS, videoModels: VIDEO_MODELS, models3d: MODELS_3D, skills: SKILLS, aspects: ASPECTS };
 })();
