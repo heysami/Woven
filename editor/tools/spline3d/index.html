@@ -157,6 +157,7 @@
         <div class="field"><label>Repeat</label><input type="range" id="t-repeat" min="1" max="12" step="1" value="3"/><span class="val" id="t-repeat-v">3</span></div>
         <div class="row"><button class="btn ghost full" id="t-image">Upload image texture…</button></div>
         <input type="file" id="t-file" accept="image/*" style="display:none"/>
+        <div class="swatches" id="t-linked" style="margin-top:8px"></div>
       </div>
 
       <div class="group">
@@ -180,6 +181,21 @@
         <div class="field"><label>Fur length</label><input type="range" id="fur-len" min="0.05" max="0.6" step="0.01" value="0.28"/><span class="val" id="fur-len-v">.28</span></div>
         <div class="row" style="margin-top:6px"><button class="btn ghost full warn" id="delete">Delete object</button></div>
       </div>
+    </div>
+
+    <div class="group">
+      <div class="label">Import 3D</div>
+      <div class="row"><button class="btn ghost full" id="import-btn">Import .glb / .gltf…</button></div>
+      <input type="file" id="import-file" accept=".glb,.gltf,model/gltf-binary" style="display:none"/>
+      <div class="empty" style="padding:8px 4px;font-size:11px">Upload a model, drag-drop onto the canvas, or link a 3D-gen node into this tool's input.</div>
+    </div>
+
+    <div class="group">
+      <div class="label">Extrude SVG <span class="tag" id="ex-tag"></span></div>
+      <div class="row"><button class="btn ghost full" id="ex-btn">Import .svg → extrude…</button></div>
+      <input type="file" id="ex-file" accept=".svg,image/svg+xml" style="display:none"/>
+      <div class="field"><label>Depth</label><input type="range" id="ex-depth" min="0.05" max="2" step="0.05" value="0.5"/><span class="val" id="ex-depth-v">.50</span></div>
+      <div class="field"><label>Corner (bevel)</label><input type="range" id="ex-bevel" min="0" max="0.5" step="0.01" value="0.08"/><span class="val" id="ex-bevel-v">.08</span></div>
     </div>
 
     <div class="group">
@@ -236,6 +252,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshBVH } from 'three-mesh-bvh';
@@ -426,6 +444,89 @@ function addShape(kind) {
   brush.name = kind + '-' + (objects.length + 1);
   brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3();
   scene.add(brush); objects.push(brush); select([brush]); refresh();
+}
+
+// ── Import 3D asset (.glb / .gltf) ─────────────────────────────────────────
+// Loads a model — uploaded by the user OR fed from an upstream node (a 3d-gen /
+// Meshy output linked into this node, surfaced as window.__SPLINE3D_IMPORT).
+// Each mesh is baked to world space, normalised to fit, and added as a normal
+// selectable object (its PBR material + textures preserved).
+const gltfLoader = new GLTFLoader();
+function addImportedScene(gltf, label) {
+  const root = gltf.scene || gltf.scenes[0]; root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3()), maxd = Math.max(size.x, size.y, size.z) || 1;
+  const k = 2.2 / maxd, center = box.getCenter(new THREE.Vector3());
+  const meshes = []; root.traverse(o => { if (o.isMesh && o.geometry) meshes.push(o); });
+  if (!meshes.length) { flash('No mesh in file'); return; }
+  let last = null;
+  meshes.forEach((m, i) => {
+    m.updateMatrixWorld(true);
+    const geo = m.geometry.clone(); geo.applyMatrix4(m.matrixWorld);
+    geo.translate(-center.x, -center.y, -center.z); geo.scale(k, k, k);
+    const mesh = new THREE.Mesh(geo, Array.isArray(m.material) ? m.material[0] : m.material);
+    if (mesh.material && 'envMapIntensity' in mesh.material) mesh.material.envMapIntensity = 1.0;
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.position.set(0, 0.6 + (size.y * k) / 2 - (box.max.y - center.y) * k, 0);
+    mesh.name = (label || 'import') + (i ? '-' + i : '');
+    mesh.userData.mode = 'imported'; mesh.userData.vel = new THREE.Vector3();
+    scene.add(mesh); objects.push(mesh); last = mesh;
+  });
+  if (last) select([last]);
+  flash('Imported · ' + (label || 'model') + ' (' + meshes.length + ' mesh' + (meshes.length === 1 ? '' : 'es') + ')');
+  refresh();
+}
+function importGLBfromURL(url, label) {
+  gltfLoader.load(url, g => addImportedScene(g, label), undefined, err => { flash('Import failed: ' + url.split('/').pop()); console.error(err); });
+}
+function importGLBfromBuffer(buf, label) {
+  gltfLoader.parse(buf, '', g => addImportedScene(g, label), err => { flash('Import failed'); console.error(err); });
+}
+
+// ── SVG → extruded 3D (Spline's "3D Shape": depth + soft beveled corners) ──
+const svgLoader = new SVGLoader();
+function shapesFromSVG(svgText) {
+  const data = svgLoader.parse(svgText);
+  const shapes = [];
+  for (const path of data.paths) for (const sh of SVGLoader.createShapes(path)) shapes.push(sh);
+  return shapes;
+}
+// Build the extruded geometry for a set of THREE.Shapes. `bevel` softens the
+// corners (this is what Spline's corner-radius does on a 3D Shape).
+function extrudeGeometry(shapes, depth, bevel) {
+  const geo = new THREE.ExtrudeGeometry(shapes, {
+    depth, curveSegments: 32, steps: 1,
+    bevelEnabled: bevel > 0.0001, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 4,
+  });
+  geo.computeBoundingBox();
+  const c = new THREE.Vector3(); geo.boundingBox.getCenter(c);
+  geo.translate(-c.x, -c.y, -c.z);
+  geo.scale(1, -1, 1);                          // SVG y is down → flip upright
+  // normalise to ~2.4 units on the largest axis
+  geo.computeBoundingBox(); const sz = geo.boundingBox.getSize(new THREE.Vector3());
+  const k = 2.4 / (Math.max(sz.x, sz.y, sz.z) || 1); geo.scale(k, k, k);
+  geo.computeVertexNormals();
+  return geo;
+}
+function addExtrudedSVG(svgText, label) {
+  let shapes; try { shapes = shapesFromSVG(svgText); } catch (e) { flash('Bad SVG'); console.error(e); return; }
+  if (!shapes.length) { flash('No shapes in SVG'); return; }
+  const depth = parseFloat($('#ex-depth').value), bevel = parseFloat($('#ex-bevel').value);
+  const brush = new Brush(extrudeGeometry(shapes, depth, bevel), physicalMat('#ffffff'));
+  brush.material.color.set('#6c7bff');
+  brush.castShadow = brush.receiveShadow = true; brush.position.set(0, 0.6, 0);
+  brush.name = (label || 'svg') + '-' + (objects.length + 1);
+  brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3();
+  brush.userData.svgShapes = shapes; brush.userData.extrude = { depth, bevel };  // for live re-extrude
+  scene.add(brush); objects.push(brush); select([brush]);
+  flash('Extruded SVG · depth ' + depth.toFixed(2) + ' · corner ' + bevel.toFixed(2)); refresh();
+}
+// Re-extrude the selected SVG object when depth/corner sliders move.
+function reExtrude(brush, depth, bevel) {
+  if (!brush.userData.svgShapes) return;
+  brush.geometry.dispose();
+  brush.geometry = extrudeGeometry(brush.userData.svgShapes, depth, bevel);
+  brush.userData.extrude = { depth, bevel };
 }
 
 // ── Selection ─────────────────────────────────────────────────────────────
@@ -814,6 +915,38 @@ $('#export').addEventListener('click', () => {
   exporter.parse(group, glb => { const blob = new Blob([glb], { type: 'model/gltf-binary' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.glb'; a.click(); URL.revokeObjectURL(a.href); }, err => { flash('Export failed'); console.error(err); }, { binary: true });
 });
 
+// Import wiring — button, file picker, canvas drag-drop.
+$('#import-btn').addEventListener('click', () => $('#import-file').click());
+$('#import-file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => importGLBfromBuffer(r.result, f.name.replace(/\.(glb|gltf)$/i, ''));
+  r.readAsArrayBuffer(f); e.target.value = '';
+});
+stage.addEventListener('dragover', e => { e.preventDefault(); });
+stage.addEventListener('drop', e => {
+  e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return;
+  const r = new FileReader();
+  if (/\.(glb|gltf)$/i.test(f.name)) { r.onload = () => importGLBfromBuffer(r.result, f.name.replace(/\.(glb|gltf)$/i, '')); r.readAsArrayBuffer(f); }
+  else if (/\.svg$/i.test(f.name)) { r.onload = () => addExtrudedSVG(r.result, f.name.replace(/\.svg$/i, '')); r.readAsText(f); }
+  else flash('Drop a .glb, .gltf or .svg');
+});
+
+// SVG extrude wiring
+$('#ex-btn').addEventListener('click', () => $('#ex-file').click());
+$('#ex-file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader(); r.onload = () => addExtrudedSVG(r.result, f.name.replace(/\.svg$/i, '')); r.readAsText(f); e.target.value = '';
+});
+$('#ex-depth').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#ex-depth-v').textContent = v.toFixed(2).slice(1);
+  const s = selection[0]; if (s && s.userData.svgShapes) reExtrude(s, v, parseFloat($('#ex-bevel').value));
+});
+$('#ex-bevel').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#ex-bevel-v').textContent = v.toFixed(2).slice(1);
+  const s = selection[0]; if (s && s.userData.svgShapes) reExtrude(s, parseFloat($('#ex-depth').value), v);
+});
+
 // Inspector refresh
 function refresh() {
   $('#count').textContent = (objects.length + sims.length) + ' object' + ((objects.length + sims.length) === 1 ? '' : 's');
@@ -829,7 +962,14 @@ function refresh() {
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
     set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5);
     $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
-  }
+    // Sync extrude sliders to the selected SVG object (live re-extrude target).
+    const ex = s.userData.extrude;
+    $('#ex-tag').textContent = ex ? '· editing selected' : '';
+    if (ex) {
+      $('#ex-depth').value = ex.depth; $('#ex-depth-v').textContent = ex.depth.toFixed(2).slice(1);
+      $('#ex-bevel').value = ex.bevel; $('#ex-bevel-v').textContent = ex.bevel.toFixed(2).slice(1);
+    }
+  } else { $('#ex-tag').textContent = ''; }
 }
 
 // Keyboard
@@ -880,12 +1020,43 @@ function tick(now) {
   renderer.render(scene, camera);
 }
 
-// Seed scene — glossy liquid candy, the Spline register.
-addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
-addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
-select([]);
+// Linked image textures (window.__SPLINE3D_TEXTURES = ["../images/x.png", …]),
+// injected by the Tool pathway when image assets are wired into this node.
+// Shown as clickable swatches under the Texture section — click to apply the
+// image as the selected object's surface map.
+const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D_TEXTURES : [];
+(function buildLinkedTextures() {
+  const wrap = $('#t-linked'); if (!wrap) return;
+  LINKED_TEX.forEach(url => {
+    const sw = document.createElement('div'); sw.className = 'swatch';
+    sw.style.background = 'center/cover url("' + url + '")'; sw.title = url.split('/').pop();
+    sw.addEventListener('click', () => {
+      if (!selection.length) { flash('Select an object first'); return; }
+      new THREE.TextureLoader().load(url, tex => {
+        tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        const rep = parseInt($('#t-repeat').value); tex.repeat.set(rep, rep);
+        selection.forEach(s => { if ('map' in s.material) { s.material.map = tex; s.material.needsUpdate = true; } });
+        flash('Applied linked texture');
+      });
+    });
+    wrap.appendChild(sw);
+  });
+})();
+
+// Linked-node imports (window.__SPLINE3D_IMPORT = ["../models3d/x.glb", …]),
+// injected by the Tool pathway when a 3D asset is wired into this node. If any
+// are present we load them INSTEAD of the demo seed scene.
+const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : [];
+if (LINKED.length) {
+  LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : '')));
+} else {
+  // Seed scene — glossy liquid candy, the Spline register.
+  addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
+  addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
+  select([]);
+}
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liquefy, applyMode, toggleFur, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liquefy, applyMode, toggleFur, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; } };
 </script>
 </body>
 </html>

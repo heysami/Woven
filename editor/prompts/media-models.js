@@ -475,11 +475,14 @@
       // palettes, transform gizmo, and .glb export. Spline-style, in-canvas.
       id: "spline3d-editor",
       label: "3D editor (Spline-style)",
-      hint: "interactive scene · boolean shapes · glass · soft lighting · curated palettes · export .glb",
+      hint: "interactive scene · boolean · glass · fur/cloth/liquid · import .glb (link a 3D-gen node in) · export",
       glyph: "⬢",
       pathway: "Tool",
       template: "/editor/tools/spline3d/index.html",
-      inputs: [],
+      // OPTIONAL asset input — link a 3D asset (or a 3d-gen / Meshy output) and
+      // it loads into the editor on open. The Tool pathway treats it as
+      // optional (runs fine with nothing linked). See app.js runSkill.
+      inputs: ["asset"],
       output: "3d",
       pathwayBExt: "html",
       hasModelDropdown: false,

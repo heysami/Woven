@@ -33978,7 +33978,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (wantsPrompt && promptTexts.length === 0) {
         update(skillId, { status: "error", error: "Connect a prompt node to this skill's input" }); break;
       }
-      if (wantsAsset && !assetInputPath && !assetInputDataUri) {
+      if (wantsAsset && !assetInputPath && !assetInputDataUri && skillSpec.pathway !== "Tool") {
         update(skillId, { status: "error", error: "Connect a file-backed asset, an inline-SVG asset, an upstream image skill, or a prototype's raster port to this skill's input" }); break;
       }
       // DS scope (per-node dropdown) — prepended to the prompt as a
@@ -34234,14 +34234,44 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (skillSpec.pathway === "Tool" && skillSpec.template) {
         const forceExt = (p) => p.replace(/\.[a-z0-9]+$/i, "." + (skillSpec.pathwayBExt || "html"));
         const htmlTargets = outputTargets.map(t => ({ ...t, path: forceExt(t.path) }));
+        // Collect any 3D models (.glb/.gltf) linked into this node's input —
+        // an uploaded asset OR a 3d-gen / Meshy output. They're injected as
+        // window.__SPLINE3D_IMPORT so the editor loads them on open.
+        const modelPaths = [], texturePaths = [];
+        const collect = (p) => {
+          if (typeof p !== "string") return;
+          if (/\.(glb|gltf)$/i.test(p) && !modelPaths.includes(p)) modelPaths.push(p);
+          else if (/\.(png|jpe?g|webp|avif)$/i.test(p) && !texturePaths.includes(p)) texturePaths.push(p);
+        };
+        for (const e of edges) {
+          const to = workflowParseEdgeRef(e.to); if (!to || to.node !== skillId || to.port !== "in") continue;
+          const fr = workflowParseEdgeRef(e.from); if (!fr) continue;
+          const up = nodeById[fr.node];
+          if (up && up.kind === "asset") collect(up.path);
+          if (up && writtenPathByskill[up.id]) collect(writtenPathByskill[up.id]);
+        }
+        // Relative URL from the written editor html to a sibling source asset.
+        const relUrl = (fromHtml, toAsset) => {
+          const a = fromHtml.split("/").slice(0, -1), b = toAsset.split("/");
+          let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+          return "../".repeat(a.length - i) + b.slice(i).join("/");
+        };
         try {
           const tr = await fetch(skillSpec.template, { cache: "no-store" });
           if (!tr.ok) throw new Error("template fetch failed (" + tr.status + ")");
           const templateHtml = await tr.text();
           for (const t of htmlTargets) {
+            let html = templateHtml;
+            const injects = [];
+            if (modelPaths.length) injects.push("window.__SPLINE3D_IMPORT=" + JSON.stringify(modelPaths.map(p => relUrl(t.path, p))) + ";");
+            if (texturePaths.length) injects.push("window.__SPLINE3D_TEXTURES=" + JSON.stringify(texturePaths.map(p => relUrl(t.path, p))) + ";");
+            if (injects.length) {
+              const tag = "<script>" + injects.join("") + "<\/script>";
+              html = html.includes("</body>") ? html.replace("</body>", tag + "</body>") : html + tag;
+            }
             const wr = await fetch(apiUrl("/__write_text"), {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: t.path, text: templateHtml }),
+              body: JSON.stringify({ path: t.path, text: html }),
             });
             if (!wr.ok) {
               const j = await wr.json().catch(() => ({}));
