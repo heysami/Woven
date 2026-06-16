@@ -6383,6 +6383,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._prompt_delete(qs, m.group(1))
             if parsed.path == "/__projects/new":
                 return self._project_create(qs)
+            if parsed.path == "/__projects/clone":
+                return self._project_clone(qs)
             if parsed.path == "/__seed_default_ds":
                 return self._seed_existing_ds(qs)
             if parsed.path == "/__projects/rename":
@@ -12610,12 +12612,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             "avatar": tok.get("avatar") or "",
         })
 
-    # GET /__github/repos  → {repos:[…]} for the per-project picker.
+    # GET /__github/repos[&q=<query>]  → {repos:[…]} for the per-project picker.
+    # No q → recently-pushed list. q → GitHub search across all the user's repos.
     def _github_repos(self, qs):
         tok = _gitops.host_token()
         if not tok:
             return self._reply(401, {"error": "not signed in to GitHub"})
+        q = (_qs_get(qs, "q") or "").strip()
         try:
+            if q:
+                login = (_gitops.load_token() or {}).get("login") or ""
+                return self._reply(200, {"repos": _gitops.search_repos(tok, q, login=login)})
             return self._reply(200, {"repos": _gitops.list_repos(tok)})
         except Exception as e:
             return self._reply(500, {"error": str(e)})
@@ -16035,6 +16042,92 @@ class H(http.server.SimpleHTTPRequestHandler):
         if ds_warning:
             resp["dsWarning"] = ds_warning
         return self._reply(200, resp)
+
+    # POST /__projects/clone  body: { clone_url, id?, label? }
+    # Clone a GitHub repo into a NEW project folder (projects/<id>/). Because the
+    # project IS the clone, origin is set and the tree is clean — Pull/Push work
+    # immediately, which is the whole point (it avoids the "fresh project is
+    # dirty, can't pull" trap a generated project hits). Workspace-mode +
+    # GitHub-signed-in only; private repos authenticate via the host token (a
+    # one-shot URL that's never persisted to .git/config).
+    def _project_clone(self, qs):
+        if not WORKSPACE_DIR:
+            return self._reply(400, {
+                "error": "clone needs workspace mode",
+                "hint": "set TH_WORKSPACE_DIR=<path> on the daemon to host multiple projects",
+            })
+        body = self._read_json_body()
+        clone_url = (body.get("clone_url") or body.get("remote") or "").strip()
+        if not clone_url:
+            return self._reply(400, {"error": "missing repo clone_url"})
+        tok = _gitops.host_token()
+        if not tok:
+            return self._reply(401, {"error": "not signed in to GitHub — connect your account first"})
+
+        # Collision check across both the projects/ layout and the legacy root.
+        def _taken(pid):
+            if os.path.exists(_safe_join(PROJECTS_DIR, pid)):
+                return True
+            legacy = os.path.join(WORKSPACE_DIR, pid)
+            return os.path.isdir(legacy) and os.path.isdir(os.path.join(legacy, "source"))
+
+        # Derive the project id: caller-supplied (validated) or slugified from the
+        # repo name (last URL segment minus .git), deduped with -2/-3… like duplicate.
+        def _slug_from_url(u):
+            name = u.rstrip("/").split("/")[-1]
+            if name.endswith(".git"):
+                name = name[:-4]
+            name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._") or "project"
+            if not re.match(r"^[A-Za-z0-9]", name):
+                name = "p-" + name
+            return name[:64]
+
+        new_id = (body.get("id") or "").strip()
+        if new_id:
+            if not PROJECT_ID_OK.match(new_id):
+                return self._reply(400, {"error": "invalid project id (alphanumeric + ._- only, 1..64 chars)", "id": new_id})
+            if _taken(new_id):
+                return self._reply(409, {"error": "project already exists", "id": new_id})
+        else:
+            base = _slug_from_url(clone_url)
+            new_id = base
+            n = 2
+            while _taken(new_id):
+                suffix = f"-{n}"
+                new_id = (base[:64 - len(suffix)] + suffix)
+                n += 1
+        label = (body.get("label") or new_id).strip() or new_id
+
+        os.makedirs(PROJECTS_DIR, exist_ok=True)
+        dest = _safe_join(PROJECTS_DIR, new_id)
+        try:
+            _gitops.clone(dest, clone_url, token=tok)
+        except Exception as e:
+            # Leave no half-cloned directory behind on failure.
+            try:
+                if os.path.isdir(dest):
+                    shutil.rmtree(dest, ignore_errors=True)
+            except Exception:
+                pass
+            return self._reply(502, {"error": f"clone failed: {e}"})
+
+        # Register the label in workspace.json so /__projects reports it back
+        # (auto-discovery would otherwise fall back to id == label).
+        ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
+        try:
+            cfg = {}
+            if os.path.isfile(ws_json):
+                with open(ws_json, "r", encoding="utf-8") as f:
+                    cfg = json.load(f) or {}
+            entries = cfg.setdefault("projects", [])
+            if not any((e.get("id") or "").strip() == new_id for e in entries):
+                entries.append({"id": new_id, "label": label})
+            with open(ws_json, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception:
+            pass  # auto-discovery still picks the project up via folder scan
+        return self._reply(200, {"ok": True, "id": new_id, "label": label,
+                                 "path": dest, "from": clone_url})
 
     # POST /__seed_default_ds?project=<id>&ds=<dsId>
     # Bakes the bundled template design system into an EXISTING project's

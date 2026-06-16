@@ -235,6 +235,34 @@ def pull(root, token=None):
             "detail": (out or err).strip()[:400], "conflicts": conflicts}
 
 
+def clone(dest, clone_url, token=None):
+    """git clone `clone_url` into `dest` (which must NOT already exist). When a
+    token is given and the URL is https, authenticate with a one-shot
+    x-access-token URL (same pattern as publish()/pull()) so private repos work
+    and the credential is never written to .git/config. `git clone` sets
+    `origin` itself, so the resulting repo is ready for pull()/publish() with no
+    follow-up connect(). Returns {ok, dest}; raises RuntimeError on failure."""
+    url = (clone_url or "").strip()
+    if not url:
+        raise RuntimeError("missing clone url")
+    fetch_url = url
+    if token and url.startswith("https://"):
+        # one-shot authenticated URL; not persisted (git clone records the bare
+        # `url` as origin because we pass it via the source arg, not config —
+        # but to be safe we reset origin to the token-free URL after cloning).
+        fetch_url = url.replace("https://", f"https://x-access-token:{token}@", 1)
+    parent = os.path.dirname(os.path.abspath(dest))
+    os.makedirs(parent, exist_ok=True)
+    code, out, err = _git(parent, "clone", fetch_url, os.path.abspath(dest), timeout=300)
+    if code != 0:
+        raise RuntimeError(f"git clone failed: {(err or out).strip()[:400]}")
+    # Make sure origin carries the clean (token-free) URL even if git recorded
+    # the authenticated one — we never persist credentials in config.
+    if fetch_url != url:
+        _git(dest, "remote", "set-url", "origin", url)
+    return {"ok": True, "dest": os.path.abspath(dest)}
+
+
 def log(root, limit=30):
     """Recent commit history for the panel's history view. Returns a list of
     {sha, short, subject, author, relative, iso}, newest first. \\x1f field +
@@ -438,6 +466,27 @@ def list_repos(token, limit=100):
             break
         page += 1
     return repos[:limit]
+
+
+def search_repos(token, query, login=None, limit=30):
+    """Search the signed-in account's repos by name via GitHub's search API, so
+    repos beyond the recently-pushed page are findable. Scoped to the user's own
+    repos (incl. forks). Returns [] on empty query or error."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    terms = f"{q} in:name fork:true"
+    if login:
+        terms += f" user:{login}"
+    qq = urllib.parse.quote(terms)
+    code, j = _gh_api("GET", f"/search/repositories?q={qq}&per_page={int(limit)}"
+                      "&sort=updated&order=desc", token=token)
+    if code != 200 or not isinstance(j, dict):
+        return []
+    return [{"full_name": r.get("full_name"), "clone_url": r.get("clone_url"),
+             "private": bool(r.get("private")), "pushed_at": r.get("pushed_at"),
+             "default_branch": r.get("default_branch") or "main"}
+            for r in (j.get("items") or [])][:limit]
 
 
 def create_repo(token, name, private=True, description=""):

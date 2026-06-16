@@ -613,6 +613,7 @@ const Icon = {
   Text:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 4h10M8 4v9M5.5 13h5"/></svg>`,
   Pen:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 14l3-1 7-7-2-2-7 7-1 3z M9 4l3 3"/></svg>`,
   Move:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M2 8l2 2M2 8l2-2M14 8l-2 2M14 8l-2-2M8 14l-2-2M8 14l2-2"/></svg>`,
+  Grip:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="6" cy="4" r=".9" fill="currentColor"/><circle cx="10" cy="4" r=".9" fill="currentColor"/><circle cx="6" cy="8" r=".9" fill="currentColor"/><circle cx="10" cy="8" r=".9" fill="currentColor"/><circle cx="6" cy="12" r=".9" fill="currentColor"/><circle cx="10" cy="12" r=".9" fill="currentColor"/></svg>`,
   StateM:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="4" r="2"/><path d="M6 4h4M12 6v4M10.5 6.5l-5 5"/></svg>`,
   Clock:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`,
   Grid:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12"/></svg>`,
@@ -9814,6 +9815,9 @@ function GitPanel({ railTop, panelRef }) {
   const [newRepo, setNewRepo] = useState(""); // new-repo name field
   const [editingRemote, setEditingRemote] = useState(false); // manual remote URL editor
   const [tokenInput, setTokenInput] = useState("");          // paste-a-token sign-in field
+  const [repoQuery, setRepoQuery] = useState("");            // repo-picker search box
+  const [newRepoPrivate, setNewRepoPrivate] = useState(true);
+  const searchTimer = useRef(0);
   const msgTouched = useRef(false);           // stop the poll clobbering typed text
   const devTimer = useRef(0);
   // Live-session GUESTS get a read-only view: repo link + history, but no
@@ -9843,7 +9847,7 @@ function GitPanel({ railTop, panelRef }) {
   useEffect(() => {
     reload(); loadGh();
     const t = setInterval(reload, 8000);
-    return () => { clearInterval(t); if (devTimer.current) clearTimeout(devTimer.current); };
+    return () => { clearInterval(t); if (devTimer.current) clearTimeout(devTimer.current); if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [reload, loadGh]);
 
   const flashErr = (m) => { setErr(String(m)); setTimeout(() => setErr(null), 6000); };
@@ -9940,14 +9944,28 @@ function GitPanel({ railTop, panelRef }) {
   };
 
   // ── Repo picker (per-project remote) ─────────────────────────────────────
-  const openPicker = async () => {
-    setPicking(true); setRepos(null); setNewRepo("");
+  // Fetch repos — no q → recently-pushed list; q → GitHub search across all the
+  // account's repos (so old repos beyond the first page are still findable).
+  const fetchRepos = useCallback(async (q) => {
+    setRepos(null);
     try {
-      const r = await fetch(apiUrl("/__github/repos"));
+      const base = apiUrl("/__github/repos");
+      const url = q ? base + (base.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(q) : base;
+      const r = await fetch(url);
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "could not list repos");
       setRepos(j.repos || []);
-    } catch (e) { flashErr(e.message || e); setRepos([]); }
+    } catch (e) { flashErr(String(e.message || e)); setRepos([]); }
+  }, []);
+  const openPicker = () => {
+    setPicking(true); setRepos(null); setNewRepo(""); setRepoQuery("");
+    fetchRepos("");
+  };
+  // Debounced search as the user types in the picker's search box.
+  const onSearchInput = (v) => {
+    setRepoQuery(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => fetchRepos(v.trim()), 320);
   };
   const chooseRepo = async (r) => {
     const j = await ghOp("connect_repo", { clone_url: r.clone_url });
@@ -9955,7 +9973,7 @@ function GitPanel({ railTop, panelRef }) {
   };
   const createRepo = async () => {
     const name = newRepo.trim(); if (!name) return;
-    const j = await ghOp("create_repo", { name, private: true });
+    const j = await ghOp("create_repo", { name, private: newRepoPrivate });
     if (j) { flashNote("Created " + ((j.repo && j.repo.full_name) || name)); setPicking(false); setNewRepo(""); reload(); }
   };
 
@@ -10059,22 +10077,32 @@ function GitPanel({ railTop, panelRef }) {
                   <span>Pick a repo for this project</span>
                   <button className="th-git-link" onClick=${() => setPicking(false)}>Close</button>
                 </div>
+                <input className="th-git-input th-git-search" placeholder="Search your repos…"
+                  value=${repoQuery} onInput=${e => onSearchInput(e.target.value)} />
                 <div className="th-git-create">
-                  <input className="th-git-input" placeholder="new-repo-name (creates private)"
+                  <input className="th-git-input" placeholder="new-repo-name"
                     value=${newRepo} onInput=${e => setNewRepo(e.target.value)}
                     onKeyDown=${e => { if (e.key === "Enter") createRepo(); }} />
+                  <label className="th-git-priv" title="Create a private repo">
+                    <input type="checkbox" checked=${newRepoPrivate} onChange=${e => setNewRepoPrivate(e.target.checked)} /> Private
+                  </label>
                   <button className="th-git-btn is-primary" disabled=${!newRepo.trim() || busy === "create_repo"} onClick=${createRepo}>
                     ${busy === "create_repo" ? "Creating…" : "Create"}</button>
                 </div>
-                ${repos === null && html`<div className="runs-empty">Loading repos…</div>`}
-                ${repos !== null && repos.length === 0 && html`<div className="runs-empty">No repos on this account yet — create one above.</div>`}
-                <div className="th-git-repo-list">
-                  ${(repos || []).map(r => html`
-                    <button className="th-git-repo-item" key=${r.full_name} disabled=${busy === "connect_repo"} onClick=${() => chooseRepo(r)}>
-                      <span className="th-git-repo-item-name">${r.full_name}</span>
-                      ${r.private && html`<span className="th-git-pill">private</span>`}
-                    </button>`)}
-                </div>
+                ${repos === null && html`<div className="runs-empty">Searching…</div>`}
+                ${(() => {
+                  const q = repoQuery.trim().toLowerCase();
+                  const shown = (repos || []).filter(r => !q || (r.full_name || "").toLowerCase().includes(q));
+                  if (repos !== null && shown.length === 0)
+                    return html`<div className="runs-empty">${q ? "No repos match “" + repoQuery.trim() + "”." : "No repos on this account yet — create one above."}</div>`;
+                  return html`<div className="th-git-repo-list">
+                    ${shown.map(r => html`
+                      <button className="th-git-repo-item" key=${r.full_name} disabled=${busy === "connect_repo"} onClick=${() => chooseRepo(r)}>
+                        <span className="th-git-repo-item-name">${r.full_name}</span>
+                        ${r.private && html`<span className="th-git-pill">private</span>`}
+                      </button>`)}
+                  </div>`;
+                })()}
               </div>`}
           </div>`}
 
@@ -11839,6 +11867,69 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
   const removeQueued = (id) => setQueue(prev => prev.filter(q => q.id !== id));
 
+  // Reorder the send-queue. The drain effect always fires queue[0], so the
+  // order here IS the firing order — letting the user re-prioritise what the
+  // agent picks up next turn. Two entry points: drag-and-drop (mouse) and
+  // ↑/↓ on the focused grip (keyboard). Both funnel through setQueue so the
+  // persistence effect mirrors the new order to localStorage automatically.
+  const moveQueued = (id, dir) => setQueue(prev => {
+    const i = prev.findIndex(q => q.id === id);
+    if (i < 0) return prev;
+    const j = i + dir;
+    if (j < 0 || j >= prev.length) return prev;
+    const next = prev.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
+  });
+  const reorderQueued = (fromId, toId, after) => {
+    if (fromId === toId) return;
+    setQueue(prev => {
+      const item = prev.find(q => q.id === fromId);
+      if (!item) return prev;
+      const without = prev.filter(q => q.id !== fromId);
+      let to = without.findIndex(q => q.id === toId);
+      if (to < 0) return prev;
+      if (after) to += 1;
+      without.splice(to, 0, item);
+      return without;
+    });
+  };
+  // Drag state — `dragQId` is the envelope being dragged; `dropQId` is the
+  // hovered drop target plus which side of it the drop would land on. Null
+  // when no queue drag is active (so file drops onto the composer still flow
+  // to the existing onDrop image/upload path untouched).
+  const [dragQId, setDragQId] = useState(null);
+  const [dropQId, setDropQId] = useState(null);   // { id, after } | null
+  const onQDragStart = (e, id) => {
+    setDragQId(id);
+    try {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("application/x-th-queue", String(id));
+    } catch { /* some browsers restrict setData mime types */ }
+  };
+  const onQDragOver = (e, id) => {
+    if (dragQId == null) return;            // not a queue drag — leave file DnD alone
+    e.preventDefault();
+    e.stopPropagation();
+    try { e.dataTransfer.dropEffect = "move"; } catch { /* fine */ }
+    const r = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    setDropQId(cur => (cur && cur.id === id && cur.after === after) ? cur : { id, after });
+  };
+  const onQDrop = (e, id) => {
+    if (dragQId == null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const after = dropQId && dropQId.id === id ? dropQId.after : false;
+    reorderQueued(dragQId, id, after);
+    setDragQId(null); setDropQId(null);
+  };
+  const onQDragEnd = () => { setDragQId(null); setDropQId(null); };
+  const onGripKey = (e, id) => {
+    if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); moveQueued(id, -1); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); moveQueued(id, +1); }
+  };
+
   // Filter the loaded skill list against the current slash query (chars after
   // `/`). Match against kind + group + slug + name + description so users can
   // surface a whole bucket with `/orch` / `/aesthetic` / `/shell` etc., AND
@@ -11986,8 +12077,25 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             if (q.attachments.length) titleParts.push("Attachments:\n" + q.attachments.map(a => "  " + a.path).join("\n"));
             if (q.uploads.length)     titleParts.push("Uploads:\n"     + q.uploads.map(u => "  " + u.path).join("\n"));
             return html`
-              <span key=${"q" + q.id} className="chat-composer-queue-item" role="listitem">
-                <span className="chat-composer-queue-index">${i + 1}</span>
+              <span
+                key=${"q" + q.id}
+                className="chat-composer-queue-item"
+                role="listitem"
+                draggable=${true}
+                data-dragging=${dragQId === q.id ? "true" : null}
+                data-drop=${dropQId && dropQId.id === q.id ? (dropQId.after ? "after" : "before") : null}
+                onDragStart=${(e) => onQDragStart(e, q.id)}
+                onDragOver=${(e) => onQDragOver(e, q.id)}
+                onDrop=${(e) => onQDrop(e, q.id)}
+                onDragEnd=${onQDragEnd}
+              >
+                <button
+                  type="button"
+                  className="chat-composer-queue-index"
+                  title="Drag to reorder · ↑/↓ to move"
+                  aria-label=${`Queued message ${i + 1} of ${queue.length}. Press up or down arrow to reorder.`}
+                  onKeyDown=${(e) => onGripKey(e, q.id)}
+                ><span className="chat-composer-queue-grip"><${Icon.Grip}/></span><span className="chat-composer-queue-num">${i + 1}</span></button>
                 <button
                   type="button"
                   className="chat-composer-queue-body"
@@ -19772,8 +19880,224 @@ function SharesLanding({ onCountChange }) {
   `;
 }
 
+/* GitHubAccountButton — landing-page (top-right) GitHub account control. Sign-in
+   is HOST-level and shared with the in-editor Git panel, so connecting here also
+   lights up Pull/Push there. Reuses /__github/status + the device-flow / paste-
+   token sign-in endpoints. Self-contained: polls status, owns a little popover. */
+function GitHubAccountButton() {
+  const [gh, setGh] = useState(null);          // {configured, signedIn, login, avatar}
+  const [open, setOpen] = useState(false);
+  const [device, setDevice] = useState(null);  // active device-flow {user_code, verification_uri, …}
+  const [tokenInput, setTokenInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const wrapRef = useRef(null);
+  const devTimer = useRef(0);
+
+  const loadGh = useCallback(() => {
+    fetch(apiUrl("/__github/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => setGh(j || {}))
+      .catch(() => setGh({}));
+  }, []);
+  useEffect(() => {
+    loadGh();
+    const t = setInterval(loadGh, 10000);
+    return () => { clearInterval(t); if (devTimer.current) clearTimeout(devTimer.current); };
+  }, [loadGh]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const flash = (m) => { setNote(String(m)); setTimeout(() => setNote(null), 3500); };
+  const ghOp = async (kind, body) => {
+    setBusy(true);
+    try {
+      const r = await fetch(apiUrl("/__github/" + kind), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || (kind + " failed"));
+      return j;
+    } catch (e) { flash(e.message || e); return null; }
+    finally { setBusy(false); }
+  };
+  const pollDevice = (interval) => {
+    devTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(apiUrl("/__github/device/poll"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const j = await r.json().catch(() => ({}));
+        if (j.status === "ok") { setDevice(null); flash("Signed in as " + j.login); loadGh(); return; }
+        if (j.status === "pending") { pollDevice(j.slowDown ? interval + 5 : interval); return; }
+        flash(j.error || "authorization failed"); setDevice(null);
+      } catch (e) { flash(e.message || e); setDevice(null); }
+    }, Math.max(2, interval) * 1000);
+  };
+  const startDevice = async () => { const j = await ghOp("device/start", {}); if (j) { setDevice(j); pollDevice(j.interval || 5); } };
+  const cancelDevice = () => { if (devTimer.current) { clearTimeout(devTimer.current); devTimer.current = 0; } setDevice(null); };
+  const doTokenSignin = async () => { const t = tokenInput.trim(); if (!t) return; const j = await ghOp("token", { token: t }); if (j) { setTokenInput(""); flash("Signed in as " + j.login); loadGh(); } };
+  const signOut = async () => { if (devTimer.current) clearTimeout(devTimer.current); const j = await ghOp("signout", {}); if (j) { setDevice(null); flash("Signed out"); loadGh(); } };
+
+  const signedIn = !!(gh && gh.signedIn);
+  return html`
+    <div className="landing-gh" ref=${wrapRef}>
+      <button className=${"landing-gh-btn" + (signedIn ? " is-in" : "")} onClick=${() => setOpen(o => !o)}
+        title=${signedIn ? ("GitHub: " + (gh.login || "signed in")) : "Connect a GitHub account"}>
+        ${signedIn && gh.avatar
+          ? html`<img className="landing-gh-avatar" src=${gh.avatar} alt="" />`
+          : html`<${Icon.Fork}/>`}
+        <span className="landing-gh-label">${signedIn ? (gh.login || "GitHub") : "Connect GitHub"}</span>
+        <${Icon.Chev}/>
+      </button>
+      ${open && html`
+        <div className="popover landing-gh-pop">
+          ${note && html`<div className="landing-gh-note">${note}</div>`}
+          ${signedIn ? html`
+            <div className="popover-title">GitHub account</div>
+            <div className="landing-gh-who">
+              ${gh.avatar ? html`<img className="landing-gh-avatar" src=${gh.avatar} alt="" />` : html`<${Icon.User}/>`}
+              <span>${gh.login || "signed in"}</span>
+            </div>
+            <button className="popover-item" onClick=${signOut} disabled=${busy}>
+              <span className="popover-item-icon"><${Icon.X}/></span><span>Sign out</span></button>
+          ` : (device ? html`
+            <div className="popover-title">Authorize on GitHub</div>
+            <div className="landing-gh-code">${device.user_code}</div>
+            <button className="popover-item" onClick=${() => window.open(device.verification_uri || "https://github.com/login/device", "_blank")}>
+              <span className="popover-item-icon"><${Icon.External}/></span><span>Open GitHub & enter the code</span></button>
+            <button className="popover-item" onClick=${cancelDevice}>
+              <span className="popover-item-icon"><${Icon.X}/></span><span>Cancel</span></button>
+            <div className="landing-gh-hint">Waiting for authorization… keep this open.</div>
+          ` : html`
+            <div className="popover-title">Connect GitHub</div>
+            <input className="landing-gh-input" type="password" placeholder="Paste a token (scope: repo)"
+              value=${tokenInput} onInput=${e => setTokenInput(e.target.value)}
+              onKeyDown=${e => { if (e.key === "Enter") doTokenSignin(); }} />
+            <button className="popover-item is-primary" onClick=${doTokenSignin} disabled=${busy || !tokenInput.trim()}>
+              <span className="popover-item-icon"><${Icon.Check}/></span><span>${busy ? "Connecting…" : "Connect with token"}</span></button>
+            <a className="landing-gh-link" href="https://github.com/settings/tokens/new?scopes=repo&description=Woven" target="_blank" rel="noopener">Create a token →</a>
+            <button className="popover-item" onClick=${startDevice} disabled=${busy}>
+              <span className="popover-item-icon"><${Icon.External}/></span><span>Sign in with a code instead</span></button>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* CloneFromGithubDialog — "New project ▸ From GitHub". Lists the signed-in
+   account's repos (picker only), lets the user confirm/edit the project name,
+   then POSTs /__projects/clone to clone the repo into a fresh project folder.
+   Because the new project IS the clone, origin is set and Pull/Push work with no
+   "dirty tree" trap. Reuses the New-project wizard's overlay/card classes. */
+function CloneFromGithubDialog({ onClose, onCreated }) {
+  const [gh, setGh] = useState(null);
+  const [repos, setRepos] = useState(null);     // null = loading
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState(null);   // selected repo
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const searchTimer = useRef(0);
+
+  const loadGh = useCallback(() => {
+    fetch(apiUrl("/__github/status")).then(r => r.ok ? r.json() : null).then(j => setGh(j || {})).catch(() => setGh({}));
+  }, []);
+  const fetchRepos = useCallback(async (q) => {
+    setRepos(null);
+    try {
+      const base = apiUrl("/__github/repos");
+      const url = q ? base + (base.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(q) : base;
+      const r = await fetch(url);
+      const j = await r.json().catch(() => ({}));
+      setRepos(j.repos || []);
+    } catch { setRepos([]); }
+  }, []);
+  useEffect(() => { loadGh(); }, [loadGh]);
+  useEffect(() => { if (gh && gh.signedIn) fetchRepos(""); }, [gh, fetchRepos]);
+
+  const onSearch = (v) => {
+    setQuery(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => fetchRepos(v.trim()), 320);
+  };
+  const slug = (s) => (s || "").replace(/\.git$/, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "").slice(0, 64) || "project";
+  const choose = (r) => { setPicked(r); setName(slug(r.name || (r.full_name || "").split("/").pop())); setErr(null); };
+  const create = async () => {
+    if (!picked) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__projects/clone"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clone_url: picked.clone_url, id: name.trim() || undefined }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "clone failed");
+      onCreated && onCreated({ id: j.id });
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const signedIn = !!(gh && gh.signedIn);
+  return createPortal(html`
+    <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <div className="newproj-card clone-card">
+        <header className="newproj-card-head">
+          <h2>New project from GitHub</h2>
+          <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+        </header>
+        <div className="newproj-card-body">
+          ${err && html`<div className="newproj-error">${err}</div>`}
+          ${!signedIn ? html`
+            <div className="clone-signin-note">
+              <b>Connect your GitHub account first.</b>
+              <div className="newproj-hint">Use the <b>Connect GitHub</b> button at the top-right of the landing page, then come back.</div>
+              <button className="newproj-cancel" onClick=${loadGh}>Recheck</button>
+            </div>
+          ` : (!picked ? html`
+            <input className="clone-search" placeholder="Search your repositories…" value=${query}
+              onInput=${e => onSearch(e.target.value)} autoFocus spellCheck="false" />
+            ${repos === null && html`<div className="clone-empty">Loading repos…</div>`}
+            ${repos !== null && repos.length === 0 && html`<div className="clone-empty">No repositories found${query ? " for that search" : ""}.</div>`}
+            <div className="clone-repo-list">
+              ${(repos || []).map(r => html`
+                <button className="clone-repo-item" key=${r.full_name} onClick=${() => choose(r)}>
+                  <span className="clone-repo-name">${r.full_name}</span>
+                  ${r.private && html`<span className="clone-pill">private</span>`}
+                </button>`)}
+            </div>
+          ` : html`
+            <div className="clone-picked">
+              <span className="clone-repo-name">${picked.full_name}</span>
+              ${picked.private && html`<span className="clone-pill">private</span>`}
+              <button className="newproj-link" onClick=${() => setPicked(null)}>Change</button>
+            </div>
+            <label className="newproj-field">
+              <input value=${name} onInput=${e => setName(e.target.value)} placeholder="Project name"
+                maxLength=${64} onKeyDown=${e => { if (e.key === "Enter") create(); }} autoFocus />
+            </label>
+            <div className="newproj-hintrow"><span className="newproj-hint">Cloned into a fresh project folder — Pull & Push work right away.</span></div>
+          `)}
+        </div>
+        ${signedIn && picked && html`
+          <footer className="newproj-card-foot">
+            <button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
+            <button type="button" className="newproj-create" disabled=${busy || !name.trim()} onClick=${create}>
+              ${busy ? "Cloning…" : "Clone & create"}</button>
+          </footer>
+        `}
+      </div>
+    </div>
+  `, document.body);
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
+  const [cloningGithub, setCloningGithub] = useState(false);  // "From GitHub" dialog
+  const [newMenuOpen, setNewMenuOpen] = useState(false);       // New-project split dropdown
+  const newMenuRef = useRef(null);
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [busyId, setBusyId] = useState(null);
@@ -19905,6 +20229,16 @@ function ProjectsLanding({ info, projects, onReload }) {
     // surface — the user assembles the project there before any HTML exists.
     openProject(id, "workflow");
   };
+  // A cloned-from-GitHub project DOES have a source/ tree already, but we still
+  // land in workflow mode for consistency with the wizard flow.
+  const onClonedCreated = ({ id }) => { setCloningGithub(false); openProject(id, "workflow"); };
+  // Close the New-project split dropdown on any outside click.
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    const onDown = (e) => { if (newMenuRef.current && !newMenuRef.current.contains(e.target)) setNewMenuOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [newMenuOpen]);
 
   const saveRename = async (pid) => {
     setErr(null);
@@ -20136,6 +20470,7 @@ function ProjectsLanding({ info, projects, onReload }) {
               <${DaemonIndicator}/>
               <${CliIndicator}/>
               <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
+              <${GitHubAccountButton}/>
               <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="landing-gear"/>
             </div>
           </div>
@@ -20179,21 +20514,40 @@ function ProjectsLanding({ info, projects, onReload }) {
                     onInput=${e => setFilter(e.target.value)}
                   />
                 `}
-                <button
-                  className="landing-new-btn"
-                  disabled=${setupNeeded}
-                  data-disabled=${setupNeeded}
-                  title=${
-                    !mediaCfg.configured
-                      ? "Connect a model first — see the setup card below."
-                      : (!localSkills.allRequiredInstalled
-                          ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
-                          : "Create a new project")
-                  }
-                  onClick=${() => { if (setupNeeded) return; setCreating(true); setErr(null); }}>
-                  <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
-                  <span>New project</span>
-                </button>
+                <div className="landing-new-split" ref=${newMenuRef}>
+                  <button
+                    className="landing-new-btn"
+                    disabled=${setupNeeded}
+                    data-disabled=${setupNeeded}
+                    title=${
+                      !mediaCfg.configured
+                        ? "Connect a model first — see the setup card below."
+                        : (!localSkills.allRequiredInstalled
+                            ? `Install ${localSkills.missing.map(p => p.label).join(", ")} first — see the setup card below.`
+                            : "Create a new project")
+                    }
+                    onClick=${() => { if (setupNeeded) return; setNewMenuOpen(false); setCreating(true); setErr(null); }}>
+                    <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
+                    <span>New project</span>
+                  </button>
+                  <button
+                    className="landing-new-caret"
+                    disabled=${setupNeeded}
+                    data-disabled=${setupNeeded}
+                    aria-label="More project options"
+                    title="More ways to create a project"
+                    onClick=${() => { if (setupNeeded) return; setNewMenuOpen(o => !o); }}>
+                    <${Icon.Chev}/>
+                  </button>
+                  ${newMenuOpen && html`
+                    <div className="popover landing-new-menu">
+                      <button className="popover-item" onClick=${() => { setNewMenuOpen(false); setCreating(true); setErr(null); }}>
+                        <span className="popover-item-icon"><${Icon.Plus}/></span><span>Blank project</span></button>
+                      <button className="popover-item" onClick=${() => { setNewMenuOpen(false); setCloningGithub(true); setErr(null); }}>
+                        <span className="popover-item-icon"><${Icon.Fork}/></span><span>From GitHub…</span></button>
+                    </div>
+                  `}
+                </div>
               </div>
             `}
             </div>
@@ -20222,6 +20576,11 @@ function ProjectsLanding({ info, projects, onReload }) {
           workspaceProjects=${projects}
           onClose=${() => { setCreating(false); setErr(null); }}
           onCreated=${onWizardCreated}
+        />`}
+
+        ${activeTab === "projects" && cloningGithub && html`<${CloneFromGithubDialog}
+          onClose=${() => { setCloningGithub(false); setErr(null); }}
+          onCreated=${onClonedCreated}
         />`}
 
         ${activeTab === "projects" && projects.length === 0 && !creating && wizardOpen && onboardingReady && html`
