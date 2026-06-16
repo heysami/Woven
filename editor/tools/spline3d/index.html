@@ -161,15 +161,32 @@
       </div>
 
       <div class="group">
-        <div class="label">Boolean <span class="tag" id="selinfo"></span></div>
+        <div class="label">Live blob <span class="tag">smooth · editable</span></div>
+        <div class="row"><button class="btn on full" id="b-liveblob">⬤ Live blob from selected</button></div>
+        <div class="row"><button class="btn ghost full" id="b-addball">＋ Add metaball</button></div>
+        <div class="empty" style="padding:6px 4px;font-size:11px">Fuses into a smooth liquid that stays editable — drag the dots to reshape. (Re-polygonised live, like the water.)</div>
+      </div>
+
+      <div class="group">
+        <div class="label">Boolean (hard CSG) <span class="tag" id="selinfo"></span></div>
         <div class="row">
           <button class="btn" data-bool="union">Union</button>
           <button class="btn" data-bool="subtract">Subtract</button>
           <button class="btn" data-bool="intersect">Intersect</button>
         </div>
         <div class="field"><label>Liquid merge</label><input type="range" id="b-smooth" min="0" max="14" step="1" value="6"/><span class="val" id="b-smooth-v">6</span></div>
-        <div class="row"><button class="btn on full" id="b-blob">⬤ Blob merge (seamless)</button></div>
+        <div class="row"><button class="btn ghost full" id="b-blob">Bake fused mesh (static)</button></div>
         <div class="row"><button class="btn ghost full" id="b-liquefy">Liquefy selected</button></div>
+      </div>
+
+      <div class="group">
+        <div class="label">Deform <span class="tag">non-destructive</span></div>
+        <div class="field"><label>Twist</label><input type="range" id="d-twist" min="-3.14" max="3.14" step="0.02" value="0"/><span class="val" id="d-twist-v">0</span></div>
+        <div class="field"><label>Bend</label><input type="range" id="d-bend" min="-3.14" max="3.14" step="0.02" value="0"/><span class="val" id="d-bend-v">0</span></div>
+        <div class="field"><label>Taper</label><input type="range" id="d-taper" min="-1" max="1" step="0.02" value="0"/><span class="val" id="d-taper-v">0</span></div>
+        <div class="field"><label>Inflate</label><input type="range" id="d-inflate" min="-0.6" max="0.6" step="0.01" value="0"/><span class="val" id="d-inflate-v">0</span></div>
+        <div class="field"><label>Noise / melt</label><input type="range" id="d-noise" min="0" max="0.6" step="0.01" value="0"/><span class="val" id="d-noise-v">0</span></div>
+        <div class="row"><button class="btn ghost full" id="d-reset">Reset deform</button></div>
       </div>
 
       <div class="group">
@@ -683,8 +700,114 @@ function duplicate() {
   scene.add(d); objects.push(d); select([d]);
 }
 function removeSelected() {
-  selection.forEach(o => { detachFur(o); scene.remove(o); objects.splice(objects.indexOf(o), 1); }); select([]);
+  selection.forEach(o => {
+    detachFur(o); scene.remove(o); objects.splice(objects.indexOf(o), 1);
+    if (o.userData.isBlobDot && liveBlob) { liveBlob.sources = liveBlob.sources.filter(s => s.dot !== o); blobDirty = true; }
+  });
+  select([]);
 }
+
+// ── Live Blob — smooth, EDITABLE metaball merge (the water mechanism) ───────
+// Unlike the baked CSG/SDF blobMerge (frozen + faceted), this keeps a LIVE
+// MarchingCubes field re-polygonised every frame from movable handle "dots".
+// Drag a dot → the blob flows; it's always smooth (sphere metaballs, hi-res MC)
+// and always editable. This is exactly how the liquid/water reads.
+let liveBlob = null, blobDirty = true;   // dirty flag — only re-polygonise on change
+const BLOB_VOL = 9;   // world size of the live field cube (centred at origin-ish)
+const BLOB_CENTER = new THREE.Vector3(0, 0.8, 0);
+function ensureLiveBlob() {
+  if (liveBlob) return liveBlob;
+  const mat = physicalMat('#8b93ff'); MODE.liquid(mat);
+  const mc = new MarchingCubes(64, mat, true, false, 250000);
+  mc.isolation = 46; mc.castShadow = mc.receiveShadow = true;
+  mc.position.copy(BLOB_CENTER); mc.scale.setScalar(BLOB_VOL / 2);
+  scene.add(mc);
+  liveBlob = { mc, sources: [], color: new THREE.Color('#8b93ff') };
+  sims.push({ type: 'liveblob', mesh: mc, update: updateLiveBlob });
+  return liveBlob;
+}
+function addBlobSource(pos, r, color) {
+  const lb = ensureLiveBlob();
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x1a1f2e, depthTest: false }));
+  dot.renderOrder = 999; dot.position.copy(pos || new THREE.Vector3(0, 0.8, 0));
+  dot.userData.isBlobDot = true; dot.userData.r = r || 1; dot.userData.vel = new THREE.Vector3();
+  dot.name = 'blob-source-' + (lb.sources.length + 1);
+  scene.add(dot); objects.push(dot); lb.sources.push({ dot });
+  if (color) lb.color.set(color), lb.mc.material.color.copy(lb.color);
+  blobDirty = true; select([dot]); refresh();
+}
+function liveBlobFromSelected() {
+  const sel = selection.slice(); if (!sel.length) { flash('Select object(s) first'); return; }
+  let firstColor = null;
+  sel.forEach(o => {
+    o.geometry.computeBoundingSphere();
+    const r = (o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 1) * Math.max(o.scale.x, o.scale.y, o.scale.z);
+    if (!firstColor && o.material.color) firstColor = '#' + o.material.color.getHexString();
+    addBlobSource(o.getWorldPosition(new THREE.Vector3()), Math.max(0.5, r * 0.8), firstColor);
+  });
+  // remove the originals — they're now metaball sources
+  sel.forEach(o => { detachFur(o); scene.remove(o); const i = objects.indexOf(o); if (i >= 0) objects.splice(i, 1); });
+  flash('Live blob · ' + sel.length + ' source' + (sel.length === 1 ? '' : 's') + ' — drag the dots'); refresh();
+}
+function updateLiveBlob() {
+  const lb = liveBlob; if (!lb) return;
+  if (!lb.sources.length) { lb.mc.visible = false; return; }
+  // Only re-polygonise when a source moved / was added — idle frames are free.
+  let moved = blobDirty;
+  for (const s of lb.sources) {
+    if (!s._last) { s._last = s.dot.position.clone(); moved = true; }
+    else if (!s._last.equals(s.dot.position)) { s._last.copy(s.dot.position); moved = true; }
+  }
+  if (!moved) return;
+  blobDirty = false;
+  lb.mc.visible = true; lb.mc.reset();
+  for (const s of lb.sources) {
+    const p = s.dot.position;
+    const nx = (p.x - BLOB_CENTER.x) / BLOB_VOL + 0.5;
+    const ny = (p.y - BLOB_CENTER.y) / BLOB_VOL + 0.5;
+    const nz = (p.z - BLOB_CENTER.z) / BLOB_VOL + 0.5;
+    const str = 0.95 * (s.dot.userData.r || 1);
+    if (nx > 0 && nx < 1 && ny > 0 && ny < 1 && nz > 0 && nz < 1) lb.mc.addBall(nx, ny, nz, str, 12);
+  }
+  lb.mc.update();
+}
+
+// ── Parametric deformers (bend / twist / taper / inflate / noise) ──────────
+// Non-destructive: the ORIGINAL positions+normals are cached once, and every
+// slider change re-applies all deformers from that base — so any slider back to
+// 0 restores the original. Operate in object-local space, normalised by the
+// base bounding box (ny ∈ [-1,1] up the object).
+function ensureBase(o) {
+  if (o.userData.baseGeo) return;
+  if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+  o.userData.baseGeo = { pos: o.geometry.attributes.position.array.slice(), nor: o.geometry.attributes.normal.array.slice() };
+  o.geometry.computeBoundingBox();
+  const bb = o.geometry.boundingBox;
+  o.userData.baseBox = { c: bb.getCenter(new THREE.Vector3()), h: bb.getSize(new THREE.Vector3()).multiplyScalar(0.5) };
+}
+function applyDeformers(o) {
+  ensureBase(o);
+  const d = o.userData.deform || {};
+  const bend = d.bend || 0, twist = d.twist || 0, taper = d.taper || 0, inflate = d.inflate || 0, noise = d.noise || 0;
+  const base = o.userData.baseGeo, box = o.userData.baseBox;
+  const cx = box.c.x, cy = box.c.y, cz = box.c.z, hy = box.h.y || 1e-3;
+  const pos = o.geometry.attributes.position.array, bp = base.pos, bn = base.nor;
+  for (let i = 0; i < bp.length; i += 3) {
+    let x = bp[i], y = bp[i + 1], z = bp[i + 2];
+    const ny = (y - cy) / hy;
+    if (taper)  { const s = 1 + taper * ny; x = cx + (x - cx) * s; z = cz + (z - cz) * s; }
+    if (twist)  { const a = twist * ny, c = Math.cos(a), s = Math.sin(a), xx = x - cx, zz = z - cz; x = cx + xx * c - zz * s; z = cz + xx * s + zz * c; }
+    if (bend)   { const a = bend * ny, c = Math.cos(a), s = Math.sin(a), xx = x - cx, yy = y - cy; x = cx + xx * c - yy * s; y = cy + xx * s + yy * c; }
+    if (inflate){ x += bn[i] * inflate; y += bn[i + 1] * inflate; z += bn[i + 2] * inflate; }
+    if (noise)  { const n = Math.sin(bp[i] * 4.1 + bp[i + 1] * 2.3) * Math.cos(bp[i + 2] * 3.7 + bp[i + 1] * 1.9); x += bn[i] * n * noise; y += bn[i + 1] * n * noise; z += bn[i + 2] * n * noise; }
+    pos[i] = x; pos[i + 1] = y; pos[i + 2] = z;
+  }
+  o.geometry.attributes.position.needsUpdate = true;
+  o.geometry.computeVertexNormals(); o.geometry.computeBoundingSphere();
+}
+function setDeform(o, key, val) { o.userData.deform = o.userData.deform || {}; o.userData.deform[key] = val; applyDeformers(o); }
+function resetDeform(o) { o.userData.deform = {}; if (o.userData.baseGeo) applyDeformers(o); }
 
 // ── Fur (shell fur) ─────────────────────────────────────────────────────
 function furAlpha() {
@@ -826,12 +949,27 @@ function setTool(t) { toolbar.querySelectorAll('[data-tool]').forEach(b => b.cla
 
 document.querySelectorAll('[data-bool]').forEach(b => b.addEventListener('click', () => boolOp(b.dataset.bool)));
 $('#b-smooth').addEventListener('input', e => { boolSmooth = parseInt(e.target.value); $('#b-smooth-v').textContent = boolSmooth; });
+$('#b-liveblob').addEventListener('click', liveBlobFromSelected);
+$('#b-addball').addEventListener('click', () => addBlobSource(new THREE.Vector3((Math.random()-0.5)*1.5, 0.8, (Math.random()-0.5)*1.5), 1));
 $('#b-blob').addEventListener('click', () => blobMerge(selection.slice(), boolSmooth));
 $('#b-liquefy').addEventListener('click', () => { if (!selection.length) { flash('Select an object'); return; } selection.forEach(s => liquefy(s, boolSmooth || 6)); flash('Liquefied ×' + (boolSmooth || 6)); });
 $('#duplicate').addEventListener('click', duplicate);
 $('#delete').addEventListener('click', removeSelected);
 $('#fur-toggle').addEventListener('click', toggleFur);
 $('#fur-len').addEventListener('input', e => { $('#fur-len-v').textContent = (+e.target.value).toFixed(2).slice(1); if (selection[0] && selection[0].userData.fur) buildFur(selection[0], +e.target.value); });
+
+// Deform sliders (non-destructive — re-applied from cached base each change)
+[['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
+  $(sel).addEventListener('input', e => {
+    const v = parseFloat(e.target.value); $(sel + '-v').textContent = v.toFixed(2);
+    const s = selection[0]; if (s && s.geometry && s.geometry.attributes && s.geometry.attributes.position) setDeform(s, key, v);
+  });
+});
+$('#d-reset').addEventListener('click', () => {
+  const s = selection[0]; if (!s) return; resetDeform(s);
+  ['twist','bend','taper','inflate','noise'].forEach(k => { $('#d-' + k).value = 0; $('#d-' + k + '-v').textContent = '0'; });
+  flash('Deform reset');
+});
 $('#m-mode').addEventListener('change', e => { selection.forEach(s => applyMode(s, e.target.value)); refresh(); });
 
 const sliders = [['#m-rough', 'roughness', '#m-rough-v'], ['#m-metal', 'metalness', '#m-metal-v'], ['#m-trans', 'transmission', '#m-trans-v'], ['#m-ior', 'ior', '#m-ior-v']];
@@ -911,7 +1049,7 @@ function switchCamera(mode) {
 // Export
 $('#export').addEventListener('click', () => {
   const exporter = new GLTFExporter(); const group = new THREE.Group();
-  objects.forEach(o => group.add(o.clone())); sims.forEach(s => group.add(s.mesh.clone()));
+  objects.forEach(o => { if (!o.userData.isBlobDot) group.add(o.clone()); }); sims.forEach(s => group.add(s.mesh.clone()));
   exporter.parse(group, glb => { const blob = new Blob([glb], { type: 'model/gltf-binary' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.glb'; a.click(); URL.revokeObjectURL(a.href); }, err => { flash('Export failed'); console.error(err); }, { binary: true });
 });
 
@@ -962,6 +1100,11 @@ function refresh() {
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
     set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5);
     $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
+    // Sync deform sliders to the selected object's stored deform state.
+    const df = s.userData.deform || {};
+    [['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
+      const v = df[key] || 0; $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2);
+    });
     // Sync extrude sliders to the selected SVG object (live re-extrude target).
     const ex = s.userData.extrude;
     $('#ex-tag').textContent = ex ? '· editing selected' : '';
@@ -992,6 +1135,7 @@ function flash(msg) {
 function stepPhysics(dt) {
   if (!physicsOn) return;
   for (const o of objects) {
+    if (o.userData.isBlobDot) continue;   // blob handles aren't physics bodies
     const v = o.userData.vel; v.y += gravity * dt;
     o.position.addScaledVector(v, dt);
     o.geometry.boundingSphere || o.geometry.computeBoundingSphere();
@@ -1056,7 +1200,7 @@ if (LINKED.length) {
   select([]);
 }
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liquefy, applyMode, toggleFur, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
 </script>
 </body>
 </html>
