@@ -48724,6 +48724,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           <${WorkflowLodVeil} zoom=${zoom} glyph=${glyph} label=${basename} mode="body"/>
         `}
       </div>
+      <div className="workflow-node-asset-chrome-bottom">
       ${(node.versions && node.versions.length > 0) && html`
         <div
           className="workflow-node-asset-versions"
@@ -48866,6 +48867,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           title="Output path — Run writes bytes here. Must start with source/<prototype>/"
         />
       `}
+      </div>
       <div
         className="workflow-port-zone workflow-port-zone-in"
         data-port-node=${node.id}

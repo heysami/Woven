@@ -7310,33 +7310,26 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 
 /* Asset node — small card with a thumbnail body + path foot + inbound port. */
 .workflow-node-asset {
-  display: grid;
-  grid-template-rows: 26px 1fr 22px;
-  transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease,
-    grid-template-rows 0.14s ease;
+  /* v3.x — chrome-OUTSIDE-the-asset layout. The body fills the WHOLE node box
+     and never resizes; the top bar floats ABOVE it and the bottom strip stack
+     (foot / versions / lineage) floats BELOW it — neither covers the asset and
+     neither shifts it. They only fade in on hover/selection, so at rest the
+     card is a clean rounded thumbnail and on hover the bars appear flush above
+     and below it (the card visually grows; the asset stays put). Previously
+     these were grid rows that grew 0→full on hover and shoved + re-cropped the
+     asset (the "bop" + squeeze). The bars paint outside the node box, so the
+     clip margin is widened to keep the bottom stack from being cut off. */
+  display: block;
+  overflow-clip-margin: 120px;
+  transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 }
-/* v3.x — chrome-on-hover. When the asset card is at rest (not hovered, not
-   selected) it reads as a single clean rounded thumbnail: the top bar, the
-   bottom path foot, the version strip and the lineage strip all collapse to
-   zero height and fade out, and the body rounds all four corners. Hovering
-   (or selecting) brings the chrome back so every control is reachable.
-   `grid-auto-rows: 0` also flattens the IMPLICIT rows that the version /
-   lineage / foot children land in once a versioned (html etc.) node carries
-   more than three rows — otherwise the version bar would stay visible. */
-.workflow-node-asset:not(:hover):not([data-selected="true"]) {
-  grid-template-rows: 0 1fr 0;
-  grid-auto-rows: 0;
-}
+/* At rest (not hovered, not selected) the card reads as a single clean rounded
+   thumbnail: the top bar and the whole bottom strip stack fade out. Hover or
+   selection brings them back. The asset itself does not move. */
 .workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-bar,
-.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-foot,
-.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-versions,
-.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-lineage {
+.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-chrome-bottom {
   opacity: 0;
-  overflow: hidden;
   pointer-events: none;
-}
-.workflow-node-asset:not(:hover):not([data-selected="true"]) .workflow-node-asset-body {
-  border-radius: 10px;
 }
 /* Cutout assets keep the white card surface at rest (they no longer float bare
    on the canvas) — the transparent-bg image sits on the node's own white tile,
@@ -7424,8 +7417,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-ds-reminder-ok:hover { filter: brightness(0.96); }
 .workflow-node-asset-bar {
+  position: absolute;
+  bottom: 100%;            /* float flush ABOVE the asset — never over it */
+  left: 0; right: 0;
+  z-index: 3;
   height: 26px;
   padding: 0 6px;
+  /* Solid header panel rounded at the TOP only; its bottom edge meets the
+     asset's (now-squared) top edge so the two read as one card. */
+  background: var(--surface-2);
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
   transition: opacity 0.14s ease;
 }
 .workflow-node-asset-glyph {
@@ -7447,15 +7449,36 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   white-space: nowrap;
 }
 .workflow-node-asset-body {
-  /* v3.9 — positioned so the canvas-LOD veil (mode="body", inset: 0) can
-     overlay a hidden-but-live iframe without escaping to the node root. */
-  position: relative;
+  /* v3.x — the body is a full-bleed layer pinned to the node box (inset: 0). It
+     never resizes when chrome reveals — the bar floats above it and the bottom
+     strips float below it. At rest all four corners are rounded (clean
+     thumbnail); on hover/selection the corners that meet an attached bar go
+     square so the bar + asset + foot read as one continuous card. Also hosts
+     the canvas-LOD veil (mode="body", inset: 0). */
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 10px;
   background:
     repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 50% / 12px 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  transition: border-radius 0.14s ease;
+}
+/* The top bar is always present, so square the body's top corners on reveal. */
+.workflow-node-asset:hover .workflow-node-asset-body,
+.workflow-node-asset[data-selected="true"] .workflow-node-asset-body {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+/* The bottom strip stack is only present when it actually has children, so
+   square the body's bottom corners only then (otherwise keep them rounded). */
+.workflow-node-asset:hover:has(.workflow-node-asset-chrome-bottom > *) .workflow-node-asset-body,
+.workflow-node-asset[data-selected="true"]:has(.workflow-node-asset-chrome-bottom > *) .workflow-node-asset-body {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 /* Cutout assets (transparent-background PNG / SVG) read cleaner WITHOUT the
    checkerboard behind them — the checker is meant to signal "this region is
@@ -7651,6 +7674,24 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 
 /* Dot strip beneath the asset body. One dot per version (oldest left).
    Active is enlarged; pinned gets a ring outline. */
+/* v3.x — the bottom chrome stack (foot / versions / lineage) floats over the
+   bottom of the full-bleed body and only fades in on hover/selection. overflow
+   stays visible so the version-dot .tab-tip can escape upward; only the
+   bottom-most strip rounds its corners to match the node's rounded body. */
+.workflow-node-asset-chrome-bottom {
+  position: absolute;
+  top: 100%;               /* float flush BELOW the asset — never over it */
+  left: 0; right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  transition: opacity 0.14s ease;
+}
+.workflow-node-asset-chrome-bottom > :last-child {
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
 .workflow-node-asset-versions {
   display: flex;
   align-items: center;
