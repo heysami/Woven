@@ -14682,11 +14682,15 @@ function chatErrorReason(ev) {
    pass through untouched. */
 function stripChatPreamble(text) {
   if (typeof text !== "string") return text;
-  if (/^\[Context: you're chatting from (?:WORKFLOW|EDITOR) MODE/.test(text)) {
-    const idx = text.indexOf("\n\n");
-    if (idx !== -1) return text.slice(idx + 2);
+  let s = text;
+  if (/^\[Context: you're chatting from (?:WORKFLOW|EDITOR) MODE/.test(s)) {
+    const idx = s.indexOf("\n\n");
+    if (idx !== -1) s = s.slice(idx + 2);
   }
-  return text;
+  const BLOCK = /^<(selected-nodes|whiteboard|selected-frame)\b[\s\S]*?<\/\1>\s*/;
+  let prev;
+  do { prev = s; s = s.replace(BLOCK, ""); } while (s !== prev);
+  return s;
 }
 
 /* Final block dispatcher — replaces ChatEventRow for rendering. ChatEventRow
