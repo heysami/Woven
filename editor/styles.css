@@ -3983,6 +3983,39 @@ button {
 .th-comment-proto:focus { outline: none; border-color: var(--accent); }
 
 /* Git panel (fifth, bottom-most rail entry) — commit / push / pull / history. */
+.th-git-syncver {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-faint, rgba(235, 240, 238, 0.45));
+  letter-spacing: 0.02em;
+}
+.th-git-conflict {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.th-git-conflict .th-git-btn { align-self: flex-start; }
+.th-git-inflight {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text);
+  padding: 2px 0 2px;
+}
+.th-git-inflight-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #6aa6ff);
+  animation: th-git-pulse 1s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+.th-git-inflight-sub { color: var(--text-faint, rgba(235, 240, 238, 0.45)); }
+@keyframes th-git-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 .th-git-note {
   font-size: 11.5px;
   color: var(--success, #16A34A);

@@ -153,12 +153,70 @@ def draft_message(root):
     return head
 
 
+def clear_stale_index_lock(root, max_age=8):
+    """Remove a leftover .git/index.lock when it's older than `max_age` seconds.
+    The daemon serialises its own git ops, so a lingering lock means a prior op
+    was interrupted (tab close / daemon restart / crash) — not a live op. The age
+    floor avoids racing a just-started external `git` in a terminal. Best-effort."""
+    lock = os.path.join(root, ".git", "index.lock")
+    try:
+        import time as _t
+        if os.path.isfile(lock) and (_t.time() - os.path.getmtime(lock)) >= max_age:
+            os.remove(lock)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def conflict_marker_files(root):
+    """Changed/untracked files that still contain git conflict markers
+    (`<<<<<<< ` / `>>>>>>> ` at line start). Committing these is exactly how a
+    synced project ends up with a corrupt, un-openable workflow.json — so commit()
+    refuses when this returns anything. Binary / very large / unreadable files are
+    skipped (they can't carry the text markers we care about)."""
+    code, out, _e = _git(root, "status", "--porcelain", "-uall")
+    if code != 0:
+        return []
+    hits = []
+    for ln in out.splitlines():
+        if not ln.strip():
+            continue
+        rel = ln[3:].strip()
+        if " -> " in rel:                 # rename — take the destination path
+            rel = rel.split(" -> ", 1)[1]
+        rel = rel.strip().strip('"')
+        if not rel or rel.endswith("/"):
+            continue
+        path = os.path.join(root, rel)
+        try:
+            if os.path.getsize(path) > 8 * 1024 * 1024:
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("<<<<<<< ") or line.startswith(">>>>>>> "):
+                        hits.append(rel)
+                        break
+        except (OSError, UnicodeDecodeError):
+            continue                      # binary / unreadable — no text markers
+    return hits
+
+
 def commit(root, message, coauthors=None, name=None, email=None):
     """Stage everything and commit. `coauthors` is a list of 'Name <email>'
     strings appended as Co-authored-by trailers. Deliberate — only called when
     the host presses Commit. Returns {sha, message}."""
     if not is_repo(root):
         raise RuntimeError("project is not a git repo — connect it first")
+    # Refuse to bake unresolved conflict markers into a commit — that's what
+    # corrupts a project's workflow.json and makes it un-openable downstream.
+    marked = conflict_marker_files(root)
+    if marked:
+        shown = ", ".join(marked[:5]) + (f" (+{len(marked) - 5} more)" if len(marked) > 5 else "")
+        raise RuntimeError(
+            "unresolved merge conflicts — these files still contain conflict "
+            f"markers: {shown}. Remove the <<<<<<< / ======= / >>>>>>> lines "
+            "(keep the content you want), then commit.")
     msg = (message or "").strip() or draft_message(root)
     trailers = ""
     for ca in (coauthors or []):
@@ -265,6 +323,85 @@ def clone(dest, clone_url, token=None):
     if fetch_url != url:
         _git(dest, "remote", "set-url", "origin", url)
     return {"ok": True, "dest": os.path.abspath(dest)}
+
+
+# ── sync-version + gitignore helpers ─────────────────────────────────────────
+# A project repo records the Woven SYNC version (an int the daemon bumps only
+# when a synced on-disk format changes) in `.woven/version`. push/pull are gated
+# on it so an OLD daemon can't merge a repo written by a newer (incompatible)
+# Woven — which is how a project gets corrupted across machines. serve.py owns
+# the WOVEN_SYNC_VERSION constant and calls these.
+
+def read_sync_version(root):
+    """Sync version recorded in the working tree's .woven/version, or None."""
+    try:
+        with open(os.path.join(root, ".woven", "version"), "r", encoding="utf-8") as f:
+            s = f.read().strip()
+        return int(s) if s else None
+    except (FileNotFoundError, NotADirectoryError, ValueError, OSError):
+        return None
+
+
+def write_sync_version(root, version):
+    """Stamp .woven/version with `version` (creates .woven/ if needed)."""
+    d = os.path.join(root, ".woven")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "version"), "w", encoding="utf-8") as f:
+        f.write(str(int(version)) + "\n")
+
+
+def remote_sync_version(root, branch=None, token=None):
+    """Sync version recorded on origin/<branch> WITHOUT merging — fetch the ref
+    (one-shot token URL for private repos), then read it out of FETCH_HEAD.
+    Returns int, or None when there's no origin / no version file / offline.
+    The caller treats None as 'legacy, compatible'."""
+    code, remote, _e = _git(root, "remote", "get-url", "origin")
+    if code != 0 or not remote.strip():
+        return None
+    if not branch:
+        _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        branch = branch.strip() or "main"
+    fetch_ref = remote.strip()
+    if token and fetch_ref.startswith("https://"):
+        fetch_ref = fetch_ref.replace("https://", f"https://x-access-token:{token}@", 1)
+    # Updates FETCH_HEAD only; never touches the working tree.
+    fcode, _fo, _fe = _git(root, "fetch", fetch_ref, branch, timeout=60)
+    if fcode != 0:
+        return None
+    code, out, _e = _git(root, "show", "FETCH_HEAD:.woven/version")
+    if code != 0:
+        return None
+    try:
+        return int(out.strip())
+    except ValueError:
+        return None
+
+
+def ensure_gitignore(root, lines):
+    """Idempotently ensure each entry in `lines` is present in <root>/.gitignore,
+    keeping per-machine local files (e.g. workflow/viewport.json) out of the
+    synced repo. No-op for entries already listed."""
+    path = os.path.join(root, ".gitignore")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            existing = f.read()
+    except (FileNotFoundError, OSError):
+        existing = ""
+    have = {ln.strip() for ln in existing.splitlines()}
+    add = [ln for ln in lines if ln.strip() and ln.strip() not in have]
+    if not add:
+        return
+    block = ""
+    if existing and not existing.endswith("\n"):
+        block += "\n"
+    if "# Woven — per-machine local state" not in existing:
+        block += "# Woven — per-machine local state (never sync)\n"
+    block += "\n".join(add) + "\n"
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(block)
+    except OSError:
+        pass
 
 
 def log(root, limit=30):

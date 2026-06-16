@@ -8869,7 +8869,7 @@ function formatRunAge(ts) {
    reads each run's transcript on open.
 
    Pass `hidden` (workflow fullscreen) to unmount the rail + its panel entirely. */
-function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
+function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden }) {
   // Which panel is open ("runs" | "tasks" | null).
   const [active, setActive] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -9108,6 +9108,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, hidden }) {
     ${active === "git" && html`<${GitPanel}
       railTop=${railTop}
       panelRef=${panelRef}
+      onStartChatWithPrompt=${onStartChatWithPrompt}
     />`}
   `;
 }
@@ -9800,7 +9801,7 @@ function CommentsPanel({ railTop, panelRef }) {
    we never merge remote history on top of in-flight edits. Commits credit any
    active live-session guests as Co-authored-by via the share's id. Available in
    both editor + workflow modes through the shared rail. */
-function GitPanel({ railTop, panelRef }) {
+function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
   const [st, setSt] = useState(null);        // /__git/status, null = loading
   const [gh, setGh] = useState(null);        // /__github/status {configured,signedIn,login,avatar}
   const [commits, setCommits] = useState(null);
@@ -9908,6 +9909,21 @@ function GitPanel({ railTop, panelRef }) {
       reload();
     }
   };
+  // Hand the conflicted files to the agent: /__git/resolve returns a tailored
+  // prompt; we start a chat run with it so the agent reconciles BOTH sides and
+  // strips the markers. The user reviews the edits, then commits (the commit
+  // guard refuses while any marker remains).
+  const doResolve = async () => {
+    const j = await op("resolve", {});
+    if (!j) return;
+    if (!j.files || !j.files.length) { flashNote("No conflicts to resolve"); reload(); return; }
+    if (onStartChatWithPrompt) {
+      onStartChatWithPrompt(j.prompt);
+      flashNote("Asked the agent to resolve " + j.files.length + " file(s)");
+    } else {
+      flashErr("Open the workflow canvas to let the agent resolve conflicts.");
+    }
+  };
 
   // ── GitHub account: device-flow sign-in ──────────────────────────────────
   const pollDevice = (interval) => {
@@ -9980,6 +9996,11 @@ function GitPanel({ railTop, panelRef }) {
   const loading = st === null;
   const repo = !!(st && st.repo);
   const hasRemote = repo && !!st.remote;
+  // A commit/push/pull running on the DAEMON for this project (survives a tab
+  // reload — see serve.py _GIT_INFLIGHT). While set, the action buttons are
+  // disabled so a second click can't collide on git's index.lock.
+  const inflight = (st && st.opInProgress) || null;
+  const opBusy = (k) => busy === k || inflight === k;
   const signedIn = !!(gh && gh.signedIn);
   const configured = !!(gh && gh.configured);
   const repoLabel = (rem) => {
@@ -9993,6 +10014,7 @@ function GitPanel({ railTop, panelRef }) {
       style=${railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
         <span>Git${repo && st.branch ? " · " + st.branch : ""}</span>
+        ${st && st.syncVersion != null && html`<span className="th-git-syncver" title="Woven sync-format version — push/pull is blocked between mismatched versions to prevent cross-machine corruption">sync v${st.syncVersion}</span>`}
         <button className="th-icon-btn" onClick=${() => { reload(); loadGh(); }} title="Refresh"><${Icon.Refresh}/></button>
       </div>
       <div className="th-rail-panel-body">
@@ -10118,20 +10140,31 @@ function GitPanel({ railTop, panelRef }) {
               <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
                 onInput=${e => { msgTouched.current = true; setMsg(e.target.value); }}></textarea>
 
+            ${inflight && html`
+              <div className="th-git-inflight">
+                <span className="th-git-inflight-dot"/>
+                ${({ commit: "Committing", publish: "Pushing", pull: "Pulling" }[inflight] || "Working")}… <span className="th-git-inflight-sub">in progress on this machine</span>
+              </div>`}
               <div className="th-git-actions">
-                <button className="th-git-btn is-primary" disabled=${!st.dirty || busy === "commit"} onClick=${doCommit}>
-                  <${Icon.Check}/> ${busy === "commit" ? "Committing…" : "Commit"}</button>
-                <button className="th-git-btn" disabled=${!hasRemote || busy === "publish"} onClick=${doPush}
+                <button className="th-git-btn is-primary" disabled=${!st.dirty || !!inflight || busy === "commit"} onClick=${doCommit}>
+                  <${Icon.Check}/> ${opBusy("commit") ? "Committing…" : "Commit"}</button>
+                <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "publish"} onClick=${doPush}
                   title=${hasRemote ? "Push commits to origin" : "Connect a repo first"}>
-                  <${Icon.ArrowUp}/> ${busy === "publish" ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
-                <button className="th-git-btn" disabled=${!hasRemote || busy === "pull"} onClick=${doPull}
+                  <${Icon.ArrowUp}/> ${opBusy("publish") ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
+                <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "pull"} onClick=${doPull}
                   title=${hasRemote ? "Pull from origin — blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
-                  <${Icon.Download}/> ${busy === "pull" ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
+                  <${Icon.Download}/> ${opBusy("pull") ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
               </div>
             `}
 
             ${st.conflicts && st.conflicts.length > 0 && html`
-              <div className="shares-error-banner">${st.conflicts.length} unresolved conflict(s): ${st.conflicts.slice(0, 5).join(", ")}</div>`}
+              <div className="shares-error-banner th-git-conflict">
+                <span>${st.conflicts.length} unresolved conflict(s): ${st.conflicts.slice(0, 5).join(", ")}</span>
+                ${onStartChatWithPrompt && html`
+                  <button className="th-git-btn is-primary" disabled=${busy === "resolve"} onClick=${doResolve}
+                    title="Let the agent reconcile both sides and remove the conflict markers">
+                    <${Icon.Bot}/> ${busy === "resolve" ? "Asking agent…" : "Resolve with agent"}</button>`}
+              </div>`}
 
             <div className="th-git-history-head">History</div>
             ${commits === null && html`<div className="runs-empty">Loading…</div>`}
@@ -37658,6 +37691,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <${RightNavRail}
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
+          onStartChatWithPrompt=${onStartChatWithPrompt}
           hidden=${fullscreen}/>
       </div>
       ${zoomTarget && html`
@@ -62913,6 +62947,7 @@ function App() {
       />`}
       ${!embedMode && html`<${RightNavRail}
         onStartNewChat=${openNewChat}
+        onStartChatWithPrompt=${spawnFromComposer}
         onOpenRun=${(run) => {
           if (run) {
             setChatRun(run);
