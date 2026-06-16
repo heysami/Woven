@@ -113,8 +113,15 @@
 </div>
 
 <div class="panel">
-  <header><span class="dot"></span><h1>Inspector</h1><small id="count">0 objects</small></header>
+  <header><span class="dot"></span><h1>Inspector</h1><small id="save-state" style="margin-left:auto;color:var(--accent-2);opacity:.35;transition:opacity .3s">autosave on</small><small id="count" style="margin-left:8px">0 objects</small></header>
   <div class="scroll" id="scroll">
+    <div class="group" style="margin-top:8px">
+      <div class="row">
+        <button class="btn ghost" id="save-now">Save now</button>
+        <button class="btn ghost" id="save-clear">Clear saved</button>
+      </div>
+      <div class="empty" style="padding:6px 4px;font-size:11px">Your scene autosaves in this browser, keyed to this node — reopening it (here or in the prototype tab) restores your work. Imported .glb and baked meshes aren't saved.</div>
+    </div>
     <div id="empty" class="empty">Add a shape from the toolbar.<br/>Shift-click two objects for a <b>Boolean</b> op.<br/>Try the <b>Cloth</b> &amp; <b>Liquid</b> tools at the bottom.</div>
 
     <div id="inspector" style="display:none">
@@ -460,8 +467,8 @@ function addShape(kind) {
   brush.castShadow = brush.receiveShadow = true;
   brush.position.set((Math.random() - 0.5) * 2, 0.4, (Math.random() - 0.5) * 2);
   brush.name = kind + '-' + (objects.length + 1);
-  brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3();
-  scene.add(brush); objects.push(brush); select([brush]); refresh();
+  brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3(); brush.userData.kind = kind;
+  scene.add(brush); objects.push(brush); select([brush]); refresh(); saveSoon();
 }
 
 // ── Import 3D asset (.glb / .gltf) ─────────────────────────────────────────
@@ -535,9 +542,9 @@ function addExtrudedSVG(svgText, label) {
   brush.castShadow = brush.receiveShadow = true; brush.position.set(0, 0.6, 0);
   brush.name = (label || 'svg') + '-' + (objects.length + 1);
   brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3();
-  brush.userData.svgShapes = shapes; brush.userData.extrude = { depth, bevel };  // for live re-extrude
+  brush.userData.svgShapes = shapes; brush.userData.extrude = { depth, bevel }; brush.userData.svgText = svgText;
   scene.add(brush); objects.push(brush); select([brush]);
-  flash('Extruded SVG · depth ' + depth.toFixed(2) + ' · corner ' + bevel.toFixed(2)); refresh();
+  flash('Extruded SVG · depth ' + depth.toFixed(2) + ' · corner ' + bevel.toFixed(2)); refresh(); saveSoon();
 }
 // Re-extrude the selected SVG object when depth/corner sliders move.
 function reExtrude(brush, depth, bevel) {
@@ -1079,6 +1086,8 @@ $('#export').addEventListener('click', () => {
   objects.forEach(o => { if (!o.userData.isBlobDot) group.add(o.clone()); }); sims.forEach(s => group.add(s.mesh.clone()));
   exporter.parse(group, glb => { const blob = new Blob([glb], { type: 'model/gltf-binary' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.glb'; a.click(); URL.revokeObjectURL(a.href); }, err => { flash('Export failed'); console.error(err); }, { binary: true });
 });
+$('#save-now').addEventListener('click', () => { persist(); flash('Scene saved'); });
+$('#save-clear').addEventListener('click', clearSave);
 
 // Import wiring — button, file picker, canvas drag-drop.
 $('#import-btn').addEventListener('click', () => $('#import-file').click());
@@ -1215,18 +1224,81 @@ const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D
   });
 })();
 
-// Linked-node imports (window.__SPLINE3D_IMPORT = ["../models3d/x.glb", …]),
-// injected by the Tool pathway when a 3D asset is wired into this node. If any
-// are present we load them INSTEAD of the demo seed scene.
+// ── Persistence (autosave to localStorage, keyed by this editor's file path) ─
+// The editor is otherwise in-memory — reopening it (node OR prototype tab) would
+// start fresh. We serialise the RECONSTRUCTABLE scene (primitives, transforms,
+// materials, deform, fur, live-blob, extruded SVG) and restore it on load, so
+// the same node remembers your work in this browser. (Imported .glb and baked
+// boolean/blob meshes aren't serialised — re-link or re-bake those.)
+const SAVE_KEY = 'spline3d:' + (location.pathname || 'default');
+let lastSaved = '', saveTimer = null;
+function persist() {
+  try { const s = JSON.stringify(serializeScene()); if (s !== lastSaved) { localStorage.setItem(SAVE_KEY, s); lastSaved = s; blip('Saved'); } }
+  catch (e) { console.warn('save failed', e); }
+}
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 300); }
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); lastSaved = ''; } catch (e) {} blip('Cleared — reload to reset'); }
+function blip(msg) { const el = document.getElementById('save-state'); if (el) { el.textContent = msg; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => el.style.opacity = 0.35, 1200); } }
+function serializeScene() {
+  const objs = [];
+  for (const o of objects) {
+    if (o.userData.isBlobDot) continue;
+    if (!o.userData.kind && !o.userData.svgText) continue;   // only reconstructable
+    const m = o.material;
+    objs.push({
+      kind: o.userData.kind || null, svgText: o.userData.svgText || null, extrude: o.userData.extrude || null,
+      pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scl: o.scale.toArray(),
+      mode: o.userData.mode || 'solid', color: (m && m.color) ? '#' + m.color.getHexString() : '#cccccc',
+      rough: m && 'roughness' in m ? m.roughness : null, metal: m && 'metalness' in m ? m.metalness : null,
+      trans: m && 'transmission' in m ? m.transmission : null, ior: m && 'ior' in m ? m.ior : null,
+      deform: o.userData.deform || null, fur: o.userData.fur ? (o.userData.fur.userData.furLen || 0.28) : null,
+    });
+  }
+  const blob = liveBlob && liveBlob.sources.length
+    ? { color: '#' + liveBlob.mc.material.color.getHexString(), sources: liveBlob.sources.map(s => ({ p: s.dot.position.toArray(), r: s.dot.userData.r })) }
+    : null;
+  return { v: 1, objects: objs, blob };
+}
+function restoreScene(data) {
+  if (!data || !Array.isArray(data.objects)) return false;
+  for (const d of data.objects) {
+    let o = null;
+    if (d.svgText) { addExtrudedSVG(d.svgText, 'svg'); o = objects[objects.length - 1]; if (d.extrude && o && o.userData.svgShapes) reExtrude(o, d.extrude.depth, d.extrude.bevel); }
+    else if (d.kind) { addShape(d.kind); o = objects[objects.length - 1]; }
+    if (!o) continue;
+    o.position.fromArray(d.pos); o.rotation.set(d.rot[0], d.rot[1], d.rot[2]); o.scale.fromArray(d.scl);
+    if (d.mode) applyMode(o, d.mode);
+    if (o.material.color && d.color) o.material.color.set(d.color);
+    if (d.rough != null && 'roughness' in o.material) o.material.roughness = d.rough;
+    if (d.metal != null && 'metalness' in o.material) o.material.metalness = d.metal;
+    if (d.trans != null && 'transmission' in o.material) { o.material.transmission = d.trans; o.material.transparent = false; }
+    if (d.ior != null && 'ior' in o.material) o.material.ior = d.ior;
+    o.material.needsUpdate = true;
+    if (d.deform) { o.userData.deform = d.deform; applyDeformers(o); }
+    if (d.fur) buildFur(o, d.fur);
+  }
+  if (data.blob && Array.isArray(data.blob.sources)) data.blob.sources.forEach(sp => addBlobSource(new THREE.Vector3().fromArray(sp.p), sp.r, data.blob.color));
+  select([]); return true;
+}
+gizmo.addEventListener('objectChange', saveSoon);
+// Diff-based catch-all: persists whenever the serialised scene changes — covers
+// EVERY edit path (sliders, palette, transforms, blob dots) with no per-handler
+// hooks. Cheap for the small scenes this tool makes.
+setInterval(persist, 1200);
+
+// Load order: saved scene → linked imports → demo seed.
 const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : [];
-if (LINKED.length) {
-  LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : '')));
-} else {
+let restored = false;
+try { const raw = localStorage.getItem(SAVE_KEY); if (raw) restored = restoreScene(JSON.parse(raw)); } catch (e) { console.warn('restore failed', e); }
+if (restored) { blip('Restored'); }
+else if (LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); }
+else {
   // Seed scene — glossy liquid candy, the Spline register.
   addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
   addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
   select([]);
 }
+try { lastSaved = JSON.stringify(serializeScene()); } catch (e) {}   // baseline so we don't re-save the freshly-loaded scene
 requestAnimationFrame(tick);
 window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
 </script>
