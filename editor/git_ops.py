@@ -222,11 +222,15 @@ def pull(root, token=None):
         raise RuntimeError("no 'origin' remote — connect the project to GitHub first")
     _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     branch = branch.strip() or "main"
-    pull_args = ["pull", "--no-edit", "origin", branch]
+    # --no-rebase pins the MERGE strategy. Without it, modern git (2.27+) refuses
+    # to reconcile DIVERGENT branches unless pull.rebase is configured, failing
+    # with "Need to specify how to reconcile divergent branches". We always merge
+    # (host-authoritative): conflicts land in the working tree for resolve().
+    pull_args = ["pull", "--no-rebase", "--no-edit", "origin", branch]
     if token and remote.strip().startswith("https://"):
         # one-shot authenticated URL; not written to config
         env_remote = remote.strip().replace("https://", f"https://x-access-token:{token}@", 1)
-        pull_args = ["pull", "--no-edit", env_remote, branch]
+        pull_args = ["pull", "--no-rebase", "--no-edit", env_remote, branch]
     code, out, err = _git(root, *pull_args, timeout=120)
     conflicts = conflicted_files(root)
     if code != 0 and not conflicts:
