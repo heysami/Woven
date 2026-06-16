@@ -87,6 +87,22 @@ PORT = _pick_port()
 # to the pre-Phase-6 single-repo install (INSTALL_ROOT == project root).
 INSTALL_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 EDITOR_DIR   = os.path.join(INSTALL_ROOT, "editor")
+
+# Sync-format compatibility version. Recorded in each project repo's
+# .woven/version on commit; push/pull refuse when the daemon's value differs
+# from the repo's, so an old daemon can't merge a repo written by a newer
+# (incompatible) Woven and corrupt it. BUMP ONLY when a synced on-disk format
+# changes (workflow.json / source layout) — NOT for ordinary releases.
+WOVEN_SYNC_VERSION = 1
+
+# In-flight git ops, keyed by project root → {"op", "startedAt"}. Lets the Git
+# panel show "Committing…/Pulling…/Pushing…" after a tab reload (the op runs on
+# the daemon, not the tab) and serialises ops so a second request is refused
+# cleanly instead of colliding on git's index.lock. In-memory: cleared on
+# daemon restart, after which any leftover index.lock is treated as stale.
+_GIT_INFLIGHT = {}
+_GIT_INFLIGHT_LOCK = threading.Lock()
+_GIT_INFLIGHT_TTL = 600   # seconds; a flag older than this is considered stale
 # Bundled "starter" design system shipped inside the editor binary. New
 # projects can opt to seed design-systems/default/ from this folder (with the
 # user's colour / radius / type / spacing tweaks baked in). It is version- and
@@ -6934,6 +6950,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         data.setdefault("nodes", [])
         data.setdefault("edges", [])
         data.setdefault("wb", [])  # whiteboard layer (legacy files lack the key)
+        # Hydrate the per-machine canvas viewport from the local sidecar written
+        # by _workflow_save. Falls back to any pan/zoom still in workflow.json
+        # (legacy / pre-split files, which migrate out on the next save) or the
+        # defaults above — so the client always receives pan/zoom as before.
+        try:
+            vp_path = os.path.join(os.path.dirname(path), "viewport.json")
+            if os.path.isfile(vp_path):
+                with open(vp_path, "r", encoding="utf-8") as vf:
+                    vp = json.load(vf)
+                if isinstance(vp, dict):
+                    if isinstance(vp.get("pan"), dict):
+                        data["pan"] = vp["pan"]
+                    if vp.get("zoom") is not None:
+                        data["zoom"] = vp["zoom"]
+        except Exception:
+            pass  # sidecar unreadable — fall back to workflow.json / defaults
         # v2.20 — backward-compat projection for `runId`. Older daemons (pre-
         # v2.20) wrote only `runRunId` when dispatching agent-kind nodes;
         # WorkflowAgentNode reads `node.runId`. Project the value on the wire
@@ -7489,12 +7521,25 @@ class H(http.server.SimpleHTTPRequestHandler):
                                     n["text"] = disk_text
             except Exception:
                 pass  # disk read failed — fall through; we still write what was posted.
-            out = {"pan": pan, "zoom": zoom, "nodes": clean_nodes, "edges": clean_edges,
-                   "wb": clean_wb}
+            out = {"nodes": clean_nodes, "edges": clean_edges, "wb": clean_wb}
             try:
                 os.makedirs(wf_dir, exist_ok=True)
             except Exception as e:
                 return self._reply(500, {"error": f"could not create workflow dir: {e}"})
+            # Canvas viewport (pan/zoom) is PER-MACHINE state — persist it to a
+            # local, gitignored sidecar (workflow/viewport.json) so it never lands
+            # in the synced workflow.json, where it caused cross-machine merge
+            # conflicts (and, after a bad merge, corrupted the file). The GET
+            # endpoint merges it back so the client contract is unchanged.
+            try:
+                vp_path = os.path.join(wf_dir, "viewport.json")
+                vp_tmp = vp_path + ".tmp"
+                with open(vp_tmp, "w", encoding="utf-8") as vf:
+                    json.dump({"pan": pan, "zoom": zoom}, vf, indent=2)
+                os.replace(vp_tmp, vp_path)
+                _gitops.ensure_gitignore(project_root, ["workflow/viewport.json"])
+            except Exception:
+                pass  # best-effort; viewport state must never block the save
             rel_path = os.path.relpath(path, project_root)
             try:
                 with _history_bracket(project_root, [rel_path],
@@ -12597,6 +12642,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             st["githubConfigured"] = _gitops.oauth_configured()
             st["gitAvailable"] = _gitops.git_available()
             st["conflicts"] = _gitops.conflicted_files(root) if st.get("repo") else []
+            # Local sync version (cheap). The remote comparison is NOT done here
+            # (status is polled often, and a remote read is a network round-trip)
+            # — a mismatch surfaces as a 409 when the user actually pulls/pushes.
+            st["syncVersion"] = WOVEN_SYNC_VERSION
+            # In-flight git op (commit/publish/pull) for this project, if any —
+            # lets the panel restore "Committing…/Pulling…/Pushing…" after a tab
+            # reload instead of looking idle and inviting a colliding re-click.
+            with _GIT_INFLIGHT_LOCK:
+                cur = _GIT_INFLIGHT.get(root)
+                st["opInProgress"] = cur["op"] if cur and (time.time() - cur["startedAt"]) < _GIT_INFLIGHT_TTL else None
             return self._reply(200, st)
         except Exception as e:
             return self._reply(500, {"error": str(e)})
@@ -12740,11 +12795,36 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = {}
         if not isinstance(body, dict):
             body = {}
+        # Serialise the mutating ops + record them as in-flight so the panel can
+        # show progress after a tab reload and a second click is refused cleanly.
+        mutating = op in ("commit", "publish", "pull")
+        if mutating:
+            now = time.time()
+            with _GIT_INFLIGHT_LOCK:
+                cur = _GIT_INFLIGHT.get(root)
+                if cur and (now - cur["startedAt"]) < _GIT_INFLIGHT_TTL:
+                    return self._reply(409, {
+                        "error": f"a git {cur['op']} is already running for this project — wait for it to finish.",
+                        "opInProgress": cur["op"]})
+                _GIT_INFLIGHT[root] = {"op": op, "startedAt": now}
+            # Clear a stale index.lock left by an interrupted op (tab close /
+            # daemon restart) so this op doesn't die on "index.lock exists".
+            try:
+                _gitops.clear_stale_index_lock(root)
+            except Exception:
+                pass
         try:
             if op == "connect":
                 st = _gitops.connect(root, remote=(body.get("remote") or None),
                                      name=(body.get("name") or None),
                                      email=(body.get("email") or None))
+                # Stamp the sync version + ignore the per-machine viewport sidecar
+                # so a freshly-connected repo is gate-ready from the start.
+                try:
+                    _gitops.write_sync_version(root, WOVEN_SYNC_VERSION)
+                    _gitops.ensure_gitignore(root, ["workflow/viewport.json"])
+                except Exception:
+                    pass
                 return self._reply(200, {"ok": True, "status": st})
             if op == "commit":
                 coauthors = []
@@ -12752,11 +12832,29 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if sid:
                     try: coauthors = _live.take_credits(sid)
                     except Exception: coauthors = []
+                # Stamp .woven/version + the viewport ignore so both ride into
+                # this commit (commit() does `git add -A`).
+                try:
+                    _gitops.write_sync_version(root, WOVEN_SYNC_VERSION)
+                    _gitops.ensure_gitignore(root, ["workflow/viewport.json"])
+                except Exception:
+                    pass
                 res = _gitops.commit(root, body.get("message"), coauthors=coauthors,
                                      name=body.get("name"), email=body.get("email"))
                 return self._reply(200, {"ok": True, **res})
             if op == "publish":
-                res = _gitops.publish(root, token=(body.get("token") or _gitops.host_token()))
+                tok = body.get("token") or _gitops.host_token()
+                # Version gate: refuse to push when the repo was last written by a
+                # DIFFERENT Woven sync-version (legacy repos with no version are
+                # allowed and get stamped by the commit we're pushing).
+                remote_v = _gitops.remote_sync_version(root, token=tok)
+                if remote_v is not None and remote_v != WOVEN_SYNC_VERSION:
+                    return self._reply(409, {
+                        "error": (f"version mismatch — this Woven syncs v{WOVEN_SYNC_VERSION}, "
+                                  f"the repo is v{remote_v}. Update the older Woven before pushing."),
+                        "versionMismatch": True, "syncVersion": WOVEN_SYNC_VERSION,
+                        "remoteSyncVersion": remote_v})
+                res = _gitops.publish(root, token=tok)
                 return self._reply(200, {"ok": True, **res})
             if op == "pull":
                 # Guard (host-authoritative): refuse to merge remote history on
@@ -12771,7 +12869,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(409, {"error": "working tree has uncommitted changes — commit them before pulling"})
                 if pid and _live.project_has_live_session(pid):
                     return self._reply(409, {"error": "a live session is active — end it before pulling remote changes"})
-                res = _gitops.pull(root, token=(body.get("token") or _gitops.host_token()))
+                tok = body.get("token") or _gitops.host_token()
+                # Version gate: refuse to merge a repo written by a DIFFERENT Woven
+                # sync-version (an old daemon merging a newer format is exactly how
+                # projects get corrupted across machines). Legacy repos (no version
+                # file) are allowed.
+                remote_v = _gitops.remote_sync_version(root, token=tok)
+                if remote_v is not None and remote_v != WOVEN_SYNC_VERSION:
+                    return self._reply(409, {
+                        "error": (f"version mismatch — this Woven syncs v{WOVEN_SYNC_VERSION}, "
+                                  f"the repo is v{remote_v}. Update the older Woven before pulling."),
+                        "versionMismatch": True, "syncVersion": WOVEN_SYNC_VERSION,
+                        "remoteSyncVersion": remote_v})
+                res = _gitops.pull(root, token=tok)
                 # Surface the merged state to the editor (and any guests) exactly
                 # like any other edit, so the canvas reloads to the new HEAD.
                 if pid:
@@ -12781,13 +12891,23 @@ class H(http.server.SimpleHTTPRequestHandler):
             if op == "resolve":
                 # Agent-assisted conflict resolution: hand the conflicted files
                 # to the host agent (loops back to a chat run scoped to them).
-                files = _gitops.conflicted_files(root)
+                # Union git's unmerged paths with any file still carrying markers,
+                # so it also catches markers present without an active merge.
+                files = list(_gitops.conflicted_files(root))
+                seen = set(files)
+                for f in _gitops.conflict_marker_files(root):
+                    if f not in seen:
+                        files.append(f); seen.add(f)
                 if not files:
                     return self._reply(200, {"ok": True, "files": [], "note": "no conflicts"})
                 return self._reply(200, {"ok": True, "files": files,
                                          "prompt": _git_resolve_prompt(files)})
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+        finally:
+            if mutating:
+                with _GIT_INFLIGHT_LOCK:
+                    _GIT_INFLIGHT.pop(root, None)
         return self._reply(404, {"error": f"unknown git op: {op}"})
 
     # GET /__share_thumbnail?project=<id>&prototype=<slug>[&v=<mtime>]
