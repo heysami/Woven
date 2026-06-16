@@ -55,6 +55,8 @@ responsible for resolving project_root + exportFolder + node from
 workflow.json; this module is a pure I/O layer over those inputs.
 """
 
+from __future__ import annotations
+
 import datetime as _dt
 import json
 import os
