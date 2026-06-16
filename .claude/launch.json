@@ -23,6 +23,16 @@
       ],
       "cwd": ".",
       "port": 8951
+    },
+    {
+      "name": "spline3d-preview",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m", "http.server", "4733",
+        "--directory", "/Users/sami/Documents/Woven/editor/tools/spline3d"
+      ],
+      "cwd": ".",
+      "port": 4733
     }
   ]
 }

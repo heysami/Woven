@@ -18338,6 +18338,7 @@ function SkillsLanding() {
   const groups = {
     "A": { label: "Pathway A — vendor API call", desc: "Daemon POSTs to a provider (OpenAI / fal.ai / Anthropic / etc.) and receives bytes back. Requires the provider's API key in Settings.", items: [] },
     "B": { label: "Pathway B — Claude writes the file", desc: "Spawns a Claude Code subprocess with a curated system prompt. The agent writes one self-contained file (HTML / SVG / JSON) per Run. No external API key beyond Claude.", items: [] },
+    "Tool": { label: "Pathway Tool — interactive editor", desc: "Drops a fixed, self-contained interactive HTML tool into the project (no agent, no API key). The node renders the live tool in its iframe — e.g. the Spline-style 3D editor.", items: [] },
     "Local": { label: "Pathway Local — local binary", desc: "Runs a Python package installed via pip (e.g. rembg) on the daemon machine. No network call, no API key.", items: [] },
   };
   for (const sk of skills) {
@@ -34070,7 +34071,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         || skillNode.provider
         || ((allModels.find(m => m.id === model) || {}).provider)
         || "";
-      if (!provider && skillSpec.pathway !== "B") {
+      if (!provider && skillSpec.pathway !== "B" && skillSpec.pathway !== "Tool") {
         update(skillId, { status: "error", error: `Cannot resolve provider for model ${model}` });
         break;
       }
@@ -34221,6 +34222,52 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             edges: [...(d.edges || []), { from: `${skillId}.out`, to: `${newId}.in` }],
           };
         });
+      }
+
+      // ── Tool pathway (fixed interactive HTML from a canonical template) ──
+      // A "Tool" skill drops a self-contained interactive HTML file copied
+      // verbatim from a static install template — no agent, no provider, no
+      // API key. The dropped file renders as a LIVE iframe asset node (e.g.
+      // the Spline-style 3D editor: boolean shapes, glass, soft lighting,
+      // curated palettes, .glb export). Deterministic: every Run yields the
+      // same canonical editor, so the node's preview is the tool itself.
+      if (skillSpec.pathway === "Tool" && skillSpec.template) {
+        const forceExt = (p) => p.replace(/\.[a-z0-9]+$/i, "." + (skillSpec.pathwayBExt || "html"));
+        const htmlTargets = outputTargets.map(t => ({ ...t, path: forceExt(t.path) }));
+        try {
+          const tr = await fetch(skillSpec.template, { cache: "no-store" });
+          if (!tr.ok) throw new Error("template fetch failed (" + tr.status + ")");
+          const templateHtml = await tr.text();
+          for (const t of htmlTargets) {
+            const wr = await fetch(apiUrl("/__write_text"), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: t.path, text: templateHtml }),
+            });
+            if (!wr.ok) {
+              const j = await wr.json().catch(() => ({}));
+              throw new Error(j.error || ("write failed (" + wr.status + ")"));
+            }
+            writtenPathByskill[skillId] = t.path;
+            allWrittenPaths.push(t.path);
+            try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [t.path] } })); } catch {}
+          }
+          // Point connected asset cards at the written .html so they render
+          // the live editor iframe.
+          const idToNewPath = new Map();
+          for (const t of htmlTargets) if (t.node && t.node.id) idToNewPath.set(t.node.id, t.path);
+          if (idToNewPath.size) {
+            setData(d => ({
+              ...d,
+              nodes: (d.nodes || []).map(n => idToNewPath.has(n.id)
+                ? { ...n, path: idToNewPath.get(n.id), assetKind: "html", runStatus: null, runError: null }
+                : n),
+            }));
+          }
+          update(skillId, { status: "done", error: null, ranAt: Date.now() });
+        } catch (e) {
+          update(skillId, { status: "error", error: String(e.message || e) });
+        }
+        continue;
       }
 
       // ── Pathway B (agent-written single-file HTML) ─────────────────

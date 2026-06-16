@@ -467,6 +467,25 @@
         "Output the file with Write to the path the user specifies (.json extension). Validate that your JSON parses — Lottie is strict. If the animation is complex enough that you can't hand-author it cleanly, simplify to a single hero motion (one path morph + one transform) rather than producing invalid JSON.",
     },
     {
+      // Pathway "Tool" — drops a fixed, self-contained interactive HTML editor
+      // from a static install template (editor/tools/spline3d/index.html) into
+      // the project via /__write_text. No agent, no provider, no API key. The
+      // node renders the live editor in its iframe: boolean (CSG) shapes,
+      // glass / metal / plastic materials, soft IBL lighting, curated color
+      // palettes, transform gizmo, and .glb export. Spline-style, in-canvas.
+      id: "spline3d-editor",
+      label: "3D editor (Spline-style)",
+      hint: "interactive scene · boolean shapes · glass · soft lighting · curated palettes · export .glb",
+      glyph: "⬢",
+      pathway: "Tool",
+      template: "/editor/tools/spline3d/index.html",
+      inputs: [],
+      output: "3d",
+      pathwayBExt: "html",
+      hasModelDropdown: false,
+      hasAspect: false,
+    },
+    {
       // 3D-model generation → a textured `.glb` written under
       // source/<branch>/models3d/. Pathway A: dispatches to Meshy (async
       // create+poll, preview→refine) or fal (sync) per the picked model's

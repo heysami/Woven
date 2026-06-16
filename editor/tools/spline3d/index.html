@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spline-style 3D Editor</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #16181f; --panel-2: #1d2029; --line: #2a2e3a;
+    --text: #e7e9ef; --muted: #9aa0b0; --accent: #6c7bff; --accent-2: #38e0c8;
+    --shadow: 0 8px 30px rgba(0,0,0,.45);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; outline: none; }
+
+  .toolbar {
+    position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 5px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 7px; box-shadow: var(--shadow); z-index: 10;
+  }
+  .tool {
+    width: 38px; height: 38px; border-radius: 9px; border: 1px solid transparent;
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: grid; place-items: center; transition: .15s;
+  }
+  .tool:hover { background: var(--panel-2); color: var(--text); }
+  .tool.active { background: var(--accent); color: #fff; }
+  .tool svg { width: 19px; height: 19px; }
+  .sep { height: 1px; background: var(--line); margin: 3px 2px; }
+
+  .panel {
+    position: fixed; right: 14px; top: 14px; bottom: 14px; width: 280px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); z-index: 10; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel header {
+    padding: 13px 16px 10px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 10px var(--accent-2); }
+  .panel header h1 { font-size: 13px; margin: 0; letter-spacing: .3px; font-weight: 600; }
+  .panel header small { color: var(--muted); font-size: 11px; margin-left: auto; }
+  .scroll { overflow-y: auto; padding: 4px 14px 18px; flex: 1; }
+  .scroll::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+
+  .group { margin-top: 14px; }
+  .group > .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .group > .label .tag { color: var(--accent-2); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    flex: 1 1 auto; min-width: 0; padding: 7px 6px; font-size: 11.5px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    cursor: pointer; transition: .15s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: #fff; }
+  .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.full { flex-basis: 100%; }
+  .btn.ghost { background: transparent; }
+  .btn.warn:hover { border-color: #ff5d6c; color: #ff8a93; }
+
+  .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 9px 0; }
+  .field label { font-size: 11.5px; color: var(--muted); }
+  .field .val { font-size: 11px; min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 4px; background: var(--line); border-radius: 4px; flex: 1; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  select, input[type=color] { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 5px 7px; font-size: 11.5px; }
+  input[type=color] { width: 38px; height: 26px; padding: 2px; cursor: pointer; }
+  select { flex: 1; }
+
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .swatch { aspect-ratio: 1; border-radius: 7px; border: 1px solid #ffffff14; cursor: pointer; transition: transform .12s; }
+  .swatch:hover { transform: scale(1.12); }
+  .palette-name { font-size: 10.5px; color: var(--muted); margin: 10px 0 6px; display: flex; align-items: center; gap: 6px; }
+  .palette-name::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; line-height: 1.6; }
+  .hint {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: #00000088; backdrop-filter: blur(8px); border: 1px solid var(--line);
+    color: var(--muted); font-size: 11px; padding: 7px 14px; border-radius: 999px; z-index: 9; display: flex; gap: 13px;
+  }
+  .hint b { color: var(--text); font-weight: 600; }
+  .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; }
+  .badge b { color: var(--accent-2); }
+  #flash { transition: opacity .3s; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="toolbar" id="toolbar">
+  <button class="tool active" data-tool="select" title="Move (W)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg></button>
+  <button class="tool" data-tool="rotate" title="Rotate (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></button>
+  <button class="tool" data-tool="scale" title="Scale (R)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 14v6h6"/><path d="M20 10V4h-6"/><path d="M14 10l6-6M10 14l-6 6"/></svg></button>
+  <div class="sep"></div>
+  <button class="tool" data-add="box" title="Box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/></svg></button>
+  <button class="tool" data-add="sphere" title="Sphere"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></button>
+  <button class="tool" data-add="cylinder" title="Cylinder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v14a7 3 0 0 0 14 0V5"/></svg></button>
+  <button class="tool" data-add="cone" title="Cone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l8 15H4z"/><ellipse cx="12" cy="18" rx="8" ry="3"/></svg></button>
+  <button class="tool" data-add="torus" title="Torus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="12" rx="9" ry="5"/><ellipse cx="12" cy="12" rx="3.5" ry="1.8"/></svg></button>
+  <button class="tool" data-add="torusknot" title="Torus knot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 9c4-6 6 6 10 0M7 15c4 6 6-6 10 0"/></svg></button>
+  <button class="tool" data-add="icosahedron" title="Icosahedron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2l9 6.5-3.5 10.5h-11L3 8.5z"/><path d="M12 2v17M3 8.5l9 4 9-4M6.5 19L12 12l5.5 7"/></svg></button>
+  <button class="tool" data-add="pyramid" title="Pyramid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3L3 19h18z"/><path d="M12 3v16M3 19l9-5 9 5"/></svg></button>
+  <button class="tool" data-add="helix" title="Helix"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3c8 1 8 4 0 5s-8 4 0 5 8 4 0 5"/></svg></button>
+  <div class="sep"></div>
+  <button class="tool" data-add="cloth" title="Cloth (fabric sim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h16v3c-2 2-2 4-4 4s-2-2-4-2-2 2-4 2-2-2-4-4z"/><path d="M4 7v13M20 7v13M4 20c2-3 4 0 4-2s2 1 4 0 2-2 4 0 2-1 4 2"/></svg></button>
+  <button class="tool" data-add="liquid" title="Liquid (metaball sim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3c3 5 6 7 6 11a6 6 0 0 1-12 0c0-4 3-6 6-11z"/></svg></button>
+</div>
+
+<div class="panel">
+  <header><span class="dot"></span><h1>Inspector</h1><small id="count">0 objects</small></header>
+  <div class="scroll" id="scroll">
+    <div id="empty" class="empty">Add a shape from the toolbar.<br/>Shift-click two objects for a <b>Boolean</b> op.<br/>Try the <b>Cloth</b> &amp; <b>Liquid</b> tools at the bottom.</div>
+
+    <div id="inspector" style="display:none">
+      <div class="group">
+        <div class="label">Material <span class="tag" id="mat-kind"></span></div>
+        <div class="field"><label>Mode</label>
+          <select id="m-mode">
+            <option value="liquid">Liquid (glossy)</option>
+            <option value="solid">Solid</option>
+            <option value="glass">Glass</option>
+            <option value="metal">Metal</option>
+            <option value="plastic">Plastic</option>
+            <option value="matte">Matte</option>
+            <option value="toon">Toon</option>
+            <option value="matcap">Matcap</option>
+            <option value="normal">Normal</option>
+            <option value="fresnel">Fresnel</option>
+          </select>
+        </div>
+        <div class="field"><label>Color</label><input type="color" id="m-color" value="#6c7bff"/></div>
+        <div class="field"><label>Roughness</label><input type="range" id="m-rough" min="0" max="1" step="0.01"/><span class="val" id="m-rough-v"></span></div>
+        <div class="field"><label>Metalness</label><input type="range" id="m-metal" min="0" max="1" step="0.01"/><span class="val" id="m-metal-v"></span></div>
+        <div class="field"><label>Transmission</label><input type="range" id="m-trans" min="0" max="1" step="0.01"/><span class="val" id="m-trans-v"></span></div>
+        <div class="field"><label>IOR</label><input type="range" id="m-ior" min="1" max="2.33" step="0.01"/><span class="val" id="m-ior-v"></span></div>
+      </div>
+
+      <div class="group">
+        <div class="label">Texture</div>
+        <div class="field"><label>Pattern</label>
+          <select id="t-pattern">
+            <option value="none">None</option>
+            <option value="noise">Noise</option>
+            <option value="checker">Checker</option>
+            <option value="grid">Grid</option>
+            <option value="dots">Dots</option>
+            <option value="stripes">Stripes</option>
+            <option value="fabric">Fabric weave</option>
+          </select>
+        </div>
+        <div class="field"><label>Repeat</label><input type="range" id="t-repeat" min="1" max="12" step="1" value="3"/><span class="val" id="t-repeat-v">3</span></div>
+        <div class="row"><button class="btn ghost full" id="t-image">Upload image texture…</button></div>
+        <input type="file" id="t-file" accept="image/*" style="display:none"/>
+      </div>
+
+      <div class="group">
+        <div class="label">Boolean <span class="tag" id="selinfo"></span></div>
+        <div class="row">
+          <button class="btn" data-bool="union">Union</button>
+          <button class="btn" data-bool="subtract">Subtract</button>
+          <button class="btn" data-bool="intersect">Intersect</button>
+        </div>
+        <div class="field"><label>Liquid merge</label><input type="range" id="b-smooth" min="0" max="14" step="1" value="6"/><span class="val" id="b-smooth-v">6</span></div>
+        <div class="row"><button class="btn ghost full" id="b-liquefy">Liquefy selected</button></div>
+      </div>
+
+      <div class="group">
+        <div class="label">Effects</div>
+        <div class="row">
+          <button class="btn" id="fur-toggle">Fur on/off</button>
+          <button class="btn ghost" id="duplicate">Duplicate</button>
+        </div>
+        <div class="field"><label>Fur length</label><input type="range" id="fur-len" min="0.02" max="0.4" step="0.01" value="0.14"/><span class="val" id="fur-len-v">.14</span></div>
+        <div class="row" style="margin-top:6px"><button class="btn ghost full warn" id="delete">Delete object</button></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="label">Simulation</div>
+      <div class="field"><label>Physics (gravity)</label><button class="btn" id="sim-toggle" style="flex:0 0 64px">Off</button></div>
+      <div class="field"><label>Gravity</label><input type="range" id="sim-gravity" min="-30" max="0" step="0.5" value="-10"/><span class="val" id="sim-gravity-v">-10</span></div>
+      <div class="field"><label>Wind (cloth)</label><input type="range" id="sim-wind" min="0" max="3" step="0.05" value="0.6"/><span class="val" id="sim-wind-v">.60</span></div>
+    </div>
+
+    <div class="group">
+      <div class="label">Curated palettes</div>
+      <div id="palettes"></div>
+    </div>
+
+    <div class="group">
+      <div class="label">Lighting &amp; environment</div>
+      <div class="field"><label>Environment</label><input type="range" id="l-env" min="0" max="3" step="0.05" value="1"/><span class="val" id="l-env-v">1.0</span></div>
+      <div class="field"><label>Key light</label><input type="range" id="l-key" min="0" max="5" step="0.05" value="2"/><span class="val" id="l-key-v">2.0</span></div>
+      <div class="field"><label>Soft shadows</label><input type="checkbox" id="l-shadow" checked/></div>
+      <div class="field"><label>Fog</label><input type="checkbox" id="l-fog"/></div>
+      <div class="field"><label>Fog density</label><input type="range" id="l-fogd" min="0" max="0.12" step="0.002" value="0.03"/><span class="val" id="l-fogd-v">.030</span></div>
+      <div class="field"><label>Background</label><input type="color" id="l-bg" value="#e7e4fb"/></div>
+      <div class="field"><label>Preset</label>
+        <select id="l-preset"><option value="studio">Studio soft</option><option value="sunset">Warm sunset</option><option value="cool">Cool dusk</option><option value="noir">Noir</option></select>
+      </div>
+      <div class="field"><label>Camera</label>
+        <select id="cam-mode"><option value="persp">Perspective</option><option value="ortho">Orthographic</option></select>
+      </div>
+    </div>
+
+    <div class="group"><div class="row"><button class="btn ghost full" id="export">Export .glb</button></div></div>
+  </div>
+</div>
+
+<div class="badge">Spline-style editor · <b id="fps">–</b></div>
+<div class="hint">
+  <span><b>Click</b> select</span><span><b>Shift</b> multi</span><span><b>W/E/R</b> move·rot·scale</span><span><b>Drag</b> orbit</span><span><b>Del</b> remove</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.163.0",
+    "three/addons/": "https://esm.sh/three@0.163.0/examples/jsm/",
+    "three-mesh-bvh": "https://esm.sh/three-mesh-bvh@0.7.0?deps=three@0.163.0",
+    "three-bvh-csg": "https://esm.sh/three-bvh-csg@0.0.16?deps=three@0.163.0,three-mesh-bvh@0.7.0"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
+
+const $ = s => document.querySelector(s);
+const clock = new THREE.Clock();
+
+// ── Renderer / scene / cameras ────────────────────────────────────────────
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// Soft light gradient background (Spline-style) — a vertical lavender wash.
+function makeGradientBg(hex) {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 256; const x = c.getContext('2d');
+  const base = new THREE.Color(hex);
+  const top = base.clone().multiplyScalar(0.94);
+  const bot = base.clone().lerp(new THREE.Color('#ffffff'), 0.32);
+  const g = x.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, '#' + top.getHexString()); g.addColorStop(1, '#' + bot.getHexString());
+  x.fillStyle = g; x.fillRect(0, 0, 16, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+let bgHex = '#e7e4fb';
+const bgColor = new THREE.Color('#d9d4f5');   // mid-tone, used for fog
+scene.background = makeGradientBg(bgHex);
+
+let camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(5.5, 4.2, 7);
+const orthoCam = new THREE.OrthographicCamera(-6, 6, 4, -4, 0.1, 200);
+orthoCam.position.copy(camera.position);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 1.0;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0xd9d4f5, 0.85); scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(6, 10, 6); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 1; key.shadow.camera.far = 40;
+key.shadow.camera.left = -12; key.shadow.camera.right = 12; key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
+key.shadow.bias = -0.0004; key.shadow.radius = 8; scene.add(key);
+const fill = new THREE.DirectionalLight(0x9bb0ff, 0.5); fill.position.set(-7, 4, -5); scene.add(fill);
+
+const FLOOR = -1;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.28 }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = FLOOR - 0.0001; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(40, 40, 0xb9b2e0, 0xcdc8ee);
+grid.position.y = FLOOR; grid.material.transparent = true; grid.material.opacity = 0.55; scene.add(grid);
+
+// ── Controls ──────────────────────────────────────────────────────────────
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true; orbit.dampingFactor = 0.08; orbit.target.set(0, 0.4, 0); orbit.maxPolarAngle = Math.PI * 0.495;
+const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.setSize(0.85);
+gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
+scene.add(gizmo);
+
+// ── State ───────────────────────────────────────────────────────────────
+const objects = [];   // selectable Brushes
+const sims = [];       // { type:'cloth'|'liquid', update(dt) }
+let selection = [];
+const evaluator = new Evaluator(); evaluator.attributes = ['position', 'normal'];
+let nextHue = 0.62;
+let physicsOn = false, gravity = -10, wind = 0.6;
+
+// ── Generated textures (matcap, toon ramp, procedural maps) ────────────────
+function makeMatcap() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(96, 80, 20, 128, 128, 150);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, '#b9c2d6'); g.addColorStop(0.8, '#41485c'); g.addColorStop(1, '#1a1d27');
+  x.fillStyle = g; x.beginPath(); x.arc(128, 128, 128, 0, Math.PI * 2); x.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function makeToonRamp() {
+  const d = new Uint8Array([60, 60, 60, 130, 130, 130, 210, 210, 210, 255, 255, 255]);
+  const t = new THREE.DataTexture(d, 4, 1, THREE.RGBFormat); t.needsUpdate = true; return t;
+}
+const MATCAP = makeMatcap(), TOON = makeToonRamp();
+
+function procTexture(kind, color) {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N;
+  const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, N, N);
+  x.fillStyle = '#000000';
+  if (kind === 'noise') {
+    const img = x.getImageData(0, 0, N, N), d = img.data;
+    for (let i = 0; i < d.length; i += 4) { const v = 120 + Math.random() * 135; d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255; }
+    x.putImageData(img, 0, 0);
+  } else if (kind === 'checker') {
+    const s = N / 8; for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) if ((i + j) % 2) x.fillRect(i*s, j*s, s, s);
+  } else if (kind === 'grid') {
+    x.strokeStyle = '#000'; x.lineWidth = 6; const s = N / 8;
+    for (let i = 0; i <= 8; i++) { x.beginPath(); x.moveTo(i*s,0); x.lineTo(i*s,N); x.moveTo(0,i*s); x.lineTo(N,i*s); x.stroke(); }
+  } else if (kind === 'dots') {
+    const s = N / 6; for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) { x.beginPath(); x.arc(i*s+s/2, j*s+s/2, s*0.28, 0, 7); x.fill(); }
+  } else if (kind === 'stripes') {
+    const s = N / 10; for (let i = 0; i < 10; i += 2) x.fillRect(i*s, 0, s, N);
+  } else if (kind === 'fabric') {
+    // woven over/under weave
+    const s = N / 16; x.strokeStyle = '#000'; x.lineWidth = s * 0.55;
+    for (let i = 0; i < 16; i++) { x.globalAlpha = 0.5 + 0.5 * (i % 2); x.beginPath(); x.moveTo(i*s+s/2, 0); x.lineTo(i*s+s/2, N); x.stroke(); }
+    for (let j = 0; j < 16; j++) { x.globalAlpha = 0.5 + 0.5 * ((j+1) % 2); x.beginPath(); x.moveTo(0, j*s+s/2); x.lineTo(N, j*s+s/2); x.stroke(); }
+    x.globalAlpha = 1;
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+
+// ── Materials ───────────────────────────────────────────────────────────
+function physicalMat(hex) {
+  // Glossy candy/jelly default — the Spline "liquid" look: full clearcoat,
+  // low roughness, a touch of sheen so highlights read wet.
+  return new THREE.MeshPhysicalMaterial({ color: new THREE.Color(hex), roughness: 0.16, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08, sheen: 0.4, sheenColor: new THREE.Color(0xffffff), envMapIntensity: 1.25 });
+}
+const MODE = {
+  liquid:  m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.06, sheen: 0.5, transparent: false, envMapIntensity: 1.35 }),
+  solid:   m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.08, transparent: false }),
+  glass:   m => Object.assign(m, { transmission: 1, metalness: 0, roughness: 0.05, ior: 1.5, thickness: 0.7, clearcoat: 0, transparent: true }),
+  metal:   m => Object.assign(m, { transmission: 0, metalness: 1, roughness: 0.18, clearcoat: 0, transparent: false }),
+  plastic: m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.35, clearcoat: 0.8, transparent: false }),
+  matte:   m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.95, clearcoat: 0, transparent: false }),
+};
+// Fresnel rim — injected once into a physical material.
+function makeFresnel(m) {
+  m.transmission = 0; m.metalness = 0; m.roughness = 0.4;
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uRim = { value: new THREE.Color(0x9bdcff) };
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
+      .replace('#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\nfloat fres = pow(1.0 - max(dot(normalize(vNormal), normalize(vViewPosition)), 0.0), 2.5);\ntotalEmissiveRadiance += uRim * fres * 1.6;');
+  };
+  m.needsUpdate = true; return m;
+}
+function applyMode(brush, mode) {
+  const hex = '#' + (brush.material.color ? brush.material.color.getHexString() : 'cccccc');
+  const map = brush.material.map || null;
+  let m;
+  if (mode === 'toon') { m = new THREE.MeshToonMaterial({ color: hex, gradientMap: TOON }); }
+  else if (mode === 'matcap') { m = new THREE.MeshMatcapMaterial({ color: hex, matcap: MATCAP }); }
+  else if (mode === 'normal') { m = new THREE.MeshNormalMaterial(); m.userData.normal = true; }
+  else if (mode === 'fresnel') { m = makeFresnel(physicalMat(hex)); }
+  else { m = physicalMat(hex); (MODE[mode] || MODE.solid)(m); }
+  if (map && 'map' in m) m.map = map;
+  brush.material.dispose && brush.material.dispose();
+  brush.material = m; brush.userData.mode = mode; m.needsUpdate = true;
+}
+
+// ── Geometry ──────────────────────────────────────────────────────────────
+function helixGeo() {
+  const pts = [];
+  for (let i = 0; i <= 220; i++) { const t = i / 220 * Math.PI * 6; pts.push(new THREE.Vector3(Math.cos(t) * 0.8, (i / 220 - 0.5) * 2.4, Math.sin(t) * 0.8)); }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 220, 0.18, 12, false);
+}
+function makeGeometry(kind) {
+  switch (kind) {
+    case 'box':          return new RoundedBoxGeometry(1.4, 1.4, 1.4, 4, 0.12);
+    case 'sphere':       return new THREE.SphereGeometry(1, 48, 32);
+    case 'cylinder':     return new THREE.CylinderGeometry(0.85, 0.85, 1.8, 48);
+    case 'cone':         return new THREE.ConeGeometry(1, 1.8, 48);
+    case 'torus':        return new THREE.TorusGeometry(0.9, 0.35, 24, 64);
+    case 'torusknot':    return new THREE.TorusKnotGeometry(0.7, 0.26, 128, 20);
+    case 'icosahedron':  return new THREE.IcosahedronGeometry(1.1, 0);
+    case 'pyramid':      return new THREE.ConeGeometry(1.1, 1.7, 4);
+    case 'helix':        return helixGeo();
+    default:             return new THREE.BoxGeometry(1, 1, 1);
+  }
+}
+function addShape(kind) {
+  const hex = new THREE.Color().setHSL(nextHue % 1, 0.6, 0.6); nextHue += 0.17;
+  const brush = new Brush(makeGeometry(kind), physicalMat('#ffffff'));
+  brush.material.color.copy(hex);
+  brush.castShadow = brush.receiveShadow = true;
+  brush.position.set((Math.random() - 0.5) * 2, 0.4, (Math.random() - 0.5) * 2);
+  brush.name = kind + '-' + (objects.length + 1);
+  brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3();
+  scene.add(brush); objects.push(brush); select([brush]); refresh();
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────
+const ray = new THREE.Raycaster(); const ptr = new THREE.Vector2(); let down = null;
+function setOutline(b, on) { if (b.material.emissive && !b.userData.mode) {} if ('emissive' in b.material) { b.material.emissive = b.material.emissive || new THREE.Color(0); b.material.emissive.setHex(on ? 0x202a55 : 0x000000); } }
+function select(list) {
+  selection.forEach(b => setOutline(b, false));
+  selection = list.filter(Boolean);
+  selection.forEach(b => setOutline(b, true));
+  if (selection.length === 1) gizmo.attach(selection[0]); else gizmo.detach();
+  refresh();
+}
+renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!down) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
+  if (moved > 5 || gizmo.dragging) return;
+  ptr.x = (e.clientX / innerWidth) * 2 - 1; ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObjects(objects, false)[0];
+  if (!hit) { if (!e.shiftKey) select([]); return; }
+  const obj = hit.object;
+  if (e.shiftKey) { const i = selection.indexOf(obj); if (i >= 0) select(selection.filter(o => o !== obj)); else select([...selection, obj].slice(-2)); }
+  else select([obj]);
+});
+
+// ── Liquid smoothing (Taubin λ|μ) — rounds CSG seams into a liquid blend ────
+// Plain CSG leaves hard polygonal seams; Spline's boolean reads as a smooth
+// liquid merge. We weld the result (CSG splits verts), build vertex adjacency,
+// then run Taubin smoothing (alternating positive λ / negative μ passes so the
+// mesh rounds WITHOUT shrinking like naive Laplacian would).
+function smoothTaubin(geo, iterations, lambda, mu) {
+  lambda = lambda ?? 0.5; mu = mu ?? -0.53;
+  const pos = geo.attributes.position, n = pos.count, index = geo.index.array;
+  const nbr = Array.from({ length: n }, () => new Set());
+  for (let i = 0; i < index.length; i += 3) {
+    const a = index[i], b = index[i + 1], c = index[i + 2];
+    nbr[a].add(b); nbr[a].add(c); nbr[b].add(a); nbr[b].add(c); nbr[c].add(a); nbr[c].add(b);
+  }
+  const src = pos.array, dst = new Float32Array(src.length);
+  const pass = (f) => {
+    for (let i = 0; i < n; i++) {
+      const s = nbr[i]; const px = src[i*3], py = src[i*3+1], pz = src[i*3+2];
+      if (!s.size) { dst[i*3] = px; dst[i*3+1] = py; dst[i*3+2] = pz; continue; }
+      let ax = 0, ay = 0, az = 0; s.forEach(j => { ax += src[j*3]; ay += src[j*3+1]; az += src[j*3+2]; });
+      const inv = 1 / s.size; ax *= inv; ay *= inv; az *= inv;
+      dst[i*3] = px + (ax - px) * f; dst[i*3+1] = py + (ay - py) * f; dst[i*3+2] = pz + (az - pz) * f;
+    }
+    src.set(dst);
+  };
+  for (let k = 0; k < iterations; k++) { pass(lambda); pass(mu); }
+  pos.needsUpdate = true; geo.computeVertexNormals();
+}
+// Weld + smooth a brush's geometry in place (keeps pivot).
+function liquefy(brush, iterations) {
+  if (iterations <= 0) return;
+  const geo = mergeVertices(brush.geometry, 1e-4);
+  smoothTaubin(geo, iterations);
+  brush.geometry.dispose(); brush.geometry = geo;
+}
+
+let boolSmooth = 6;   // liquid-merge strength applied to boolean results
+
+// ── Boolean ─────────────────────────────────────────────────────────────
+function boolOp(op) {
+  if (selection.length !== 2) { flash('Select exactly 2 objects'); return; }
+  const [a, b] = selection; a.updateMatrixWorld(true); b.updateMatrixWorld(true);
+  const OP = op === 'union' ? ADDITION : op === 'subtract' ? SUBTRACTION : INTERSECTION;
+  let result; try { result = evaluator.evaluate(a, b, OP); } catch (err) { flash('Boolean failed'); console.error(err); return; }
+  result.material = a.material; result.castShadow = result.receiveShadow = true; result.name = op + '-result';
+  result.geometry.computeBoundingBox(); const c = new THREE.Vector3(); result.geometry.boundingBox.getCenter(c);
+  result.geometry.translate(-c.x, -c.y, -c.z); result.position.copy(c);
+  result.userData.mode = a.userData.mode || 'liquid'; result.userData.vel = new THREE.Vector3();
+  // Liquid merge: weld + Taubin-smooth the seam so it reads like Spline.
+  if (boolSmooth > 0) {
+    let geo = mergeVertices(result.geometry, 1e-4);
+    smoothTaubin(geo, boolSmooth);
+    result.geometry.dispose(); result.geometry = geo;
+  }
+  scene.add(result);
+  [a, b].forEach(o => { detachFur(o); scene.remove(o); objects.splice(objects.indexOf(o), 1); });
+  objects.push(result); select([result]);
+  flash(op + ' · liquid-smoothed ×' + boolSmooth);
+}
+function duplicate() {
+  if (selection.length !== 1) return; const s = selection[0];
+  const d = new Brush(s.geometry.clone(), s.material.clone());
+  d.position.copy(s.position).add(new THREE.Vector3(0.8, 0, 0.8)); d.rotation.copy(s.rotation); d.scale.copy(s.scale);
+  d.castShadow = d.receiveShadow = true; d.name = s.name + '-copy';
+  d.userData.mode = s.userData.mode; d.userData.vel = new THREE.Vector3();
+  scene.add(d); objects.push(d); select([d]);
+}
+function removeSelected() {
+  selection.forEach(o => { detachFur(o); scene.remove(o); objects.splice(objects.indexOf(o), 1); }); select([]);
+}
+
+// ── Fur (shell fur) ─────────────────────────────────────────────────────
+function furAlpha() {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0, 0, N, N);
+  for (let i = 0; i < 9000; i++) { const v = Math.random() * 255 | 0; x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(Math.random()*N|0, Math.random()*N|0, 2, 2); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); return t;
+}
+const FUR_ALPHA = furAlpha();
+function buildFur(brush, length) {
+  detachFur(brush);
+  const group = new THREE.Group(); const SHELLS = 24;
+  const base = '#' + (brush.material.color ? brush.material.color.getHexString() : 'cccccc');
+  for (let i = 1; i <= SHELLS; i++) {
+    const f = i / SHELLS;
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(base).multiplyScalar(0.5 + 0.5 * f),
+      roughness: 0.9, transparent: true, alphaMap: FUR_ALPHA, alphaTest: 0.02 + f * 0.5, depthWrite: false,
+    });
+    const off = f * length;
+    mat.onBeforeCompile = sh => {
+      sh.uniforms.uOff = { value: off };
+      sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize(normal) * ' + off.toFixed(4) + ';');
+    };
+    const shell = new THREE.Mesh(brush.geometry, mat); shell.castShadow = i < 6;
+    group.add(shell);
+  }
+  brush.add(group); brush.userData.fur = group;
+}
+function detachFur(brush) { if (brush.userData && brush.userData.fur) { brush.remove(brush.userData.fur); brush.userData.fur = null; } }
+function toggleFur() {
+  if (selection.length !== 1) { flash('Select one object'); return; }
+  const s = selection[0];
+  if (s.userData.fur) detachFur(s); else buildFur(s, parseFloat($('#fur-len').value));
+}
+
+// ── Cloth (verlet fabric) ─────────────────────────────────────────────────
+function addCloth() {
+  const W = 22, H = 22, size = 3.2, rest = size / (W - 1);
+  const parts = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = new THREE.Vector3((x / (W - 1) - 0.5) * size, 2.2, (y / (H - 1) - 0.5) * size * 0.05 + (y / (H - 1)) * 0.001);
+    p.y = 2.4; p.z = (y / (H - 1) - 0.5) * size; p.x = (x / (W - 1) - 0.5) * size;
+    parts.push({ pos: p.clone(), prev: p.clone(), pin: (y === 0 && (x === 0 || x === W - 1 || x === (W >> 1))) });
+  }
+  const idx = (x, y) => y * W + x;
+  const geo = new THREE.BufferGeometry();
+  const verts = new Float32Array(W * H * 3);
+  const tris = [];
+  for (let y = 0; y < H - 1; y++) for (let x = 0; x < W - 1; x++) {
+    tris.push(idx(x, y), idx(x + 1, y), idx(x, y + 1), idx(x + 1, y), idx(x + 1, y + 1), idx(x, y + 1));
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  geo.setIndex(tris); geo.computeVertexNormals();
+  const mat = new THREE.MeshPhysicalMaterial({ color: 0xff6f91, roughness: 0.75, metalness: 0, side: THREE.DoubleSide, sheen: 1, sheenColor: new THREE.Color(0xffd0dd), map: procTexture('fabric'), envMapIntensity: 0.8 });
+  if (mat.map) mat.map.repeat.set(4, 4);
+  const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = mesh.receiveShadow = true; mesh.name = 'cloth-' + (sims.length + 1);
+  scene.add(mesh);
+  const constraints = [];
+  const link = (a, b) => { const d = parts[a].pos.distanceTo(parts[b].pos); constraints.push([a, b, d]); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (x < W - 1) link(idx(x, y), idx(x + 1, y));
+    if (y < H - 1) link(idx(x, y), idx(x, y + 1));
+    if (x < W - 1 && y < H - 1) { link(idx(x, y), idx(x + 1, y + 1)); link(idx(x + 1, y), idx(x, y + 1)); }
+  }
+  const tmp = new THREE.Vector3();
+  const sim = {
+    type: 'cloth', mesh,
+    update(dt) {
+      const g = gravity * 0.4, t = clock.getElapsedTime();
+      for (const p of parts) {
+        if (p.pin) continue;
+        tmp.copy(p.pos).sub(p.prev).multiplyScalar(0.98);
+        p.prev.copy(p.pos);
+        p.pos.add(tmp);
+        p.pos.y += g * dt * dt;
+        p.pos.z += Math.sin(t * 1.5 + p.pos.x) * wind * dt * dt * 60;
+        p.pos.x += Math.cos(t * 1.1 + p.pos.y) * wind * 0.4 * dt * dt * 60;
+        if (p.pos.y < FLOOR + 0.02) p.pos.y = FLOOR + 0.02;
+      }
+      for (let it = 0; it < 4; it++) for (const [a, b, d] of constraints) {
+        const pa = parts[a].pos, pb = parts[b].pos; tmp.copy(pb).sub(pa);
+        const dist = tmp.length() || 1e-5, diff = (dist - d) / dist * 0.5;
+        const mv = tmp.multiplyScalar(diff);
+        if (!parts[a].pin) pa.add(mv); if (!parts[b].pin) pb.sub(mv);
+      }
+      const pos = geo.attributes.position.array;
+      for (let i = 0; i < parts.length; i++) { pos[i*3] = parts[i].pos.x; pos[i*3+1] = parts[i].pos.y; pos[i*3+2] = parts[i].pos.z; }
+      geo.attributes.position.needsUpdate = true; geo.computeVertexNormals();
+    }
+  };
+  sims.push(sim); refresh(); flash('Cloth added — drape animates live');
+}
+
+// ── Liquid (marching-cubes metaballs) ─────────────────────────────────────
+function addLiquid() {
+  const mat = new THREE.MeshPhysicalMaterial({ color: 0x4ec5ff, roughness: 0.08, metalness: 0, transmission: 0.9, ior: 1.33, thickness: 1.2, transparent: true, envMapIntensity: 1.2 });
+  const mc = new MarchingCubes(56, mat, true, false, 90000);
+  mc.scale.set(2.6, 2.6, 2.6); mc.position.set(0, 0.4, 0); mc.isolation = 70; mc.castShadow = true;
+  scene.add(mc);
+  const balls = [];
+  for (let i = 0; i < 6; i++) balls.push({ phase: Math.random() * 7, sx: 0.6 + Math.random() * 0.6, sy: 0.5 + Math.random(), sz: 0.6 + Math.random() * 0.6, str: 0.5 + Math.random() * 0.3 });
+  const sim = {
+    type: 'liquid', mesh: mc,
+    update() {
+      const t = clock.getElapsedTime(); mc.reset();
+      const sink = 0.5 + 0.18 * Math.sin(t * 0.6);
+      for (const b of balls) {
+        const x = 0.5 + 0.26 * Math.sin(t * b.sx + b.phase);
+        const z = 0.5 + 0.26 * Math.cos(t * b.sz + b.phase * 1.3);
+        const y = sink + 0.12 * Math.sin(t * b.sy + b.phase);
+        mc.addBall(x, y, z, b.str, 12);
+      }
+      mc.addPlaneY(2.2, 8); // pooling floor so it reads as liquid settling
+      mc.update();
+    }
+  };
+  sims.push(sim); refresh(); flash('Liquid added — metaball blobs merge live');
+}
+
+// ── UI wiring ─────────────────────────────────────────────────────────────
+const toolbar = $('#toolbar');
+toolbar.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.add;
+  if (k === 'cloth') addCloth(); else if (k === 'liquid') addLiquid(); else addShape(k);
+}));
+toolbar.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+function setTool(t) { toolbar.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t)); gizmo.setMode(t === 'rotate' ? 'rotate' : t === 'scale' ? 'scale' : 'translate'); }
+
+document.querySelectorAll('[data-bool]').forEach(b => b.addEventListener('click', () => boolOp(b.dataset.bool)));
+$('#b-smooth').addEventListener('input', e => { boolSmooth = parseInt(e.target.value); $('#b-smooth-v').textContent = boolSmooth; });
+$('#b-liquefy').addEventListener('click', () => { if (!selection.length) { flash('Select an object'); return; } selection.forEach(s => liquefy(s, boolSmooth || 6)); flash('Liquefied ×' + (boolSmooth || 6)); });
+$('#duplicate').addEventListener('click', duplicate);
+$('#delete').addEventListener('click', removeSelected);
+$('#fur-toggle').addEventListener('click', toggleFur);
+$('#fur-len').addEventListener('input', e => { $('#fur-len-v').textContent = (+e.target.value).toFixed(2).slice(1); if (selection[0] && selection[0].userData.fur) buildFur(selection[0], +e.target.value); });
+$('#m-mode').addEventListener('change', e => { selection.forEach(s => applyMode(s, e.target.value)); refresh(); });
+
+const sliders = [['#m-rough', 'roughness', '#m-rough-v'], ['#m-metal', 'metalness', '#m-metal-v'], ['#m-trans', 'transmission', '#m-trans-v'], ['#m-ior', 'ior', '#m-ior-v']];
+sliders.forEach(([sel, prop, valSel]) => $(sel).addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  selection.forEach(s => { if (prop in s.material) { s.material[prop] = v; if (prop === 'transmission') s.material.transparent = v > 0; s.material.needsUpdate = true; } });
+  $(valSel).textContent = v.toFixed(2);
+}));
+$('#m-color').addEventListener('input', e => selection.forEach(s => { if (s.material.color) s.material.color.set(e.target.value); }));
+
+// Texture
+function applyTexture(brush, tex) { if ('map' in brush.material) { brush.material.map = tex; brush.material.needsUpdate = true; } }
+$('#t-pattern').addEventListener('change', e => {
+  const rep = parseInt($('#t-repeat').value);
+  selection.forEach(s => {
+    if (e.target.value === 'none') { applyTexture(s, null); return; }
+    const t = procTexture(e.target.value); t.repeat.set(rep, rep); applyTexture(s, t);
+  });
+});
+$('#t-repeat').addEventListener('input', e => { const r = parseInt(e.target.value); $('#t-repeat-v').textContent = r; selection.forEach(s => { if (s.material.map) { s.material.map.repeat.set(r, r); s.material.map.needsUpdate = true; } }); });
+$('#t-image').addEventListener('click', () => $('#t-file').click());
+$('#t-file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => new THREE.TextureLoader().load(r.result, tex => {
+    tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    const rep = parseInt($('#t-repeat').value); tex.repeat.set(rep, rep);
+    selection.forEach(s => applyTexture(s, tex)); flash('Image texture applied');
+  });
+  r.readAsDataURL(f); e.target.value = '';
+});
+
+// Simulation
+$('#sim-toggle').addEventListener('click', e => { physicsOn = !physicsOn; e.target.textContent = physicsOn ? 'On' : 'Off'; e.target.classList.toggle('on', physicsOn); if (physicsOn) objects.forEach(o => o.userData.vel.set(0, 0, 0)); });
+$('#sim-gravity').addEventListener('input', e => { gravity = +e.target.value; $('#sim-gravity-v').textContent = gravity; });
+$('#sim-wind').addEventListener('input', e => { wind = +e.target.value; $('#sim-wind-v').textContent = wind.toFixed(2).slice(1); });
+
+// Palettes
+const PALETTES = { Aurora:['#6c7bff','#38e0c8','#a78bfa','#22d3ee','#f472b6','#818cf8'], Sunset:['#ff7e5f','#feb47b','#ff5d6c','#ffd166','#ef476f','#ffb4a2'], Mint:['#2dd4bf','#34d399','#a7f3d0','#10b981','#5eead4','#bbf7d0'], Candy:['#f472b6','#c084fc','#60a5fa','#fb7185','#facc15','#4ade80'], Mono:['#f8fafc','#cbd5e1','#94a3b8','#64748b','#334155','#0f172a'] };
+const palWrap = $('#palettes');
+Object.entries(PALETTES).forEach(([name, cols]) => {
+  const t = document.createElement('div'); t.className = 'palette-name'; t.textContent = name;
+  const grid = document.createElement('div'); grid.className = 'swatches';
+  cols.forEach(hex => { const sw = document.createElement('div'); sw.className = 'swatch'; sw.style.background = hex; sw.title = hex;
+    sw.addEventListener('click', () => { if (selection.length) { selection.forEach(s => { if (s.material.color) s.material.color.set(hex); }); $('#m-color').value = hex; } else flash('Select an object first'); }); grid.appendChild(sw); });
+  palWrap.appendChild(t); palWrap.appendChild(grid);
+});
+
+// Lighting + scene
+$('#l-env').addEventListener('input', e => { scene.environmentIntensity = +e.target.value; $('#l-env-v').textContent = (+e.target.value).toFixed(2); });
+$('#l-key').addEventListener('input', e => { key.intensity = +e.target.value; $('#l-key-v').textContent = (+e.target.value).toFixed(2); });
+$('#l-shadow').addEventListener('change', e => { renderer.shadowMap.enabled = e.target.checked; scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; }); });
+$('#l-fog').addEventListener('change', e => updateFog());
+$('#l-fogd').addEventListener('input', e => { $('#l-fogd-v').textContent = (+e.target.value).toFixed(3).slice(1); updateFog(); });
+function updateFog() { scene.fog = $('#l-fog').checked ? new THREE.FogExp2(bgColor.getHex(), parseFloat($('#l-fogd').value)) : null; }
+function setBg(hex) { bgHex = hex; scene.background = makeGradientBg(hex); bgColor.set(hex).lerp(new THREE.Color('#ffffff'), 0.12); if (scene.fog) scene.fog.color.copy(bgColor); }
+$('#l-bg').addEventListener('input', e => setBg(e.target.value));
+$('#l-preset').addEventListener('change', e => applyLightPreset(e.target.value));
+function applyLightPreset(p) {
+  const sets = {
+    studio: { sky:0xffffff, gnd:0xd9d4f5, k:0xffffff, f:0xc8d0ff, pos:[6,10,6], bg:'#e7e4fb' },
+    sunset: { sky:0xffe6cc, gnd:0xffd9c0, k:0xffd0a0, f:0xff9e7a, pos:[8,6,4], bg:'#ffe7d6' },
+    cool:   { sky:0xdce8ff, gnd:0xc8d4f5, k:0xeaf1ff, f:0x9bb0ff, pos:[4,9,7], bg:'#dde6ff' },
+    noir:   { sky:0x404048, gnd:0x101014, k:0xffffff, f:0x303040, pos:[3,12,2], bg:'#0a0a0d' },
+  }[p];
+  hemi.color.setHex(sets.sky); hemi.groundColor.setHex(sets.gnd); key.color.setHex(sets.k); key.position.set(...sets.pos); fill.color.setHex(sets.f);
+  $('#l-bg').value = sets.bg; setBg(sets.bg);
+}
+$('#cam-mode').addEventListener('change', e => switchCamera(e.target.value));
+function switchCamera(mode) {
+  const old = camera; const next = mode === 'ortho' ? orthoCam : (camera === orthoCam ? new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200) : camera);
+  if (mode === 'ortho') { orthoCam.position.copy(old.position); camera = orthoCam; }
+  else { const pc = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200); pc.position.copy(old.position); camera = pc; }
+  orbit.object = camera; gizmo.camera = camera;
+}
+
+// Export
+$('#export').addEventListener('click', () => {
+  const exporter = new GLTFExporter(); const group = new THREE.Group();
+  objects.forEach(o => group.add(o.clone())); sims.forEach(s => group.add(s.mesh.clone()));
+  exporter.parse(group, glb => { const blob = new Blob([glb], { type: 'model/gltf-binary' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.glb'; a.click(); URL.revokeObjectURL(a.href); }, err => { flash('Export failed'); console.error(err); }, { binary: true });
+});
+
+// Inspector refresh
+function refresh() {
+  $('#count').textContent = (objects.length + sims.length) + ' object' + ((objects.length + sims.length) === 1 ? '' : 's');
+  const has = selection.length > 0;
+  $('#inspector').style.display = has ? 'block' : 'none';
+  $('#empty').style.display = (objects.length + sims.length) ? 'none' : 'block';
+  $('#selinfo').textContent = selection.length === 2 ? '· 2 selected' : selection.length === 1 ? '· 1 selected' : '';
+  if (selection.length) {
+    const s = selection[0], m = s.material;
+    $('#mat-kind').textContent = '· ' + (s.userData.mode || 'solid');
+    $('#m-mode').value = s.userData.mode || 'solid';
+    if (m.color) $('#m-color').value = '#' + m.color.getHexString();
+    const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
+    set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5);
+    $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
+  }
+}
+
+// Keyboard
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'w') setTool('select'); else if (k === 'e') setTool('rotate'); else if (k === 'r') setTool('scale');
+  else if (k === 'd' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); duplicate(); }
+  else if (k === 'delete' || k === 'backspace') removeSelected();
+});
+
+let flashT;
+function flash(msg) {
+  let el = document.getElementById('flash');
+  if (!el) { el = document.createElement('div'); el.id = 'flash'; el.className = 'hint'; el.style.bottom = '60px'; document.body.appendChild(el); }
+  el.innerHTML = '<b>' + msg + '</b>'; el.style.opacity = 1; clearTimeout(flashT); flashT = setTimeout(() => el.style.opacity = 0, 1700);
+}
+
+// Physics step (gravity drop + ground bounce on solid objects)
+function stepPhysics(dt) {
+  if (!physicsOn) return;
+  for (const o of objects) {
+    const v = o.userData.vel; v.y += gravity * dt;
+    o.position.addScaledVector(v, dt);
+    o.geometry.boundingSphere || o.geometry.computeBoundingSphere();
+    const r = (o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 1) * Math.max(o.scale.x, o.scale.y, o.scale.z);
+    if (o.position.y - r * 0.4 < FLOOR) { o.position.y = FLOOR + r * 0.4; v.y *= -0.45; v.x *= 0.85; v.z *= 0.85; }
+  }
+}
+
+// Resize + loop
+addEventListener('resize', () => {
+  const a = innerWidth / innerHeight;
+  camera.aspect && (camera.aspect = a); camera.updateProjectionMatrix && camera.updateProjectionMatrix();
+  orthoCam.left = -6 * a / (16/9 > a ? 1 : 1); orthoCam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+let last = performance.now(), frames = 0, fpsT = 0;
+function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = Math.min((now - last) / 1000, 0.033); last = now; fpsT += (now - last) + dt * 1000; frames++;
+  if (fpsT > 500) { document.getElementById('fps').textContent = Math.round(frames / (fpsT / 1000)) + ' fps'; fpsT = 0; frames = 0; }
+  clock.getDelta();
+  stepPhysics(dt);
+  for (const s of sims) s.update(dt);
+  orbit.update();
+  renderer.render(scene, camera);
+}
+
+// Seed scene — glossy liquid candy, the Spline register.
+addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
+addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
+select([]);
+requestAnimationFrame(tick);
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, liquefy, applyMode, toggleFur, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; } };
+</script>
+</body>
+</html>
