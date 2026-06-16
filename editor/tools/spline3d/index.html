@@ -196,6 +196,7 @@
           <button class="btn ghost" id="duplicate">Duplicate</button>
         </div>
         <div class="field"><label>Fur length</label><input type="range" id="fur-len" min="0.05" max="0.6" step="0.01" value="0.28"/><span class="val" id="fur-len-v">.28</span></div>
+        <div class="field"><label>Fur gravity</label><input type="range" id="fur-grav" min="0" max="1.5" step="0.05" value="0.55"/><span class="val" id="fur-grav-v">.55</span></div>
         <div class="row" style="margin-top:6px"><button class="btn ghost full warn" id="delete">Delete object</button></div>
       </div>
     </div>
@@ -817,35 +818,60 @@ function furAlpha() {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); return t;
 }
 const FUR_ALPHA = furAlpha();
+let furGravity = 0.55;   // how much fur droops under gravity
 function buildFur(brush, length) {
   detachFur(brush);
   const group = new THREE.Group(); const SHELLS = 32;
   const base = '#' + (brush.material.color ? brush.material.color.getHexString() : 'cccccc');
-  // Scale fur length by the object's size so it reads on big AND small objects.
   brush.geometry.computeBoundingSphere();
   const r = (brush.geometry.boundingSphere ? brush.geometry.boundingSphere.radius : 1);
+  // Shared per-fur force uniform (local space) — gravity droop + motion lag.
+  // All shells reference the SAME {value} so one update/frame drives the coat.
+  const forceU = { value: new THREE.Vector3() };
+  group.userData.forceUniform = forceU;
+  group.userData.furLen = length * r;
+  group.userData.prevPos = brush.getWorldPosition(new THREE.Vector3());
   for (let i = 1; i <= SHELLS; i++) {
     const f = i / SHELLS;
     const off = f * length * r;
+    const tip = (f * f).toFixed(4);   // tips (f→1) bend most, roots stay put
     const mat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(base).multiplyScalar(0.45 + 0.55 * f),
       roughness: 0.95, transparent: true, alphaMap: FUR_ALPHA, alphaTest: 0.01 + f * 0.45, depthWrite: false,
     });
-    // Extrude each shell along the surface normal in the vertex shader. The
-    // offset is baked into the source, so we MUST give three a distinct program
-    // cache key per shell — otherwise all shells share one compiled program
-    // (the first offset) and collapse onto the surface → "noise, no fur".
+    // Each shell extrudes along the normal AND bends by uForce∝tip². The offset
+    // is baked literal, so a distinct program cache key per (off,tip) is REQUIRED
+    // or three reuses one program and the shells collapse to the surface.
     mat.onBeforeCompile = sh => {
-      sh.vertexShader = sh.vertexShader.replace(
+      sh.uniforms.uForce = forceU;
+      sh.vertexShader = 'uniform vec3 uForce;\n' + sh.vertexShader.replace(
         '#include <begin_vertex>',
-        '#include <begin_vertex>\ntransformed += normalize(objectNormal) * ' + off.toFixed(5) + ';'
+        '#include <begin_vertex>\ntransformed += normalize(objectNormal) * ' + off.toFixed(5) + ' + uForce * ' + tip + ';'
       );
     };
-    mat.customProgramCacheKey = () => 'fur' + off.toFixed(5);
+    mat.customProgramCacheKey = () => 'furd' + off.toFixed(5) + '_' + tip;
     const shell = new THREE.Mesh(brush.geometry, mat); shell.castShadow = i < 8;
     group.add(shell);
   }
   brush.add(group); brush.userData.fur = group;
+}
+// Per-frame fur dynamics: gravity droop (always) + inertial sway when the object
+// moves. Force is built in world space then rotated into the object's local
+// frame (the shells displace in local space); springy lerp gives lag + settle.
+const _fwForce = new THREE.Vector3(), _fwQuat = new THREE.Quaternion(), _fwPos = new THREE.Vector3();
+function updateFurDynamics() {
+  for (const o of objects) {
+    const g = o.userData.fur; if (!g || !g.userData.forceUniform) continue;
+    o.getWorldPosition(_fwPos);
+    const pv = g.userData.prevPos;
+    const vx = _fwPos.x - pv.x, vy = _fwPos.y - pv.y, vz = _fwPos.z - pv.z;
+    pv.copy(_fwPos);
+    const len = g.userData.furLen || 0.2, K = 5;   // K = inertia gain
+    _fwForce.set(-vx * K, -furGravity * len - vy * K, -vz * K);   // gravity down + lag opposite motion
+    o.getWorldQuaternion(_fwQuat).invert();
+    _fwForce.applyQuaternion(_fwQuat);
+    g.userData.forceUniform.value.lerp(_fwForce, 0.18);   // spring → lag + settle
+  }
 }
 function detachFur(brush) { if (brush.userData && brush.userData.fur) { brush.remove(brush.userData.fur); brush.userData.fur = null; } }
 function toggleFur() {
@@ -957,6 +983,7 @@ $('#duplicate').addEventListener('click', duplicate);
 $('#delete').addEventListener('click', removeSelected);
 $('#fur-toggle').addEventListener('click', toggleFur);
 $('#fur-len').addEventListener('input', e => { $('#fur-len-v').textContent = (+e.target.value).toFixed(2).slice(1); if (selection[0] && selection[0].userData.fur) buildFur(selection[0], +e.target.value); });
+$('#fur-grav').addEventListener('input', e => { furGravity = +e.target.value; $('#fur-grav-v').textContent = furGravity.toFixed(2).slice(1); });
 
 // Deform sliders (non-destructive — re-applied from cached base each change)
 [['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
@@ -1159,6 +1186,7 @@ function tick(now) {
   if (fpsT > 500) { document.getElementById('fps').textContent = Math.round(frames / (fpsT / 1000)) + ' fps'; fpsT = 0; frames = 0; }
   clock.getDelta();
   stepPhysics(dt);
+  updateFurDynamics();
   for (const s of sims) s.update(dt);
   orbit.update();
   renderer.render(scene, camera);
@@ -1200,7 +1228,7 @@ if (LINKED.length) {
   select([]);
 }
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
 </script>
 </body>
 </html>
