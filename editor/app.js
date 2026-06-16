@@ -9909,6 +9909,36 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
       reload();
     }
   };
+  // Roll the project back to match origin (GitHub) — DISCARDS local commits AND
+  // uncommitted changes. This is the escape hatch `pull` can't provide: pull only
+  // merges remote commits forward and can never remove a commit you made locally.
+  const doDiscardRemote = async () => {
+    const behind = (st && st.behind) || 0, ahead = (st && st.ahead) || 0;
+    const lost = [];
+    if (ahead) lost.push(ahead + " local commit" + (ahead === 1 ? "" : "s"));
+    if (st && st.dirty) lost.push((st.changedCount || st.changed?.length || 0) + " uncommitted change(s)");
+    const what = lost.length ? lost.join(" + ") : "any local changes";
+    if (!window.confirm(
+      "Discard local changes and reset this project to match GitHub?\n\n" +
+      "This throws away " + what + " and makes the project exactly match " +
+      "origin/" + ((st && st.branch) || "main") + ". This can't be undone.")) return;
+    const j = await op("discard-remote", {});
+    if (j) {
+      flashNote("Reset to GitHub" + (j.head ? " (" + j.head + ")" : ""));
+      reload();
+    }
+  };
+  // Throw away UNCOMMITTED edits only — reset the working tree to the last local
+  // commit. No GitHub needed; unblocks "I just want my unsaved edits gone".
+  const doDiscardLocal = async () => {
+    if (!(st && st.dirty)) { flashNote("Nothing to discard"); return; }
+    const n = st.changedCount || (st.changed && st.changed.length) || 0;
+    if (!window.confirm(
+      "Discard " + n + " uncommitted change(s)?\n\n" +
+      "The project reverts to your last commit. This can't be undone.")) return;
+    const j = await op("discard-local", {});
+    if (j) { flashNote("Discarded uncommitted changes"); reload(); }
+  };
   // Hand the conflicted files to the agent: /__git/resolve returns a tailored
   // prompt; we start a chat run with it so the agent reconciles BOTH sides and
   // strips the markers. The user reviews the edits, then commits (the commit
@@ -10143,7 +10173,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
             ${inflight && html`
               <div className="th-git-inflight">
                 <span className="th-git-inflight-dot"/>
-                ${({ commit: "Committing", publish: "Pushing", pull: "Pulling" }[inflight] || "Working")}… <span className="th-git-inflight-sub">in progress on this machine</span>
+                ${({ commit: "Committing", publish: "Pushing", pull: "Pulling", "discard-local": "Discarding", "discard-remote": "Resetting to GitHub" }[inflight] || "Working")}… <span className="th-git-inflight-sub">in progress on this machine</span>
               </div>`}
               <div className="th-git-actions">
                 <button className="th-git-btn is-primary" disabled=${!st.dirty || !!inflight || busy === "commit"} onClick=${doCommit}>
@@ -10155,6 +10185,16 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
                   title=${hasRemote ? "Pull from origin — blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
                   <${Icon.Download}/> ${opBusy("pull") ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
               </div>
+              ${(st.dirty || st.ahead > 0) && html`
+              <div className="th-git-actions th-git-actions-danger">
+                <button className="th-git-btn is-danger" disabled=${!st.dirty || !!inflight || busy === "discard-local"} onClick=${doDiscardLocal}
+                  title="Throw away uncommitted edits — revert the working tree to your last commit">
+                  <${Icon.Trash}/> ${opBusy("discard-local") ? "Discarding…" : "Discard changes"}</button>
+                <button className="th-git-btn is-danger" disabled=${!hasRemote || !!inflight || busy === "discard-remote"} onClick=${doDiscardRemote}
+                  title=${hasRemote ? "Roll back to match GitHub — discards local commits AND uncommitted changes (what Pull can't do)" : "Connect a repo first"}>
+                  <${Icon.Refresh}/> ${opBusy("discard-remote") ? "Resetting…" : "Reset to GitHub"}</button>
+              </div>
+            `}
             `}
 
             ${st.conflicts && st.conflicts.length > 0 && html`

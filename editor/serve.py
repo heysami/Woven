@@ -6463,7 +6463,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
             if m_live:
                 return self._live_op(m_live.group(1), m_live.group(2), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|discard-local|discard-remote)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
             m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token)$", parsed.path)
@@ -12940,7 +12940,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = {}
         # Serialise the mutating ops + record them as in-flight so the panel can
         # show progress after a tab reload and a second click is refused cleanly.
-        mutating = op in ("commit", "publish", "pull")
+        mutating = op in ("commit", "publish", "pull", "discard-local", "discard-remote")
         if mutating:
             now = time.time()
             with _GIT_INFLIGHT_LOCK:
@@ -13027,6 +13027,26 @@ class H(http.server.SimpleHTTPRequestHandler):
                 res = _gitops.pull(root, token=tok)
                 # Surface the merged state to the editor (and any guests) exactly
                 # like any other edit, so the canvas reloads to the new HEAD.
+                if pid:
+                    try: _broadcast_workflow_change(pid)
+                    except Exception: pass
+                return self._reply(200, {"ok": True, **res})
+            if op in ("discard-local", "discard-remote"):
+                # Destructive rollback — the UI confirms first. Guard against an
+                # active live session (would clobber a guest's in-flight edits);
+                # the host ends it first, then discards.
+                pid = (_qs_get(qs, "project") or "").strip()
+                st = _gitops.status(root)
+                if not st.get("repo"):
+                    return self._reply(400, {"error": "project is not a git repo — connect it first"})
+                if pid and _live.project_has_live_session(pid):
+                    return self._reply(409, {"error": "a live session is active — end it before discarding changes"})
+                if op == "discard-local":
+                    res = _gitops.discard_local(root)
+                else:
+                    tok = body.get("token") or _gitops.host_token()
+                    res = _gitops.discard_to_remote(root, token=tok)
+                # Reload the canvas (and any guests) to the rolled-back HEAD.
                 if pid:
                     try: _broadcast_workflow_change(pid)
                     except Exception: pass

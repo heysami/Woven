@@ -302,6 +302,66 @@ def pull(root, token=None):
             "detail": (out or err).strip()[:400], "conflicts": conflicts}
 
 
+def discard_local(root):
+    """Throw away UNCOMMITTED changes — reset the working tree back to the last
+    local commit (HEAD) and remove untracked files. No remote involved. This is
+    the escape hatch for "I just want my unsaved edits gone": `git reset --hard
+    HEAD` + `git clean -fd`. `clean` is intentionally WITHOUT -x, so .gitignore'd
+    runtime artifacts survive — only untracked *tracked-worthy* files are removed.
+    Returns {ok, head, removed}. Destructive; the caller confirms first."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    _c, head_before, _e = _git(root, "rev-parse", "HEAD")
+    if _c != 0:
+        raise RuntimeError("no commits yet — nothing to reset to")
+    code, out, err = _git(root, "reset", "--hard", "HEAD", timeout=120)
+    if code != 0:
+        raise RuntimeError(f"git reset failed: {(err or out).strip()[:400]}")
+    _c, cleaned, _e = _git(root, "clean", "-fd", timeout=120)
+    removed = [ln[len("Removing "):].strip() for ln in cleaned.splitlines()
+               if ln.startswith("Removing ")]
+    _c, head, _e = _git(root, "rev-parse", "--short", "HEAD")
+    return {"ok": True, "head": head.strip(), "removed": removed[:200]}
+
+
+def discard_to_remote(root, token=None):
+    """Roll the branch ALL the way back to match origin — `git fetch` then
+    `git reset --hard origin/<branch>` + `git clean -fd`. Unlike pull() (which
+    only merges remote commits FORWARD and can never remove a local commit), this
+    DISCARDS local commits AND uncommitted changes so the tree exactly matches
+    GitHub. Works on a dirty tree (no forced commit). If a token is given, use it
+    for the fetch only (https remote) so we never persist credentials. `clean` is
+    WITHOUT -x so .gitignore'd runtime artifacts survive. Returns {ok, branch,
+    head, removed, detail}. Destructive; the caller confirms first."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    code, remote, _e = _git(root, "remote", "get-url", "origin")
+    if code != 0 or not remote.strip():
+        raise RuntimeError("no 'origin' remote — connect the project to GitHub first")
+    _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    branch = branch.strip() or "main"
+    fetch_args = ["fetch", "origin", branch]
+    if token and remote.strip().startswith("https://"):
+        # one-shot authenticated URL; not written to config
+        env_remote = remote.strip().replace("https://", f"https://x-access-token:{token}@", 1)
+        fetch_args = ["fetch", env_remote, branch]
+    code, out, err = _git(root, *fetch_args, timeout=120)
+    if code != 0:
+        raise RuntimeError(f"git fetch failed: {(err or out).strip()[:400]}")
+    # Reset to the freshly-fetched ref. FETCH_HEAD is what we just brought down
+    # (origin/<branch> may not exist yet on a never-fetched repo); it points at
+    # the same commit and always exists post-fetch.
+    code, out, err = _git(root, "reset", "--hard", "FETCH_HEAD", timeout=120)
+    if code != 0:
+        raise RuntimeError(f"git reset failed: {(err or out).strip()[:400]}")
+    _c, cleaned, _e = _git(root, "clean", "-fd", timeout=120)
+    removed = [ln[len("Removing "):].strip() for ln in cleaned.splitlines()
+               if ln.startswith("Removing ")]
+    _c, head, _e = _git(root, "rev-parse", "--short", "HEAD")
+    return {"ok": True, "branch": branch, "head": head.strip(),
+            "removed": removed[:200], "detail": (out or err).strip()[:400]}
+
+
 def clone(dest, clone_url, token=None):
     """git clone `clone_url` into `dest` (which must NOT already exist). When a
     token is given and the URL is https, authenticate with a one-shot
