@@ -24,6 +24,7 @@ Design choices that match the doc:
     serve.py hands them to the host agent. We never hand-merge LLM-regenerated
     HTML/CSS/JS ourselves.
 """
+from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
 import json
 import os

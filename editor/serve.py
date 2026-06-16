@@ -15,6 +15,8 @@ See docs/features/deprecate-project-branches.md.
 
 All writes are confined to the repo root; sources/targets can't escape via `..`.
 """
+from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
+
 import atexit
 import datetime as _dt
 import hashlib
