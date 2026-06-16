@@ -7341,11 +7341,61 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    same as an opaque asset. The checkerboard is still dropped (rule below), so
    it reads as a clean white background rather than a noisy checker. */
 
-/* Same chrome-on-hover treatment for prototype + canvas-frames nodes — they
-   render a live iframe under a 32px title bar (and no foot). At rest the bar
-   collapses + fades so the embedded prototype reads as a clean rounded tile;
-   hover or selection brings the bar (back/forward, open-in-editor, etc.) back. */
-.workflow-node-proto:not(:hover):not([data-selected="true"]),
+/* Prototype nodes use the SAME chrome-OUTSIDE-the-asset model as asset nodes:
+   the iframe body fills the whole node box and never moves or resizes; the
+   title bar floats flush ABOVE it and the version strip floats flush BELOW it.
+   At rest the chrome fades out so the embed reads as a clean rounded tile; on
+   hover/selection the bars appear outside it without shifting or covering the
+   prototype. (The iframe scale in JS is computed against the full node height
+   now that the bar no longer eats body space.) */
+.workflow-node-proto {
+  display: block;
+  overflow-clip-margin: 120px;
+}
+.workflow-node-proto .workflow-node-iframe-scale {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  transition: border-radius 0.14s ease;
+}
+.workflow-node-proto > .workflow-node-bar {
+  position: absolute;
+  bottom: 100%;            /* float flush ABOVE the prototype — never over it */
+  left: 0; right: 0;
+  z-index: 3;
+  height: 32px;
+  background: var(--surface-2);
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  transition: opacity 0.14s ease;
+}
+.workflow-node-proto .workflow-node-asset-versions {
+  position: absolute;
+  top: 100%;               /* float flush BELOW the prototype — never over it */
+  left: 0; right: 0;
+  z-index: 3;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+/* Square the body corners that meet an attached bar on reveal. */
+.workflow-node-proto:hover .workflow-node-iframe-scale,
+.workflow-node-proto[data-selected="true"] .workflow-node-iframe-scale {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.workflow-node-proto:hover:has(.workflow-node-asset-versions) .workflow-node-iframe-scale,
+.workflow-node-proto[data-selected="true"]:has(.workflow-node-asset-versions) .workflow-node-iframe-scale {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.workflow-node-proto:not(:hover):not([data-selected="true"]) > .workflow-node-bar {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Canvas-frames nodes keep the original collapse-and-clip chrome-on-hover. At
+   rest the 32px bar collapses + fades so the embedded editor reads as a clean
+   rounded tile; hover/selection brings it back. */
 .workflow-node-frames:not(:hover):not([data-selected="true"]) {
   grid-template-rows: 0 1fr;
   /* The body grows by the bar's 32px when the bar collapses, but the iframe
@@ -7358,14 +7408,12 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   clip-path: inset(0 0 32px 0 round 10px);
   transition: grid-template-rows 0.14s ease, clip-path 0.14s ease;
 }
-.workflow-node-proto:not(:hover):not([data-selected="true"]) > .workflow-node-bar,
 .workflow-node-frames:not(:hover):not([data-selected="true"]) > .workflow-node-frames-bar {
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
   transition: opacity 0.14s ease;
 }
-.workflow-node-proto:not(:hover):not([data-selected="true"]) .workflow-node-iframe-scale,
 .workflow-node-frames:not(:hover):not([data-selected="true"]) .workflow-node-frames-body {
   border-radius: 10px;
 }

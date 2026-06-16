@@ -46161,11 +46161,12 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         const vp = node.viewport || {};
         const vw = (typeof vp.w === "number" && vp.w > 0) ? vp.w : 1440;
         const vh = (typeof vp.h === "number" && vp.h > 0) ? vp.h : 900;
-        // Body region is the node minus the ~32px title bar. We compute
-        // scale ourselves rather than letting CSS handle it because we
-        // want one transform per render, not a recalc on every resize.
+        // Body region is the FULL node box — the title bar no longer eats body
+        // space (it floats outside the box, above the embed). We compute scale
+        // ourselves rather than letting CSS handle it because we want one
+        // transform per render, not a recalc on every resize.
         const bodyW = Math.max(1, (node.w || 720));
-        const bodyH = Math.max(1, (node.h || 480) - 32);
+        const bodyH = Math.max(1, (node.h || 480));
         const scale = Math.min(bodyW / vw, bodyH / vh);
         return html`
           <div key="iframe-scale" className="workflow-node-iframe-scale" data-lod=${lod}>
@@ -46189,6 +46190,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             zoom=${zoom}
             glyph="▶"
             label=${"source/" + branch + "/"}
+            mode="body"
           />`}
         `;
       })()}
