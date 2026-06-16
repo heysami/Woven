@@ -170,12 +170,17 @@ def clear_stale_index_lock(root, max_age=8):
 
 
 def conflict_marker_files(root):
-    """Changed/untracked files that still contain git conflict markers
+    """TRACKED, changed files that still contain git conflict markers
     (`<<<<<<< ` / `>>>>>>> ` at line start). Committing these is exactly how a
     synced project ends up with a corrupt, un-openable workflow.json — so commit()
     refuses when this returns anything. Binary / very large / unreadable files are
-    skipped (they can't carry the text markers we care about)."""
-    code, out, _e = _git(root, "status", "--porcelain", "-uall")
+    skipped (they can't carry the text markers we care about).
+
+    Uses `-uno` (NO untracked files): conflict markers only ever appear in TRACKED
+    files coming out of a merge — a brand-new untracked file can't have them.
+    Scanning untracked too means reading the entire untracked tree (100k+ files on
+    a big project), which turned every commit into a multi-second stall for nothing."""
+    code, out, _e = _git(root, "status", "--porcelain", "-uno")
     if code != 0:
         return []
     hits = []
