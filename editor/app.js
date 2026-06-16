@@ -24832,6 +24832,22 @@ function elementPatchSelector(el) {
    reason #2 (omit / 0 to skip). Bars anchor at `rect.top - 40` (32px chip
    + 8px gap), so the vertical bleed check is `rect.top - 40 < c.top`.
    Returns true when the bar should be hidden. */
+/* v3.x — prototype + asset nodes float their TITLE BAR flush above the node box
+   (CSS: .workflow-node-proto > .workflow-node-bar and .workflow-node-asset-bar
+   both anchor at `bottom: 100%`). The body-portaled top-row chrome (select
+   badge, top-actions strip, asset action bar, stage pill) anchors at
+   `rect.top - 40`, which would land ON that floating bar. This returns the
+   floating bar's height so callers can lift their chrome above it; 0 for node
+   kinds whose bar is in-flow (simulation / interactive / canvas-frames /
+   generic), so their chrome is unaffected. */
+function nodeFloatingBarClearance(nodeId) {
+  const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+  if (!el) return 0;
+  if (el.classList.contains("workflow-node-proto")) return 32; // proto bar = 32px
+  if (el.classList.contains("workflow-node-asset")) return 26; // asset bar = 26px
+  return 0;
+}
+
 function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   if (!rect) return true;
   // Multi-select: ALL per-node floating chrome (top-action strips, asset
@@ -24942,7 +24958,7 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   const BAR_HEIGHT = 32, BAR_GAP = 8;
   const BAR_WIDTH  = 4 * 28 + 3 * 4 + 8; // 4 buttons (28px) + 3 gaps (4px) + 8px padding
   const barLeft = rect.left;
-  const barTop  = rect.top - BAR_HEIGHT - BAR_GAP;
+  const barTop  = rect.top - BAR_HEIGHT - BAR_GAP - nodeFloatingBarClearance(nodeId);
   const popoverTop = barTop + BAR_HEIGHT + 6;
   const popoverLeft = rect.left + Math.min(rect.width / 2, 160); // anchor for translateX(-50%)
   // Hide when the bar would bleed under the library / chat-drawer, or when
@@ -25826,7 +25842,7 @@ function WorkflowNodeStagePill({ nodeId }) {
       window.innerWidth - idealBadgeLeft + SLACK,
       window.innerWidth - wrapRect.right + SLACK,
     );
-    pillTop = Math.max(rect.top - 40, wrapRect.top + SLACK);
+    pillTop = Math.max(rect.top - 40 - nodeFloatingBarClearance(nodeId), wrapRect.top + SLACK);
   } else {
     pillRight = window.innerWidth - wrapRect.right + SLACK;
     pillTop   = wrapRect.top + SLACK;
@@ -25977,7 +25993,7 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // overlap with panels is fine — z-index keeps the chat-drawer / library
   // on top — and shouldHideNodeChrome hides the badge once it's fully off.
   const badgeLeft = rect.right - 32;
-  const badgeTop  = rect.top - 40;
+  const badgeTop  = rect.top - 40 - nodeFloatingBarClearance(nodeId);
   // v3.5.6 — Badge and Save/Revert pill hide INDEPENDENTLY. Previously a
   // single shouldHideNodeChrome early-return null'd the entire portal —
   // when a wide prototype node bled past the canvas wrap, the pill went
@@ -26384,7 +26400,7 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
   if (shouldHideNodeChrome(rect, stripLeft, stripRight, minWidth)) return null;
   const style = {
     position: "fixed",
-    top: (rect.top - 40) + "px",
+    top: (rect.top - 40 - nodeFloatingBarClearance(nodeId)) + "px",
     left: stripLeft + "px",
     height: BTN + "px",
     // Matches the badge — under the chat-drawer (60) so panels paint on top.
