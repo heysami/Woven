@@ -116,11 +116,12 @@
   <header><span class="dot"></span><h1>Inspector</h1><small id="save-state" style="margin-left:auto;color:var(--accent-2);opacity:.35;transition:opacity .3s">autosave on</small><small id="count" style="margin-left:8px">0 objects</small></header>
   <div class="scroll" id="scroll">
     <div class="group" style="margin-top:8px">
-      <div class="row">
+      <div class="row"><button class="btn on full" id="bake">⦿ Bake into project (permanent · shareable)</button></div>
+      <div class="row" style="margin-top:6px">
         <button class="btn ghost" id="save-now">Save now</button>
         <button class="btn ghost" id="save-clear">Clear saved</button>
       </div>
-      <div class="empty" style="padding:6px 4px;font-size:11px">Your scene autosaves in this browser, keyed to this node — reopening it (here or in the prototype tab) restores your work. Imported .glb and baked meshes aren't saved.</div>
+      <div class="empty" style="padding:6px 4px;font-size:11px">Autosaves in this browser per node. <b>Bake</b> writes the scene into the project (a .scene.json sidecar) so it travels with the repo and loads on any machine. Imported .glb / baked meshes aren't serialised.</div>
     </div>
     <div id="empty" class="empty">Add a shape from the toolbar.<br/>Shift-click two objects for a <b>Boolean</b> op.<br/>Try the <b>Cloth</b> &amp; <b>Liquid</b> tools at the bottom.</div>
 
@@ -1088,6 +1089,7 @@ $('#export').addEventListener('click', () => {
 });
 $('#save-now').addEventListener('click', () => { persist(); flash('Scene saved'); });
 $('#save-clear').addEventListener('click', clearSave);
+$('#bake').addEventListener('click', bake);
 
 // Import wiring — button, file picker, canvas drag-drop.
 $('#import-btn').addEventListener('click', () => $('#import-file').click());
@@ -1286,19 +1288,50 @@ gizmo.addEventListener('objectChange', saveSoon);
 // hooks. Cheap for the small scenes this tool makes.
 setInterval(persist, 1200);
 
-// Load order: saved scene → linked imports → demo seed.
-const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : [];
-let restored = false;
-try { const raw = localStorage.getItem(SAVE_KEY); if (raw) restored = restoreScene(JSON.parse(raw)); } catch (e) { console.warn('restore failed', e); }
-if (restored) { blip('Restored'); }
-else if (LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); }
-else {
-  // Seed scene — glossy liquid candy, the Spline register.
-  addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
-  addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
-  select([]);
+// ── Bake — write the scene into the PROJECT as a JSON sidecar (permanent +
+// shareable, travels with the repo). The Tool pathway injects __SPLINE3D_SAVE
+// {project, writePath (source-relative .scene.json), readUrl (relative)}. On a
+// machine with no localStorage for this node, the baked sidecar is the source
+// of truth. Falls back to a file download when opened outside a node.
+async function bake() {
+  const save = window.__SPLINE3D_SAVE, data = JSON.stringify(serializeScene());
+  if (save && save.project && save.writePath) {
+    try {
+      const r = await fetch('/__write_text?project=' + encodeURIComponent(save.project), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: save.writePath, text: data }),
+      });
+      if (r.ok) { flash('Baked into project ✓ — shareable, travels with the repo'); blip('Baked'); return; }
+      const j = await r.json().catch(() => ({})); flash('Bake failed: ' + (j.error || ('HTTP ' + r.status)));
+    } catch (e) { flash('Bake failed'); console.error(e); }
+  } else {
+    const blob = new Blob([data], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.spline3d.json'; a.click(); URL.revokeObjectURL(a.href);
+    flash('Downloaded scene JSON (open this editor from a node to bake into the project)');
+  }
 }
-try { lastSaved = JSON.stringify(serializeScene()); } catch (e) {}   // baseline so we don't re-save the freshly-loaded scene
+
+// Load order: localStorage (latest local work) → baked sidecar (shared/permanent)
+// → linked imports → demo seed. localStorage wins on the SAME machine so
+// post-bake edits survive a reload; the baked sidecar is what other machines get.
+const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : [];
+(async function boot() {
+  let loaded = false;
+  try { const raw = localStorage.getItem(SAVE_KEY); if (raw && restoreScene(JSON.parse(raw))) { blip('Restored'); loaded = true; } } catch (e) { console.warn('restore failed', e); }
+  if (!loaded) {
+    const save = window.__SPLINE3D_SAVE;
+    if (save && save.readUrl) {
+      try { const r = await fetch(save.readUrl, { cache: 'no-store' }); if (r.ok) { if (restoreScene(await r.json())) { blip('Loaded baked'); loaded = true; } } } catch (e) {}
+    }
+  }
+  if (!loaded && LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); loaded = true; }
+  if (!loaded) {
+    addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
+    addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
+    select([]);
+  }
+  try { lastSaved = JSON.stringify(serializeScene()); } catch (e) {}   // baseline so we don't re-save the freshly-loaded scene
+})();
 requestAnimationFrame(tick);
 window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
 </script>

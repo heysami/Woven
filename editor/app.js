@@ -34265,6 +34265,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             const injects = [];
             if (modelPaths.length) injects.push("window.__SPLINE3D_IMPORT=" + JSON.stringify(modelPaths.map(p => relUrl(t.path, p))) + ";");
             if (texturePaths.length) injects.push("window.__SPLINE3D_TEXTURES=" + JSON.stringify(texturePaths.map(p => relUrl(t.path, p))) + ";");
+            // Bake target: a .scene.json sidecar next to the editor html. The
+            // editor writes it via /__write_text (permanent, travels with repo)
+            // and reads it back by relative url when no local autosave exists.
+            const sidecar = t.path.replace(/\.html?$/i, ".scene.json");
+            injects.push("window.__SPLINE3D_SAVE=" + JSON.stringify({ project: activeProjectId() || "", writePath: sidecar, readUrl: sidecar.split("/").pop() }) + ";");
             if (injects.length) {
               const tag = "<script>" + injects.join("") + "<\/script>";
               html = html.includes("</body>") ? html.replace("</body>", tag + "</body>") : html + tag;
