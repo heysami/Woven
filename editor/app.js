@@ -27371,15 +27371,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setCodePanelNodeId(null);
     setZoomTarget({ filePath, branch, nodeId: nodeId || null });
   }, []);
-  const openZoomForPrototype = useCallback((node) => {
-    // Prototype nodes load `source/<slug>/` (the index of the prototype). If
-    // a lockedState pinned them to a sub-path, honour it for the zoom file too.
+  const openZoomForPrototype = useCallback((node, livePath) => {
+    // Prototype nodes load `source/<slug>/` (the index of the prototype). The
+    // user can click around inside the iframe, so prefer the page they're
+    // ACTUALLY on (livePath, read from the live iframe location by the node).
+    // Fall back to a lockedState pin, then the prototype index.
     const branch = nodePrototype(node);
-    const pathname = node.lockedState?.pathname || "/source/" + branch + "/";
-    // /source/<branch>/foo.html  →  source/<branch>/foo.html
-    let rel = pathname.startsWith("/") ? pathname.slice(1) : pathname;
-    // If the path ends with a slash, Zoom on the implicit index.html.
-    if (rel.endsWith("/")) rel = rel + "index.html";
+    let rel = (typeof livePath === "string" && livePath) ? livePath : null;
+    if (!rel) {
+      const pathname = node.lockedState?.pathname || "/source/" + branch + "/";
+      // /source/<branch>/foo.html  →  source/<branch>/foo.html
+      rel = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+      // If the path ends with a slash, Zoom on the implicit index.html.
+      if (rel.endsWith("/")) rel = rel + "index.html";
+    }
     openZoomAt(rel, branch, node.id);
   }, [openZoomAt]);
   // Viewer-tab → zoom. Derives branch from the path; binds the matching
@@ -36376,7 +36381,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onIframeState=${(state) => reportIframeState(n.id, state)}
                 onExpose=${(lockedState, assets) => exposePrototype(n.id, lockedState, assets)}
-                onZoom=${() => openZoomForPrototype(n)}
+                onZoom=${(livePath) => openZoomForPrototype(n, livePath)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
                 codeOpen=${codePanelNodeId === n.id}
                 onToggleComments=${() => setCommentsPanelNodeId(p => p === n.id ? null : n.id)}
@@ -37451,6 +37456,23 @@ function WorkflowLibraryHoverLottie({ fileUrl, alt }) {
    tabstrip toolbar can drive whichever tab is active. The only difference
    from the node is the Back fallback: with no lockedState here, an
    exhausted history reloads the current page (the node's reset gesture). */
+// Convert a live iframe contentWindow.location into a source-relative path
+// (`source/<branch>/foo.html`). Returns null when the live location can't be
+// read (cross-origin / not yet loaded) or isn't a source/ HTML page. The zoom
+// + prototype-viewer Edit affordances use this so they open the page the user
+// has CLICKED THROUGH to, not the prototype's pinned/default entry — the user
+// can navigate around inside the iframe, and "edit this" should mean the
+// screen they're actually looking at.
+function liveLocationToSourcePath(loc) {
+  try {
+    if (!loc || !loc.pathname) return null;
+    let p = loc.pathname.replace(/^\/+/, "");
+    if (p.endsWith("/")) p += "index.html";
+    if (p.startsWith("source/") && (p.endsWith(".html") || p.endsWith(".htm"))) return p;
+  } catch {}
+  return null;
+}
+
 function ProtoViewerFrame({ tab, src, isActive, registerNav }) {
   const iframeRef = useRef(null);
   const navHistRef = useRef({ past: [], future: [], current: null });
@@ -37624,12 +37646,20 @@ function ProtoViewerFrame({ tab, src, isActive, registerNav }) {
   })();
   const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
 
+  // Live source path of whatever screen the iframe currently shows — the
+  // shared toolbar's Edit button reads this so it zoom-edits the page the
+  // user clicked through to, not the tab's original entry.
+  const getCurrentPath = useCallback(() => {
+    try { return liveLocationToSourcePath(iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.location); }
+    catch { return null; }
+  }, []);
+
   // Push the active controls up so the shared toolbar can drive this tab.
   // No null-on-unmount cleanup here — that would race a reloading frame's
   // re-registration. The viewer prunes closed tabs in closeTab instead.
   useEffect(() => {
-    registerNav(tab.id, { goBack, goForward, canGoForward });
-  }, [tab.id, goBack, goForward, canGoForward, registerNav]);
+    registerNav(tab.id, { goBack, goForward, canGoForward, getCurrentPath });
+  }, [tab.id, goBack, goForward, canGoForward, getCurrentPath, registerNav]);
 
   return html`
     <iframe
@@ -37864,7 +37894,10 @@ function WorkflowProtoViewer({ active, onEditTab }) {
             className="workflow-proto-tool workflow-proto-tool-edit"
             title="Edit this page — opens the zoom editing tools (select / text / comment / sketch / export / import)"
             aria-label="Edit this page"
-            onClick=${() => onEditTab(activeTab)}
+            onClick=${() => {
+              const live = activeNav && activeNav.getCurrentPath && activeNav.getCurrentPath();
+              onEditTab(live ? { ...activeTab, path: live } : activeTab);
+            }}
           ><${Icon.Pen}/></button>
         `}
         ${activeTab && html`
@@ -45346,6 +45379,15 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     }
   }, [linkedDsRef, node.dsStrictness, branch]);
 
+  // Live source path of whatever screen the iframe currently shows. The Zoom
+  // button passes this up so it edits the page the user clicked through to,
+  // not the prototype's pinned/default entry. Null when the live location
+  // can't be read — openZoomForPrototype then falls back to lockedState/index.
+  const zoomLivePath = useCallback(() => {
+    try { return liveLocationToSourcePath(iframeRef.current && iframeRef.current.contentWindow && iframeRef.current.contentWindow.location); }
+    catch { return null; }
+  }, []);
+
   const openInEditor = useCallback(() => {
     const url = new URL(window.location.href);
     url.searchParams.set("prototype", branch);
@@ -45759,7 +45801,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             icon: html`<${Icon.Search}/>`,
             tip: "Zoom in — open this prototype at native size for direct editing (Select / Text / Comment / Sketch / Export).",
             ariaLabel: "Zoom",
-            onClick: onZoom,
+            onClick: () => onZoom(zoomLivePath()),
             className: "workflow-node-top-action-zoom",
           },
         ]}
