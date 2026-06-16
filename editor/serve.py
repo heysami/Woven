@@ -95,6 +95,22 @@ EDITOR_DIR   = os.path.join(INSTALL_ROOT, "editor")
 # changes (workflow.json / source layout) — NOT for ordinary releases.
 WOVEN_SYNC_VERSION = 1
 
+# Per-project paths that must NEVER be committed/synced — the daemon keeps them
+# in each repo's .gitignore. `workflow/viewport.json` is per-machine canvas
+# state; `workflow/runs/` and `workflow/views/` are GENERATED run artifacts
+# (asset/thumbnail/snapshot output keyed by run id) that routinely reach
+# multiple GB — committing them makes commits crawl and pushes fail GitHub's
+# 100MB-per-file limit.
+_GITIGNORE_LOCAL = [
+    "workflow/viewport.json",   # per-machine canvas viewport (see _workflow_save)
+    "workflow/runs/",           # generated run artifacts (assets/thumbnails) — GBs
+    "workflow/views/",          # generated per-version prototype snapshots — GBs
+    ".history/",                # undo stack — transient (matches duplicate's skip set)
+    ".trash/",                  # transient scratch
+    ".DS_Store",                # macOS junk
+    "__pycache__/",
+]
+
 # In-flight git ops, keyed by project root → {"op", "startedAt"}. Lets the Git
 # panel show "Committing…/Pulling…/Pushing…" after a tab reload (the op runs on
 # the daemon, not the tab) and serialises ops so a second request is refused
@@ -7537,7 +7553,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 with open(vp_tmp, "w", encoding="utf-8") as vf:
                     json.dump({"pan": pan, "zoom": zoom}, vf, indent=2)
                 os.replace(vp_tmp, vp_path)
-                _gitops.ensure_gitignore(project_root, ["workflow/viewport.json"])
+                _gitops.ensure_gitignore(project_root, _GITIGNORE_LOCAL)
             except Exception:
                 pass  # best-effort; viewport state must never block the save
             rel_path = os.path.relpath(path, project_root)
@@ -12822,7 +12838,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # so a freshly-connected repo is gate-ready from the start.
                 try:
                     _gitops.write_sync_version(root, WOVEN_SYNC_VERSION)
-                    _gitops.ensure_gitignore(root, ["workflow/viewport.json"])
+                    _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
                 except Exception:
                     pass
                 return self._reply(200, {"ok": True, "status": st})
@@ -12836,7 +12852,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # this commit (commit() does `git add -A`).
                 try:
                     _gitops.write_sync_version(root, WOVEN_SYNC_VERSION)
-                    _gitops.ensure_gitignore(root, ["workflow/viewport.json"])
+                    _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
                 except Exception:
                     pass
                 res = _gitops.commit(root, body.get("message"), coauthors=coauthors,
