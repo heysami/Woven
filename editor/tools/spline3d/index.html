@@ -167,6 +167,7 @@
           <button class="btn" data-bool="intersect">Intersect</button>
         </div>
         <div class="field"><label>Liquid merge</label><input type="range" id="b-smooth" min="0" max="14" step="1" value="6"/><span class="val" id="b-smooth-v">6</span></div>
+        <div class="row"><button class="btn on full" id="b-blob">⬤ Blob merge (seamless)</button></div>
         <div class="row"><button class="btn ghost full" id="b-liquefy">Liquefy selected</button></div>
       </div>
 
@@ -176,7 +177,7 @@
           <button class="btn" id="fur-toggle">Fur on/off</button>
           <button class="btn ghost" id="duplicate">Duplicate</button>
         </div>
-        <div class="field"><label>Fur length</label><input type="range" id="fur-len" min="0.02" max="0.4" step="0.01" value="0.14"/><span class="val" id="fur-len-v">.14</span></div>
+        <div class="field"><label>Fur length</label><input type="range" id="fur-len" min="0.05" max="0.6" step="0.01" value="0.28"/><span class="val" id="fur-len-v">.28</span></div>
         <div class="row" style="margin-top:6px"><button class="btn ghost full warn" id="delete">Delete object</button></div>
       </div>
     </div>
@@ -237,6 +238,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MeshBVH } from 'three-mesh-bvh';
 import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
 
@@ -364,7 +366,7 @@ function physicalMat(hex) {
 const MODE = {
   liquid:  m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.06, sheen: 0.5, transparent: false, envMapIntensity: 1.35 }),
   solid:   m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.08, transparent: false }),
-  glass:   m => Object.assign(m, { transmission: 1, metalness: 0, roughness: 0.05, ior: 1.5, thickness: 0.7, clearcoat: 0, transparent: true }),
+  glass:   m => Object.assign(m, { transmission: 1, metalness: 0, roughness: 0.04, ior: 1.5, thickness: 0.5, clearcoat: 0, sheen: 0, transparent: false, envMapIntensity: 0.85 }),
   metal:   m => Object.assign(m, { transmission: 0, metalness: 1, roughness: 0.18, clearcoat: 0, transparent: false }),
   plastic: m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.35, clearcoat: 0.8, transparent: false }),
   matte:   m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.95, clearcoat: 0, transparent: false }),
@@ -486,6 +488,70 @@ function liquefy(brush, iterations) {
 
 let boolSmooth = 6;   // liquid-merge strength applied to boolean results
 
+// ── Blob merge — true metaball/SDF fusion of NORMAL objects ────────────────
+// CSG (even Taubin-smoothed) leaves a crease where two solids meet. To fuse
+// arbitrary objects as seamlessly as the water metaballs, we sample each one
+// into a signed-distance field (three-mesh-bvh closest-point + face-normal
+// sign), smooth-union the fields (polynomial smin), then re-polygonise the
+// combined field with MarchingCubes — the same engine the liquid uses.
+const _bvA=new THREE.Vector3(),_bvB=new THREE.Vector3(),_bvC=new THREE.Vector3(),_bcb=new THREE.Vector3(),_bab=new THREE.Vector3(),_bn=new THREE.Vector3(),_bd=new THREE.Vector3();
+function faceNormalLocal(geo, fi, out) {
+  const idx = geo.index, pos = geo.attributes.position; let a, b, c;
+  if (idx) { a = idx.getX(fi*3); b = idx.getX(fi*3+1); c = idx.getX(fi*3+2); } else { a = fi*3; b = fi*3+1; c = fi*3+2; }
+  _bvA.fromBufferAttribute(pos, a); _bvB.fromBufferAttribute(pos, b); _bvC.fromBufferAttribute(pos, c);
+  _bcb.subVectors(_bvC, _bvB); _bab.subVectors(_bvA, _bvB); return out.crossVectors(_bcb, _bab).normalize();
+}
+function smin(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; }
+
+async function blobMerge(sel, strength) {
+  if (sel.length < 2) { flash('Select 2+ objects'); return; }
+  flash('Blob merging…'); await new Promise(r => setTimeout(r, 30));   // let the flash paint
+  const box = new THREE.Box3(); sel.forEach(o => { o.updateMatrixWorld(true); box.expandByObject(o); });
+  box.expandByScalar(0.25 + strength * 0.12);
+  const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const dim = Math.max(size.x, size.y, size.z) || 1;
+  const objs = sel.map(o => {
+    const g = o.geometry;
+    if (!g.boundsTree) { try { g.boundsTree = new MeshBVH(g); } catch (e) { g.boundsTree = new MeshBVH(g.index ? g : mergeVertices(g)); } }
+    return { bvh: g.boundsTree, geo: g, inv: new THREE.Matrix4().copy(o.matrixWorld).invert(), s: (o.scale.x + o.scale.y + o.scale.z) / 3, mode: o.userData.mode, color: o.material.color && o.material.color.clone() };
+  });
+  const RES = 52, mc = new MarchingCubes(RES, new THREE.MeshBasicMaterial(), true, false, 400000);
+  const N = mc.size, field = mc.field, k = 0.1 + strength * 0.06;
+  const wp = new THREE.Vector3(), lp = new THREE.Vector3(), hit = {};
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    wp.set(center.x + (x/(N-1)-0.5)*dim, center.y + (y/(N-1)-0.5)*dim, center.z + (z/(N-1)-0.5)*dim);
+    let sd = 1e9;
+    for (const ob of objs) {
+      lp.copy(wp).applyMatrix4(ob.inv);
+      ob.bvh.closestPointToPoint(lp, hit);
+      let dist = hit.distance * ob.s;
+      faceNormalLocal(ob.geo, hit.faceIndex, _bn); _bd.copy(lp).sub(hit.point);
+      if (_bd.dot(_bn) < 0) dist = -dist;          // inside → negative
+      sd = smin(sd, dist, k);                        // smooth union
+    }
+    field[x + y*N + z*N*N] = -sd;                    // MarchingCubes: positive = inside
+  }
+  mc.isolation = 0;
+  mc.update();                                         // polygonise the field
+  const cnt = mc.count;
+  if (!cnt) { flash('Blob merge produced nothing — overlap the objects more'); return; }
+  const src = mc.geometry.attributes.position.array;
+  const arr = new Float32Array(cnt * 3); arr.set(src.subarray(0, cnt * 3));
+  let geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  geo.scale(dim / 2, dim / 2, dim / 2);               // mc local [-1,1] → world
+  geo = mergeVertices(geo, 1e-4); geo.computeVertexNormals();
+  const result = new Brush(geo, physicalMat('#ffffff'));
+  if (objs[0].color) result.material.color.copy(objs[0].color);
+  applyMode(result, objs[0].mode || 'liquid');
+  result.position.copy(center); result.castShadow = result.receiveShadow = true;
+  result.name = 'blob-merge'; result.userData.mode = objs[0].mode || 'liquid'; result.userData.vel = new THREE.Vector3();
+  scene.add(result);
+  sel.forEach(o => { detachFur(o); scene.remove(o); objects.splice(objects.indexOf(o), 1); });
+  objects.push(result); select([result]);
+  flash('Blob merged · seamless');
+}
+
 // ── Boolean ─────────────────────────────────────────────────────────────
 function boolOp(op) {
   if (selection.length !== 2) { flash('Select exactly 2 objects'); return; }
@@ -529,20 +595,30 @@ function furAlpha() {
 const FUR_ALPHA = furAlpha();
 function buildFur(brush, length) {
   detachFur(brush);
-  const group = new THREE.Group(); const SHELLS = 24;
+  const group = new THREE.Group(); const SHELLS = 32;
   const base = '#' + (brush.material.color ? brush.material.color.getHexString() : 'cccccc');
+  // Scale fur length by the object's size so it reads on big AND small objects.
+  brush.geometry.computeBoundingSphere();
+  const r = (brush.geometry.boundingSphere ? brush.geometry.boundingSphere.radius : 1);
   for (let i = 1; i <= SHELLS; i++) {
     const f = i / SHELLS;
+    const off = f * length * r;
     const mat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(base).multiplyScalar(0.5 + 0.5 * f),
-      roughness: 0.9, transparent: true, alphaMap: FUR_ALPHA, alphaTest: 0.02 + f * 0.5, depthWrite: false,
+      color: new THREE.Color(base).multiplyScalar(0.45 + 0.55 * f),
+      roughness: 0.95, transparent: true, alphaMap: FUR_ALPHA, alphaTest: 0.01 + f * 0.45, depthWrite: false,
     });
-    const off = f * length;
+    // Extrude each shell along the surface normal in the vertex shader. The
+    // offset is baked into the source, so we MUST give three a distinct program
+    // cache key per shell — otherwise all shells share one compiled program
+    // (the first offset) and collapse onto the surface → "noise, no fur".
     mat.onBeforeCompile = sh => {
-      sh.uniforms.uOff = { value: off };
-      sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize(normal) * ' + off.toFixed(4) + ';');
+      sh.vertexShader = sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\ntransformed += normalize(objectNormal) * ' + off.toFixed(5) + ';'
+      );
     };
-    const shell = new THREE.Mesh(brush.geometry, mat); shell.castShadow = i < 6;
+    mat.customProgramCacheKey = () => 'fur' + off.toFixed(5);
+    const shell = new THREE.Mesh(brush.geometry, mat); shell.castShadow = i < 8;
     group.add(shell);
   }
   brush.add(group); brush.userData.fur = group;
@@ -614,7 +690,7 @@ function addCloth() {
 
 // ── Liquid (marching-cubes metaballs) ─────────────────────────────────────
 function addLiquid() {
-  const mat = new THREE.MeshPhysicalMaterial({ color: 0x4ec5ff, roughness: 0.08, metalness: 0, transmission: 0.9, ior: 1.33, thickness: 1.2, transparent: true, envMapIntensity: 1.2 });
+  const mat = new THREE.MeshPhysicalMaterial({ color: 0x9fd8ff, roughness: 0.04, metalness: 0, transmission: 1, ior: 1.33, thickness: 1.2, transparent: false, envMapIntensity: 0.9 });
   const mc = new MarchingCubes(56, mat, true, false, 90000);
   mc.scale.set(2.6, 2.6, 2.6); mc.position.set(0, 0.4, 0); mc.isolation = 70; mc.castShadow = true;
   scene.add(mc);
@@ -649,6 +725,7 @@ function setTool(t) { toolbar.querySelectorAll('[data-tool]').forEach(b => b.cla
 
 document.querySelectorAll('[data-bool]').forEach(b => b.addEventListener('click', () => boolOp(b.dataset.bool)));
 $('#b-smooth').addEventListener('input', e => { boolSmooth = parseInt(e.target.value); $('#b-smooth-v').textContent = boolSmooth; });
+$('#b-blob').addEventListener('click', () => blobMerge(selection.slice(), boolSmooth));
 $('#b-liquefy').addEventListener('click', () => { if (!selection.length) { flash('Select an object'); return; } selection.forEach(s => liquefy(s, boolSmooth || 6)); flash('Liquefied ×' + (boolSmooth || 6)); });
 $('#duplicate').addEventListener('click', duplicate);
 $('#delete').addEventListener('click', removeSelected);
@@ -659,7 +736,7 @@ $('#m-mode').addEventListener('change', e => { selection.forEach(s => applyMode(
 const sliders = [['#m-rough', 'roughness', '#m-rough-v'], ['#m-metal', 'metalness', '#m-metal-v'], ['#m-trans', 'transmission', '#m-trans-v'], ['#m-ior', 'ior', '#m-ior-v']];
 sliders.forEach(([sel, prop, valSel]) => $(sel).addEventListener('input', e => {
   const v = parseFloat(e.target.value);
-  selection.forEach(s => { if (prop in s.material) { s.material[prop] = v; if (prop === 'transmission') s.material.transparent = v > 0; s.material.needsUpdate = true; } });
+  selection.forEach(s => { if (prop in s.material) { s.material[prop] = v; if (prop === 'transmission') s.material.transparent = false; s.material.needsUpdate = true; } });
   $(valSel).textContent = v.toFixed(2);
 }));
 $('#m-color').addEventListener('input', e => selection.forEach(s => { if (s.material.color) s.material.color.set(e.target.value); }));
@@ -808,7 +885,7 @@ addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].mat
 addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
 select([]);
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, liquefy, applyMode, toggleFur, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liquefy, applyMode, toggleFur, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; } };
 </script>
 </body>
 </html>
