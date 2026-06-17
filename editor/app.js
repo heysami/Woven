@@ -37326,6 +37326,34 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   if (f2.port === "folder-write" && down.kind === "prototype") summary.folderWrite = `source/${nodePrototype(down)}/`;
                   // Output dispatch — accept `output` (new) + legacy aliases.
                   if (f2.port === "output" || f2.port === "output-1" || f2.port === "output-2" || f2.port === "output-3" || f2.port === "file-out") {
+                    // v4.0 — contract-driven output. If the downstream kind's io
+                    // contract has an editTarget accept (composer / vector-editor /
+                    // spline-3d), the agent's deliverable is to WRITE that node's
+                    // canonical file per the contract's authoring schema — the node
+                    // re-imports it. This is what the agent ACTUALLY needs to know;
+                    // the old per-kind table had no spline-3d branch, so it fell
+                    // through to targetType "any" → "<freeform text>" and the agent
+                    // produced something the 3D editor can't hold.
+                    const _dio = workflowKindIo(down.kind);
+                    const _edit = _dio && (_dio.accepts || []).find(a => a.ingest === "editTarget");
+                    if (_edit && _edit.canonical) {
+                      let b = "main";
+                      for (const pe of (data.edges || [])) {
+                        if ((pe.to || "").split(".", 1)[0] !== down.id) continue;
+                        const pu = (data.nodes || []).find(x => x.id === (pe.from || "").split(".", 1)[0]);
+                        if (pu && pu.kind === "prototype") { const s = pu.prototype || pu.branch; if (s) { b = s; break; } }
+                      }
+                      const path = _edit.canonical
+                        .replace(/\{branch\}/g, b).replace(/\{prototype\}/g, b).replace(/\{id\}/g, down.id);
+                      const authoring = (_edit.authoring || "")
+                        .replace(/\{branch\}/g, b).replace(/\{prototype\}/g, b).replace(/\{id\}/g, down.id);
+                      summary.outputs.push({
+                        targetNodeId: down.id, targetKind: down.kind, targetPort: to.port,
+                        mode: "file", targetPath: path, authoring,
+                        targetType: down.kind, label: down.title || down.name || down.kind,
+                      });
+                      continue;
+                    }
                     let targetType = "any";
                     let label = "";
                     if (down.kind === "color-palette" && to.port === "in") {
@@ -61718,7 +61746,25 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
   // "targetType": "<kind>", "value": <typed payload> }, …] }. One entry per
   // wired downstream — the editor walks the array and dispatches each entry
   // into the matching target's patch surface.
-  const targets = Array.isArray(wiredOutputs) ? wiredOutputs : [];
+  const allTargets = Array.isArray(wiredOutputs) ? wiredOutputs : [];
+  // v4.0 — split by how each output ACCEPTS work, from its io contract:
+  //  • file targets (editTarget kinds: composer / vector / spline-3d) — the
+  //    deliverable is a FILE the agent writes per the target's schema; the node
+  //    re-imports it. Positive spec, no JSON return.
+  //  • typed targets (palette / typography / text / direction / asset) — the
+  //    agent returns a typed value in the final JSON, mapped to a node patch.
+  const fileTargets = allTargets.filter(t => t.mode === "file");
+  const targets = allTargets.filter(t => t.mode !== "file");
+  if (fileTargets.length) {
+    parts.push("=== Your deliverable: write these files ===");
+    parts.push("You are wired to the node(s) below. Each one renders ONLY the file described — that file IS your deliverable. Produce it with Write/Edit at the exact path; the node picks it up automatically. Realize the user's intent (from the context above) WITHIN each target's accepted format. Do NOT substitute a different medium, and do NOT return these in any JSON response.");
+    parts.push("");
+    fileTargets.forEach((t, i) => {
+      parts.push(`  ${i + 1}. ${t.targetKind} node "${t.label}" → file \`${t.targetPath}\``);
+      if (t.authoring) parts.push("     " + t.authoring.split("\n").join("\n     "));
+    });
+    parts.push("");
+  }
   if (targets.length) {
     parts.push("=== Typed outputs ===");
     parts.push(`Your final response MUST be a single JSON object with one key "outputs", whose value is an array of ${targets.length} entries — one per wired downstream target listed below. Each entry's "targetId" must match the listed id exactly; "value" must match that target's schema. Emit ONLY the JSON object (no prose, no markdown fences).`);

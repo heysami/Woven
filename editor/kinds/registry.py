@@ -2566,20 +2566,19 @@ KINDS = {
 # {branch}/{id} are resolved like outputsRoot; JSON braces in the schema are
 # left intact (token-replace, not str.format).
 _SPLINE_AUTHORING = (
-    "This node is a Spline-style 3D SCENE EDITOR. Produce its 3D CONTENT — do NOT "
-    "create a generic motion/HTML/image/2D-canvas asset, and do NOT dispatch the "
-    "visual/motion orchestrators. Pick ONE mode for the request:\n"
-    "  (A) AUTHOR THE SCENE — write the canonical file `source/{branch}/spline-{id}.scene.json` "
-    "as JSON in EXACTLY this schema (the editor loads it directly; re-import is automatic):\n"
+    "Accepts: a 3D SCENE, in one of exactly two forms (produce one). It is a "
+    "Spline-style WebGL scene editor; the only things it can render are the scene "
+    "JSON below or an imported mesh — that JSON (or registered .glb) IS the deliverable.\n"
+    "  (A) Scene JSON at `source/{branch}/spline-{id}.scene.json`, in EXACTLY this schema "
+    "(loaded directly; re-imported live on write):\n"
     "      {\"v\":1,\"objects\":[{\"kind\":\"box|sphere|cylinder|cone|torus|torusknot|icosahedron|pyramid|helix\","
     "\"pos\":[x,y,z],\"rot\":[x,y,z],\"scl\":[x,y,z],\"mode\":\"solid|toon|matcap|normal|fresnel\","
     "\"color\":\"#rrggbb\",\"rough\":0.0,\"metal\":0.0,\"trans\":0.0,\"ior\":1.5}],\"blob\":null}\n"
-    "      Compose the subject out of these primitives (translate/rotate/scale/colour them). "
-    "Units are ~metres; the camera frames roughly -3..3. Omit material fields you don't need.\n"
-    "  (B) REAL MODEL — if a realistic mesh is required AND a 3D-generation model is wired/available, "
-    "generate a textured .glb under `source/{branch}/spline-imports/` and register its source-relative "
-    "path on THIS node by POSTing /__workflow/node/{id}/status with {\"imports\":[\"source/{branch}/spline-imports/<file>.glb\"]}. "
-    "The editor imports it live. Never invent a .glb path you didn't create."
+    "      Build the subject by composing/transforming/colouring those primitives. Units ~metres; "
+    "the camera frames about -3..3. Each object needs at least kind+pos; other fields are optional.\n"
+    "  (B) A textured .glb under `source/{branch}/spline-imports/`, whose source-relative path you "
+    "then register on this node: POST /__workflow/node/{id}/status {\"imports\":[\"source/{branch}/spline-imports/<file>.glb\"]} "
+    "(only a .glb you actually created)."
 )
 KIND_IO = {
     "prompt": {
