@@ -197,6 +197,12 @@
         <div class="row"><button class="btn ghost full" id="d-reset">Reset deform</button></div>
       </div>
 
+      <div class="group" id="anim-group" style="display:none">
+        <div class="label">Animation <span class="tag">imported clip</span></div>
+        <div class="field"><label>Clip</label><select id="anim-clip"></select></div>
+        <div class="row"><button class="btn on full" id="anim-play">Pause</button></div>
+      </div>
+
       <div class="group">
         <div class="label">Effects</div>
         <div class="row">
@@ -479,7 +485,39 @@ function addShape(kind) {
 // selectable object (its PBR material + textures preserved).
 const gltfLoader = new GLTFLoader();
 function addImportedScene(gltf, label, srcUrl) {
-  const root = gltf.scene || gltf.scenes[0]; root.updateMatrixWorld(true);
+  const root0 = gltf.scene || gltf.scenes[0]; root0.updateMatrixWorld(true);
+  const clips = gltf.animations || [];
+  let skinned = false; root0.traverse(o => { if (o.isSkinnedMesh) skinned = true; });
+
+  // ── Animated / rigged glb: keep the scene graph INTACT (skinning needs the
+  // bones + SkinnedMeshes — baking geometry would break it) and drive it with
+  // an AnimationMixer. Added as ONE selectable group object. ──────────────────
+  if (clips.length > 0 || skinned) {
+    const root = root0;
+    let box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3()), maxd = Math.max(size.x, size.y, size.z) || 1;
+    const k = 2.4 / maxd; root.scale.setScalar(k); root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(root); const c = box.getCenter(new THREE.Vector3());
+    root.position.set(-c.x, 0.8 - c.y, -c.z);
+    root.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; if (o.material && 'envMapIntensity' in o.material) o.material.envMapIntensity = 1.0; } });
+    root.name = (label || 'import');
+    root.userData.mode = 'imported'; root.userData.vel = new THREE.Vector3();
+    if (srcUrl) root.userData.importUrl = srcUrl;
+    if (clips.length) {
+      const mixer = new THREE.AnimationMixer(root);
+      const action = mixer.clipAction(clips[0]); action.play();
+      root.userData.mixer = mixer; root.userData.clips = clips;
+      root.userData.action = action; root.userData.animIndex = 0; root.userData.animPlaying = true;
+    }
+    scene.add(root); objects.push(root);
+    if (srcUrl) { const arr = __loadedImports.get(srcUrl) || []; arr.push(root); __loadedImports.set(srcUrl, arr); }
+    select([root]);
+    flash('Imported · ' + (label || 'model') + (clips.length ? ' · ' + clips.length + ' animation' + (clips.length === 1 ? '' : 's') : ' (rigged)'));
+    refresh(); return;
+  }
+
+  // ── Static glb: bake each mesh to world space → individually editable. ──────
+  const root = root0;
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3()), maxd = Math.max(size.x, size.y, size.z) || 1;
   const k = 2.2 / maxd, center = box.getCenter(new THREE.Vector3());
@@ -560,7 +598,7 @@ function reExtrude(brush, depth, bevel) {
 
 // ── Selection ─────────────────────────────────────────────────────────────
 const ray = new THREE.Raycaster(); const ptr = new THREE.Vector2(); let down = null;
-function setOutline(b, on) { if (b.material.emissive && !b.userData.mode) {} if ('emissive' in b.material) { b.material.emissive = b.material.emissive || new THREE.Color(0); b.material.emissive.setHex(on ? 0x202a55 : 0x000000); } }
+function setOutline(b, on) { if (!b.material) return; if ('emissive' in b.material) { b.material.emissive = b.material.emissive || new THREE.Color(0); b.material.emissive.setHex(on ? 0x202a55 : 0x000000); } }
 function select(list) {
   selection.forEach(b => setOutline(b, false));
   selection = list.filter(Boolean);
@@ -574,9 +612,12 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (moved > 5 || gizmo.dragging) return;
   ptr.x = (e.clientX / innerWidth) * 2 - 1; ptr.y = -(e.clientY / innerHeight) * 2 + 1;
   ray.setFromCamera(ptr, camera);
-  const hit = ray.intersectObjects(objects, false)[0];
+  // Recursive: animated/rigged imports are groups — hit a child mesh then walk
+  // up to the registered top-level object so the whole model is selected.
+  const hit = ray.intersectObjects(objects, true)[0];
   if (!hit) { if (!e.shiftKey) select([]); return; }
-  const obj = hit.object;
+  let obj = hit.object; while (obj && objects.indexOf(obj) === -1) obj = obj.parent;
+  if (!obj) { if (!e.shiftKey) select([]); return; }
   if (e.shiftKey) { const i = selection.indexOf(obj); if (i >= 0) select(selection.filter(o => o !== obj)); else select([...selection, obj].slice(-2)); }
   else select([obj]);
 });
@@ -996,6 +1037,23 @@ $('#fur-toggle').addEventListener('click', toggleFur);
 $('#fur-len').addEventListener('input', e => { $('#fur-len-v').textContent = (+e.target.value).toFixed(2).slice(1); if (selection[0] && selection[0].userData.fur) buildFur(selection[0], +e.target.value); });
 $('#fur-grav').addEventListener('input', e => { furGravity = +e.target.value; $('#fur-grav-v').textContent = furGravity.toFixed(2).slice(1); });
 
+// Animation playback for imported animated/rigged glbs.
+$('#anim-clip').addEventListener('change', e => {
+  const s = selection[0]; if (!s || !s.userData.mixer) return;
+  const i = parseInt(e.target.value); const clips = s.userData.clips;
+  if (s.userData.action) s.userData.action.stop();
+  const action = s.userData.mixer.clipAction(clips[i]); action.reset(); action.play();
+  if (!s.userData.animPlaying) action.paused = true;
+  s.userData.action = action; s.userData.animIndex = i;
+});
+$('#anim-play').addEventListener('click', () => {
+  const s = selection[0]; if (!s || !s.userData.action) return;
+  s.userData.animPlaying = !s.userData.animPlaying;
+  s.userData.action.paused = !s.userData.animPlaying;
+  $('#anim-play').textContent = s.userData.animPlaying ? 'Pause' : 'Play';
+  $('#anim-play').classList.toggle('on', s.userData.animPlaying);
+});
+
 // Deform sliders (non-destructive — re-applied from cached base each change)
 [['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
   $(sel).addEventListener('input', e => {
@@ -1137,10 +1195,22 @@ function refresh() {
     const s = selection[0], m = s.material;
     $('#mat-kind').textContent = '· ' + (s.userData.mode || 'solid');
     $('#m-mode').value = s.userData.mode || 'solid';
-    if (m.color) $('#m-color').value = '#' + m.color.getHexString();
+    if (m && m.color) $('#m-color').value = '#' + m.color.getHexString();
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
-    set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5);
+    if (m) { set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5); }
     $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
+    // Animation controls — shown only for animated/rigged imports (a mixer).
+    const anim = $('#anim-group');
+    if (anim) {
+      if (s.userData.mixer && s.userData.clips && s.userData.clips.length) {
+        anim.style.display = 'block';
+        const sel = $('#anim-clip'); sel.innerHTML = '';
+        s.userData.clips.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = c.name || ('clip ' + (i + 1)); sel.appendChild(o); });
+        sel.value = s.userData.animIndex || 0;
+        $('#anim-play').textContent = s.userData.animPlaying ? 'Pause' : 'Play';
+        $('#anim-play').classList.toggle('on', !!s.userData.animPlaying);
+      } else { anim.style.display = 'none'; }
+    }
     // Sync deform sliders to the selected object's stored deform state.
     const df = s.userData.deform || {};
     [['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
@@ -1201,6 +1271,7 @@ function tick(now) {
   clock.getDelta();
   stepPhysics(dt);
   updateFurDynamics();
+  for (const o of objects) { if (o.userData.mixer) o.userData.mixer.update(dt); }   // animated glb playback
   for (const s of sims) s.update(dt);
   orbit.update();
   renderer.render(scene, camera);

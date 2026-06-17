@@ -741,17 +741,81 @@ def _meshy_extract_glb(payload):
         f"meshy: no model url in task (keys: {list(payload.keys()) if isinstance(payload, dict) else '?'})")
 
 
+def _meshy_extract_any_glb(payload):
+    """Tolerant .glb extractor for rig / animation results, which put urls under
+    `result` (rigged_character_glb_url, basic_animations.*_glb_url) rather than
+    the `model_urls` shape the generate endpoints use."""
+    try:
+        return _meshy_extract_glb(payload)
+    except Exception:
+        pass
+    res = payload.get("result") if isinstance(payload, dict) else None
+    if isinstance(res, dict):
+        urls = res.get("model_urls")
+        if isinstance(urls, dict) and isinstance(urls.get("glb"), str) and urls["glb"]:
+            return urls["glb"]
+        for k in ("animated_glb_url", "glb_url", "rigged_character_glb_url"):
+            v = res.get(k)
+            if isinstance(v, str) and v:
+                return v
+    raise RuntimeError("meshy: no glb url in rig/animation payload")
+
+
+def _meshy_animate(api_key, mesh_task_id, opts):
+    """Rig the generated mesh, then animate it. Returns animated .glb bytes.
+    Two-stage: POST /openapi/v1/rigging (input_task_id = the mesh task) → poll;
+    the rig result already carries basic walking/running glbs. A NAMED library
+    action goes through POST /openapi/v1/animations (rig_task_id + action_id).
+    Character/humanoid meshes only — Meshy auto-rig needs a riggable shape, and
+    rigging/animation require a plan tier that exposes those endpoints."""
+    rig_body = {"input_task_id": mesh_task_id, "height_meters": opts.get("height_meters", 1.7)}
+    if opts.get("texture_image_url"): rig_body["texture_image_url"] = opts["texture_image_url"]
+    created = _meshy_request(api_key, "/openapi/v1/rigging", rig_body)
+    rig_id = created.get("result") if isinstance(created, dict) else None
+    if not rig_id:
+        raise RuntimeError(f"meshy: no rig task id — {created}")
+    rig = _meshy_poll(api_key, "/openapi/v1/rigging", rig_id, timeout_total=900)
+
+    action = opts.get("action") or opts.get("action_id")
+    basic = {"walking", "running", "walk", "run", "", None}
+    # A specific library action → the animations endpoint.
+    if action and str(action).lower() not in basic:
+        abody = {"rig_task_id": rig_id, "action_id": action}
+        for k in ("fps", "target_formats"):
+            if opts.get(k) is not None: abody[k] = opts[k]
+        c2 = _meshy_request(api_key, "/openapi/v1/animations", abody)
+        anim_id = c2.get("result") if isinstance(c2, dict) else None
+        if anim_id:
+            done = _meshy_poll(api_key, "/openapi/v1/animations", anim_id, timeout_total=900)
+            return _download_bytes(_meshy_extract_any_glb(done), timeout=180)
+
+    # Default: use the rig's built-in basic animation (walking unless running asked).
+    res = rig.get("result") if isinstance(rig, dict) else None
+    url = None
+    if isinstance(res, dict):
+        ba = res.get("basic_animations") or {}
+        want = "running" if str(action or "").lower().startswith("run") else "walking"
+        url = ba.get(want + "_glb_url") or ba.get("walking_glb_url") or ba.get("running_glb_url") or res.get("rigged_character_glb_url")
+    if not url:
+        url = _meshy_extract_any_glb(rig)
+    return _download_bytes(url, timeout=180)
+
+
 def _meshy_generate_3d(api_key, prompt, model, aspect, options):
-    """Meshy text-to-3D (preview → refine) or image-to-3D. Async create+poll;
-    returns raw .glb bytes. `model` selects the endpoint family:
-    'meshy/image-to-3d' (or an options.image_url being present) routes to
-    image-to-3d; anything else routes to text-to-3d. Aspect is meaningless for
-    3D and ignored. Knobs (ai_model, should_texture, enable_pbr, art_style,
-    target_polycount, …) ride in via the skill node's options."""
+    """Meshy text-to-3D (preview → refine) or image-to-3D, with OPTIONAL rig +
+    animation. Async create+poll; returns raw .glb bytes. `model` selects the
+    family: 'image-to-3d' (or an options.image_url) → image-to-3d, else
+    text-to-3d. TEXTURE is on by default (text: preview→refine bakes PBR;
+    image: should_texture). ANIMATION runs when `model` contains 'anim', or
+    options.animate / options.action(_id) is set — the mesh is rigged and
+    animated, falling back to the static textured mesh if rigging isn't
+    available (plan/non-character). Knobs ride in via the skill node options."""
     opts = options if isinstance(options, dict) else {}
     ai_model = opts.get("ai_model") or "meshy-5"
     is_image = "image-to-3d" in (model or "") or bool(opts.get("image_url"))
+    want_anim = ("anim" in (model or "").lower()) or bool(opts.get("animate")) or bool(opts.get("action") or opts.get("action_id"))
 
+    # ── 1. Produce the (textured) base mesh, keeping its task id for rigging ──
     if is_image:
         image_url = opts.get("image_url")
         if not image_url:
@@ -766,49 +830,57 @@ def _meshy_generate_3d(api_key, prompt, model, aspect, options):
         for k in ("topology", "target_polycount", "should_remesh", "symmetry_mode"):
             if opts.get(k) is not None: body[k] = opts[k]
         created = _meshy_request(api_key, "/openapi/v2/image-to-3d", body)
-        task_id = created.get("result") if isinstance(created, dict) else None
-        if not task_id:
+        mesh_task_id = created.get("result") if isinstance(created, dict) else None
+        if not mesh_task_id:
             raise RuntimeError(f"meshy: no task id (image-to-3d) — {created}")
-        done = _meshy_poll(api_key, "/openapi/v2/image-to-3d", task_id)
-        return _download_bytes(_meshy_extract_glb(done), timeout=120)
+        done = _meshy_poll(api_key, "/openapi/v2/image-to-3d", mesh_task_id)
+        static_url = _meshy_extract_glb(done)
+    else:
+        # Text-to-3D — stage 1: preview (geometry only).
+        pbody = {
+            "mode":           "preview",
+            "prompt":         (prompt or "")[:600],
+            "ai_model":       ai_model,
+            "should_remesh":  opts.get("should_remesh", True),
+            "target_formats": ["glb"],
+        }
+        for k in ("model_type", "target_polycount", "pose_mode", "negative_prompt", "seed", "topology"):
+            if opts.get(k) is not None: pbody[k] = opts[k]
+        created = _meshy_request(api_key, "/openapi/v2/text-to-3d", pbody)
+        preview_id = created.get("result") if isinstance(created, dict) else None
+        if not preview_id:
+            raise RuntimeError(f"meshy: no task id (text-to-3d preview) — {created}")
+        preview = _meshy_poll(api_key, "/openapi/v2/text-to-3d", preview_id)
+        mesh_task_id = preview_id
+        static_url = _meshy_extract_glb(preview)
+        # Stage 2: refine (TEXTURES) referencing the preview task id, unless
+        # explicitly disabled.
+        if opts.get("should_texture", True) is not False:
+            rbody = {
+                "mode":            "refine",
+                "preview_task_id": preview_id,
+                "enable_pbr":      opts.get("enable_pbr", True),
+                "target_formats":  ["glb"],
+            }
+            for k in ("texture_prompt", "texture_image_url", "hd_texture"):
+                if opts.get(k) is not None: rbody[k] = opts[k]
+            created2 = _meshy_request(api_key, "/openapi/v2/text-to-3d", rbody)
+            refine_id = created2.get("result") if isinstance(created2, dict) else None
+            if refine_id:
+                refined = _meshy_poll(api_key, "/openapi/v2/text-to-3d", refine_id)
+                mesh_task_id = refine_id
+                static_url = _meshy_extract_glb(refined)
 
-    # Text-to-3D — stage 1: preview (geometry only).
-    pbody = {
-        "mode":           "preview",
-        "prompt":         (prompt or "")[:600],
-        "ai_model":       ai_model,
-        "should_remesh":  opts.get("should_remesh", True),
-        "target_formats": ["glb"],
-    }
-    for k in ("model_type", "target_polycount", "pose_mode", "negative_prompt", "seed", "topology"):
-        if opts.get(k) is not None: pbody[k] = opts[k]
-    created = _meshy_request(api_key, "/openapi/v2/text-to-3d", pbody)
-    preview_id = created.get("result") if isinstance(created, dict) else None
-    if not preview_id:
-        raise RuntimeError(f"meshy: no task id (text-to-3d preview) — {created}")
-    preview = _meshy_poll(api_key, "/openapi/v2/text-to-3d", preview_id)
+    # ── 2. Optional rig + animate (character meshes only). Graceful fallback:
+    # if rigging/animation isn't available, return the static textured mesh. ──
+    if want_anim:
+        try:
+            return _meshy_animate(api_key, mesh_task_id, opts)
+        except Exception as e:
+            print(f"[meshy] animation stage failed ({type(e).__name__}: {e}); "
+                  f"returning the static textured mesh", flush=True)
 
-    # Untextured geometry only? Return the preview mesh as-is.
-    if opts.get("should_texture", True) is False:
-        return _download_bytes(_meshy_extract_glb(preview), timeout=120)
-
-    # Stage 2: refine (textures) referencing the preview task id.
-    rbody = {
-        "mode":            "refine",
-        "preview_task_id": preview_id,
-        "enable_pbr":      opts.get("enable_pbr", True),
-        "target_formats":  ["glb"],
-    }
-    for k in ("texture_prompt", "texture_image_url", "hd_texture"):
-        if opts.get(k) is not None: rbody[k] = opts[k]
-    created2 = _meshy_request(api_key, "/openapi/v2/text-to-3d", rbody)
-    refine_id = created2.get("result") if isinstance(created2, dict) else None
-    if not refine_id:
-        # Refine failed to enqueue — fall back to the untextured preview mesh
-        # rather than failing the whole run.
-        return _download_bytes(_meshy_extract_glb(preview), timeout=120)
-    refined = _meshy_poll(api_key, "/openapi/v2/text-to-3d", refine_id)
-    return _download_bytes(_meshy_extract_glb(refined), timeout=120)
+    return _download_bytes(static_url, timeout=180)
 
 
 def _fal_generate_image(api_key, prompt, model, aspect, options):
@@ -4743,6 +4815,28 @@ class RunState:
         # (asset / view / prototype — any kind). Same capture point + tool
         # whitelist as `modifying`.
         self.touched_paths: list = []
+
+    @property
+    def is_live(self) -> bool:
+        """True iff a driveable subprocess is attached — i.e. we can write a
+        frame to its stdin or signal it right now.
+
+        The load-bearing case is `self.proc is None`: runs rehydrated from
+        history after a daemon restart are "ghost" RunStates (see _rehydrate,
+        proc=None) — their original subprocess died with the old daemon. Any
+        handler that touches `self.proc.<x>` MUST gate on this first, or it
+        crashes with "'NoneType' has no attribute 'stdin'/'terminate'/…". The
+        recovery path for a non-live run is /resume, which re-spawns the CLI
+        with --resume <session_id> and rebinds self.proc.
+
+        Note this is the SAME check the stdin handlers need (proc present AND
+        its stdin pipe open), so they share one source of truth — but it is
+        also correct for terminate()/signal handlers, which only require the
+        proc to exist. A closed stdin on a still-running proc is rare (we keep
+        it open for follow-ups) but counts as not-live for our purposes: there
+        is no way to drive the agent without it."""
+        proc = self.proc
+        return proc is not None and proc.stdin is not None and not proc.stdin.closed
 
     def append(self, ev_type: str, data) -> None:
         with self.lock:
@@ -18308,8 +18402,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
         if state.done:
             return self._reply(409, {"error": "run already finished"})
-        if not state.proc.stdin or state.proc.stdin.closed:
-            return self._reply(409, {"error": "agent stdin not available"})
+        # Non-live runs (history-rehydrated ghosts with proc=None) can't take a
+        # stdin frame — recovery is /resume. is_live is the single source of
+        # truth for "proc present AND stdin writable" (see RunState.is_live).
+        if not state.is_live:
+            return self._reply(409, {"error": "agent stdin not available", "needsResume": True})
         try:
             state.proc.stdin.write(_claude_tool_result_frame(tool_use_id, content, is_error))
             state.proc.stdin.flush()
@@ -18335,8 +18432,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
         if state.done:
             return self._reply(409, {"error": "run already finished"})
-        if not state.proc.stdin or state.proc.stdin.closed:
-            return self._reply(409, {"error": "agent stdin not available"})
+        # See _run_tool_result: state.proc is None for history-rehydrated ghost
+        # runs; guard it before .stdin so we 409 cleanly instead of crashing.
+        if not state.proc or not state.proc.stdin or state.proc.stdin.closed:
+            return self._reply(409, {"error": "agent stdin not available", "needsResume": True})
         try:
             state.proc.stdin.write(_claude_user_frame(text))
             state.proc.stdin.flush()

@@ -240,9 +240,14 @@
   // handled by serve.py's _meshy_generate_3d; the fal rows go through the sync
   // fal.run pipeline (_fal_generate_3d). Both dispatch under the `3d-gen` skill.
   const MODELS_3D = [
-    // Meshy — the dedicated 3D provider. Default.
-    { id: "meshy/text-to-3d",     provider: "meshy", label: "Meshy 5 (text→3D)",  hint: "Meshy · prompt → textured .glb (preview+refine)", caps: ["t23d"],         integrated: true, default: true },
-    { id: "meshy/image-to-3d",    provider: "meshy", label: "Meshy 5 (image→3D)", hint: "Meshy · image → textured .glb",                   caps: ["i23d"],         integrated: true },
+    // Meshy — the dedicated 3D provider. Default. Text/image-to-3D are textured
+    // (preview→refine bakes PBR). The "-anim" rows add Meshy's rig+animate pass
+    // (character/humanoid meshes; needs a plan tier that exposes rigging) — they
+    // fall back to the static textured mesh if rigging isn't available.
+    { id: "meshy/text-to-3d",      provider: "meshy", label: "Meshy 5 (text→3D)",        hint: "Meshy · prompt → textured .glb (preview+refine)", caps: ["t23d"],         integrated: true, default: true },
+    { id: "meshy/image-to-3d",     provider: "meshy", label: "Meshy 5 (image→3D)",       hint: "Meshy · image → textured .glb",                   caps: ["i23d"],         integrated: true },
+    { id: "meshy/text-to-3d-anim", provider: "meshy", label: "Meshy 5 (text→animated)",  hint: "Meshy · prompt → textured + rigged + animated .glb (character)", caps: ["t23d"], integrated: true },
+    { id: "meshy/image-to-3d-anim",provider: "meshy", label: "Meshy 5 (image→animated)", hint: "Meshy · image → textured + rigged + animated .glb (character)",  caps: ["i23d"], integrated: true },
     // fal — sync 3D endpoints (already wired in serve.py).
     { id: "fal-ai/hyper3d/rodin", provider: "fal",   label: "Rodin (Hyper3D)",    hint: "fal · text/image → 3D (PBR)",                     caps: ["t23d", "i23d"], integrated: true },
     { id: "fal-ai/hunyuan3d-v2",  provider: "fal",   label: "Hunyuan3D v2",       hint: "fal · Tencent Hunyuan3D v2",                      caps: ["t23d", "i23d"], integrated: true },
