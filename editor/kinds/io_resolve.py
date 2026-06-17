@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import re
 
-from kinds.registry import kind_contract, ASSET_KIND_AUTHORING
+from kinds.registry import kind_contract, ASSET_KIND_AUTHORING, MEDIA_MODEL_AUTHORING
 
 
 # ── small helpers ───────────────────────────────────────────────────────────
@@ -327,10 +327,16 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
         aw = next((a for a in accepts if a.get("ingest") == "assetWrite"), None)
         if aw and dpath:
             ak = dn.get("assetKind") or "file"
-            line = f"- Write your {ak} output to `{dpath}` (wired to asset node “{dlabel}”)."
-            # Per-medium authoring — what a {ak} asset IS + how to produce it, so the
-            # agent doesn't default to HTML/CSS for a shader/3d/etc.
-            medium = ASSET_KIND_AUTHORING.get(ak)
+            # Prefer the node's MEDIUM (generating media-model id, e.g. "shader",
+            # "viz", "threejs") over the storage assetKind ("html") — many
+            # Pathway-B media models all store as html but expect a specific kind
+            # of result. mediaModel contract wins; else fall back to assetKind.
+            mm = dn.get("mediaModel")
+            medium = MEDIA_MODEL_AUTHORING.get(mm) if mm else None
+            medium_key = mm if medium else ak
+            if not medium:
+                medium = ASSET_KIND_AUTHORING.get(ak)
+            line = f"- Write your {medium_key} output to `{dpath}` (wired to asset node “{dlabel}”)."
             if medium:
                 line += "\n  " + _resolve_tpl(medium, dn, proto_slug)
             targets.append(line)

@@ -174,6 +174,16 @@ contract-driven:
      both dispatch paths (`io_resolve` assetWrite + the frontend typed-output
      builder via the `/__kinds/registry` payload) and is enforced by the same
      import-time `io_contract_violations()` check.
+   - **Medium ≠ storage.** `assetKind` is the STORAGE/embed type; an asset node
+     also carries `mediaModel` (the generating media-model id). Many Pathway-B
+     models all store `.html` (assetKind `html`) but expect a SPECIFIC result —
+     shader (WebGL), viz (chart), threejs (3D scene), motion-gen (GSAP timeline),
+     canvas-gen (particle loop), html-page (UI mockup), plus svg-gen / lottie-gen.
+     `MEDIA_MODEL_AUTHORING` (keyed by media-model id) carries each contract;
+     dispatch prefers it over `ASSET_KIND_AUTHORING` when the node has a matching
+     `mediaModel`. The catalog lives in `prompts/media-models.js` (frontend-only),
+     so `MEDIA_MODEL_AUTHORING` is the daemon-side mirror; `test_io_contract.py`
+     asserts the known specific models stay covered.
    - And to **`sectionWrite`**: a `section` is a FRAME, not a medium, so its
      `authoring` (`_SECTION_AUTHORING`) is a placement+registration PROTOCOL —
      register children into the frame's grid — and is medium-agnostic: each

@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import sys
 
-from .registry import KIND_IO, KINDS, ASSET_KIND_AUTHORING, io_contract_violations
+from .registry import (KIND_IO, KINDS, ASSET_KIND_AUTHORING,
+                       MEDIA_MODEL_AUTHORING, io_contract_violations)
 
 
 def test_every_edit_target_has_authoring():
@@ -75,9 +76,23 @@ def test_every_asset_kind_has_authoring():
     assert not missing, f"assetKinds with no ASSET_KIND_AUTHORING entry: {missing}"
 
 
+def test_specific_pathway_b_media_models_have_authoring():
+    """Pathway-B media models that all store as html (or another generic kind)
+    but expect a SPECIFIC result must each carry a media-model authoring, so an
+    agent wired to one gets the right contract — not the generic-HTML one. This
+    list mirrors prompts/media-models.js (not daemon-readable), so keep in sync."""
+    expected = {"shader", "viz", "threejs", "motion-gen", "canvas-gen",
+                "html-page", "svg-gen", "lottie-gen"}
+    missing = [m for m in expected
+               if not (isinstance(MEDIA_MODEL_AUTHORING.get(m), str)
+                       and MEDIA_MODEL_AUTHORING[m].strip())]
+    assert not missing, f"media models with no MEDIA_MODEL_AUTHORING entry: {missing}"
+
+
 def main():
     tests = [test_every_edit_target_has_authoring, test_known_edit_target_kinds_covered,
-             test_section_write_has_authoring, test_every_asset_kind_has_authoring]
+             test_section_write_has_authoring, test_every_asset_kind_has_authoring,
+             test_specific_pathway_b_media_models_have_authoring]
     for t in tests:
         try:
             t()

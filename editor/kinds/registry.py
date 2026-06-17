@@ -2739,6 +2739,69 @@ ASSET_KIND_AUTHORING = {
         "This is a TEXT asset — write plain text to the target path. No markup, no code fences."
     ),
 }
+
+# Per-MEDIA-MODEL authoring. `assetKind` is the STORAGE type; `mediaModel` is the
+# PRODUCTION medium. Many Pathway-B generators (see prompts/media-models.js) all
+# write `.html` (assetKind "html") but each expects a SPECIFIC kind of result —
+# a shader scene, a data-viz chart, a three.js scene, a GSAP motion piece, a
+# canvas particle loop. Keyed on the media-model id so an agent wired to such a
+# node gets the right contract instead of the generic-HTML one. Dispatch prefers
+# this map over ASSET_KIND_AUTHORING when the node carries a matching `mediaModel`.
+# NOTE: the media-model catalog lives in the frontend (window.TH_MEDIA); the
+# daemon can't read it, so this map is the daemon-side mirror of those contracts.
+# test_io_contract.py asserts the known specific media models are covered.
+MEDIA_MODEL_AUTHORING = {
+    "shader": ASSET_KIND_AUTHORING["shader"],
+    "viz": (
+        "This is a DATA-VISUALIZATION asset — a self-contained `.html` page rendering a real "
+        "chart/graph (D3 v7, Observable Plot, or vanilla SVG; CDN imports OK). If the brief gives "
+        "no data, INVENT a small plausible inline dataset and label it synthetic. Responsive SVG "
+        "(viewBox + 100% width), accessible color (no red/green-only encoding), restrained axis "
+        "chrome. Do NOT produce a generic page, a static image, or a decorative graphic — the "
+        "deliverable is an actual data visualization."
+    ),
+    "threejs": (
+        "This is a 3D-SCENE asset — a self-contained `.html` page with an INTERACTIVE three.js "
+        "scene (r155+ via CDN ES modules): PerspectiveCamera, ambient + directional light, "
+        "OrbitControls, at least one animated element, full-window <canvas> with resize handling "
+        "and pixelRatio capped at 2. Do NOT produce a flat image, a CSS pseudo-3D effect, or a "
+        "static render — it must be a live WebGL scene."
+    ),
+    "motion-gen": (
+        "This is a MOTION asset — a self-contained `.html` motion piece on the Hyperframes model: "
+        "a `#stage`, child `clip` elements timed via data-attributes, driven by a PAUSED GSAP "
+        "timeline (GSAP from CDN). It must play standalone AND render deterministically to video. "
+        "Do NOT produce a static page or a loose CSS animation — the deliverable is a timed motion "
+        "composition on a GSAP timeline."
+    ),
+    "canvas-gen": (
+        "This is a CANVAS-MOTION / PARTICLE asset — a self-contained `.html` page driven by a "
+        "real-time canvas2D or WebGL requestAnimationFrame loop (particles, dust/snow/confetti/"
+        "sparks, flow fields, generative motion). canvas2D for ≤500 particles; WebGL instanced for "
+        "more. Do NOT fake it with CSS keyframes or a static image — the idiom is a live render loop."
+    ),
+    "html-page": (
+        "This is a UI-PAGE MOCKUP asset — ONE self-contained `.html` screen mockup (inline <style> "
+        "with CSS-custom-property tokens; a CDN/Google font OK; NO React/Vue/build step, NO chart "
+        "libraries unless the brief is a dashboard). It must be a REALISTIC, POPULATED mockup — "
+        "named entities, specific numbers, voiced microcopy; never 'User 1' / 'Lorem'. Fit a "
+        "1280×800 viewport without horizontal scroll."
+    ),
+    "svg-gen": (
+        "This is an SVG ILLUSTRATION asset — ONE valid self-contained `<svg>` with a viewBox, "
+        "cleanly STRUCTURED (layered <g> groups bg→mid→fg with descriptive ids), no bitmap "
+        "`<image href>`, no JS unless requested. Do NOT rasterize or embed a photo; this is "
+        "authored vector art."
+    ),
+    "lottie-gen": (
+        "This is a LOTTIE asset — ONE Bodymovin `.json` conforming to the Lottie schema (v 5.7+): "
+        "top-level `v`, `fr` (default 30), `ip`, `op`, `w`, `h`, `layers[]` (with `ty`, `ks` "
+        "transforms, `shapes`). Author keyframe-driven path morphs / transforms with Bézier easing; "
+        "NO external asset references. Do NOT write HTML/CSS or a video — the deliverable is Lottie "
+        "JSON a player ingests."
+    ),
+}
+
 # Section authoring — the sectionWrite analogue. A section is a FRAME/CONTAINER,
 # not a medium, so its contract is a placement+registration PROTOCOL, not a
 # per-medium schema: register one child node per piece of content into the
@@ -3031,4 +3094,5 @@ def to_jsonable():
     """Return the registry as a plain JSON-serializable dict, for the
     /__kinds/registry endpoint and offline tooling."""
     return {"KINDS": KINDS, "STAGES": STAGES,
-            "ASSET_KIND_AUTHORING": ASSET_KIND_AUTHORING}
+            "ASSET_KIND_AUTHORING": ASSET_KIND_AUTHORING,
+            "MEDIA_MODEL_AUTHORING": MEDIA_MODEL_AUTHORING}

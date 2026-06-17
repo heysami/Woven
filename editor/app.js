@@ -7239,7 +7239,12 @@ function pickAssetSpawnDefaults(skillSpec, branch, stamp) {
   }
   const slug = skill.id || "asset";
   const path = `source/${branch}/${assetSubdirForKind(assetKind)}/${slug}-${stamp}.${ext}`;
-  return { assetKind, ext, path };
+  // v4.0 — persist the generating media-model id as the node's MEDIUM. assetKind
+  // is the storage/embed type (a shader scene is an .html → assetKind "html"),
+  // but the PRODUCTION medium is the skill (shader / viz / …). Without this, an
+  // agent later wired to the node only sees assetKind=html and makes CSS instead
+  // of a WebGL shader. Dispatch prefers mediaModel when it maps to an authoring.
+  return { assetKind, ext, path, mediaModel: skill.id || null };
 }
 
 /* Per-kind output subdirectory under source/<branch>/. Previously every
@@ -32057,6 +32062,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         w, h,
         assetKind: spawned.assetKind,
         path: spawned.path,
+        ...(spawned.mediaModel ? { mediaModel: spawned.mediaModel } : {}),
       };
       const newEdge = { from: `${skillNodeId}.out`, to: `${newId}.in` };
       return {
@@ -32739,6 +32745,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               y: Math.round(rep.y + 32 + offsetY),
               w: 220, h: 170,
               assetKind: repSpawn.assetKind, path,
+              ...(repSpawn.mediaModel ? { mediaModel: repSpawn.mediaModel } : {}),
               runStatus: "pending",
             });
             eagerEdges.push({ from: `${repeaterId}.output-${i + 1}`, to: `${newId}.in` });
@@ -34582,6 +34589,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               w: 220, h: 170,
               assetKind: spawned.assetKind,
               path: spawned.path,
+              ...(spawned.mediaModel ? { mediaModel: spawned.mediaModel } : {}),
             }],
             edges: [...(d.edges || []), { from: `${skillId}.out`, to: `${newId}.in` }],
           };
@@ -34847,7 +34855,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               ...d,
               nodes: (d.nodes || []).map(n => {
                 if (idToNewPath.has(n.id)) {
-                  return { ...n, path: idToNewPath.get(n.id), assetKind: patchKind };
+                  return { ...n, path: idToNewPath.get(n.id), assetKind: patchKind,
+                           ...(patchSpawn.mediaModel ? { mediaModel: patchSpawn.mediaModel } : {}) };
                 }
                 return n;
               }),
@@ -37641,14 +37650,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     // editTarget's authoring). Without it the asset dispatch is
                     // medium-blind and a shader/3d node gets the same generic
                     // schema as an image → agent defaults to HTML/CSS.
-                    let assetKind = null, assetAuthoring = "";
+                    let assetKind = null, assetMedium = null, assetAuthoring = "";
                     if (down.kind === "asset") {
                       assetKind = down.assetKind || null;
                       const reg = (typeof window !== "undefined") && window.__thKindRegistry;
-                      const map = (reg && reg.ASSET_KIND_AUTHORING) || {};
-                      assetAuthoring = (assetKind && map[assetKind]) || "";
+                      const mmMap = (reg && reg.MEDIA_MODEL_AUTHORING) || {};
+                      const akMap = (reg && reg.ASSET_KIND_AUTHORING) || {};
+                      // Prefer the node's MEDIUM (generating media-model id, e.g.
+                      // "shader" / "viz" / "threejs") over the storage assetKind
+                      // ("html") — many Pathway-B models store html but expect a
+                      // specific kind of result. mediaModel contract wins.
+                      const mmAuth = down.mediaModel && mmMap[down.mediaModel];
+                      assetMedium = mmAuth ? down.mediaModel : assetKind;
+                      assetAuthoring = mmAuth || (assetKind && akMap[assetKind]) || "";
                     }
-                    summary.outputs.push({ targetNodeId: down.id, targetKind: down.kind, targetPort: to.port, targetType, label, assetKind, authoring: assetAuthoring });
+                    summary.outputs.push({ targetNodeId: down.id, targetKind: down.kind, targetPort: to.port, targetType, label, assetKind: assetMedium || assetKind, authoring: assetAuthoring });
                   }
                 }
               }
