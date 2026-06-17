@@ -30,7 +30,7 @@
   .lp-nav__cta{margin-left:auto;display:flex;align-items:center;gap:var(--space-xs);}
 
   /* ---- hero ---- */
-  .lp-hero{display:grid;grid-template-columns:1fr 1.08fr;gap:var(--space-2xl);align-items:center;padding:var(--space-2xl) 0 var(--space-3xl);}
+  .lp-hero{display:grid;grid-template-columns:1fr 1.08fr;gap:var(--space-2xl);align-items:center;padding-block:var(--space-2xl) var(--space-3xl);}
   .lp-hero h1{margin:var(--space-base) 0 0;font-size:clamp(2.2rem,4.2vw,var(--text-h1));font-weight:var(--w-light);
     line-height:1.05;letter-spacing:-.025em;color:var(--fg-default);}
   .lp-hero h1 b{font-weight:var(--w-semibold);color:var(--primary-fg-emphasis);}
@@ -48,12 +48,12 @@
 
   /* ---- logo cloud ---- */
   .lp-cloud{display:flex;align-items:center;justify-content:center;gap:var(--space-xl);flex-wrap:wrap;
-    padding:var(--space-l) 0 var(--space-2xl);border-top:1px solid var(--border-subtle);}
+    padding-block:var(--space-l) var(--space-2xl);border-top:1px solid var(--border-subtle);}
   .lp-cloud__label{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.08em;color:var(--fg-subtle);}
   .lp-cloud b{font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-subtle);opacity:.75;}
 
   /* ---- section scaffolding ---- */
-  .lp-section{padding:var(--space-3xl) 0;}
+  .lp-section{padding-block:var(--space-3xl);}
   .lp-band{background:var(--surface-default);border-block:1px solid var(--border-subtle);}
   .lp-head{max-width:54ch;margin:0 0 var(--space-2xl);}
   .lp-head--center{margin-inline:auto;text-align:center;}
@@ -112,7 +112,7 @@
   .lp-cta__art svg{width:100%;height:auto;display:block;overflow:visible;}
 
   /* ---- footer ---- */
-  .lp-foot{padding:var(--space-2xl) 0;border-top:1px solid var(--border-default);
+  .lp-foot{padding-block:var(--space-2xl);border-top:1px solid var(--border-default);
     display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:var(--space-l);}
   .lp-foot__brand p{font-size:var(--text-s);color:var(--fg-muted);max-width:30ch;margin:var(--space-s) 0 0;line-height:1.6;}
   .lp-foot__col h4{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-subtle);margin:0 0 var(--space-s);}

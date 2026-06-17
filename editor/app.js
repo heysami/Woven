@@ -16950,52 +16950,203 @@ function DsTemplateModal({ projectId, dsId, dsLabel, onClose, onApplied }) {
     busyLabel="Applying…"/>`;
 }
 
+/* ────────── Curated tuning presets for the "Default library" gallery ──────
+   Each entry is a hand-picked retune of the bundled design system. The picks
+   aren't random — the colour vibe drives every other axis:
+     · scheme   — saturated/luminous palettes read better DARK; warm, soft,
+                  print-ish palettes read better LIGHT.
+     · font     — chosen to match the colour temperament (techy grotesk for
+                  monochrome, humanist sans for warm, editorial serif for print).
+     · density  — spacing + type scale tightened (compact/dashboard) or opened
+                  up (airy/marketing) to suit the mood.
+     · roundness— deliberately spans the FULL range and tracks the font: a
+                  brutalist grotesk gets SQUARE corners (f=0), an editorial
+                  serif near-square crisp, a neutral plex mid (~12px), a
+                  friendly Figtree a 16px rounded rect, and the soft humanist /
+                  geometric sans go full PILL (f=1). One look per shape.
+   `roundness` is the customizer's 0–1 multiplier on the radius ladder; the base
+   button uses --radius-xl (24px), so f≈ pill(1) · 16px(0.67) · mid(0.5) ·
+   crisp(0.1) · square(0). */
+const DS_TUNING_PRESETS = [
+  { id: "onyx", name: "Onyx · brutalist mono", dark: true,
+    primary: "#24252D", secondary: "#F5172A", tertiary: "#4A4D55", neutral: "#80838A",
+    neutralDark: "#16171B",
+    fontKey: "space-grotesk", baseFontPx: 15, typeRatio: 1.25, spacingBasePx: 14, spacingRatio: 1.333,
+    roundness: 0,
+    note: "Monochrome charcoal + one electric-red accent — premium and technical, so it leans dark, dense, and totally square-cornered under a geometric grotesk." },
+  { id: "teal-coral", name: "Teal & Coral · warm humanist", dark: false,
+    primary: "#0E9F8C", secondary: "#F0533C", tertiary: "#8AA39E", neutral: "#8E8070",
+    fontKey: "dm-sans", baseFontPx: 17, typeRatio: 1.2, spacingBasePx: 18, spacingRatio: 1.618,
+    roundness: 1,
+    note: "Warm sand under fresh teal + coral — friendly and human, so it stays light, airy, and fully pill-rounded with a soft humanist sans." },
+  { id: "violet-amber", name: "Violet & Amber · vivid play", dark: true,
+    primary: "#6D28D9", secondary: "#F59E0B", tertiary: "#9890AE", neutral: "#8A8196",
+    fontKey: "poppins", baseFontPx: 16, typeRatio: 1.25, spacingBasePx: 16, spacingRatio: 1.5,
+    roundness: 1,
+    note: "Saturated violet glows on dark far better than light; amber keeps it vivid and playful, so geometric Poppins on a balanced scale with full pill corners." },
+  { id: "editorial-forest", name: "Forest & Magenta · editorial serif", dark: false,
+    primary: "#15803D", secondary: "#DB2777", tertiary: "#8DA394", neutral: "#7A8A7A",
+    fontKey: "fraunces", baseFontPx: 18, typeRatio: 1.333, spacingBasePx: 18, spacingRatio: 1.618,
+    roundness: 0.1,
+    note: "Forest green + magenta with a high-contrast serif reads like print editorial — light, generous, large type ladder, and crisp near-square corners." },
+  { id: "marine-gold", name: "Marine & Gold · dense dashboard", dark: true,
+    primary: "#2389B6", secondary: "#FFB703", tertiary: "#8ECAE6", neutral: "#7C8794",
+    neutralDark: "#0E1620",
+    fontKey: "ibm-plex-sans", baseFontPx: 15, typeRatio: 1.2, spacingBasePx: 15, spacingRatio: 1.333,
+    roundness: 0.5,
+    note: "Deep marine + gold over a neutral-dark slate feels confident and data-dense — dark, compact, neutral Plex sans with medium 12px corners." },
+  { id: "indigo-tangerine", name: "Indigo & Tangerine · bright SaaS", dark: false,
+    primary: "#4338CA", secondary: "#EA580C", tertiary: "#9094B3", neutral: "#8E8080",
+    fontKey: "figtree", baseFontPx: 15, typeRatio: 1.2, spacingBasePx: 14, spacingRatio: 1.333,
+    roundness: 0.67,
+    note: "Indigo + tangerine is classic SaaS energy — bright and light, tightened to a compact productivity rhythm with a friendly 16px rounded-rect button." },
+];
+
+/* Turn a preset into the full settings object buildDsCustomization expects. */
+function dsTuningSettings(p) {
+  return {
+    ...dsDefaultSettings(),
+    primary: p.primary, secondary: p.secondary, tertiary: p.tertiary, neutral: p.neutral || null,
+    neutralDark: p.neutralDark || null,
+    fontKey: p.fontKey,
+    baseFontPx: p.baseFontPx ?? null, typeRatio: p.typeRatio ?? null,
+    typeTouched: p.typeRatio != null || p.baseFontPx != null,
+    spacingBasePx: p.spacingBasePx ?? null, spacingRatio: p.spacingRatio ?? null,
+    spacingTouched: p.spacingRatio != null || p.spacingBasePx != null,
+    roundness: p.roundness == null ? 1 : p.roundness,
+    schemeLight: !p.dark, schemeDark: !!p.dark,
+  };
+}
+// Human-readable chips describing one preset's tuning.
+function dsTuningChips(p) {
+  const font = (DS_FONT_CATALOG.find(f => f.key === p.fontKey) || {}).name || p.fontKey;
+  const dens = p.spacingRatio == null ? "Balanced"
+    : (p.spacingRatio <= 1.333 ? "Compact" : (p.spacingRatio >= 1.618 ? "Airy" : "Balanced"));
+  const f = p.roundness == null ? 1 : p.roundness;
+  const round = f <= 0.02 ? "Square corners"
+    : f >= 0.92 ? "Pill"
+    : (Math.round(24 * f) + "px corners");
+  return [
+    { k: "scheme", v: p.dark ? "Dark" : "Light" },
+    { k: "font",   v: font },
+    { k: "dens",   v: dens },
+    { k: "round",  v: round },
+  ];
+}
+
+/* One scaled, non-interactive preview thumbnail. The page renders at a fixed
+   logical desktop size (1280×800) and is CSS-scaled to fill the card; a
+   ResizeObserver keeps the scale exact as the column resizes. The preset's
+   tuning (override CSS + webfont link + dark theme attr) is injected into the
+   iframe head on load — the same mechanism the live customizer uses. */
+function DsTuneThumb({ file, custom, dark }) {
+  const LOGICAL_W = 1280, LOGICAL_H = 800;
+  const wrapRef = useRef(null);
+  const iframeRef = useRef(null);
+  const [scale, setScale] = useState(0.28);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) { const w = e.contentRect.width; if (w) setScale(w / LOGICAL_W); }
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
+
+  const apply = useCallback(() => {
+    const ifr = iframeRef.current;
+    let doc;
+    try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
+    if (!doc || !doc.head) return;
+    if (doc.documentElement) {
+      if (dark) doc.documentElement.setAttribute("data-theme", "dark");
+      else doc.documentElement.removeAttribute("data-theme");
+    }
+    let link = doc.getElementById("__ds_custom_font");
+    if (custom.font && custom.font.googleFontsUrl) {
+      if (!link) { link = doc.createElement("link"); link.id = "__ds_custom_font"; link.rel = "stylesheet"; doc.head.appendChild(link); }
+      if (link.getAttribute("href") !== custom.font.googleFontsUrl) link.setAttribute("href", custom.font.googleFontsUrl);
+    } else if (link) { link.parentNode.removeChild(link); }
+    let style = doc.getElementById("__ds_custom_style");
+    if (!style) { style = doc.createElement("style"); style.id = "__ds_custom_style"; }
+    style.textContent = (custom.overrideCss || "") + "\n" + (custom.darkCss || "");
+    doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
+    try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
+  }, [custom, dark]);
+
+  // Re-apply when the tuning changes after the frame is already loaded.
+  useEffect(() => { apply(); }, [apply]);
+
+  return html`
+    <div ref=${wrapRef} className=${"deflib-thumb" + (dark ? " is-dark" : "")}>
+      <iframe
+        ref=${iframeRef}
+        className="deflib-thumb-frame"
+        title="Tuning preview"
+        loading="lazy"
+        scrolling="no"
+        style=${{ width: LOGICAL_W + "px", height: LOGICAL_H + "px", transform: "scale(" + scale + ")" }}
+        src=${apiUrl("/__default_ds/" + file)}
+        onLoad=${apply}/>
+    </div>
+  `;
+}
+
 /* ────────── Capabilities → "Default library" landing section ──────────
-   The bundled default design system surfaced as a first-class capability:
-   a live, scrollable preview of the shipped gallery + a "Tune" button that
-   reuses the very same customizer as the "Use template design system" flow,
-   in preview-only mode (no project context on the landing page → nothing to
-   bake). Lets the user see + play with the default tokens before they ever
-   create a project. */
+   The bundled default design system surfaced as a first-class capability.
+   Instead of one preview, a GALLERY: each row is a curated retune (colour /
+   font / density / scheme / roundness) shown as two scaled thumbnails — the
+   marketing landing + the component gallery ("the design system") — with the
+   exact tuning labelled beside them. A "Tune" button opens the full customizer
+   in preview-only mode (no project on the landing page → nothing baked); to
+   bake a tuned copy, use "Use template design system" on a project's DS node. */
 function DefaultLibraryLanding() {
   const [tuneOpen, setTuneOpen] = useState(false);
   const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
   const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
-  const [previewFile, setPreviewFile] = useState("templates/landing.html");
-  const [frameReady, setFrameReady] = useState(false);
+
+  // Compute each preset's override once.
+  const tunings = useMemo(
+    () => DS_TUNING_PRESETS.map(p => ({ preset: p, custom: buildDsCustomization(dsTuningSettings(p)) })),
+    []
+  );
 
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
         name="Default library"
-        count=${DS_PREVIEW_VIEWS.length}
-        desc=${html`The design system every new project can inherit — tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates (landing, storefront, dashboard, app shell, forms, profile, login…). Preview it below, then <strong>Tune</strong> to retune the tokens against a live preview. To bake a tuned copy into a project, use <code>Use template design system</code> on that project's design-system node.`}
+        count=${DS_TUNING_PRESETS.length}
+        desc=${html`The design system every new project can inherit — tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below is a curated retune shown on two surfaces — the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) — with the tuning it uses labelled. <strong>Tune</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
         action=${html`<button className="sysadd-bar-btn" type="button"
           onClick=${() => setTuneOpen(true)}
           title="Open the token customizer against a live preview (sandbox — nothing is saved)">
           <${Icon.Palette}/><span>Tune</span></button>`}
       />
 
-      <div className="deflib-preview">
-        <div className="dscz-preview-tabs" role="tablist">
-          ${DS_PREVIEW_VIEWS.map(v => html`
-            <button
-              key=${v.id}
-              type="button"
-              role="tab"
-              aria-selected=${previewFile === v.id}
-              className=${"dscz-preview-tab" + (previewFile === v.id ? " is-active" : "")}
-              onClick=${() => { if (previewFile !== v.id) { setFrameReady(false); setPreviewFile(v.id); } }}>
-              ${v.label}
-            </button>
-          `)}
-        </div>
-        <iframe
-          className="deflib-preview-frame"
-          title="Default design system preview"
-          style=${{ opacity: frameReady ? 1 : 0 }}
-          src=${apiUrl("/__default_ds/" + previewFile)}
-          onLoad=${() => setFrameReady(true)}/>
+      <div className="deflib-rows">
+        ${tunings.map(({ preset, custom }) => html`
+          <div key=${preset.id} className="deflib-row">
+            <div className="deflib-row-head">
+              <span className="deflib-row-name">${preset.name}</span>
+              <div className="deflib-row-chips">
+                ${dsTuningChips(preset).map(c => html`<span key=${c.k} className=${"deflib-chip deflib-chip-" + c.k}>${c.v}</span>`)}
+              </div>
+            </div>
+            <div className="deflib-row-note">${preset.note}</div>
+            <div className="deflib-grid">
+              <figure className="deflib-cell">
+                <${DsTuneThumb} file="templates/landing.html" custom=${custom} dark=${preset.dark}/>
+                <figcaption className="deflib-cap">Landing page</figcaption>
+              </figure>
+              <figure className="deflib-cell">
+                <${DsTuneThumb} file="gallery.html" custom=${custom} dark=${preset.dark}/>
+                <figcaption className="deflib-cap">Design system</figcaption>
+              </figure>
+            </div>
+          </div>
+        `)}
       </div>
 
       ${tuneOpen && html`<${DsCustomizerStep}
@@ -18346,8 +18497,8 @@ function SystemLanding({ onSpawnSystemThread }) {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
-    { id: "default-library", label: "Default library", count: DS_PREVIEW_VIEWS.length,
-      hint: "The bundled default design system — preview its templates + tune the tokens against a live preview" },
+    { id: "default-library", label: "Default library", count: DS_TUNING_PRESETS.length,
+      hint: "The bundled default design system — curated retunes previewed on two surfaces + tune the tokens live" },
     { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
@@ -54947,6 +55098,21 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => window.removeEventListener("th:asset-refresh", onRefresh);
   }, [sidecarPath, onChange, postToIframe]);
+
+  // Live re-import when node.scene changes from OUTSIDE this iframe — a committed
+  // agent/run edit updates the cached scene via the workflow reload (SSE). A
+  // manual refresh worked only because reboot → spline:init re-reads node.scene;
+  // push that same scene straight into the ALREADY-RUNNING iframe so no refresh
+  // is needed. Guarded against echoing the iframe's own edits (those match
+  // lastWrittenRef, which persistScene sets before this update fires).
+  const lastPushedSceneRef = useRef(JSON.stringify(node.scene || null));
+  useEffect(() => {
+    const key = JSON.stringify(node.scene || null);
+    if (key === lastPushedSceneRef.current) return;   // unchanged since last push/mount
+    lastPushedSceneRef.current = key;
+    if (key === lastWrittenRef.current) return;        // echo of this iframe's own edit
+    if (readyRef.current && node.scene) postToIframe({ type: "spline:set-scene", scene: node.scene });
+  }, [node.scene, postToIframe]);
 
   return html`
     <div
