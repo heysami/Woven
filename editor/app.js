@@ -27461,11 +27461,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Build (false, default) vs Whiteboard (true). Same canvas, same pan/zoom;
   // both node + whiteboard content stay visible in BOTH modes — the mode
   // only changes the active tools, the left panel, paste semantics, and
-  // chat context. Session-only by design: Build is the safe default on
-  // reload. Mode entry clears node selection (nodes are inert for
-  // selection/drag while whiteboarding); exit clears wb selection/tool.
-  const [wbMode, setWbMode] = useState(false);
+  // chat context. Default-on (Whiteboard) on a fresh load, persisted to
+  // localStorage so the last-used mode sticks across reloads (same
+  // convention as leftPanel / mainView). Mode entry clears node selection
+  // (nodes are inert for selection/drag while whiteboarding); exit clears
+  // wb selection/tool.
+  const [wbMode, setWbMode] = useState(() => {
+    try { return localStorage.getItem("th-workflow-wb-mode") !== "0"; } catch { return true; }
+  });
   const wbModeRef = useRef(false); wbModeRef.current = wbMode;
+  useEffect(() => {
+    try { localStorage.setItem("th-workflow-wb-mode", wbMode ? "1" : "0"); } catch {}
+  }, [wbMode]);
   const [wbTool, setWbTool] = useState("select");   // select|text|textbox|sticky|pen|shape|arrow
   const wbToolRef = useRef("select"); wbToolRef.current = wbTool;
   const [selectedWbIds, setSelectedWbIds] = useState(() => new Set());
@@ -28051,7 +28058,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     try {
       const v = localStorage.getItem("th-workflow-left-panel");
       if (v === "none") return null;
-      return v === "outputs" ? "outputs" : "nodes";
+      if (v === "outputs") return "outputs";
+      if (v === "app-nodes") return "app-nodes";
+      return "nodes";
     } catch { return "nodes"; }
   });
   const [mainView, setMainView] = useState(() => {
@@ -36955,6 +36964,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ><${Icon.Flow}/><//>
           <${HoverTip}
             placement="right"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "app-nodes" ? " is-active" : "")}
+            ariaLabel="App nodes"
+            tip="App nodes — browser, vector editor, 3D editor, composer"
+            onClick=${() => onRailPanel("app-nodes")}
+          ><${Icon.Cube}/><//>
+          <${HoverTip}
+            placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "outputs" ? " is-active" : "")}
             ariaLabel="Outputs"
             tip="Outputs — prototypes, pages + assets"
@@ -39338,20 +39354,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             onDragStart=${(e) => {
               e.dataTransfer.effectAllowed = "copy";
               e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "browser", url: "" }));
-            }}
-            title="Drag onto canvas — embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text — wire it into an Agent or Skill as context, or use the clip (scissors) button to send the current selection to a prompt node."
-          >
-            <span className="workflow-library-item-glyph"><${Icon.Globe}/></span>
-            <span className="workflow-library-item-label">Web browser</span>
-            <span className="workflow-library-item-id">url → live page</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "prompt", title: "", text: "" }));
             }}
             title="Drag onto canvas — empty prompt node. Type a brief, then wire its out port into an agent / skill / iterator input."
@@ -39408,20 +39410,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             onDragStart=${(e) => {
               e.dataTransfer.effectAllowed = "copy";
               e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "composer" }));
-            }}
-            title="Drag onto canvas — responsive layered canvas. Wire multiple asset nodes in to stack them with per-layer opacity, anchor, and offset."
-          >
-            <span className="workflow-library-item-glyph">▣</span>
-            <span className="workflow-library-item-label">Composer</span>
-            <span className="workflow-library-item-id">layered canvas</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "formatted-text" }));
             }}
             title="Drag onto canvas — rich text node. Type directly; wire a Typography node to enable selection-based level picking."
@@ -39429,34 +39417,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">¶</span>
             <span className="workflow-library-item-label">Formatted text</span>
             <span className="workflow-library-item-id">rich</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "vector-editor" }));
-            }}
-            title="Drag onto canvas — inline SVG drawing tool. Draw rects, ellipses, lines, paths, freehand strokes, text. Apply fill/stroke/gradient/shadow/blur, run boolean ops, convert text to outlines. Bake to a self-contained .svg file."
-          >
-            <span className="workflow-library-item-glyph">✎</span>
-            <span className="workflow-library-item-label">Vector editor</span>
-            <span className="workflow-library-item-id">svg drawing</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "spline-3d" }));
-            }}
-            title="Drag onto canvas — inline 3D scene editor (Spline-style). Boolean (CSG) shapes, glass / metal / plastic materials, soft lighting, fur / cloth / liquid, import .glb (wire a 3D-gen node in). The scene autosaves into the project as a shareable .scene.json; wire an Agent in to edit it."
-          >
-            <span className="workflow-library-item-glyph">⬢</span>
-            <span className="workflow-library-item-label">3D editor</span>
-            <span className="workflow-library-item-id">spline-style scene</span>
           </div>
           <div
             className="workflow-library-item"
@@ -39682,6 +39642,69 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Canvas}/></span>
             <span className="workflow-library-item-label">Prototype generator</span>
             <span className="workflow-library-item-id">agent · DS-aware preset</span>
+          </div>
+        </div>
+      </div>
+      ` : null}
+      ${tab === "app-nodes" ? html`
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">App nodes</div>
+        <div className="workflow-library-list">
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "browser", url: "" }));
+            }}
+            title="Drag onto canvas — embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text — wire it into an Agent or Skill as context, or use the clip (scissors) button to send the current selection to a prompt node."
+          >
+            <span className="workflow-library-item-glyph"><${Icon.Globe}/></span>
+            <span className="workflow-library-item-label">Web browser</span>
+            <span className="workflow-library-item-id">url → live page</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "vector-editor" }));
+            }}
+            title="Drag onto canvas — inline SVG drawing tool. Draw rects, ellipses, lines, paths, freehand strokes, text. Apply fill/stroke/gradient/shadow/blur, run boolean ops, convert text to outlines. Bake to a self-contained .svg file."
+          >
+            <span className="workflow-library-item-glyph">✎</span>
+            <span className="workflow-library-item-label">Vector editor</span>
+            <span className="workflow-library-item-id">svg drawing</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "spline-3d" }));
+            }}
+            title="Drag onto canvas — inline 3D scene editor (Spline-style). Boolean (CSG) shapes, glass / metal / plastic materials, soft lighting, fur / cloth / liquid, import .glb (wire a 3D-gen node in). The scene autosaves into the project as a shareable .scene.json; wire an Agent in to edit it."
+          >
+            <span className="workflow-library-item-glyph">⬢</span>
+            <span className="workflow-library-item-label">3D editor</span>
+            <span className="workflow-library-item-id">spline-style scene</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "composer" }));
+            }}
+            title="Drag onto canvas — responsive layered canvas. Wire multiple asset nodes in to stack them with per-layer opacity, anchor, and offset."
+          >
+            <span className="workflow-library-item-glyph">▣</span>
+            <span className="workflow-library-item-label">Composer</span>
+            <span className="workflow-library-item-id">layered canvas</span>
           </div>
         </div>
       </div>
