@@ -8448,8 +8448,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-port-label-right { left:  100%; margin-left:  10px; }
 /* v3.8 — port labels are quiet by default: hidden until the node is
    SELECTED (data-selected is flagged imperatively by WorkflowSurface's
-   selection effect). Hovering a port zone also reveals ITS label so the
-   target name still surfaces mid-edge-drag onto an unselected node.
+   selection effect) OR hovered. v3.8.1 fix: the old rule only had
+   `.workflow-port-zone:hover`, but the zone is `pointer-events: none`
+   (only the 14px dot inside is `pointer-events: auto`), so zone-hover only
+   ever fired on the dot itself — hovering the node body revealed nothing.
+   Added `.workflow-node:hover` / `.workflow-node-section:hover` so hovering
+   anywhere on the node surfaces its port labels. The zone:hover rule stays
+   for the mid-edge-drag case (target name surfaces over an unselected node).
    opacity (not display) so layout never shifts. NO transition: the
    selection effect clears + re-flags data-selected on every re-render,
    which would restart a transition from 0 each time and pin the label
@@ -8460,6 +8465,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node[data-selected="true"] .workflow-port-label,
 .workflow-node-section[data-selected="true"] .workflow-port-label,
+.workflow-node:hover .workflow-port-label,
+.workflow-node-section:hover .workflow-port-label,
 .workflow-port-zone:hover .workflow-port-label {
   opacity: 1;
 }
