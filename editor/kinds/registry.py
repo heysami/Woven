@@ -2702,14 +2702,28 @@ ASSET_KIND_AUTHORING = {
         "highp float;`, `uniform float u_time;`, `uniform vec2 u_resolution;` (+ `u_mouse` if "
         "interactive), animated in a rAF loop. The look must be MATH in the shader, not DOM. "
         "If the brief is a UI surface that merely looks glassy, that is a CSS/HTML asset, not a "
-        "shader — say so rather than faking a shader with CSS."
+        "shader — say so rather than faking a shader with CSS.\n"
+        "  MUST RENDER A VISIBLE RESULT — never a blank/black canvas (the #1 failure). "
+        "Prefer WebGL2 (`getContext('webgl2')`, `#version 300 es`, `out vec4`) so `fwidth`/"
+        "derivatives and precision work WITHOUT extensions. If you stay on WebGL1 AND use "
+        "`fwidth`/`dFdx`/`dFdy`, you MUST `getExtension('OES_standard_derivatives')` AND prepend "
+        "`#extension GL_OES_standard_derivatives : enable` — and gracefully degrade (drop the "
+        "derivative-based AA) if it's missing rather than failing to compile. ALWAYS check "
+        "`COMPILE_STATUS` + `LINK_STATUS`; on failure, clear the canvas to a visible color and "
+        "surface the infoLog — do NOT leave a silent black frame. Size the drawing buffer from "
+        "the canvas's own client size (it is embedded in an iframe), and call resize once before "
+        "the first frame."
     ),
     "3d": (
         "This is a 3D asset — an interactive WebGL scene (Three.js or raw WebGL), NOT a flat "
         "image or CSS pseudo-3D. Deliverable: a self-contained `.html`/JS module that builds a "
         "scene (geometry + materials + lights + camera + rAF render loop), resizes to its "
         "container, and respects prefers-reduced-motion. Do NOT substitute a static PNG or a "
-        "CSS transform; if a real 3D scene is overkill for the brief, say so."
+        "CSS transform; if a real 3D scene is overkill for the brief, say so.\n"
+        "  MUST RENDER A VISIBLE RESULT — never a black void: add ambient + key light, point the "
+        "camera AT the subject and frame it, give meshes lit materials (not unlit black). Size the "
+        "renderer from the canvas's client size (embedded in an iframe) and resize once before the "
+        "first frame."
     ),
     "svg": (
         "This is an SVG asset — inline vector markup written to the target path. Deliverable: a "
@@ -2776,7 +2790,11 @@ MEDIA_MODEL_AUTHORING = {
         "scene (r155+ via CDN ES modules): PerspectiveCamera, ambient + directional light, "
         "OrbitControls, at least one animated element, full-window <canvas> with resize handling "
         "and pixelRatio capped at 2. Do NOT produce a flat image, a CSS pseudo-3D effect, or a "
-        "static render — it must be a live WebGL scene."
+        "static render — it must be a live WebGL scene.\n"
+        "  MUST RENDER A VISIBLE RESULT — never a black void: lights present, camera framed on the "
+        "subject, lit materials. Size the renderer from the canvas's client size (it's embedded in "
+        "an iframe) and resize once before the first frame. If the CDN import fails, surface it "
+        "visibly rather than leaving a black canvas."
     ),
     "motion-gen": (
         "This is a MOTION asset — a self-contained `.html` motion piece on the Hyperframes model: "
@@ -2789,7 +2807,11 @@ MEDIA_MODEL_AUTHORING = {
         "This is a CANVAS-MOTION / PARTICLE asset — a self-contained `.html` page driven by a "
         "real-time canvas2D or WebGL requestAnimationFrame loop (particles, dust/snow/confetti/"
         "sparks, flow fields, generative motion). canvas2D for ≤500 particles; WebGL instanced for "
-        "more. Do NOT fake it with CSS keyframes or a static image — the idiom is a live render loop."
+        "more. Do NOT fake it with CSS keyframes or a static image — the idiom is a live render loop.\n"
+        "  MUST RENDER A VISIBLE RESULT — never a blank/black canvas: clear to a visible background "
+        "each frame and keep particles within view. Size the canvas from its client size (embedded "
+        "in an iframe) and resize once before the first frame. For WebGL, check COMPILE/LINK status "
+        "and fall back visibly rather than leaving a silent black frame."
     ),
     "html-page": (
         "This is a UI-PAGE MOCKUP asset — ONE self-contained `.html` screen mockup (inline <style> "
