@@ -21594,7 +21594,14 @@ function WorkflowCanvas() {
           // assume an array.
           wb: Array.isArray(j.wb) ? j.wb : [],
           nodes: (j.nodes || []).map(n => {
-            if (n.runStatus !== "pending" && n.runStatus !== "paused") return n;
+            // A "running" design-system node is ALWAYS stale on a fresh load:
+            // unlike agent nodes (whose subprocess hook resumes them), a DS
+            // node has no owner that flips it back, so a persisted "running"
+            // would otherwise spin forever. Safe to clear race-free here — a
+            // fresh load has no in-flight session. (The reconcile effect handles
+            // a DS node that goes running mid-session, via its lastRunId.)
+            const dsStuck = n.kind === "design-system" && n.runStatus === "running";
+            if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck) return n;
             if (n.runStatus === "pending" && n._brainstormRunId) return n;
             const next = { ...n, runStatus: null, runError: null };
             if (Array.isArray(n.pendingOutputIds)) next.pendingOutputIds = [];
@@ -36447,6 +36454,83 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       resumeCardRun(card.id, card._brainstormRunId, card.path);
     }
   }, [data, resumeCardRun]);
+
+  // Reconcile design-system nodes wedged in "running"/"pending". Unlike agent
+  // nodes (cleared by the subprocess completion hook) and ds-brainstorm nodes
+  // (cleared by resolveBrainstormRun), a design-system node has NO owner that
+  // flips its runStatus back: "Build DS" tracks completion via local component
+  // state + lastRunId, and an orchestrator that POSTs runStatus:"running" on it
+  // may finish as a long-lived freeform/system run whose `done` flip never
+  // lands on the node. So a running DS node could spin forever (the worker
+  // badge hovers and "never completes") until a manual reload. This poller is
+  // that missing reconciler: watch the run via lastRunId, clear on completion.
+  const resolveDsNodeRun = useCallback(async (nodeId, runId, dsId) => {
+    const clear = () => setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(n => n.id === nodeId
+        ? { ...n, runStatus: null, runError: null }
+        : n),
+    }));
+    // Early-exit success probe: the DS landed on disk (styles.css has bytes).
+    const dsExists = async () => {
+      if (!dsId) return false;
+      try {
+        const hr = await fetch(apiUrl("/design-systems/" + dsId + "/styles.css"), { method: "HEAD" });
+        return hr.ok && (parseInt(hr.headers.get("content-length") || "0", 10) > 0);
+      } catch { return false; }
+    };
+    // No run to track → we can't tell an in-flight build from a stale flip, so
+    // don't blunt-clear here (a build dispatched without lastRunId-yet would
+    // flicker off). The on-load sanitize clears a runStatus:"running" DS node
+    // race-free instead — a fresh load definitionally has no in-flight session.
+    if (!runId) return;
+    const start = Date.now();
+    const maxMs = 30 * 60 * 1000;
+    while (Date.now() - start < maxMs) {
+      if (await dsExists()) { clear(); return; }
+      try {
+        const sr = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}`));
+        if (sr.ok) {
+          const sj = await sr.json();
+          // turnDone (agent went idle after ≥1 turn) is the real "build landed"
+          // signal — a freeform Claude run stays alive (done=false) waiting for
+          // follow-ups, so waiting on `done` alone would spin the full cap.
+          if (sj.done || (sj.turnDone && (sj.turnsCompleted || 0) >= 1)) { clear(); return; }
+        } else if (sr.status === 404) { clear(); return; }
+      } catch { /* keep trying */ }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    // Timed out — drop the spinner so it isn't stuck forever; surface why.
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(n => n.id === nodeId
+        ? { ...n, runStatus: "error", runError: "build run did not report completion within 30 min" }
+        : n),
+    }));
+  }, [setData]);
+
+  // Fires on data changes; picks up any design-system node sitting in
+  // running/pending and reconciles it. Tracked per-node so a freshly-dispatched
+  // build isn't double-handled, but a node that ENTERS running mid-session
+  // (e.g. an orchestrator flip) still gets a reconciler attached.
+  const dsReconcileRef = useRef(new Set());
+  useEffect(() => {
+    if (!data.nodes || data.nodes.length === 0) return;
+    const live = new Set();
+    for (const n of data.nodes) {
+      if (n.kind !== "design-system") continue;
+      if (n.runStatus !== "running" && n.runStatus !== "pending") continue;
+      live.add(n.id);
+      if (dsReconcileRef.current.has(n.id)) continue;
+      dsReconcileRef.current.add(n.id);
+      // Fire and forget — resolveDsNodeRun manages its own polling + setData.
+      resolveDsNodeRun(n.id, n.lastRunId, n.dsId);
+    }
+    // Drop ids that left running so a future run re-attaches a reconciler.
+    for (const id of [...dsReconcileRef.current]) {
+      if (!live.has(id)) dsReconcileRef.current.delete(id);
+    }
+  }, [data, resolveDsNodeRun]);
 
   const empty = !data.nodes || data.nodes.length === 0;
 
@@ -57737,6 +57821,15 @@ function workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths) {
     if (n.kind === "prototype") {
       const slug = prototypeSlugForNode(n);
       if (slug) np.push("source/" + slug);
+    }
+    // A design-system node carries no `path` either — it's keyed by `dsId` and
+    // OWNS design-systems/<dsId>/. Tether it to that folder (mirroring the
+    // prototype case above) so an agent editing the DS both LIGHTS the node and,
+    // when the run ends, lets it clear. Without this the DS-folder derivation
+    // below is dead for this node kind (it only augments an existing path), so
+    // the node could only ever be lit by a wedged runStatus that nothing reset.
+    if (n.kind === "design-system" && n.dsId) {
+      np.push("design-systems/" + n.dsId);
     }
     // A design-system node owns its whole folder — editing ANY file under
     // design-systems/<id>/ (styles.css, templates/*, gallery.html, …) counts

@@ -7604,7 +7604,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # done / null) flows through the editor, so editor
                         # wins. Narrow the preservation to just "running":
                         disk_status = disk_n.get("runStatus")
-                        if disk_status == "running":
+                        # ...EXCEPT design-system nodes, which have no subprocess
+                        # owner to ever flip them back: "Build DS" tracks via
+                        # local state + lastRunId, and an orchestrator /status
+                        # flip may finish as a long-lived freeform run whose done
+                        # signal never lands on the node. Preserving "running"
+                        # for them re-wedges the editor's clear on every save, so
+                        # the worker badge spins forever ("summons ds-reference,
+                        # never completes"). Let the editor (on-load sanitize +
+                        # the lastRunId reconcile effect) be authoritative here.
+                        if disk_status == "running" and disk_n.get("kind") != "design-system":
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
                             if disk_error is not None:
