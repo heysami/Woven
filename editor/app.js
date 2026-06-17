@@ -33842,7 +33842,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
     const allSkills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
     const branch = "main";
-    const tempPathFor = (skillId) => `source/${branch}/.workflow-tmp/${skillId}.png`;
+    // Typed temp path for skill→skill auto-chaining (no bridge asset). The
+    // extension MUST match the producer's real output kind — a hardcoded .png
+    // broke every non-image chain (a 3d-gen → editor chain wrote .glb bytes to
+    // a .png path, so the consumer's .glb importer never matched).
+    const extForSkill = (spec) => (
+      (spec && (spec.pathwayBExt
+        || (spec.pathwayAFallback && spec.pathwayAFallback.ext)
+        || (spec.output && KIND_TO_EXT[spec.output])))
+      || "png").toLowerCase().replace(/^\./, "");
+    const tempPathFor = (skillId, ext) => `source/${branch}/.workflow-tmp/${skillId}.${ext || "png"}`;
 
     const nodes = data.nodes || [];
     const edges = data.edges || [];
@@ -34239,8 +34248,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       let outputTargets = explicitImageTargets;
       if (outputTargets.length === 0 && hasSkillDownstream) {
         // No asset card connected, but a downstream skill is — write to a
-        // deterministic temp path the next skill will consume.
-        outputTargets = [{ path: tempPathFor(skillId) }];
+        // deterministic temp path (typed to THIS skill's output) the next skill
+        // consumes. Typed ext = direct chaining works for 3d/video/svg/lottie,
+        // not just png.
+        outputTargets = [{ path: tempPathFor(skillId, extForSkill(skillSpec)) }];
       }
       if (outputTargets.length === 0) {
         // Terminal skill with no asset card wired → auto-spawn one and use
