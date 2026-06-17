@@ -48393,6 +48393,37 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     h = _aspect ? Math.round(w / _aspect + _CHROME)
                 : (node.h || 280);
   }
+  // ── HTML asset fit mode ────────────────────────────────────────────────
+  // Two ways an HTML/WebGL asset fills its card:
+  //   • "scale" (default) — render the iframe at a fixed device-class
+  //     viewport (desktop 1440×900 / mobile 390×844 / unknown 1280×800) and
+  //     transform:scale it to the card width, exactly like the prototype node
+  //     + the output-library thumbnail. WebGL scenes and fixed-design pages
+  //     stay visible at their authored framing instead of rendering into a
+  //     cramped node-sized viewport; tall pages scroll inside the iframe.
+  //   • "fill" — legacy: iframe viewport == card box (responsive reflow).
+  // The card aspect already tracks the device-class viewport aspect, so the
+  // scaled render fills the body with no letterbox. The user toggles via the
+  // title-bar ⊡/⤢ button (html kind only).
+  const htmlFit = (node.htmlFit === "fill") ? "fill" : "scale";
+  const _htmlVP = (_size.deviceClass === "mobile")  ? { w: 390,  h: 844 }
+                : (_size.deviceClass === "desktop") ? { w: 1440, h: 900 }
+                : { w: 1280, h: 800 };
+  const htmlScaleWrapRef = useRef(null);
+  useEffect(() => {
+    if (htmlFit !== "scale" || kind !== "html") return;
+    const wrap = htmlScaleWrapRef.current;
+    if (!wrap) return;
+    const vw = _htmlVP.w;
+    const update = () => {
+      const ww = wrap.getBoundingClientRect().width;
+      if (ww > 0) wrap.style.setProperty("--asset-thumb-scale", String(ww / vw));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [htmlFit, kind, _htmlVP.w]);
   // Defensive normalize: an absolute filesystem path that happens to live
   // inside the project tree (e.g. picked via the OS-native folder picker
   // before the daemon learned to convert it) → strip everything up to and
@@ -48681,6 +48712,28 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         <div className="workflow-node-asset-empty-text">no file yet</div>
         <div className="workflow-node-asset-empty-hint">connect a Pathway-B skill → Run</div>
       </div>
+    ` : (htmlFit === "scale" ? html`
+      <div ref=${htmlScaleWrapRef} className="workflow-node-asset-iframe-scale">
+        <iframe
+          ref=${htmlIframeRef}
+          key=${"asset-iframe-" + bust + "-" + (node.activeVersionId || "live")}
+          className="workflow-node-asset-thumb workflow-node-asset-iframe"
+          src=${fileSrc}
+          title=${basename}
+          sandbox=${isDsGallery
+            ? "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            : "allow-scripts allow-same-origin"}
+          data-asset-id=${node.id}
+          onLoad=${onHtmlIframeLoad}
+          onError=${() => setThumbState("missing")}
+          style=${{
+            width:  _htmlVP.w + "px",
+            height: _htmlVP.h + "px",
+            transform: "scale(var(--asset-thumb-scale, 1))",
+            transformOrigin: "top left",
+          }}
+        />
+      </div>
     ` : html`
       <iframe
         ref=${htmlIframeRef}
@@ -48695,7 +48748,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onLoad=${onHtmlIframeLoad}
         onError=${() => setThumbState("missing")}
       />
-    `;
+    `);
   } else {
     // shader / 3d / viz / audio without a file preview — glyph placeholder.
     bodyContent = html`
@@ -48819,6 +48872,17 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             onClick=${(e) => { e.stopPropagation(); goForward(); }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Forward}/><//>
+          ${kind === "html" && html`
+            <${HoverTip}
+              className="workflow-node-action workflow-node-action-fit"
+              tip=${htmlFit === "scale"
+                ? "Fit-to-card — the page renders at its full viewport and scales to the card (like the library thumbnail), so WebGL / fixed designs stay visible. Tall pages scroll inside. Click to switch to live viewport."
+                : "Live viewport — the page lays out at the card's actual width (responsive reflow), true on-screen size. Click to switch to fit-to-card scaling."}
+              ariaLabel="Toggle HTML fit mode"
+              onClick=${(e) => { e.stopPropagation(); onChange && onChange({ htmlFit: htmlFit === "scale" ? "fill" : "scale" }); }}
+              onMouseDown=${(e) => e.stopPropagation()}
+            >${htmlFit === "scale" ? "⊡" : "⤢"}<//>
+          `}
         `}
         <span className="workflow-node-asset-name" title=${path}>${basename}</span>
         ${node.animated && html`<span className="workflow-node-asset-tag" title="SMIL animation detected">◐</span>`}

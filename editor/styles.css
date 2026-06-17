@@ -7582,6 +7582,24 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-asset[data-selected="true"] .workflow-node-asset-iframe {
   pointer-events: auto;
 }
+/* HTML-asset scale-to-fit — parity with the prototype node + the output-
+   library thumbnail. The iframe renders at a fixed device-class viewport
+   (set inline) and is transform:scaled (var written by a ResizeObserver) to
+   the card width, so WebGL scenes and fixed-design pages stay visible at
+   their authored framing instead of rendering into a cramped node-sized
+   viewport. overflow:hidden clips the scaled box; content taller than the
+   viewport scrolls inside the iframe itself when the card is selected. */
+.workflow-node-asset-iframe-scale {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.workflow-node-asset-iframe-scale > .workflow-node-asset-iframe {
+  position: absolute;
+  top: 0; left: 0;
+}
 /* Inline-SVG thumb: container holds an injected <svg> element via
    dangerouslySetInnerHTML. Force the child svg to scale-to-fit because
    prototypes often hard-code width/height attributes that would otherwise
