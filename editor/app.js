@@ -62240,39 +62240,50 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
   // it's gone, silently fall back to a fresh chat shell AND drop the stale
   // id from the node so we don't re-probe on every reopen.
   useEffect(() => {
-    if (!node.runId) return;
+    const id = node.runId || node.lastRunId;
+    if (!id) return;
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(apiUrl(`/__run/${encodeURIComponent(node.runId)}`));
+        const r = await fetch(apiUrl(`/__run/${encodeURIComponent(id)}`));
         if (cancelled) return;
+        if (r.ok) {
+          // Attach to the REAL run object (runId, title, done, turnDone, branch,
+          // agentId, …) — the SAME object the agent-runs panel uses — so the
+          // chat shows the actual thread: correct title, correct live/done
+          // state, working stop button. NOT a metadata-poor {runId} shell that
+          // renders as "Agent run" with no live indicators. _run_get even
+          // rehydrates from chat.jsonl after a daemon restart, so this also
+          // covers the post-restart case. node.runId present → live/normal;
+          // only lastRunId → show it read-only (historical).
+          try {
+            const rj = await r.json();
+            if (!cancelled && rj && rj.runId) setChatRun(node.runId ? rj : { ...rj, historical: true });
+          } catch (_e) {}
+          return;
+        }
         if (r.status === 404) {
-          // The LIVE run is gone from the daemon's in-memory RUNS registry
-          // (daemon restart, or the run was evicted after completing). But its
-          // transcript is PERSISTED in editor/chat.jsonl — the same source the
-          // "agent runs" panel reads, which is why the run still shows there.
-          // So do NOT destroy the link: recover it as a read-only HISTORICAL
-          // run (ChatDrawer hydrates the transcript from /__chat?runId). Only
-          // drop node.runId when no transcript exists anywhere — otherwise the
-          // chat button blanks out a run the user can plainly see is alive.
+          // Gone from memory AND jsonl-rehydrate failed. Last resort: the
+          // persisted transcript via /__chat?runId. Keep the link if it exists.
           let hasHistory = false;
           try {
-            const hr = await fetch(apiUrl(`/__chat?runId=${encodeURIComponent(node.runId)}`));
+            const hr = await fetch(apiUrl(`/__chat?runId=${encodeURIComponent(id)}`));
             if (hr.ok) { const hj = await hr.json(); hasHistory = Array.isArray(hj.events) && hj.events.length > 0; }
           } catch (_e) {}
           if (cancelled) return;
           if (hasHistory) {
-            setChatRun({ runId: node.runId, branch, agentId: "claude", historical: true, done: true });
-          } else {
+            setChatRun({ runId: id, branch, agentId: "claude", historical: true, done: true });
+          } else if (node.runId) {
+            // Truly gone — drop only the live pointer; lastRunId stays.
             setChatRun(_freshChatShell());
             onChange && onChange({ runId: null });
           }
         }
-      } catch { /* network blip — keep the runId, ChatDrawer surfaces the SSE error */ }
+      } catch { /* network blip — keep the current chatRun */ }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.runId]);
+  }, [node.runId, node.lastRunId]);
 
   const spawnFromComposer = async (userText) => {
     const fullPrompt = workflowComposeAgentPrompt({
