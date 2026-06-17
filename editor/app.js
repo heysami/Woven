@@ -11799,41 +11799,52 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: body }),
       });
-      let r = await postTo(isResuming ? "resume" : "user-message");
-      let usedResume = isResuming;
-      let didFallback = false;
-      if (!r.ok) {
+      // v3.5.3 — converge, don't one-shot. While a stopped subprocess is mid
+      // shutdown the daemon's two guards flip on DIFFERENT requests: there's a
+      // cross-request race where /resume still says "run is still active"
+      // (is_live not yet False) and, a beat later, /user-message says "run
+      // already finished" (done just flipped True). A single user-message↔
+      // resume handoff loses that race — the 2nd endpoint can reject too, and
+      // the old code then threw the raw 409 straight at the user. Both errors
+      // are transient: once the subprocess is fully reaped, /resume is the
+      // settled-state endpoint and wins. So we reroute on the daemon's signal
+      // and retry until it settles (bounded), only throwing on a real error.
+      //   • wantResume  — process is gone / finished → continue on /resume
+      //   • wantUserMsg — a live process is still attached → /user-message
+      // "no session id captured" / "not yet supported" 409s match neither and
+      // throw immediately (they are NOT races).
+      const reroute = (status, msg) => {
+        const m = String(msg || "").toLowerCase();
+        const wantResume = status === 404 || status === 410
+          || m.includes("not found") || m.includes("not running")
+          || m.includes("exited") || m.includes("no such") || m.includes("finished");
+        const wantUserMsg = m.includes("still active") || m.includes("use /user-message");
+        return { wantResume, wantUserMsg, any: wantResume || wantUserMsg };
+      };
+      let ep = isResuming ? "resume" : "user-message";
+      const startEp = ep;
+      let r = await postTo(ep);
+      let lastErr = null;
+      for (let attempt = 0; !r.ok && attempt < 5; attempt++) {
         const j = await r.json().catch(() => ({}));
-        const msg = String(j.error || "").toLowerCase();
-        if (!usedResume) {
-          const processGone = r.status === 404 || r.status === 410
-            || r.status === 409
-            || msg.includes("not found") || msg.includes("not running")
-            || msg.includes("exited")   || msg.includes("no such")
-            || msg.includes("finished");
-          if (processGone) {
-            r = await postTo("resume");
-            usedResume = true;
-            didFallback = true;
-          } else {
-            throw new Error(j.error || `HTTP ${r.status}`);
-          }
+        lastErr = j.error || `HTTP ${r.status}`;
+        const sig = reroute(r.status, j.error);
+        if (!sig.any) throw new Error(lastErr);
+        if (sig.wantUserMsg && ep !== "user-message") {
+          ep = "user-message";
+        } else if (sig.wantResume && ep !== "resume") {
+          ep = "resume";
         } else {
-          const stillActive = r.status === 409
-            || msg.includes("still active") || msg.includes("use /user-message");
-          if (stillActive) {
-            r = await postTo("user-message");
-            usedResume = false;
-            didFallback = true;
-          } else {
-            throw new Error(j.error || `HTTP ${r.status}`);
-          }
+          // Same endpoint waved us off again — the run is still settling.
+          // Pause a beat and converge on /resume (the post-shutdown endpoint).
+          await new Promise((res) => setTimeout(res, 200));
+          ep = "resume";
         }
-        if (!r.ok) {
-          const j2 = await r.json().catch(() => ({}));
-          throw new Error(j2.error || `HTTP ${r.status}`);
-        }
+        r = await postTo(ep);
       }
+      if (!r.ok) throw new Error(lastErr || `HTTP ${r.status}`);
+      const usedResume = ep === "resume";
+      const didFallback = ep !== startEp;
       // v3.5.1 — ALWAYS bump SSE after any send while the chat wasn't already
       // actively streaming. The bug this catches:
       //   1. The daemon's run finished a turn → emits `end` → its `_run_stream`
@@ -14911,6 +14922,26 @@ function stripChatPreamble(text) {
 
 /* Final block dispatcher — replaces ChatEventRow for rendering. ChatEventRow
    stays in the file as the fallback / debug renderer for unrecognised events. */
+// Per-message copy affordance — hover-revealed, sits top-right of an
+// assistant text row. Copies the RAW text directly (never fights the
+// streaming re-render that wipes a manual selection). Self-contained
+// "copied ✓" state so it works without threading state through ChatBlock.
+function CopyMsgButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async (e) => {
+    e.stopPropagation();
+    try { await navigator.clipboard.writeText(text || ""); } catch {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  return html`<button
+    className="chat-copy-btn"
+    title=${copied ? "Copied ✓" : "Copy message"}
+    aria-label=${copied ? "Copied" : "Copy message"}
+    onClick=${onCopy}
+  ><${copied ? Icon.Check : Icon.Copy}/></button>`;
+}
+
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
   switch (block.kind) {
     case "text": {
@@ -14918,9 +14949,13 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       // Hot path — most text has no form; render the simple way to keep
       // the markdown root stable across renders.
       if (segments.length === 1 && segments[0].kind === "text") {
-        return html`<div className="chat-row chat-assistant chat-text"><${Markdown} text=${block.text}/></div>`;
+        return html`<div className="chat-row chat-assistant chat-text has-copy"><${Markdown} text=${block.text}/><${CopyMsgButton} text=${block.text}/></div>`;
       }
-      return html`<div className="chat-row chat-assistant chat-text">
+      // Segmented (forms / decisions / inline previews): copy only the prose
+      // segments, not the form markup, so a paste is clean.
+      const plain = segments.filter(s => s.kind === "text").map(s => s.text).join("").trim();
+      return html`<div className="chat-row chat-assistant chat-text has-copy">
+        ${plain ? html`<${CopyMsgButton} text=${plain}/>` : null}
         ${segments.map((seg, i) => {
           if (seg.kind === "text") {
             const t = (seg.text || "").trim();
