@@ -62116,8 +62116,26 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
         const r = await fetch(apiUrl(`/__run/${encodeURIComponent(node.runId)}`));
         if (cancelled) return;
         if (r.status === 404) {
-          setChatRun(_freshChatShell());
-          onChange && onChange({ runId: null });
+          // The LIVE run is gone from the daemon's in-memory RUNS registry
+          // (daemon restart, or the run was evicted after completing). But its
+          // transcript is PERSISTED in editor/chat.jsonl — the same source the
+          // "agent runs" panel reads, which is why the run still shows there.
+          // So do NOT destroy the link: recover it as a read-only HISTORICAL
+          // run (ChatDrawer hydrates the transcript from /__chat?runId). Only
+          // drop node.runId when no transcript exists anywhere — otherwise the
+          // chat button blanks out a run the user can plainly see is alive.
+          let hasHistory = false;
+          try {
+            const hr = await fetch(apiUrl(`/__chat?runId=${encodeURIComponent(node.runId)}`));
+            if (hr.ok) { const hj = await hr.json(); hasHistory = Array.isArray(hj.events) && hj.events.length > 0; }
+          } catch (_e) {}
+          if (cancelled) return;
+          if (hasHistory) {
+            setChatRun({ runId: node.runId, branch, agentId: "claude", historical: true, done: true });
+          } else {
+            setChatRun(_freshChatShell());
+            onChange && onChange({ runId: null });
+          }
         }
       } catch { /* network blip — keep the runId, ChatDrawer surfaces the SSE error */ }
     })();
