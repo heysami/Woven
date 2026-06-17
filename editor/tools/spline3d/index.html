@@ -1365,7 +1365,12 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
   // the on-disk scene authoritative over same-machine localStorage.
   if (__SP_FORCE_SIDECAR) { loaded = (await trySidecar()) || tryLocal(); }
   else { loaded = tryLocal(); if (!loaded) loaded = await trySidecar(); }
-  if (!loaded && LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); loaded = true; }
+  // Linked imports (.glb/.gltf wired into the node) are NOT part of the
+  // serialized scene, so they must be (re)loaded on EVERY boot — not only when
+  // no saved scene exists. Without this, once the node autosaved ANY scene
+  // (even the demo seed on first open), a newly-wired model would be gated out
+  // and never appear in the editor.
+  if (LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); loaded = true; }
   if (!loaded) {
     addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
     addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');

@@ -486,33 +486,65 @@ def _asset_target_port(assetKind: str) -> str:
 
 
 def _detect_orphan_asset_no_prototype_edge(workflow, project_root, drifts):
-    """v3.1 — every asset node in the workflow should have an edge to the
-    prototype. Routing branches by assetKind:
+    """v4.0 — auto-wire an asset to a prototype ONLY when there is an EXPLICIT
+    relationship between them. An asset belongs to a prototype when it was
+    exposed FROM that prototype (`asset.boundTo.node` points at the prototype)
+    or it is listed in that prototype's `exposedAssets[]` (by id or path).
+
+    The pre-v4.0 rule wired ANY unwired asset to the prototype whenever exactly
+    one prototype existed — so a standalone asset the user created (never
+    associated with the prototype) got force-wired, and the edge re-appeared
+    every time the user deleted it. It also did nothing with 2+ prototypes.
+    Keying off the explicit binding fixes both: unrelated assets are left
+    alone, and each exposed asset re-wires to ITS prototype regardless of how
+    many prototypes exist.
+
+    Routing branches by assetKind:
       • image/svg/video/audio/3d/shader → prototype.visual-assets
       • html/html-set/markdown/text      → prototype.source-write
-    If exactly ONE prototype exists and an asset is unwired to it on the
-    correct port, emit an auto-class drift. Multiple prototype nodes →
-    don't guess (skip silently)."""
+    """
     nodes = workflow.get("nodes") or []
     prototypes = [n for n in nodes if isinstance(n, dict) and n.get("kind") == "prototype"]
-    if len(prototypes) != 1:
-        return   # zero or many — don't auto-wire
-    proto_id = prototypes[0].get("id")
-    if not isinstance(proto_id, str): return
+    if not prototypes:
+        return
+    proto_ids = {p.get("id") for p in prototypes if isinstance(p.get("id"), str)}
+    # Map exposed asset id / path → owning prototype id. Entries may be plain
+    # path strings or {id, path, intent} dicts (both shapes exist in the wild).
+    exposed_id_to_proto, exposed_path_to_proto = {}, {}
+    for p in prototypes:
+        pid = p.get("id")
+        for entry in (p.get("exposedAssets") or []):
+            if isinstance(entry, str):
+                exposed_path_to_proto.setdefault(entry, pid)
+            elif isinstance(entry, dict):
+                if isinstance(entry.get("id"), str):   exposed_id_to_proto.setdefault(entry["id"], pid)
+                if isinstance(entry.get("path"), str): exposed_path_to_proto.setdefault(entry["path"], pid)
     edges = workflow.get("edges") or []
     assets = [n for n in nodes if isinstance(n, dict) and n.get("kind") == "asset"]
     for a in assets:
         aid = a.get("id")
         if not isinstance(aid, str): continue
+        # Which prototype, if any, does this asset explicitly belong to?
+        bound = a.get("boundTo")
+        bound_node = bound.get("node") if isinstance(bound, dict) else None
+        target_proto = None
+        if bound_node in proto_ids:
+            target_proto = bound_node
+        elif aid in exposed_id_to_proto:
+            target_proto = exposed_id_to_proto[aid]
+        elif isinstance(a.get("path"), str) and a.get("path") in exposed_path_to_proto:
+            target_proto = exposed_path_to_proto[a["path"]]
+        if not target_proto:
+            continue   # no explicit prototype relationship → never auto-wire
         target_port = _asset_target_port(a.get("assetKind") or "image")
-        # Already wired to ANY port on this prototype?
+        # Already wired to ANY port on its prototype (either direction)?
         wired = any(
             (e.get("from") or "").split(".", 1)[0] == aid
-            and (e.get("to") or "").split(".", 1)[0] == proto_id
+            and (e.get("to") or "").split(".", 1)[0] == target_proto
             for e in edges if isinstance(e, dict)
         ) or any(
             (e.get("to") or "").split(".", 1)[0] == aid
-            and (e.get("from") or "").split(".", 1)[0] == proto_id
+            and (e.get("from") or "").split(".", 1)[0] == target_proto
             for e in edges if isinstance(e, dict)
         )
         if wired: continue
@@ -520,10 +552,10 @@ def _detect_orphan_asset_no_prototype_edge(workflow, project_root, drifts):
             "type": ORPHAN_ASSET_NO_PROTOTYPE_EDGE,
             "class": "auto",
             "assetNodeId": aid,
-            "prototypeNodeId": proto_id,
+            "prototypeNodeId": target_proto,
             "targetPort": target_port,
-            "summary": f"asset {aid!r} ({a.get('assetKind') or '?'}) not wired to prototype "
-                       f"{proto_id!r}.{target_port}",
+            "summary": f"asset {aid!r} ({a.get('assetKind') or '?'}) not wired to its "
+                       f"prototype {target_proto!r}.{target_port}",
         })
 
 
