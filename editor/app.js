@@ -61576,10 +61576,17 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                   const m2 = node.outputPath.match(/^source\/([^/]+)\/?/);
                   if (m2 && isSlug(m2[1])) branch = m2[1];
                 }
+                // Title: prefer a wired prompt's text over the placeholder node
+                // name so the agent-runs panel shows what the run is ABOUT
+                // (not a generic "Untitled agent"). Falls back to a real name.
+                const _promptIn = (derivedSummary?.inputs || []).find(i => i.kind === "text" && (i.text || "").trim());
+                const _runTitle = (node.name && node.name !== "Untitled agent")
+                  ? node.name
+                  : ((_promptIn && _promptIn.text.trim().slice(0, 60)) || "Agent run");
                 const run = await triggerRun({
                   branch, agentId: "claude", kind: "freeform",
                   prompt: fullPrompt,
-                  title: (node.name || "Agent run").slice(0, 60),
+                  title: _runTitle.slice(0, 60),
                   permissionMode: "bypassPermissions",
                 });
                 // Persist runId + the list of eagerly-spawned target ids
@@ -62158,7 +62165,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     const fullPrompt = workflowComposeAgentPrompt({
       wiredSystem, wiredInputs, wiredReadRoot, wiredReferenceFolder, wiredWriteRoot, wiredFileOut, userText,
     });
-    const title = (node.name || (userText || "").slice(0, 60)) || "Agent chat";
+    const title = (((node.name && node.name !== "Untitled agent") ? node.name : (userText || "").trim().slice(0, 60)) || "Agent chat");
     const run = await triggerRun({
       branch, agentId: "claude", kind: "freeform",
       prompt: fullPrompt, title, permissionMode,
