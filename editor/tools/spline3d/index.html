@@ -1352,10 +1352,18 @@ function applyImports(urls) {
   refresh();
 }
 
+// The friendly starter scene — also the never-blank fallback. Reused by the
+// standalone boot and the embedded handshake so the editor is never empty.
+function seedDemo() {
+  addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
+  addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
+  select([]);
+}
+
 // ── Node bridge (EMBEDDED): the host node owns scene + imports; this iframe is
 // a driven VIEW. Emit edits up (debounced diff); apply init / imports / set-scene
 // down. No localStorage, no self-sidecar-write here — the NODE writes the sidecar.
-let lastEmitted = '';
+let lastEmitted = '', __gotInit = false;
 function emitSceneIfChanged(force) {
   if (!EMBEDDED) return;
   try {
@@ -1371,13 +1379,21 @@ if (EMBEDDED) {
     const d = ev && ev.data;
     if (!d || typeof d !== 'object' || (d.nodeId && d.nodeId !== __SP_NODE)) return;
     if (d.type === 'spline:init') {
-      resetScene(); if (d.scene) restoreScene(d.scene); applyImports(d.imports || []);
+      __gotInit = true;
+      resetScene();
+      if (d.scene) restoreScene(d.scene);
+      applyImports(d.imports || []);
+      // Fresh node (no saved scene, no wired model) → friendly demo so the
+      // editor never looks dead.
+      if (!d.scene && (!d.imports || !d.imports.length) && objects.length === 0) seedDemo();
       try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
     } else if (d.type === 'spline:set-scene') {
+      __gotInit = true;
       const keep = Array.from(__loadedImports.keys());
       resetScene(); if (d.scene) restoreScene(d.scene); applyImports(keep);
       try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
     } else if (d.type === 'spline:imports') {
+      __gotInit = true;
       applyImports(d.urls || []);
     }
   });
@@ -1422,7 +1438,14 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
   // spline:init (scene + imports). Single source of truth = the node.
   if (EMBEDDED) {
     try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
-    try { parent.postMessage({ type: 'spline:ready', nodeId: __SP_NODE }, '*'); } catch (e) {}
+    // Announce ready so the host node pushes spline:init. Retry once (covers a
+    // listener-not-yet-attached race), and if NO init ever arrives (e.g. a
+    // stale cached app.js that doesn't speak the protocol), fall back to the
+    // demo seed so the editor is never blank.
+    const announce = () => { try { parent.postMessage({ type: 'spline:ready', nodeId: __SP_NODE }, '*'); } catch (e) {} };
+    announce();
+    setTimeout(() => { if (!__gotInit) announce(); }, 600);
+    setTimeout(() => { if (!__gotInit && objects.length === 0) seedDemo(); }, 2200);
     return;
   }
   // Standalone load order: localStorage → sidecar → linked imports → demo seed.
@@ -1441,11 +1464,7 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
   };
   loaded = tryLocal(); if (!loaded) loaded = await trySidecar();
   if (LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); loaded = true; }
-  if (!loaded) {
-    addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
-    addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
-    select([]);
-  }
+  if (!loaded) seedDemo();
   try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}
 })();
 requestAnimationFrame(tick);
