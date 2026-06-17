@@ -24875,8 +24875,9 @@ function elementPatchSelector(el) {
 function nodeFloatingBarClearance(nodeId) {
   const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
   if (!el) return 0;
-  if (el.classList.contains("workflow-node-proto")) return 32; // proto bar = 32px
-  if (el.classList.contains("workflow-node-asset")) return 26; // asset bar = 26px
+  if (el.classList.contains("workflow-node-proto")) return 32;  // proto bar = 32px
+  if (el.classList.contains("workflow-node-frames")) return 32; // frames bar = 32px
+  if (el.classList.contains("workflow-node-asset")) return 26;  // asset bar = 26px
   return 0;
 }
 
@@ -45370,6 +45371,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         zoom=${zoom}
         glyph="▦"
         label=${cfg.label + " · " + protoSlug}
+        mode="body"
       />`}
       <div
         className="workflow-node-resize-corner"

@@ -7393,29 +7393,42 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   pointer-events: none;
 }
 
-/* Canvas-frames nodes keep the original collapse-and-clip chrome-on-hover. At
-   rest the 32px bar collapses + fades so the embedded editor reads as a clean
-   rounded tile; hover/selection brings it back. */
-.workflow-node-frames:not(:hover):not([data-selected="true"]) {
-  grid-template-rows: 0 1fr;
-  /* The body grows by the bar's 32px when the bar collapses, but the iframe
-     content is sized for the WITH-bar height — so that extra 32px reads as an
-     awkward empty strip at the bottom. We can't shrink node.h (edge/port
-     anchors are computed from it — workflowPortPosition), so instead CLIP the
-     bottom 32px away: the box stays full height (edges stay aligned) while the
-     minimised card visually ends flush with the content, bottom corners
-     re-rounded at the clip. */
-  clip-path: inset(0 0 32px 0 round 10px);
-  transition: grid-template-rows 0.14s ease, clip-path 0.14s ease;
+/* Canvas-frames nodes (and their siblings — user-flow / IA / timeline, all
+   .workflow-node-frames) use the SAME chrome-OUTSIDE model as prototype nodes:
+   the embedded-editor iframe fills the whole node box and never moves/resizes;
+   the title bar floats flush ABOVE it. At rest the bar fades out so the embed
+   reads as a clean framed tile; hover/selection brings it back outside the box.
+   (The iframe is 100%×100% of the body, so no JS scale change is needed.) */
+.workflow-node-frames {
+  display: block;
+  overflow-clip-margin: 120px;
+}
+.workflow-node-frames .workflow-node-frames-body {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  transition: border-radius 0.14s ease;
+}
+.workflow-node-frames > .workflow-node-frames-bar {
+  position: absolute;
+  bottom: 100%;            /* float flush ABOVE the embed — never over it */
+  left: 0; right: 0;
+  z-index: 3;
+  height: 32px;
+  background: var(--surface-2);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  transition: opacity 0.14s ease;
+}
+/* Square the body's top corners when the bar attaches on reveal. */
+.workflow-node-frames:hover .workflow-node-frames-body,
+.workflow-node-frames[data-selected="true"] .workflow-node-frames-body {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 .workflow-node-frames:not(:hover):not([data-selected="true"]) > .workflow-node-frames-bar {
   opacity: 0;
-  overflow: hidden;
   pointer-events: none;
-  transition: opacity 0.14s ease;
-}
-.workflow-node-frames:not(:hover):not([data-selected="true"]) .workflow-node-frames-body {
-  border-radius: 10px;
 }
 /* Version + lineage strips (NodeVersioningChrome) mount on asset, prototype AND
    design-system nodes — so hide the whole "version bar" at rest universally,
