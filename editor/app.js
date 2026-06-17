@@ -61587,6 +61587,8 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                 // each when the agent finishes.
                 onChange && onChange({
                   runId: run.runId,
+                  lastRunId: run.runId,   // durable pointer — never wiped, so the
+                                          // Chat button can always recover this run
                   runStatus: "pending",
                   runError: null,
                   pendingOutputIds: eagerlySpawned,
@@ -62079,8 +62081,14 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     branch,
     agentId: "claude",
   });
+  // Resolve the run to show: the LIVE pointer (node.runId) if present, else the
+  // DURABLE pointer (node.lastRunId) as a read-only historical run. lastRunId is
+  // set on every Run/chat-send and never wiped, so the Chat button can always
+  // recover the agent's thread from the persisted transcript — even after the
+  // live run is evicted from the daemon's in-memory registry.
   const [chatRun, setChatRun] = useState(() => {
     if (node.runId) return { runId: node.runId, branch, agentId: "claude" };
+    if (node.lastRunId) return { runId: node.lastRunId, branch, agentId: "claude", historical: true, done: true };
     return _freshChatShell();
   });
 
@@ -62096,12 +62104,15 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
   //      drawer (e.g. Continue / resume that respawns under a new id). Same
   //      symptom, same fix.
   useEffect(() => {
-    if (!node.runId) return;
-    if (chatRun?.runId !== node.runId) {
-      setChatRun({ runId: node.runId, branch, agentId: "claude" });
+    const eff = node.runId || node.lastRunId;
+    if (!eff) return;
+    if (chatRun?.runId !== eff) {
+      setChatRun(node.runId
+        ? { runId: eff, branch, agentId: "claude" }
+        : { runId: eff, branch, agentId: "claude", historical: true, done: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.runId]);
+  }, [node.runId, node.lastRunId]);
 
   // The daemon's RUNS dict is in-memory only — when serve.py restarts, every
   // prior runId becomes a 404. Persisted node.runId on the workflow would
@@ -62153,7 +62164,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
       prompt: fullPrompt, title, permissionMode,
     });
     setChatRun(run);
-    onChange && onChange({ runId: run.runId });
+    onChange && onChange({ runId: run.runId, lastRunId: run.runId });
     return run;
   };
 
