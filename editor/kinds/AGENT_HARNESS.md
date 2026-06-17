@@ -154,6 +154,21 @@ When a `ds-brainstorm` subagent finishes writing its variant folder, it dispatch
 
 ---
 
+## Rule 11 — Adapt to what you're wired to; edit canonicals, don't write siblings
+
+Your `<context>` and `<output-destinations>` blocks are built from each connected
+node's `io` contract (see [NODE_IO_FRAMEWORK.md](NODE_IO_FRAMEWORK.md)). Honour them:
+
+- When `<output-destinations>` says **"EDIT the `<kind>` node … write its canonical
+  source file `<path>`"** (an `editTarget` — composer / vector-editor / spline-3d),
+  that path is a **JSON document**. Read it, modify the JSON, write it back to the
+  **same path**. Do NOT write a sibling file and do NOT hand-edit the baked
+  `.html`/`.svg` — the editor re-imports the JSON, not the presentation file.
+- When it says **"Write your `<assetKind>` output to `<path>`"**, produce exactly
+  that format (the `assetKind` tells you svg vs html vs png vs …).
+- Upstream context already carries baked composer/vector/spline content and
+  flattened palette/typography — use it; don't re-derive what's handed to you.
+
 ## Quick reference — common dispatch shapes
 
 ```

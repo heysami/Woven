@@ -466,28 +466,10 @@
         "7. Use the active design system's palette tokens by name when the prompt references brand color (write a comment at the top of the JSON if you can't fit a comment, just stay close to those values).\n" +
         "Output the file with Write to the path the user specifies (.json extension). Validate that your JSON parses — Lottie is strict. If the animation is complex enough that you can't hand-author it cleanly, simplify to a single hero motion (one path morph + one transform) rather than producing invalid JSON.",
     },
-    {
-      // Pathway "Tool" — drops a fixed, self-contained interactive HTML editor
-      // from a static install template (editor/tools/spline3d/index.html) into
-      // the project via /__write_text. No agent, no provider, no API key. The
-      // node renders the live editor in its iframe: boolean (CSG) shapes,
-      // glass / metal / plastic materials, soft IBL lighting, curated color
-      // palettes, transform gizmo, and .glb export. Spline-style, in-canvas.
-      id: "spline3d-editor",
-      label: "3D editor (Spline-style)",
-      hint: "interactive scene · boolean · glass · fur/cloth/liquid · import .glb (link a 3D-gen node in) · export",
-      glyph: "⬢",
-      pathway: "Tool",
-      template: "/editor/tools/spline3d/index.html",
-      // OPTIONAL asset input — link a 3D asset (or a 3d-gen / Meshy output) and
-      // it loads into the editor on open. The Tool pathway treats it as
-      // optional (runs fine with nothing linked). See app.js runSkill.
-      inputs: ["asset"],
-      output: "3d",
-      pathwayBExt: "html",
-      hasModelDropdown: false,
-      hasAspect: false,
-    },
+    // v4.0 — the "3D editor (Spline-style)" Tool-pathway skill was removed.
+    // It is now a first-class node kind `spline-3d` rendered directly on the
+    // canvas (Composition section), not a run-a-skill-to-spawn-an-asset step.
+    // See editor/kinds/registry.py + WorkflowSpline3DNode in app.js.
     {
       // 3D-model generation → a textured `.glb` written under
       // source/<branch>/models3d/. Pathway A: dispatches to Meshy (async

@@ -1207,7 +1207,20 @@ function tick(now) {
 // injected by the Tool pathway when image assets are wired into this node.
 // Shown as clickable swatches under the Texture section — click to apply the
 // image as the selected object's surface map.
-const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D_TEXTURES : [];
+// v4.0 — node-embed bridge. When embedded as a `spline-3d` node iframe, config
+// arrives via URL params (the static tool is SHARED across nodes, so we can't
+// inject per-node globals the way the old skill pathway did). Standalone (no
+// params) → globals or nothing, exactly as before.
+const __SP_Q = new URLSearchParams(location.search);
+const __splitList = (s) => (s ? s.split(',').map(x => x.trim()).filter(Boolean) : []);
+const __SP_SAVE = window.__SPLINE3D_SAVE || (__SP_Q.get('writePath') ? {
+  project: __SP_Q.get('project') || '',
+  writePath: __SP_Q.get('writePath'),
+  readUrl: __SP_Q.get('readUrl') || ('/' + __SP_Q.get('writePath')),
+} : null);
+const __SP_NODE = __SP_Q.get('nodeId') || '';
+const __SP_FORCE_SIDECAR = __SP_Q.get('forceSidecar') === '1';
+const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D_TEXTURES : __splitList(__SP_Q.get('textures'));
 (function buildLinkedTextures() {
   const wrap = $('#t-linked'); if (!wrap) return;
   LINKED_TEX.forEach(url => {
@@ -1232,7 +1245,7 @@ const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D
 // materials, deform, fur, live-blob, extruded SVG) and restore it on load, so
 // the same node remembers your work in this browser. (Imported .glb and baked
 // boolean/blob meshes aren't serialised — re-link or re-bake those.)
-const SAVE_KEY = 'spline3d:' + (location.pathname || 'default');
+const SAVE_KEY = 'spline3d:' + (__SP_NODE || location.pathname || 'default');
 let lastSaved = '', saveTimer = null;
 function persist() {
   try { const s = JSON.stringify(serializeScene()); if (s !== lastSaved) { localStorage.setItem(SAVE_KEY, s); lastSaved = s; blip('Saved'); } }
@@ -1288,22 +1301,41 @@ gizmo.addEventListener('objectChange', saveSoon);
 // hooks. Cheap for the small scenes this tool makes.
 setInterval(persist, 1200);
 
+// v4.0 — when embedded as a node (writePath configured), ALSO autosave the
+// scene to the project sidecar so it persists, travels with the repo, and is
+// agent-editable — then tell the host node so it can stamp bakedPath + refresh
+// downstream consumers. This is what makes the node "always baked" (no manual
+// Bake needed for the scene to survive a reload or feed downstream).
+let lastSidecar = '';
+async function persistSidecar(force) {
+  if (!__SP_SAVE || !__SP_SAVE.writePath) return false;
+  try {
+    const data = JSON.stringify(serializeScene());
+    if (!force && data === lastSidecar) return false;
+    const r = await fetch('/__write_text?project=' + encodeURIComponent(__SP_SAVE.project), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: __SP_SAVE.writePath, text: data }),
+    });
+    if (r.ok) {
+      lastSidecar = data;
+      try { parent.postMessage({ type: 'spline:saved', nodeId: __SP_NODE, path: __SP_SAVE.writePath }, '*'); } catch (e) {}
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+if (__SP_SAVE && __SP_SAVE.writePath) setInterval(() => persistSidecar(false), 1800);
+
 // ── Bake — write the scene into the PROJECT as a JSON sidecar (permanent +
-// shareable, travels with the repo). The Tool pathway injects __SPLINE3D_SAVE
-// {project, writePath (source-relative .scene.json), readUrl (relative)}. On a
-// machine with no localStorage for this node, the baked sidecar is the source
-// of truth. Falls back to a file download when opened outside a node.
+// shareable, travels with the repo). Embedded nodes pass writePath/readUrl via
+// URL params (see __SP_SAVE); the autosave above keeps the sidecar fresh, and
+// this button forces an immediate write. Falls back to a file download when
+// opened outside a node.
 async function bake() {
-  const save = window.__SPLINE3D_SAVE, data = JSON.stringify(serializeScene());
-  if (save && save.project && save.writePath) {
-    try {
-      const r = await fetch('/__write_text?project=' + encodeURIComponent(save.project), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: save.writePath, text: data }),
-      });
-      if (r.ok) { flash('Baked into project ✓ — shareable, travels with the repo'); blip('Baked'); return; }
-      const j = await r.json().catch(() => ({})); flash('Bake failed: ' + (j.error || ('HTTP ' + r.status)));
-    } catch (e) { flash('Bake failed'); console.error(e); }
+  const save = __SP_SAVE, data = JSON.stringify(serializeScene());
+  if (save && save.writePath) {
+    if (await persistSidecar(true)) { flash('Baked into project ✓ — shareable, travels with the repo'); blip('Baked'); return; }
+    flash('Bake failed'); return;
   } else {
     const blob = new Blob([data], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.spline3d.json'; a.click(); URL.revokeObjectURL(a.href);
@@ -1314,23 +1346,32 @@ async function bake() {
 // Load order: localStorage (latest local work) → baked sidecar (shared/permanent)
 // → linked imports → demo seed. localStorage wins on the SAME machine so
 // post-bake edits survive a reload; the baked sidecar is what other machines get.
-const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : [];
+const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : __splitList(__SP_Q.get('imports'));
 (async function boot() {
   let loaded = false;
-  try { const raw = localStorage.getItem(SAVE_KEY); if (raw && restoreScene(JSON.parse(raw))) { blip('Restored'); loaded = true; } } catch (e) { console.warn('restore failed', e); }
-  if (!loaded) {
-    const save = window.__SPLINE3D_SAVE;
+  const tryLocal = () => {
+    try { const raw = localStorage.getItem(SAVE_KEY); if (raw && restoreScene(JSON.parse(raw))) { blip('Restored'); return true; } }
+    catch (e) { console.warn('restore failed', e); }
+    return false;
+  };
+  const trySidecar = async () => {
+    const save = __SP_SAVE;
     if (save && save.readUrl) {
-      try { const r = await fetch(save.readUrl, { cache: 'no-store' }); if (r.ok) { if (restoreScene(await r.json())) { blip('Loaded baked'); loaded = true; } } } catch (e) {}
+      try { const r = await fetch(save.readUrl, { cache: 'no-store' }); if (r.ok && restoreScene(await r.json())) { blip('Loaded baked'); return true; } } catch (e) {}
     }
-  }
+    return false;
+  };
+  // forceSidecar (set by the host node after an agent edits the sidecar) makes
+  // the on-disk scene authoritative over same-machine localStorage.
+  if (__SP_FORCE_SIDECAR) { loaded = (await trySidecar()) || tryLocal(); }
+  else { loaded = tryLocal(); if (!loaded) loaded = await trySidecar(); }
   if (!loaded && LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); loaded = true; }
   if (!loaded) {
     addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
     addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
     select([]);
   }
-  try { lastSaved = JSON.stringify(serializeScene()); } catch (e) {}   // baseline so we don't re-save the freshly-loaded scene
+  try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}   // baseline so we don't re-save the freshly-loaded scene
 })();
 requestAnimationFrame(tick);
 window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };

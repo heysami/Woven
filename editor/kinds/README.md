@@ -176,6 +176,19 @@ Endpoint contract: see `docs/features/asset-versioning.md §7.2` for the complet
 
 Adaptive sizing: card layout derives from `node.size.naturalAspect + scale` rather than fixed `w/h`. Drag-resize commits `scale: "custom"` so the user's pick survives re-render; a `↺` button restores adaptive mode.
 
+## The edge I/O contract (how the Agent node adapts)
+
+Every kind also declares an `io` block (`KIND_IO` in [registry.py](registry.py))
+that is the single source of truth for **what flows on a workflow edge**: what a
+node `provides` to downstream consumers and what it `accepts` from upstream / from
+an agent wiring into it. The agent's `/run` dispatch reads it (via
+[io_resolve.py](io_resolve.py)) to build its `<context>` and `<output-destinations>`
+blocks, so the agent ADAPTS to whatever it is wired to — and adding a new kind
+needs only a `KIND_IO` entry. Complex editable nodes (composer / vector-editor /
+spline-3d) keep a JSON sidecar as the agent-editable canonical and re-import it
+live. See **[NODE_IO_FRAMEWORK.md](NODE_IO_FRAMEWORK.md)** for the full guide,
+the resolve/ingest strategy tables, and the "how to add a new node kind" checklist.
+
 ## When in doubt
 
 If you're writing code that needs to know "what is `kind X`," call `kinds.kind_contract(kind, node_id)` and read what it returns. Do not hardcode. Do not duplicate. If the registry is wrong, fix the registry — not the call site.

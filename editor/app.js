@@ -22942,6 +22942,11 @@ const WORKFLOW_NODE_FACTORY = {
     selection: [],
     activeTool: p.activeTool || "select",
   }),
+  "spline-3d": (p) => ({
+    kind: "spline-3d", w: 720, h: 540,
+    scene: p.scene || null,
+    imports: p.imports || [],
+  }),
   "formatted-text": (p) => ({
     kind: "formatted-text", w: 380, h: 320,
     html: p.html || "<p>Type or wire a prompt here.</p>",
@@ -23155,12 +23160,21 @@ const WORKFLOW_CONNECT_DEFS = {
   "composer": {
     label: "Composer",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
-    accepts:  { in:  { label: "Layer", tags: ["asset"] } },
+    // v4.0 — `edit` port: wire an Agent in to EDIT the composition (it rewrites
+    // the composer-<id>.json sidecar, which the node re-imports live).
+    accepts:  { in:  { label: "Layer", tags: ["asset"] },
+                edit: { label: "Edit composer", tags: ["text-gen", "asset-gen"] } },
   },
   "vector-editor": {
     label: "Vector editor",
     provides: { out: { label: "Baked SVG", tags: ["asset"] } },
-    accepts:  {},
+    accepts:  { edit: { label: "Edit vector", tags: ["text-gen", "asset-gen"] } },
+  },
+  "spline-3d": {
+    label: "3D editor",
+    provides: { out: { label: "3D scene", tags: ["asset", "3d"] } },
+    accepts:  { in:   { label: "Import 3D model", tags: ["asset", "3d"] },
+                edit: { label: "Edit 3D scene", tags: ["text-gen", "asset-gen", "3d"] } },
   },
   "formatted-text": {
     label: "Formatted text",
@@ -34291,86 +34305,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         });
       }
 
-      // ── Tool pathway (fixed interactive HTML from a canonical template) ──
-      // A "Tool" skill drops a self-contained interactive HTML file copied
-      // verbatim from a static install template — no agent, no provider, no
-      // API key. The dropped file renders as a LIVE iframe asset node (e.g.
-      // the Spline-style 3D editor: boolean shapes, glass, soft lighting,
-      // curated palettes, .glb export). Deterministic: every Run yields the
-      // same canonical editor, so the node's preview is the tool itself.
-      if (skillSpec.pathway === "Tool" && skillSpec.template) {
-        const forceExt = (p) => p.replace(/\.[a-z0-9]+$/i, "." + (skillSpec.pathwayBExt || "html"));
-        const htmlTargets = outputTargets.map(t => ({ ...t, path: forceExt(t.path) }));
-        // Collect any 3D models (.glb/.gltf) linked into this node's input —
-        // an uploaded asset OR a 3d-gen / Meshy output. They're injected as
-        // window.__SPLINE3D_IMPORT so the editor loads them on open.
-        const modelPaths = [], texturePaths = [];
-        const collect = (p) => {
-          if (typeof p !== "string") return;
-          if (/\.(glb|gltf)$/i.test(p) && !modelPaths.includes(p)) modelPaths.push(p);
-          else if (/\.(png|jpe?g|webp|avif)$/i.test(p) && !texturePaths.includes(p)) texturePaths.push(p);
-        };
-        for (const e of edges) {
-          const to = workflowParseEdgeRef(e.to); if (!to || to.node !== skillId || to.port !== "in") continue;
-          const fr = workflowParseEdgeRef(e.from); if (!fr) continue;
-          const up = nodeById[fr.node];
-          if (up && up.kind === "asset") collect(up.path);
-          if (up && writtenPathByskill[up.id]) collect(writtenPathByskill[up.id]);
-        }
-        // Relative URL from the written editor html to a sibling source asset.
-        const relUrl = (fromHtml, toAsset) => {
-          const a = fromHtml.split("/").slice(0, -1), b = toAsset.split("/");
-          let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
-          return "../".repeat(a.length - i) + b.slice(i).join("/");
-        };
-        try {
-          const tr = await fetch(skillSpec.template, { cache: "no-store" });
-          if (!tr.ok) throw new Error("template fetch failed (" + tr.status + ")");
-          const templateHtml = await tr.text();
-          for (const t of htmlTargets) {
-            let html = templateHtml;
-            const injects = [];
-            if (modelPaths.length) injects.push("window.__SPLINE3D_IMPORT=" + JSON.stringify(modelPaths.map(p => relUrl(t.path, p))) + ";");
-            if (texturePaths.length) injects.push("window.__SPLINE3D_TEXTURES=" + JSON.stringify(texturePaths.map(p => relUrl(t.path, p))) + ";");
-            // Bake target: a .scene.json sidecar next to the editor html. The
-            // editor writes it via /__write_text (permanent, travels with repo)
-            // and reads it back by relative url when no local autosave exists.
-            const sidecar = t.path.replace(/\.html?$/i, ".scene.json");
-            injects.push("window.__SPLINE3D_SAVE=" + JSON.stringify({ project: activeProjectId() || "", writePath: sidecar, readUrl: sidecar.split("/").pop() }) + ";");
-            if (injects.length) {
-              const tag = "<script>" + injects.join("") + "<\/script>";
-              html = html.includes("</body>") ? html.replace("</body>", tag + "</body>") : html + tag;
-            }
-            const wr = await fetch(apiUrl("/__write_text"), {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: t.path, text: html }),
-            });
-            if (!wr.ok) {
-              const j = await wr.json().catch(() => ({}));
-              throw new Error(j.error || ("write failed (" + wr.status + ")"));
-            }
-            writtenPathByskill[skillId] = t.path;
-            allWrittenPaths.push(t.path);
-            try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [t.path] } })); } catch {}
-          }
-          // Point connected asset cards at the written .html so they render
-          // the live editor iframe.
-          const idToNewPath = new Map();
-          for (const t of htmlTargets) if (t.node && t.node.id) idToNewPath.set(t.node.id, t.path);
-          if (idToNewPath.size) {
-            setData(d => ({
-              ...d,
-              nodes: (d.nodes || []).map(n => idToNewPath.has(n.id)
-                ? { ...n, path: idToNewPath.get(n.id), assetKind: "html", runStatus: null, runError: null }
-                : n),
-            }));
-          }
-          update(skillId, { status: "done", error: null, ranAt: Date.now() });
-        } catch (e) {
-          update(skillId, { status: "error", error: String(e.message || e) });
-        }
-        continue;
-      }
+      // v4.0 — the "Tool" pathway (a skill that dropped a static interactive
+      // HTML editor + spawned an asset card) was removed. Its only user, the
+      // Spline-style 3D editor, is now the first-class `spline-3d` node kind
+      // rendered directly on the canvas (WorkflowSpline3DNode). No skill Run
+      // step, no injected window.__SPLINE3D_* globals.
 
       // ── Pathway B (agent-written single-file HTML) ─────────────────
       // The skill spawns a one-shot Claude Code run with the skill's curated
@@ -37692,6 +37631,48 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "spline-3d").map(n => html`
+              <${WorkflowSpline3DNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onBakeAutoCreateOutput=${(bakedPath) => {
+                  // Spawn a 3D-scene asset card wired to .out on first bake,
+                  // mirroring composer / vector. Re-bakes find the edge + no-op.
+                  setData(d => {
+                    const edges = d.edges || [];
+                    const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id && (e.from || "").endsWith(".out"));
+                    if (hasOut) return d;
+                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const fw = n.w || 720;
+                    const newAsset = {
+                      id: assetId, kind: "asset", assetKind: "scene",
+                      x: (n.x || 0) + fw + 60, y: (n.y || 0),
+                      w: 360, h: 240,
+                      path: bakedPath,
+                      spawnedBy: "spline-bake-output",
+                      boundTo: { node: n.id, port: "out" },
+                    };
+                    return {
+                      ...d,
+                      nodes: [...(d.nodes || []), newAsset],
+                      edges: [...edges, { from: `${n.id}.out`, to: `${assetId}.in` }],
+                    };
+                  });
+                }}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "iterator-repeater").map(n => html`
               <${WorkflowRepeaterNode}
                 key=${n.id}
@@ -39012,6 +38993,20 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">✎</span>
             <span className="workflow-library-item-label">Vector editor</span>
             <span className="workflow-library-item-id">svg drawing</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "spline-3d" }));
+            }}
+            title="Drag onto canvas — inline 3D scene editor (Spline-style). Boolean (CSG) shapes, glass / metal / plastic materials, soft lighting, fur / cloth / liquid, import .glb (wire a 3D-gen node in). The scene autosaves into the project as a shareable .scene.json; wire an Agent in to edit it."
+          >
+            <span className="workflow-library-item-glyph">⬢</span>
+            <span className="workflow-library-item-label">3D editor</span>
+            <span className="workflow-library-item-id">spline-style scene</span>
           </div>
           <div
             className="workflow-library-item"
@@ -50748,6 +50743,50 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     setActiveLayerIdx(null);
   };
 
+  // v4.0 — Phase B (node-I/O framework). The composer's AGENT-EDITABLE
+  // canonical representation is a JSON sidecar — NOT the baked presentation
+  // HTML, which can't losslessly round-trip back to layers. Bake writes BOTH:
+  // composer-<id>.html (downstream-consumable) and composer-<id>.json (the
+  // canonical an agent edits). When an agent rewrites the .json, the daemon's
+  // SSE asset-changed → th:asset-refresh bus tells this node to re-import it
+  // live. See kinds/NODE_IO_FRAMEWORK.md.
+  const bakeBranch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+  const composerSidecarPath = `source/${bakeBranch}/composer-${node.id}.json`;
+  // The exact bytes we last wrote ourselves, so our own bake's asset-changed
+  // echo doesn't trigger a redundant (loop-prone) re-import.
+  const selfWriteRef = useRef("");
+  useEffect(() => {
+    const onRefresh = async (ev) => {
+      const paths = (ev && ev.detail && ev.detail.paths) || [];
+      if (!paths.includes(composerSidecarPath)) return;
+      try {
+        const r = await fetch(apiUrl("/" + composerSidecarPath), { cache: "no-store" });
+        if (!r.ok) return;
+        const raw = await r.text();
+        if (raw === selfWriteRef.current) return;            // our own write
+        const j = JSON.parse(raw);
+        if (!j || typeof j !== "object") return;
+        const patch = {};
+        if (Array.isArray(j.layers)) patch.layers = j.layers;
+        if (Number.isFinite(j.canvasW)) patch.canvasW = j.canvasW;
+        if (Number.isFinite(j.canvasH)) patch.canvasH = j.canvasH;
+        if (j.maxWidth !== undefined) patch.maxWidth = j.maxWidth;
+        if (j.maxHeight !== undefined) patch.maxHeight = j.maxHeight;
+        if (typeof j.background === "string") patch.background = j.background;
+        if (Object.keys(patch).length) onChange(patch);
+      } catch {}
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [composerSidecarPath, onChange]);
+
   // v3.4.43 — Bake. Serialize the current layer stack + canvas params
   // into a self-contained HTML file written to source/<branch>/composer-
   // <nodeId>.html. The file mirrors the in-node preview: a relatively-
@@ -50759,15 +50798,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   const bakeComposer = useCallback(async () => {
     setBakeState({ phase: "baking", error: null });
     try {
-      const branch = (() => {
-        // Sniff prototype slug from a wired prototype if present, else "main".
-        for (const e of (allEdges || [])) {
-          const f = (e.from || "").split(".", 1)[0];
-          const up = (allNodes || []).find(n => n.id === f);
-          if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
-        }
-        return "main";
-      })();
+      const branch = bakeBranch;
       const outPath = `source/${branch}/composer-${node.id}.html`;
       // v3.4.46 — Guard pX/pY against zero / NaN / infinite canvas dims
       // so a misconfigured canvas can't emit "Infinity%" or "NaN%" CSS
@@ -50969,6 +51000,20 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         }
         throw new Error("Save failed: " + detail);
       }
+      // v4.0 — Phase B: also write the JSON sidecar — the agent-editable
+      // canonical + re-import source. Lossless: the inline state verbatim.
+      const sidecar = JSON.stringify({
+        v: 1, layers, canvasW, canvasH,
+        maxWidth: node.maxWidth || null, maxHeight: node.maxHeight || null,
+        background: node.background || null,
+      }, null, 2);
+      selfWriteRef.current = sidecar;
+      try {
+        await fetch(apiUrl("/__write_text"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: composerSidecarPath, text: sidecar }),
+        });
+      } catch {}
       const ts = new Date().toISOString();
       onChange({ bakedPath: outPath, bakedAt: ts });
       // v3.4.47 — Auto-spawn an output asset card if nothing is wired to
@@ -51005,7 +51050,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         : baseMsg;
       setBakeState({ phase: "error", error: fullMsg, warnings: errs });
     }
-  }, [node.id, node.maxWidth, node.maxHeight, node.background, canvasW, canvasH, layers, wiredAssetIds, allNodes, allEdges, onChange, onBakeAutoCreateOutput]);
+  }, [node.id, node.maxWidth, node.maxHeight, node.background, canvasW, canvasH, layers, wiredAssetIds, allNodes, allEdges, onChange, onBakeAutoCreateOutput, bakeBranch, composerSidecarPath]);
 
   return html`
     <div
@@ -51723,6 +51768,45 @@ function WorkflowVectorEditorNode({
   const tool    = node.activeTool || "select";
   const selection = Array.isArray(node.selection) ? node.selection : [];
 
+  // v4.0 — Phase B (node-I/O framework). The vector editor's AGENT-EDITABLE
+  // canonical is a JSON sidecar (vector-<id>.json) holding the shape model
+  // verbatim — NOT the baked .svg, whose flattened primitives can't round-trip
+  // back to the editor's shape objects. Bake writes both; an agent edits the
+  // .json and this node re-imports it live via th:asset-refresh.
+  const vecBranch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to || "").split(".", 1)[0];
+      const peer = (allNodes || []).find(n => n.id === (f === node.id ? t : f));
+      if (peer && peer.kind === "prototype") { const s = peer.prototype || peer.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes, node.id]);
+  const vectorSidecarPath = `source/${vecBranch}/svg/vector-${node.id}.json`;
+  const selfWriteRef = useRef("");
+  useEffect(() => {
+    const onRefresh = async (ev) => {
+      const paths = (ev && ev.detail && ev.detail.paths) || [];
+      if (!paths.includes(vectorSidecarPath)) return;
+      try {
+        const r = await fetch(apiUrl("/" + vectorSidecarPath), { cache: "no-store" });
+        if (!r.ok) return;
+        const raw = await r.text();
+        if (raw === selfWriteRef.current) return;            // our own write
+        const j = JSON.parse(raw);
+        if (!j || typeof j !== "object") return;
+        const patch = {};
+        if (Array.isArray(j.shapes)) patch.shapes = j.shapes;
+        if (Number.isFinite(j.canvasW)) patch.canvasW = j.canvasW;
+        if (Number.isFinite(j.canvasH)) patch.canvasH = j.canvasH;
+        if (typeof j.background === "string") patch.background = j.background;
+        if (Object.keys(patch).length) onChange(patch);
+      } catch {}
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [vectorSidecarPath, onChange]);
+
   const dragRef = useRef(null);
   const [, forceRerender] = useState(0);
   const [draftShape, setDraftShape] = useState(null);
@@ -52169,19 +52253,7 @@ function WorkflowVectorEditorNode({
     setBakeState({ phase: "baking", error: null });
     try {
       const svgText = _vecSerializeSvg(node);
-      // Sniff branch from a wired downstream prototype, falling back to
-      // "main". Mirrors WorkflowComposerNode's bake-path resolution so
-      // both nodes drop their artifacts into the same source/<branch>/.
-      const branch = (() => {
-        for (const e of (allEdges || [])) {
-          const f = (e.from || "").split(".", 1)[0];
-          const t = (e.to || "").split(".", 1)[0];
-          // upstream prototype (rare) or downstream prototype.
-          const peer = (allNodes || []).find(n => n.id === (f === node.id ? t : f));
-          if (peer && peer.kind === "prototype") { const s = peer.prototype || peer.branch; if (s) return s; }
-        }
-        return "main";
-      })();
+      const branch = vecBranch;
       // Write into source/<branch>/svg/ so /__assets picks it up (the
       // endpoint only scans a fixed set of subdirs: images/, svg/,
       // video/, models/, shaders/, viz/, audio/). Files dropped at
@@ -52196,6 +52268,18 @@ function WorkflowVectorEditorNode({
         const j = await r.json().catch(() => ({}));
         throw new Error(j.error || `HTTP ${r.status}`);
       }
+      // v4.0 — Phase B: also write the JSON sidecar (agent-editable canonical
+      // + re-import source). Lossless: the shape model verbatim.
+      const sidecar = JSON.stringify({
+        v: 1, shapes, canvasW, canvasH, background: node.background || null,
+      }, null, 2);
+      selfWriteRef.current = sidecar;
+      try {
+        await fetch(apiUrl("/__write_text"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: vectorSidecarPath, text: sidecar }),
+        });
+      } catch {}
       const ts = new Date().toISOString();
       onChange({ bakedPath: outPath, bakedAt: ts });
       setBakeState({ phase: "done", error: null });
@@ -52213,7 +52297,7 @@ function WorkflowVectorEditorNode({
     } catch (err) {
       setBakeState({ phase: "error", error: String(err && err.message || err) });
     }
-  }, [node, onChange, allNodes, allEdges, onBakeAutoCreateOutput]);
+  }, [node, onChange, allNodes, allEdges, onBakeAutoCreateOutput, vecBranch, vectorSidecarPath, shapes, canvasW, canvasH]);
 
   const liveShape = (shape) => {
     const d = dragRef.current;
@@ -54307,6 +54391,139 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
         data-port-node=${node.id}
         data-port-side="out"
         title="Pipe the rendered HTML into a downstream Composer / Prototype consumer."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+/* v4.0 — 3D editor node (kind: spline-3d). Renders the three.js scene editor
+   (editor/tools/spline3d/index.html) DIRECTLY in an iframe — no run-a-skill-to-
+   spawn-an-asset step (that two-step Tool pathway is removed). The embedded
+   editor autosaves the scene to source/<branch>/spline-<id>.scene.json — the
+   canonical, shareable, repo-resident artifact downstream consumers read via
+   bakedPath. On each autosave the iframe postMessages back so we stamp
+   bakedPath. When an AGENT rewrites the sidecar (io editTarget), the SSE
+   asset-changed → th:asset-refresh bus reloads the iframe with forceSidecar=1
+   so the on-disk scene wins over same-machine localStorage. */
+const SPLINE_TOOL_SRC = "/editor/tools/spline3d/index.html";
+function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
+  const w = node.w || 720;
+  const h = node.h || 540;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const iframeRef = useRef(null);
+  const selfSaveTsRef = useRef(0);
+  // reload.n bumps the iframe key to force a fresh mount; force=1 makes the
+  // tool prefer the on-disk sidecar over localStorage on that mount.
+  const [reload, setReload] = useState({ n: 0, force: false });
+
+  const branch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+  const sidecarPath = `source/${branch}/spline-${node.id}.scene.json`;
+
+  // Upstream .glb/.gltf assets become linked imports the editor loads on open.
+  const importUrls = useMemo(() => {
+    const urls = [];
+    for (const e of (allEdges || [])) {
+      const t = (e.to || "").split(".", 1)[0];
+      if (t !== node.id) continue;
+      const up = (allNodes || []).find(n => n.id === (e.from || "").split(".", 1)[0]);
+      if (up && up.kind === "asset" && /\.(glb|gltf)$/i.test(up.path || "")) {
+        urls.push(apiUrl("/" + String(up.path).replace(/^\//, "")));
+      }
+    }
+    return urls;
+  }, [allEdges, allNodes, node.id]);
+
+  const iframeSrc = useMemo(() => {
+    const p = new URLSearchParams();
+    const pid = activeProjectId();
+    if (pid) p.set("project", pid);
+    p.set("nodeId", node.id);
+    p.set("writePath", sidecarPath);
+    p.set("readUrl", apiUrl("/" + sidecarPath));
+    if (importUrls.length) p.set("imports", importUrls.join(","));
+    if (reload.force) p.set("forceSidecar", "1");
+    if (reload.n) p.set("_", String(reload.n));
+    return SPLINE_TOOL_SRC + "?" + p.toString();
+  }, [node.id, sidecarPath, importUrls, reload]);
+
+  // The editor posts {type:'spline:saved'} after it writes the sidecar. Stamp
+  // bakedPath the first time so downstream consumers + the io bakedFile
+  // resolver pick it up (and spawn the output asset card once).
+  useEffect(() => {
+    const onMsg = (ev) => {
+      const d = ev && ev.data;
+      if (!d || d.type !== "spline:saved" || d.nodeId !== node.id) return;
+      selfSaveTsRef.current = Date.now();
+      if (node.bakedPath !== sidecarPath) {
+        onChange({ bakedPath: sidecarPath, bakedAt: new Date().toISOString() });
+        try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(sidecarPath); } catch {}
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [node.id, node.bakedPath, sidecarPath, onChange, onBakeAutoCreateOutput]);
+
+  // Agent edited the sidecar → reload the iframe with forceSidecar so the
+  // freshly-written scene overrides same-machine localStorage. Skip the echo
+  // of our own autosave (guarded by selfSaveTsRef).
+  useEffect(() => {
+    const onRefresh = (ev) => {
+      const paths = (ev && ev.detail && ev.detail.paths) || [];
+      if (!paths.includes(sidecarPath)) return;
+      if (Date.now() - selfSaveTsRef.current < 4000) return;
+      setReload({ n: Date.now(), force: true });
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [sidecarPath]);
+
+  return html`
+    <div
+      className="workflow-node workflow-node-spline3d"
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">⬢</span>
+        <span className="workflow-node-label">3D editor</span>
+        <span className="workflow-node-bar-spacer"/>
+        ${importUrls.length > 0 && html`<span className="workflow-node-fmttext-tag" title=${importUrls.length + " linked 3D model(s)"}>${importUrls.length} model${importUrls.length === 1 ? "" : "s"}</span>`}
+        ${node.bakedAt && html`<span className="workflow-node-composer-baked-tag" title=${"Autosaved scene → " + sidecarPath}>saved</span>`}
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <iframe
+        ref=${iframeRef}
+        key=${reload.n}
+        src=${iframeSrc}
+        className="workflow-spline3d-frame"
+        title="3D editor"
+        style=${{ width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" }}
+        onMouseDown=${(e) => e.stopPropagation()}
+      />
+      <div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id}
+        data-port-side="in"
+        title="Wire a 3D-gen / asset node (.glb/.gltf) to load it into the scene, or an Agent to edit the scene."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id}
+        data-port-side="out"
+        title="Pipe the baked 3D scene (.scene.json) into a downstream consumer."
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
       ><div className="workflow-port-dot"/></div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>

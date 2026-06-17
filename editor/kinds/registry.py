@@ -1738,6 +1738,41 @@ KINDS = {
         "notes": "User-driven inline vector tool. Bake writes source/<branch>/vector-<id>.svg; downstream consumers read bakedPath as an SVG asset.",
     },
 
+    # ── spline-3d ─────────────────────────────────────────────────────────
+    # v4.0 — Inline 3D scene editor (three.js), rendered DIRECTLY as a node
+    # like composer / vector-editor — no more run-a-skill-to-spawn-an-asset
+    # two-step. The editor (editor/tools/spline3d/index.html) is embedded in an
+    # iframe; the scene autosaves to a JSON sidecar at
+    # source/<branch>/spline-<id>.scene.json (the canonical, shareable,
+    # repo-resident artifact). Downstream consumers read bakedPath as a 3D
+    # scene asset; an agent wired to the `edit` port rewrites the .scene.json
+    # and the node re-imports it live. io contract lives in KIND_IO.
+    "spline-3d": {
+        "title":        "3D editor (Spline-style)",
+        "category":     "container",
+        "inputs": {
+            "scene":   {"type": "object", "userEditable": True},   # last serialized scene (cache)
+            "imports": {"type": "array",  "userEditable": False},  # linked .glb/.gltf asset paths
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": (
+            "User-driven inline 3D editor. The embedded three.js tool autosaves "
+            "the scene to source/<branch>/spline-<id>.scene.json; downstream "
+            "consumers read that sidecar as a 3D asset via bakedPath. An agent "
+            "wired to the `edit` port may rewrite the .scene.json (read it, edit "
+            "the JSON, write it back) and the node re-imports it live."
+        ),
+    },
+
     # ── formatted-text ───────────────────────────────────────────────────
     # v3.4.37 — Rich text node. The body is edited in-place via
     # contentEditable, and the user can select a range to apply a
@@ -2492,6 +2527,167 @@ KINDS = {
         "notes": "Pure UI grouping. No semantics. Never created by the orchestrator; manual only.",
     },
 }
+
+
+# ─── the edge I/O contract (single source of truth) ────────────────────────
+#
+# `KIND_IO` declares, per kind, how that kind behaves on a workflow EDGE — what
+# it PROVIDES to downstream consumers and what it ACCEPTS from upstream / from
+# an agent wiring INTO it. This is the one table that the three previously
+# divergent sites read:
+#   1. serve.py's agent/skill dispatch (kinds/io_resolve.py walks it to build
+#      the <context> and <output-destinations> blocks for the running agent),
+#   2. the frontend connect-menu + edge-compatibility (derived from `tags`),
+#   3. the section bundle resolver (recurses through provider `resolve`s).
+#
+# Because all three read THIS table, adding a new node kind needs only a new
+# KIND_IO entry — the agent node, edge typing, and dispatch adapt with zero
+# other code changes. See kinds/NODE_IO_FRAMEWORK.md for the full guide.
+#
+# Port entry shape:
+#   provides[]: {port, label, tags[], resolve?, resolveArgs?}
+#       resolve ∈ text | folder | webfetch | bakedFile | assetFile | typed |
+#                 dsRef | sectionBundle   (omit → frontend-only, no upstream
+#                 context contribution)
+#   accepts[]:  {port, label, tags[], ingest?, canonical?}
+#       ingest  ∈ context | assetWrite | folderWrite | editTarget | sectionWrite
+#       canonical (editTarget only): path template the agent edits & the editor
+#                 re-imports. {branch}/{id} resolved like outputsRoot.
+#
+# `tags` is the single merged vocabulary (text/text-gen/asset/asset-gen/palette/
+# typography/folder/section/3d/remixable/blendable/folder-write/…). Two ports
+# are compatible when their tag sets intersect (or either is empty = wildcard).
+KIND_IO = {
+    "prompt": {
+        "provides": [{"port": "out", "label": "Text", "tags": ["text", "runnable", "blendable"],
+                       "resolve": "text", "resolveArgs": {"fields": ["text"]}}],
+        "accepts":  [{"port": "in", "label": "Generate text with", "tags": ["text-gen"], "ingest": "context"}],
+    },
+    "folder": {
+        "provides": [{"port": "out", "label": "Folder scope", "tags": ["folder"], "resolve": "folder"}],
+        "accepts":  [{"port": "in", "label": "Write into", "tags": ["folder-write"], "ingest": "folderWrite"}],
+    },
+    "browser": {
+        "provides": [{"port": "out", "label": "Page capture", "tags": ["asset", "remixable", "blendable"],
+                       "resolve": "webfetch", "resolveArgs": {"cap": 16000}}],
+        "accepts":  [],
+    },
+    "asset": {
+        "provides": [{"port": "out", "label": "Asset", "tags": ["asset", "remixable", "blendable"],
+                       "resolve": "assetFile"}],
+        "accepts":  [{"port": "in", "label": "Generate with", "tags": ["asset-gen"],
+                       "ingest": "assetWrite"}],
+    },
+    "color-palette": {
+        "provides": [{"port": "out", "label": "Palette", "tags": ["palette"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "palette"}}],
+        "accepts":  [{"port": "in", "label": "Generate with", "tags": ["palette-gen"], "ingest": "context"}],
+    },
+    "typography": {
+        "provides": [{"port": "out", "label": "Type scale", "tags": ["typography"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "typography"}}],
+        "accepts":  [{"port": "in", "label": "Generate with", "tags": ["typography-gen"], "ingest": "context"}],
+    },
+    "design-system": {
+        "provides": [{"port": "out", "label": "DS reference", "tags": ["design-system", "folder"],
+                       "resolve": "dsRef"}],
+        "accepts":  [{"port": "in", "label": "Direction input",
+                       "tags": ["palette", "typography", "asset", "folder", "section"], "ingest": "context"}],
+    },
+    "section": {
+        "provides": [{"port": "out", "label": "Section contents", "tags": ["section"],
+                       "resolve": "sectionBundle"}],
+        "accepts":  [{"port": "in", "label": "Generate into section",
+                       "tags": ["text-gen", "asset-gen"], "ingest": "sectionWrite"}],
+    },
+    "skill": {
+        "dynamic": True,   # ports depend on node.skill; frontend keeps a capability resolver
+        "provides": [{"port": "out", "label": "Generated output", "tags": ["text-gen", "asset-gen", "runnable"],
+                       "resolve": "text", "resolveArgs": {"fields": ["output", "text"]}}],
+        "accepts":  [{"port": "in", "label": "Prompt / input", "tags": ["text", "asset", "section"],
+                       "ingest": "context"}],
+    },
+    "agent": {
+        "provides": [
+            {"port": "output", "label": "Output",
+              "tags": ["text-gen", "asset-gen", "palette-gen", "typography-gen", "runnable"],
+              "resolve": "text", "resolveArgs": {"fields": ["output", "text"], "headerKind": True}},
+            {"port": "folder-write", "label": "Writes folder", "tags": ["folder-write"]},
+        ],
+        "accepts":  [
+            {"port": "input", "label": "Context input",
+              "tags": ["text", "asset", "palette", "typography", "design-system", "section", "3d"],
+              "ingest": "context"},
+            {"port": "system-in", "label": "System prompt", "tags": ["text"], "ingest": "context"},
+            {"port": "folder-read", "label": "Read scope", "tags": ["folder"], "ingest": "context"},
+        ],
+    },
+    "prototype": {
+        "provides": [{"port": "source-read", "label": "Source folder", "tags": ["folder"]}],
+        "accepts":  [{"port": "source-write", "label": "Built by", "tags": ["folder-write"],
+                       "ingest": "folderWrite"}],
+    },
+    "ds-brainstorm": {
+        "provides": [{"port": "out", "label": "Runnable", "tags": ["runnable"],
+                       "resolve": "text", "resolveArgs": {"fields": ["output", "text"], "headerKind": True}}],
+        "accepts":  [{"port": "in", "label": "Reference folder", "tags": ["folder"], "ingest": "context"}],
+    },
+    "iterator-repeater": {
+        "provides": [],
+        "accepts":  [{"port": "in", "label": "Runnable to repeat", "tags": ["runnable"], "ingest": "context"}],
+    },
+    "iterator-remix": {
+        "provides": [{"port": "out", "label": "Remixed", "tags": ["runnable"],
+                       "resolve": "text", "resolveArgs": {"fields": ["output", "text"], "headerKind": True}}],
+        "accepts":  [{"port": "in", "label": "Source to remix", "tags": ["remixable"], "ingest": "context"}],
+    },
+    "iterator-blend": {
+        "provides": [{"port": "out", "label": "Blended output", "tags": ["asset-gen"]}],
+        "accepts":  [{"port": "input-*", "label": "Blend input", "tags": ["blendable"], "ingest": "context"}],
+    },
+    "iterator-refiner": {
+        "provides": [{"port": "out", "label": "Refined prompt", "tags": ["text-gen"]}],
+        "accepts":  [{"port": "in", "label": "Prompt to refine", "tags": ["text"], "ingest": "context"}],
+    },
+    "composer": {
+        "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
+        "accepts":  [
+            {"port": "in", "label": "Layer", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Edit composer", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/composer-{id}.json"},
+        ],
+    },
+    "vector-editor": {
+        "provides": [{"port": "out", "label": "Baked SVG", "tags": ["asset"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "svg"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit vector", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/svg/vector-{id}.json"},
+        ],
+    },
+    "formatted-text": {
+        "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
+        "accepts":  [{"port": "in", "label": "Text / typography", "tags": ["text", "typography"],
+                       "ingest": "context"}],
+    },
+    "spline-3d": {
+        "provides": [{"port": "out", "label": "3D scene", "tags": ["asset", "3d"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "scene.json"}}],
+        "accepts":  [
+            {"port": "in", "label": "Import 3D model", "tags": ["asset", "3d"], "ingest": "context"},
+            {"port": "edit", "label": "Edit 3D scene", "tags": ["text-gen", "asset-gen", "3d"],
+              "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json"},
+        ],
+    },
+}
+
+# Merge the I/O contract onto each kind so kind_contract() + to_jsonable()
+# (and therefore the /__kinds/registry endpoint the frontend reads) carry it.
+for _io_kind, _io_block in KIND_IO.items():
+    if _io_kind in KINDS:
+        KINDS[_io_kind]["io"] = _io_block
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────

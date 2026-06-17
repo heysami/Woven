@@ -8046,155 +8046,27 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not node:
             return self._reply(404, {"error": f"node not found: {node_id!r}", "known": sorted(nodes_by_id.keys())[:20]})
 
-        # Collect upstream content by walking incoming edges. The result is a
-        # single text blob the dispatcher prepends to the node's own prompt.
-        upstream_chunks = []
-        for e in (wf.get("edges") or []):
-            to_ref = (e.get("to") or "")
-            if to_ref.split(".", 1)[0] != node_id: continue
-            from_id = (e.get("from") or "").split(".", 1)[0]
-            up = nodes_by_id.get(from_id)
-            if not up: continue
-            label = up.get("title") or up.get("name") or from_id
-            kind = up.get("kind")
-            if kind == "folder":
-                rel = (up.get("path") or "").lstrip("/")
-                try:
-                    fp = _safe_join(project_root, rel)
-                except ValueError:
-                    continue
-                if os.path.isfile(fp):
-                    try:
-                        with open(fp, "r", encoding="utf-8", errors="replace") as fh:
-                            upstream_chunks.append(f"### {label} (file: {rel})\n{fh.read()}")
-                    except OSError:
-                        pass
-            elif kind in ("prompt", "skill"):
-                # v2.12a — skill nodes store the LLM response in `output`; the
-                # `text` field is the user-editable prompt. Prefer output when
-                # set so downstream consumers walk the response, not the
-                # instruction. For prompt kind, only text exists.
-                txt = ((up.get("output") if kind == "skill" else None) or up.get("text") or "").strip()
-                if txt: upstream_chunks.append(f"### {label}\n{txt}")
-            elif kind in ("ds-brainstorm", "iterator-remix", "agent"):
-                # Pull whatever the node stored as output, if anything.
-                txt = (up.get("output") or up.get("text") or "").strip() if isinstance(up.get("output"), str) else (up.get("text") or "").strip()
-                if txt: upstream_chunks.append(f"### {label} ({kind})\n{txt}")
-            elif kind == "browser":
-                # v3.9 — web-browser node: fetch the page and contribute its
-                # readable text as context. Failures degrade to a note rather
-                # than blocking the run (the site may be down / offline).
-                web_url = str(up.get("url") or "").strip()
-                if re.match(r"^https?://", web_url, re.I):
-                    try:
-                        page = self._web_fetch(web_url)
-                        title, text = self._web_extract_text(page["body"], cap=16000)
-                        head = f"### {label} (web page: {web_url}" + (f" — {title}" if title else "") + ")"
-                        upstream_chunks.append(head + "\n" + (text or "(no readable text)"))
-                    except Exception as e:
-                        upstream_chunks.append(f"### {label} (web page: {web_url})\n(unreachable: {e})")
-            elif kind == "section":
-                # v3.8 — section upstream: the COMBINATION of every node whose
-                # center sits inside the section frame (same containment rule
-                # as the editor's moveSection group-drag). Text-bearing nodes
-                # flatten verbatim; visual nodes contribute path descriptors.
-                sx0 = float(up.get("x") or 0); sy0 = float(up.get("y") or 0)
-                sx1 = sx0 + float(up.get("w") or 880); sy1 = sy0 + float(up.get("h") or 560)
-                parts = []
-                for cn in (wf.get("nodes") or []):
-                    if not cn or cn.get("id") == up.get("id") or cn.get("kind") == "section":
-                        continue
-                    cx = float(cn.get("x") or 0) + float(cn.get("w") or 280) / 2
-                    cy = float(cn.get("y") or 0) + float(cn.get("h") or 200) / 2
-                    if not (sx0 <= cx <= sx1 and sy0 <= cy <= sy1):
-                        continue
-                    ck = cn.get("kind")
-                    clabel = cn.get("title") or cn.get("name") or cn.get("id")
-                    if ck in ("prompt", "skill"):
-                        ctxt = ((cn.get("output") if ck == "skill" else None) or cn.get("text") or "")
-                        ctxt = ctxt.strip() if isinstance(ctxt, str) else ""
-                        if ctxt: parts.append(f"- {clabel}:\n{ctxt}")
-                    elif ck == "color-palette":
-                        sw = ", ".join(f"{s.get('name')}={s.get('value')}" for s in (cn.get("swatches") or []) if isinstance(s, dict))
-                        if sw: parts.append(f"- color palette '{clabel}': {sw}")
-                    elif ck == "typography":
-                        lv = ", ".join(f"{l.get('name')} {l.get('size')}px/{l.get('weight')}" for l in (cn.get("levels") or []) if isinstance(l, dict))
-                        parts.append(f"- typography '{clabel}': sans={cn.get('fontFamily') or ''}, mono={cn.get('monoFamily') or ''}" + (f". Scale: {lv}" if lv else ""))
-                    elif ck == "asset" and str(cn.get("path") or "").startswith("source/"):
-                        parts.append(f"- asset ({cn.get('assetKind') or 'file'}): {cn.get('path')}")
-                    elif ck == "design-system":
-                        ds_ref = cn.get("dsId") or "main"
-                        ds_fonts = [f["family"] for f in _list_local_fonts(project_root) if f["ds"] == ds_ref]
-                        parts.append(f"- design system reference: id={ds_ref}"
-                                     + (f". Local uploaded fonts (PREFER these): {', '.join(ds_fonts)}" if ds_fonts else ""))
-                    elif ck == "folder" and str(cn.get("path") or "").strip():
-                        parts.append(f"- folder: {cn.get('path')}")
-                if parts:
-                    upstream_chunks.append(
-                        f"### {label} (section — combined contents of every node inside)\n" + "\n".join(parts)
-                    )
-        upstream_text = "\n\n".join(upstream_chunks)
-
-        # v2.50 — DOWNSTREAM walk. Previously only incoming edges were read, so
-        # wiring `agent → asset(path=foo.html)` told the agent NOTHING about
-        # where to write — the link was decorative and the agent was clueless
-        # about its output destination. Now: walk OUTGOING edges, and for any
-        # downstream node that declares a file destination (asset.path,
-        # folder.path) OR a kind whose registry contract has an outputsRoot,
-        # tell the agent explicitly to write there. This makes the link
-        # semantically meaningful: you wire an agent to a file node to say
-        # "your output goes here."
-        downstream_targets = []
-        for e in (wf.get("edges") or []):
-            from_ref = (e.get("from") or "")
-            if from_ref.split(".", 1)[0] != node_id: continue
-            to_id = (e.get("to") or "").split(".", 1)[0]
-            dn = nodes_by_id.get(to_id)
-            if not dn: continue
-            dkind = dn.get("kind")
-            dlabel = dn.get("title") or dn.get("name") or to_id
-            dpath = (dn.get("path") or "").lstrip("/")
-            if dkind == "section":
-                # v3.9 — generate INTO the section: the producer commits its
-                # outputs as asset nodes laid out inside the frame.
-                sx = float(dn.get("x") or 0); sy = float(dn.get("y") or 0)
-                sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
-                downstream_targets.append(
-                    f"- Generate INTO the section frame “{dlabel}” (canvas rect x={sx:.0f} y={sy:.0f} "
-                    f"w={sw:.0f} h={sh:.0f}). After writing each output file under source/, register it as an "
-                    f"asset node INSIDE that rect via POST /__workflow/node/{node_id}/commit with "
-                    "addNodes: [{\"id\": \"<fresh id>\", \"kind\": \"asset\", \"assetKind\": \"image|html|svg|…\", "
-                    "\"path\": \"source/…\", \"x\": …, \"y\": …, \"w\": 320, \"h\": 240}]. Lay the nodes out as a "
-                    "grid inside the section bounds: start ~24px in from the left edge and ~48px below the top "
-                    "(the title strip), step by node width/height + 40px gaps, and keep every node FULLY inside "
-                    "the rect. If they don't fit, shrink w/h per node rather than overflowing the frame.")
-                continue
-            if dkind == "asset" and dpath:
-                ak = dn.get("assetKind") or "file"
-                downstream_targets.append(f"- Write your {ak} output to `{dpath}` (wired to asset node “{dlabel}”).")
-            elif dkind == "folder" and dpath:
-                downstream_targets.append(f"- Write outputs into `{dpath}` (wired to folder node “{dlabel}”).")
-            else:
-                # Registry-declared outputsRoot for the downstream kind.
-                try:
-                    from kinds.registry import kind_contract as _kc
-                    c = _kc(dkind, to_id)
-                    root = c.get("outputsRoot") if c else None
-                    if root:
-                        proto_slug = node.get("prototype") or node.get("branch") or "main"
-                        resolved = root.replace("{prototype}", proto_slug) \
-                                       .replace("{branch}", proto_slug) \
-                                       .replace("{variant}", dn.get("variant") or "") \
-                                       .replace("{dsId}", dn.get("dsId") or "main") \
-                                       .replace("{id}", to_id)
-                        downstream_targets.append(f"- Feed the `{dlabel}` node ({dkind}); it expects its inputs under `{resolved}`.")
-                except Exception:
-                    pass
-        downstream_text = ""
-        if downstream_targets:
-            downstream_text = ("This node is wired to the following OUTPUT destinations — "
-                               "write your results there so the canvas reflects them:\n"
-                               + "\n".join(downstream_targets))
+        # v4.0 — contract-driven edge I/O. The two hand-written per-kind
+        # if/elif chains that used to live here (one building the upstream
+        # <context> block, one building the <output-destinations> block) are
+        # replaced by a single walk keyed on each connected node's `io`
+        # contract (KIND_IO in kinds/registry.py). The agent now ADAPTS to
+        # whatever it is wired to — including baked composer/vector/spline
+        # nodes (previously invisible to the running agent) and "edit this
+        # complex node" wiring. Adding a new node kind needs only a KIND_IO
+        # entry; this code does not change. See kinds/NODE_IO_FRAMEWORK.md.
+        from kinds import io_resolve as _io_resolve
+        _io_ctx = {
+            "project_root":     project_root,
+            "nodes_by_id":      nodes_by_id,
+            "safe_join":        _safe_join,
+            "web_fetch":        self._web_fetch,
+            "web_extract_text": self._web_extract_text,
+            "list_local_fonts": _list_local_fonts,
+            "proto_slug":       (node.get("prototype") or node.get("branch") or "main"),
+        }
+        upstream_text   = _io_resolve.resolve_upstream(wf, node_id, _io_ctx)
+        downstream_text = _io_resolve.resolve_downstream(wf, node_id, node, _io_ctx)
 
         kind = node.get("kind")
         out  = None
