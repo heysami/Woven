@@ -5678,6 +5678,19 @@ Every prototype lives in its own subfolder: `source/<slug>/`. The bare `source/`
 root is reserved for project-level artefacts (PRD, research notes, coherence \
 contracts) — **never** write `source/index.html` or any page directly under it.
 
+**Standalone assets — not tied to any prototype.** Some assets are generated on \
+their own, not as part of any prototype's page: a one-off 3D model, an \
+illustration, a video, a texture the user just wants to *have*. Write these under \
+`source/uploads/` (the long-lived, prototype-independent project-asset folder), \
+NOT under a `source/<slug>/`. They stay UNBOUND — no prototype owns them, so the \
+worker badge tethers to the asset's own node instead of lighting up an unrelated \
+prototype, and the user can drag the asset into a prototype later if they want. \
+Only file an asset under `source/<slug>/` when it genuinely belongs to that \
+prototype's page (e.g. a hero image you are placing into \
+`source/<slug>/index.html`). When in doubt — the request is "make me a 3D \
+asset / an image / a video" with no prototype named and none in obvious scope — \
+treat it as standalone and use `source/uploads/`.
+
 When the user asks you to build something:
 
 1. **List existing prototypes first.** Run `ls source/` (or `Bash` with that \
