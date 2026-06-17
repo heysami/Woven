@@ -92,12 +92,47 @@ So each editTarget kind keeps **two** artifacts:
   representation and the **re-import source**.
 
 `io.accepts[].canonical` points at the **JSON**, never the presentation file.
-Bake writes both. When an agent rewrites the JSON, the daemon's SSE
-`asset-changed` → `th:asset-refresh` bus tells the editor node to re-import it
-live (composer/vector patch their inline state; spline reloads its iframe with
-`forceSidecar=1` so the on-disk scene wins over local autosave). A
-`selfWriteRef` / timestamp guard stops the node's own write from echoing into a
-re-import loop.
+When an agent rewrites the JSON, the daemon's SSE `asset-changed` →
+`th:asset-refresh` bus tells the editor node to re-import it live: composer/vector
+patch their inline state; spline-3d pushes `spline:set-scene` to its iframe (the
+driven-view protocol below). A content-compare against the bytes the node last
+wrote stops the node's own write from echoing into a re-import loop.
+
+## Frontend resolution & iframe tools (v4.0)
+
+The backend (`io_resolve.py`) was contract-driven from the start; the **frontend
+now matches it**. `app.js` exposes a single resolver that reads the same `io`
+contract (served via `/__kinds/registry` → `window.__thKindRegistry`):
+
+```
+resolveUpstreamInputs(node, allNodes, allEdges, opts) → ResolvedInput[]
+useUpstreamInputs(node, allNodes, allEdges, opts)      // reactive useMemo wrapper
+```
+
+It picks each upstream node's `io.provides` entry by the edge's from-port and
+normalises by `resolve` + `tags` into typed inputs:
+`text | asset | glb-import | palette | typography | design-system | web |
+section{children} | unbaked`. Each input also carries `node` (the source node)
+so a consumer can reach fields the normalized shape doesn't surface (e.g.
+formatted-text reads `typo.node.fontCdn`). `opts`: `{toPort, accept:tagSet}`.
+
+**Every container node uses this — no node hand-rolls an `allEdges` walk:**
+composer layer sources, formatted-text typo/text, and the spline-3d import list
+all derive from `useUpstreamInputs`. Adding a container kind that consumes inputs
+needs **zero** new resolution code — it inherits hydration, reactively.
+(The agent node's on-canvas input *summary* is display-only; the agent's real
+`/run` input resolution is the backend `io_resolve.py`, already contract-driven.)
+
+**Iframe-embedded tools are DRIVEN VIEWS, never owners of state.** The spline-3d
+3D editor is an `<iframe>`; the structural rule that keeps it (and any future
+iframe tool) bug-free: the **host node is the single source of truth**, the
+iframe holds **no independent persistence** (no localStorage in embedded mode),
+and inputs are **pushed reactively** over a postMessage protocol — never baked
+one-shot into the iframe URL. Protocol: iframe→node `spline:ready` / `spline:scene`;
+node→iframe `spline:init {scene, imports}` / `spline:imports {urls}` /
+`spline:set-scene {scene}` (agent editTarget re-import). The node writes the
+sidecar (single writer) and stamps `bakedPath`. The earlier "imports passed in
+the URL + the tool's own localStorage boot" was the bug class this removes.
 
 ## How to add a new node kind (the framework property)
 
@@ -118,9 +153,17 @@ contract-driven:
 5. Frontend: add the `WORKFLOW_NODE_FACTORY` defaults + a render block +
    (optionally) a `WORKFLOW_CONNECT_DEFS` entry mirroring the `io` tags so the
    connect menu offers it. (Edge-drag already allows it via wildcard flavor.)
+6. If the node CONSUMES wired inputs, read them with **`useUpstreamInputs(node,
+   allNodes, allEdges, opts)`** — never hand-roll an `allEdges` walk. It's
+   reactive and contract-driven, so the node hydrates new edges by construction.
+7. If the node embeds an **iframe tool**, make it a DRIVEN VIEW: the node owns
+   state, the iframe keeps NO independent persistence, inputs are pushed over
+   postMessage (not the URL). Follow the spline-3d protocol. This is the rule
+   that prevents the iframe + competing-persistence bug class.
 
-The section `sectionBundle` resolver and the agent's upstream/downstream walks
-pick the new kind up automatically — no `serve.py` change.
+The section `sectionBundle` resolver, the frontend `useUpstreamInputs`, and the
+agent's backend upstream/downstream walks all pick the new kind up automatically
+— no `serve.py` and no per-node edge-walk change.
 
 ## Worked example — spline-3d
 

@@ -50429,6 +50429,133 @@ function _composerLayerStyle(layer, canvasW, canvasH) {
   else if (a === "stretch-v")  { style.left = pX(oX); }
   return style;
 }
+// ── Shared, io-contract-driven upstream-input resolver ──────────────────────
+// v4.0 — THE single way the frontend answers "what is wired into this node".
+// Mirrors the backend's kinds/io_resolve.py keying (read each upstream node's
+// io.provides contract, match the edge's from-port, normalise by resolve+tags)
+// so adding a node kind needs only its KIND_IO entry — no per-node edge walk.
+// Pure + memoizable; useUpstreamInputs() wraps it reactively. Every container
+// node (composer / formatted-text / vector / spline-3d) and the agent input
+// summary route through this, replacing four hand-rolled copies of the walk.
+function workflowKindIo(kind) {
+  try {
+    const r = (typeof window !== "undefined") && window.__thKindRegistry;
+    return (r && r.KINDS && r.KINDS[kind] && r.KINDS[kind].io) || null;
+  } catch (_e) { return null; }
+}
+function _ioProvideForPort(io, port) {
+  const list = (io && io.provides) || [];
+  if (!list.length) return null;
+  for (const p of list) if (p && p.port === port) return p;
+  return list[0];
+}
+// Returns ResolvedInput[]: each {type, edge, fromId, toPort, kind, tags, label, …}
+// where type ∈ text | asset | glb-import | palette | typography | design-system
+//            | web | section{children} | unbaked.
+// opts: { toPort?: filter incoming port, accept?: tag set/array, _depth? }.
+function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
+  opts = opts || {};
+  if (!node) return [];
+  const byId = {};
+  for (const n of (allNodes || [])) if (n && n.id) byId[n.id] = n;
+  const accept = opts.accept;
+  const accepts = (t) => !accept || (accept.has ? accept.has(t) : (accept.indexOf(t) >= 0));
+  const out = [];
+  for (const e of (allEdges || [])) {
+    const to = workflowParseEdgeRef(e.to || "");
+    if (!to || to.node !== node.id) continue;
+    if (opts.toPort && to.port !== opts.toPort) continue;
+    const from = workflowParseEdgeRef(e.from || "");
+    if (!from) continue;
+    const up = byId[from.node];
+    if (!up) continue;
+    const io = workflowKindIo(up.kind);
+    const prov = _ioProvideForPort(io, from.port);
+    const tags = (prov && prov.tags) || [];
+    if (accept && !tags.some(accepts)) continue;
+    const resolve = prov && prov.resolve;
+    const label = up.title || up.name || up.id;
+    // `node` carries the full upstream node so a consumer can reach fields the
+    // normalized shape doesn't surface (e.g. formatted-text needs typo.fontCdn).
+    const base = { edge: e, fromId: up.id, node: up, toPort: to.port, fromPort: from.port, kind: up.kind, tags };
+
+    // .glb/.gltf asset → a 3D import (checked before the generic asset branch).
+    if (up.kind === "asset" && /\.(glb|gltf)$/i.test(up.path || "")) {
+      out.push({ ...base, type: "glb-import", label: (up.path || "").split("/").pop() || label, url: _composerAssetUrl(up) });
+      continue;
+    }
+    if (resolve === "bakedFile" || resolve === "assetFile" || up.kind === "asset") {
+      const editable = up.kind === "composer" || up.kind === "vector-editor"
+        || up.kind === "formatted-text" || up.kind === "spline-3d";
+      if (editable && !up.bakedPath) {
+        out.push({ ...base, type: "unbaked", label: _composerLayerLabel(up) || label });
+        continue;
+      }
+      out.push({
+        ...base, type: "asset",
+        label: _composerLayerLabel(up) || label,
+        url: _composerAssetUrl(up),
+        assetKind: _composerAssetKind(up),
+        bakedPath: up.bakedPath || null,
+        path: up.path || up.bakedPath || null,
+      });
+      continue;
+    }
+    if (resolve === "typed" || up.kind === "color-palette" || up.kind === "typography") {
+      const flavor = (prov && prov.resolveArgs && prov.resolveArgs.flavor)
+        || (up.kind === "color-palette" ? "palette" : up.kind === "typography" ? "typography" : null);
+      if (flavor === "palette") { out.push({ ...base, type: "palette", label, swatches: up.swatches || [] }); continue; }
+      if (flavor === "typography") {
+        out.push({ ...base, type: "typography", label, fontFamily: up.fontFamily, monoFamily: up.monoFamily, levels: up.levels || [] });
+        continue;
+      }
+    }
+    if (resolve === "dsRef" || up.kind === "design-system") {
+      out.push({ ...base, type: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, version: up.version });
+      continue;
+    }
+    if (resolve === "webfetch" || up.kind === "browser") {
+      const u = (up.url || "").trim();
+      if (u) out.push({ ...base, type: "web", label: "web page", url: u });
+      continue;
+    }
+    if (resolve === "sectionBundle" || up.kind === "section") {
+      const depth = opts._depth || 0;
+      let children = [];
+      if (depth < 3) {
+        const inside = workflowSectionContainedNodes(up, allNodes || []);
+        const synth = inside.map(cn => ({ from: cn.id + "." + _firstProvidePort(cn.kind), to: "__sec__." + (opts.toPort || "in") }));
+        children = resolveUpstreamInputs({ id: "__sec__" }, [{ id: "__sec__" }, ...inside], synth, { _depth: depth + 1, toPort: opts.toPort })
+          .map(c => ({ ...c, label: label + " · " + c.label }));
+      }
+      out.push({ ...base, type: "section", label, children });
+      continue;
+    }
+    if (resolve === "text" || up.kind === "prompt" || up.kind === "skill"
+        || up.kind === "agent" || up.kind === "ds-brainstorm" || up.kind === "iterator-remix") {
+      const fields = (prov && prov.resolveArgs && prov.resolveArgs.fields) || ["text"];
+      let txt = "";
+      for (const f of fields) { const v = up[f]; if (typeof v === "string" && v.trim()) { txt = v; break; } }
+      out.push({ ...base, type: "text", label, text: txt });
+      continue;
+    }
+    // Provider with no backend resolve strategy (frontend-only port) → skip.
+  }
+  return out;
+}
+function _firstProvidePort(kind) {
+  const io = workflowKindIo(kind);
+  const p = io && io.provides && io.provides[0];
+  return (p && p.port) || "out";
+}
+function useUpstreamInputs(node, allNodes, allEdges, opts) {
+  return useMemo(
+    () => resolveUpstreamInputs(node, allNodes, allEdges, opts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [node && node.id, allNodes, allEdges, JSON.stringify(opts || {})]
+  );
+}
+
 function _composerAssetUrl(assetNode) {
   // Resolve the same kind of version-aware path the asset card iframe
   // uses, so the composer renders the live bytes — not a stale source/
@@ -50536,22 +50663,16 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   //     no bytes the composer can render, so we skip it.
   //   - composer   → also via bakedPath, so composer → composer compounding
   //     is possible (after baking the upstream composer).
-  const wiredAssetIds = useMemo(() => {
-    const ids = [];
-    for (const e of (allEdges || [])) {
-      const t = (e.to || "").split(".", 1)[0];
-      if (t !== node.id) continue;
-      const f = (e.from || "").split(".", 1)[0];
-      if (!f) continue;
-      const up = (allNodes || []).find(n => n.id === f);
-      if (!up) continue;
-      if (up.kind === "asset") ids.push(f);
-      else if (up.kind === "formatted-text" && up.bakedPath) ids.push(f);
-      else if (up.kind === "composer" && up.bakedPath) ids.push(f);
-      else if (up.kind === "vector-editor" && up.bakedPath) ids.push(f);
-    }
-    return ids;
-  }, [allEdges, allNodes, node.id]);
+  // v4.0 — resolved through the shared io-contract resolver (no bespoke walk).
+  // Layer sources = renderable assets + baked containers; `unbaked` containers
+  // and non-asset inputs (text/agent edit) are excluded — matching the prior
+  // per-kind walk exactly. .glb assets surface as `glb-import` (still an asset
+  // node), preserved here for parity though the composer can't render them.
+  const _composerInputs = useUpstreamInputs(node, allNodes, allEdges);
+  const wiredAssetIds = useMemo(
+    () => _composerInputs.filter(i => i.type === "asset" || i.type === "glb-import").map(i => i.fromId),
+    [_composerInputs]
+  );
 
   // v3.4.44 — Merge: layers state defines render ORDER + per-layer settings.
   //   1. Drop layer entries whose edge is gone (orphans). Previously these
@@ -54215,20 +54336,16 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const editorRef = useRef(null);
 
-  // Resolve wired typography + text inputs once per edge / node change.
+  // Resolve wired typography + text inputs via the shared io-contract resolver
+  // (no bespoke walk). typo = first wired Typography node (full node, so bake
+  // can read fontCdn/monoCdn); sourceText = first wired Prompt's text (null if
+  // none — distinct from "" so the sync effect can tell "unwired" from "empty").
+  const _fmtInputs = useUpstreamInputs(node, allNodes, allEdges);
   const { typo, sourceText } = useMemo(() => {
-    let typo = null, sourceText = null;
-    for (const e of (allEdges || [])) {
-      const t = (e.to || "").split(".", 1)[0];
-      if (t !== node.id) continue;
-      const f = (e.from || "").split(".", 1)[0];
-      const up = (allNodes || []).find(n => n.id === f);
-      if (!up) continue;
-      if (up.kind === "typography" && !typo) typo = up;
-      else if (up.kind === "prompt" && sourceText == null) sourceText = up.text || "";
-    }
-    return { typo, sourceText };
-  }, [allEdges, allNodes, node.id]);
+    const t = _fmtInputs.find(i => i.type === "typography");
+    const p = _fmtInputs.find(i => i.type === "text" && i.kind === "prompt");
+    return { typo: t ? t.node : null, sourceText: p ? (p.text || "") : null };
+  }, [_fmtInputs]);
 
   // Plain-text source sync — when an upstream Prompt's text changes,
   // overwrite the body. lastSourceText guards against repeatedly
@@ -54483,14 +54600,16 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
 }
 
 /* v4.0 — 3D editor node (kind: spline-3d). Renders the three.js scene editor
-   (editor/tools/spline3d/index.html) DIRECTLY in an iframe — no run-a-skill-to-
-   spawn-an-asset step (that two-step Tool pathway is removed). The embedded
-   editor autosaves the scene to source/<branch>/spline-<id>.scene.json — the
-   canonical, shareable, repo-resident artifact downstream consumers read via
-   bakedPath. On each autosave the iframe postMessages back so we stamp
-   bakedPath. When an AGENT rewrites the sidecar (io editTarget), the SSE
-   asset-changed → th:asset-refresh bus reloads the iframe with forceSidecar=1
-   so the on-disk scene wins over same-machine localStorage. */
+   (editor/tools/spline3d/index.html) DIRECTLY in an iframe, as a DRIVEN VIEW:
+   the NODE is the single source of truth. The iframe holds no localStorage; it
+   announces `spline:ready`, the node pushes `spline:init {scene, imports}`, and
+   thereafter the node pushes `spline:imports` reactively (as wired .glb edges
+   change) and `spline:set-scene` when an agent rewrites the canonical sidecar.
+   The iframe emits `spline:scene` on edit; the NODE persists it to node.scene
+   (cache) + writes source/<branch>/spline-<id>.scene.json (single writer) and
+   stamps bakedPath so downstream consumers + the io bakedFile resolver pick it
+   up. Imports are node-owned (not serialized into the scene) and resolved via
+   the shared io-contract resolver — no bespoke edge walk. */
 const SPLINE_TOOL_SRC = "/editor/tools/spline3d/index.html";
 function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
   const w = node.w || 720;
@@ -54498,10 +54617,6 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const iframeRef = useRef(null);
-  const selfSaveTsRef = useRef(0);
-  // reload.n bumps the iframe key to force a fresh mount; force=1 makes the
-  // tool prefer the on-disk sidecar over localStorage on that mount.
-  const [reload, setReload] = useState({ n: 0, force: false });
 
   const branch = useMemo(() => {
     for (const e of (allEdges || [])) {
@@ -54513,63 +54628,104 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
   }, [allEdges, allNodes]);
   const sidecarPath = `source/${branch}/spline-${node.id}.scene.json`;
 
-  // Upstream .glb/.gltf assets become linked imports the editor loads on open.
-  const importUrls = useMemo(() => {
-    const urls = [];
-    for (const e of (allEdges || [])) {
-      const t = (e.to || "").split(".", 1)[0];
-      if (t !== node.id) continue;
-      const up = (allNodes || []).find(n => n.id === (e.from || "").split(".", 1)[0]);
-      if (up && up.kind === "asset" && /\.(glb|gltf)$/i.test(up.path || "")) {
-        urls.push(apiUrl("/" + String(up.path).replace(/^\//, "")));
-      }
-    }
-    return urls;
-  }, [allEdges, allNodes, node.id]);
+  // Wired .glb/.gltf imports — resolved through the shared io-contract resolver
+  // (no bespoke edge walk). Reactive: a new wired model re-hydrates by itself.
+  const inputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
+  const importUrls = useMemo(
+    () => inputs.filter(i => i.type === "glb-import").map(i => i.url),
+    [inputs]
+  );
+  const importKey = importUrls.join("|");
 
+  // Param-light iframe URL — scene + imports flow over postMessage, not the URL,
+  // so changing imports never reloads the iframe.
   const iframeSrc = useMemo(() => {
     const p = new URLSearchParams();
     const pid = activeProjectId();
     if (pid) p.set("project", pid);
     p.set("nodeId", node.id);
-    p.set("writePath", sidecarPath);
-    p.set("readUrl", apiUrl("/" + sidecarPath));
-    if (importUrls.length) p.set("imports", importUrls.join(","));
-    if (reload.force) p.set("forceSidecar", "1");
-    if (reload.n) p.set("_", String(reload.n));
     return SPLINE_TOOL_SRC + "?" + p.toString();
-  }, [node.id, sidecarPath, importUrls, reload]);
+  }, [node.id]);
 
-  // The editor posts {type:'spline:saved'} after it writes the sidecar. Stamp
-  // bakedPath the first time so downstream consumers + the io bakedFile
-  // resolver pick it up (and spawn the output asset card once).
+  // Refs read by the message handler so it doesn't re-register on every edit.
+  const readyRef = useRef(false);
+  const sceneRef = useRef(node.scene); sceneRef.current = node.scene;
+  const importsRef = useRef(importUrls); importsRef.current = importUrls;
+  const lastWrittenRef = useRef("");      // last sidecar bytes WE wrote (ignore our own echo)
+  const saveTimerRef = useRef(null);
+  const pendingSceneRef = useRef(null);
+
+  const postToIframe = useCallback((msg) => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win) { try { win.postMessage({ ...msg, nodeId: node.id }, "*"); } catch (_e) {} }
+  }, [node.id]);
+
+  // Persist an edit emitted by the iframe: cache on node.scene + write the
+  // sidecar (single writer) + stamp bakedPath the first time. Debounced.
+  const persistScene = useCallback((scene) => {
+    pendingSceneRef.current = scene;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      const sc = pendingSceneRef.current; if (sc == null) return;
+      const text = JSON.stringify(sc);
+      if (text === lastWrittenRef.current) return;
+      lastWrittenRef.current = text;
+      onChange({ scene: sc });
+      try {
+        await fetch(apiUrl("/__write_text"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: sidecarPath, text }),
+        });
+        if (node.bakedPath !== sidecarPath) {
+          onChange({ bakedPath: sidecarPath, bakedAt: new Date().toISOString() });
+          try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(sidecarPath); } catch (_e) {}
+        }
+      } catch (_e) {}
+    }, 1000);
+  }, [sidecarPath, node.bakedPath, onChange, onBakeAutoCreateOutput]);
+
+  // iframe → node messages: ready (push init) + scene edits (persist).
   useEffect(() => {
     const onMsg = (ev) => {
       const d = ev && ev.data;
-      if (!d || d.type !== "spline:saved" || d.nodeId !== node.id) return;
-      selfSaveTsRef.current = Date.now();
-      if (node.bakedPath !== sidecarPath) {
-        onChange({ bakedPath: sidecarPath, bakedAt: new Date().toISOString() });
-        try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(sidecarPath); } catch {}
+      if (!d || d.nodeId !== node.id) return;
+      if (d.type === "spline:ready") {
+        readyRef.current = true;
+        postToIframe({ type: "spline:init", scene: sceneRef.current || null, imports: importsRef.current });
+      } else if (d.type === "spline:scene") {
+        persistScene(d.scene);
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [node.id, node.bakedPath, sidecarPath, onChange, onBakeAutoCreateOutput]);
+  }, [node.id, postToIframe, persistScene]);
 
-  // Agent edited the sidecar → reload the iframe with forceSidecar so the
-  // freshly-written scene overrides same-machine localStorage. Skip the echo
-  // of our own autosave (guarded by selfSaveTsRef).
+  // Reactive imports: push the current wired-model list whenever it changes.
   useEffect(() => {
-    const onRefresh = (ev) => {
+    if (readyRef.current) postToIframe({ type: "spline:imports", urls: importUrls });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importKey, postToIframe]);
+
+  // Agent edited the canonical sidecar (io editTarget) → re-import it live via
+  // set-scene (reset+restore, no reload). Ignore the echo of our own write.
+  useEffect(() => {
+    const onRefresh = async (ev) => {
       const paths = (ev && ev.detail && ev.detail.paths) || [];
       if (!paths.includes(sidecarPath)) return;
-      if (Date.now() - selfSaveTsRef.current < 4000) return;
-      setReload({ n: Date.now(), force: true });
+      try {
+        const r = await fetch(apiUrl("/" + sidecarPath), { cache: "no-store" });
+        if (!r.ok) return;
+        const text = await r.text();
+        if (text === lastWrittenRef.current) return;   // our own write
+        lastWrittenRef.current = text;
+        const scene = JSON.parse(text);
+        onChange({ scene });
+        postToIframe({ type: "spline:set-scene", scene });
+      } catch (_e) {}
     };
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => window.removeEventListener("th:asset-refresh", onRefresh);
-  }, [sidecarPath]);
+  }, [sidecarPath, onChange, postToIframe]);
 
   return html`
     <div
@@ -54589,7 +54745,6 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
       </div>
       <iframe
         ref=${iframeRef}
-        key=${reload.n}
         src=${iframeSrc}
         className="workflow-spline3d-frame"
         title="3D editor"

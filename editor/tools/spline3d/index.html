@@ -478,14 +478,14 @@ function addShape(kind) {
 // Each mesh is baked to world space, normalised to fit, and added as a normal
 // selectable object (its PBR material + textures preserved).
 const gltfLoader = new GLTFLoader();
-function addImportedScene(gltf, label) {
+function addImportedScene(gltf, label, srcUrl) {
   const root = gltf.scene || gltf.scenes[0]; root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3()), maxd = Math.max(size.x, size.y, size.z) || 1;
   const k = 2.2 / maxd, center = box.getCenter(new THREE.Vector3());
   const meshes = []; root.traverse(o => { if (o.isMesh && o.geometry) meshes.push(o); });
   if (!meshes.length) { flash('No mesh in file'); return; }
-  let last = null;
+  let last = null; const created = [];
   meshes.forEach((m, i) => {
     m.updateMatrixWorld(true);
     const geo = m.geometry.clone(); geo.applyMatrix4(m.matrixWorld);
@@ -496,14 +496,17 @@ function addImportedScene(gltf, label) {
     mesh.position.set(0, 0.6 + (size.y * k) / 2 - (box.max.y - center.y) * k, 0);
     mesh.name = (label || 'import') + (i ? '-' + i : '');
     mesh.userData.mode = 'imported'; mesh.userData.vel = new THREE.Vector3();
-    scene.add(mesh); objects.push(mesh); last = mesh;
+    if (srcUrl) mesh.userData.importUrl = srcUrl;
+    scene.add(mesh); objects.push(mesh); last = mesh; created.push(mesh);
   });
+  // Track by source URL so applyImports() can remove this import later.
+  if (srcUrl) { const arr = __loadedImports.get(srcUrl) || []; created.forEach(m => arr.push(m)); __loadedImports.set(srcUrl, arr); }
   if (last) select([last]);
   flash('Imported · ' + (label || 'model') + ' (' + meshes.length + ' mesh' + (meshes.length === 1 ? '' : 'es') + ')');
   refresh();
 }
 function importGLBfromURL(url, label) {
-  gltfLoader.load(url, g => addImportedScene(g, label), undefined, err => { flash('Import failed: ' + url.split('/').pop()); console.error(err); });
+  gltfLoader.load(url, g => addImportedScene(g, label, url), undefined, err => { flash('Import failed: ' + url.split('/').pop()); console.error(err); });
 }
 function importGLBfromBuffer(buf, label) {
   gltfLoader.parse(buf, '', g => addImportedScene(g, label), err => { flash('Import failed'); console.error(err); });
@@ -1220,6 +1223,16 @@ const __SP_SAVE = window.__SPLINE3D_SAVE || (__SP_Q.get('writePath') ? {
 } : null);
 const __SP_NODE = __SP_Q.get('nodeId') || '';
 const __SP_FORCE_SIDECAR = __SP_Q.get('forceSidecar') === '1';
+// v4.0 — EMBEDDED (rendered inside a spline-3d node) → the host node is the
+// single source of truth. No localStorage, no self-sidecar-write, no
+// self-boot: the node drives scene + imports via postMessage and owns the
+// sidecar write. Standalone (opened directly, no nodeId) keeps localStorage +
+// sidecar boot + download-bake exactly as before.
+const EMBEDDED = !!__SP_NODE;
+// Imported .glb/.gltf meshes are NOT serialized into the scene JSON, so the
+// node owns the import list and we track loaded meshes by source URL to add /
+// remove them idempotently (reload-free).
+const __loadedImports = new Map();   // url -> [mesh, …]
 const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D_TEXTURES : __splitList(__SP_Q.get('textures'));
 (function buildLinkedTextures() {
   const wrap = $('#t-linked'); if (!wrap) return;
@@ -1248,6 +1261,7 @@ const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D
 const SAVE_KEY = 'spline3d:' + (__SP_NODE || location.pathname || 'default');
 let lastSaved = '', saveTimer = null;
 function persist() {
+  if (EMBEDDED) return;   // node-driven: the host owns persistence (no localStorage)
   try { const s = JSON.stringify(serializeScene()); if (s !== lastSaved) { localStorage.setItem(SAVE_KEY, s); lastSaved = s; blip('Saved'); } }
   catch (e) { console.warn('save failed', e); }
 }
@@ -1301,11 +1315,76 @@ gizmo.addEventListener('objectChange', saveSoon);
 // hooks. Cheap for the small scenes this tool makes.
 setInterval(persist, 1200);
 
-// v4.0 — when embedded as a node (writePath configured), ALSO autosave the
-// scene to the project sidecar so it persists, travels with the repo, and is
-// agent-editable — then tell the host node so it can stamp bakedPath + refresh
-// downstream consumers. This is what makes the node "always baked" (no manual
-// Bake needed for the scene to survive a reload or feed downstream).
+// ── Scene reset + linked-import diffing (node-driven re-hydration) ──────────
+// resetScene disposes the whole editable scene so the host node can re-drive it
+// (init / agent edit). Reuses the dispose pattern proven in removeSelected/boolOp.
+function resetScene() {
+  select([]);
+  for (const o of objects.slice()) {
+    try {
+      detachFur(o); scene.remove(o);
+      if (o.geometry) o.geometry.dispose();
+      const mm = Array.isArray(o.material) ? o.material : [o.material];
+      mm.forEach(m => m && m.dispose && m.dispose());
+    } catch (e) {}
+  }
+  objects.length = 0;
+  for (const s of sims.slice()) {
+    try { if (s.mesh) { scene.remove(s.mesh); s.mesh.geometry && s.mesh.geometry.dispose(); s.mesh.material && s.mesh.material.dispose && s.mesh.material.dispose(); } } catch (e) {}
+  }
+  sims.length = 0;
+  if (liveBlob) { try { scene.remove(liveBlob.mc); liveBlob.mc.geometry && liveBlob.mc.geometry.dispose(); liveBlob.mc.material && liveBlob.mc.material.dispose && liveBlob.mc.material.dispose(); } catch (e) {} liveBlob = null; }
+  blobDirty = true; __loadedImports.clear();
+  refresh();
+}
+// Add/remove linked imports idempotently to match the node-owned URL list.
+function applyImports(urls) {
+  urls = Array.isArray(urls) ? urls : [];
+  for (const u of Array.from(__loadedImports.keys())) {
+    if (urls.indexOf(u) < 0) {
+      for (const mesh of (__loadedImports.get(u) || [])) {
+        try { detachFur(mesh); scene.remove(mesh); const i = objects.indexOf(mesh); if (i >= 0) objects.splice(i, 1); mesh.geometry && mesh.geometry.dispose(); } catch (e) {}
+      }
+      __loadedImports.delete(u);
+    }
+  }
+  for (const u of urls) { if (!__loadedImports.has(u)) { __loadedImports.set(u, []); importGLBfromURL(u, 'linked'); } }
+  refresh();
+}
+
+// ── Node bridge (EMBEDDED): the host node owns scene + imports; this iframe is
+// a driven VIEW. Emit edits up (debounced diff); apply init / imports / set-scene
+// down. No localStorage, no self-sidecar-write here — the NODE writes the sidecar.
+let lastEmitted = '';
+function emitSceneIfChanged(force) {
+  if (!EMBEDDED) return;
+  try {
+    const s = JSON.stringify(serializeScene());
+    if (!force && s === lastEmitted) return;
+    lastEmitted = s;
+    parent.postMessage({ type: 'spline:scene', nodeId: __SP_NODE, scene: JSON.parse(s) }, '*');
+  } catch (e) {}
+}
+if (EMBEDDED) {
+  setInterval(() => emitSceneIfChanged(false), 800);
+  window.addEventListener('message', (ev) => {
+    const d = ev && ev.data;
+    if (!d || typeof d !== 'object' || (d.nodeId && d.nodeId !== __SP_NODE)) return;
+    if (d.type === 'spline:init') {
+      resetScene(); if (d.scene) restoreScene(d.scene); applyImports(d.imports || []);
+      try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
+    } else if (d.type === 'spline:set-scene') {
+      const keep = Array.from(__loadedImports.keys());
+      resetScene(); if (d.scene) restoreScene(d.scene); applyImports(keep);
+      try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
+    } else if (d.type === 'spline:imports') {
+      applyImports(d.urls || []);
+    }
+  });
+}
+
+// Standalone-only sidecar autosave (embedded uses postMessage + the node as the
+// single sidecar writer).
 let lastSidecar = '';
 async function persistSidecar(force) {
   if (!__SP_SAVE || !__SP_SAVE.writePath) return false;
@@ -1316,22 +1395,16 @@ async function persistSidecar(force) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: __SP_SAVE.writePath, text: data }),
     });
-    if (r.ok) {
-      lastSidecar = data;
-      try { parent.postMessage({ type: 'spline:saved', nodeId: __SP_NODE, path: __SP_SAVE.writePath }, '*'); } catch (e) {}
-      return true;
-    }
+    if (r.ok) { lastSidecar = data; return true; }
   } catch (e) {}
   return false;
 }
-if (__SP_SAVE && __SP_SAVE.writePath) setInterval(() => persistSidecar(false), 1800);
+if (!EMBEDDED && __SP_SAVE && __SP_SAVE.writePath) setInterval(() => persistSidecar(false), 1800);
 
-// ── Bake — write the scene into the PROJECT as a JSON sidecar (permanent +
-// shareable, travels with the repo). Embedded nodes pass writePath/readUrl via
-// URL params (see __SP_SAVE); the autosave above keeps the sidecar fresh, and
-// this button forces an immediate write. Falls back to a file download when
-// opened outside a node.
+// ── Bake — embedded: push the scene to the host node (it writes the sidecar).
+// Standalone with a sidecar target: write directly; otherwise download.
 async function bake() {
+  if (EMBEDDED) { emitSceneIfChanged(true); flash('Saved into project ✓'); blip('Saved'); return; }
   const save = __SP_SAVE, data = JSON.stringify(serializeScene());
   if (save && save.writePath) {
     if (await persistSidecar(true)) { flash('Baked into project ✓ — shareable, travels with the repo'); blip('Baked'); return; }
@@ -1343,11 +1416,16 @@ async function bake() {
   }
 }
 
-// Load order: localStorage (latest local work) → baked sidecar (shared/permanent)
-// → linked imports → demo seed. localStorage wins on the SAME machine so
-// post-bake edits survive a reload; the baked sidecar is what other machines get.
 const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : __splitList(__SP_Q.get('imports'));
 (async function boot() {
+  // EMBEDDED: start empty + announce ready; the host node then pushes
+  // spline:init (scene + imports). Single source of truth = the node.
+  if (EMBEDDED) {
+    try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
+    try { parent.postMessage({ type: 'spline:ready', nodeId: __SP_NODE }, '*'); } catch (e) {}
+    return;
+  }
+  // Standalone load order: localStorage → sidecar → linked imports → demo seed.
   let loaded = false;
   const tryLocal = () => {
     try { const raw = localStorage.getItem(SAVE_KEY); if (raw && restoreScene(JSON.parse(raw))) { blip('Restored'); return true; } }
@@ -1361,22 +1439,14 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
     }
     return false;
   };
-  // forceSidecar (set by the host node after an agent edits the sidecar) makes
-  // the on-disk scene authoritative over same-machine localStorage.
-  if (__SP_FORCE_SIDECAR) { loaded = (await trySidecar()) || tryLocal(); }
-  else { loaded = tryLocal(); if (!loaded) loaded = await trySidecar(); }
-  // Linked imports (.glb/.gltf wired into the node) are NOT part of the
-  // serialized scene, so they must be (re)loaded on EVERY boot — not only when
-  // no saved scene exists. Without this, once the node autosaved ANY scene
-  // (even the demo seed on first open), a newly-wired model would be gated out
-  // and never appear in the editor.
+  loaded = tryLocal(); if (!loaded) loaded = await trySidecar();
   if (LINKED.length) { LINKED.forEach((u, i) => importGLBfromURL(u, 'linked' + (i ? '-' + i : ''))); loaded = true; }
   if (!loaded) {
     addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
     addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
     select([]);
   }
-  try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}   // baseline so we don't re-save the freshly-loaded scene
+  try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}
 })();
 requestAnimationFrame(tick);
 window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
