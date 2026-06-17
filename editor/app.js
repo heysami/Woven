@@ -16705,9 +16705,9 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       <div className="dscz-card">
         <header className="dscz-head">
           <div className="dscz-head-titles">
-            <h2>${previewOnly ? "Preview the default library" : "Tune your design system"}</h2>
+            <h2>${previewOnly ? "Try customisation — template library" : "Tune your design system"}</h2>
             <p>${previewOnly
-              ? "Adjust the tokens — the preview updates live. This is a sandbox preview of the bundled default design system; nothing is saved. Use “Use template design system” on a project's design-system node to bake a tuned copy."
+              ? "Adjust the tokens — the preview updates live. This is a sandbox preview of the bundled template design system; nothing is saved. Use “Use template design system” on a project's design-system node to bake a tuned copy."
               : "Adjust the tokens — the preview updates live. Untouched controls keep the default. Confirm to bake these into the project's design system."}</p>
           </div>
           <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
@@ -17116,13 +17116,13 @@ function DefaultLibraryLanding() {
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
-        name="Default library"
+        name="Template library"
         count=${DS_TUNING_PRESETS.length}
-        desc=${html`The design system every new project can inherit — tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below is a curated retune shown on two surfaces — the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) — with the tuning it uses labelled. <strong>Tune</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
+        desc=${html`The template design system every new project can inherit — tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below is a curated retune shown on two surfaces — the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) — with the tuning it uses labelled. <strong>Try customisation</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
         action=${html`<button className="sysadd-bar-btn" type="button"
           onClick=${() => setTuneOpen(true)}
           title="Open the token customizer against a live preview (sandbox — nothing is saved)">
-          <${Icon.Palette}/><span>Tune</span></button>`}
+          <${Icon.Palette}/><span>Try customisation</span></button>`}
       />
 
       <div className="deflib-rows">
@@ -18497,8 +18497,8 @@ function SystemLanding({ onSpawnSystemThread }) {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
-    { id: "default-library", label: "Default library", count: DS_TUNING_PRESETS.length,
-      hint: "The bundled default design system — curated retunes previewed on two surfaces + tune the tokens live" },
+    { id: "default-library", label: "Template library", count: DS_TUNING_PRESETS.length,
+      hint: "The bundled template design system — curated retunes previewed on two surfaces + try customisation live" },
     { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
