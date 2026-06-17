@@ -63958,6 +63958,7 @@ function App() {
         onPermissionModeChange=${onPermissionModeChange}
         onStartNewChat=${spawnFromComposer}
         selectionCount=${editorSelectionCount}
+        variant="dock"
       />`}
     </div>
   `;
