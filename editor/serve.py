@@ -3455,6 +3455,15 @@ AGENT_DEFAULT = "claude"
 RUNS: dict = {}
 RUNS_LOCK = threading.Lock()
 
+# Runs the user has explicitly DELETED. A live run can keep draining stdout for
+# a beat after we terminate it (the final __finish line in particular), which
+# would otherwise re-append history we just purged — resurrecting the run as a
+# historical ghost on the next /__runs scan. _chat_jsonl_append consults this
+# set and drops any write for a deleted run id. Membership is permanent for the
+# daemon's lifetime; ids are tiny hex strings, so the set never meaningfully
+# grows.
+_DELETED_RUN_IDS: set = set()
+
 # v2.30 — workflow-event SSE channel. Per-project waiter set the daemon
 # signals whenever workflow.json mutates (POST /__workflow, POST /__workflow/
 # node/<id>/status, completion hook). Replaces v2.22's 5s client-side polling
@@ -4410,6 +4419,11 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
     self-describing — the rehydrator on the UI side parses lines independently
     and groups by `runId`. `seq` < 0 marks a synthetic lifecycle event (see
     RunState.finish) that doesn't correspond to an SSE frame."""
+    # Drop writes for a run the user deleted — see _DELETED_RUN_IDS. A
+    # terminated subprocess can still emit its __finish line a beat later;
+    # persisting it would resurrect the run as a historical ghost.
+    if getattr(state, "run_id", None) in _DELETED_RUN_IDS:
+        return
     project_root = getattr(state, "project_root", None) or DEFAULT_PROJECT_ROOT
     branch = getattr(state, "branch", None) or "main"
     if not SLUG_OK.match(branch):
@@ -4445,6 +4459,55 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
             f.write(serialized + "\n")
+
+
+def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
+    """Rewrite `path` dropping every line whose runId == run_id, moving the
+    removed lines into a sibling .chat-trash.jsonl so the delete is
+    recoverable (mirrors the source/.trash/ convention for prototype deletes).
+    Returns the count of purged lines. Best-effort; never raises — chat history
+    persistence must never break the caller.
+
+    Serializes against _chat_jsonl_append via the same per-path lock so a
+    concurrent run writing to the file can't interleave with the rewrite."""
+    if not path or not os.path.isfile(path):
+        return 0
+    lk = _chat_jsonl_lock(path)
+    with lk:
+        try:
+            removed = []
+            kept = []
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    s = line.rstrip("\n")
+                    if not s.strip():
+                        continue
+                    try:
+                        obj = json.loads(s)
+                    except Exception:
+                        kept.append(s)  # keep unparseable lines untouched
+                        continue
+                    if obj.get("runId") == run_id:
+                        removed.append(s)
+                    else:
+                        kept.append(s)
+            if not removed:
+                return 0
+            trash = os.path.join(os.path.dirname(path), ".chat-trash.jsonl")
+            try:
+                with open(trash, "a", encoding="utf-8") as tf:
+                    for s in removed:
+                        tf.write(s + "\n")
+            except OSError:
+                pass  # trash is a nicety; proceed with the purge regardless
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                for s in kept:
+                    f.write(s + "\n")
+            os.replace(tmp, path)
+            return len(removed)
+        except OSError:
+            return 0
 
 
 def _chat_jsonl_candidate_files(project_root: str) -> list:
@@ -6728,8 +6791,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._decision_save(qs, m_dec.group(1))
             if parsed.path == "/__run":
                 return self._run_create(qs)
-            # /__run/<id>/stop · user-message · tool-result — RESTish nested
-            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume)$", parsed.path)
+            # /__run/<id>/stop · user-message · tool-result · resume · delete
+            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete)$", parsed.path)
             if m:
                 run_id, action = m.group(1), m.group(2)
                 if action == "stop":
@@ -6738,6 +6801,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._run_tool_result(run_id)
                 if action == "resume":
                     return self._run_resume(run_id)
+                if action == "delete":
+                    return self._run_delete(run_id, qs)
                 return self._run_user_message(run_id)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
@@ -13320,7 +13385,83 @@ class H(http.server.SimpleHTTPRequestHandler):
                         })
         except OSError as e:
             return self._reply(500, {"error": f"scan failed: {e}"})
+        # Brand-new projects: auto-star + auto-thumbnail the first prototype so
+        # the landing card isn't blank. One-shot, gated, never backfills an
+        # already-populated project. Best-effort — wrapped, never breaks the list.
+        self._maybe_autofeature_first_prototype(project_root, found, qs)
         return self._reply(200, {"prototypes": found})
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Auto-feature the FIRST prototype of a brand-new project — star it and
+    # set it as the landing thumbnail so a fresh project's card has something
+    # to show the moment its first prototype lands. "Brand-new only": we never
+    # backfill a project that already had prototypes when we first saw it.
+    #
+    # A one-shot sentinel (<project>/.prototype-autofeatured.json, shape
+    # {"state": "armed"|"done"}) drives a tiny state machine, evaluated each
+    # time the prototype list is built:
+    #   • sentinel absent + 0 prototypes  → write "armed"  (fresh, empty project)
+    #   • sentinel absent + ≥1 prototype  → write "done"   (pre-existing — never
+    #                                        feature; this is the no-backfill rule)
+    #   • "armed"          + ≥1 prototype → feature the first, write "done"
+    #   • "done"                          → no-op forever
+    # ─────────────────────────────────────────────────────────────────────
+    def _autofeature_sentinel_path(self, project_root):
+        return os.path.join(project_root, ".prototype-autofeatured.json")
+
+    def _write_autofeature_sentinel(self, path, state):
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"state": state}, f, indent=2)
+                f.write("\n")
+        except OSError:
+            pass
+
+    def _maybe_autofeature_first_prototype(self, project_root, found, qs):
+        try:
+            path = self._autofeature_sentinel_path(project_root)
+            state = None
+            if os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        state = (json.load(f) or {}).get("state")
+                except Exception:
+                    state = "done"  # unreadable sentinel → never act
+            if state == "done":
+                return
+            # Only depth-1 prototypes (source/<slug>/index.html) are eligible —
+            # they're the project's own prototypes, not sub-prototypes.
+            depth1 = [p for p in found if p.get("depth") == 1 and p.get("id")]
+            have = bool(depth1)
+            if state is None:
+                # First time we've ever observed this project. Arm it only if
+                # it's still empty; if prototypes already exist this is a
+                # pre-existing project and we mark done WITHOUT featuring.
+                self._write_autofeature_sentinel(path, "armed" if not have else "done")
+                return
+            # state == "armed": the project was seen empty and is now gaining
+            # its first prototype(s). Feature one, then settle to "done".
+            if not have:
+                return
+            default_slug = self._default_prototype_slug(project_root)
+            pick = None
+            if default_slug:
+                pick = next((p for p in depth1 if p.get("id") == default_slug), None)
+            if not pick:
+                pick = depth1[0]
+            slug = pick.get("id")
+            # Star it — but never stomp a star the user somehow already set.
+            if not self._read_starred_ids(project_root):
+                self._write_starred_ids(project_root, [slug])
+            # Thumbnail it (+ capture the PNG) — likewise only if none chosen.
+            if not self._read_thumbnail_path(project_root):
+                tp = f"source/{slug}/index.html"
+                if self._write_thumbnail_path(project_root, tp):
+                    _spawn_thumbnail_screenshot(
+                        project_root, _qs_get(qs, "project") or "", tp)
+            self._write_autofeature_sentinel(path, "done")
+        except Exception:
+            pass  # never break the prototype listing
 
     # POST /__prototypes/duplicate?project=<id>  body: { id, newId?, label? }
     # Clones a prototype WITHOUT the LLM, rewriting every reference to the old
@@ -18409,6 +18550,51 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"terminate failed: {e}"})
         state.append("status", {"label": "interrupted"})
         return self._reply(200, {"ok": True})
+
+    # POST /__run/<id>/delete
+    #   Remove a run entirely: stop it if still live (stop-then-delete), drop it
+    #   from the in-memory registry, and purge its lines from the persisted chat
+    #   JSONL (moving them to a recoverable .chat-trash.jsonl). Handles project
+    #   runs and system-thread runs, plus history-only ghosts no longer in RUNS.
+    def _run_delete(self, run_id, qs):
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        # Mark deleted BEFORE terminating so any in-flight stdout drain (esp.
+        # the trailing __finish line) is suppressed by _chat_jsonl_append and
+        # can't resurrect the run as a historical ghost.
+        _DELETED_RUN_IDS.add(run_id)
+        # Stop a live subprocess first.
+        if state is not None and getattr(state, "is_live", False):
+            try:
+                state.stop_reason = "user-stop"
+                state.proc.terminate()
+            except Exception:
+                pass
+        # Figure out which JSONL(s) hold this run's history and purge it there.
+        paths = []
+        if state is not None and getattr(state, "scope", None) == "system":
+            section = getattr(state, "section", None) or "orchestrators"
+            if SYSTEM_SECTION_OK.match(section):
+                paths.append(_system_chat_path(section))
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError:
+                project_root = DEFAULT_PROJECT_ROOT
+            paths.append(_chat_jsonl_path(project_root, "main"))
+            # A history-only ghost (gone from RUNS) might be a system thread —
+            # the project chat won't carry it. Sweep the section files too.
+            if state is None:
+                for p, _sec in _system_chat_candidate_files():
+                    paths.append(p)
+        purged = 0
+        for p in paths:
+            purged += _chat_jsonl_purge_run(p, run_id)
+        # Drop from the live registry last so a concurrent _runs_list can't
+        # re-merge in-memory state after we've purged the on-disk history.
+        with RUNS_LOCK:
+            RUNS.pop(run_id, None)
+        return self._reply(200, {"ok": True, "runId": run_id, "purged": purged})
 
     # POST /__run/<id>/tool-result  body: { toolUseId, content, isError? }
     # Pipes the user's answer to an agent-side tool prompt (AskUserQuestion,
