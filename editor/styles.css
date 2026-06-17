@@ -909,7 +909,12 @@ button {
 
 /* "Default library" tuning gallery on the Capabilities landing — a stack of
    curated retune rows, each with two scaled preview thumbnails. */
-.deflib-rows { margin-top: 16px; display: flex; flex-direction: column; gap: 30px; }
+.deflib-samples-head {
+  margin-top: 22px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.1));
+  font: 600 15px/1.2 var(--font-sans, system-ui, sans-serif); color: var(--text, #1a1a1a);
+}
+.deflib-rows { margin-top: 18px; display: flex; flex-direction: column; gap: 30px; }
 .deflib-row { display: flex; flex-direction: column; gap: 8px; }
 .deflib-row-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .deflib-row-name { font: 600 14px/1.2 var(--font-sans, system-ui, sans-serif); color: var(--text, #1a1a1a); }

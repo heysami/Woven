@@ -16705,7 +16705,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       <div className="dscz-card">
         <header className="dscz-head">
           <div className="dscz-head-titles">
-            <h2>${previewOnly ? "Try customisation — template library" : "Tune your design system"}</h2>
+            <h2>${previewOnly ? "Try customisation — Template Design System" : "Tune your design system"}</h2>
             <p>${previewOnly
               ? "Adjust the tokens — the preview updates live. This is a sandbox preview of the bundled template design system; nothing is saved. Use “Use template design system” on a project's design-system node to bake a tuned copy."
               : "Adjust the tokens — the preview updates live. Untouched controls keep the default. Confirm to bake these into the project's design system."}</p>
@@ -17116,8 +17116,7 @@ function DefaultLibraryLanding() {
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
-        name="Template library"
-        count=${DS_TUNING_PRESETS.length}
+        name="Template Design System"
         desc=${html`The template design system every new project can inherit — tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below is a curated retune shown on two surfaces — the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) — with the tuning it uses labelled. <strong>Try customisation</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
         action=${html`<button className="sysadd-bar-btn" type="button"
           onClick=${() => setTuneOpen(true)}
@@ -17125,6 +17124,7 @@ function DefaultLibraryLanding() {
           <${Icon.Palette}/><span>Try customisation</span></button>`}
       />
 
+      <div className="deflib-samples-head">Template Design System Samples</div>
       <div className="deflib-rows">
         ${tunings.map(({ preset, custom }) => html`
           <div key=${preset.id} className="deflib-row">
@@ -18497,7 +18497,7 @@ function SystemLanding({ onSpawnSystemThread }) {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
-    { id: "default-library", label: "Template library", count: DS_TUNING_PRESETS.length,
+    { id: "default-library", label: "Template Design System", count: null,
       hint: "The bundled template design system — curated retunes previewed on two surfaces + try customisation live" },
     { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
@@ -18529,7 +18529,7 @@ function SystemLanding({ onSpawnSystemThread }) {
             title=${s.hint}
           >
             <span className="system-nav-label">${s.label}</span>
-            <span className="system-nav-count">${s.count}</span>
+            ${s.count != null && html`<span className="system-nav-count">${s.count}</span>`}
             <span className="system-nav-hint">${s.hint}</span>
           </button>
         `)}
