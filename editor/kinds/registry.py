@@ -1797,6 +1797,158 @@ KINDS = {
         ),
     },
 
+    # ── App-node family (Phase: app-nodes) ────────────────────────────────
+    # Eight new driven-view editors, all modelled on spline-3d/composer:
+    # the iframe tool at editor/tools/<tool>/index.html owns NO persistence;
+    # the node autosaves a JSON sidecar (the canonical, agent-editable file);
+    # downstream consumers read bakedPath. io contracts live in KIND_IO.
+    "font-editor": {
+        "title":        "Font creator",
+        "category":     "container",
+        "inputs": {
+            "font":      {"type": "object", "userEditable": True},   # serialized font spec (cache)
+            "baseFont":  {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven inline font editor (opentype.js). Pick a base font, edit glyphs as vector outlines or borrow glyphs from other fonts; bake compiles source/<branch>/fonts/font-<id>.otf. Agent edits source/<branch>/font-<id>.json.",
+    },
+    "image-editor": {
+        "title":        "Image editor",
+        "category":     "container",
+        "inputs": {
+            "doc":       {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven raster painter with layers, free-lasso selection, per-pixel alpha-mask layer, and gradient-map. Bake flattens to source/<branch>/images/image-<id>.png. Agent edits source/<branch>/image-<id>.json (structure/grades/selection, not pixels).",
+    },
+    "pixel-editor": {
+        "title":        "Pixel editor",
+        "category":     "container",
+        "inputs": {
+            "doc":       {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven pixel-art editor with a code/data generator mode AND a manual draw mode (also an ASCII canvas). Bake → source/<branch>/images/pixel-<id>.png (+ .txt in ASCII mode). Agent edits source/<branch>/pixel-<id>.json.",
+    },
+    "voxel-3d": {
+        "title":        "Voxel editor",
+        "category":     "container",
+        "inputs": {
+            "grid":      {"type": "object", "userEditable": True},
+            "imports":   {"type": "array",  "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven voxel editor on a fixed grid (three.js), reusing the spline-3d material set (glass/metal/plastic + metaball/fur/cloth). Autosaves source/<branch>/voxel-<id>.json; exports .glb to models/. Agent edits the JSON.",
+    },
+    "synth": {
+        "title":        "Synth / percussion",
+        "category":     "container",
+        "inputs": {
+            "patch":     {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven WebAudio synth + percussion engine for sound effects. Offline-renders a one-shot to source/<branch>/audio/synth-<id>.wav. Agent drives it by editing source/<branch>/synth-<id>.json (the patch).",
+    },
+    "music": {
+        "title":        "Music maker",
+        "category":     "container",
+        "inputs": {
+            "song":      {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven algorithmic sample-based sequencer (Tidal/Strudel-style mini-notation). Samples come from wired audio assets / synth nodes. Offline-renders source/<branch>/audio/music-<id>.wav. Agent edits source/<branch>/music-<id>.json.",
+    },
+    "material-lab": {
+        "title":        "Material Lab",
+        "category":     "container",
+        "inputs": {
+            "doc":       {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven 2D material/shader editor — UI elements with live materials (Apple Liquid Glass via WebGL refraction over a backdrop texture) that react to mouse / nearby elements / backdrop. Bakes an interactive source/<branch>/material-<id>.html. Agent edits source/<branch>/material-<id>.json.",
+    },
+    "mm-composer": {
+        "title":        "Interactive multimedia composer",
+        "category":     "container",
+        "inputs": {
+            "doc":       {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven layered interactive surface. Each layer = {positioning · trigger · effects}: grid/instance/physics/drawn/rope/camera-feed positioning, mouse/timeline/audio/camera triggers that cross-affect layers, and GPU/shader effects (shader-lab taxonomy). Bakes interactive source/<branch>/mm-<id>.html. Agent edits source/<branch>/mm-<id>.json.",
+    },
+
     # ── formatted-text ───────────────────────────────────────────────────
     # v3.4.37 — Rich text node. The body is edited in-place via
     # contentEditable, and the user can select a range to apply a
@@ -2683,6 +2835,131 @@ _VECTOR_AUTHORING = (
     "  Compose the illustration from these primitives; array order is paint order (later = on top)."
 )
 
+_FONT_AUTHORING = (
+    "This is a FONT CREATOR (opentype.js). The deliverable is a font spec whose glyph outlines "
+    "are SVG path data in FONT UNITS (y-up, origin at the baseline). It is NOT a raster/illustration "
+    "tool — produce glyph outlines, not pictures.\n"
+    "  Write the canonical file `source/{branch}/font-{id}.json` (read the existing file first; "
+    "re-imported live on write). Schema:\n"
+    "      {\"v\":1,\"familyName\":\"...\",\"unitsPerEm\":1000,\"ascender\":800,\"descender\":-200,\n"
+    "       \"baseFont\":{\"source\":\"upload|google|none\",\"ref\":\"<google family name or asset path>\"},\n"
+    "       \"glyphs\":{\"A\":{\"from\":\"base|font:<ref>|custom\",\"advanceWidth\":600,\"path\":\"<SVG path data, font units, y-up>\"}}}\n"
+    "  `glyphs` is keyed by the character. `from:\"base\"` keeps the base font's outline; `from:\"custom\"` "
+    "uses your `path`; `from:\"font:<google family>\"` borrows that character from another font (the tool "
+    "resolves it). Only include glyphs you change — unlisted characters fall back to the base font. "
+    "Coordinates are in font units (unitsPerEm tall); the baseline is y=0, ascenders are POSITIVE y."
+)
+
+_IMAGE_AUTHORING = (
+    "This is an IMAGE EDITOR — a layered raster compositor. You author the layer STRUCTURE, gradient-map "
+    "grades, blend/opacity, and lasso selection — you do NOT paint pixels (raster pixel data lives in "
+    "referenced PNGs the user/asset pipeline produces). Do not invent pixel content inline.\n"
+    "  Write the canonical file `source/{branch}/image-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"w\":1024,\"h\":1024,\n"
+    "       \"layers\":[\n"
+    "         {\"id\":\"l1\",\"name\":\"paint\",\"type\":\"raster\",\"src\":\"image-{id}/l1.png\",\"opacity\":1,\"blend\":\"normal|multiply|screen|overlay\",\"visible\":true},\n"
+    "         {\"id\":\"m1\",\"name\":\"mask\",\"type\":\"alpha-mask\",\"target\":\"l1\",\"src\":\"image-{id}/m1.png\"},\n"
+    "         {\"id\":\"g1\",\"name\":\"grade\",\"type\":\"gradient-map\",\"target\":\"l1\",\"stops\":[{\"t\":0,\"color\":\"#000\"},{\"t\":1,\"color\":\"#fff\"}]}\n"
+    "       ],\n"
+    "       \"selection\":{\"type\":\"lasso\",\"points\":[[x,y],[x,y]]}}\n"
+    "  Array order is z-order (later = on top). A gradient-map layer maps its target's luminance through "
+    "the color `stops` (t in 0..1). An alpha-mask layer multiplies its target's alpha by the mask's luminance."
+)
+
+_PIXEL_AUTHORING = (
+    "This is a PIXEL editor. Pixels can be DECLARED by data/code (Data-Pixels style) or drawn manually; "
+    "you produce the data. In ASCII mode the palette entries are glyphs instead of colors.\n"
+    "  Write the canonical file `source/{branch}/pixel-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"w\":32,\"h\":32,\"mode\":\"code|draw\",\"scale\":12,\n"
+    "       \"palette\":[\"#00000000\",\"#1a1c2c\",\"#5d275d\"],   (or [\" \",\".\",\"#\",\"@\"] for ASCII)\n"
+    "       \"pixels\":\"<w*h palette indices, row-major, as a JSON array OR a compact run-length string 'count:index,...'>\",\n"
+    "       \"code\":\"(x,y)=>/* return a palette index */ ((x^y)&7)\"}\n"
+    "  In `mode:\"code\"` the `code` arrow-function is evaluated per cell (x,y from 0) and must return a "
+    "palette index; in `mode:\"draw\"` the `pixels` grid is authoritative. Index 0 is conventionally "
+    "transparent/empty. Keep w*h reasonable (<=256x256)."
+)
+
+_VOXEL_AUTHORING = (
+    "This is a VOXEL editor — voxels on a fixed integer grid (a Minecraft/MagicaVoxel-style block scene). "
+    "It reuses the 3D editor's materials but the geometry is voxels only; do NOT emit free meshes or "
+    "primitives. The deliverable is the voxel list + palette.\n"
+    "  Write the canonical file `source/{branch}/voxel-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"grid\":[64,64,64],\"voxelSize\":1,\n"
+    "       \"palette\":[{\"color\":\"#aabbcc\",\"mode\":\"solid|glass|metal|plastic\",\"rough\":0.5,\"metal\":0,\"trans\":0}],\n"
+    "       \"voxels\":[[x,y,z,paletteIndex]],   (sparse; only filled cells. A compact run string is also accepted: 'x,y,z,idx;...')\n"
+    "       \"blob\":null,\"fur\":null,\"cloth\":null}\n"
+    "  Coordinates are integer grid cells 0..grid-1 (y-up). Build the subject by filling cells and assigning "
+    "each a palette index. `blob`/`fur`/`cloth` mirror the 3D editor's optional effects and may stay null."
+)
+
+_SYNTH_AUTHORING = (
+    "This is a SYNTH / percussion patch (WebAudio). The deliverable is a patch the tool renders to audio; "
+    "do NOT write an audio file yourself — describe the synth, the tool renders the .wav.\n"
+    "  Write the canonical file `source/{branch}/synth-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\n"
+    "       \"voice\":{\"osc\":[{\"type\":\"sine|saw|square|triangle|noise\",\"detune\":0,\"gain\":0.6}],\n"
+    "                 \"filter\":{\"type\":\"lowpass|highpass|bandpass\",\"cutoff\":1200,\"q\":1},\n"
+    "                 \"amp\":{\"a\":0.01,\"d\":0.2,\"s\":0.5,\"r\":0.3},\n"
+    "                 \"fx\":[{\"type\":\"reverb|delay|drive\",\"wet\":0.2}]},\n"
+    "       \"percussion\":{\"mode\":false,\"pitchEnv\":[200,40],\"noise\":0.5},\n"
+    "       \"render\":{\"note\":\"C3\",\"durationMs\":800}}\n"
+    "  ADSR times are seconds. For percussion set `percussion.mode:true` (a kick = noise + a fast downward "
+    "`pitchEnv`; a snare = noise-heavy + short decay). `render` is the one-shot the bake produces."
+)
+
+_MUSIC_AUTHORING = (
+    "This is an ALGORITHMIC MUSIC maker — a sample sequencer using Tidal/Strudel-style mini-notation. "
+    "The deliverable is the song spec; the tool renders the audio.\n"
+    "  Write the canonical file `source/{branch}/music-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"bpm\":120,\"swing\":0,\"bars\":4,\n"
+    "       \"samples\":[{\"id\":\"bd\",\"src\":\"<wired audio asset path, or synth:<node id>>\"}],\n"
+    "       \"tracks\":[{\"name\":\"drums\",\"pattern\":\"bd ~ sd ~ bd bd sd ~\",\"gain\":0.9},\n"
+    "                   {\"name\":\"bass\",\"pattern\":\"c2 ~ eb2 g2\",\"instrument\":\"synth:<node id>\"}]}\n"
+    "  In a `pattern` string, tokens are sample ids (or note names for an `instrument`), `~` is a rest, "
+    "and the tokens are spread evenly across one bar (space-separated steps). Samples must reference a "
+    "wired audio asset or a wired synth node — do NOT fabricate sample sources."
+)
+
+_MATERIAL_AUTHORING = (
+    "This is MATERIAL LAB — a 2D surface of UI ELEMENTS, each wearing a live SHADER MATERIAL (Apple "
+    "Liquid Glass and friends) that refracts the backdrop and reacts to the mouse / nearby elements / "
+    "what is behind it. You author the elements + their material params + reactivity; the tool renders "
+    "the WebGL. Do NOT write CSS backdrop-filter — the material IS a refraction shader.\n"
+    "  Write the canonical file `source/{branch}/material-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"canvasW\":1200,\"canvasH\":800,\"background\":\"#111\",\n"
+    "       \"elements\":[{\"id\":\"E1\",\"name\":\"card\",\"shape\":\"squircle|rounded-rect|circle|path\",\n"
+    "         \"rect\":[x,y,w,h],\"radius\":28,\"z\":0,\n"
+    "         \"content\":{\"kind\":\"asset|text|color\",\"assetId\":\"<wired node id>\",\"text\":\"...\",\"color\":\"#fff\"},\n"
+    "         \"material\":{\"type\":\"liquid-glass|frosted|holographic|metal|chrome|plastic\",\"ior\":1.5,\"thickness\":12,\n"
+    "                     \"profile\":\"squircle|convex|concave|lip\",\"refraction\":0.7,\"dispersion\":0.3,\"frost\":0.2,\"specular\":0.6,\"tint\":\"#ffffff22\"},\n"
+    "         \"reactivity\":{\"mouse\":true,\"neighbors\":true,\"backdrop\":true,\"mouseDrives\":[\"lightDir\",\"refraction\"],\"neighborRadius\":120}}]}\n"
+    "  `profile:\"squircle\"` (Apple's preference) gives the smoothest bezel. `refraction` scales the "
+    "backdrop displacement, `dispersion` the edge chromatic aberration, `frost` the blur, `specular` the "
+    "rim light. Elements refer to wired asset nodes by id for their content."
+)
+
+_MM_AUTHORING = (
+    "This is the INTERACTIVE MULTIMEDIA COMPOSER — a stack of LAYERS where each layer = "
+    "{content + positioning + trigger + effects}. You author the whole reactive graph in JSON; the tool "
+    "runs it per frame. Content that is an asset MUST reference a node wired into this composer (like the "
+    "plain composer) — do not fabricate assetIds.\n"
+    "  Write the canonical file `source/{branch}/mm-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"canvasW\":1280,\"canvasH\":720,\"background\":\"#000\",\"inputs\":{\"camera\":false,\"mic\":false},\n"
+    "       \"layers\":[{\"id\":\"L1\",\"name\":\"...\",\"z\":0,\"visible\":true,\n"
+    "         \"content\":{\"kind\":\"asset|text|shape|generator\",\"assetId\":\"<wired node>\",\"text\":\"...\"},\n"
+    "         \"positioning\":{\"mode\":\"single|grid|instances|physics|drawn|rope|camera-feed|face-3d\", ...mode params },\n"
+    "         \"trigger\":{\"source\":\"none|mouse-click|hover|position|timeline|audio|camera\", ...source params,\n"
+    "             \"impacts\":[{\"target\":\"<layer id>\",\"param\":\"opacity|scale|position|effect.intensity\",\"map\":\"linear|threshold\",\"range\":[0,1]}]},\n"
+    "         \"effects\":{\"stack\":[{\"type\":\"pixel-mosh|chromatic-aberration|particle-float|halftone|ascii|displace|bloom|shader\",\"params\":{},\"glsl\":\"<optional custom fragment shader>\",\"intensity\":1}]}\n"
+    "       }]}\n"
+    "  positioning modes: grid {cols,rows,placement:'fixed|random'}; instances {source:'mouse|random|interaction',count,physics:true}; "
+    "physics {engine:'matter',gravity:[0,1]}; drawn {paths:[[x,y]]}; rope {anchors,segments,stiffness}; "
+    "camera-feed {detector:'hand|face|object|ocr',source:'camera|video:<assetId>'}; face-3d {meshId:'<voxel/spline node>'}. "
+    "trigger.audio {sourceId:'<synth/music/audio node>',feature:'loudness|pitch|band'}; trigger.camera {detector,event:'present|gesture|count'}; "
+    "trigger.timeline {keys:[{t,...}],loop:true}. A trigger's `impacts` route its value onto OTHER layers' params — "
+    "that is how layers cross-affect. Effects are a post-process chain (shader-lab taxonomy)."
+)
+
 # Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
 # An `asset` node carries an `assetKind` (see KINDS["asset"].inputs.assetKind enum);
 # "Write your <assetKind> output to <path>" names the medium but leaks no schema, so
@@ -2990,6 +3267,86 @@ KIND_IO = {
             {"port": "edit", "label": "Edit 3D scene", "tags": ["text-gen", "asset-gen", "3d"],
               "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json",
               "authoring": _SPLINE_AUTHORING},
+        ],
+    },
+    "font-editor": {
+        "provides": [{"port": "out", "label": "Font", "tags": ["asset", "font"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "otf"}}],
+        "accepts":  [
+            {"port": "in", "label": "Base font", "tags": ["asset", "font"], "ingest": "context"},
+            {"port": "edit", "label": "Edit font", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/font-{id}.json",
+              "authoring": _FONT_AUTHORING},
+        ],
+    },
+    "image-editor": {
+        "provides": [{"port": "out", "label": "Baked image", "tags": ["asset", "remixable", "blendable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "png"}}],
+        "accepts":  [
+            {"port": "in", "label": "Layer", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Edit image", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/image-{id}.json",
+              "authoring": _IMAGE_AUTHORING},
+        ],
+    },
+    "pixel-editor": {
+        "provides": [{"port": "out", "label": "Baked pixels", "tags": ["asset", "remixable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "png"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit pixels", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/pixel-{id}.json",
+              "authoring": _PIXEL_AUTHORING},
+        ],
+    },
+    "voxel-3d": {
+        "provides": [{"port": "out", "label": "Voxel scene", "tags": ["asset", "3d"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "json"}}],
+        "accepts":  [
+            {"port": "in", "label": "Model / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/voxel-{id}.json",
+              "authoring": _VOXEL_AUTHORING},
+            {"port": "edit", "label": "Edit voxels", "tags": ["text-gen", "asset-gen", "3d"],
+              "ingest": "editTarget", "canonical": "source/{branch}/voxel-{id}.json",
+              "authoring": _VOXEL_AUTHORING},
+        ],
+    },
+    "synth": {
+        "provides": [{"port": "out", "label": "Sound", "tags": ["asset", "audio"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "wav"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit patch", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/synth-{id}.json",
+              "authoring": _SYNTH_AUTHORING},
+        ],
+    },
+    "music": {
+        "provides": [{"port": "out", "label": "Track", "tags": ["asset", "audio"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "wav"}}],
+        "accepts":  [
+            {"port": "in", "label": "Sample / instrument", "tags": ["asset", "audio"], "ingest": "context"},
+            {"port": "edit", "label": "Edit song", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/music-{id}.json",
+              "authoring": _MUSIC_AUTHORING},
+        ],
+    },
+    "material-lab": {
+        "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
+        "accepts":  [
+            {"port": "in", "label": "Element content", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Edit materials", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/material-{id}.json",
+              "authoring": _MATERIAL_AUTHORING},
+        ],
+    },
+    "mm-composer": {
+        "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
+        "accepts":  [
+            {"port": "in", "label": "Layer content", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Edit composition", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/mm-{id}.json",
+              "authoring": _MM_AUTHORING},
         ],
     },
 }

@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Voxel 3D Editor</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #16181f; --panel-2: #1d2029; --line: #2a2e3a;
+    --text: #e7e9ef; --muted: #9aa0b0; --accent: #6c7bff; --accent-2: #38e0c8;
+    --shadow: 0 8px 30px rgba(0,0,0,.45);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; outline: none; }
+
+  .toolbar {
+    position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 5px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 7px; box-shadow: var(--shadow); z-index: 10;
+  }
+  .tool {
+    width: 38px; height: 38px; border-radius: 9px; border: 1px solid transparent;
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: grid; place-items: center; transition: .15s;
+  }
+  .tool:hover { background: var(--panel-2); color: var(--text); }
+  .tool.active { background: var(--accent); color: #fff; }
+  .tool svg { width: 19px; height: 19px; }
+  .sep { height: 1px; background: var(--line); margin: 3px 2px; }
+
+  .panel {
+    position: fixed; right: 14px; top: 14px; bottom: 14px; width: 280px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); z-index: 10; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel header {
+    padding: 13px 16px 10px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 10px var(--accent-2); }
+  .panel header h1 { font-size: 13px; margin: 0; letter-spacing: .3px; font-weight: 600; }
+  .panel header small { color: var(--muted); font-size: 11px; margin-left: auto; }
+  .scroll { overflow-y: auto; padding: 4px 14px 18px; flex: 1; }
+  .scroll::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+
+  .group { margin-top: 14px; }
+  .group > .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .group > .label .tag { color: var(--accent-2); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    flex: 1 1 auto; min-width: 0; padding: 7px 6px; font-size: 11.5px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    cursor: pointer; transition: .15s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: #fff; }
+  .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.full { flex-basis: 100%; }
+  .btn.ghost { background: transparent; }
+  .btn.warn:hover { border-color: #ff5d6c; color: #ff8a93; }
+
+  .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 9px 0; }
+  .field label { font-size: 11.5px; color: var(--muted); }
+  .field .val { font-size: 11px; min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 4px; background: var(--line); border-radius: 4px; flex: 1; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  select, input[type=color] { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 5px 7px; font-size: 11.5px; }
+  input[type=color] { width: 38px; height: 26px; padding: 2px; cursor: pointer; }
+  select { flex: 1; }
+
+  .pal-list { display: flex; flex-direction: column; gap: 5px; }
+  .pal-row { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; transition: .12s; }
+  .pal-row.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .pal-row:hover { border-color: var(--accent); }
+  .pal-chip { width: 22px; height: 22px; border-radius: 6px; border: 1px solid #ffffff20; flex: 0 0 auto; }
+  .pal-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pal-meta b { color: var(--text); font-weight: 600; }
+  .pal-idx { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .swatch { aspect-ratio: 1; border-radius: 7px; border: 1px solid #ffffff14; cursor: pointer; transition: transform .12s; }
+  .swatch:hover { transform: scale(1.12); }
+  .palette-name { font-size: 10.5px; color: var(--muted); margin: 10px 0 6px; display: flex; align-items: center; gap: 6px; }
+  .palette-name::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; line-height: 1.6; }
+  .hint {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: #00000088; backdrop-filter: blur(8px); border: 1px solid var(--line);
+    color: var(--muted); font-size: 11px; padding: 7px 14px; border-radius: 999px; z-index: 9; display: flex; gap: 13px;
+  }
+  .hint b { color: var(--text); font-weight: 600; }
+  .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; }
+  .badge b { color: var(--accent-2); }
+  #flash { transition: opacity .3s; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="toolbar" id="toolbar">
+  <button class="tool active" data-tool="add" title="Add voxel (A)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M12 6v5M9.5 8.5h5" stroke-width="1.2"/></svg></button>
+  <button class="tool" data-tool="remove" title="Remove voxel (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M9.5 8.5l5 0" stroke-width="1.4"/></svg></button>
+  <button class="tool" data-tool="paint" title="Paint voxel (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l8-8 5 5-8 8z"/><path d="M5 11l-1 6 6-1"/><path d="M3 21h7"/></svg></button>
+  <button class="tool" data-tool="box" title="Box fill (B) — click two corners"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h7v7H4z"/><path d="M13 13h7v7h-7z"/><path d="M11 11l2 2" stroke-dasharray="2 2"/></svg></button>
+  <div class="sep"></div>
+  <button class="tool" data-tool="orbit" title="Orbit only (no edit) (O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3.2"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(28 12 12)"/></svg></button>
+</div>
+
+<div class="panel">
+  <header><span class="dot"></span><h1>Voxel Inspector</h1><small id="save-state" style="margin-left:auto;color:var(--accent-2);opacity:.35;transition:opacity .3s">autosave on</small><small id="count" style="margin-left:8px">0 voxels</small></header>
+  <div class="scroll" id="scroll">
+
+    <div class="group" style="margin-top:8px">
+      <div class="label">Palette <span class="tag">material per slot</span></div>
+      <div class="pal-list" id="pal-list"></div>
+      <div class="row" style="margin-top:7px">
+        <button class="btn ghost" id="pal-add">＋ Add color</button>
+        <button class="btn ghost warn" id="pal-del">Delete slot</button>
+      </div>
+      <div class="empty" style="padding:6px 4px;font-size:11px">The active slot (highlighted) is what <b>Add</b> &amp; <b>Paint</b> place. Edit its color &amp; material below.</div>
+    </div>
+
+    <div class="group">
+      <div class="label">Active slot <span class="tag" id="slot-tag">#0</span></div>
+      <div class="field"><label>Mode</label>
+        <select id="m-mode">
+          <option value="solid">Solid</option>
+          <option value="glass">Glass</option>
+          <option value="metal">Metal</option>
+          <option value="plastic">Plastic</option>
+        </select>
+      </div>
+      <div class="field"><label>Color</label><input type="color" id="m-color" value="#6c7bff"/></div>
+      <div class="field"><label>Roughness</label><input type="range" id="m-rough" min="0" max="1" step="0.01" value="0.5"/><span class="val" id="m-rough-v">0.50</span></div>
+      <div class="field"><label>Metalness</label><input type="range" id="m-metal" min="0" max="1" step="0.01" value="0"/><span class="val" id="m-metal-v">0.00</span></div>
+      <div class="field"><label>Transmission</label><input type="range" id="m-trans" min="0" max="1" step="0.01" value="0"/><span class="val" id="m-trans-v">0.00</span></div>
+    </div>
+
+    <div class="group">
+      <div class="label">Curated palettes</div>
+      <div id="palettes"></div>
+    </div>
+
+    <div class="group">
+      <div class="label">Grid</div>
+      <div class="field"><label>Size</label>
+        <select id="grid-size">
+          <option value="16">16³</option>
+          <option value="24">24³</option>
+          <option value="32" selected>32³</option>
+          <option value="48">48³</option>
+          <option value="64">64³</option>
+        </select>
+      </div>
+      <div class="field"><label>Show grid floor</label><input type="checkbox" id="show-grid" checked/></div>
+      <div class="row" style="margin-top:4px"><button class="btn ghost full warn" id="clear-all">Clear all voxels</button></div>
+    </div>
+
+    <div class="group">
+      <div class="label">Lighting &amp; environment</div>
+      <div class="field"><label>Environment</label><input type="range" id="l-env" min="0" max="3" step="0.05" value="1"/><span class="val" id="l-env-v">1.0</span></div>
+      <div class="field"><label>Key light</label><input type="range" id="l-key" min="0" max="5" step="0.05" value="2"/><span class="val" id="l-key-v">2.0</span></div>
+      <div class="field"><label>Soft shadows</label><input type="checkbox" id="l-shadow" checked/></div>
+      <div class="field"><label>Background</label><input type="color" id="l-bg" value="#e7e4fb"/></div>
+      <div class="field"><label>Preset</label>
+        <select id="l-preset"><option value="studio">Studio soft</option><option value="sunset">Warm sunset</option><option value="cool">Cool dusk</option><option value="noir">Noir</option></select>
+      </div>
+      <div class="field"><label>Camera</label>
+        <select id="cam-mode"><option value="persp">Perspective</option><option value="ortho">Orthographic</option></select>
+      </div>
+    </div>
+
+    <div class="group"><div class="row"><button class="btn ghost full" id="export-json">Export voxel JSON</button></div></div>
+
+  </div>
+</div>
+
+<div class="badge">Voxel editor · <b id="fps">–</b></div>
+<div class="hint">
+  <span><b>Click</b> place</span><span><b>A/X/P/B</b> add·rem·paint·box</span><span><b>Drag</b> orbit</span><span><b>1-9</b> slot</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.163.0",
+    "three/addons/": "https://esm.sh/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const $ = s => document.querySelector(s);
+
+// ── Renderer / scene / cameras (reused from spline3d) ──────────────────────
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+function makeGradientBg(hex) {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 256; const x = c.getContext('2d');
+  const base = new THREE.Color(hex);
+  const top = base.clone().multiplyScalar(0.94);
+  const bot = base.clone().lerp(new THREE.Color('#ffffff'), 0.32);
+  const g = x.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, '#' + top.getHexString()); g.addColorStop(1, '#' + bot.getHexString());
+  x.fillStyle = g; x.fillRect(0, 0, 16, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+let bgHex = '#e7e4fb';
+const bgColor = new THREE.Color('#d9d4f5');
+scene.background = makeGradientBg(bgHex);
+
+let camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(28, 24, 34);
+const orthoCam = new THREE.OrthographicCamera(-24, 24, 16, -16, 0.1, 500);
+orthoCam.position.copy(camera.position);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 1.0;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0xd9d4f5, 0.85); scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(30, 50, 30); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 1; key.shadow.camera.far = 200;
+key.shadow.camera.left = -60; key.shadow.camera.right = 60; key.shadow.camera.top = 60; key.shadow.camera.bottom = -60;
+key.shadow.bias = -0.0004; key.shadow.radius = 8; scene.add(key);
+const fill = new THREE.DirectionalLight(0x9bb0ff, 0.5); fill.position.set(-35, 20, -25); scene.add(fill);
+
+// ── Grid state ─────────────────────────────────────────────────────────────
+// The world: a fixed integer grid, y-up. A voxel cell (x,y,z) with integer
+// coords 0..G-1 occupies the world box [x..x+1] in voxel units (centred so the
+// grid is symmetric around the origin in XZ, and sits ON the ground plane).
+let G = 32;            // grid dimension (cube)
+let VOXEL = 1;         // voxelSize (world units per cell)
+let voxels = new Map();        // "x,y,z" -> paletteIndex
+let palette = [];               // [{color,mode,rough,metal,trans}]
+let activeSlot = 0;
+
+const key3 = (x, y, z) => x + ',' + y + ',' + z;
+const inBounds = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < G && y < G && z < G;
+
+// World transform: place the grid so its XZ footprint is centred on origin and
+// y=0 is the ground. Cell (x,y,z) lower corner → world (x-G/2, y, z-G/2)*VOXEL.
+const FLOOR = 0;
+function cellToWorldCenter(x, y, z, out) {
+  out = out || new THREE.Vector3();
+  return out.set((x - G / 2 + 0.5) * VOXEL, (y + 0.5) * VOXEL + FLOOR, (z - G / 2 + 0.5) * VOXEL);
+}
+function worldOrigin() { return new THREE.Vector3(-G / 2 * VOXEL, FLOOR, -G / 2 * VOXEL); }
+
+// ── Ground + grid helpers ───────────────────────────────────────────────────
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.ShadowMaterial({ opacity: 0.26 }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = FLOOR - 0.001; ground.receiveShadow = true; scene.add(ground);
+// Invisible raycast plane (sits exactly on the floor) for placing on empty grid.
+const planeGeo = new THREE.PlaneGeometry(1, 1);
+const groundPlane = new THREE.Mesh(planeGeo, new THREE.MeshBasicMaterial({ visible: false }));
+groundPlane.rotation.x = -Math.PI / 2; groundPlane.position.y = FLOOR; scene.add(groundPlane);
+
+let gridHelper = null;
+function rebuildGridHelper() {
+  if (gridHelper) { scene.remove(gridHelper); gridHelper.geometry.dispose(); gridHelper.material.dispose(); gridHelper = null; }
+  if (!$('#show-grid').checked) return;
+  const span = G * VOXEL;
+  gridHelper = new THREE.GridHelper(span, G, 0xb9b2e0, 0xcdc8ee);
+  gridHelper.position.y = FLOOR + 0.001;
+  gridHelper.material.transparent = true; gridHelper.material.opacity = 0.5;
+  scene.add(gridHelper);
+}
+function fitGroundPlane() { groundPlane.scale.set(G * VOXEL, G * VOXEL, 1); }
+
+// ── Controls (reused) ────────────────────────────────────────────────────────
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+orbit.maxPolarAngle = Math.PI * 0.495;
+function recenterTarget() { orbit.target.set(0, Math.min(G, 8) * VOXEL * 0.4, 0); }
+recenterTarget();
+
+// ── Materials (reused MODE map + applyMode logic from spline3d) ──────────────
+function physicalMat(hex) {
+  return new THREE.MeshPhysicalMaterial({ color: new THREE.Color(hex), roughness: 0.5, metalness: 0, clearcoat: 0, envMapIntensity: 1.1 });
+}
+const MODE = {
+  solid:   (m, e) => Object.assign(m, { transmission: 0, metalness: e.metal ?? 0, roughness: e.rough ?? 0.5, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true }),
+  glass:   (m, e) => Object.assign(m, { transmission: e.trans != null ? e.trans : 1, metalness: 0, roughness: e.rough ?? 0.05, ior: 1.5, thickness: VOXEL, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true, envMapIntensity: 0.85 }),
+  metal:   (m, e) => Object.assign(m, { transmission: 0, metalness: 1, roughness: e.rough ?? 0.2, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true }),
+  plastic: (m, e) => Object.assign(m, { transmission: 0, metalness: e.metal ?? 0, roughness: e.rough ?? 0.4, clearcoat: 0.8, clearcoatRoughness: 0.2, transparent: false, opacity: 1, depthWrite: true }),
+};
+// Build a material for a palette entry (same applyMode shape as spline3d).
+function matForEntry(e) {
+  const m = physicalMat(e.color || '#cccccc');
+  (MODE[e.mode] || MODE.solid)(m, e);
+  m.needsUpdate = true;
+  return m;
+}
+
+// ── Meshing — one merged mesh per palette slot (so each can carry its own ─────
+// material/material-mode). Greedy-ish: we just merge per-cell BoxGeometries into
+// one buffer per slot, rebuilt on every edit. Cheap for these grid sizes and
+// gives proper per-material shading (glass/metal read correctly).
+const meshes = new Map();   // paletteIndex -> THREE.Mesh
+const unitBox = new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL);
+function clearMeshes() {
+  for (const m of meshes.values()) { scene.remove(m); m.geometry.dispose(); }
+  meshes.clear();
+}
+const _m4 = new THREE.Matrix4(), _v = new THREE.Vector3();
+function remesh() {
+  clearMeshes();
+  // bucket cells by palette index
+  const buckets = new Map();
+  for (const [k, idx] of voxels) {
+    const i = (idx >= 0 && idx < palette.length) ? idx : 0;
+    let arr = buckets.get(i); if (!arr) { arr = []; buckets.set(i, arr); }
+    arr.push(k);
+  }
+  for (const [idx, keys] of buckets) {
+    const geos = [];
+    for (const k of keys) {
+      const [x, y, z] = k.split(',').map(Number);
+      cellToWorldCenter(x, y, z, _v);
+      const g = new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL);
+      g.translate(_v.x, _v.y, _v.z);
+      geos.push(g);
+    }
+    if (!geos.length) continue;
+    const merged = mergeGeometries(geos, false);
+    geos.forEach(g => g.dispose());
+    const e = palette[idx] || palette[0] || { color: '#cccccc', mode: 'solid' };
+    const mesh = new THREE.Mesh(merged, matForEntry(e));
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.userData.slot = idx;
+    scene.add(mesh); meshes.set(idx, mesh);
+  }
+  refreshCount();
+}
+// Lightweight material refresh when only a palette entry's look changes (no
+// topology change) — avoids a full remesh.
+function refreshSlotMaterial(idx) {
+  const mesh = meshes.get(idx); if (!mesh) return;
+  const e = palette[idx]; if (!e) return;
+  mesh.material.dispose(); mesh.material = matForEntry(e);
+}
+
+// ── Editing ──────────────────────────────────────────────────────────────────
+function setVoxel(x, y, z, idx) {
+  if (!inBounds(x, y, z)) return false;
+  voxels.set(key3(x, y, z), idx); return true;
+}
+function delVoxel(x, y, z) { return voxels.delete(key3(x, y, z)); }
+function getVoxel(x, y, z) { const v = voxels.get(key3(x, y, z)); return v === undefined ? -1 : v; }
+
+// Hover highlight box
+const hoverMat = new THREE.MeshBasicMaterial({ color: 0x6c7bff, transparent: true, opacity: 0.28, depthWrite: false });
+const hoverEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL)), new THREE.LineBasicMaterial({ color: 0x6c7bff }));
+const hoverBox = new THREE.Mesh(new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL), hoverMat);
+hoverBox.add(hoverEdge); hoverBox.visible = false; scene.add(hoverBox);
+
+const ray = new THREE.Raycaster(); const ptr = new THREE.Vector2();
+let tool = 'add';
+let boxAnchor = null;   // first corner for box fill
+
+// Raycast → returns { cell:[x,y,z], place:[x,y,z], face } where `cell` is the
+// hovered filled voxel and `place` is the adjacent empty cell (face-based), OR a
+// ground-plane hit mapped to a grid cell at y=0.
+function pick(e) {
+  ptr.x = (e.clientX / innerWidth) * 2 - 1; ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const meshList = Array.from(meshes.values());
+  const hit = ray.intersectObjects(meshList, false)[0];
+  if (hit) {
+    // World point → cell. Step slightly INTO the box along -normal to find the
+    // hovered cell, and slightly OUT along +normal to find the adjacent cell.
+    const n = hit.face.normal.clone(); // box geo normals are axis-aligned (no rotation on mesh)
+    const p = hit.point;
+    const o = worldOrigin();
+    const toCell = (pt) => [
+      Math.floor((pt.x - o.x) / VOXEL),
+      Math.floor((pt.y - o.y) / VOXEL),
+      Math.floor((pt.z - o.z) / VOXEL),
+    ];
+    const inside = p.clone().addScaledVector(n, -VOXEL * 0.5);
+    const outside = p.clone().addScaledVector(n, VOXEL * 0.5);
+    return { cell: toCell(inside), place: toCell(outside) };
+  }
+  // Ground plane fallback (place on the floor, y=0)
+  const gh = ray.intersectObject(groundPlane, false)[0];
+  if (gh) {
+    const o = worldOrigin();
+    const x = Math.floor((gh.point.x - o.x) / VOXEL);
+    const z = Math.floor((gh.point.z - o.z) / VOXEL);
+    return { cell: [x, 0, z], place: [x, 0, z] };
+  }
+  return null;
+}
+
+function updateHover(e) {
+  if (tool === 'orbit') { hoverBox.visible = false; return; }
+  const r = pick(e);
+  if (!r) { hoverBox.visible = false; return; }
+  let target = (tool === 'remove' || tool === 'paint') ? r.cell : r.place;
+  if (tool === 'box' && boxAnchor) target = r.place; // box uses place cells
+  if (!inBounds(...target)) { hoverBox.visible = false; return; }
+  hoverBox.visible = true;
+  cellToWorldCenter(target[0], target[1], target[2], _v);
+  hoverBox.position.copy(_v);
+  const col = tool === 'remove' ? 0xff5d6c : tool === 'paint' ? 0x38e0c8 : 0x6c7bff;
+  hoverMat.color.setHex(col); hoverEdge.material.color.setHex(col);
+}
+
+let down = null;
+renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+renderer.domElement.addEventListener('pointermove', e => updateHover(e));
+renderer.domElement.addEventListener('pointerleave', () => { hoverBox.visible = false; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
+  if (moved > 5 || tool === 'orbit') return;   // dragging = orbit, not edit
+  applyEdit(e);
+});
+
+function applyEdit(e) {
+  const r = pick(e); if (!r) return;
+  let changed = false;
+  if (tool === 'add') {
+    if (setVoxel(...r.place, activeSlot)) changed = true;
+  } else if (tool === 'remove') {
+    if (delVoxel(...r.cell)) changed = true;
+  } else if (tool === 'paint') {
+    if (getVoxel(...r.cell) >= 0) { setVoxel(...r.cell, activeSlot); changed = true; }
+  } else if (tool === 'box') {
+    const c = (getVoxel(...r.cell) >= 0) ? r.place : r.cell; // first click anchors
+    if (!boxAnchor) { boxAnchor = r.place; flash('Box: click the opposite corner'); }
+    else {
+      const a = boxAnchor, b = r.place;
+      const [x0, x1] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])];
+      const [y0, y1] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])];
+      const [z0, z1] = [Math.min(a[2], b[2]), Math.max(a[2], b[2])];
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) { if (setVoxel(x, y, z, activeSlot)) changed = true; }
+      boxAnchor = null;
+    }
+  }
+  if (changed) { remesh(); scheduleEmit(); }
+}
+
+// ── Palette UI ────────────────────────────────────────────────────────────────
+function defaultPalette() {
+  return [
+    { color: '#6c7bff', mode: 'solid', rough: 0.5, metal: 0, trans: 0 },
+    { color: '#38e0c8', mode: 'solid', rough: 0.5, metal: 0, trans: 0 },
+    { color: '#f472b6', mode: 'plastic', rough: 0.4, metal: 0, trans: 0 },
+    { color: '#ffd166', mode: 'metal', rough: 0.25, metal: 1, trans: 0 },
+  ];
+}
+function renderPalette() {
+  const wrap = $('#pal-list'); wrap.innerHTML = '';
+  palette.forEach((e, i) => {
+    const row = document.createElement('div');
+    row.className = 'pal-row' + (i === activeSlot ? ' sel' : '');
+    const chip = document.createElement('div'); chip.className = 'pal-chip'; chip.style.background = e.color;
+    const meta = document.createElement('div'); meta.className = 'pal-meta';
+    meta.innerHTML = '<b>' + e.color + '</b> · ' + e.mode;
+    const idx = document.createElement('div'); idx.className = 'pal-idx'; idx.textContent = '#' + i;
+    row.appendChild(chip); row.appendChild(meta); row.appendChild(idx);
+    row.addEventListener('click', () => { activeSlot = i; syncSlotInspector(); renderPalette(); });
+    wrap.appendChild(row);
+  });
+  $('#slot-tag').textContent = '#' + activeSlot;
+}
+function syncSlotInspector() {
+  const e = palette[activeSlot]; if (!e) return;
+  $('#m-mode').value = e.mode || 'solid';
+  $('#m-color').value = e.color || '#cccccc';
+  const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
+  set('#m-rough', e.rough ?? 0.5); set('#m-metal', e.metal ?? 0); set('#m-trans', e.trans ?? 0);
+  $('#slot-tag').textContent = '#' + activeSlot;
+}
+function editSlot(patch) {
+  const e = palette[activeSlot]; if (!e) return;
+  Object.assign(e, patch);
+  refreshSlotMaterial(activeSlot);
+  renderPalette();
+  scheduleEmit();
+}
+
+$('#m-mode').addEventListener('change', ev => editSlot({ mode: ev.target.value }));
+$('#m-color').addEventListener('input', ev => editSlot({ color: ev.target.value }));
+[['#m-rough', 'rough'], ['#m-metal', 'metal'], ['#m-trans', 'trans']].forEach(([sel, key]) => {
+  $(sel).addEventListener('input', ev => { const v = parseFloat(ev.target.value); $(sel + '-v').textContent = v.toFixed(2); editSlot({ [key]: v }); });
+});
+$('#pal-add').addEventListener('click', () => {
+  palette.push({ color: '#' + new THREE.Color().setHSL(Math.random(), 0.6, 0.6).getHexString(), mode: 'solid', rough: 0.5, metal: 0, trans: 0 });
+  activeSlot = palette.length - 1; renderPalette(); syncSlotInspector(); scheduleEmit();
+});
+$('#pal-del').addEventListener('click', () => {
+  if (palette.length <= 1) { flash('Keep at least one slot'); return; }
+  const removed = activeSlot;
+  palette.splice(removed, 1);
+  // remap voxels: drop ones that pointed at removed, shift higher indices down.
+  const next = new Map();
+  for (const [k, idx] of voxels) {
+    if (idx === removed) continue;
+    next.set(k, idx > removed ? idx - 1 : idx);
+  }
+  voxels = next;
+  activeSlot = Math.min(activeSlot, palette.length - 1);
+  renderPalette(); syncSlotInspector(); remesh(); scheduleEmit();
+});
+
+// Curated palettes (reused list from spline3d) — click a swatch sets active slot color.
+const PALETTES = { Aurora:['#6c7bff','#38e0c8','#a78bfa','#22d3ee','#f472b6','#818cf8'], Sunset:['#ff7e5f','#feb47b','#ff5d6c','#ffd166','#ef476f','#ffb4a2'], Mint:['#2dd4bf','#34d399','#a7f3d0','#10b981','#5eead4','#bbf7d0'], Candy:['#f472b6','#c084fc','#60a5fa','#fb7185','#facc15','#4ade80'], Mono:['#f8fafc','#cbd5e1','#94a3b8','#64748b','#334155','#0f172a'] };
+const palWrap = $('#palettes');
+Object.entries(PALETTES).forEach(([name, cols]) => {
+  const t = document.createElement('div'); t.className = 'palette-name'; t.textContent = name;
+  const grid = document.createElement('div'); grid.className = 'swatches';
+  cols.forEach(hex => { const sw = document.createElement('div'); sw.className = 'swatch'; sw.style.background = hex; sw.title = hex;
+    sw.addEventListener('click', () => { editSlot({ color: hex }); $('#m-color').value = hex; }); grid.appendChild(sw); });
+  palWrap.appendChild(t); palWrap.appendChild(grid);
+});
+
+// ── Grid + scene controls ──────────────────────────────────────────────────
+$('#grid-size').addEventListener('change', ev => {
+  const ng = parseInt(ev.target.value);
+  // keep voxels that still fit; recenter / rebuild helpers
+  G = ng;
+  const next = new Map();
+  for (const [k, idx] of voxels) { const [x, y, z] = k.split(',').map(Number); if (inBounds(x, y, z)) next.set(k, idx); }
+  voxels = next;
+  rebuildGridHelper(); fitGroundPlane(); recenterTarget(); remesh(); scheduleEmit();
+});
+$('#show-grid').addEventListener('change', rebuildGridHelper);
+$('#clear-all').addEventListener('click', () => { voxels.clear(); boxAnchor = null; remesh(); scheduleEmit(); flash('Cleared'); });
+
+// Lighting (reused from spline3d)
+$('#l-env').addEventListener('input', e => { scene.environmentIntensity = +e.target.value; $('#l-env-v').textContent = (+e.target.value).toFixed(2); });
+$('#l-key').addEventListener('input', e => { key.intensity = +e.target.value; $('#l-key-v').textContent = (+e.target.value).toFixed(2); });
+$('#l-shadow').addEventListener('change', e => { renderer.shadowMap.enabled = e.target.checked; for (const m of meshes.values()) m.material.needsUpdate = true; });
+function setBg(hex) { bgHex = hex; scene.background = makeGradientBg(hex); bgColor.set(hex).lerp(new THREE.Color('#ffffff'), 0.12); }
+$('#l-bg').addEventListener('input', e => setBg(e.target.value));
+$('#l-preset').addEventListener('change', e => applyLightPreset(e.target.value));
+function applyLightPreset(p) {
+  const sets = {
+    studio: { sky:0xffffff, gnd:0xd9d4f5, k:0xffffff, f:0xc8d0ff, pos:[30,50,30], bg:'#e7e4fb' },
+    sunset: { sky:0xffe6cc, gnd:0xffd9c0, k:0xffd0a0, f:0xff9e7a, pos:[40,30,20], bg:'#ffe7d6' },
+    cool:   { sky:0xdce8ff, gnd:0xc8d4f5, k:0xeaf1ff, f:0x9bb0ff, pos:[20,45,35], bg:'#dde6ff' },
+    noir:   { sky:0x404048, gnd:0x101014, k:0xffffff, f:0x303040, pos:[15,60,10], bg:'#0a0a0d' },
+  }[p];
+  hemi.color.setHex(sets.sky); hemi.groundColor.setHex(sets.gnd); key.color.setHex(sets.k); key.position.set(...sets.pos); fill.color.setHex(sets.f);
+  $('#l-bg').value = sets.bg; setBg(sets.bg);
+}
+$('#cam-mode').addEventListener('change', e => switchCamera(e.target.value));
+function switchCamera(mode) {
+  const old = camera;
+  if (mode === 'ortho') { orthoCam.position.copy(old.position); camera = orthoCam; }
+  else { const pc = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 500); pc.position.copy(old.position); camera = pc; }
+  orbit.object = camera;
+}
+
+// ── Toolbar wiring ──────────────────────────────────────────────────────────
+const toolbar = $('#toolbar');
+toolbar.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+function setTool(t) {
+  tool = t; boxAnchor = null;
+  toolbar.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+}
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'a') setTool('add'); else if (k === 'x') setTool('remove');
+  else if (k === 'p') setTool('paint'); else if (k === 'b') setTool('box');
+  else if (k === 'o') setTool('orbit');
+  else if (k >= '1' && k <= '9') { const i = parseInt(k) - 1; if (i < palette.length) { activeSlot = i; syncSlotInspector(); renderPalette(); } }
+});
+
+function refreshCount() { $('#count').textContent = voxels.size + ' voxel' + (voxels.size === 1 ? '' : 's'); }
+
+let flashT;
+function flash(msg) {
+  let el = document.getElementById('flash');
+  if (!el) { el = document.createElement('div'); el.id = 'flash'; el.className = 'hint'; el.style.bottom = '60px'; document.body.appendChild(el); }
+  el.innerHTML = '<b>' + msg + '</b>'; el.style.opacity = 1; clearTimeout(flashT); flashT = setTimeout(() => el.style.opacity = 0, 1700);
+}
+function blip(msg) { const el = document.getElementById('save-state'); if (el) { el.textContent = msg; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => el.style.opacity = 0.35, 1200); } }
+
+// ── Canonical JSON serialize / deserialize (the AI-agent contract) ───────────
+function serializeState() {
+  const vox = [];
+  for (const [k, idx] of voxels) { const [x, y, z] = k.split(',').map(Number); vox.push([x, y, z, idx]); }
+  return {
+    v: 1,
+    grid: [G, G, G],
+    voxelSize: VOXEL,
+    palette: palette.map(e => ({ color: e.color, mode: e.mode, rough: e.rough ?? 0.5, metal: e.metal ?? 0, trans: e.trans ?? 0 })),
+    voxels: vox,
+    blob: null, fur: null, cloth: null,
+  };
+}
+// Accept either array-of-arrays voxels OR a compact "x,y,z,idx;..." string.
+function parseVoxels(v) {
+  const out = [];
+  if (Array.isArray(v)) {
+    for (const t of v) { if (Array.isArray(t) && t.length >= 4) out.push([t[0]|0, t[1]|0, t[2]|0, t[3]|0]); }
+  } else if (typeof v === 'string') {
+    for (const seg of v.split(';')) {
+      const s = seg.trim(); if (!s) continue;
+      const p = s.split(',').map(Number);
+      if (p.length >= 4 && p.every(n => !isNaN(n))) out.push([p[0]|0, p[1]|0, p[2]|0, p[3]|0]);
+    }
+  }
+  return out;
+}
+function loadState(state) {
+  // null → empty grid + tiny demo
+  if (!state || typeof state !== 'object') { applyDefaults(); seedDemo(); rebuildAll(); return; }
+  G = (Array.isArray(state.grid) && state.grid[0]) ? (state.grid[0] | 0) : G;
+  VOXEL = (typeof state.voxelSize === 'number' && state.voxelSize > 0) ? state.voxelSize : 1;
+  palette = Array.isArray(state.palette) && state.palette.length
+    ? state.palette.map(e => ({ color: e.color || '#cccccc', mode: e.mode || 'solid', rough: e.rough ?? 0.5, metal: e.metal ?? 0, trans: e.trans ?? 0 }))
+    : defaultPalette();
+  voxels = new Map();
+  for (const [x, y, z, idx] of parseVoxels(state.voxels)) {
+    if (inBounds(x, y, z)) voxels.set(key3(x, y, z), (idx >= 0 && idx < palette.length) ? idx : 0);
+  }
+  activeSlot = Math.min(activeSlot, palette.length - 1);
+  // sync grid-size select if it matches an option
+  const gs = $('#grid-size'); if ([...gs.options].some(o => +o.value === G)) gs.value = String(G);
+  rebuildAll();
+}
+function applyDefaults() { G = 32; VOXEL = 1; palette = defaultPalette(); voxels = new Map(); activeSlot = 0; }
+function rebuildAll() {
+  rebuildGridHelper(); fitGroundPlane(); recenterTarget();
+  renderPalette(); syncSlotInspector(); remesh();
+}
+
+// A tiny demo: a small checker pad + a couple of stacked voxels.
+function seedDemo() {
+  const c = Math.floor(G / 2);
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
+    const idx = ((x + z) & 1) ? 1 : 0;
+    setVoxel(c + x, 0, c + z, idx);
+  }
+  setVoxel(c, 1, c, 2); setVoxel(c, 2, c, 2); setVoxel(c, 3, c, 3);
+  setVoxel(c + 2, 1, c, 3); setVoxel(c - 2, 1, c, 2);
+}
+
+// ── DRIVEN-VIEW protocol (adapted from spline3d's embedded bridge) ───────────
+const Q = new URLSearchParams(location.search);
+const nodeId = Q.get('nodeId') || '';
+const EMBEDDED = window.parent !== window;
+let imports = [];     // .glb URLs (accepted; voxelization import is a later enhancement)
+let lastEmitted = '', emitTimer = null, gotInit = false;
+
+function post(type, extra) {
+  try { parent.postMessage(Object.assign({ type, nodeId }, extra || {}), '*'); } catch (e) {}
+}
+// USER edit → debounce ~700ms → emit voxel:state (guarded against echo).
+function scheduleEmit() {
+  if (!EMBEDDED) { blip('Saved'); return; }
+  clearTimeout(emitTimer);
+  emitTimer = setTimeout(() => {
+    const s = JSON.stringify(serializeState());
+    if (s === lastEmitted) return;
+    lastEmitted = s;
+    post('voxel:state', { state: JSON.parse(s) });
+  }, 700);
+}
+
+if (EMBEDDED) {
+  window.addEventListener('message', ev => {
+    const d = ev && ev.data;
+    if (!d || typeof d !== 'object' || (d.nodeId && d.nodeId !== nodeId)) return;
+    if (d.type === 'voxel:init') {
+      gotInit = true;
+      imports = Array.isArray(d.imports) ? d.imports : [];
+      if (d.state) loadState(d.state);
+      else { applyDefaults(); seedDemo(); rebuildAll(); }   // null → empty + tiny demo
+      try { lastEmitted = JSON.stringify(serializeState()); } catch (e) {}
+    } else if (d.type === 'voxel:set-state') {
+      gotInit = true;
+      loadState(d.state);   // rebuild scene, no echo
+      try { lastEmitted = JSON.stringify(serializeState()); } catch (e) {}
+    } else if (d.type === 'voxel:content') {
+      gotInit = true;
+      if (Array.isArray(d.imports)) imports = d.imports;
+    }
+  });
+}
+
+// ── Export (standalone convenience) ──────────────────────────────────────────
+$('#export-json').addEventListener('click', () => {
+  const data = JSON.stringify(serializeState(), null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'voxels.json'; a.click(); URL.revokeObjectURL(a.href);
+  flash('Exported voxel JSON');
+});
+
+// ── Resize + loop (reused) ───────────────────────────────────────────────────
+addEventListener('resize', () => {
+  const a = innerWidth / innerHeight;
+  if (camera.isPerspectiveCamera) { camera.aspect = a; camera.updateProjectionMatrix(); }
+  else { const h = 24; orthoCam.left = -h * a; orthoCam.right = h * a; orthoCam.top = h; orthoCam.bottom = -h; orthoCam.updateProjectionMatrix(); }
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+let last = performance.now(), frames = 0, fpsT = 0;
+function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = now - last; last = now; fpsT += dt; frames++;
+  if (fpsT > 500) { $('#fps').textContent = Math.round(frames / (fpsT / 1000)) + ' fps'; fpsT = 0; frames = 0; }
+  orbit.update();
+  renderer.render(scene, camera);
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+(function boot() {
+  applyDefaults();
+  if (EMBEDDED) {
+    rebuildAll();   // start with defaults (no demo) until init arrives
+    try { lastEmitted = JSON.stringify(serializeState()); } catch (e) {}
+    post('voxel:ready');
+    setTimeout(() => { if (!gotInit) post('voxel:ready'); }, 600);
+    // If no init ever arrives (stale host), seed a demo so it's never blank.
+    setTimeout(() => { if (!gotInit && voxels.size === 0) { seedDemo(); remesh(); refreshCount(); } }, 2200);
+  } else {
+    // Standalone: seed a small demo.
+    seedDemo(); rebuildAll();
+  }
+  requestAnimationFrame(tick);
+})();
+
+window.__voxel3d = { scene, get voxels() { return voxels; }, get palette() { return palette; }, serializeState, loadState, setVoxel, delVoxel, remesh };
+</script>
+</body>
+</html>

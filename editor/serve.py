@@ -6690,6 +6690,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._tasks_archive(qs)
             if parsed.path == "/__write_text":
                 return self._write_text(qs)
+            if parsed.path == "/__write_binary":
+                return self._write_binary(qs)
             if parsed.path == "/__html_save":
                 return self._html_save(qs)
             if parsed.path == "/__starred_prototypes/toggle":
@@ -12132,6 +12134,51 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"write failed: {e}"})
         return self._reply(200, {"ok": True, "path": rel, "size": len(text.encode("utf-8"))})
 
+    # POST /__write_binary?project=<id>
+    # Body: JSON { path: "source/<branch>/<sub>/<file>", dataUrl: "data:<mime>;base64,..." }
+    # The binary sibling of /__write_text — lets a driven-view iframe tool bake
+    # a real binary deliverable (font .otf, raster .png, audio .wav) into the
+    # project from a base64 data URL it produced client-side (opentype.js /
+    # canvas.toDataURL / OfflineAudioContext render). Same source/-only +
+    # history-bracket guards as _write_text. 16 MB cap (audio renders).
+    def _write_binary(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=16 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        rel = (body.get("path") or "").strip()
+        url = body.get("dataUrl") or body.get("data") or ""
+        if not isinstance(url, str) or not url:
+            return self._reply(400, {"error": "dataUrl must be a non-empty string"})
+        if not rel.startswith("source/"):
+            return self._reply(400, {"error": "path must start with source/"})
+        if url.startswith("data:"):
+            try:
+                url = url.split(",", 1)[1]
+            except Exception:
+                return self._reply(400, {"error": "malformed data URL"})
+        try:
+            data = base64.b64decode(url)
+        except Exception as e:
+            return self._reply(400, {"error": f"base64 decode failed: {e}"})
+        try:
+            abs_path = _safe_join(project_root, rel)
+        except Exception as e:
+            return self._reply(400, {"error": f"path resolution failed: {e}"})
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        try:
+            with _history_bracket(project_root, [rel],
+                                   kind="ui-edit", label=f"Write {rel}",
+                                   source="editor"):
+                with open(abs_path, "wb") as f: f.write(data)
+        except OSError as e:
+            return self._reply(500, {"error": f"write failed: {e}"})
+        return self._reply(200, {"ok": True, "path": rel, "size": len(data)})
+
     # POST /__html_save?project=<id>
     # Body: JSON { path: "source/<branch>/index.html", html: "<!doctype html>..." }
     # Writes a full HTML document atomically (.staging → os.replace). Used by
@@ -15252,10 +15299,10 @@ class H(http.server.SimpleHTTPRequestHandler):
     # models,shaders,viz,audio}/ as a draggable library item. Delete removes
     # the file from disk (destructive — the user is in control of their own
     # source tree). Newest first.
-    _LIB_ASSET_SUBDIRS = ("images", "svg", "video", "models", "shaders", "viz", "audio")
+    _LIB_ASSET_SUBDIRS = ("images", "svg", "video", "models", "shaders", "viz", "audio", "fonts")
     _LIB_KIND_FOR_DIR  = {
         "images": "image", "svg": "svg", "video": "video", "models": "3d",
-        "shaders": "shader", "viz": "viz", "audio": "audio",
+        "shaders": "shader", "viz": "viz", "audio": "audio", "fonts": "font",
     }
     # v3.4.16 — Extension → asset kind. Wins over the folder-derived default
     # in `_LIB_KIND_FOR_DIR`. Background: skill outputs (shader / threejs /
@@ -15278,6 +15325,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         "mp3": "audio", "wav": "audio", "ogg": "audio", "flac": "audio", "aac": "audio", "m4a": "audio",
         # 3d / scene
         "glb": "3d", "gltf": "3d", "obj": "3d", "fbx": "3d", "usdz": "3d",
+        # fonts
+        "otf": "font", "ttf": "font", "woff": "font", "woff2": "font",
         # html-driven scenes (shader / threejs / viz / canvas-gen / motion-gen)
         "html": "html", "htm": "html",
         # lottie JSON

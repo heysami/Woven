@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Font Creator</title>
+<script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<style>
+  :root{
+    --bg:#0e0f12; --panel:#16181d; --panel2:#1c1f26; --line:#2a2e37;
+    --ink:#e8eaf0; --ink2:#9aa1ad; --ink3:#6b7280; --accent:#6c8cff;
+    --accent2:#3a4a7a; --good:#3ecf8e; --warn:#e0a14a; --bad:#e05a5a;
+    --guide:#3a3f4b; --guide-key:#5a6275;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  button{
+    font:inherit; color:var(--ink); background:var(--panel2);
+    border:1px solid var(--line); border-radius:6px; padding:5px 10px;
+    cursor:pointer; transition:background .12s,border-color .12s;
+  }
+  button:hover{background:#242832; border-color:#3a4150}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--accent2); border-color:#4a5a9a; color:#eaf0ff}
+  button.primary:hover{background:#465a9a}
+  button.tiny{padding:3px 7px; font-size:11px}
+  input,select{
+    font:inherit; color:var(--ink); background:#0c0d10;
+    border:1px solid var(--line); border-radius:6px; padding:5px 8px; outline:none;
+  }
+  input:focus,select:focus{border-color:var(--accent)}
+  input[type=number]{width:78px}
+  label.fld{display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink2)}
+  label.fld span{padding-left:2px; letter-spacing:.02em; text-transform:uppercase; font-size:10px}
+
+  /* ---- toolbar ---- */
+  #toolbar{
+    display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+    padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  #toolbar .brand{font-weight:700; letter-spacing:.04em; color:var(--ink); align-self:center; margin-right:4px}
+  #toolbar .brand small{display:block; font-weight:400; font-size:10px; color:var(--ink3); letter-spacing:.06em}
+  #toolbar .spacer{flex:1}
+  #status{font-size:11px; color:var(--ink3); align-self:center; white-space:nowrap}
+  #status.ok{color:var(--good)} #status.err{color:var(--bad)} #status.busy{color:var(--warn)}
+
+  /* ---- main ---- */
+  #main{flex:1; display:flex; min-height:0}
+  #grid-pane{
+    width:320px; flex:none; border-right:1px solid var(--line);
+    background:var(--panel); display:flex; flex-direction:column; min-height:0;
+  }
+  #grid-head{padding:8px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px}
+  #grid-head .t{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink2)}
+  #grid{
+    flex:1; overflow:auto; padding:8px;
+    display:grid; grid-template-columns:repeat(6,1fr); gap:6px; align-content:start;
+  }
+  .cell{
+    position:relative; aspect-ratio:1; border:1px solid var(--line); border-radius:6px;
+    background:#0c0d10; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    overflow:hidden; transition:border-color .1s,background .1s;
+  }
+  .cell:hover{border-color:#3a4150}
+  .cell.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset}
+  .cell svg{width:100%; height:100%; display:block}
+  .cell .ch{position:absolute; bottom:2px; left:4px; font-size:9px; color:var(--ink3)}
+  .cell .src{position:absolute; top:3px; right:4px; width:6px; height:6px; border-radius:50%}
+  .src.base{background:var(--ink3)} .src.font{background:var(--accent)} .src.custom{background:var(--good)}
+  .cell.empty .glyphfill{opacity:.25}
+
+  #edit-pane{flex:1; display:flex; flex-direction:column; min-height:0; background:var(--bg)}
+  #edit-head{
+    padding:8px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center;
+    gap:14px; flex-wrap:wrap; background:var(--panel);
+  }
+  #edit-head .glyph-title{font-size:18px; font-weight:700}
+  #edit-head .glyph-title small{font-size:11px; color:var(--ink3); font-weight:400; margin-left:6px}
+  #canvas-wrap{flex:1; position:relative; overflow:hidden; min-height:0}
+  #canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none}
+  #edit-foot{
+    padding:8px 14px; border-top:1px solid var(--line); background:var(--panel);
+    display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:11px; color:var(--ink2)
+  }
+  .legend{display:flex; gap:12px; flex-wrap:wrap}
+  .legend i{display:inline-block; width:14px; height:2px; vertical-align:middle; margin-right:4px}
+
+  #preview-pane{
+    width:240px; flex:none; border-left:1px solid var(--line); background:var(--panel);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  #preview-pane .ph{padding:8px 12px; border-bottom:1px solid var(--line); font-size:11px;
+    text-transform:uppercase; letter-spacing:.05em; color:var(--ink2)}
+  #preview-body{padding:12px; overflow:auto; flex:1}
+  #preview-canvas{width:100%; background:#0c0d10; border:1px solid var(--line); border-radius:6px; display:block}
+  #preview-text{width:100%; margin-top:8px}
+  .hint{font-size:11px; color:var(--ink3); margin-top:8px; line-height:1.5}
+  .pill{display:inline-block; padding:1px 7px; border-radius:99px; font-size:10px; border:1px solid var(--line); color:var(--ink2)}
+
+  .modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:50}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:10px; width:min(440px,92vw); padding:16px; box-shadow:0 16px 48px rgba(0,0,0,.5)}
+  .modal h3{margin:0 0 10px; font-size:14px}
+  .modal .row{display:flex; gap:8px; align-items:flex-end; margin-bottom:10px}
+  .modal .row label.fld{flex:1}
+  .modal .actions{display:flex; gap:8px; justify-content:flex-end; margin-top:6px}
+  .modal .note{font-size:11px; color:var(--ink3); margin:2px 0 10px}
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <div class="brand">Font Creator<small>Woven driven view</small></div>
+    <label class="fld"><span>Family name</span><input id="familyName" type="text" value="My Font" style="width:160px"></label>
+    <label class="fld"><span>Units / em</span><input id="unitsPerEm" type="number" value="1000" min="64" max="16384" step="1"></label>
+    <label class="fld"><span>Ascender</span><input id="ascender" type="number" value="800"></label>
+    <label class="fld"><span>Descender</span><input id="descender" type="number" value="-200"></label>
+    <label class="fld"><span>Base font (Google)</span>
+      <span style="display:flex; gap:6px">
+        <input id="baseGoogle" type="text" placeholder="e.g. Inter" value="Inter" style="width:130px">
+        <button id="loadGoogleBtn" class="tiny">Load</button>
+      </span>
+    </label>
+    <label class="fld"><span>Or upload .ttf/.otf</span>
+      <input id="uploadFont" type="file" accept=".ttf,.otf,font/ttf,font/otf,application/font-sfnt" style="width:170px">
+    </label>
+    <div class="spacer"></div>
+    <button id="downloadBtn" class="tiny">Download .otf</button>
+    <div id="status">starting…</div>
+  </div>
+
+  <div id="main">
+    <div id="grid-pane">
+      <div id="grid-head">
+        <div class="t">Glyphs</div>
+        <div class="spacer" style="flex:1"></div>
+        <span class="pill" id="glyphCount">0</span>
+      </div>
+      <div id="grid"></div>
+    </div>
+
+    <div id="edit-pane">
+      <div id="edit-head">
+        <div class="glyph-title" id="glyphTitle">—<small id="glyphCode"></small></div>
+        <label class="fld"><span>Advance width</span><input id="advanceWidth" type="number" value="600"></label>
+        <label class="fld"><span>Source</span>
+          <select id="glyphFrom">
+            <option value="base">base font</option>
+            <option value="font">borrow Google font…</option>
+            <option value="custom">custom path</option>
+          </select>
+        </label>
+        <button id="reloadBaseBtn" class="tiny">Reset to base</button>
+        <button id="editNodesBtn" class="tiny">Edit nodes</button>
+        <div class="spacer" style="flex:1"></div>
+        <span class="pill" id="fromBadge">base</span>
+      </div>
+      <div id="canvas-wrap"><canvas id="canvas"></canvas></div>
+      <div id="edit-foot">
+        <div class="legend">
+          <span><i style="background:var(--guide-key)"></i>baseline / cap / x</span>
+          <span><i style="background:var(--guide)"></i>asc / desc</span>
+          <span><i style="background:var(--accent)"></i>advance</span>
+        </div>
+        <div class="spacer" style="flex:1"></div>
+        <div id="editHint" class="">Drag anchors to edit (custom mode). Y-up, baseline = 0.</div>
+      </div>
+    </div>
+
+    <div id="preview-pane">
+      <div class="ph">Preview</div>
+      <div id="preview-body">
+        <canvas id="preview-canvas" width="216" height="120"></canvas>
+        <input id="preview-text" type="text" value="Handgloves 0123" />
+        <div class="hint" id="bakeInfo">No compiled font yet.</div>
+        <div class="hint">
+          Path data is stored in <b>font units</b>, y-up, baseline at 0.
+          opentype.js is y-down, so outlines are flipped on import
+          (y&nbsp;→&nbsp;ascenderBaseline&minus;y conceptually; here y&nbsp;→&nbsp;&minus;y after origin shift).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- borrow-font modal -->
+  <div class="modal-bg" id="borrowModal">
+    <div class="modal">
+      <h3>Borrow this glyph from another Google font</h3>
+      <div class="note">Loads the family via Google Fonts and copies just the outline for the current glyph.</div>
+      <div class="row">
+        <label class="fld"><span>Google family</span><input id="borrowFamily" type="text" placeholder="e.g. Playfair Display"></label>
+        <button id="borrowLoadBtn" class="primary">Use outline</button>
+      </div>
+      <div class="actions"><button id="borrowCancel">Cancel</button></div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+(function(){
+
+/* =========================================================================
+ * Woven driven-view protocol
+ * =======================================================================*/
+const EMBEDDED = window.parent !== window;
+const params = new URLSearchParams(location.search);
+const nodeId = params.get("nodeId");
+let suppressEmit = false;          // guard: programmatic renders must NOT emit font:state
+let emitTimer = null;
+
+function post(msg){
+  if(!EMBEDDED) return;
+  try{ window.parent.postMessage(Object.assign({nodeId}, msg), "*"); }catch(e){}
+}
+
+/* =========================================================================
+ * State
+ * =======================================================================*/
+const DEFAULT_CHARS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+  "abcdefghijklmnopqrstuvwxyz" +
+  "0123456789" +
+  ".,:;!?'\"()-+/&@#%";
+
+function blankDoc(){
+  return {
+    v:1, familyName:"My Font", unitsPerEm:1000, ascender:800, descender:-200,
+    baseFont:{source:"google", ref:"Inter"},
+    glyphs:{}
+  };
+}
+let doc = blankDoc();
+let current = "A";              // selected glyph char
+
+/* base font cache: family name -> opentype.Font */
+const fontCache = {};           // ref -> {font, unitsPerEm}
+let baseFontObj = null;         // the currently-loaded base font object
+
+/* =========================================================================
+ * Google Fonts loading -> opentype.Font
+ * =======================================================================*/
+async function fetchGoogleFontUrl(family){
+  // Ask the CSS API for the regular weight; parse the woff2/ttf url from src.
+  const css = await fetch(
+    "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family) + ":wght@400&display=swap",
+    { headers:{ "User-Agent":"Mozilla/5.0" } }
+  ).then(r=>{ if(!r.ok) throw new Error("CSS "+r.status); return r.text(); });
+  // Prefer a truetype/opentype url (opentype.js can't parse woff2). Fall back to any url.
+  let m = css.match(/url\((https:\/\/[^)]+\.(?:ttf|otf))\)/i);
+  if(!m){
+    // try forcing the legacy css endpoint which serves ttf to old UAs
+    const css2 = await fetch(
+      "https://fonts.googleapis.com/css?family=" + encodeURIComponent(family),
+      { headers:{ "User-Agent":"Mozilla/4.0" } }
+    ).then(r=>r.text()).catch(()=> "");
+    m = css2.match(/url\((https:\/\/[^)]+\.(?:ttf|otf))\)/i);
+  }
+  if(!m) throw new Error("No TTF/OTF url for \""+family+"\" (Google may only offer woff2).");
+  return m[1];
+}
+
+async function loadFontByRef(ref, source){
+  if(fontCache[ref]) return fontCache[ref];
+  let buf;
+  if(source === "upload"){
+    throw new Error("Uploaded fonts must be provided as a buffer."); // handled separately
+  } else {
+    const url = await fetchGoogleFontUrl(ref);
+    buf = await fetch(url).then(r=>{ if(!r.ok) throw new Error("font "+r.status); return r.arrayBuffer(); });
+  }
+  const font = opentype.parse(buf);
+  const entry = { font, unitsPerEm: font.unitsPerEm || 1000 };
+  fontCache[ref] = entry;
+  return entry;
+}
+
+function loadFontFromBuffer(ref, buf){
+  const font = opentype.parse(buf);
+  const entry = { font, unitsPerEm: font.unitsPerEm || 1000 };
+  fontCache[ref] = entry;
+  return entry;
+}
+
+/* =========================================================================
+ * Outline extraction & coordinate flip
+ *
+ * opentype.js getPath(char, x, y, fontSize): with fontSize == sourceUnitsPerEm
+ * and (x=0,y=0), commands are in source font units, y-DOWN, baseline at y=0
+ * (i.e. ascenders have NEGATIVE y). Our schema is y-UP, baseline 0. So we flip
+ * y (y -> -y) and scale source units -> our unitsPerEm.
+ * =======================================================================*/
+function pathCmdsToData(cmds, scale){
+  // cmds: opentype path commands in source units, y-down. Flip y, scale.
+  const f = (n)=> +(n*scale).toFixed(2);
+  const fy = (n)=> +(-n*scale).toFixed(2);   // y-down -> y-up
+  let out = [];
+  for(const c of cmds){
+    switch(c.type){
+      case "M": out.push("M "+f(c.x)+" "+fy(c.y)); break;
+      case "L": out.push("L "+f(c.x)+" "+fy(c.y)); break;
+      case "C": out.push("C "+f(c.x1)+" "+fy(c.y1)+" "+f(c.x2)+" "+fy(c.y2)+" "+f(c.x)+" "+fy(c.y)); break;
+      case "Q": out.push("Q "+f(c.x1)+" "+fy(c.y1)+" "+f(c.x)+" "+fy(c.y)); break;
+      case "Z": out.push("Z"); break;
+    }
+  }
+  return out.join(" ");
+}
+
+/* Parse our font-unit path-data (y-up) into an opentype.Path (y-down) for compile. */
+function dataToOpentypePath(data){
+  const p = new opentype.Path();
+  if(!data) return p;
+  const toks = data.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) || [];
+  let i = 0;
+  const num = ()=> parseFloat(toks[i++]);
+  const Y = (y)=> -y;   // y-up -> y-down for opentype
+  while(i < toks.length){
+    const cmd = toks[i++];
+    switch(cmd){
+      case "M": p.moveTo(num(), Y(num())); break;
+      case "L": p.lineTo(num(), Y(num())); break;
+      case "C": { const x1=num(),y1=Y(num()),x2=num(),y2=Y(num()),x=num(),y=Y(num()); p.curveTo(x1,y1,x2,y2,x,y); } break;
+      case "Q": { const x1=num(),y1=Y(num()),x=num(),y=Y(num()); p.quadTo(x1,y1,x,y); } break;
+      case "Z": case "z": p.close(); break;
+      default: /* skip unknown */ break;
+    }
+  }
+  return p;
+}
+
+/* Parse our path-data into a screen-space DOM path string (y-up -> y-down for SVG/canvas, with scale & origin). */
+function dataToScreenPath(data, sx, sy, ox, oy){
+  if(!data) return "";
+  const toks = data.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) || [];
+  let i=0; const num=()=>parseFloat(toks[i++]);
+  const X=(x)=> ox + x*sx;
+  const Y=(y)=> oy - y*sy;     // y-up data -> y-down screen
+  let out=[];
+  while(i<toks.length){
+    const c=toks[i++];
+    switch(c){
+      case "M": out.push("M"+X(num())+" "+Y(num())); break;
+      case "L": out.push("L"+X(num())+" "+Y(num())); break;
+      case "C": out.push("C"+X(num())+" "+Y(num())+" "+X(num())+" "+Y(num())+" "+X(num())+" "+Y(num())); break;
+      case "Q": out.push("Q"+X(num())+" "+Y(num())+" "+X(num())+" "+Y(num())); break;
+      case "Z": case "z": out.push("Z"); break;
+    }
+  }
+  return out.join(" ");
+}
+
+/* =========================================================================
+ * Resolve a glyph's effective outline + advance for editing / rendering.
+ * Returns {data, advanceWidth}.
+ * =======================================================================*/
+function baseGlyphOutline(font, srcUpm, char, targetUpm){
+  const g = font.charToGlyph(char);
+  if(!g) return null;
+  const path = font.getPath(char, 0, 0, srcUpm); // source units, y-down, baseline 0
+  const scale = targetUpm / srcUpm;
+  const data = pathCmdsToData(path.commands, scale);
+  const adv = g.advanceWidth!=null ? Math.round(g.advanceWidth*scale) : Math.round(targetUpm*0.5);
+  return { data, advanceWidth: adv };
+}
+
+async function resolveGlyph(char){
+  // Returns {data, advanceWidth, from}. Uses stored glyph if present; else base.
+  const stored = doc.glyphs[char];
+  const upm = doc.unitsPerEm;
+  if(stored){
+    if(stored.from === "custom"){
+      return { data: stored.path||"", advanceWidth: stored.advanceWidth||Math.round(upm*0.5), from:"custom" };
+    }
+    if(typeof stored.from === "string" && stored.from.indexOf("font:")===0){
+      const ref = stored.from.slice(5);
+      // if path already baked in, use it; else try to load
+      if(stored.path) return { data:stored.path, advanceWidth: stored.advanceWidth||Math.round(upm*0.5), from:stored.from };
+      try{
+        const e = await loadFontByRef(ref, "google");
+        const o = baseGlyphOutline(e.font, e.unitsPerEm, char, upm);
+        return { data:o?o.data:"", advanceWidth: stored.advanceWidth||(o?o.advanceWidth:Math.round(upm*0.5)), from:stored.from };
+      }catch(e){ return { data:stored.path||"", advanceWidth: stored.advanceWidth||Math.round(upm*0.5), from:stored.from }; }
+    }
+    // from:"base" with possible stored path / advance overrides
+    if(stored.path) return { data:stored.path, advanceWidth: stored.advanceWidth||Math.round(upm*0.5), from:"base" };
+  }
+  // fall back to live base font
+  if(baseFontObj){
+    const o = baseGlyphOutline(baseFontObj.font, baseFontObj.unitsPerEm, char, upm);
+    if(o) return { data:o.data, advanceWidth:(stored&&stored.advanceWidth)||o.advanceWidth, from:"base" };
+  }
+  return { data:"", advanceWidth:(stored&&stored.advanceWidth)||Math.round(upm*0.5), from:"base" };
+}
+
+/* =========================================================================
+ * Compile -> opentype.Font -> base64 OTF
+ * =======================================================================*/
+async function buildOpentypeFont(){
+  const upm = doc.unitsPerEm;
+  const glyphs = [];
+  // .notdef
+  const notdef = new opentype.Glyph({ name:".notdef", unicode:0, advanceWidth:Math.round(upm*0.5), path:new opentype.Path() });
+  glyphs.push(notdef);
+  // space
+  const space = new opentype.Glyph({ name:"space", unicode:32, advanceWidth:Math.round(upm*0.3), path:new opentype.Path() });
+  glyphs.push(space);
+
+  const chars = Object.keys(doc.glyphs).length ? Object.keys(doc.glyphs) : DEFAULT_CHARS.split("");
+  const seen = new Set([0,32]);
+  for(const ch of chars){
+    if(ch.length!==1) continue;
+    const cp = ch.codePointAt(0);
+    if(seen.has(cp)) continue;
+    seen.add(cp);
+    const r = await resolveGlyph(ch);
+    const path = dataToOpentypePath(r.data);
+    glyphs.push(new opentype.Glyph({
+      name: glyphName(ch),
+      unicode: cp,
+      advanceWidth: Math.max(0, Math.round(r.advanceWidth||Math.round(upm*0.5))),
+      path
+    }));
+  }
+
+  return new opentype.Font({
+    familyName: doc.familyName || "My Font",
+    styleName: "Regular",
+    unitsPerEm: upm,
+    ascender: doc.ascender,
+    descender: doc.descender,
+    glyphs
+  });
+}
+
+function glyphName(ch){
+  const map = {" ":"space",".":"period",",":"comma",":":"colon",";":"semicolon","!":"exclam","?":"question",
+    "'":"quotesingle",'"':"quotedbl","(":"parenleft",")":"parenright","-":"hyphen","+":"plus","/":"slash",
+    "&":"ampersand","@":"at","#":"numbersign","%":"percent"};
+  if(map[ch]) return map[ch];
+  if(/[A-Za-z]/.test(ch)) return ch;
+  if(/[0-9]/.test(ch)) return ({"0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine"})[ch];
+  return "uni"+ch.codePointAt(0).toString(16).toUpperCase().padStart(4,"0");
+}
+
+function arrayBufferToBase64(buf){
+  const bytes = new Uint8Array(buf);
+  let bin=""; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+  }
+  return btoa(bin);
+}
+
+let lastBakedUrl = null;
+async function compileAndBake(){
+  try{
+    const font = await buildOpentypeFont();
+    const ab = font.toArrayBuffer();
+    const b64 = arrayBufferToBase64(ab);
+    lastBakedUrl = "data:font/otf;base64,"+b64;
+    return { dataUrl:lastBakedUrl, font };
+  }catch(err){
+    console.warn("compile failed:", err);
+    lastBakedUrl = null;
+    return null;
+  }
+}
+
+/* =========================================================================
+ * Emit (user edits only, debounced)
+ * =======================================================================*/
+function scheduleEmit(){
+  if(suppressEmit) return;
+  clearTimeout(emitTimer);
+  setStatus("editing…","busy");
+  emitTimer = setTimeout(doEmit, 600);
+}
+
+async function doEmit(){
+  const state = JSON.parse(JSON.stringify(doc));
+  const baked = await compileAndBake();
+  const msg = { type:"font:state", state };
+  if(baked){ msg.baked = { dataUrl: baked.dataUrl }; setStatus("synced + baked","ok"); }
+  else { setStatus("synced (compile failed — JSON only)","err"); }
+  post(msg);
+  updateBakeInfo(baked);
+  renderPreview(baked);
+}
+
+function setStatus(t, cls){
+  const el = document.getElementById("status");
+  el.textContent = (EMBEDDED?"":"[standalone] ")+t;
+  el.className = cls||"";
+}
+
+/* =========================================================================
+ * UI rendering
+ * =======================================================================*/
+function glyphList(){
+  const stored = Object.keys(doc.glyphs);
+  // union of default chars + any stored chars, preserving default ordering then extras
+  const set = new Set(DEFAULT_CHARS.split(""));
+  stored.forEach(c=>set.add(c));
+  return Array.from(set);
+}
+
+async function renderGrid(){
+  const grid = document.getElementById("grid");
+  const chars = glyphList();
+  document.getElementById("glyphCount").textContent = chars.length;
+  grid.innerHTML = "";
+  for(const ch of chars){
+    const cell = document.createElement("div");
+    cell.className = "cell" + (ch===current?" sel":"");
+    cell.title = ch;
+    cell.addEventListener("click", ()=> selectGlyph(ch));
+    // mini preview svg (resolve synchronously where possible)
+    const upm = doc.unitsPerEm;
+    const ns="http://www.w3.org/2000/svg";
+    const svg=document.createElementNS(ns,"svg");
+    svg.setAttribute("viewBox","0 0 100 100");
+    const r = await resolveGlyph(ch);
+    if(r.data){
+      const p=document.createElementNS(ns,"path");
+      // fit em-box into 0..100 with padding; baseline at 80
+      const s = 80/upm;
+      const ox = 50 - (r.advanceWidth*s)/2;
+      const oy = 82;
+      p.setAttribute("d", dataToScreenPath(r.data, s, s, ox, oy));
+      p.setAttribute("fill","var(--ink)");
+      p.setAttribute("class","glyphfill");
+      svg.appendChild(p);
+    } else { cell.classList.add("empty"); }
+    cell.appendChild(svg);
+    const lab=document.createElement("div"); lab.className="ch"; lab.textContent=ch; cell.appendChild(lab);
+    const dot=document.createElement("div");
+    let sk = "base";
+    const stored = doc.glyphs[ch];
+    if(stored){ if(stored.from==="custom") sk="custom"; else if(String(stored.from).indexOf("font:")===0) sk="font"; }
+    dot.className="src "+sk; cell.appendChild(dot);
+    grid.appendChild(cell);
+  }
+}
+
+/* ----- center editor canvas ----- */
+let editState = { data:"", advanceWidth:600, from:"base", nodes:[], nodeEdit:false };
+
+async function selectGlyph(ch){
+  current = ch;
+  const r = await resolveGlyph(ch);
+  editState.data = r.data;
+  editState.advanceWidth = r.advanceWidth;
+  editState.from = doc.glyphs[ch] ? doc.glyphs[ch].from : "base";
+  editState.nodeEdit = false;
+  syncEditHeader();
+  rebuildNodes();
+  drawCanvas();
+  renderGrid();
+}
+
+function fromToSelectValue(from){
+  if(from==="custom") return "custom";
+  if(String(from).indexOf("font:")===0) return "font";
+  return "base";
+}
+
+function syncEditHeader(){
+  document.getElementById("glyphTitle").firstChild.nodeValue = current;
+  document.getElementById("glyphCode").textContent =
+    "U+"+current.codePointAt(0).toString(16).toUpperCase().padStart(4,"0")+"  ·  "+glyphName(current);
+  document.getElementById("advanceWidth").value = Math.round(editState.advanceWidth);
+  document.getElementById("glyphFrom").value = fromToSelectValue(editState.from);
+  const badge = document.getElementById("fromBadge");
+  badge.textContent = String(editState.from);
+  document.getElementById("editNodesBtn").textContent = editState.nodeEdit ? "Done editing" : "Edit nodes";
+}
+
+/* Parse data -> list of absolute anchor nodes for the node editor.
+ * We expose only on-curve anchor points (M / L / C-end / Q-end) as draggable.
+ * Control handles are kept structurally; moving an anchor translates following
+ * control points by the same delta (simple but useful). */
+function rebuildNodes(){
+  const data = editState.data;
+  editState.tokens = data ? (data.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g)||[]) : [];
+  const toks = editState.tokens;
+  const nodes = [];
+  let i=0; const num=()=>parseFloat(toks[i]);
+  while(i<toks.length){
+    const c=toks[i];
+    if(c==="M"||c==="L"){ nodes.push({ti:i+1, x:parseFloat(toks[i+1]), y:parseFloat(toks[i+2])}); i+=3; }
+    else if(c==="C"){ nodes.push({ti:i+5, cx1:i+1,cx2:i+3, x:parseFloat(toks[i+5]), y:parseFloat(toks[i+6])}); i+=7; }
+    else if(c==="Q"){ nodes.push({ti:i+3, cx1:i+1, x:parseFloat(toks[i+3]), y:parseFloat(toks[i+4])}); i+=5; }
+    else if(c==="Z"||c==="z"){ i+=1; }
+    else { i+=1; }
+  }
+  editState.nodes = nodes;
+}
+
+function nodesToData(){
+  return (editState.tokens||[]).join(" ").replace(/([a-zA-Z]) /g,"$1 ").trim();
+}
+
+/* canvas view transform: maps font units (y-up) -> screen px */
+let view = { scale:1, ox:0, oy:0 };
+function computeView(){
+  const cv = document.getElementById("canvas");
+  const W = cv.clientWidth, H = cv.clientHeight;
+  const upm = doc.unitsPerEm;
+  const span = (doc.ascender - doc.descender) || upm; // total vertical extent
+  const margin = 0.12;
+  const s = Math.min(W/(upm*1.6), H/(span*(1+margin*2)));
+  view.scale = s;
+  // origin (baseline at y=0). Place baseline so that ascender..descender is centered.
+  const contentH = span*s;
+  view.oy = H/2 + (doc.ascender)*s - contentH/2 + (doc.descender)*s/2 ; // tuned below
+  // Simpler: baseline y so ascender fits near top.
+  view.oy = (H - contentH)/2 + doc.ascender*s;
+  view.ox = (W - editState.advanceWidth*s)/2;
+}
+
+function u2sx(x){ return view.ox + x*view.scale; }
+function u2sy(y){ return view.oy - y*view.scale; }
+function s2ux(px){ return (px - view.ox)/view.scale; }
+function s2uy(py){ return (view.oy - py)/view.scale; }
+
+function drawCanvas(){
+  const cv = document.getElementById("canvas");
+  const dpr = window.devicePixelRatio||1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W*dpr; cv.height = H*dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  computeView();
+
+  const upm = doc.unitsPerEm;
+  // guides
+  const guides = [
+    {y:0, c:"--guide-key", label:"baseline"},
+    {y:doc.ascender, c:"--guide", label:"ascender"},
+    {y:doc.descender, c:"--guide", label:"descender"},
+    {y:Math.round(upm*0.7), c:"--guide-key", label:"cap height"},
+    {y:Math.round(upm*0.5), c:"--guide-key", label:"x-height"},
+  ];
+  ctx.lineWidth=1; ctx.font="10px ui-sans-serif,system-ui";
+  for(const g of guides){
+    const y=u2sy(g.y);
+    ctx.strokeStyle=getCSS(g.c);
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    ctx.fillStyle=getCSS("--ink3");
+    ctx.fillText(g.label+" ("+g.y+")", 6, y-3);
+  }
+  // advance-width verticals
+  ctx.strokeStyle=getCSS("--accent");
+  ctx.setLineDash([4,4]);
+  for(const x of [0, editState.advanceWidth]){
+    const sx=u2sx(x);
+    ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx,H); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // glyph fill
+  if(editState.data){
+    const p = new Path2D(dataToScreenPath(editState.data, view.scale, view.scale, view.ox, view.oy));
+    ctx.fillStyle = editState.nodeEdit ? "rgba(108,140,255,.22)" : getCSS("--ink");
+    ctx.fill(p, "nonzero");
+    if(editState.nodeEdit){
+      ctx.strokeStyle=getCSS("--accent"); ctx.lineWidth=1; ctx.stroke(p);
+    }
+  }
+
+  // node handles (only in node-edit mode)
+  if(editState.nodeEdit && editState.nodes.length){
+    for(const n of editState.nodes){
+      const sx=u2sx(n.x), sy=u2sy(n.y);
+      ctx.fillStyle = (n===dragNode)?getCSS("--good"):getCSS("--accent");
+      ctx.strokeStyle="#0c0d10"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(sx,sy,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+  }
+}
+
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#888"; }
+
+/* ----- node dragging ----- */
+let dragNode=null;
+function setupCanvasInteraction(){
+  const cv=document.getElementById("canvas");
+  cv.addEventListener("pointerdown", e=>{
+    if(!editState.nodeEdit) return;
+    const r=cv.getBoundingClientRect();
+    const px=e.clientX-r.left, py=e.clientY-r.top;
+    let best=null, bd=12*12;
+    for(const n of editState.nodes){
+      const dx=u2sx(n.x)-px, dy=u2sy(n.y)-py; const d=dx*dx+dy*dy;
+      if(d<bd){ bd=d; best=n; }
+    }
+    if(best){ dragNode=best; cv.setPointerCapture(e.pointerId); drawCanvas(); }
+  });
+  cv.addEventListener("pointermove", e=>{
+    if(!dragNode) return;
+    const r=cv.getBoundingClientRect();
+    const nx=Math.round(s2ux(e.clientX-r.left));
+    const ny=Math.round(s2uy(e.clientY-r.top));
+    const dx=nx-dragNode.x, dy=ny-dragNode.y;
+    const toks=editState.tokens;
+    // move anchor
+    toks[dragNode.ti]=String(nx); toks[dragNode.ti+1]=String(ny);
+    // translate this node's own incoming control points (cx2 / cx1 for C, cx1 for Q) along
+    if(dragNode.cx2!=null){ toks[dragNode.cx2]=String(+toks[dragNode.cx2]+dx); toks[dragNode.cx2+1]=String(+toks[dragNode.cx2+1]+dy); }
+    if(dragNode.cx1!=null){ toks[dragNode.cx1]=String(+toks[dragNode.cx1]+dx); toks[dragNode.cx1+1]=String(+toks[dragNode.cx1+1]+dy); }
+    dragNode.x=nx; dragNode.y=ny;
+    editState.data = toks.join(" ");
+    drawCanvas();
+  });
+  cv.addEventListener("pointerup", e=>{
+    if(dragNode){
+      dragNode=null;
+      // committing node edits switches glyph to custom
+      commitGlyph("custom");
+      drawCanvas();
+    }
+  });
+  window.addEventListener("resize", ()=>{ drawCanvas(); });
+}
+
+/* =========================================================================
+ * Commit helpers (these are USER edits -> emit)
+ * =======================================================================*/
+function commitGlyph(forceFrom){
+  const upm = doc.unitsPerEm;
+  let from = forceFrom || editState.from;
+  let g;
+  if(from==="custom"){
+    g = { from:"custom", advanceWidth:Math.round(editState.advanceWidth), path:editState.data||"" };
+  } else if(from==="font"){
+    // keep family ref in editState.borrowRef
+    const ref = editState.borrowRef || "";
+    g = { from:"font:"+ref, advanceWidth:Math.round(editState.advanceWidth), path:editState.data||"" };
+  } else {
+    // base: store advance override (and path snapshot so AI/doc is concrete)
+    g = { from:"base", advanceWidth:Math.round(editState.advanceWidth) };
+    if(editState.data) g.path = editState.data;
+  }
+  doc.glyphs[current] = g;
+  editState.from = g.from;
+  syncEditHeader();
+  renderGrid();
+  scheduleEmit();
+}
+
+/* =========================================================================
+ * Toolbar / field wiring
+ * =======================================================================*/
+function wireToolbar(){
+  const fam=document.getElementById("familyName");
+  const upe=document.getElementById("unitsPerEm");
+  const asc=document.getElementById("ascender");
+  const dsc=document.getElementById("descender");
+  fam.addEventListener("input", ()=>{ doc.familyName=fam.value; scheduleEmit(); });
+  upe.addEventListener("change", ()=>{ doc.unitsPerEm=clampInt(upe.value,64,16384,1000); upe.value=doc.unitsPerEm; selectGlyph(current); scheduleEmit(); });
+  asc.addEventListener("change", ()=>{ doc.ascender=parseInt(asc.value)||800; drawCanvas(); scheduleEmit(); });
+  dsc.addEventListener("change", ()=>{ doc.descender=parseInt(dsc.value)||-200; drawCanvas(); scheduleEmit(); });
+
+  document.getElementById("loadGoogleBtn").addEventListener("click", async ()=>{
+    const fam=document.getElementById("baseGoogle").value.trim();
+    if(!fam) return;
+    setStatus("loading "+fam+"…","busy");
+    try{
+      const e=await loadFontByRef(fam,"google");
+      baseFontObj=e;
+      doc.baseFont={source:"google", ref:fam};
+      setStatus("base font: "+fam,"ok");
+      await selectGlyph(current);
+      renderGrid();
+      scheduleEmit();
+    }catch(err){ setStatus("load failed: "+err.message,"err"); }
+  });
+
+  document.getElementById("uploadFont").addEventListener("change", async (ev)=>{
+    const file=ev.target.files[0]; if(!file) return;
+    setStatus("reading "+file.name+"…","busy");
+    try{
+      const buf=await file.arrayBuffer();
+      const ref=file.name;
+      const e=loadFontFromBuffer(ref, buf);
+      baseFontObj=e;
+      doc.baseFont={source:"upload", ref};
+      setStatus("base font: "+ref,"ok");
+      await selectGlyph(current); renderGrid(); scheduleEmit();
+    }catch(err){ setStatus("upload failed: "+err.message,"err"); }
+  });
+
+  document.getElementById("advanceWidth").addEventListener("change", (e)=>{
+    editState.advanceWidth=Math.max(0,parseInt(e.target.value)||0);
+    commitGlyph();   // advance change is a user edit
+    drawCanvas();
+  });
+
+  document.getElementById("glyphFrom").addEventListener("change", async (e)=>{
+    const v=e.target.value;
+    if(v==="base"){
+      // reset to base outline
+      delete doc.glyphs[current];
+      await selectGlyph(current);
+      doc.glyphs[current]={from:"base", advanceWidth:Math.round(editState.advanceWidth), path:editState.data};
+      scheduleEmit();
+    } else if(v==="custom"){
+      commitGlyph("custom");
+    } else if(v==="font"){
+      openBorrow();
+    }
+  });
+
+  document.getElementById("reloadBaseBtn").addEventListener("click", async ()=>{
+    delete doc.glyphs[current];
+    await selectGlyph(current);
+    scheduleEmit();
+  });
+
+  document.getElementById("editNodesBtn").addEventListener("click", ()=>{
+    editState.nodeEdit=!editState.nodeEdit;
+    if(editState.nodeEdit){ rebuildNodes(); }
+    syncEditHeader(); drawCanvas();
+  });
+
+  document.getElementById("downloadBtn").addEventListener("click", async ()=>{
+    const baked=await compileAndBake();
+    if(!baked){ setStatus("compile failed — cannot download","err"); return; }
+    const a=document.createElement("a");
+    a.href=baked.dataUrl; a.download=(doc.familyName||"font").replace(/\s+/g,"")+".otf";
+    a.click();
+  });
+
+  document.getElementById("preview-text").addEventListener("input", ()=> renderPreview(null));
+
+  // borrow modal
+  document.getElementById("borrowCancel").addEventListener("click", closeBorrow);
+  document.getElementById("borrowLoadBtn").addEventListener("click", doBorrow);
+  document.getElementById("borrowModal").addEventListener("click",(e)=>{ if(e.target.id==="borrowModal") closeBorrow(); });
+}
+
+function clampInt(v,lo,hi,dft){ let n=parseInt(v); if(isNaN(n)) n=dft; return Math.max(lo,Math.min(hi,n)); }
+
+/* ----- borrow modal ----- */
+function openBorrow(){
+  document.getElementById("borrowFamily").value = editState.borrowRef || document.getElementById("baseGoogle").value || "";
+  document.getElementById("borrowModal").classList.add("show");
+  document.getElementById("borrowFamily").focus();
+}
+function closeBorrow(){
+  document.getElementById("borrowModal").classList.remove("show");
+  // revert select to actual state
+  document.getElementById("glyphFrom").value = fromToSelectValue(editState.from);
+}
+async function doBorrow(){
+  const fam=document.getElementById("borrowFamily").value.trim();
+  if(!fam){ return; }
+  setStatus("borrowing "+current+" from "+fam+"…","busy");
+  try{
+    const e=await loadFontByRef(fam,"google");
+    const o=baseGlyphOutline(e.font, e.unitsPerEm, current, doc.unitsPerEm);
+    if(!o){ setStatus("glyph not in "+fam,"err"); return; }
+    editState.data=o.data;
+    editState.advanceWidth=o.advanceWidth;
+    editState.borrowRef=fam;
+    editState.from="font:"+fam;
+    closeBorrow();
+    commitGlyph("font");
+    rebuildNodes(); drawCanvas();
+    setStatus("borrowed from "+fam,"ok");
+  }catch(err){ setStatus("borrow failed: "+err.message,"err"); }
+}
+
+/* =========================================================================
+ * Preview rendering
+ * =======================================================================*/
+async function renderPreview(baked){
+  const cv=document.getElementById("preview-canvas");
+  const ctx=cv.getContext("2d");
+  const dpr=window.devicePixelRatio||1;
+  const W=cv.clientWidth||216, H=120;
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.height=H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  let font = baked && baked.font;
+  if(!font){
+    const b=await compileAndBake();
+    font=b&&b.font;
+    updateBakeInfo(b);
+  }
+  if(!font){
+    ctx.fillStyle=getCSS("--ink3"); ctx.font="12px ui-sans-serif"; ctx.fillText("(no compiled font)",10,60); return;
+  }
+  const text=document.getElementById("preview-text").value||"Aa";
+  const fs=42;
+  try{
+    const path=font.getPath(text, 8, 70, fs);
+    ctx.fillStyle=getCSS("--ink");
+    const p2=new Path2D(path.toPathData(2));
+    ctx.fill(p2);
+  }catch(e){ ctx.fillStyle=getCSS("--bad"); ctx.fillText("render error",10,60); }
+}
+
+function updateBakeInfo(baked){
+  const el=document.getElementById("bakeInfo");
+  if(baked && baked.dataUrl){
+    const kb=Math.round(baked.dataUrl.length*0.75/102.4)/10;
+    el.innerHTML="Compiled OTF: ~"+kb+" KB · "+Object.keys(doc.glyphs).length+" stored glyph(s).";
+  } else {
+    el.textContent="Compile failed or no glyphs yet (JSON-only state).";
+  }
+}
+
+/* =========================================================================
+ * Init from state / set-state
+ * =======================================================================*/
+function applyDocToToolbar(){
+  document.getElementById("familyName").value=doc.familyName||"My Font";
+  document.getElementById("unitsPerEm").value=doc.unitsPerEm||1000;
+  document.getElementById("ascender").value=doc.ascender;
+  document.getElementById("descender").value=doc.descender;
+  if(doc.baseFont && doc.baseFont.source==="google") document.getElementById("baseGoogle").value=doc.baseFont.ref||"";
+}
+
+async function ensureBaseFontLoaded(){
+  const bf=doc.baseFont;
+  if(!bf || bf.source==="none") { baseFontObj=null; return; }
+  try{
+    if(bf.source==="google" && bf.ref){
+      setStatus("loading base "+bf.ref+"…","busy");
+      const e=await loadFontByRef(bf.ref,"google");
+      baseFontObj=e;
+      setStatus("base font: "+bf.ref,"ok");
+    }
+    // uploaded base fonts can't be re-fetched from a ref string; user re-uploads if needed.
+  }catch(err){ baseFontObj=null; setStatus("base load failed: "+err.message,"err"); }
+}
+
+async function initFromState(state, opts){
+  suppressEmit=true;
+  doc = (state && typeof state==="object") ? normalizeDoc(state) : blankDoc();
+  applyDocToToolbar();
+  await ensureBaseFontLoaded();
+  // pick a starting glyph that exists
+  const list=glyphList();
+  current = list.includes(current)? current : (list[0]||"A");
+  await selectGlyph(current);
+  renderGrid();
+  const baked=await compileAndBake();
+  updateBakeInfo(baked);
+  renderPreview(baked);
+  suppressEmit=false;
+}
+
+function normalizeDoc(s){
+  const d=blankDoc();
+  d.v=1;
+  d.familyName=s.familyName||d.familyName;
+  d.unitsPerEm=clampInt(s.unitsPerEm,64,16384,1000);
+  d.ascender=(typeof s.ascender==="number")?s.ascender:d.ascender;
+  d.descender=(typeof s.descender==="number")?s.descender:d.descender;
+  if(s.baseFont && typeof s.baseFont==="object"){
+    d.baseFont={ source:s.baseFont.source||"google", ref:s.baseFont.ref||"" };
+  }
+  d.glyphs={};
+  if(s.glyphs && typeof s.glyphs==="object"){
+    for(const k of Object.keys(s.glyphs)){
+      const g=s.glyphs[k]||{};
+      d.glyphs[k]={
+        from: g.from||"base",
+        advanceWidth: (typeof g.advanceWidth==="number")?g.advanceWidth:Math.round(d.unitsPerEm*0.5),
+        ...(g.path?{path:g.path}:{})
+      };
+    }
+  }
+  return d;
+}
+
+/* =========================================================================
+ * Message handling
+ * =======================================================================*/
+window.addEventListener("message", async (ev)=>{
+  const data=ev.data;
+  if(!data || typeof data!=="object") return;
+  if(data.nodeId !== nodeId) return;   // ignore foreign nodes
+  switch(data.type){
+    case "font:init":
+      await initFromState(data.state||null);
+      break;
+    case "font:set-state":
+      await initFromState(data.state||null);   // MUST NOT echo font:state (suppress guard handles it)
+      break;
+    case "font:content":
+      // ignore for fonts
+      break;
+  }
+});
+
+/* =========================================================================
+ * Boot
+ * =======================================================================*/
+function boot(){
+  if(typeof opentype==="undefined"){
+    setStatus("opentype.js failed to load","err");
+  }
+  wireToolbar();
+  setupCanvasInteraction();
+  if(EMBEDDED){
+    setStatus("ready — waiting for init…","");
+    post({type:"font:ready"});
+  } else {
+    // standalone: spin up a default doc so the tool is usable on its own
+    setStatus("standalone","");
+    initFromState(blankDoc());
+  }
+}
+
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
+
+})();
+</script>
+</body>
+</html>

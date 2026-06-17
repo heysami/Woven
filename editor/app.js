@@ -23252,6 +23252,41 @@ const WORKFLOW_NODE_FACTORY = {
     scene: p.scene || null,
     imports: p.imports || [],
   }),
+  // ── App-node family (driven views; sidecar JSON is canonical) ──────────
+  "font-editor": (p) => ({
+    kind: "font-editor", w: 820, h: 600,
+    font: p.font || null,
+    baseFont: p.baseFont || null,
+  }),
+  "image-editor": (p) => ({
+    kind: "image-editor", w: 900, h: 640,
+    doc: p.doc || null,
+  }),
+  "pixel-editor": (p) => ({
+    kind: "pixel-editor", w: 720, h: 600,
+    doc: p.doc || null,
+  }),
+  "voxel-3d": (p) => ({
+    kind: "voxel-3d", w: 720, h: 540,
+    grid: p.grid || null,
+    imports: p.imports || [],
+  }),
+  "synth": (p) => ({
+    kind: "synth", w: 560, h: 460,
+    patch: p.patch || null,
+  }),
+  "music": (p) => ({
+    kind: "music", w: 820, h: 520,
+    song: p.song || null,
+  }),
+  "material-lab": (p) => ({
+    kind: "material-lab", w: 900, h: 620,
+    doc: p.doc || null,
+  }),
+  "mm-composer": (p) => ({
+    kind: "mm-composer", w: 960, h: 640,
+    doc: p.doc || null,
+  }),
   "formatted-text": (p) => ({
     kind: "formatted-text", w: 380, h: 320,
     html: p.html || "<p>Type or wire a prompt here.</p>",
@@ -23485,6 +23520,53 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Formatted text",
     provides: { out: { label: "Baked HTML", tags: ["asset"] } },
     accepts:  { in:  { label: "Text / typography", tags: ["text", "typography"] } },
+  },
+  // ── App-node family ───────────────────────────────────────────────────
+  "font-editor": {
+    label: "Font creator",
+    provides: { out: { label: "Font", tags: ["asset", "font"] } },
+    accepts:  { in:   { label: "Base font", tags: ["asset", "font"] },
+                edit: { label: "Edit font", tags: ["text-gen", "asset-gen"] } },
+  },
+  "image-editor": {
+    label: "Image editor",
+    provides: { out: { label: "Baked image", tags: ["asset", "remixable", "blendable"] } },
+    accepts:  { in:   { label: "Layer", tags: ["asset"] },
+                edit: { label: "Edit image", tags: ["text-gen", "asset-gen"] } },
+  },
+  "pixel-editor": {
+    label: "Pixel editor",
+    provides: { out: { label: "Baked pixels", tags: ["asset", "remixable"] } },
+    accepts:  { edit: { label: "Edit pixels", tags: ["text-gen", "asset-gen"] } },
+  },
+  "voxel-3d": {
+    label: "Voxel editor",
+    provides: { out: { label: "Voxel scene", tags: ["asset", "3d"] } },
+    accepts:  { in:   { label: "Import 3D model", tags: ["asset", "3d"] },
+                edit: { label: "Edit voxels", tags: ["text-gen", "asset-gen", "3d"] } },
+  },
+  "synth": {
+    label: "Synth / percussion",
+    provides: { out: { label: "Sound", tags: ["asset", "audio"] } },
+    accepts:  { edit: { label: "Edit patch", tags: ["text-gen", "asset-gen"] } },
+  },
+  "music": {
+    label: "Music maker",
+    provides: { out: { label: "Track", tags: ["asset", "audio"] } },
+    accepts:  { in:   { label: "Sample / instrument", tags: ["asset", "audio"] },
+                edit: { label: "Edit song", tags: ["text-gen", "asset-gen"] } },
+  },
+  "material-lab": {
+    label: "Material Lab",
+    provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
+    accepts:  { in:   { label: "Element content", tags: ["asset"] },
+                edit: { label: "Edit materials", tags: ["text-gen", "asset-gen"] } },
+  },
+  "mm-composer": {
+    label: "Interactive composer",
+    provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
+    accepts:  { in:   { label: "Layer content", tags: ["asset"] },
+                edit: { label: "Edit composition", tags: ["text-gen", "asset-gen"] } },
   },
 };
 
@@ -38139,6 +38221,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => APP_NODE_TOOLS[n.kind]).map(n => html`
+              <${WorkflowDrivenToolNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onBakeAutoCreateOutput=${(bakedPath) => spawnAppNodeOutput(setData, n, bakedPath)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "iterator-repeater").map(n => html`
               <${WorkflowRepeaterNode}
                 key=${n.id}
@@ -39705,6 +39806,110 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">▣</span>
             <span className="workflow-library-item-label">Composer</span>
             <span className="workflow-library-item-id">layered canvas</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "font-editor" }));
+            }}
+            title="Drag onto canvas — font creator. Pick a base font, edit individual glyphs as vector outlines, or borrow glyphs from other fonts. Bakes a real .otf you can @font-face. Wire an Agent in to edit glyphs."
+          >
+            <span className="workflow-library-item-glyph">Aa</span>
+            <span className="workflow-library-item-label">Font creator</span>
+            <span className="workflow-library-item-id">glyph outlines → otf</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "image-editor" }));
+            }}
+            title="Drag onto canvas — raster image editor. Brush / shapes / fill, layers, free-lasso selection, per-pixel alpha-mask layer, and gradient map. Bakes a flattened .png."
+          >
+            <span className="workflow-library-item-glyph">▦</span>
+            <span className="workflow-library-item-label">Image editor</span>
+            <span className="workflow-library-item-id">raster · layers</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "pixel-editor" }));
+            }}
+            title="Drag onto canvas — pixel-art editor with a code/data generator mode AND a manual draw mode (also an ASCII canvas). Bakes a .png (+ .txt in ASCII mode)."
+          >
+            <span className="workflow-library-item-glyph">▩</span>
+            <span className="workflow-library-item-label">Pixel editor</span>
+            <span className="workflow-library-item-id">code · draw · ascii</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "voxel-3d" }));
+            }}
+            title="Drag onto canvas — voxel editor on a fixed grid. Same materials as the 3D editor (glass / metal / plastic + metaball / fur / cloth). Autosaves a .json scene; exports .glb."
+          >
+            <span className="workflow-library-item-glyph">⬚</span>
+            <span className="workflow-library-item-label">Voxel editor</span>
+            <span className="workflow-library-item-id">grid voxels</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "material-lab" }));
+            }}
+            title="Drag onto canvas — Material Lab. 2D UI elements wearing live shader materials (Apple Liquid Glass via WebGL refraction over the backdrop) that react to the mouse, nearby elements, and what's behind them. Bakes interactive .html."
+          >
+            <span className="workflow-library-item-glyph">◉</span>
+            <span className="workflow-library-item-label">Material Lab</span>
+            <span className="workflow-library-item-id">liquid glass · shaders</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "synth" }));
+            }}
+            title="Drag onto canvas — WebAudio synth + percussion for sound effects. Oscillators → filter → ADSR → FX, plus a percussion mode. Renders a .wav; wire an Agent in to drive the patch."
+          >
+            <span className="workflow-library-item-glyph">∿</span>
+            <span className="workflow-library-item-label">Synth / percussion</span>
+            <span className="workflow-library-item-id">webaudio → wav</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "music" }));
+            }}
+            title="Drag onto canvas — algorithmic sample-based music maker (Tidal/Strudel-style mini-notation). Wire audio assets / synth nodes as samples. Renders a .wav."
+          >
+            <span className="workflow-library-item-glyph">♪</span>
+            <span className="workflow-library-item-label">Music maker</span>
+            <span className="workflow-library-item-id">patterns → wav</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "mm-composer" }));
+            }}
+            title="Drag onto canvas — interactive multimedia composer. Layers of {positioning · trigger · effects}: grid / instance / physics / drawn / rope / camera-feed positioning, mouse / timeline / audio / camera triggers that cross-affect layers, and GPU/shader effects. Bakes interactive .html."
+          >
+            <span className="workflow-library-item-glyph">❖</span>
+            <span className="workflow-library-item-label">Interactive composer</span>
+            <span className="workflow-library-item-id">layers · triggers · fx</span>
           </div>
         </div>
       </div>
@@ -50939,8 +51144,7 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
       continue;
     }
     if (resolve === "bakedFile" || resolve === "assetFile" || up.kind === "asset") {
-      const editable = up.kind === "composer" || up.kind === "vector-editor"
-        || up.kind === "formatted-text" || up.kind === "spline-3d";
+      const editable = WORKFLOW_BAKED_EDITABLE_KINDS.has(up.kind);
       if (editable && !up.bakedPath) {
         out.push({ ...base, type: "unbaked", label: _composerLayerLabel(up) || label });
         continue;
@@ -51010,6 +51214,14 @@ function useUpstreamInputs(node, allNodes, allEdges, opts) {
   );
 }
 
+// Driven-view editor kinds whose downstream contribution is a baked file at
+// node.bakedPath (the canonical sidecar / baked presentation). Single source
+// of truth for the asset-resolution helpers below + the upstream resolver.
+const WORKFLOW_BAKED_EDITABLE_KINDS = new Set([
+  "formatted-text", "composer", "vector-editor", "spline-3d",
+  "font-editor", "image-editor", "pixel-editor", "voxel-3d",
+  "synth", "music", "material-lab", "mm-composer",
+]);
 function _composerAssetUrl(assetNode) {
   // Resolve the same kind of version-aware path the asset card iframe
   // uses, so the composer renders the live bytes — not a stale source/
@@ -51018,7 +51230,7 @@ function _composerAssetUrl(assetNode) {
   // v3.4.44 — formatted-text and composer nodes contribute a baked HTML
   // file path (set by their respective Bake buttons). Resolve those
   // through apiUrl so they render against the daemon-served source.
-  if ((assetNode.kind === "formatted-text" || assetNode.kind === "composer" || assetNode.kind === "vector-editor") && assetNode.bakedPath) {
+  if (WORKFLOW_BAKED_EDITABLE_KINDS.has(assetNode.kind) && assetNode.bakedPath) {
     return apiUrl("/" + assetNode.bakedPath);
   }
   const ver = (assetNode.versions || []).find(v => v && v.id === assetNode.activeVersionId);
@@ -51042,6 +51254,11 @@ function _composerLayerLabel(assetNode) {
   if (assetNode.kind === "composer") return "composer (unbaked)";
   if (assetNode.kind === "vector-editor" && assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
   if (assetNode.kind === "vector-editor") return "vector (unbaked)";
+  // App-node family: filename of the baked file, else "<kind> (unbaked)".
+  if (WORKFLOW_BAKED_EDITABLE_KINDS.has(assetNode.kind)) {
+    if (assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
+    return assetNode.kind + " (unbaked)";
+  }
   return (assetNode.path || "").split("/").pop() || assetNode.id;
 }
 function _composerAssetKind(assetNode) {
@@ -51057,6 +51274,15 @@ function _composerAssetKind(assetNode) {
   // scale crisply when used as a composer layer.
   if (assetNode.kind === "vector-editor" && assetNode.bakedPath) return "img";
   if (assetNode.kind === "vector-editor") return "iframe";
+  // App-node family: derive the renderer from the baked file's extension
+  // (png → img, html → iframe, otf/json/wav → iframe fallback).
+  if (WORKFLOW_BAKED_EDITABLE_KINDS.has(assetNode.kind)) {
+    const bp = (assetNode.bakedPath || "").toLowerCase();
+    const bext = bp.includes(".") ? bp.split(".").pop() : "";
+    if (["png","jpg","jpeg","webp","gif","avif"].includes(bext)) return "img";
+    if (bext === "svg") return "img";
+    return "iframe";
+  }
   const p = (assetNode.path || "").toLowerCase();
   const ext = p.includes(".") ? p.split(".").pop() : "";
   if (["png","jpg","jpeg","webp","gif","avif"].includes(ext)) return "img";
@@ -55240,6 +55466,323 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
     </div>
   `;
+}
+
+/* ── App-node family: generic driven-view tool node ────────────────────────
+   One component drives all eight new app-node kinds (font / image / pixel /
+   voxel / synth / music / material-lab / mm-composer). Same DRIVEN-VIEW
+   contract as spline-3d: the iframe holds NO persistence; it announces
+   `<prefix>:ready`, the node pushes `<prefix>:init {state, imports?}`, the
+   iframe emits `<prefix>:state {state, baked?}` on edit, and the node is the
+   single writer of BOTH the canonical JSON sidecar (the agent-editable file,
+   via /__write_text) AND the baked deliverable (font .otf / .png / .wav /
+   .html, via /__write_binary or /__write_text). An agent rewriting the
+   canonical file fires th:asset-refresh → the node pushes `<prefix>:set-state`
+   so the edit appears live. Per-kind config lives in APP_NODE_TOOLS. */
+const APP_NODE_TOOLS = {
+  "font-editor": {
+    glyph: "Aa", label: "Font creator", tool: "/editor/tools/fonteditor/index.html",
+    prefix: "font", stateField: "font",
+    canonical: (b, id) => `source/${b}/font-${id}.json`,
+    baked:     (b, id) => `source/${b}/fonts/font-${id}.otf`,
+    canonicalIsBaked: false, imports: false,
+    inTitle: "Wire a base-font asset, or an Agent to edit the glyphs.",
+    outTitle: "Pipe the baked .otf font into a DS / prototype consumer.",
+  },
+  "image-editor": {
+    glyph: "▦", label: "Image editor", tool: "/editor/tools/imageeditor/index.html",
+    prefix: "image", stateField: "doc",
+    canonical: (b, id) => `source/${b}/image-${id}.json`,
+    baked:     (b, id) => `source/${b}/images/image-${id}.png`,
+    canonicalIsBaked: false, imports: false,
+    inTitle: "Wire an image asset as a layer, or an Agent to edit.",
+    outTitle: "Pipe the flattened .png downstream.",
+  },
+  "pixel-editor": {
+    glyph: "▩", label: "Pixel editor", tool: "/editor/tools/pixeleditor/index.html",
+    prefix: "pixel", stateField: "doc",
+    canonical: (b, id) => `source/${b}/pixel-${id}.json`,
+    baked:     (b, id) => `source/${b}/images/pixel-${id}.png`,
+    canonicalIsBaked: false, imports: false,
+    inTitle: "Wire an Agent to edit the pixel data / generator.",
+    outTitle: "Pipe the rendered .png downstream.",
+  },
+  "voxel-3d": {
+    glyph: "⬚", label: "Voxel editor", tool: "/editor/tools/voxel3d/index.html",
+    prefix: "voxel", stateField: "grid",
+    canonical: (b, id) => `source/${b}/voxel-${id}.json`,
+    baked:     (b, id) => `source/${b}/voxel-${id}.json`,
+    canonicalIsBaked: true, imports: true,
+    inTitle: "Wire a 3D-gen / .glb asset to import, or an Agent to edit.",
+    outTitle: "Pipe the voxel scene (.json) into a downstream consumer.",
+  },
+  "synth": {
+    glyph: "∿", label: "Synth / percussion", tool: "/editor/tools/synth/index.html",
+    prefix: "synth", stateField: "patch",
+    canonical: (b, id) => `source/${b}/synth-${id}.json`,
+    baked:     (b, id) => `source/${b}/audio/synth-${id}.wav`,
+    canonicalIsBaked: false, imports: false,
+    inTitle: "Wire an Agent to edit the synth patch.",
+    outTitle: "Pipe the rendered .wav into a Music maker / downstream.",
+  },
+  "music": {
+    glyph: "♪", label: "Music maker", tool: "/editor/tools/music/index.html",
+    prefix: "music", stateField: "song",
+    canonical: (b, id) => `source/${b}/music-${id}.json`,
+    baked:     (b, id) => `source/${b}/audio/music-${id}.wav`,
+    canonicalIsBaked: false, imports: true,
+    inTitle: "Wire audio assets / synth nodes as samples, or an Agent to edit.",
+    outTitle: "Pipe the rendered .wav downstream.",
+  },
+  "material-lab": {
+    glyph: "◉", label: "Material Lab", tool: "/editor/tools/materiallab/index.html",
+    prefix: "material", stateField: "doc",
+    canonical: (b, id) => `source/${b}/material-${id}.json`,
+    baked:     (b, id) => `source/${b}/material-${id}.html`,
+    canonicalIsBaked: false, imports: true,
+    inTitle: "Wire asset nodes for element content, or an Agent to edit.",
+    outTitle: "Pipe the interactive material .html into a prototype.",
+  },
+  "mm-composer": {
+    glyph: "❖", label: "Interactive composer", tool: "/editor/tools/mmcomposer/index.html",
+    prefix: "mm", stateField: "doc",
+    canonical: (b, id) => `source/${b}/mm-${id}.json`,
+    baked:     (b, id) => `source/${b}/mm-${id}.html`,
+    canonicalIsBaked: false, imports: true,
+    inTitle: "Wire asset / synth / music nodes as layer content, or an Agent to edit.",
+    outTitle: "Pipe the interactive composition .html into a prototype.",
+  },
+};
+
+function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
+  const cfg = APP_NODE_TOOLS[node.kind];
+  const w = node.w || 720;
+  const h = node.h || 540;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const iframeRef = useRef(null);
+
+  const branch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+  const canonicalPath = cfg.canonical(branch, node.id);
+  const bakedPathTarget = cfg.baked(branch, node.id);
+
+  // Wired upstream content (assets) + .glb imports (voxel/3d). Resolved via the
+  // shared io-contract resolver, reactive. Content assets flow to the tool as a
+  // simple {id, url, kind, label} list so layer/element editors can reference
+  // them by node id; glb imports flow as URLs (voxel).
+  const inputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
+  const contentAssets = useMemo(() => inputs
+    .filter(i => i.type === "asset")
+    .map(i => ({ id: i.fromId, url: i.url, kind: i.assetKind, label: i.label })),
+    [inputs]);
+  const importUrls = useMemo(() => {
+    if (!cfg.imports) return [];
+    const wired = inputs.filter(i => i.type === "glb-import").map(i => i.url);
+    const own = (Array.isArray(node.imports) ? node.imports : [])
+      .map(p => /^(https?:)?\//.test(p) ? p : apiUrl("/" + String(p).replace(/^\//, "")));
+    return Array.from(new Set([...wired, ...own]));
+  }, [inputs, cfg.imports, (node.imports || []).join("|")]);
+  const contentKey = JSON.stringify(contentAssets);
+  const importKey = importUrls.join("|");
+
+  const iframeSrc = useMemo(() => {
+    const p = new URLSearchParams();
+    const pid = activeProjectId();
+    if (pid) p.set("project", pid);
+    p.set("nodeId", node.id);
+    return cfg.tool + "?" + p.toString();
+  }, [node.id, cfg.tool]);
+
+  const readyRef = useRef(false);
+  const stateRef = useRef(node[cfg.stateField]); stateRef.current = node[cfg.stateField];
+  const contentRef = useRef(contentAssets); contentRef.current = contentAssets;
+  const importsRef = useRef(importUrls); importsRef.current = importUrls;
+  const lastWrittenRef = useRef("");
+  const saveTimerRef = useRef(null);
+  const pendingRef = useRef(null);
+
+  const postToIframe = useCallback((msg) => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win) { try { win.postMessage({ ...msg, nodeId: node.id }, "*"); } catch (_e) {} }
+  }, [node.id]);
+
+  // Persist an edit from the iframe: cache state, write the canonical JSON
+  // (single writer), optionally write the baked deliverable, stamp bakedPath.
+  const persistState = useCallback((state, baked) => {
+    pendingRef.current = { state, baked };
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      const pend = pendingRef.current; if (!pend) return;
+      const text = JSON.stringify(pend.state);
+      const sig = text + "|" + (pend.baked ? "b" : "");
+      if (sig === lastWrittenRef.current) return;
+      lastWrittenRef.current = text;   // echo-suppress on the canonical text
+      const patch = {}; patch[cfg.stateField] = pend.state;
+      onChange(patch);
+      try {
+        await fetch(apiUrl("/__write_text"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: canonicalPath, text }),
+        });
+        let finalBaked = null;
+        if (cfg.canonicalIsBaked) {
+          finalBaked = canonicalPath;
+        } else if (pend.baked && (pend.baked.dataUrl || typeof pend.baked.text === "string")) {
+          if (pend.baked.dataUrl) {
+            await fetch(apiUrl("/__write_binary"), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: bakedPathTarget, dataUrl: pend.baked.dataUrl }),
+            });
+          } else {
+            await fetch(apiUrl("/__write_text"), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: bakedPathTarget, text: pend.baked.text }),
+            });
+          }
+          finalBaked = bakedPathTarget;
+        }
+        if (finalBaked && node.bakedPath !== finalBaked) {
+          onChange({ bakedPath: finalBaked, bakedAt: new Date().toISOString() });
+          try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(finalBaked); } catch (_e) {}
+          try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [finalBaked] } })); } catch (_e) {}
+        }
+      } catch (_e) {}
+    }, 900);
+  }, [canonicalPath, bakedPathTarget, cfg.canonicalIsBaked, cfg.stateField, node.bakedPath, onChange, onBakeAutoCreateOutput]);
+
+  // iframe → node: ready (push init) + state edits (persist).
+  useEffect(() => {
+    const onMsg = (ev) => {
+      const d = ev && ev.data;
+      if (!d || d.nodeId !== node.id) return;
+      if (d.type === cfg.prefix + ":ready") {
+        readyRef.current = true;
+        postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
+                       content: contentRef.current, imports: importsRef.current, branch });
+      } else if (d.type === cfg.prefix + ":state") {
+        persistState(d.state, d.baked || null);
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [node.id, cfg.prefix, branch, postToIframe, persistState]);
+
+  // Reactive content/imports push.
+  useEffect(() => {
+    if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentKey, importKey, cfg.prefix, postToIframe]);
+
+  // Agent edited the canonical file → re-import live (ignore our own echo).
+  useEffect(() => {
+    const onRefresh = async (ev) => {
+      const paths = (ev && ev.detail && ev.detail.paths) || [];
+      if (!paths.includes(canonicalPath)) return;
+      try {
+        const r = await fetch(apiUrl("/" + canonicalPath), { cache: "no-store" });
+        if (!r.ok) return;
+        const text = await r.text();
+        if (text === lastWrittenRef.current) return;
+        lastWrittenRef.current = text;
+        const state = JSON.parse(text);
+        const patch = {}; patch[cfg.stateField] = state; onChange(patch);
+        postToIframe({ type: cfg.prefix + ":set-state", state });
+      } catch (_e) {}
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [canonicalPath, cfg.prefix, cfg.stateField, onChange, postToIframe]);
+
+  // Live re-import when node[stateField] changes from OUTSIDE this iframe.
+  const lastPushedRef = useRef(JSON.stringify(node[cfg.stateField] || null));
+  useEffect(() => {
+    const key = JSON.stringify(node[cfg.stateField] || null);
+    if (key === lastPushedRef.current) return;
+    lastPushedRef.current = key;
+    if (key === lastWrittenRef.current) return;
+    if (readyRef.current && node[cfg.stateField]) postToIframe({ type: cfg.prefix + ":set-state", state: node[cfg.stateField] });
+  }, [node[cfg.stateField], cfg.prefix, cfg.stateField, postToIframe]);
+
+  const hasIn = !!(WORKFLOW_CONNECT_DEFS[node.kind] && WORKFLOW_CONNECT_DEFS[node.kind].accepts && WORKFLOW_CONNECT_DEFS[node.kind].accepts.in);
+  return html`
+    <div
+      className=${"workflow-node workflow-node-apptool workflow-node-apptool-" + node.kind}
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">${cfg.glyph}</span>
+        <span className="workflow-node-label">${cfg.label}</span>
+        <span className="workflow-node-bar-spacer"/>
+        ${cfg.imports && importUrls.length > 0 && html`<span className="workflow-node-fmttext-tag" title=${importUrls.length + " wired import(s)"}>${importUrls.length}</span>`}
+        ${node.bakedAt && html`<span className="workflow-node-composer-baked-tag" title=${"Saved → " + bakedPathTarget}>saved</span>`}
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <iframe
+        ref=${iframeRef}
+        src=${iframeSrc}
+        className="workflow-apptool-frame"
+        title=${cfg.label}
+        style=${{ width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" }}
+        onMouseDown=${(e) => e.stopPropagation()}
+      />
+      ${hasIn && html`<div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id}
+        data-port-side="in"
+        title=${cfg.inTitle}
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>`}
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id}
+        data-port-side="out"
+        title=${cfg.outTitle}
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+// Spawn an asset card wired to .out on first bake (mirrors composer / vector /
+// spline). assetKind derives from the baked file extension. Re-bakes no-op.
+function spawnAppNodeOutput(setData, n, bakedPath) {
+  const ext = (String(bakedPath).split(".").pop() || "").toLowerCase();
+  const assetKind = ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp" ? "image"
+    : ext === "svg" ? "svg"
+    : ext === "html" ? "html"
+    : ext === "wav" || ext === "mp3" || ext === "ogg" ? "audio"
+    : ext === "otf" || ext === "ttf" || ext === "woff" || ext === "woff2" ? "font"
+    : ext === "json" ? "scene"
+    : "image";
+  setData(d => {
+    const edges = d.edges || [];
+    const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id && (e.from || "").endsWith(".out"));
+    if (hasOut) return d;
+    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const fw = n.w || 720;
+    const newAsset = {
+      id: assetId, kind: "asset", assetKind,
+      x: (n.x || 0) + fw + 60, y: (n.y || 0), w: 360, h: 240,
+      path: bakedPath, spawnedBy: n.kind + "-bake-output",
+      boundTo: { node: n.id, port: "out" },
+    };
+    return {
+      ...d,
+      nodes: [...(d.nodes || []), newAsset],
+      edges: [...edges, { from: `${n.id}.out`, to: `${assetId}.in` }],
+    };
+  });
 }
 
 /* v3.4.38 — Mermaid diagram node.

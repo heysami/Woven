@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Woven · Image Editor</title>
+<style>
+  :root{
+    --bg:#16181d; --bg2:#1c1f26; --panel:#21252e; --panel2:#272c37;
+    --line:#333a47; --line2:#3d4555; --ink:#e8ecf3; --ink2:#9aa4b6;
+    --ink3:#6b7484; --accent:#5b8cff; --accent2:#7aa2ff; --danger:#ff6b6b;
+    --good:#4fd190; --chk1:#2a2e36; --chk2:#23262d; --radius:7px;
+  }
+  *{box-sizing:border-box; -webkit-user-select:none; user-select:none;}
+  html,body{margin:0; height:100%; overflow:hidden;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column;
+  }
+  /* ── top bar ── */
+  #topbar{
+    display:flex; align-items:center; gap:10px; padding:8px 12px;
+    background:linear-gradient(180deg,var(--bg2),var(--bg)); border-bottom:1px solid var(--line);
+    flex:0 0 auto; z-index:30;
+  }
+  .brand{font-weight:700; letter-spacing:.3px; font-size:13px; color:var(--ink);}
+  .brand b{color:var(--accent2);}
+  .sep{width:1px; height:22px; background:var(--line); margin:0 2px;}
+  .spacer{flex:1;}
+  .doc-size{color:var(--ink3); font-size:11px; font-variant-numeric:tabular-nums;}
+  button.btn{
+    background:var(--panel); color:var(--ink); border:1px solid var(--line2);
+    border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px;
+  }
+  button.btn:hover{background:var(--panel2); border-color:var(--accent);}
+  button.btn:active{transform:translateY(1px);}
+  button.btn.primary{background:var(--accent); border-color:var(--accent); color:#0a0e18; font-weight:600;}
+  button.btn.primary:hover{background:var(--accent2);}
+  /* ── layout ── */
+  #main{flex:1; display:flex; min-height:0;}
+  /* tool rail */
+  #toolrail{
+    flex:0 0 48px; background:var(--bg2); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; overflow-y:auto;
+  }
+  .tool{
+    width:36px; height:36px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--ink2); border:1px solid transparent; position:relative;
+  }
+  .tool:hover{background:var(--panel); color:var(--ink);}
+  .tool.active{background:var(--accent); color:#0a0e18; border-color:var(--accent);}
+  .tool svg{width:19px; height:19px; display:block;}
+  .tool .tip{
+    position:absolute; left:46px; top:50%; transform:translateY(-50%);
+    background:#000; color:#fff; padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
+    opacity:0; pointer-events:none; transition:opacity .12s; z-index:50;
+  }
+  .tool:hover .tip{opacity:.92;}
+  /* canvas stage */
+  #stage{
+    flex:1; position:relative; overflow:hidden; min-width:0;
+    background:
+      linear-gradient(45deg,#101216 25%,transparent 25%,transparent 75%,#101216 75%),
+      linear-gradient(45deg,#101216 25%,#14161b 25%,#14161b 75%,#101216 75%);
+    background-size:22px 22px; background-position:0 0,11px 11px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #canvasWrap{position:relative; box-shadow:0 8px 40px rgba(0,0,0,.5);}
+  #viewCanvas{
+    display:block; image-rendering:auto;
+    background-image:
+      linear-gradient(45deg,var(--chk1) 25%,transparent 25%,transparent 75%,var(--chk1) 75%),
+      linear-gradient(45deg,var(--chk1) 25%,var(--chk2) 25%,var(--chk2) 75%,var(--chk1) 75%);
+    background-size:18px 18px; background-position:0 0,9px 9px; background-color:var(--chk2);
+  }
+  #overlay{position:absolute; left:0; top:0; pointer-events:none;}
+  #cursorRing{
+    position:absolute; border:1px solid #fff; border-radius:50%; pointer-events:none;
+    mix-blend-mode:difference; display:none; left:0; top:0; box-shadow:0 0 0 1px rgba(0,0,0,.4) inset;
+  }
+  #zoomHud{
+    position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,.55); backdrop-filter:blur(6px);
+    border:1px solid var(--line); border-radius:6px; padding:5px 8px; display:flex; gap:6px; align-items:center;
+    font-size:11px; color:var(--ink2);
+  }
+  #zoomHud button{background:none; border:none; color:var(--ink2); cursor:pointer; font-size:14px; padding:0 4px;}
+  #zoomHud button:hover{color:var(--ink);}
+  /* right panels */
+  #rightcol{
+    flex:0 0 264px; background:var(--bg2); border-left:1px solid var(--line);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  .pane{border-bottom:1px solid var(--line); display:flex; flex-direction:column; min-height:0;}
+  .pane-h{
+    display:flex; align-items:center; justify-content:space-between; padding:7px 10px;
+    font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--ink2); font-weight:600;
+    background:var(--bg);
+  }
+  .pane-h .acts{display:flex; gap:4px;}
+  .iconbtn{
+    width:22px; height:22px; border-radius:5px; background:var(--panel); border:1px solid var(--line2);
+    color:var(--ink2); cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .iconbtn:hover{color:var(--ink); border-color:var(--accent); background:var(--panel2);}
+  .iconbtn svg{width:13px; height:13px;}
+  .iconbtn.danger:hover{color:var(--danger); border-color:var(--danger);}
+  /* tool options */
+  #opts{padding:10px; display:flex; flex-direction:column; gap:11px; overflow-y:auto; flex:0 0 auto; max-height:40%;}
+  .row{display:flex; align-items:center; gap:8px;}
+  .row label{flex:0 0 56px; color:var(--ink2); font-size:11px;}
+  .row .val{margin-left:auto; color:var(--ink3); font-size:11px; font-variant-numeric:tabular-nums; min-width:32px; text-align:right;}
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; height:4px; border-radius:3px; background:var(--line2);
+    flex:1; outline:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent2);
+    border:2px solid var(--bg2); cursor:pointer;
+  }
+  input[type=color]{
+    -webkit-appearance:none; appearance:none; width:30px; height:24px; border:1px solid var(--line2);
+    border-radius:5px; background:none; padding:0; cursor:pointer;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper{padding:2px;}
+  input[type=color]::-webkit-color-swatch{border:none; border-radius:3px;}
+  select{
+    background:var(--panel); color:var(--ink); border:1px solid var(--line2); border-radius:5px;
+    padding:3px 6px; font-size:12px; cursor:pointer; flex:1;
+  }
+  .swatches{display:flex; flex-wrap:wrap; gap:5px;}
+  .sw{width:18px; height:18px; border-radius:4px; cursor:pointer; border:1px solid rgba(255,255,255,.12);}
+  .sw:hover{transform:scale(1.12);}
+  .hint{color:var(--ink3); font-size:11px; line-height:1.5;}
+  /* layers list */
+  #layersWrap{flex:1; overflow-y:auto; min-height:80px;}
+  .layer{
+    display:flex; align-items:center; gap:7px; padding:6px 8px; border-bottom:1px solid var(--line);
+    cursor:pointer; position:relative;
+  }
+  .layer:hover{background:var(--panel);}
+  .layer.sel{background:rgba(91,140,255,.16); box-shadow:inset 2px 0 0 var(--accent);}
+  .layer .vis{flex:0 0 auto; width:18px; height:18px; cursor:pointer; color:var(--ink2); display:flex; align-items:center; justify-content:center;}
+  .layer.hidden .vis{color:var(--ink3); opacity:.5;}
+  .layer .thumb{
+    flex:0 0 30px; width:30px; height:30px; border-radius:4px; border:1px solid var(--line2);
+    background-color:var(--chk2); background-image:
+      linear-gradient(45deg,var(--chk1) 25%,transparent 25%,transparent 75%,var(--chk1) 75%),
+      linear-gradient(45deg,var(--chk1) 25%,var(--chk2) 25%,var(--chk2) 75%,var(--chk1) 75%);
+    background-size:10px 10px; background-position:0 0,5px 5px;
+  }
+  .layer .thumb canvas{width:100%; height:100%; display:block; border-radius:3px;}
+  .layer .meta{flex:1; min-width:0;}
+  .layer .nm{font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .layer.hidden .nm{color:var(--ink3);}
+  .layer .badge{
+    font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink3);
+    background:var(--bg); border:1px solid var(--line); border-radius:3px; padding:1px 4px; margin-left:4px;
+  }
+  .layer .badge.mask{color:#c9a8ff; border-color:#43385e;}
+  .layer .badge.grad{color:#ffd28a; border-color:#5e5238;}
+  .layer .badge.asset{color:#8af0d2; border-color:#2f5a4d;}
+  .layer .sub{font-size:10px; color:var(--ink3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .layer .reorder{display:flex; flex-direction:column; gap:1px; opacity:0;}
+  .layer:hover .reorder{opacity:1;}
+  .layer .reorder button{
+    width:16px; height:13px; padding:0; background:var(--panel2); border:1px solid var(--line2);
+    color:var(--ink2); border-radius:3px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .layer .reorder button:hover{color:var(--ink); border-color:var(--accent);}
+  .layer .reorder svg{width:9px; height:9px;}
+  /* gradient editor */
+  #gradEditor{padding:10px; display:none; flex-direction:column; gap:9px; border-top:1px solid var(--line); background:var(--bg);}
+  #gradEditor.show{display:flex;}
+  #gradBar{
+    position:relative; height:26px; border-radius:5px; border:1px solid var(--line2); cursor:crosshair;
+    background:#000;
+  }
+  .gstop{
+    position:absolute; top:-5px; width:13px; height:36px; transform:translateX(-50%); cursor:grab;
+  }
+  .gstop .pin{
+    width:13px; height:13px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px #000,0 1px 3px rgba(0,0,0,.6);
+    position:absolute; bottom:0; left:0;
+  }
+  .gstop.sel .pin{border-color:var(--accent2); box-shadow:0 0 0 2px var(--accent),0 1px 4px rgba(0,0,0,.7);}
+  .gstop .stem{position:absolute; top:0; left:50%; width:1px; height:8px; background:#fff; transform:translateX(-50%);}
+  .grad-ctrls{display:flex; align-items:center; gap:8px;}
+  .grad-ctrls .hint{flex:1;}
+  /* selection actions bar */
+  #selBar{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.6); backdrop-filter:blur(8px); border:1px solid var(--line);
+    border-radius:8px; padding:5px 7px; display:none; gap:6px; align-items:center; font-size:11px; color:var(--ink2);
+  }
+  #selBar.show{display:flex;}
+  /* toast */
+  #toast{
+    position:absolute; bottom:14px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:#000; color:#fff; padding:7px 14px; border-radius:7px; font-size:12px;
+    opacity:0; transition:.25s; pointer-events:none; z-index:60; border:1px solid var(--line2);
+  }
+  #toast.show{opacity:.96; transform:translateX(-50%) translateY(0);}
+  /* standalone notice */
+  #standalone{
+    position:absolute; top:8px; right:8px; background:rgba(0,0,0,.5); border:1px solid var(--line);
+    color:var(--ink3); font-size:10px; padding:3px 7px; border-radius:5px; z-index:40;
+  }
+  .scroll-thin::-webkit-scrollbar{width:9px; height:9px;}
+  .scroll-thin::-webkit-scrollbar-thumb{background:var(--line2); border-radius:5px; border:2px solid var(--bg2);}
+  .scroll-thin::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="brand">Woven <b>Image</b></span>
+  <span class="sep"></span>
+  <button class="btn" id="undoBtn" title="Undo (⌘Z)">Undo</button>
+  <button class="btn" id="redoBtn" title="Redo (⌘⇧Z)">Redo</button>
+  <span class="spacer"></span>
+  <span class="doc-size" id="docSize">1024 × 1024</span>
+  <span class="sep"></span>
+  <button class="btn" id="exportBtn">Export PNG</button>
+  <button class="btn primary" id="bakeBtn">Save to node</button>
+</div>
+
+<div id="main">
+  <div id="toolrail" class="scroll-thin"></div>
+
+  <div id="stage">
+    <div id="canvasWrap">
+      <canvas id="viewCanvas"></canvas>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div id="cursorRing"></div>
+    <div id="selBar">
+      <span>Selection active</span>
+      <button class="btn" id="invertSel">Invert</button>
+      <button class="btn" id="clearSel">Clear</button>
+    </div>
+    <div id="zoomHud">
+      <button id="zoomOut">−</button>
+      <span id="zoomVal">100%</span>
+      <button id="zoomIn">+</button>
+      <button id="zoomFit" title="Fit">⊡</button>
+    </div>
+    <div id="standalone" style="display:none">standalone preview</div>
+    <div id="toast"></div>
+  </div>
+
+  <div id="rightcol">
+    <div class="pane">
+      <div class="pane-h"><span id="optTitle">Brush</span></div>
+      <div id="opts" class="scroll-thin"></div>
+    </div>
+    <div class="pane" style="flex:1;">
+      <div class="pane-h">
+        <span>Layers</span>
+        <div class="acts">
+          <button class="iconbtn" id="addRaster" title="Add raster layer"></button>
+          <button class="iconbtn" id="addMask" title="Add alpha mask to selected">M</button>
+          <button class="iconbtn" id="addGrad" title="Add gradient map to selected">G</button>
+          <button class="iconbtn danger" id="delLayer" title="Delete layer">×</button>
+        </div>
+      </div>
+      <div id="layersWrap" class="scroll-thin"></div>
+      <div id="gradEditor"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   Woven Image Editor — single-file raster editor, driven-view of a parent node.
+   ========================================================================== */
+
+// ── Icon set (inline SVG, currentColor — no emoji icons) ───────────────────
+const ICON = {
+  brush:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 3 21M14 4l6 6M16.5 6.5 6.8 16.2c-.6.6-.9 1.4-.9 2.2 0 .3-.2.6-.5.6-1.4 0-2.7-.5-3.7-1.5"/><path d="M14.5 4.5 19.5 9.5l1-1c1-1 1-2.6 0-3.5l-1.5-1.5c-1-1-2.6-1-3.5 0z"/></svg>',
+  eraser:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12.5 6.5 17 11 9 19H6l-2-2c-.8-.8-.8-2 0-2.8z"/><path d="m9.5 9.5 5 5"/></svg>',
+  bucket:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 10.5 11.5 4l7 7-6 6c-.8.8-2 .8-2.8 0L5 12.3a1.3 1.3 0 0 1 0-1.8z"/><path d="m9 6 8 8"/><path d="M20 15c0 1.1-.9 2-2 2"/><path d="M3.5 19h6"/></svg>',
+  rect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg>',
+  ellipse:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></svg>',
+  eyedrop:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m11 11 2 2"/><path d="M14.5 6.5 17.5 9.5"/><path d="M16 5l3 3"/><path d="M14.5 6.5 5.5 15.5 4 20l4.5-1.5 9-9z"/></svg>',
+  lasso:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11c0-3.9 3.6-7 8-7s8 3.1 8 7-3.6 7-8 7c-1.2 0-2.4-.2-3.4-.6"/><path d="M6.5 16.5c.8.8.8 2.2 0 3s-2.2.8-3 0c-.5-.5-.7-1.3-.5-2"/></svg>',
+  move:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>',
+  eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.6"/></svg>',
+  eyeoff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.7 9.7 0 0 1 12 5c6.5 0 10 7 10 7a16 16 0 0 1-2.9 3.5M6.2 6.7C3.7 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 3.6-.7"/><path d="M9.5 9.6a2.6 2.6 0 0 0 3.8 3.6"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 6-6 6 6"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 10 6 6 6-6"/></svg>',
+};
+
+// ── Parent-node bridge state ───────────────────────────────────────────────
+const Q = new URLSearchParams(location.search);
+const NODE = Q.get('nodeId') || '';
+const PROJECT = Q.get('project') || '';
+const EMBEDDED = window.parent !== window;
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const view = document.getElementById('viewCanvas');
+const vctx = view.getContext('2d');
+const overlay = document.getElementById('overlay');
+const octx = overlay.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+const stage = document.getElementById('stage');
+const cursorRing = document.getElementById('cursorRing');
+
+// ── Document model ─────────────────────────────────────────────────────────
+// Each raster/mask layer has: id, name, type, opacity, blend, visible, target,
+// canvas (offscreen pixel buffer), and (for asset layers) assetUrl/assetId.
+// Gradient-map layers have: stops [{t,color}], target.
+let DOC = { w:1024, h:1024, layers:[], selection:null };
+let activeId = null;
+let suppressEmit = false;      // guard so programmatic rebuilds don't echo upward
+let gotInit = false;
+let uidc = 1;
+const uid = (p)=> p + (Date.now().toString(36).slice(-4)) + (uidc++).toString(36);
+
+function newCanvas(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+function layerById(id){ return DOC.layers.find(l=>l.id===id); }
+function activeLayer(){ return layerById(activeId); }
+function rasterLayers(){ return DOC.layers.filter(l=>l.type==='raster'); }
+
+// ── Tools ──────────────────────────────────────────────────────────────────
+const TOOLS = [
+  {id:'brush',   name:'Brush',      icon:ICON.brush},
+  {id:'eraser',  name:'Eraser',     icon:ICON.eraser},
+  {id:'bucket',  name:'Bucket fill',icon:ICON.bucket},
+  {id:'rect',    name:'Rectangle',  icon:ICON.rect},
+  {id:'ellipse', name:'Ellipse',    icon:ICON.ellipse},
+  {id:'eyedrop', name:'Eyedropper', icon:ICON.eyedrop},
+  {id:'lasso',   name:'Lasso select',icon:ICON.lasso},
+];
+let tool = 'brush';
+const opt = { size:32, color:'#5b8cff', opacity:1, fill:true, tolerance:32 };
+
+// ── View transform ─────────────────────────────────────────────────────────
+let zoom = 1;
+
+function buildDocCanvases(){
+  view.width = DOC.w; view.height = DOC.h;
+  overlay.width = DOC.w; overlay.height = DOC.h;
+}
+function fitZoom(){
+  const pad = 40;
+  const aw = stage.clientWidth - pad, ah = stage.clientHeight - pad;
+  zoom = Math.max(0.05, Math.min(aw/DOC.w, ah/DOC.h, 4));
+  applyZoom();
+}
+function applyZoom(){
+  const w = DOC.w*zoom, h = DOC.h*zoom;
+  view.style.width = w+'px'; view.style.height = h+'px';
+  overlay.style.width = w+'px'; overlay.style.height = h+'px';
+  document.getElementById('zoomVal').textContent = Math.round(zoom*100)+'%';
+}
+
+// ── Selection (lasso polygon) ──────────────────────────────────────────────
+// selectionPath: cached Path2D for clipping; selPoints stored in DOC.selection.
+let selPath = null;
+function buildSelPath(){
+  selPath = null;
+  const s = DOC.selection;
+  if(!s || s.type!=='lasso' || !s.points || s.points.length<3) return;
+  const p = new Path2D();
+  p.moveTo(s.points[0][0], s.points[0][1]);
+  for(let i=1;i<s.points.length;i++) p.lineTo(s.points[i][0], s.points[i][1]);
+  p.closePath();
+  selPath = p;
+  if(s.invert){ /* handled by clip-then-paint-outside via even-odd full-rect */ }
+}
+function applySelClip(ctx){
+  if(!selPath) return false;
+  const s = DOC.selection;
+  if(s && s.invert){
+    const p = new Path2D();
+    p.rect(0,0,DOC.w,DOC.h);
+    p.addPath(selPath);
+    ctx.clip(p,'evenodd');
+  } else {
+    ctx.clip(selPath);
+  }
+  return true;
+}
+
+// ============================================================================
+// COMPOSITING — flatten visible layers (masks + gradient maps + blend) → view
+// ============================================================================
+// Returns a flattened canvas of the whole doc. Used both for screen + bake.
+const _tmp = newCanvas(1,1);
+function compose(targetCanvas){
+  const out = targetCanvas || view;
+  const ctx = out.getContext('2d');
+  ctx.clearRect(0,0,DOC.w,DOC.h);
+
+  // Pre-build a fast lookup of effects attached to each raster target.
+  const masks = {}, grads = {};
+  for(const l of DOC.layers){
+    if(l.type==='alpha-mask' && l.visible!==false) (masks[l.target]=masks[l.target]||[]).push(l);
+    if(l.type==='gradient-map' && l.visible!==false) (grads[l.target]=grads[l.target]||[]).push(l);
+  }
+
+  for(const l of DOC.layers){
+    if(l.type!=='raster') continue;
+    if(l.visible===false) continue;
+
+    // Start from the raster pixels.
+    if(_tmp.width!==DOC.w || _tmp.height!==DOC.h){ _tmp.width=DOC.w; _tmp.height=DOC.h; }
+    const tctx = _tmp.getContext('2d');
+    tctx.clearRect(0,0,DOC.w,DOC.h);
+    tctx.drawImage(l.canvas,0,0);
+
+    // Gradient map: remap luminance → gradient color (preserve alpha).
+    const gs = grads[l.id];
+    if(gs && gs.length){ for(const g of gs) applyGradientMap(_tmp, g); }
+
+    // Alpha masks: multiply alpha by mask luminance.
+    const ms = masks[l.id];
+    if(ms && ms.length){ for(const m of ms) applyMask(_tmp, m); }
+
+    ctx.save();
+    ctx.globalAlpha = (l.opacity==null?1:l.opacity);
+    ctx.globalCompositeOperation = (l.blend && l.blend!=='normal') ? l.blend : 'source-over';
+    ctx.drawImage(_tmp,0,0);
+    ctx.restore();
+  }
+  return out;
+}
+
+function applyMask(canvas, mask){
+  const w=DOC.w,h=DOC.h;
+  const cx = canvas.getContext('2d');
+  const base = cx.getImageData(0,0,w,h);
+  const mctx = mask.canvas.getContext('2d');
+  const md = mctx.getImageData(0,0,w,h);
+  const bd=base.data, mdd=md.data;
+  for(let i=0;i<bd.length;i+=4){
+    // luminance of mask pixel, weighted by the mask pixel's own alpha
+    const ma = mdd[i+3]/255;
+    const lum = (0.2126*mdd[i] + 0.7152*mdd[i+1] + 0.0722*mdd[i+2])/255;
+    bd[i+3] = bd[i+3] * lum * ma;
+  }
+  cx.putImageData(base,0,0);
+}
+
+function applyGradientMap(canvas, grad){
+  const w=DOC.w,h=DOC.h;
+  const cx = canvas.getContext('2d');
+  const img = cx.getImageData(0,0,w,h);
+  const d = img.data;
+  const lut = gradientLUT(grad.stops);
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]===0) continue;
+    const lum = (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2])|0;
+    const c = lut[lum];
+    d[i]=c[0]; d[i+1]=c[1]; d[i+2]=c[2];
+  }
+  cx.putImageData(img,0,0);
+}
+
+// 256-entry LUT from sorted color stops.
+function gradientLUT(stops){
+  const s = (stops&&stops.length?stops:[{t:0,color:'#000'},{t:1,color:'#fff'}])
+    .slice().sort((a,b)=>a.t-b.t).map(x=>({t:x.t, c:hexToRgb(x.color)}));
+  const lut = new Array(256);
+  for(let i=0;i<256;i++){
+    const t=i/255;
+    if(t<=s[0].t){ lut[i]=s[0].c.slice(); continue; }
+    if(t>=s[s.length-1].t){ lut[i]=s[s.length-1].c.slice(); continue; }
+    let a=s[0],b=s[s.length-1];
+    for(let k=0;k<s.length-1;k++){ if(t>=s[k].t && t<=s[k+1].t){ a=s[k]; b=s[k+1]; break; } }
+    const f = b.t===a.t?0:(t-a.t)/(b.t-a.t);
+    lut[i]=[Math.round(a.c[0]+(b.c[0]-a.c[0])*f),
+            Math.round(a.c[1]+(b.c[1]-a.c[1])*f),
+            Math.round(a.c[2]+(b.c[2]-a.c[2])*f)];
+  }
+  return lut;
+}
+function hexToRgb(h){
+  h=(h||'#000').replace('#','');
+  if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  const n=parseInt(h,16);
+  return [(n>>16)&255,(n>>8)&255,n&255];
+}
+function rgbToHex(r,g,b){ return '#'+[r,g,b].map(v=>('0'+(v|0).toString(16)).slice(-2)).join(''); }
+
+let composeRAF = 0;
+function render(){
+  if(composeRAF) return;
+  composeRAF = requestAnimationFrame(()=>{ composeRAF=0; compose(view); drawOverlay(); });
+}
+
+// ── Overlay: marching ants + in-progress lasso + shape preview ─────────────
+let antsOffset = 0, antsRAF = 0, livePoints = null, shapePreview = null;
+function drawOverlay(){
+  octx.clearRect(0,0,DOC.w,DOC.h);
+  const lw = Math.max(1, 1.5/zoom);
+  // committed selection
+  const s = DOC.selection;
+  if(s && s.points && s.points.length>1){
+    octx.save();
+    octx.lineWidth=lw; octx.setLineDash([6/zoom,5/zoom]); octx.lineDashOffset=-antsOffset/zoom;
+    octx.beginPath();
+    octx.moveTo(s.points[0][0],s.points[0][1]);
+    for(let i=1;i<s.points.length;i++) octx.lineTo(s.points[i][0],s.points[i][1]);
+    octx.closePath();
+    octx.strokeStyle='#000'; octx.stroke();
+    octx.lineDashOffset=(-antsOffset+6)/zoom; octx.strokeStyle='#fff'; octx.stroke();
+    octx.restore();
+  }
+  // live lasso
+  if(livePoints && livePoints.length>1){
+    octx.save();
+    octx.lineWidth=lw; octx.setLineDash([5/zoom,4/zoom]);
+    octx.beginPath();
+    octx.moveTo(livePoints[0][0],livePoints[0][1]);
+    for(let i=1;i<livePoints.length;i++) octx.lineTo(livePoints[i][0],livePoints[i][1]);
+    octx.strokeStyle='#fff'; octx.stroke();
+    octx.restore();
+  }
+  // shape preview (rect/ellipse)
+  if(shapePreview){
+    const {x0,y0,x1,y1,kind}=shapePreview;
+    octx.save();
+    octx.lineWidth=lw; octx.setLineDash([4/zoom,3/zoom]); octx.strokeStyle='#fff';
+    if(kind==='rect'){ octx.strokeRect(Math.min(x0,x1),Math.min(y0,y1),Math.abs(x1-x0),Math.abs(y1-y0)); }
+    else { octx.beginPath(); octx.ellipse((x0+x1)/2,(y0+y1)/2,Math.abs(x1-x0)/2,Math.abs(y1-y0)/2,0,0,7); octx.stroke(); }
+    octx.restore();
+  }
+}
+function startAnts(){
+  if(antsRAF) return;
+  const loop=()=>{ antsOffset=(antsOffset+0.6)%11; drawOverlay(); antsRAF=requestAnimationFrame(loop); };
+  antsRAF=requestAnimationFrame(loop);
+}
+function stopAntsIfIdle(){
+  if(!DOC.selection && !livePoints){ if(antsRAF){ cancelAnimationFrame(antsRAF); antsRAF=0; } drawOverlay(); }
+}
+
+// ============================================================================
+// PAINTING — operates on the active layer's offscreen canvas, clipped to sel.
+// ============================================================================
+let painting=false, lastP=null, shapeStart=null;
+
+function paintableLayer(){
+  const l = activeLayer();
+  if(!l) return null;
+  if(l.type==='raster' || l.type==='alpha-mask') return l;
+  return null; // gradient-map has no pixels to paint
+}
+
+function strokeDot(l, x, y){
+  const ctx=l.canvas.getContext('2d');
+  ctx.save();
+  applySelClip(ctx);
+  ctx.globalAlpha = opt.opacity;
+  if(tool==='eraser'){ ctx.globalCompositeOperation='destination-out'; ctx.fillStyle='#000'; }
+  else {
+    ctx.globalCompositeOperation='source-over';
+    // mask layers paint grayscale; use color's luminance as gray for clarity but
+    // honour chosen color so users can paint white/black masks directly.
+    ctx.fillStyle = (l.type==='alpha-mask') ? opt.color : opt.color;
+  }
+  ctx.beginPath(); ctx.arc(x,y,opt.size/2,0,7); ctx.fill();
+  ctx.restore();
+}
+function strokeSeg(l,a,b){
+  const ctx=l.canvas.getContext('2d');
+  ctx.save();
+  applySelClip(ctx);
+  ctx.globalAlpha=opt.opacity;
+  ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=opt.size;
+  if(tool==='eraser'){ ctx.globalCompositeOperation='destination-out'; ctx.strokeStyle='#000'; }
+  else { ctx.globalCompositeOperation='source-over'; ctx.strokeStyle=opt.color; }
+  ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+  ctx.restore();
+}
+
+function drawShape(l, x0,y0,x1,y1,kind){
+  const ctx=l.canvas.getContext('2d');
+  ctx.save();
+  applySelClip(ctx);
+  ctx.globalAlpha=opt.opacity;
+  ctx.globalCompositeOperation='source-over';
+  ctx.beginPath();
+  if(kind==='rect') ctx.rect(Math.min(x0,x1),Math.min(y0,y1),Math.abs(x1-x0),Math.abs(y1-y0));
+  else ctx.ellipse((x0+x1)/2,(y0+y1)/2,Math.abs(x1-x0)/2,Math.abs(y1-y0)/2,0,0,7);
+  if(opt.fill){ ctx.fillStyle=opt.color; ctx.fill(); }
+  else { ctx.lineWidth=opt.size; ctx.strokeStyle=opt.color; ctx.stroke(); }
+  ctx.restore();
+}
+
+// Flood fill (4-connected, tolerance) on active raster, clipped to selection.
+function bucketFill(l, sx, sy){
+  const w=DOC.w,h=DOC.h;
+  const ctx=l.canvas.getContext('2d');
+  const img=ctx.getImageData(0,0,w,h);
+  const d=img.data;
+  sx|=0; sy|=0;
+  if(sx<0||sy<0||sx>=w||sy>=h) return;
+  const idx=(sy*w+sx)*4;
+  const tr=d[idx],tg=d[idx+1],tb=d[idx+2],ta=d[idx+3];
+  const fc=hexToRgb(opt.color);
+  const fa=Math.round(opt.opacity*255);
+  const tol=opt.tolerance;
+  const match=(i)=> Math.abs(d[i]-tr)<=tol && Math.abs(d[i+1]-tg)<=tol &&
+                     Math.abs(d[i+2]-tb)<=tol && Math.abs(d[i+3]-ta)<=tol;
+  if(d[idx]===fc[0]&&d[idx+1]===fc[1]&&d[idx+2]===fc[2]&&ta===fa) return;
+  // selection mask for clipping
+  let selMask=null;
+  if(selPath){
+    const mc=newCanvas(w,h); const mx=mc.getContext('2d');
+    mx.fillStyle='#fff'; mx.beginPath();
+    // re-derive path on the mask canvas
+    if(DOC.selection.invert){ mx.rect(0,0,w,h); mx.fill('evenodd'); }
+    mx.save(); applySelClip(mx); mx.fillStyle='#fff'; mx.fillRect(0,0,w,h); mx.restore();
+    selMask=mx.getImageData(0,0,w,h).data;
+  }
+  const stack=[sx,sy];
+  const seen=new Uint8Array(w*h);
+  while(stack.length){
+    const y=stack.pop(), x=stack.pop();
+    if(x<0||y<0||x>=w||y>=h) continue;
+    const p=y*w+x;
+    if(seen[p]) continue;
+    const i=p*4;
+    if(!match(i)) continue;
+    if(selMask && selMask[i+3]===0) continue;
+    seen[p]=1;
+    d[i]=fc[0]; d[i+1]=fc[1]; d[i+2]=fc[2]; d[i+3]=fa;
+    stack.push(x+1,y,x-1,y,x,y+1,x,y-1);
+  }
+  ctx.putImageData(img,0,0);
+}
+
+function pickColor(x,y){
+  // sample the flattened composite for a true eyedropper
+  const tmp=newCanvas(DOC.w,DOC.h); compose(tmp);
+  const d=tmp.getContext('2d').getImageData(x|0,y|0,1,1).data;
+  if(d[3]===0) return;
+  opt.color=rgbToHex(d[0],d[1],d[2]);
+  buildOpts();
+}
+
+// ── Pointer → doc coordinates ──────────────────────────────────────────────
+function toDoc(e){
+  const r=view.getBoundingClientRect();
+  return [ (e.clientX-r.left)/zoom, (e.clientY-r.top)/zoom ];
+}
+
+view.parentElement.addEventListener('pointerdown', onDown);
+window.addEventListener('pointermove', onMove);
+window.addEventListener('pointerup', onUp);
+
+function onDown(e){
+  if(e.button!==0) return;
+  const [x,y]=toDoc(e);
+  if(tool==='lasso'){ livePoints=[[x,y]]; painting=true; startAnts(); view.setPointerCapture&&view.setPointerCapture(e.pointerId); return; }
+  if(tool==='eyedrop'){ pickColor(x,y); return; }
+
+  const l=paintableLayer();
+  if(!l){ toast(activeLayer()? 'This layer has no pixels to paint' : 'Add or select a layer'); return; }
+
+  pushHistory();
+  if(tool==='bucket'){ bucketFill(l,x,y); afterEdit(); return; }
+  if(tool==='rect'||tool==='ellipse'){ shapeStart=[x,y]; shapePreview={x0:x,y0:y,x1:x,y1:y,kind:tool}; painting=true; render(); return; }
+  // brush / eraser
+  painting=true; lastP=[x,y]; strokeDot(l,x,y); render();
+}
+function onMove(e){
+  // cursor ring for brush/eraser
+  updateCursorRing(e);
+  if(!painting) return;
+  const [x,y]=toDoc(e);
+  if(tool==='lasso'){ const p=livePoints[livePoints.length-1]; if(!p||Math.hypot(x-p[0],y-p[1])>2/zoom){ livePoints.push([x,y]); drawOverlay(); } return; }
+  if(tool==='rect'||tool==='ellipse'){ shapePreview={x0:shapeStart[0],y0:shapeStart[1],x1:x,y1:y,kind:tool}; drawOverlay(); return; }
+  const l=paintableLayer(); if(!l) return;
+  strokeSeg(l,lastP,[x,y]); strokeDot(l,x,y); lastP=[x,y]; render();
+}
+function onUp(e){
+  if(!painting) return;
+  painting=false;
+  if(tool==='lasso'){
+    if(livePoints && livePoints.length>=3){
+      DOC.selection={ type:'lasso', points:livePoints.map(p=>[Math.round(p[0]),Math.round(p[1])]) };
+      buildSelPath(); updateSelBar(); startAnts();
+      emitUserEdit();
+    }
+    livePoints=null; drawOverlay(); return;
+  }
+  if(tool==='rect'||tool==='ellipse'){
+    const l=paintableLayer();
+    if(l && shapeStart){ const [x,y]=toDoc(e); drawShape(l,shapeStart[0],shapeStart[1],x,y,tool); }
+    shapeStart=null; shapePreview=null; afterEdit(); return;
+  }
+  lastP=null; afterEdit();
+}
+
+function updateCursorRing(e){
+  if((tool==='brush'||tool==='eraser') && e && stage.contains(e.target)){
+    const d=opt.size*zoom;
+    cursorRing.style.display='block';
+    cursorRing.style.width=d+'px'; cursorRing.style.height=d+'px';
+    cursorRing.style.left=(e.clientX - stage.getBoundingClientRect().left - d/2)+'px';
+    cursorRing.style.top=(e.clientY - stage.getBoundingClientRect().top - d/2)+'px';
+  } else cursorRing.style.display='none';
+}
+stage.addEventListener('pointerleave',()=>cursorRing.style.display='none');
+
+// After any pixel edit: refresh view, thumb, mark dirty, debounce emit.
+function afterEdit(){ render(); refreshThumb(activeId); emitUserEdit(); }
+
+// ============================================================================
+// HISTORY (snapshot of layer pixels + meta + selection)
+// ============================================================================
+const HIST=[], REDO=[]; const HMAX=30;
+function snapshot(){
+  return {
+    selection: DOC.selection?JSON.parse(JSON.stringify(DOC.selection)):null,
+    active: activeId,
+    layers: DOC.layers.map(l=>({
+      ...stripCanvas(l),
+      data: l.canvas ? l.canvas.getContext('2d').getImageData(0,0,DOC.w,DOC.h) : null
+    }))
+  };
+}
+function stripCanvas(l){ const {canvas,...rest}=l; return JSON.parse(JSON.stringify(rest)); }
+function pushHistory(){
+  try{ HIST.push(snapshot()); if(HIST.length>HMAX) HIST.shift(); REDO.length=0; updateUndo(); }catch(e){}
+}
+function restoreSnap(s){
+  DOC.selection=s.selection; activeId=s.active;
+  DOC.layers = s.layers.map(ls=>{
+    const {data,...meta}=ls; const l={...meta};
+    if(data){ l.canvas=newCanvas(DOC.w,DOC.h); l.canvas.getContext('2d').putImageData(data,0,0); }
+    return l;
+  });
+  buildSelPath(); buildLayers(); buildGradEditor(); updateSelBar();
+  if(DOC.selection) startAnts(); else stopAntsIfIdle();
+  render();
+}
+function undo(){ if(!HIST.length) return; REDO.push(snapshot()); restoreSnap(HIST.pop()); updateUndo(); emitUserEdit(); }
+function redo(){ if(!REDO.length) return; HIST.push(snapshot()); restoreSnap(REDO.pop()); updateUndo(); emitUserEdit(); }
+function updateUndo(){
+  document.getElementById('undoBtn').disabled=!HIST.length;
+  document.getElementById('redoBtn').disabled=!REDO.length;
+  document.getElementById('undoBtn').style.opacity=HIST.length?1:.4;
+  document.getElementById('redoBtn').style.opacity=REDO.length?1:.4;
+}
+
+// ============================================================================
+// LAYER OPERATIONS
+// ============================================================================
+function addRasterLayer(name){
+  pushHistory();
+  const l={ id:uid('l'), name:name||('Layer '+(rasterLayers().length+1)), type:'raster',
+            opacity:1, blend:'normal', visible:true, canvas:newCanvas(DOC.w,DOC.h) };
+  DOC.layers.push(l); activeId=l.id;
+  buildLayers(); render(); emitUserEdit();
+  return l;
+}
+function addMaskLayer(){
+  const t=activeLayer();
+  if(!t || t.type!=='raster'){ toast('Select a raster layer to mask'); return; }
+  if(DOC.layers.some(l=>l.type==='alpha-mask'&&l.target===t.id)){ toast('That layer already has a mask'); return; }
+  pushHistory();
+  const c=newCanvas(DOC.w,DOC.h);
+  const cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,DOC.w,DOC.h); // white = fully visible
+  const l={ id:uid('m'), name:'Mask · '+t.name, type:'alpha-mask', target:t.id, visible:true, canvas:c };
+  // insert right after target for sane ordering
+  const ti=DOC.layers.indexOf(t); DOC.layers.splice(ti+1,0,l);
+  activeId=l.id;
+  buildLayers(); render(); emitUserEdit();
+  toast('Mask added — paint black to hide, white to reveal');
+}
+function addGradLayer(){
+  const t=activeLayer();
+  if(!t || t.type!=='raster'){ toast('Select a raster layer to grade'); return; }
+  pushHistory();
+  const l={ id:uid('g'), name:'Grade · '+t.name, type:'gradient-map', target:t.id, visible:true,
+            stops:[{t:0,color:'#1a1d4e'},{t:0.5,color:'#c84e89'},{t:1,color:'#ffd479'}] };
+  const ti=DOC.layers.indexOf(t); DOC.layers.splice(ti+1,0,l);
+  activeId=l.id;
+  buildLayers(); buildGradEditor(); render(); emitUserEdit();
+}
+function deleteLayer(id){
+  const l=layerById(id); if(!l) return;
+  if(l.type==='raster' && rasterLayers().length<=1 && !DOC.layers.some(x=>x.type!=='raster')){
+    toast('Need at least one layer'); return;
+  }
+  pushHistory();
+  // also drop dependent masks/grades if a raster is removed
+  DOC.layers = DOC.layers.filter(x=> x.id!==id && !(x.target===id));
+  if(!DOC.layers.length) addRasterLayer('paint');
+  activeId = (DOC.layers[DOC.layers.length-1]||{}).id;
+  buildLayers(); buildGradEditor(); render(); emitUserEdit();
+}
+function moveLayer(id,dir){
+  const i=DOC.layers.findIndex(l=>l.id===id); if(i<0) return;
+  const j=i+dir; if(j<0||j>=DOC.layers.length) return;
+  pushHistory();
+  const [l]=DOC.layers.splice(i,1); DOC.layers.splice(j,0,l);
+  buildLayers(); render(); emitUserEdit();
+}
+
+// ── Load wired asset layers (from content {id,url,kind,label}) ─────────────
+function loadAssetLayer(asset){
+  return new Promise((resolve)=>{
+    const img=new Image();
+    img.crossOrigin='anonymous';
+    img.onload=()=>{
+      try{
+        const c=newCanvas(DOC.w,DOC.h);
+        const cx=c.getContext('2d');
+        // fit-contain into the doc
+        const s=Math.min(DOC.w/img.width, DOC.h/img.height);
+        const dw=img.width*s, dh=img.height*s;
+        cx.drawImage(img,(DOC.w-dw)/2,(DOC.h-dh)/2,dw,dh);
+        const l={ id:'asset-'+asset.id, name:asset.label||asset.kind||'Asset', type:'raster',
+                  opacity:1, blend:'normal', visible:true, canvas:c,
+                  asset:true, assetId:asset.id, assetUrl:asset.url, assetKind:asset.kind };
+        resolve(l);
+      }catch(err){ console.warn('asset draw failed',err); resolve(null); }
+    };
+    img.onerror=(err)=>{ console.warn('asset load failed',asset.url,err); resolve(null); };
+    try{ img.src=asset.url; }catch(err){ resolve(null); }
+  });
+}
+async function reconcileAssets(content){
+  const list=Array.isArray(content)?content:[];
+  const wanted=new Set(list.map(a=>'asset-'+a.id));
+  // remove asset layers no longer wired
+  DOC.layers=DOC.layers.filter(l=> !l.asset || wanted.has(l.id));
+  // add/refresh
+  for(const a of list){
+    const existing=layerById('asset-'+a.id);
+    if(existing){ if(existing.assetUrl!==a.url){ const nl=await loadAssetLayer(a); if(nl){ Object.assign(existing,{canvas:nl.canvas,assetUrl:a.url,name:a.label||existing.name}); } } continue; }
+    const nl=await loadAssetLayer(a);
+    if(nl){ DOC.layers.unshift(nl); } // assets at the bottom of the stack
+  }
+  if(!activeId && DOC.layers.length) activeId=DOC.layers[DOC.layers.length-1].id;
+  buildLayers(); render();
+}
+
+// ============================================================================
+// STATE (serialize / deserialize per the canonical schema)
+// ============================================================================
+function serializeState(){
+  const layers=DOC.layers.map(l=>{
+    if(l.type==='raster'){
+      const o={ id:l.id, name:l.name, type:'raster',
+        src:'image-'+(NODE||'doc')+'/'+l.id+'.png',
+        opacity:(l.opacity==null?1:l.opacity), blend:l.blend||'normal', visible:l.visible!==false };
+      // EMBED pixels (v1: tool is source of truth for pixels). Asset layers
+      // keep their wired URL too so the node can re-resolve them.
+      try{ o.dataUrl = l.canvas.toDataURL('image/png'); }catch(e){}
+      if(l.asset){ o.asset=true; o.assetId=l.assetId; o.assetUrl=l.assetUrl; o.assetKind=l.assetKind; }
+      return o;
+    }
+    if(l.type==='alpha-mask'){
+      const o={ id:l.id, name:l.name, type:'alpha-mask', target:l.target,
+        src:'image-'+(NODE||'doc')+'/'+l.id+'.png', visible:l.visible!==false };
+      try{ o.dataUrl=l.canvas.toDataURL('image/png'); }catch(e){}
+      return o;
+    }
+    // gradient-map
+    return { id:l.id, name:l.name, type:'gradient-map', target:l.target,
+             visible:l.visible!==false, stops:l.stops.map(s=>({t:s.t,color:s.color})) };
+  });
+  const st={ v:1, w:DOC.w, h:DOC.h, layers };
+  if(DOC.selection) st.selection=DOC.selection;
+  return st;
+}
+
+function blankDoc(w,h){
+  DOC={ w:w||1024, h:h||1024, layers:[], selection:null };
+  buildDocCanvases();
+  const l={ id:uid('l'), name:'paint', type:'raster', opacity:1, blend:'normal', visible:true, canvas:newCanvas(DOC.w,DOC.h) };
+  DOC.layers.push(l); activeId=l.id;
+}
+
+function loadFromState(state){
+  if(!state){ blankDoc(1024,1024); finalizeLoad(); return Promise.resolve(); }
+  DOC={ w:state.w||1024, h:state.h||1024, layers:[], selection:state.selection||null };
+  buildDocCanvases();
+  const jobs=[];
+  for(const ls of (state.layers||[])){
+    if(ls.type==='gradient-map'){
+      DOC.layers.push({ id:ls.id, name:ls.name, type:'gradient-map', target:ls.target,
+        visible:ls.visible!==false, stops:(ls.stops&&ls.stops.length?ls.stops:[{t:0,color:'#000'},{t:1,color:'#fff'}]).map(s=>({t:s.t,color:s.color})) });
+      continue;
+    }
+    // raster or alpha-mask: rehydrate pixels from embedded dataUrl (preferred)
+    const l={ id:ls.id, name:ls.name, type:ls.type, target:ls.target,
+              opacity:(ls.opacity==null?1:ls.opacity), blend:ls.blend||'normal',
+              visible:ls.visible!==false, canvas:newCanvas(DOC.w,DOC.h) };
+    if(ls.asset){ l.asset=true; l.assetId=ls.assetId; l.assetUrl=ls.assetUrl; l.assetKind=ls.assetKind; }
+    DOC.layers.push(l);
+    const url = ls.dataUrl || ls.assetUrl;
+    if(url){
+      jobs.push(new Promise(res=>{
+        const img=new Image(); img.crossOrigin='anonymous';
+        img.onload=()=>{ try{ l.canvas.getContext('2d').drawImage(img,0,0,DOC.w,DOC.h); }catch(e){} res(); };
+        img.onerror=()=>res();
+        try{ img.src=url; }catch(e){ res(); }
+      }));
+    } else if(l.type==='alpha-mask'){
+      const cx=l.canvas.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,DOC.w,DOC.h);
+    }
+  }
+  if(!DOC.layers.length){ const l={ id:uid('l'), name:'paint', type:'raster', opacity:1, blend:'normal', visible:true, canvas:newCanvas(DOC.w,DOC.h) }; DOC.layers.push(l); }
+  activeId = (DOC.layers.find(l=>l.type==='raster')||DOC.layers[DOC.layers.length-1]).id;
+  return Promise.all(jobs).then(finalizeLoad);
+}
+function finalizeLoad(){
+  buildSelPath(); fitZoom(); buildLayers(); buildGradEditor(); buildOpts(); updateSelBar();
+  if(DOC.selection) startAnts();
+  document.getElementById('docSize').textContent=DOC.w+' × '+DOC.h;
+  render();
+}
+
+// ============================================================================
+// PARENT BRIDGE — driven view protocol
+// ============================================================================
+let emitTimer=0;
+function emitUserEdit(){
+  if(!EMBEDDED || suppressEmit) return;
+  clearTimeout(emitTimer);
+  emitTimer=setTimeout(()=>{
+    let baked=null;
+    try{ const flat=newCanvas(DOC.w,DOC.h); compose(flat); baked={dataUrl:flat.toDataURL('image/png')}; }catch(e){}
+    try{ parent.postMessage({ type:'image:state', nodeId:NODE, state:serializeState(), baked }, '*'); }catch(e){}
+  },600);
+}
+function withSuppressed(fn){
+  suppressEmit=true;
+  Promise.resolve(fn()).finally(()=>{ setTimeout(()=>{ suppressEmit=false; },0); });
+}
+
+if(EMBEDDED){
+  window.addEventListener('message',(ev)=>{
+    const d=ev&&ev.data;
+    if(!d||typeof d!=='object') return;
+    if(d.nodeId && d.nodeId!==NODE) return;   // ignore other nodes
+    if(d.type==='image:init'){
+      gotInit=true;
+      suppressEmit=true;
+      const p = loadFromState(d.state||null);
+      p.then(()=> reconcileAssets(d.content||[]))
+       .finally(()=>{ HIST.length=0; REDO.length=0; updateUndo(); setTimeout(()=>{suppressEmit=false;},0); });
+    } else if(d.type==='image:set-state'){
+      gotInit=true; suppressEmit=true;
+      loadFromState(d.state||null).finally(()=>{ HIST.length=0; REDO.length=0; updateUndo(); setTimeout(()=>{suppressEmit=false;},0); });
+    } else if(d.type==='image:content'){
+      suppressEmit=true;
+      reconcileAssets(d.content||[]).finally(()=>{ setTimeout(()=>{suppressEmit=false;},0); });
+    }
+  });
+}
+
+// ============================================================================
+// UI BUILDERS
+// ============================================================================
+function buildToolrail(){
+  const rail=document.getElementById('toolrail'); rail.innerHTML='';
+  for(const t of TOOLS){
+    const el=document.createElement('div');
+    el.className='tool'+(t.id===tool?' active':'');
+    el.innerHTML=t.icon+'<span class="tip">'+t.name+'</span>';
+    el.onclick=()=>{ tool=t.id; buildToolrail(); buildOpts(); };
+    rail.appendChild(el);
+  }
+}
+
+const PALETTE=['#000000','#ffffff','#ff5252','#ff9800','#ffd54f','#66bb6a','#26c6da','#5b8cff','#7e57c2','#ec407a','#8d6e63','#9e9e9e'];
+function buildOpts(){
+  const box=document.getElementById('opts');
+  const title=document.getElementById('optTitle');
+  const t=TOOLS.find(x=>x.id===tool);
+  title.textContent=t?t.name:'Tool';
+  box.innerHTML='';
+  const add=(html)=>{ const w=document.createElement('div'); w.innerHTML=html; box.appendChild(w.firstElementChild); };
+
+  const usesColor = ['brush','bucket','rect','ellipse','eyedrop'].includes(tool);
+  const usesSize  = ['brush','eraser','rect','ellipse'].includes(tool);
+  const usesOpac  = ['brush','eraser','bucket','rect','ellipse'].includes(tool);
+
+  if(usesColor){
+    add('<div class="row"><label>Color</label><input type="color" id="optColor" value="'+opt.color+'"><span class="val" id="optColorHex">'+opt.color+'</span></div>');
+    add('<div class="row"><div class="swatches" id="sw"></div></div>');
+  }
+  if(usesSize){
+    add('<div class="row"><label>Size</label><input type="range" id="optSize" min="1" max="200" value="'+opt.size+'"><span class="val" id="optSizeV">'+opt.size+'</span></div>');
+  }
+  if(usesOpac){
+    add('<div class="row"><label>Opacity</label><input type="range" id="optOpac" min="0" max="100" value="'+Math.round(opt.opacity*100)+'"><span class="val" id="optOpacV">'+Math.round(opt.opacity*100)+'%</span></div>');
+  }
+  if(tool==='bucket'){
+    add('<div class="row"><label>Tolerance</label><input type="range" id="optTol" min="0" max="128" value="'+opt.tolerance+'"><span class="val" id="optTolV">'+opt.tolerance+'</span></div>');
+  }
+  if(tool==='rect'||tool==='ellipse'){
+    add('<div class="row"><label>Style</label><select id="optFill"><option value="1"'+(opt.fill?' selected':'')+'>Filled</option><option value="0"'+(!opt.fill?' selected':'')+'>Stroke</option></select></div>');
+  }
+  if(tool==='lasso'){
+    add('<div class="hint">Click-drag a freeform loop, then release to close it. Paint/erase is clipped to the selection. Use the bar above the canvas to invert or clear.</div>');
+  }
+  if(tool==='eyedrop'){
+    add('<div class="hint">Click the canvas to sample a color from the flattened image.</div>');
+  }
+
+  // wire
+  const $=(id)=>document.getElementById(id);
+  if($('optColor')){
+    $('optColor').oninput=e=>{ opt.color=e.target.value; $('optColorHex').textContent=opt.color; };
+    const sw=$('sw');
+    PALETTE.forEach(c=>{ const s=document.createElement('div'); s.className='sw'; s.style.background=c; s.title=c;
+      s.onclick=()=>{ opt.color=c; $('optColor').value=c; $('optColorHex').textContent=c; }; sw.appendChild(s); });
+  }
+  if($('optSize')) $('optSize').oninput=e=>{ opt.size=+e.target.value; $('optSizeV').textContent=opt.size; };
+  if($('optOpac')) $('optOpac').oninput=e=>{ opt.opacity=(+e.target.value)/100; $('optOpacV').textContent=e.target.value+'%'; };
+  if($('optTol')) $('optTol').oninput=e=>{ opt.tolerance=+e.target.value; $('optTolV').textContent=opt.tolerance; };
+  if($('optFill')) $('optFill').onchange=e=>{ opt.fill=e.target.value==='1'; };
+}
+
+function buildLayers(){
+  const box=document.getElementById('layersWrap'); box.innerHTML='';
+  // top of list = top of stack → iterate reversed
+  for(let i=DOC.layers.length-1;i>=0;i--){
+    const l=DOC.layers[i];
+    const el=document.createElement('div');
+    el.className='layer'+(l.id===activeId?' sel':'')+(l.visible===false?' hidden':'');
+    el.onclick=(e)=>{ if(e.target.closest('.vis')||e.target.closest('.reorder')) return; activeId=l.id; buildLayers(); buildGradEditor(); };
+
+    // visibility
+    const vis=document.createElement('div'); vis.className='vis';
+    vis.innerHTML = l.visible===false?ICON.eyeoff:ICON.eye;
+    vis.onclick=(e)=>{ e.stopPropagation(); pushHistory(); l.visible=!(l.visible!==false); buildLayers(); render(); emitUserEdit(); };
+    el.appendChild(vis);
+
+    // thumb
+    const th=document.createElement('div'); th.className='thumb';
+    if(l.canvas){ const tc=newCanvas(30,30); const tx=tc.getContext('2d'); tx.drawImage(l.canvas,0,0,30,30); th.appendChild(tc); }
+    else if(l.type==='gradient-map'){ const tc=newCanvas(30,30); paintGradThumb(tc,l.stops); th.appendChild(tc); }
+    el.appendChild(th);
+
+    // meta
+    const meta=document.createElement('div'); meta.className='meta';
+    const nm=document.createElement('div'); nm.className='nm';
+    nm.textContent=l.name;
+    if(l.asset){ const b=document.createElement('span'); b.className='badge asset'; b.textContent='wired'; nm.appendChild(b); }
+    if(l.type==='alpha-mask'){ const b=document.createElement('span'); b.className='badge mask'; b.textContent='mask'; nm.appendChild(b); }
+    if(l.type==='gradient-map'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='grade'; nm.appendChild(b); }
+    meta.appendChild(nm);
+    const sub=document.createElement('div'); sub.className='sub';
+    if(l.type==='raster') sub.textContent=Math.round((l.opacity==null?1:l.opacity)*100)+'% · '+(l.blend||'normal');
+    else { const tgt=layerById(l.target); sub.textContent='→ '+(tgt?tgt.name:'(none)'); }
+    meta.appendChild(sub);
+    el.appendChild(meta);
+
+    // reorder
+    const re=document.createElement('div'); re.className='reorder';
+    const upb=document.createElement('button'); upb.innerHTML=ICON.up; upb.title='Move up';
+    upb.onclick=(e)=>{ e.stopPropagation(); moveLayer(l.id,1); };
+    const dnb=document.createElement('button'); dnb.innerHTML=ICON.down; dnb.title='Move down';
+    dnb.onclick=(e)=>{ e.stopPropagation(); moveLayer(l.id,-1); };
+    re.appendChild(upb); re.appendChild(dnb);
+    el.appendChild(re);
+
+    box.appendChild(el);
+  }
+  buildLayerProps();
+}
+function refreshThumb(id){ /* cheap: rebuild list thumbs */ buildLayers(); }
+
+function paintGradThumb(c,stops){
+  const x=c.getContext('2d'); const g=x.createLinearGradient(0,0,c.width,0);
+  (stops||[]).slice().sort((a,b)=>a.t-b.t).forEach(s=>{ try{ g.addColorStop(Math.max(0,Math.min(1,s.t)),s.color); }catch(e){} });
+  x.fillStyle=g; x.fillRect(0,0,c.width,c.height);
+}
+
+// Active-layer property controls (opacity / blend) injected under the layers head.
+function buildLayerProps(){
+  let host=document.getElementById('layerProps');
+  if(!host){ host=document.createElement('div'); host.id='layerProps'; host.style.cssText='padding:8px 10px; border-top:1px solid var(--line); background:var(--bg); display:flex; flex-direction:column; gap:7px;'; document.getElementById('layersWrap').after(host); }
+  const l=activeLayer();
+  if(!l || l.type!=='raster'){ host.style.display='none'; return; }
+  host.style.display='flex';
+  host.innerHTML=
+    '<div class="row"><label>Opacity</label><input type="range" id="lpOpac" min="0" max="100" value="'+Math.round((l.opacity==null?1:l.opacity)*100)+'"><span class="val" id="lpOpacV">'+Math.round((l.opacity==null?1:l.opacity)*100)+'%</span></div>'+
+    '<div class="row"><label>Blend</label><select id="lpBlend">'+
+      ['normal','multiply','screen','overlay'].map(b=>'<option value="'+b+'"'+((l.blend||'normal')===b?' selected':'')+'>'+b+'</option>').join('')+
+    '</select></div>';
+  document.getElementById('lpOpac').oninput=e=>{ l.opacity=(+e.target.value)/100; document.getElementById('lpOpacV').textContent=e.target.value+'%'; render(); scheduleMetaEmit(); };
+  document.getElementById('lpBlend').onchange=e=>{ pushHistory(); l.blend=e.target.value; render(); buildLayers(); emitUserEdit(); };
+}
+let metaEmitT=0;
+function scheduleMetaEmit(){ clearTimeout(metaEmitT); metaEmitT=setTimeout(()=>{ buildLayers(); emitUserEdit(); },200); }
+
+// ── Gradient editor (for selected gradient-map layer) ──────────────────────
+let gradSel=0;
+function buildGradEditor(){
+  const ed=document.getElementById('gradEditor');
+  const l=activeLayer();
+  if(!l || l.type!=='gradient-map'){ ed.className=''; ed.innerHTML=''; return; }
+  ed.className='show';
+  ed.innerHTML=
+    '<div class="pane-h" style="padding:0 0 2px; background:none;">Gradient map</div>'+
+    '<div id="gradBar"></div>'+
+    '<div class="grad-ctrls">'+
+      '<input type="color" id="gradColor" value="'+(l.stops[gradSel]?l.stops[gradSel].color:'#ffffff')+'">'+
+      '<span class="hint">Click bar to add · drag pins · double-click pin to remove</span>'+
+      '<button class="iconbtn danger" id="gradDel" title="Remove stop">'+ICON.trash+'</button>'+
+    '</div>';
+  const bar=document.getElementById('gradBar');
+  // preview fill
+  const css=l.stops.slice().sort((a,b)=>a.t-b.t).map(s=>s.color+' '+Math.round(s.t*100)+'%').join(',');
+  bar.style.background='linear-gradient(90deg,'+css+')';
+
+  l.stops.forEach((s,i)=>{
+    const st=document.createElement('div'); st.className='gstop'+(i===gradSel?' sel':'');
+    st.style.left=(s.t*100)+'%';
+    st.innerHTML='<div class="stem"></div><div class="pin" style="background:'+s.color+'"></div>';
+    st.onpointerdown=(e)=>{ e.stopPropagation(); gradSel=i; buildGradEditor(); startStopDrag(e,l,i); };
+    st.ondblclick=(e)=>{ e.stopPropagation(); removeStop(l,i); };
+    bar.appendChild(st);
+  });
+  bar.onpointerdown=(e)=>{ if(e.target!==bar) return; addStop(l, e); };
+  document.getElementById('gradColor').oninput=(e)=>{ if(l.stops[gradSel]){ pushHistory(); l.stops[gradSel].color=e.target.value; buildGradEditor(); render(); scheduleMetaEmit(); } };
+  document.getElementById('gradDel').onclick=()=> removeStop(l,gradSel);
+}
+function addStop(l,e){
+  const r=e.currentTarget.getBoundingClientRect();
+  const t=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+  pushHistory();
+  // sample current gradient color at t
+  const lut=gradientLUT(l.stops); const c=lut[Math.round(t*255)];
+  l.stops.push({t, color:rgbToHex(c[0],c[1],c[2])});
+  l.stops.sort((a,b)=>a.t-b.t);
+  gradSel=l.stops.findIndex(s=>s.t===t);
+  buildGradEditor(); buildLayers(); render(); emitUserEdit();
+}
+function removeStop(l,i){
+  if(l.stops.length<=2){ toast('A gradient needs at least 2 stops'); return; }
+  pushHistory();
+  l.stops.splice(i,1);
+  gradSel=Math.max(0,Math.min(gradSel,l.stops.length-1));
+  buildGradEditor(); buildLayers(); render(); emitUserEdit();
+}
+function startStopDrag(e,l,i){
+  const bar=document.getElementById('gradBar');
+  const r=bar.getBoundingClientRect();
+  pushHistory();
+  let moved=false;
+  const mv=(ev)=>{ moved=true; const t=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)); l.stops[i].t=t; buildGradEditor(); render(); };
+  const up=()=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up);
+    l.stops.sort((a,b)=>a.t-b.t); gradSel=l.stops.indexOf(l.stops.find(s=>s===l.stops[i])); buildGradEditor(); buildLayers(); if(moved) emitUserEdit(); };
+  window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+}
+
+// ── Selection bar ──────────────────────────────────────────────────────────
+function updateSelBar(){ const b=document.getElementById('selBar'); if(DOC.selection) b.classList.add('show'); else b.classList.remove('show'); }
+function clearSelection(){ DOC.selection=null; selPath=null; updateSelBar(); stopAntsIfIdle(); drawOverlay(); emitUserEdit(); }
+function invertSelection(){ if(!DOC.selection) return; DOC.selection.invert=!DOC.selection.invert; buildSelPath(); drawOverlay(); emitUserEdit(); }
+
+// ============================================================================
+// WIRE TOP BAR + GLOBAL CONTROLS
+// ============================================================================
+document.getElementById('addRaster').innerHTML=ICON.plus;
+document.getElementById('delLayer').innerHTML=ICON.trash;
+document.getElementById('addRaster').onclick=()=>addRasterLayer();
+document.getElementById('addMask').onclick=addMaskLayer;
+document.getElementById('addGrad').onclick=addGradLayer;
+document.getElementById('delLayer').onclick=()=>deleteLayer(activeId);
+
+document.getElementById('undoBtn').onclick=undo;
+document.getElementById('redoBtn').onclick=redo;
+document.getElementById('clearSel').onclick=clearSelection;
+document.getElementById('invertSel').onclick=invertSelection;
+
+document.getElementById('zoomIn').onclick=()=>{ zoom=Math.min(zoom*1.25,8); applyZoom(); render(); };
+document.getElementById('zoomOut').onclick=()=>{ zoom=Math.max(zoom/1.25,0.05); applyZoom(); render(); };
+document.getElementById('zoomFit').onclick=()=>{ fitZoom(); render(); };
+
+document.getElementById('exportBtn').onclick=()=>{
+  try{ const flat=newCanvas(DOC.w,DOC.h); compose(flat);
+    const a=document.createElement('a'); a.href=flat.toDataURL('image/png'); a.download='image.png'; a.click();
+    toast('Exported PNG');
+  }catch(e){ toast('Export failed'); }
+};
+document.getElementById('bakeBtn').onclick=()=>{
+  if(EMBEDDED){ clearTimeout(emitTimer);
+    let baked=null; try{ const flat=newCanvas(DOC.w,DOC.h); compose(flat); baked={dataUrl:flat.toDataURL('image/png')}; }catch(e){}
+    try{ parent.postMessage({ type:'image:state', nodeId:NODE, state:serializeState(), baked }, '*'); }catch(e){}
+    toast('Saved into node ✓');
+  } else { document.getElementById('exportBtn').click(); }
+};
+
+// keyboard
+window.addEventListener('keydown',(e)=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  const meta=e.metaKey||e.ctrlKey;
+  if(meta && e.key.toLowerCase()==='z'){ e.preventDefault(); if(e.shiftKey) redo(); else undo(); return; }
+  if(meta && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
+  if(e.key==='Escape'){ if(DOC.selection){ clearSelection(); } return; }
+  const map={ b:'brush', e:'eraser', g:'bucket', u:'rect', o:'ellipse', i:'eyedrop', l:'lasso' };
+  if(!meta && map[e.key.toLowerCase()]){ tool=map[e.key.toLowerCase()]; buildToolrail(); buildOpts(); }
+  if(e.key==='['){ opt.size=Math.max(1,opt.size-2); buildOpts(); }
+  if(e.key===']'){ opt.size=Math.min(200,opt.size+2); buildOpts(); }
+});
+
+// zoom with wheel (ctrl/meta) + pan with wheel
+stage.addEventListener('wheel',(e)=>{
+  if(e.ctrlKey||e.metaKey){ e.preventDefault();
+    const f=e.deltaY<0?1.1:1/1.1; zoom=Math.max(0.05,Math.min(8,zoom*f)); applyZoom(); render();
+  }
+},{passive:false});
+
+window.addEventListener('resize',()=>{ /* keep zoom; just refresh ring math */ });
+
+// toast
+let toastT=0;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1800); }
+
+// ============================================================================
+// BOOT
+// ============================================================================
+buildToolrail(); buildOpts(); updateUndo();
+
+if(EMBEDDED){
+  // Announce ready; the host node pushes image:init. Fall back to a blank doc
+  // if no init ever arrives (stale host / protocol mismatch) so it's never dead.
+  const announce=()=>{ try{ parent.postMessage({ type:'image:ready', nodeId:NODE }, '*'); }catch(e){} };
+  announce();
+  setTimeout(()=>{ if(!gotInit) announce(); }, 600);
+  setTimeout(()=>{ if(!gotInit){ withSuppressed(()=>{ blankDoc(1024,1024); finalizeLoad(); }); } }, 2200);
+} else {
+  document.getElementById('standalone').style.display='block';
+  blankDoc(1024,1024); finalizeLoad();
+}
+</script>
+</body>
+</html>

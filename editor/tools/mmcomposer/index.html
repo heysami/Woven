@@ -1,0 +1,1486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interactive Multimedia Composer</title>
+<style>
+  :root{
+    --bg:#0b0c10; --panel:#14161d; --panel2:#1b1e27; --line:#2a2e3a;
+    --ink:#e7e9ef; --ink2:#9aa0b0; --acc:#6ee7ff; --acc2:#b388ff; --warn:#ff7a7a;
+    --good:#7CFFB2; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;overflow:hidden}
+  #app{display:grid;grid-template-columns:300px 1fr 320px;height:100vh;width:100vw}
+  .col{height:100vh;overflow:auto;display:flex;flex-direction:column}
+  .col.left{border-right:1px solid var(--line);background:var(--panel)}
+  .col.right{border-left:1px solid var(--line);background:var(--panel)}
+  .col.center{background:#000;position:relative;align-items:center;justify-content:center}
+  .hd{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--panel);z-index:5}
+  .hd h1{font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin:0;color:var(--ink2);font-weight:600}
+  .hd .sp{flex:1}
+  button{font-family:inherit;font-size:12px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;cursor:pointer}
+  button:hover{border-color:var(--acc)}
+  button.acc{background:linear-gradient(180deg,#234,#122);border-color:#356}
+  button.sm{padding:3px 6px;font-size:11px}
+  button.chip{border-radius:20px}
+  button.chip.on{background:#143; border-color:var(--good); color:var(--good)}
+  button.chip.off{opacity:.8}
+  .row{display:flex;gap:6px;align-items:center}
+  .layers{padding:8px;display:flex;flex-direction:column;gap:6px}
+  .layer{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;cursor:pointer}
+  .layer.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+  .layer .top{display:flex;align-items:center;gap:6px}
+  .layer .nm{flex:1;font-weight:600;font-size:12px;background:transparent;border:0;color:var(--ink);outline:none;min-width:0}
+  .layer .meta{margin-top:3px;color:var(--ink2);font-size:10px;display:flex;gap:6px;flex-wrap:wrap}
+  .tag{background:#222634;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:9px}
+  .iconbtn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0}
+  .acc-sec{border-bottom:1px solid var(--line)}
+  .acc-h{padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+  .acc-h .car{transition:transform .15s;color:var(--ink2)}
+  .acc-sec.open .acc-h .car{transform:rotate(90deg)}
+  .acc-b{padding:4px 12px 12px;display:none}
+  .acc-sec.open .acc-b{display:block}
+  .fld{margin:8px 0;display:flex;flex-direction:column;gap:3px}
+  .fld>label{font-size:10px;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between}
+  .fld>label .v{color:var(--acc);font-family:var(--mono)}
+  select,input[type=text],input[type=number],textarea{font-family:inherit;font-size:12px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%;outline:none}
+  textarea{font-family:var(--mono);font-size:11px;min-height:74px;resize:vertical;white-space:pre}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  input[type=color]{width:36px;height:24px;padding:0;border:1px solid var(--line);background:transparent;border-radius:4px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .stagewrap{position:relative;max-width:100%;max-height:100%;box-shadow:0 0 60px #000 inset}
+  canvas.layerstack{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #stageHost{position:relative;background:#000}
+  .pill{font-family:var(--mono);font-size:10px;color:var(--ink2)}
+  .badge{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10px;color:var(--acc);background:#0008;padding:3px 7px;border-radius:5px;z-index:6;pointer-events:none}
+  .perm{position:absolute;bottom:8px;left:8px;display:flex;gap:6px;z-index:7}
+  .small{font-size:10px;color:var(--ink2)}
+  .impacts{margin-top:6px;display:flex;flex-direction:column;gap:6px}
+  .impact{border:1px dashed var(--line);border-radius:6px;padding:6px;background:#0e1016}
+  .effitem{border:1px solid var(--line);border-radius:6px;padding:6px;margin:6px 0;background:#0e1016}
+  .effitem .eh{display:flex;align-items:center;gap:6px}
+  .effitem .eh select{flex:1}
+  .toolbar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:7}
+  .hint{font-size:10px;color:var(--ink2);margin:2px 0 0}
+  hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+  .errbar{position:absolute;bottom:8px;right:8px;max-width:50%;font-family:var(--mono);font-size:10px;color:var(--warn);background:#0009;padding:4px 8px;border-radius:5px;z-index:8;white-space:pre-wrap}
+  svg.ic{width:14px;height:14px;display:block}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ───────── LEFT: layers panel ───────── -->
+  <div class="col left">
+    <div class="hd">
+      <h1>Composer</h1><div class="sp"></div>
+      <button class="sm" id="addLayer" title="Add layer">+ Layer</button>
+    </div>
+    <div class="layers" id="layerList"></div>
+    <div style="padding:8px 12px;border-top:1px solid var(--line)">
+      <div class="fld"><label>Canvas <span class="v" id="dimLbl"></span></label>
+        <div class="grid2">
+          <input type="number" id="canvasW" value="1280">
+          <input type="number" id="canvasH" value="720">
+        </div></div>
+      <div class="fld"><label>Background</label>
+        <div class="row"><input type="color" id="bgcol" value="#000000"><span class="small" id="bgHex">#000000</span></div></div>
+    </div>
+  </div>
+
+  <!-- ───────── CENTER: live preview ───────── -->
+  <div class="col center">
+    <div class="stagewrap">
+      <div id="stageHost">
+        <canvas class="layerstack" id="c2d"></canvas>
+        <canvas class="layerstack" id="cgl"></canvas>
+        <div class="badge" id="badge">idle</div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="sm" id="playBtn">⏸ Pause</button>
+      <button class="sm" id="resetClock">⟲ Clock</button>
+    </div>
+    <div class="perm">
+      <button class="chip off" id="permCam">◉ Camera</button>
+      <button class="chip off" id="permMic">◉ Mic</button>
+    </div>
+    <div class="errbar" id="errbar" style="display:none"></div>
+  </div>
+
+  <!-- ───────── RIGHT: inspector ───────── -->
+  <div class="col right" id="inspector">
+    <div class="hd"><h1 id="inspTitle">Layer</h1><div class="sp"></div>
+      <span class="pill" id="fpsLbl"></span></div>
+    <div id="inspBody"></div>
+  </div>
+</div>
+
+<script type="module">
+/* ===========================================================================
+   INTERACTIVE MULTIMEDIA COMPOSER  —  Woven editor tool
+   Single-file. Modular runtime: POSITIONING · TRIGGERS · IMPACTS · EFFECTS.
+   ===========================================================================*/
+
+/* ---------- Lazy CDN module loaders (only fetched when a mode needs them) -- */
+const CDN = {
+  matter: 'https://esm.sh/matter-js@0.19.0',
+  vision: 'https://esm.sh/@mediapipe/tasks-vision@0.10.12',
+  tesseract: 'https://esm.sh/tesseract.js@5.1.0',
+};
+const _modCache = {};
+function loadMod(key){
+  if(_modCache[key]) return _modCache[key];
+  _modCache[key] = import(CDN[key]).catch(e=>{ console.warn('CDN load failed',key,e); return null; });
+  return _modCache[key];
+}
+
+/* ---------- Parent-node bridge -------------------------------------------- */
+const Q = new URLSearchParams(location.search);
+const NODE = Q.get('nodeId') || '';
+const PROJECT = Q.get('project') || '';
+const EMBEDDED = window.parent !== window;
+
+/* ---------- Small utils ---------------------------------------------------- */
+let _uid=1; const uid=(p='L')=> p + Date.now().toString(36).slice(-4) + (_uid++).toString(36);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const deep=(o)=>JSON.parse(JSON.stringify(o));
+function showErr(m){ const e=document.getElementById('errbar'); if(!m){e.style.display='none';return;} e.style.display='block'; e.textContent=m; }
+
+/* ===========================================================================
+   STATE MODEL
+   ===========================================================================*/
+let CONTENT = [];          // wired assets [{id,url,kind,label}]
+let IMPORTS = {};
+let suppressEmit=false;    // guard programmatic rebuilds
+let gotInit=false;
+
+function defaultState(){
+  return {v:1,canvasW:1280,canvasH:720,background:'#000',inputs:{camera:false,mic:false},
+    layers:[
+      { id:'L1', name:'Grid pulse', z:0, visible:true,
+        content:{kind:'shape', shape:'rect', color:'#6ee7ff', text:''},
+        positioning:{mode:'grid', cols:8, rows:5, placement:'fixed', gap:0.12, size:0.6},
+        trigger:{source:'position', axis:'x',
+          impacts:[{target:'L2', param:'effect.intensity', map:'linear', range:[0,1]}]},
+        effects:{stack:[{type:'bloom', params:{}, intensity:0.5}]} },
+      { id:'L2', name:'Reactive title', z:1, visible:true,
+        content:{kind:'text', text:'WOVEN', color:'#ffffff'},
+        positioning:{mode:'single', x:0.5, y:0.5, scale:1, rot:0},
+        trigger:{source:'mouse-click', impacts:[]},
+        effects:{stack:[{type:'chromatic-aberration', params:{}, intensity:0.3}]} },
+    ]};
+}
+let STATE = defaultState();
+
+/* default param fillers so the schema is always complete ------------------- */
+function fillLayer(L){
+  L.id = L.id||uid();
+  L.name = L.name||'Layer';
+  L.z = L.z??0; L.visible = L.visible!==false;
+  L.content = Object.assign({kind:'shape',shape:'rect',color:'#6ee7ff',text:'',assetId:''}, L.content||{});
+  L.positioning = Object.assign({mode:'single',x:0.5,y:0.5,scale:1,rot:0}, L.positioning||{});
+  fillPositioning(L.positioning);
+  L.trigger = Object.assign({source:'none',impacts:[]}, L.trigger||{});
+  fillTrigger(L.trigger);
+  L.effects = L.effects||{stack:[]}; L.effects.stack = L.effects.stack||[];
+  L.effects.stack.forEach(e=>{ e.params=e.params||{}; e.intensity=e.intensity??1; });
+  return L;
+}
+function fillPositioning(p){
+  const d={
+    single:{x:0.5,y:0.5,scale:1,rot:0},
+    grid:{cols:6,rows:4,placement:'fixed',gap:0.1,size:0.6},
+    instances:{source:'mouse',count:40,physics:false,size:0.05,spread:0.4},
+    physics:{engine:'matter',gravity:[0,1],count:30,size:0.05,bounce:0.4},
+    drawn:{paths:[],count:30,size:0.04},
+    rope:{anchors:[[0.2,0.2],[0.8,0.2]],segments:14,stiffness:0.8,size:0.03},
+    'camera-feed':{detector:'hand',source:'camera',size:0.05},
+    'face-3d':{meshId:'',size:1},
+  }[p.mode]||{};
+  for(const k in d) if(p[k]===undefined) p[k]=d[k];
+}
+function fillTrigger(t){
+  const d={
+    none:{}, 'mouse-click':{}, hover:{}, position:{axis:'x'},
+    timeline:{keys:[{t:0,v:0},{t:2,v:1},{t:4,v:0}],loop:true,dur:4},
+    audio:{sourceId:'',feature:'loudness',band:4},
+    camera:{detector:'hand',event:'present'},
+  }[t.source]||{};
+  for(const k in d) if(t[k]===undefined) t[k]=d[k];
+  t.impacts = t.impacts||[];
+}
+function normalizeState(s){
+  s=s||defaultState();
+  s.v=1; s.canvasW=s.canvasW||1280; s.canvasH=s.canvasH||720;
+  s.background=s.background||'#000';
+  s.inputs=Object.assign({camera:false,mic:false},s.inputs||{});
+  s.layers=(s.layers||[]).map(fillLayer);
+  if(!s.layers.length) s=defaultState();
+  return s;
+}
+
+/* ===========================================================================
+   ASSET CACHE  (images / video / audio elements keyed by assetId)
+   ===========================================================================*/
+const Assets = {
+  img:{}, vid:{}, aud:{},
+  meta(id){ return CONTENT.find(c=>c.id===id); },
+  image(id){
+    if(this.img[id]!==undefined) return this.img[id];
+    const m=this.meta(id); if(!m){ this.img[id]=null; return null; }
+    const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>{ im._ready=true; }; im.src=m.url;
+    this.img[id]=im; return im;
+  },
+  video(id){
+    if(this.vid[id]) return this.vid[id];
+    const m=this.meta(id); if(!m) return null;
+    const v=document.createElement('video'); v.crossOrigin='anonymous'; v.loop=true; v.muted=true;
+    v.playsInline=true; v.src=m.url; v.play().catch(()=>{}); this.vid[id]=v; return v;
+  },
+  audio(id){
+    if(this.aud[id]) return this.aud[id];
+    const m=this.meta(id); if(!m) return null;
+    const a=new Audio(); a.crossOrigin='anonymous'; a.loop=true; a.src=m.url; this.aud[id]=a; return a;
+  },
+  reset(){ this.img={}; this.vid={}; this.aud={}; }
+};
+
+/* ===========================================================================
+   INPUT HUB  (pointer / clock / camera / mic) — shared across layers
+   ===========================================================================*/
+const Input = {
+  px:0.5, py:0.5, down:false, clicks:0, clickPulse:0, hoverAny:false,
+  t0:performance.now(), clock:0,
+  cam:{ on:false, video:null, stream:null },
+  mic:{ on:false, ctx:null, analyser:null, data:null, freq:null, src:null },
+  detect:{ hand:0, face:0, object:0, ocr:'', landmarks:null },
+  resetClock(){ this.t0=performance.now(); },
+  tick(){ this.clock=(performance.now()-this.t0)/1000; this.clickPulse*=0.9; },
+};
+
+/* pointer wiring on the stage host (no per-frame getBoundingClientRect) */
+const stageHost=document.getElementById('stageHost');
+let _hostRect={left:0,top:0,width:1,height:1};
+function refreshHostRect(){ _hostRect=stageHost.getBoundingClientRect(); }
+window.addEventListener('resize', refreshHostRect);
+stageHost.addEventListener('pointermove',e=>{
+  Input.px=clamp((e.clientX-_hostRect.left)/_hostRect.width,0,1);
+  Input.py=clamp((e.clientY-_hostRect.top)/_hostRect.height,0,1);
+  Input.hoverAny=true;
+});
+stageHost.addEventListener('pointerleave',()=>{ Input.hoverAny=false; });
+stageHost.addEventListener('pointerdown',e=>{
+  Input.down=true; Input.clicks++; Input.clickPulse=1;
+  Input.px=clamp((e.clientX-_hostRect.left)/_hostRect.width,0,1);
+  Input.py=clamp((e.clientY-_hostRect.top)/_hostRect.height,0,1);
+  Engine.onPointerDown && Engine.onPointerDown(Input.px,Input.py);
+});
+window.addEventListener('pointerup',()=>{ Input.down=false; });
+
+/* ---------- Camera / Mic permission ---------------------------------------- */
+async function enableCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+    const v=document.createElement('video'); v.autoplay=true; v.playsInline=true; v.muted=true;
+    v.srcObject=stream; await v.play();
+    Input.cam={on:true,video:v,stream}; STATE.inputs.camera=true;
+    document.getElementById('permCam').className='chip on';
+    Detectors.ensure();  // (re)build detectors for camera-feed/camera triggers
+  }catch(e){ showErr('Camera denied: '+e.message); }
+}
+async function enableMic(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const src=ctx.createMediaStreamSource(stream);
+    const an=ctx.createAnalyser(); an.fftSize=2048; src.connect(an);
+    Input.mic={on:true,ctx,analyser:an,data:new Uint8Array(an.frequencyBinCount),
+      freq:new Uint8Array(an.frequencyBinCount),src};
+    STATE.inputs.mic=true; document.getElementById('permMic').className='chip on';
+  }catch(e){ showErr('Mic denied: '+e.message); }
+}
+document.getElementById('permCam').onclick=enableCamera;
+document.getElementById('permMic').onclick=enableMic;
+
+/* ===========================================================================
+   AUDIO ANALYSIS  (mic OR a wired audio asset → loudness / pitch / band)
+   ===========================================================================*/
+const AudioReact = {
+  nodes:{},  // per-asset analyser
+  ctx:null,
+  ensureAsset(id){
+    if(this.nodes[id]) return this.nodes[id];
+    const a=Assets.audio(id); if(!a) return null;
+    try{
+      this.ctx=this.ctx||new (window.AudioContext||window.webkitAudioContext)();
+      const src=this.ctx.createMediaElementSource(a);
+      const an=this.ctx.createAnalyser(); an.fftSize=2048;
+      src.connect(an); an.connect(this.ctx.destination);
+      a.play().catch(()=>{});
+      this.nodes[id]={an,data:new Uint8Array(an.frequencyBinCount),freq:new Uint8Array(an.frequencyBinCount)};
+    }catch(e){ this.nodes[id]=null; }
+    return this.nodes[id];
+  },
+  read(sourceId, feature, band){
+    let an,data,freq;
+    if(sourceId==='mic' || !sourceId){
+      if(!Input.mic.on) return 0;
+      an=Input.mic.analyser; data=Input.mic.data; freq=Input.mic.freq;
+    } else {
+      const n=this.ensureAsset(sourceId); if(!n) return 0;
+      an=n.an; data=n.data; freq=n.freq;
+    }
+    if(!an) return 0;
+    if(feature==='loudness'){
+      an.getByteTimeDomainData(data);
+      let sum=0; for(let i=0;i<data.length;i++){ const x=(data[i]-128)/128; sum+=x*x; }
+      return clamp(Math.sqrt(sum/data.length)*3,0,1);
+    }
+    an.getByteFrequencyData(freq);
+    if(feature==='band'){
+      const nb=8, sz=Math.floor(freq.length/nb), b=clamp(band|0,0,nb-1);
+      let s=0; for(let i=b*sz;i<(b+1)*sz;i++) s+=freq[i];
+      return clamp(s/sz/255,0,1);
+    }
+    if(feature==='pitch'){
+      let max=0,idx=0; for(let i=2;i<freq.length;i++) if(freq[i]>max){max=freq[i];idx=i;}
+      return clamp(idx/freq.length,0,1);
+    }
+    return 0;
+  }
+};
+
+/* ===========================================================================
+   DETECTORS  (MediaPipe Tasks Vision + Tesseract OCR) — lazy & optional
+   ===========================================================================*/
+const Detectors = {
+  hand:null, face:null, object:null, ready:false, building:false, _ocrBusy:false, _ocrAt:0,
+  async ensure(){
+    if(this.building||this.ready) return;
+    this.building=true;
+    const vision=await loadMod('vision');
+    if(!vision){ this.building=false; return; }
+    try{
+      const fileset=await vision.FilesetResolver.forVisionTasks(
+        'https://esm.sh/@mediapipe/tasks-vision@0.10.12/wasm');
+      this.fileset=fileset; this.vision=vision; this.ready=true;
+    }catch(e){ console.warn('vision init',e); }
+    this.building=false;
+  },
+  async getHand(){
+    if(this.hand) return this.hand;
+    if(!this.ready) return null;
+    this.hand=await this.vision.HandLandmarker.createFromOptions(this.fileset,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'},
+      numHands:2, runningMode:'VIDEO'});
+    return this.hand;
+  },
+  async getFace(){
+    if(this.face) return this.face;
+    if(!this.ready) return null;
+    this.face=await this.vision.FaceLandmarker.createFromOptions(this.fileset,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'},
+      numFaces:1, runningMode:'VIDEO'});
+    return this.face;
+  },
+  async getObject(){
+    if(this.object) return this.object;
+    if(!this.ready) return null;
+    this.object=await this.vision.ObjectDetector.createFromOptions(this.fileset,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite'},
+      scoreThreshold:0.4, runningMode:'VIDEO'});
+    return this.object;
+  },
+  // run all required detectors against a source video element, once/frame
+  async run(detector, srcVideo){
+    if(!srcVideo || srcVideo.readyState<2) return;
+    const ts=performance.now();
+    try{
+      if(detector==='hand'){ const m=await this.getHand(); if(!m)return;
+        const r=m.detectForVideo(srcVideo,ts);
+        Input.detect.hand=r.landmarks.length; Input.detect.landmarks=r.landmarks; }
+      else if(detector==='face'){ const m=await this.getFace(); if(!m)return;
+        const r=m.detectForVideo(srcVideo,ts);
+        Input.detect.face=r.faceLandmarks.length; Input.detect.landmarks=r.faceLandmarks; }
+      else if(detector==='object'){ const m=await this.getObject(); if(!m)return;
+        const r=m.detectForVideo(srcVideo,ts);
+        Input.detect.object=r.detections.length;
+        Input.detect.landmarks=r.detections.map(d=>[{x:(d.boundingBox.originX+d.boundingBox.width/2)/srcVideo.videoWidth,
+          y:(d.boundingBox.originY+d.boundingBox.height/2)/srcVideo.videoHeight}]); }
+      else if(detector==='ocr'){ await this.runOCR(srcVideo); }
+    }catch(e){ /* model still downloading */ }
+  },
+  async runOCR(srcVideo){
+    if(this._ocrBusy || performance.now()-this._ocrAt<1500) return;
+    this._ocrBusy=true; this._ocrAt=performance.now();
+    const T=await loadMod('tesseract'); if(!T){ this._ocrBusy=false; return; }
+    try{
+      const cv=document.createElement('canvas'); cv.width=320; cv.height=240;
+      cv.getContext('2d').drawImage(srcVideo,0,0,320,240);
+      const {data}=await T.recognize(cv,'eng');
+      Input.detect.ocr=(data.text||'').trim();
+    }catch(e){}
+    this._ocrBusy=false;
+  }
+};
+
+/* ===========================================================================
+   POSITIONING  —  resolve a layer to an array of instance transforms
+   Each instance: {x,y,scale,rot}  in 0..1 normalized canvas space
+   ===========================================================================*/
+const Positioning = {
+  // persistent per-layer simulation state (instances/physics/rope) keyed by id
+  sim:{},
+  reset(){ this.sim={}; },
+  resolve(L, W, H, dt){
+    const p=L.positioning;
+    switch(p.mode){
+      case 'single':      return [{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
+      case 'grid':        return this.grid(L,p);
+      case 'instances':   return this.instances(L,p,dt);
+      case 'physics':     return this.physics(L,p,W,H,dt);
+      case 'drawn':       return this.drawn(L,p);
+      case 'rope':        return this.rope(L,p,dt);
+      case 'camera-feed': return this.cameraFeed(L,p);
+      case 'face-3d':     return this.face3d(L,p);
+      default:            return [{x:.5,y:.5,scale:1,rot:0}];
+    }
+  },
+  grid(L,p){
+    const out=[], cols=Math.max(1,p.cols|0), rows=Math.max(1,p.rows|0);
+    let rng=mulberry(hash(L.id));
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+      if(p.placement==='random' && rng()<0.25) continue;
+      out.push({x:(c+0.5)/cols, y:(r+0.5)/rows,
+        scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1), rot:0});
+    }
+    return out;
+  },
+  instances(L,p,dt){
+    const s=this.sim[L.id]||(this.sim[L.id]={items:[]});
+    const want=p.count|0;
+    // spawn strategy
+    if(p.source==='random'){
+      while(s.items.length<want) s.items.push(spawnInst());
+    } else if(p.source==='interaction'){
+      if(Input.clickPulse>0.5 && s.items.length<want)
+        for(let i=0;i<3&&s.items.length<want;i++) s.items.push(spawnInst(Input.px,Input.py));
+    } else { // mouse trail
+      if(Input.hoverAny && s.items.length<want) s.items.push(spawnInst(Input.px,Input.py));
+    }
+    while(s.items.length>want) s.items.shift();
+    // integrate
+    for(const it of s.items){
+      it.vy+=0.0006; it.x+=it.vx*dt*60*0.016; it.y+=it.vy*dt*60*0.016;
+      it.life-=dt*0.2; it.rot+=it.vr;
+      if(it.x<0||it.x>1) it.vx*=-1; if(it.y>1){ it.y=1; it.vy*=-0.5; }
+    }
+    s.items=s.items.filter(it=>it.life>0);
+    return s.items.map(it=>({x:it.x,y:it.y,scale:p.size*(0.6+it.life*0.6),rot:it.rot}));
+    function spawnInst(x,y){ return {x:x??Math.random(),y:y??Math.random(),
+      vx:(Math.random()-0.5)*0.01,vy:(Math.random()-0.5)*0.01,vr:(Math.random()-0.5)*0.1,rot:0,life:1+Math.random()}; }
+  },
+  physics(L,p,W,H,dt){
+    const s=this.sim[L.id];
+    if(!s||!s.engine){ this.initPhysics(L,p,W,H); return (this.sim[L.id]&&this.sim[L.id].fallback)||[]; }
+    s.Matter.Engine.update(s.engine, Math.min(dt*1000,33));
+    return s.bodies.map(b=>({x:b.position.x/W, y:b.position.y/H, scale:p.size, rot:b.angle}));
+  },
+  async initPhysics(L,p,W,H){
+    if(this.sim[L.id]&&this.sim[L.id]._building) return;
+    this.sim[L.id]={_building:true, fallback:Array.from({length:p.count|0},(_,i)=>(
+      {x:(i%8+0.5)/8,y:0.2+Math.floor(i/8)*0.1,scale:p.size,rot:0}))};
+    const M=await loadMod('matter'); if(!M){ return; }
+    const Matter=M.default||M;
+    const eng=Matter.Engine.create();
+    eng.gravity.x=p.gravity[0]; eng.gravity.y=p.gravity[1];
+    const bodies=[];
+    const rad=p.size*Math.min(W,H)*0.5;
+    for(let i=0;i<(p.count|0);i++){
+      const b=Matter.Bodies.circle(Math.random()*W, Math.random()*H*0.5, Math.max(4,rad),
+        {restitution:p.bounce,friction:0.05}); bodies.push(b);
+    }
+    const walls=[
+      Matter.Bodies.rectangle(W/2,H+30,W,60,{isStatic:true}),
+      Matter.Bodies.rectangle(-30,H/2,60,H,{isStatic:true}),
+      Matter.Bodies.rectangle(W+30,H/2,60,H,{isStatic:true}),
+    ];
+    Matter.Composite.add(eng.world,[...bodies,...walls]);
+    this.sim[L.id]={Matter,engine:eng,bodies, _building:false, _W:W,_H:H};
+  },
+  drawn(L,p){
+    const paths=p.paths||[];
+    const pts=[].concat(...paths);
+    if(!pts.length) return [{x:0.5,y:0.5,scale:p.size,rot:0}];
+    const out=[], n=Math.min(p.count|0||pts.length,200);
+    for(let i=0;i<n;i++){ const pt=pts[Math.floor(i/n*pts.length)]||pts[0];
+      out.push({x:pt[0],y:pt[1],scale:p.size,rot:0}); }
+    return out;
+  },
+  rope(L,p,dt){
+    let s=this.sim[L.id];
+    const anchors=p.anchors||[[0.2,0.2],[0.8,0.2]];
+    const seg=Math.max(2,p.segments|0);
+    if(!s||s.seg!==seg){ s={seg, pts:[]}; this.sim[L.id]=s;
+      for(let i=0;i<=seg;i++){ const t=i/seg;
+        s.pts.push({x:lerp(anchors[0][0],anchors[1][0],t),y:lerp(anchors[0][1],anchors[1][1],t),ox:0,oy:0,
+          px:lerp(anchors[0][0],anchors[1][0],t),py:lerp(anchors[0][1],anchors[1][1],t)}); }
+    }
+    // verlet integrate
+    const grav=0.0006, drag=0.99;
+    for(const q of s.pts){ const vx=(q.x-q.px)*drag, vy=(q.y-q.py)*drag;
+      q.px=q.x; q.py=q.y; q.x+=vx; q.y+=vy+grav; }
+    // anchors: first pinned, last follows pointer if hovering else pinned
+    s.pts[0].x=anchors[0][0]; s.pts[0].y=anchors[0][1];
+    const last=s.pts[s.pts.length-1];
+    if(Input.hoverAny){ last.x=Input.px; last.y=Input.py; } else { last.x=anchors[1][0]; last.y=anchors[1][1]; }
+    // constraint relaxation
+    const rest=Math.hypot(anchors[1][0]-anchors[0][0],anchors[1][1]-anchors[0][1])/seg;
+    const k=clamp(p.stiffness,0.05,1);
+    for(let it=0;it<6;it++)for(let i=0;i<seg;i++){
+      const a=s.pts[i], b=s.pts[i+1];
+      let dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1e-6;
+      const diff=(d-rest)/d*0.5*k; dx*=diff; dy*=diff;
+      if(i!==0){ a.x+=dx; a.y+=dy; } b.x-=dx; b.y-=dy;
+    }
+    return s.pts.map((q,i)=>({x:q.x,y:q.y,scale:p.size,rot:0}));
+  },
+  cameraFeed(L,p){
+    const det=p.detector;
+    const lm=Input.detect.landmarks;
+    if(!lm||!lm.length) return [];
+    const out=[];
+    for(const set of lm){
+      // sample a few landmarks (or all for face/hand)
+      const step=Math.max(1,Math.floor(set.length/24));
+      for(let i=0;i<set.length;i+=step){ const k=set[i];
+        out.push({x:clamp(k.x,0,1),y:clamp(k.y,0,1),scale:p.size,rot:0}); }
+    }
+    return out;
+  },
+  face3d(L,p){
+    // minimal stub: arrange instances on a sphere-ish face mask, optionally
+    // driven by face landmarks if a camera detector is active.
+    const lm=Input.detect.landmarks;
+    if(lm&&lm[0]){ const step=Math.max(1,Math.floor(lm[0].length/40));
+      const out=[]; for(let i=0;i<lm[0].length;i+=step){ const k=lm[0][i];
+        out.push({x:k.x,y:k.y,scale:p.size*0.4,rot:0}); } return out; }
+    const out=[],n=60;
+    for(let i=0;i<n;i++){ const a=i/n*Math.PI*2, r=0.18*(0.6+0.4*Math.sin(a*3+Input.clock));
+      out.push({x:0.5+Math.cos(a)*r,y:0.5+Math.sin(a)*r*1.2,scale:p.size*0.4,rot:a}); }
+    return out;
+  }
+};
+function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+/* ===========================================================================
+   TRIGGERS  —  evaluate a layer's trigger → scalar 0..1 (+ vec for position)
+   ===========================================================================*/
+const Triggers = {
+  eval(L){
+    const t=L.trigger;
+    switch(t.source){
+      case 'none':        return {v:0};
+      case 'mouse-click': return {v:Input.clickPulse};
+      case 'hover':       return {v:Input.hoverAny?1:0};
+      case 'position':    return {v: t.axis==='y'?Input.py:Input.px, vec:[Input.px,Input.py]};
+      case 'timeline':    return {v:this.timeline(t)};
+      case 'audio':       return {v:AudioReact.read(t.sourceId,t.feature,t.band)};
+      case 'camera':      return {v:this.camera(t)};
+      default:            return {v:0};
+    }
+  },
+  timeline(t){
+    const keys=(t.keys&&t.keys.length)?t.keys:[{t:0,v:0},{t:1,v:1}];
+    const dur=t.dur||keys[keys.length-1].t||1;
+    let tt=Input.clock % dur; if(!t.loop) tt=Math.min(Input.clock,dur);
+    let a=keys[0],b=keys[keys.length-1];
+    for(let i=0;i<keys.length-1;i++){ if(tt>=keys[i].t && tt<=keys[i+1].t){ a=keys[i]; b=keys[i+1]; break; } }
+    const span=(b.t-a.t)||1; const f=clamp((tt-a.t)/span,0,1);
+    return lerp(a.v,b.v,f);
+  },
+  camera(t){
+    const c=Input.detect;
+    if(t.event==='count'){ const n=t.detector==='hand'?c.hand:t.detector==='object'?c.object:c.face;
+      return clamp(n/3,0,1); }
+    if(t.event==='gesture'){ // crude: hand present + high in frame
+      return c.hand>0?1:0; }
+    // present
+    const n=t.detector==='hand'?c.hand:t.detector==='face'?c.face:t.detector==='object'?c.object:(c.ocr?1:0);
+    return n>0?1:0;
+  }
+};
+
+/* ===========================================================================
+   IMPACTS  —  route trigger values onto OTHER layers' params (cross-wiring)
+   Computed each frame into a per-layer override map, applied at render time.
+   ===========================================================================*/
+function applyMap(v, map, range){
+  const [lo,hi]=range||[0,1];
+  if(map==='threshold') return v>=0.5 ? hi : lo;
+  return lerp(lo,hi,clamp(v,0,1));
+}
+function computeImpacts(triggerVals){
+  // returns { layerId: { opacity?, scale?, position?:[dx,dy], effIntensity?:[..per effect or global..] } }
+  const ov={};
+  for(const L of STATE.layers){
+    const tv=triggerVals[L.id]; if(!tv) continue;
+    for(const im of (L.trigger.impacts||[])){
+      if(!im||!im.target) continue;
+      const val=applyMap(tv.v, im.map, im.range);
+      const o=ov[im.target]||(ov[im.target]={});
+      if(im.param==='opacity') o.opacity=val;
+      else if(im.param==='scale') o.scale=val;
+      else if(im.param==='position'){ o.position=[tv.vec?tv.vec[0]:val, tv.vec?tv.vec[1]:val]; }
+      else if(im.param==='effect.intensity') o.effIntensity=val;
+    }
+  }
+  return ov;
+}
+
+/* ===========================================================================
+   EFFECTS  —  WebGL2 fullscreen fragment passes (ping-pong framebuffers)
+   Each effect reads previous pass texture + uTime/uIntensity/uRes.
+   ===========================================================================*/
+const VERT=`#version 300 es
+in vec2 p; out vec2 uv;
+void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`;
+
+const FRAG_HEAD=`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D tex; uniform float uTime; uniform float uIntensity; uniform vec2 uRes;
+`;
+const EFFECT_SRC={
+  'chromatic-aberration':`
+    void main(){ vec2 d=(uv-0.5); float k=uIntensity*0.03;
+      float r=texture(tex,uv+d*k).r, g=texture(tex,uv).g, b=texture(tex,uv-d*k).b;
+      o=vec4(r,g,b, texture(tex,uv).a); }`,
+  'pixel-mosh':`
+    float h(vec2 p){ return fract(sin(dot(p,vec2(12.9,78.2)))*43758.5); }
+    void main(){ float bs=mix(1.0,40.0,uIntensity);
+      vec2 blk=floor(uv*uRes/bs);
+      vec2 off=vec2(h(blk+floor(uTime*4.)),h(blk.yx))*2.-1.;
+      off*=step(0.6,h(blk*1.3))*uIntensity*0.06;
+      vec4 c=texture(tex,uv+off); o=c; }`,
+  'halftone':`
+    void main(){ float s=mix(60.0,6.0,uIntensity);
+      vec2 g=uv*uRes/ (uRes.x/s); vec2 cell=floor(g)+0.5; vec2 d=g-cell;
+      vec4 c=texture(tex,cell/(uRes.x/s)*(uRes.x/uRes)/1.0 );
+      c=texture(tex,floor(g)/(uRes.x/s));
+      float lum=dot(c.rgb,vec3(0.299,0.587,0.114));
+      float r=length(d)*1.4; float dot=step(r, sqrt(1.0-lum)*0.9);
+      o=vec4(vec3(dot)*c.rgb + vec3(dot)*0.0, c.a*max(dot,0.05)+ (1.0-uIntensity)*c.a );
+      o.rgb=mix(c.rgb, vec3(dot), uIntensity); }`,
+  'ascii':`
+    float glyph(float l, vec2 f){
+      // crude luminance->density block
+      float d=step(0.5,l)*step(abs(f.x-0.5),0.3)*step(abs(f.y-0.5),0.4);
+      d+=step(0.25,l)*step(abs(f.x-0.5),0.12);
+      return clamp(d,0.,1.); }
+    void main(){ float cells=mix(160.0,40.0,uIntensity);
+      vec2 grid=uv*vec2(cells, cells*uRes.y/uRes.x);
+      vec2 cell=floor(grid); vec2 f=fract(grid);
+      vec4 c=texture(tex, cell/vec2(cells,cells*uRes.y/uRes.x));
+      float lum=dot(c.rgb,vec3(0.299,0.587,0.114));
+      float g=glyph(lum,f);
+      vec3 col=mix(c.rgb, c.rgb*g + vec3(g)*lum, uIntensity);
+      o=vec4(col, c.a); }`,
+  'displace':`
+    void main(){ float a=uTime*1.5;
+      vec2 d=vec2(sin(uv.y*20.+a),cos(uv.x*20.+a))*uIntensity*0.02;
+      o=texture(tex,uv+d); }`,
+  'bloom':`
+    void main(){ vec4 base=texture(tex,uv); vec3 sum=vec3(0.);
+      float r=uIntensity*0.012; float w=0.;
+      for(int i=-4;i<=4;i++)for(int j=-4;j<=4;j++){
+        vec2 off=vec2(float(i),float(j))*r;
+        vec3 s=texture(tex,uv+off).rgb;
+        float br=max(0.,dot(s,vec3(0.333))-0.5);
+        sum+=s*br; w+=1.; }
+      o=vec4(base.rgb + sum/w*uIntensity*4.0, base.a); }`,
+  'particle-float':`
+    float h(vec2 p){ return fract(sin(dot(p,vec2(41.3,289.1)))*43758.5); }
+    void main(){ float rise=uTime*uIntensity*0.15;
+      vec2 cell=floor(uv*uRes/6.0);
+      float ph=h(cell);
+      vec2 suv=uv + vec2(sin((uv.y+ph)*30.)*0.01, mod(rise+ph,0.3))*uIntensity;
+      vec4 c=texture(tex,suv);
+      o=vec4(c.rgb, c.a*(1.0 - mod(rise+ph,1.0)*uIntensity*0.6)); }`,
+};
+function fragFor(eff){
+  if(eff.type==='shader' && eff.glsl && eff.glsl.trim()){
+    // custom: if user didn't include a version/header, prepend ours.
+    let src=eff.glsl;
+    if(!/#version/.test(src)) src=FRAG_HEAD+src;
+    return src;
+  }
+  return FRAG_HEAD+(EFFECT_SRC[eff.type]||'void main(){ o=texture(tex,uv); }');
+}
+
+class GLFx {
+  constructor(canvas){
+    this.cv=canvas;
+    this.gl=canvas.getContext('webgl2',{premultipliedAlpha:true,alpha:true});
+    this.progs={}; this.fbos=[]; this.tex=[];
+    if(!this.gl){ showErr('WebGL2 unavailable — effects disabled'); return; }
+    const gl=this.gl;
+    this.quad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+    this.srcTex=gl.createTexture();   // texture we upload the 2D canvas into
+  }
+  compile(src){
+    const gl=this.gl;
+    const v=gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(v,VERT); gl.compileShader(v);
+    const f=gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(f,src); gl.compileShader(f);
+    if(!gl.getShaderParameter(f,gl.COMPILE_STATUS)){
+      const log=gl.getShaderInfoLog(f); showErr('Shader error: '+log.split('\n')[0]); return null; }
+    const pr=gl.createProgram(); gl.attachShader(pr,v); gl.attachShader(pr,f); gl.linkProgram(pr);
+    if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){ showErr('Link error'); return null; }
+    return pr;
+  }
+  progFor(eff){
+    const key=eff.type==='shader'?('custom:'+hash(eff.glsl||'')):eff.type;
+    if(this.progs[key]) return this.progs[key];
+    const pr=this.compile(fragFor(eff)); if(pr){ this.progs[key]=pr; }
+    return pr;
+  }
+  ensureFbos(w,h){
+    const gl=this.gl;
+    if(this._w===w&&this._h===h&&this.fbos.length) return;
+    this._w=w; this._h=h;
+    this.fbos.forEach(f=>gl.deleteFramebuffer(f)); this.tex.forEach(t=>gl.deleteTexture(t));
+    this.fbos=[]; this.tex=[];
+    for(let i=0;i<2;i++){
+      const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      const fb=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+      this.tex.push(t); this.fbos.push(fb);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  }
+  // Run effect stack on the contents of a 2D source canvas → onto this.cv
+  apply(srcCanvas, stack, w, h, time, intensityOverride){
+    const gl=this.gl; if(!gl) return;
+    this.ensureFbos(w,h);
+    // upload source 2D canvas into srcTex
+    gl.bindTexture(gl.TEXTURE_2D,this.srcTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcCanvas);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+
+    let inputTex=this.srcTex, ping=0;
+    const passes=stack.filter(e=>e&&e.type);
+    if(!passes.length){ // straight copy to screen
+      this.blit(this.srcTex,w,h,{type:'__copy'},time,1,null); return;
+    }
+    for(let i=0;i<passes.length;i++){
+      const eff=passes[i];
+      const last=(i===passes.length-1);
+      const targetFb=last?null:this.fbos[ping];
+      const intensity = (intensityOverride!=null?intensityOverride:1) * (eff.intensity??1);
+      this.blit(inputTex,w,h,eff,time,intensity,targetFb);
+      inputTex=this.tex[ping]; ping^=1;
+    }
+  }
+  blit(inputTex,w,h,eff,time,intensity,targetFb){
+    const gl=this.gl;
+    let pr;
+    if(eff.type==='__copy'){ pr=this._copyProg||(this._copyProg=this.compile(FRAG_HEAD+'void main(){o=texture(tex,uv);}')); }
+    else pr=this.progFor(eff);
+    if(!pr){ return; }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,targetFb);
+    gl.viewport(0,0,w,h);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);
+    const loc=gl.getAttribLocation(pr,'p');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,inputTex);
+    gl.uniform1i(gl.getUniformLocation(pr,'tex'),0);
+    gl.uniform1f(gl.getUniformLocation(pr,'uTime'),time);
+    gl.uniform1f(gl.getUniformLocation(pr,'uIntensity'),intensity);
+    gl.uniform2f(gl.getUniformLocation(pr,'uRes'),w,h);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+}
+
+/* ===========================================================================
+   CONTENT RENDERING  (2D) — draw an instance's content into the 2D layer buf
+   ===========================================================================*/
+function drawContent(ctx, L, inst, W, H, baseScale){
+  const c=L.content;
+  const cx=inst.x*W, cy=inst.y*H;
+  const sz=Math.min(W,H)*(inst.scale||1)*baseScale;
+  ctx.save();
+  ctx.translate(cx,cy); ctx.rotate(inst.rot||0);
+  if(c.kind==='asset'){
+    const m=Assets.meta(c.assetId);
+    if(m && m.kind==='video'){ const v=Assets.video(c.assetId);
+      if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1; const w=sz, h=sz/ar;
+        ctx.drawImage(v,-w/2,-h/2,w,h); } }
+    else { const im=Assets.image(c.assetId);
+      if(im&&im._ready){ const ar=im.width/im.height||1; const w=sz, h=sz/ar;
+        ctx.drawImage(im,-w/2,-h/2,w,h); }
+      else { ctx.fillStyle='#333'; ctx.fillRect(-sz/2,-sz/2,sz,sz); ctx.fillStyle='#888';
+        ctx.font=`${Math.max(8,sz*0.12)}px ${getMono()}`; ctx.textAlign='center';
+        ctx.fillText(m?m.label||'asset':'no asset',0,0); } }
+  } else if(c.kind==='text'){
+    ctx.fillStyle=c.color||'#fff';
+    ctx.font=`700 ${sz*0.4}px ${getSans()}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(c.text||'TEXT',0,0);
+  } else if(c.kind==='generator'){
+    // procedural: animated rings
+    ctx.strokeStyle=c.color||'#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.03);
+    for(let i=1;i<=4;i++){ ctx.beginPath();
+      ctx.arc(0,0, sz*0.12*i*(0.8+0.2*Math.sin(Input.clock*2+i)),0,Math.PI*2); ctx.stroke(); }
+  } else { // shape
+    ctx.fillStyle=c.color||'#6ee7ff';
+    if(c.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,sz/2,0,Math.PI*2); ctx.fill(); }
+    else if(c.shape==='tri'){ ctx.beginPath(); ctx.moveTo(0,-sz/2); ctx.lineTo(sz/2,sz/2);
+      ctx.lineTo(-sz/2,sz/2); ctx.closePath(); ctx.fill(); }
+    else { ctx.fillRect(-sz/2,-sz/2,sz,sz); }
+  }
+  ctx.restore();
+}
+function getSans(){ return getComputedStyle(document.body).fontFamily; }
+function getMono(){ return 'ui-monospace,Menlo,monospace'; }
+
+/* ===========================================================================
+   ENGINE  — the requestAnimationFrame runtime tying it all together
+   ===========================================================================*/
+const Engine = {
+  c2d:document.getElementById('c2d'), cgl:document.getElementById('cgl'),
+  ctx:null, gl:null, fx:null, layerBuf:null, lctx:null,
+  W:1280, H:720, playing:true, last:performance.now(),
+  fpsAcc:0, fpsN:0, fpsT:0,
+  init(){
+    this.ctx=this.c2d.getContext('2d');
+    this.fx=new GLFx(this.cgl);
+    this.layerBuf=document.createElement('canvas'); this.lctx=this.layerBuf.getContext('2d');
+    this.resize();
+    requestAnimationFrame(this.frame.bind(this));
+  },
+  resize(){
+    this.W=STATE.canvasW; this.H=STATE.canvasH;
+    for(const cv of [this.c2d,this.cgl]){ cv.width=this.W; cv.height=this.H; }
+    this.layerBuf.width=this.W; this.layerBuf.height=this.H;
+    // CSS aspect fit
+    const host=stageHost; const maxW=host.parentElement.clientWidth, maxH=host.parentElement.clientHeight;
+    const ar=this.W/this.H; let w=maxW, h=maxW/ar; if(h>maxH){ h=maxH; w=maxH*ar; }
+    host.style.width=w+'px'; host.style.height=h+'px';
+    refreshHostRect();
+  },
+  onPointerDown(x,y){ /* hook for instance/physics spawning handled in Positioning */ },
+  frame(now){
+    const dt=Math.min((now-this.last)/1000, 0.05); this.last=now;
+    if(this.playing){ Input.tick(); this.render(dt); }
+    // fps
+    this.fpsAcc+=dt; this.fpsN++; if(now-this.fpsT>500){
+      const fps=this.fpsN/this.fpsAcc|0; document.getElementById('fpsLbl').textContent=fps+' fps';
+      this.fpsAcc=0; this.fpsN=0; this.fpsT=now; }
+    requestAnimationFrame(this.frame.bind(this));
+  },
+  render(dt){
+    const W=this.W,H=this.H, ctx=this.ctx, time=Input.clock;
+    // run camera detectors if any layer needs them
+    this.runDetectors();
+    // 1) evaluate triggers
+    const tvals={}; for(const L of STATE.layers) tvals[L.id]=Triggers.eval(L);
+    // 2) compute cross-layer impacts
+    const overrides=computeImpacts(tvals);
+    // 3) clear base canvases
+    ctx.clearRect(0,0,W,H); ctx.fillStyle=STATE.background; ctx.fillRect(0,0,W,H);
+    if(this.fx&&this.fx.gl){ this.fx.gl.clearColor(0,0,0,0); this.fx.gl.clear(this.fx.gl.COLOR_BUFFER_BIT); }
+    // 4) render layers in z-order
+    const ordered=[...STATE.layers].sort((a,b)=>(a.z||0)-(b.z||0));
+    for(const L of ordered){
+      if(!L.visible) continue;
+      const ov=overrides[L.id]||{};
+      const insts=Positioning.resolve(L,W,H,dt);
+      // base transforms can be overridden by impacts
+      const opacity = ov.opacity!=null?ov.opacity:1;
+      const scaleMul = ov.scale!=null?ov.scale:1;
+      const posOff = ov.position; // [nx,ny] absolute reposition of whole layer
+      // draw instances into the per-layer buffer
+      this.lctx.clearRect(0,0,W,H);
+      this.lctx.globalAlpha=1;
+      for(const inst of insts){
+        let it=inst;
+        if(posOff){ it={...inst, x:posOff[0], y:posOff[1]}; }
+        drawContent(this.lctx, L, it, W, H, scaleMul);
+      }
+      // 5) effects chain on this layer buffer, then composite to screen
+      const hasFx = L.effects.stack.length>0 && this.fx && this.fx.gl;
+      if(hasFx){
+        // effect-intensity impact: if present, scale ALL effect intensities
+        const eInt = ov.effIntensity!=null?ov.effIntensity:null;
+        this.fx.apply(this.layerBuf, L.effects.stack, W, H, time, eInt);
+        ctx.save(); ctx.globalAlpha=opacity;
+        ctx.drawImage(this.cgl,0,0,W,H); ctx.restore();
+        // clear gl after compositing so next layer starts clean
+      } else {
+        ctx.save(); ctx.globalAlpha=opacity;
+        ctx.drawImage(this.layerBuf,0,0); ctx.restore();
+      }
+    }
+    document.getElementById('badge').textContent =
+      `${STATE.layers.length} layers · t=${time.toFixed(1)}s`+
+      (Input.cam.on?' · cam':'')+(Input.mic.on?' · mic':'');
+  },
+  _detNeed:null,
+  runDetectors(){
+    // gather which detector + source is needed this frame
+    let need=null, srcVideo=null;
+    for(const L of STATE.layers){
+      if(!L.visible) continue;
+      if(L.positioning.mode==='camera-feed'){
+        need=L.positioning.detector;
+        srcVideo = L.positioning.source && L.positioning.source.startsWith('video:')
+          ? Assets.video(L.positioning.source.slice(6)) : (Input.cam.on?Input.cam.video:null);
+      }
+      if(L.trigger.source==='camera' && !need){ need=L.trigger.detector; srcVideo=Input.cam.on?Input.cam.video:null; }
+    }
+    if(need && srcVideo){ Detectors.ensure(); if(Detectors.ready) Detectors.run(need,srcVideo); }
+  }
+};
+
+/* play/pause/clock */
+document.getElementById('playBtn').onclick=function(){
+  Engine.playing=!Engine.playing; this.textContent=Engine.playing?'⏸ Pause':'▶ Play';
+};
+document.getElementById('resetClock').onclick=()=>Input.resetClock();
+
+/* ===========================================================================
+   DRAWN-PATH capture  (when a 'drawn' layer is selected, drag to draw)
+   ===========================================================================*/
+let drawingLayer=null, curPath=null;
+stageHost.addEventListener('pointerdown',e=>{
+  const L=selectedLayer();
+  if(L && L.positioning.mode==='drawn'){
+    drawingLayer=L; curPath=[]; L.positioning.paths=L.positioning.paths||[];
+    L.positioning.paths.push(curPath);
+  }
+});
+stageHost.addEventListener('pointermove',e=>{
+  if(drawingLayer&&curPath){ curPath.push([Input.px,Input.py]); }
+});
+window.addEventListener('pointerup',()=>{ if(drawingLayer){ drawingLayer=null; curPath=null; emit(); } });
+
+/* ===========================================================================
+   EDITOR UI
+   ===========================================================================*/
+let selId=null;
+function selectedLayer(){ return STATE.layers.find(l=>l.id===selId); }
+
+const ICONS={
+  eye:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeoff:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.9 17.9A10.7 10.7 0 0 1 12 19C5 19 1 12 1 12a18 18 0 0 1 5-5m4-1a10.7 10.7 0 0 1 7 5 18 18 0 0 1-2 3M1 1l22 22"/></svg>',
+  up:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>',
+  down:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>',
+  trash:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2m-9 0v14h10V6"/></svg>',
+  car:'<svg class="ic car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>',
+};
+
+function renderLayerList(){
+  const root=document.getElementById('layerList'); root.innerHTML='';
+  [...STATE.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
+    const el=document.createElement('div'); el.className='layer'+(L.id===selId?' sel':'');
+    el.innerHTML=`<div class="top">
+        <button class="iconbtn sm" data-act="vis" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</button>
+        <input class="nm" value="${esc(L.name)}">
+        <button class="iconbtn sm" data-act="up" title="up">${ICONS.up}</button>
+        <button class="iconbtn sm" data-act="down" title="down">${ICONS.down}</button>
+        <button class="iconbtn sm" data-act="del" title="delete">${ICONS.trash}</button>
+      </div>
+      <div class="meta">
+        <span class="tag">${L.content.kind}</span>
+        <span class="tag">pos:${L.positioning.mode}</span>
+        <span class="tag">trig:${L.trigger.source}</span>
+        <span class="tag">fx:${L.effects.stack.length}</span>
+        ${(L.trigger.impacts||[]).length?`<span class="tag" style="border-color:var(--acc2);color:var(--acc2)">→${L.trigger.impacts.length}</span>`:''}
+      </div>`;
+    el.onclick=(e)=>{ if(e.target.closest('button')||e.target.classList.contains('nm'))return;
+      selId=L.id; renderAll(); };
+    el.querySelector('.nm').onchange=e=>{ L.name=e.target.value; emit(); renderLayerList(); };
+    el.querySelector('[data-act=vis]').onclick=()=>{ L.visible=!L.visible; emit(); renderLayerList(); };
+    el.querySelector('[data-act=up]').onclick=()=>{ moveZ(L,1); };
+    el.querySelector('[data-act=down]').onclick=()=>{ moveZ(L,-1); };
+    el.querySelector('[data-act=del]').onclick=()=>{ delLayer(L); };
+    root.appendChild(el);
+  });
+}
+function moveZ(L,dir){ L.z=(L.z||0)+dir; emit(); renderAll(); }
+function delLayer(L){ STATE.layers=STATE.layers.filter(x=>x.id!==L.id);
+  if(selId===L.id) selId=STATE.layers[0]&&STATE.layers[0].id; emit(); renderAll(); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+document.getElementById('addLayer').onclick=()=>{
+  const maxZ=Math.max(0,...STATE.layers.map(l=>l.z||0));
+  const L=fillLayer({id:uid(),name:'Layer '+(STATE.layers.length+1),z:maxZ+1,
+    content:{kind:'shape',shape:'circle',color:'#b388ff'},positioning:{mode:'single'},trigger:{source:'none'},effects:{stack:[]}});
+  STATE.layers.push(L); selId=L.id; emit(); renderAll();
+};
+
+/* ---------- field helpers ------------------------------------------------- */
+function fSlider(label,val,min,max,step,on){
+  const w=document.createElement('div'); w.className='fld';
+  w.innerHTML=`<label>${label}<span class="v"></span></label><input type="range" min="${min}" max="${max}" step="${step}" value="${val}">`;
+  const v=w.querySelector('.v'), inp=w.querySelector('input'); v.textContent=(+val).toFixed(step<1?2:0);
+  inp.oninput=()=>{ v.textContent=(+inp.value).toFixed(step<1?2:0); on(+inp.value); emit(); };
+  return w;
+}
+function fSelect(label,val,opts,on){
+  const w=document.createElement('div'); w.className='fld';
+  w.innerHTML=`<label>${label}</label><select>${opts.map(o=>{const[ov,ol]=Array.isArray(o)?o:[o,o];
+    return `<option value="${ov}" ${ov===val?'selected':''}>${ol}</option>`;}).join('')}</select>`;
+  w.querySelector('select').onchange=e=>{ on(e.target.value); emit(); };
+  return w;
+}
+function fText(label,val,on,area){
+  const w=document.createElement('div'); w.className='fld';
+  w.innerHTML=`<label>${label}</label>${area?`<textarea>${esc(val||'')}</textarea>`:`<input type="text" value="${esc(val||'')}">`}`;
+  w.querySelector(area?'textarea':'input').onchange=e=>{ on(e.target.value); emit(); };
+  return w;
+}
+function fColor(label,val,on){
+  const w=document.createElement('div'); w.className='fld';
+  w.innerHTML=`<label>${label}</label><div class="row"><input type="color" value="${val||'#ffffff'}"><span class="small">${val}</span></div>`;
+  const sp=w.querySelector('.small');
+  w.querySelector('input').oninput=e=>{ sp.textContent=e.target.value; on(e.target.value); emit(); };
+  return w;
+}
+function fToggle(label,val,on){
+  const w=document.createElement('div'); w.className='fld';
+  const b=document.createElement('button'); b.className='chip '+(val?'on':'off'); b.textContent=label+': '+(val?'ON':'OFF');
+  b.onclick=()=>{ val=!val; b.className='chip '+(val?'on':'off'); b.textContent=label+': '+(val?'ON':'OFF'); on(val); emit(); };
+  w.appendChild(b); return w;
+}
+function accordion(title,bodyFn,openKey){
+  const sec=document.createElement('div'); sec.className='acc-sec'+(OPEN[openKey]?' open':'');
+  sec.innerHTML=`<div class="acc-h">${ICONS.car}<span>${title}</span></div><div class="acc-b"></div>`;
+  sec.querySelector('.acc-h').onclick=()=>{ OPEN[openKey]=!sec.classList.contains('open'); sec.classList.toggle('open'); };
+  bodyFn(sec.querySelector('.acc-b'));
+  return sec;
+}
+const OPEN={content:true,pos:true,trig:false,fx:false};
+
+/* asset dropdown options from wired content */
+function assetOpts(kindFilter){
+  const list=CONTENT.filter(c=>!kindFilter||kindFilter.includes(c.kind));
+  return [['','— none —'],...list.map(c=>[c.id,(c.label||c.id)+' ('+c.kind+')'])];
+}
+
+/* ---------- INSPECTOR ----------------------------------------------------- */
+function renderInspector(){
+  const body=document.getElementById('inspBody'); body.innerHTML='';
+  const L=selectedLayer();
+  document.getElementById('inspTitle').textContent=L?L.name:'No layer';
+  if(!L){ body.innerHTML='<p class="hint" style="padding:12px">Add a layer to begin.</p>'; return; }
+
+  /* CONTENT accordion */
+  body.appendChild(accordion('Content',(b)=>{
+    b.appendChild(fSelect('Kind',L.content.kind,
+      [['shape','Shape'],['text','Text'],['asset','Wired asset'],['generator','Generator']],
+      v=>{ L.content.kind=v; renderInspector(); }));
+    if(L.content.kind==='shape'){
+      b.appendChild(fSelect('Shape',L.content.shape||'rect',[['rect','Rect'],['circle','Circle'],['tri','Triangle']],v=>L.content.shape=v));
+      b.appendChild(fColor('Color',L.content.color||'#6ee7ff',v=>L.content.color=v));
+    } else if(L.content.kind==='text'){
+      b.appendChild(fText('Text',L.content.text,v=>L.content.text=v));
+      b.appendChild(fColor('Color',L.content.color||'#ffffff',v=>L.content.color=v));
+    } else if(L.content.kind==='asset'){
+      b.appendChild(fSelect('Asset',L.content.assetId||'',assetOpts(['image','video']),v=>L.content.assetId=v));
+      b.appendChild(html('<p class="hint">Wired images & video render as instance content.</p>'));
+    } else {
+      b.appendChild(fColor('Color',L.content.color||'#6ee7ff',v=>L.content.color=v));
+      b.appendChild(html('<p class="hint">Procedural animated rings generator.</p>'));
+    }
+  },'content'));
+
+  /* POSITIONING accordion */
+  body.appendChild(accordion('Positioning',(b)=>{
+    const p=L.positioning;
+    b.appendChild(fSelect('Mode',p.mode,
+      [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],
+       ['drawn','Drawn paths'],['rope','Rope'],['camera-feed','Camera feed'],['face-3d','Face 3D']],
+      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; renderInspector(); }));
+    if(p.mode==='single'){
+      b.appendChild(fSlider('X',p.x,0,1,0.01,v=>p.x=v));
+      b.appendChild(fSlider('Y',p.y,0,1,0.01,v=>p.y=v));
+      b.appendChild(fSlider('Scale',p.scale,0.05,3,0.01,v=>p.scale=v));
+      b.appendChild(fSlider('Rotation',p.rot,0,6.28,0.01,v=>p.rot=v));
+    } else if(p.mode==='grid'){
+      b.appendChild(fSlider('Columns',p.cols,1,24,1,v=>p.cols=v));
+      b.appendChild(fSlider('Rows',p.rows,1,24,1,v=>p.rows=v));
+      b.appendChild(fSelect('Placement',p.placement,[['fixed','Fixed'],['random','Random occupancy']],v=>p.placement=v));
+      b.appendChild(fSlider('Cell size',p.size,0.1,1.5,0.01,v=>p.size=v));
+    } else if(p.mode==='instances'){
+      b.appendChild(fSelect('Spawn',p.source,[['mouse','Mouse trail'],['random','Random'],['interaction','On click']],v=>p.source=v));
+      b.appendChild(fSlider('Count',p.count,1,300,1,v=>p.count=v));
+      b.appendChild(fSlider('Size',p.size,0.005,0.3,0.005,v=>p.size=v));
+      b.appendChild(fToggle('Physics',p.physics,v=>p.physics=v));
+    } else if(p.mode==='physics'){
+      b.appendChild(fSlider('Count',p.count,1,120,1,v=>{p.count=v;Positioning.sim[L.id]=null;}));
+      b.appendChild(fSlider('Gravity Y',p.gravity[1],-2,2,0.05,v=>{p.gravity[1]=v;if(Positioning.sim[L.id]&&Positioning.sim[L.id].engine)Positioning.sim[L.id].engine.gravity.y=v;}));
+      b.appendChild(fSlider('Gravity X',p.gravity[0],-2,2,0.05,v=>{p.gravity[0]=v;if(Positioning.sim[L.id]&&Positioning.sim[L.id].engine)Positioning.sim[L.id].engine.gravity.x=v;}));
+      b.appendChild(fSlider('Size',p.size,0.01,0.2,0.005,v=>{p.size=v;Positioning.sim[L.id]=null;}));
+      b.appendChild(fSlider('Bounce',p.bounce,0,1,0.05,v=>{p.bounce=v;Positioning.sim[L.id]=null;}));
+      b.appendChild(html('<p class="hint">matter.js engine (loaded on demand from esm.sh).</p>'));
+    } else if(p.mode==='drawn'){
+      b.appendChild(fSlider('Instances/path',p.count,1,200,1,v=>p.count=v));
+      b.appendChild(fSlider('Size',p.size,0.005,0.2,0.005,v=>p.size=v));
+      b.appendChild(html(`<p class="hint">Drag on the preview to draw paths. Stored points: ${(p.paths||[]).reduce((a,x)=>a+x.length,0)}.</p>`));
+      const clr=document.createElement('button'); clr.className='sm'; clr.textContent='Clear paths';
+      clr.onclick=()=>{ p.paths=[]; emit(); renderInspector(); }; b.appendChild(clr);
+    } else if(p.mode==='rope'){
+      b.appendChild(fSlider('Segments',p.segments,2,40,1,v=>{p.segments=v;Positioning.sim[L.id]=null;}));
+      b.appendChild(fSlider('Stiffness',p.stiffness,0.05,1,0.05,v=>p.stiffness=v));
+      b.appendChild(fSlider('Size',p.size,0.005,0.15,0.005,v=>p.size=v));
+      b.appendChild(html('<p class="hint">Verlet rope; hover preview to drag the free end.</p>'));
+    } else if(p.mode==='camera-feed'){
+      b.appendChild(fSelect('Detector',p.detector,[['hand','Hand'],['face','Face'],['object','Object'],['ocr','OCR (text)']],v=>p.detector=v));
+      const srcOpts=[['camera','Live camera'],...CONTENT.filter(c=>c.kind==='video').map(c=>['video:'+c.id,'Video: '+(c.label||c.id)])];
+      b.appendChild(fSelect('Source',p.source,srcOpts,v=>p.source=v));
+      b.appendChild(fSlider('Size',p.size,0.01,0.2,0.005,v=>p.size=v));
+      b.appendChild(html('<p class="hint">Instances placed on detector landmarks. Enable camera below-left.</p>'));
+    } else if(p.mode==='face-3d'){
+      b.appendChild(fSelect('Mesh',p.meshId||'',assetOpts(['mesh','model','glb']),v=>p.meshId=v));
+      b.appendChild(fSlider('Size',p.size,0.1,3,0.05,v=>p.size=v));
+      b.appendChild(html('<p class="hint">Stub: maps instances onto face landmarks (camera) or a procedural face mask.</p>'));
+    }
+  },'pos'));
+
+  /* TRIGGER accordion */
+  body.appendChild(accordion('Trigger',(b)=>{
+    const t=L.trigger;
+    b.appendChild(fSelect('Source',t.source,
+      [['none','None'],['mouse-click','Mouse click'],['hover','Hover'],['position','Pointer position'],
+       ['timeline','Timeline'],['audio','Audio'],['camera','Camera']],
+      v=>{ t.source=v; fillTrigger(t); renderInspector(); }));
+    if(t.source==='position'){ b.appendChild(fSelect('Axis',t.axis,[['x','X'],['y','Y']],v=>t.axis=v)); }
+    else if(t.source==='timeline'){
+      b.appendChild(fSlider('Duration (s)',t.dur,0.5,20,0.5,v=>t.dur=v));
+      b.appendChild(fToggle('Loop',t.loop,v=>t.loop=v));
+      b.appendChild(fText('Keyframes JSON',JSON.stringify(t.keys),v=>{ try{t.keys=JSON.parse(v);}catch(e){showErr('bad keys JSON');} },true));
+      b.appendChild(html('<p class="hint">[{"t":sec,"v":0..1}, ...]</p>'));
+    }
+    else if(t.source==='audio'){
+      const opts=[['mic','Microphone'],...CONTENT.filter(c=>c.kind==='audio').map(c=>[c.id,c.label||c.id])];
+      b.appendChild(fSelect('Source',t.sourceId||'mic',opts,v=>t.sourceId=v));
+      b.appendChild(fSelect('Feature',t.feature,[['loudness','Loudness'],['pitch','Pitch'],['band','Band']],v=>{t.feature=v;renderInspector();}));
+      if(t.feature==='band') b.appendChild(fSlider('Band',t.band,0,7,1,v=>t.band=v));
+      b.appendChild(html('<p class="hint">Mic requires permission chip. Audio assets auto-play muted analysis.</p>'));
+    }
+    else if(t.source==='camera'){
+      b.appendChild(fSelect('Detector',t.detector,[['hand','Hand'],['face','Face'],['object','Object'],['ocr','OCR']],v=>t.detector=v));
+      b.appendChild(fSelect('Event',t.event,[['present','Present'],['count','Count'],['gesture','Gesture']],v=>t.event=v));
+      b.appendChild(html('<p class="hint">Enable camera chip. MediaPipe/Tesseract loaded on demand.</p>'));
+    }
+    /* IMPACTS editor */
+    b.appendChild(html('<hr><label class="small" style="text-transform:uppercase;letter-spacing:.06em">Impacts (cross-layer)</label>'));
+    const wrap=document.createElement('div'); wrap.className='impacts';
+    (t.impacts||[]).forEach((im,idx)=>{
+      const card=document.createElement('div'); card.className='impact';
+      card.appendChild(fSelect('Target layer',im.target||'',
+        [['','— pick —'],...STATE.layers.filter(x=>x.id!==L.id).map(x=>[x.id,x.name])],v=>im.target=v));
+      card.appendChild(fSelect('Param',im.param,[['opacity','Opacity'],['scale','Scale'],['position','Position'],['effect.intensity','Effect intensity']],v=>im.param=v));
+      card.appendChild(fSelect('Map',im.map,[['linear','Linear'],['threshold','Threshold']],v=>im.map=v));
+      const rg=document.createElement('div'); rg.className='grid2';
+      rg.appendChild(numField('Range lo',im.range[0],v=>im.range[0]=v));
+      rg.appendChild(numField('Range hi',im.range[1],v=>im.range[1]=v));
+      card.appendChild(rg);
+      const del=document.createElement('button'); del.className='sm'; del.textContent='Remove impact';
+      del.onclick=()=>{ t.impacts.splice(idx,1); emit(); renderInspector(); }; card.appendChild(del);
+      wrap.appendChild(card);
+    });
+    b.appendChild(wrap);
+    const add=document.createElement('button'); add.className='sm'; add.textContent='+ Add impact';
+    add.onclick=()=>{ t.impacts.push({target:'',param:'opacity',map:'linear',range:[0,1]}); emit(); renderInspector(); };
+    b.appendChild(add);
+  },'trig'));
+
+  /* EFFECTS accordion */
+  body.appendChild(accordion('Effects',(b)=>{
+    const stack=L.effects.stack;
+    stack.forEach((eff,idx)=>{
+      const card=document.createElement('div'); card.className='effitem';
+      const eh=document.createElement('div'); eh.className='eh';
+      const sel=document.createElement('select');
+      sel.innerHTML=[['pixel-mosh','Pixel mosh'],['chromatic-aberration','Chromatic aberration'],
+        ['particle-float','Particle float'],['halftone','Halftone'],['ascii','ASCII'],
+        ['displace','Displace'],['bloom','Bloom'],['shader','Custom shader']]
+        .map(([v,l])=>`<option value="${v}" ${v===eff.type?'selected':''}>${l}</option>`).join('');
+      sel.onchange=e=>{ eff.type=e.target.value; emit(); renderInspector(); };
+      eh.appendChild(sel);
+      const up=document.createElement('button'); up.className='iconbtn sm'; up.innerHTML=ICONS.up;
+      up.onclick=()=>{ if(idx>0){ [stack[idx-1],stack[idx]]=[stack[idx],stack[idx-1]]; emit(); renderInspector(); } };
+      const dn=document.createElement('button'); dn.className='iconbtn sm'; dn.innerHTML=ICONS.down;
+      dn.onclick=()=>{ if(idx<stack.length-1){ [stack[idx+1],stack[idx]]=[stack[idx],stack[idx+1]]; emit(); renderInspector(); } };
+      const rm=document.createElement('button'); rm.className='iconbtn sm'; rm.innerHTML=ICONS.trash;
+      rm.onclick=()=>{ stack.splice(idx,1); emit(); renderInspector(); };
+      eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
+      card.appendChild(eh);
+      card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
+      if(eff.type==='shader'){
+        card.appendChild(fText('Fragment GLSL',eff.glsl||EFFECT_SRC['displace'],v=>{eff.glsl=v;},true));
+        card.appendChild(html('<p class="hint">Uniforms: tex, uTime, uIntensity, uRes. in vec2 uv; out vec4 o;</p>'));
+      }
+      b.appendChild(card);
+    });
+    const add=document.createElement('button'); add.className='sm'; add.textContent='+ Add effect';
+    add.onclick=()=>{ stack.push({type:'bloom',params:{},intensity:0.5}); emit(); renderInspector(); };
+    b.appendChild(add);
+  },'fx'));
+}
+function numField(label,val,on){
+  const w=document.createElement('div'); w.className='fld';
+  w.innerHTML=`<label>${label}</label><input type="number" step="0.05" value="${val}">`;
+  w.querySelector('input').onchange=e=>{ on(+e.target.value); emit(); };
+  return w;
+}
+function html(s){ const d=document.createElement('div'); d.innerHTML=s; return d.firstElementChild||d; }
+
+function renderCanvasControls(){
+  document.getElementById('canvasW').value=STATE.canvasW;
+  document.getElementById('canvasH').value=STATE.canvasH;
+  document.getElementById('bgcol') && (document.getElementById('bgcol').value=STATE.background);
+  const bc=document.getElementById('bgcol'); if(bc){ bc.value=hexOf(STATE.background); }
+  document.getElementById('bgHex').textContent=STATE.background;
+  document.getElementById('dimLbl').textContent=STATE.canvasW+'×'+STATE.canvasH;
+  document.getElementById('permCam').className='chip '+(Input.cam.on?'on':'off');
+  document.getElementById('permMic').className='chip '+(Input.mic.on?'on':'off');
+}
+function hexOf(c){ if(/^#/.test(c)) return c.slice(0,7); return '#000000'; }
+document.getElementById('canvasW').onchange=e=>{ STATE.canvasW=clamp(+e.target.value|0,16,4096); Engine.resize(); emit(); };
+document.getElementById('canvasH').onchange=e=>{ STATE.canvasH=clamp(+e.target.value|0,16,4096); Engine.resize(); emit(); };
+document.getElementById('bgcol') && (document.getElementById('bgcol').oninput=e=>{ STATE.background=e.target.value; document.getElementById('bgHex').textContent=e.target.value; emit(); });
+
+function renderAll(){ renderLayerList(); renderInspector(); renderCanvasControls(); }
+
+/* ===========================================================================
+   STATE I/O  —  init / rebuild / debounced emit + bake
+   ===========================================================================*/
+function rebuild(){
+  STATE=normalizeState(STATE);
+  if(!selId || !STATE.layers.find(l=>l.id===selId)) selId=STATE.layers[0]&&STATE.layers[0].id;
+  Positioning.reset();
+  Engine.resize();
+  renderAll();
+}
+
+let emitTimer=null;
+function emit(){
+  renderLayerList(); renderCanvasControls();
+  if(!EMBEDDED || suppressEmit) return;
+  clearTimeout(emitTimer);
+  emitTimer=setTimeout(()=>{
+    let baked=null;
+    try{ baked={text:bake()}; }catch(e){ console.warn('bake failed',e); }
+    try{ parent.postMessage({type:'mm:state',nodeId:NODE,state:deep(STATE),baked},'*'); }catch(e){}
+  },700);
+}
+
+/* ===========================================================================
+   INBOUND MESSAGES
+   ===========================================================================*/
+if(EMBEDDED){
+  window.addEventListener('message',ev=>{
+    const d=ev.data; if(!d||typeof d!=='object') return;
+    if(d.nodeId && d.nodeId!==NODE) return;
+    if(d.type==='mm:init'){
+      gotInit=true; suppressEmit=true;
+      CONTENT=d.content||[]; IMPORTS=d.imports||{}; Assets.reset();
+      STATE = d.state?normalizeState(d.state):defaultState();
+      rebuild(); suppressEmit=false;
+    } else if(d.type==='mm:set-state'){
+      suppressEmit=true; STATE=normalizeState(d.state); Assets.reset(); rebuild(); suppressEmit=false;
+    } else if(d.type==='mm:content'){
+      CONTENT=d.content||CONTENT; IMPORTS=d.imports||IMPORTS; Assets.reset(); renderAll();
+    }
+  });
+}
+
+/* ===========================================================================
+   BAKE  —  produce a standalone self-contained interactive .html
+   It embeds a slim runtime (positioning + triggers + impacts + effects) and
+   the config. Camera/mic still gated behind a user gesture button.
+   ===========================================================================*/
+function bake(){
+  const cfg=deep(STATE);
+  // inline wired asset urls so the standalone file is self-contained-ish
+  const assets=CONTENT.map(c=>({id:c.id,url:c.url,kind:c.kind,label:c.label}));
+  return BAKED_TEMPLATE
+    .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
+    .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';');
+}
+
+/* The baked runtime re-uses the SAME engine source by serializing the relevant
+   module functions into a compact player. To keep it truly self-contained and
+   small we ship a focused player that mirrors the editor runtime. */
+const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Multimedia composition</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#h{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+#s{position:relative}canvas{position:absolute;inset:0;width:100%;height:100%}
+#perm{position:absolute;bottom:10px;left:10px;display:flex;gap:6px;z-index:9;font-family:monospace;font-size:12px}
+#perm button{background:#111;color:#6ee7ff;border:1px solid #345;border-radius:18px;padding:5px 10px;cursor:pointer}
+</style></head><body>
+<div id="h"><div id="s"><canvas id="c2d"></canvas><canvas id="cgl"></canvas></div>
+<div id="perm"><button id="pc">◉ camera</button><button id="pm">◉ mic</button></div></div>
+<script>
+/*__CFG__*/
+/*__ASSETS__*/
+${'/* ===== slim player ===== */'}
+(${slimPlayer.toString()})(window.__MM_CFG__, window.__MM_ASSETS__||[],
+  ${JSON.stringify(EFFECT_SRC)}, ${JSON.stringify(FRAG_HEAD)}, ${JSON.stringify(VERT)});
+<\/script></body></html>`;
+
+/* slimPlayer: a self-contained reimplementation of the core runtime. It is a
+   FUNCTION (stringified into the baked file). It must not reference outer scope. */
+function slimPlayer(CFG, ASSETS, EFF, FH, VS){
+  const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
+  const host=document.getElementById('h'), stage=document.getElementById('s');
+  const c2d=document.getElementById('c2d'), cgl=document.getElementById('cgl');
+  const ctx=c2d.getContext('2d'); const W=CFG.canvasW, H=CFG.canvasH;
+  [c2d,cgl].forEach(c=>{c.width=W;c.height=H;});
+  const lb=document.createElement('canvas'); lb.width=W; lb.height=H; const lctx=lb.getContext('2d');
+  function fit(){ const ar=W/H; let w=host.clientWidth,h=w/ar; if(h>host.clientHeight){h=host.clientHeight;w=h*ar;}
+    stage.style.width=w+'px'; stage.style.height=h+'px'; rect=stage.getBoundingClientRect(); }
+  let rect={left:0,top:0,width:1,height:1}; addEventListener('resize',fit); fit();
+  /* input */
+  const IN={px:.5,py:.5,down:false,clickPulse:0,hover:false,t0:performance.now(),clock:0,
+    cam:{on:false,video:null},mic:{on:false,an:null,data:null,freq:null},detect:{hand:0,face:0,object:0,landmarks:null}};
+  stage.addEventListener('pointermove',e=>{IN.px=clamp((e.clientX-rect.left)/rect.width,0,1);IN.py=clamp((e.clientY-rect.top)/rect.height,0,1);IN.hover=true;});
+  stage.addEventListener('pointerleave',()=>IN.hover=false);
+  stage.addEventListener('pointerdown',e=>{IN.down=true;IN.clickPulse=1;});
+  addEventListener('pointerup',()=>IN.down=false);
+  /* assets */
+  const AC={img:{},vid:{},meta:id=>ASSETS.find(a=>a.id===id)};
+  function image(id){ if(AC.img[id]!==undefined)return AC.img[id]; const m=AC.meta(id); if(!m){AC.img[id]=null;return null;}
+    const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>i._r=true; i.src=m.url; AC.img[id]=i; return i; }
+  function video(id){ if(AC.vid[id])return AC.vid[id]; const m=AC.meta(id); if(!m)return null;
+    const v=document.createElement('video'); v.crossOrigin='anonymous'; v.loop=true; v.muted=true; v.playsInline=true; v.src=m.url; v.play().catch(()=>{}); AC.vid[id]=v; return v; }
+  /* permissions */
+  document.getElementById('pc').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({video:true});
+    const v=document.createElement('video'); v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; await v.play();
+    IN.cam={on:true,video:v}; }catch(e){} };
+  document.getElementById('pm').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({audio:true});
+    const ac=new (AudioContext||webkitAudioContext)(); const sr=ac.createMediaStreamSource(st); const an=ac.createAnalyser(); an.fftSize=2048; sr.connect(an);
+    IN.mic={on:true,an,data:new Uint8Array(an.frequencyBinCount),freq:new Uint8Array(an.frequencyBinCount)}; }catch(e){} };
+  function audioVal(feat,band){ if(!IN.mic.on)return 0; const an=IN.mic.an;
+    if(feat==='loudness'){ an.getByteTimeDomainData(IN.mic.data); let s=0; for(let i=0;i<IN.mic.data.length;i++){const x=(IN.mic.data[i]-128)/128; s+=x*x;} return clamp(Math.sqrt(s/IN.mic.data.length)*3,0,1);}
+    an.getByteFrequencyData(IN.mic.freq);
+    if(feat==='band'){ const nb=8,sz=(IN.mic.freq.length/nb)|0,b=clamp(band|0,0,nb-1); let s=0; for(let i=b*sz;i<(b+1)*sz;i++)s+=IN.mic.freq[i]; return clamp(s/sz/255,0,1);}
+    let mx=0,ix=0; for(let i=2;i<IN.mic.freq.length;i++)if(IN.mic.freq[i]>mx){mx=IN.mic.freq[i];ix=i;} return clamp(ix/IN.mic.freq.length,0,1); }
+  /* hash/rng */
+  function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+  function mb(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  /* positioning (subset: single/grid/instances/rope/drawn/camera-feed; physics→grid fallback, face-3d→procedural) */
+  const SIM={};
+  function positions(L,dt){ const p=L.positioning;
+    if(p.mode==='single')return[{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
+    if(p.mode==='grid'){ const out=[],cols=Math.max(1,p.cols|0),rows=Math.max(1,p.rows|0),rng=mb(hash(L.id));
+      for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){ if(p.placement==='random'&&rng()<0.25)continue;
+        out.push({x:(c+0.5)/cols,y:(r+0.5)/rows,scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1),rot:0});} return out; }
+    if(p.mode==='instances'||p.mode==='physics'){ const s=SIM[L.id]||(SIM[L.id]={items:[]}); const want=p.count|0;
+      if(p.source==='random'||p.mode==='physics'){while(s.items.length<want)s.items.push(spawn());}
+      else if(p.source==='interaction'){if(IN.clickPulse>0.5&&s.items.length<want)for(let i=0;i<3&&s.items.length<want;i++)s.items.push(spawn(IN.px,IN.py));}
+      else{if(IN.hover&&s.items.length<want)s.items.push(spawn(IN.px,IN.py));}
+      while(s.items.length>want)s.items.shift();
+      const g=(p.mode==='physics'?(p.gravity?p.gravity[1]:1):1)*0.0006;
+      for(const it of s.items){it.vy+=g;it.x+=it.vx;it.y+=it.vy;it.life-=dt*0.2;it.rot+=it.vr;
+        if(it.x<0||it.x>1)it.vx*=-1; if(it.y>1){it.y=1;it.vy*=-0.5;}}
+      s.items=s.items.filter(it=>it.life>0);
+      return s.items.map(it=>({x:it.x,y:it.y,scale:(p.size||0.05)*(0.6+it.life*0.6),rot:it.rot}));
+      function spawn(x,y){return{x:x!=null?x:Math.random(),y:y!=null?y:Math.random(),vx:(Math.random()-0.5)*0.01,vy:(Math.random()-0.5)*0.01,vr:(Math.random()-0.5)*0.1,rot:0,life:1+Math.random()};}}
+    if(p.mode==='rope'){ let s=SIM[L.id]; const an=p.anchors||[[0.2,0.2],[0.8,0.2]]; const seg=Math.max(2,p.segments|0);
+      if(!s||s.seg!==seg){s={seg,pts:[]};SIM[L.id]=s;for(let i=0;i<=seg;i++){const t=i/seg;s.pts.push({x:lerp(an[0][0],an[1][0],t),y:lerp(an[0][1],an[1][1],t),px:lerp(an[0][0],an[1][0],t),py:lerp(an[0][1],an[1][1],t)});}}
+      for(const q of s.pts){const vx=(q.x-q.px)*0.99,vy=(q.y-q.py)*0.99;q.px=q.x;q.py=q.y;q.x+=vx;q.y+=vy+0.0006;}
+      s.pts[0].x=an[0][0];s.pts[0].y=an[0][1]; const last=s.pts[s.pts.length-1];
+      if(IN.hover){last.x=IN.px;last.y=IN.py;}else{last.x=an[1][0];last.y=an[1][1];}
+      const rest=Math.hypot(an[1][0]-an[0][0],an[1][1]-an[0][1])/seg,k=clamp(p.stiffness||0.8,0.05,1);
+      for(let it=0;it<6;it++)for(let i=0;i<seg;i++){const a=s.pts[i],b=s.pts[i+1];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6,df=(d-rest)/d*0.5*k;dx*=df;dy*=df;if(i!==0){a.x+=dx;a.y+=dy;}b.x-=dx;b.y-=dy;}
+      return s.pts.map(q=>({x:q.x,y:q.y,scale:p.size||0.03,rot:0})); }
+    if(p.mode==='drawn'){ const pts=[].concat(...(p.paths||[])); if(!pts.length)return[{x:.5,y:.5,scale:p.size||0.04,rot:0}];
+      const out=[],n=Math.min(p.count|0||pts.length,200); for(let i=0;i<n;i++){const pt=pts[(i/n*pts.length)|0]||pts[0];out.push({x:pt[0],y:pt[1],scale:p.size||0.04,rot:0});} return out; }
+    if(p.mode==='camera-feed'){ const lm=IN.detect.landmarks; if(!lm||!lm.length)return[]; const out=[];
+      for(const set of lm){const step=Math.max(1,(set.length/24)|0);for(let i=0;i<set.length;i+=step){const kp=set[i];out.push({x:clamp(kp.x,0,1),y:clamp(kp.y,0,1),scale:p.size||0.05,rot:0});}} return out; }
+    if(p.mode==='face-3d'){ const out=[],n=60; for(let i=0;i<n;i++){const a=i/n*Math.PI*2,r=0.18*(0.6+0.4*Math.sin(a*3+IN.clock));out.push({x:0.5+Math.cos(a)*r,y:0.5+Math.sin(a)*r*1.2,scale:(p.size||1)*0.16,rot:a});} return out; }
+    return[{x:.5,y:.5,scale:1,rot:0}]; }
+  /* triggers */
+  function trigVal(L){ const t=L.trigger;
+    if(t.source==='none')return{v:0};
+    if(t.source==='mouse-click')return{v:IN.clickPulse};
+    if(t.source==='hover')return{v:IN.hover?1:0};
+    if(t.source==='position')return{v:t.axis==='y'?IN.py:IN.px,vec:[IN.px,IN.py]};
+    if(t.source==='timeline'){const keys=(t.keys&&t.keys.length)?t.keys:[{t:0,v:0},{t:1,v:1}];const dur=t.dur||keys[keys.length-1].t||1;let tt=IN.clock%dur;if(!t.loop)tt=Math.min(IN.clock,dur);let a=keys[0],b=keys[keys.length-1];for(let i=0;i<keys.length-1;i++){if(tt>=keys[i].t&&tt<=keys[i+1].t){a=keys[i];b=keys[i+1];break;}}const sp=(b.t-a.t)||1;return{v:lerp(a.v,b.v,clamp((tt-a.t)/sp,0,1))};}
+    if(t.source==='audio')return{v:audioVal(t.feature,t.band)};
+    if(t.source==='camera'){const c=IN.detect;const n=t.detector==='hand'?c.hand:t.detector==='object'?c.object:c.face;if(t.event==='count')return{v:clamp(n/3,0,1)};return{v:n>0?1:0};}
+    return{v:0}; }
+  function applyMap(v,map,range){const[lo,hi]=range||[0,1];return map==='threshold'?(v>=0.5?hi:lo):lerp(lo,hi,clamp(v,0,1));}
+  function impacts(tv){const ov={};for(const L of CFG.layers){const t=tv[L.id];if(!t)continue;for(const im of (L.trigger.impacts||[])){if(!im||!im.target)continue;const val=applyMap(t.v,im.map,im.range);const o=ov[im.target]||(ov[im.target]={});if(im.param==='opacity')o.opacity=val;else if(im.param==='scale')o.scale=val;else if(im.param==='position')o.position=[t.vec?t.vec[0]:val,t.vec?t.vec[1]:val];else if(im.param==='effect.intensity')o.eInt=val;}}return ov;}
+  /* content draw */
+  function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul;
+    lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
+    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.drawImage(v,-sz/2,-sz/2/ar,sz,sz/ar);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;lctx.drawImage(im,-sz/2,-sz/2/ar,sz,sz/ar);}else{lctx.fillStyle='#333';lctx.fillRect(-sz/2,-sz/2,sz,sz);}}}
+    else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
+    else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
+    else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.arc(0,0,sz/2,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-sz/2);lctx.lineTo(sz/2,sz/2);lctx.lineTo(-sz/2,sz/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-sz/2,-sz/2,sz,sz);}
+    lctx.restore();}
+  /* WebGL effects (same shaders as editor) — EFF/FH/VS injected as args */
+  const gl=cgl.getContext('webgl2',{premultipliedAlpha:true,alpha:true}); let GLOK=!!gl,progs={},fbos=[],texs=[],quad,srcTex,_w,_h;
+  if(GLOK){quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);srcTex=gl.createTexture();}
+  function comp(src){const v=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(v,VS);gl.compileShader(v);const f=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(f,src);gl.compileShader(f);if(!gl.getShaderParameter(f,gl.COMPILE_STATUS))return null;const p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);return gl.getProgramParameter(p,gl.LINK_STATUS)?p:null;}
+  function fragOf(e){if(e.type==='shader'&&e.glsl&&e.glsl.trim()){let s=e.glsl;if(!/#version/.test(s))s=FH+s;return s;}return FH+(EFF[e.type]||'void main(){o=texture(tex,uv);}');}
+  function progOf(e){const k=e.type==='shader'?('c'+hash(e.glsl||'')):e.type;if(progs[k])return progs[k];const p=comp(fragOf(e));if(p)progs[k]=p;return p;}
+  function ensure(w,h){if(_w===w&&_h===h&&fbos.length)return;_w=w;_h=h;fbos.forEach(f=>gl.deleteFramebuffer(f));texs.forEach(t=>gl.deleteTexture(t));fbos=[];texs=[];for(let i=0;i<2;i++){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);texs.push(t);fbos.push(fb);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
+  function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(FH+'void main(){o=texture(tex,uv);}'));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);const l=gl.getAttribLocation(p,'p');gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'tex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uRes'),w,h);gl.drawArrays(gl.TRIANGLES,0,3);}
+  function applyFx(stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,lb);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type);if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  /* loop */
+  let last=performance.now();
+  function frame(now){const dt=Math.min((now-last)/1000,0.05);last=now;IN.clock=(now-IN.t0)/1000;IN.clickPulse*=0.9;
+    const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);const ov=impacts(tv);
+    ctx.clearRect(0,0,W,H);ctx.fillStyle=CFG.background||'#000';ctx.fillRect(0,0,W,H);
+    const ord=[...CFG.layers].sort((a,b)=>(a.z||0)-(b.z||0));
+    for(const L of ord){if(L.visible===false)continue;const o=ov[L.id]||{};const ins=positions(L,dt);
+      const op=o.opacity!=null?o.opacity:1,sm=o.scale!=null?o.scale:1,pf=o.position;
+      lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
+      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null);ctx.save();ctx.globalAlpha=op;ctx.drawImage(cgl,0,0,W,H);ctx.restore();}
+      else{ctx.save();ctx.globalAlpha=op;ctx.drawImage(lb,0,0);ctx.restore();}}
+    requestAnimationFrame(frame);}
+  requestAnimationFrame(frame);
+}
+
+/* ===========================================================================
+   BOOT
+   ===========================================================================*/
+Engine.init();
+refreshHostRect();
+
+if(EMBEDDED){
+  const announce=()=>{ try{ parent.postMessage({type:'mm:ready',nodeId:NODE},'*'); }catch(e){} };
+  announce();
+  // fallback to demo if host never sends init
+  setTimeout(()=>{ if(!gotInit){ STATE=defaultState(); rebuild(); } }, 1200);
+} else {
+  // standalone editor: start from the default demo
+  STATE=defaultState(); rebuild();
+}
+</script>
+</body>
+</html>
