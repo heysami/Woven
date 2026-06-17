@@ -7783,7 +7783,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                                     n["text"] = disk_text
             except Exception:
                 pass  # disk read failed — fall through; we still write what was posted.
+            # User-dismissed prototype slugs (canvas delete intent). A plain
+            # user-driven list — no background writer touches it — so persist
+            # the posted value as-is (allowing both dismiss and un-dismiss).
+            # reconcile._orphan_prototype_folders skips these slugs so a deleted
+            # prototype doesn't re-mount from its still-present source/<slug>/.
+            clean_dismissed = []
+            _raw_dismissed = body.get("dismissedPrototypeSlugs")
+            if isinstance(_raw_dismissed, list):
+                _seen_d = set()
+                for s in _raw_dismissed:
+                    if isinstance(s, str) and s.strip() and s.strip() not in _seen_d:
+                        _seen_d.add(s.strip()); clean_dismissed.append(s.strip())
             out = {"nodes": clean_nodes, "edges": clean_edges, "wb": clean_wb}
+            if clean_dismissed:
+                out["dismissedPrototypeSlugs"] = clean_dismissed
             try:
                 os.makedirs(wf_dir, exist_ok=True)
             except Exception as e:

@@ -825,6 +825,17 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
             slug_to_node[slug] = n
     existing_branches = set(slug_to_node.keys())
 
+    # User-dismissed prototypes. Deleting a Prototype node from the canvas must
+    # STICK — but this detector would re-mount it from the still-present
+    # source/<slug>/ folder on the very next tick, making prototype deletion
+    # (uniquely among node kinds) impossible. The frontend records the slug in
+    # this project-level list on delete (app.js removeNode); honour it here by
+    # never auto-mounting a dismissed slug. The folder on disk is untouched.
+    dismissed = set()
+    for s in (workflow.get("dismissedPrototypeSlugs") or []):
+        if isinstance(s, str) and s.strip():
+            dismissed.add(s.strip())
+
     def _index_for(folder_path):
         for cand in ("index.html", "index.htm"):
             p = os.path.join(folder_path, cand)
@@ -845,6 +856,9 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
         if slug in _PROTOTYPE_FOLDER_SKIP_NAMES:
             continue
         if any(slug.startswith(p) for p in _PROTOTYPE_FOLDER_SKIP_PREFIXES):
+            continue
+        if slug in dismissed:
+            # User deleted this prototype from the canvas — don't resurrect it.
             continue
         index_path = _index_for(entry.path)
         covering = slug_to_node.get(slug)

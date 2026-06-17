@@ -28892,6 +28892,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const target = (d.nodes || []).find(n => n.id === nid);
       if (!target) return d;
       const removedIds = new Set([nid]);
+      const extra = {};
       let nodes = (d.nodes || []).filter(n => n.id !== nid);
       if (target.kind === "asset" && target.boundTo?.node) {
         nodes = nodes.map(n => n.id === target.boundTo.node && Array.isArray(n.exposedAssets)
@@ -28902,6 +28903,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           if (n.kind === "asset" && n.boundTo?.node === nid) removedIds.add(n.id);
         }
         nodes = nodes.filter(n => !(n.kind === "asset" && n.boundTo?.node === nid));
+        // Deleting a prototype must STICK. Unlike every other node kind, the
+        // reconciler auto-mounts a Prototype node for any source/<slug>/ folder
+        // that holds build artifacts (ORPHAN_PROTOTYPE_FOLDER) — so a plain
+        // delete re-appears on the next reconcile tick. Record the user's
+        // intent in a project-level dismissal list the reconciler consults
+        // before auto-mounting. The folder on disk is left untouched; the
+        // prototype simply stops showing on the canvas. To bring it back,
+        // remove the slug from data.dismissedPrototypeSlugs (or delete + rebuild
+        // the source/<slug>/ folder).
+        const slug = (typeof prototypeSlugForNode === "function"
+          ? prototypeSlugForNode(target)
+          : (target.prototype || target.branch || "")) || "";
+        if (slug) {
+          const prev = Array.isArray(d.dismissedPrototypeSlugs) ? d.dismissedPrototypeSlugs : [];
+          if (!prev.includes(slug)) extra.dismissedPrototypeSlugs = [...prev, slug];
+        }
       }
       const edges = (d.edges || []).filter(e => {
         const f = workflowParseEdgeRef(e.from);
@@ -28915,7 +28932,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (deletedIdsRef && deletedIdsRef.current) {
         for (const id of removedIds) deletedIdsRef.current.add(id);
       }
-      return { ...d, nodes, edges };
+      return { ...d, nodes, edges, ...extra };
     });
   }, [setData]);
 
