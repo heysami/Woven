@@ -37637,7 +37637,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       targetType = "text";
                       label = down.title || "text";
                     }
-                    summary.outputs.push({ targetNodeId: down.id, targetKind: down.kind, targetPort: to.port, targetType, label });
+                    // v4.0 — per-assetKind authoring (the assetWrite analogue of
+                    // editTarget's authoring). Without it the asset dispatch is
+                    // medium-blind and a shader/3d node gets the same generic
+                    // schema as an image → agent defaults to HTML/CSS.
+                    let assetKind = null, assetAuthoring = "";
+                    if (down.kind === "asset") {
+                      assetKind = down.assetKind || null;
+                      const reg = (typeof window !== "undefined") && window.__thKindRegistry;
+                      const map = (reg && reg.ASSET_KIND_AUTHORING) || {};
+                      assetAuthoring = (assetKind && map[assetKind]) || "";
+                    }
+                    summary.outputs.push({ targetNodeId: down.id, targetKind: down.kind, targetPort: to.port, targetType, label, assetKind, authoring: assetAuthoring });
                   }
                 }
               }
@@ -62126,10 +62137,14 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push("Targets:");
     targets.forEach((t, i) => {
       const schema = AGENT_OUTPUT_SCHEMAS[t.targetType] || `"<arbitrary content for ${t.targetType}>"`;
-      parts.push(`  ${i + 1}. targetId="${t.targetNodeId}"  type="${t.targetType}"  label="${t.label}"`);
+      const kindLabel = t.targetType === "asset" && t.assetKind ? `asset (${t.assetKind})` : t.targetType;
+      parts.push(`  ${i + 1}. targetId="${t.targetNodeId}"  type="${kindLabel}"  label="${t.label}"`);
       parts.push(`     value schema: ${schema}`);
       const guidance = AGENT_OUTPUT_GUIDANCE[t.targetType];
       if (guidance) parts.push(`     notes: ${guidance}`);
+      // Per-medium authoring (assetKind) — what this medium IS + how to produce
+      // it, so the agent doesn't default to HTML/CSS for a shader/3d/etc.
+      if (t.authoring) parts.push("     medium: " + t.authoring.split("\n").join("\n     "));
     });
     parts.push("");
     parts.push("Response shape:");

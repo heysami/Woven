@@ -2622,6 +2622,141 @@ _SPLINE_AUTHORING = (
     "then register on this node: POST /__workflow/node/{id}/status {\"imports\":[\"source/{branch}/spline-imports/<file>.glb\"]} "
     "(only a .glb you actually created)."
 )
+
+_COMPOSER_AUTHORING = (
+    "This is a COMPOSER — a responsive layered CANVAS that composites WIRED ASSET NODES "
+    "into a stack. It is NOT an HTML/CSS layout surface: it CANNOT render text, shapes, "
+    "buttons, gradients, or CSS you write inline. The ONLY thing it draws is a list of "
+    "layers, and EVERY layer must be backed by an asset node wired into this composer's "
+    "input — so the composer JSON places assets, it does not author content.\n"
+    "  HARD RULE — each `layers[].assetId` MUST equal the node id of an asset already "
+    "wired into this composer. A layer whose `assetId` is not wired in is DROPPED at bake; "
+    "a composer with no wired assets bakes to nothing but its `background`. So if the brief "
+    "needs imagery/video that is not wired yet, you must FIRST create the asset nodes (generate "
+    "the images, e.g. via the visual pipeline) and wire them into this composer — do NOT invent "
+    "inline layer content, and do NOT fabricate assetIds. If nothing is wired, say so rather than "
+    "writing dead layers.\n"
+    "  Write the canonical file `source/{branch}/composer-{id}.json` (read the existing file first; "
+    "re-imported live on write). ONLY these keys are honored:\n"
+    "      {\"canvasW\":<px>,\"canvasH\":<px>,\"maxWidth\":<px|null>,\"maxHeight\":<px|null>,"
+    "\"background\":\"<css color or gradient>\",\n"
+    "       \"layers\":[{\"assetId\":\"<id of a WIRED asset node>\",\"opacity\":0..1,"
+    "\"anchor\":\"top-left|top-center|top-right|middle-left|center|middle-right|bottom-left|"
+    "bottom-center|bottom-right|fill|stretch-h|stretch-v\",\"offsetX\":<px>,\"offsetY\":<px>,"
+    "\"width\":<px|null>,\"height\":<px|null>,\"visible\":true}]}\n"
+    "  Array order is z-order (later = on top). `width`/`height` null = natural size; `fill` covers "
+    "the canvas, `stretch-h`/`stretch-v` span one axis. Preserve the assetIds of layers already "
+    "present. Any other key (type/text/shape/button/css/responsive/layout) is ignored — there is no "
+    "such thing as a text or shape layer here. For a hero SECTION with live text + CTAs, the composer "
+    "is the WRONG medium; that is a prototype/HTML job."
+)
+
+_VECTOR_AUTHORING = (
+    "This is a VECTOR EDITOR — an inline-SVG drawing surface. Unlike the composer it DOES author "
+    "content directly: the deliverable is the `shapes[]` array, which bakes to a self-contained .svg "
+    "(no wired assets needed). It is a VECTOR illustration tool — do NOT produce a raster/photo, a "
+    "motion/HTML asset, or anything that is not SVG shapes.\n"
+    "  Write the canonical file `source/{branch}/svg/vector-{id}.json` (read the existing file first; "
+    "re-imported live on write). ONLY these keys are honored:\n"
+    "      {\"canvasW\":<px>,\"canvasH\":<px>,\"background\":\"<css color>\",\"shapes\":[ ... ]}\n"
+    "  Coordinates are in canvas units (the viewBox is canvasW×canvasH). Every shape carries a unique "
+    "`id` plus optional style fields: `fill`,`stroke`,`strokeWidth`,`strokeDasharray`,`strokeLinecap`,"
+    "`opacity`(0..1),`rotation`(deg),`name`,`visible`(default true),`locked`,`shadow`,`blur`. "
+    "Shape types + their geometry:\n"
+    "      • rect    — {\"type\":\"rect\",\"x\":,\"y\":,\"w\":,\"h\":,\"rx\":<corner radius, optional>}\n"
+    "      • ellipse — {\"type\":\"ellipse\",\"cx\":,\"cy\":,\"rx\":,\"ry\":}\n"
+    "      • line    — {\"type\":\"line\",\"x1\":,\"y1\":,\"x2\":,\"y2\":}\n"
+    "      • path    — {\"type\":\"path\",\"d\":\"<SVG path data>\"}  (the workhorse for any custom curve)\n"
+    "      • text    — {\"type\":\"text\",\"x\":,\"y\":,\"content\":\"...\",\"fontSize\":,\"fontWeight\":,"
+    "\"textAnchor\":\"start|middle|end\",\"fontFamily\":\"<family id>\"}\n"
+    "  Compose the illustration from these primitives; array order is paint order (later = on top)."
+)
+
+# Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
+# An `asset` node carries an `assetKind` (see KINDS["asset"].inputs.assetKind enum);
+# "Write your <assetKind> output to <path>" names the medium but leaks no schema, so
+# an agent wired to a shader/3d/lottie node DEFAULTS to plain HTML/CSS (the
+# "glassmorphic button became backdrop-filter, not GLSL" failure). Each entry below
+# states what the medium IS + how to produce it + the do-NOT-substitute guard. Both
+# dispatch paths read it: io_resolve.resolve_downstream (backend <output-destinations>)
+# and app.js's typed-output builder (frontend). Keyed by assetKind; {branch}/{id}
+# templated per target. EVERY assetKind enum value MUST have an entry (enforced at
+# import by io_contract_violations()).
+ASSET_KIND_AUTHORING = {
+    "shader": (
+        "This is a SHADER asset — a GLSL fragment shader rendered to a <canvas>, NOT an "
+        "HTML/CSS effect. Do NOT produce a div with `backdrop-filter`/gradients/box-shadow. "
+        "Deliverable: a self-contained `.html` (or the file at the target path) whose visible "
+        "output is a full-bleed WebGL/WebGL2 canvas driven by a fragment shader — `precision "
+        "highp float;`, `uniform float u_time;`, `uniform vec2 u_resolution;` (+ `u_mouse` if "
+        "interactive), animated in a rAF loop. The look must be MATH in the shader, not DOM. "
+        "If the brief is a UI surface that merely looks glassy, that is a CSS/HTML asset, not a "
+        "shader — say so rather than faking a shader with CSS."
+    ),
+    "3d": (
+        "This is a 3D asset — an interactive WebGL scene (Three.js or raw WebGL), NOT a flat "
+        "image or CSS pseudo-3D. Deliverable: a self-contained `.html`/JS module that builds a "
+        "scene (geometry + materials + lights + camera + rAF render loop), resizes to its "
+        "container, and respects prefers-reduced-motion. Do NOT substitute a static PNG or a "
+        "CSS transform; if a real 3D scene is overkill for the brief, say so."
+    ),
+    "svg": (
+        "This is an SVG asset — inline vector markup written to the target path. Deliverable: a "
+        "valid standalone `<svg>` with a viewBox, authored paths/shapes, and currentColor where "
+        "it should inherit. Do NOT embed a raster `<image>` or rasterize; this is vector."
+    ),
+    "image": (
+        "This is a RASTER image asset. You cannot hand-draw it as quality SVG/CSS — generate it "
+        "(return base64 PNG bytes in the typed-output `imageBase64`, or delegate to the image "
+        "pipeline / a raster subagent). Do NOT substitute an emoji, a CSS gradient, or a "
+        "stick-figure inline SVG for a real picture."
+    ),
+    "video": (
+        "This is a VIDEO asset (mp4/webm). Produce or fetch the clip and write it to the target "
+        "path; reference it via a <video> tag with poster + autoplay/loop/muted/playsinline as "
+        "appropriate. Do NOT substitute a CSS animation or an animated GIF for a real video."
+    ),
+    "audio": (
+        "This is an AUDIO asset. Produce or fetch the sound file at the target path. Do NOT "
+        "substitute Web Audio synthesis code unless the brief is explicitly a synth."
+    ),
+    "html": (
+        "This is an HTML asset — a SELF-CONTAINED `.html` document (inline CSS/JS, no external "
+        "build step) written to the target path. It is embedded via <iframe>, so it must stand "
+        "alone. Realize the brief in HTML/CSS/JS; for non-trivial imagery inside it, delegate "
+        "raster/illustration to the visual subagents rather than hand-drawing."
+    ),
+    "html-set": (
+        "This is an HTML-SET asset — a small set of linked self-contained `.html` pages under "
+        "the target folder (e.g. index + sub-pages), each standalone and inter-linked with "
+        "relative hrefs. Same self-containment rule as a single HTML asset."
+    ),
+    "markdown": (
+        "This is a MARKDOWN asset — write GitHub-flavored Markdown to the target path. Prose + "
+        "structure only; no HTML scaffolding or build artifacts."
+    ),
+    "text": (
+        "This is a TEXT asset — write plain text to the target path. No markup, no code fences."
+    ),
+}
+# Section authoring — the sectionWrite analogue. A section is a FRAME/CONTAINER,
+# not a medium, so its contract is a placement+registration PROTOCOL, not a
+# per-medium schema: register one child node per piece of content into the
+# frame's grid. The medium is DELEGATED — each child is an `asset` node whose own
+# `assetKind` authoring (ASSET_KIND_AUTHORING) governs how that medium is made.
+# `{rect}` is filled per-target by io_resolve with the live canvas bounds.
+_SECTION_AUTHORING = (
+    "Generate INTO this section frame ({rect}). After writing each output file under "
+    "source/, register it as a node INSIDE that rect via POST /__workflow/node/{id}/commit "
+    "with addNodes: [{\"id\": \"<fresh id>\", \"kind\": \"asset\", \"assetKind\": "
+    "\"image|html|svg|shader|3d|…\", \"path\": \"source/…\", \"x\": …, \"y\": …, \"w\": 320, "
+    "\"h\": 240}]. A section is medium-AGNOSTIC: children may be any assetKind, and EACH child "
+    "asset is produced per ITS OWN medium contract (the assetKind authoring) — the section only "
+    "governs WHERE/HOW children are placed, not what medium they are. Lay nodes out as a grid "
+    "inside the bounds: start ~24px in from the left edge and ~48px below the top (the title "
+    "strip), step by node width/height + 40px gaps, and keep every node FULLY inside the rect. "
+    "If they don't fit, shrink w/h per node rather than overflowing the frame."
+)
 KIND_IO = {
     "prompt": {
         "provides": [{"port": "out", "label": "Text", "tags": ["text", "runnable", "blendable"],
@@ -2663,7 +2798,8 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Section contents", "tags": ["section"],
                        "resolve": "sectionBundle"}],
         "accepts":  [{"port": "in", "label": "Generate into section",
-                       "tags": ["text-gen", "asset-gen"], "ingest": "sectionWrite"}],
+                       "tags": ["text-gen", "asset-gen"], "ingest": "sectionWrite",
+                       "authoring": _SECTION_AUTHORING}],
     },
     "skill": {
         "dynamic": True,   # ports depend on node.skill; frontend keeps a capability resolver
@@ -2720,7 +2856,8 @@ KIND_IO = {
         "accepts":  [
             {"port": "in", "label": "Layer", "tags": ["asset"], "ingest": "context"},
             {"port": "edit", "label": "Edit composer", "tags": ["text-gen", "asset-gen"],
-              "ingest": "editTarget", "canonical": "source/{branch}/composer-{id}.json"},
+              "ingest": "editTarget", "canonical": "source/{branch}/composer-{id}.json",
+              "authoring": _COMPOSER_AUTHORING},
         ],
     },
     "vector-editor": {
@@ -2728,7 +2865,8 @@ KIND_IO = {
                        "resolve": "bakedFile", "resolveArgs": {"ext": "svg"}}],
         "accepts":  [
             {"port": "edit", "label": "Edit vector", "tags": ["text-gen", "asset-gen"],
-              "ingest": "editTarget", "canonical": "source/{branch}/svg/vector-{id}.json"},
+              "ingest": "editTarget", "canonical": "source/{branch}/svg/vector-{id}.json",
+              "authoring": _VECTOR_AUTHORING},
         ],
     },
     "formatted-text": {
@@ -2760,6 +2898,70 @@ KIND_IO = {
 for _io_kind, _io_block in KIND_IO.items():
     if _io_kind in KINDS:
         KINDS[_io_kind]["io"] = _io_block
+
+
+def io_contract_violations():
+    """Static integrity check on KIND_IO — returns a list of human-readable
+    problems (empty == healthy). The load-bearing rule:
+
+      Every `editTarget` accept MUST carry a non-empty `authoring` string.
+
+    `editTarget` tells an agent "rewrite this node's canonical JSON", but the
+    canonical path alone leaks no schema — so without `authoring` the agent
+    GUESSES the file shape and produces something the node can't render (this
+    is the composer "blank hero" + spline "2D-instead-of-3D" failure class).
+    `authoring` is the slot that carries the target's schema + production modes
+    (see io_resolve.resolve_downstream + NODE_IO_FRAMEWORK.md §"How to add a
+    new node kind"). Making it REQUIRED here means a new editTarget kind cannot
+    ship without it: this runs at import, so `check-compat.sh` (import serve)
+    fails before the broken contract can be synced to the daemon.
+    """
+    # Productive ingests that hand an agent a SCHEMA/PROTOCOL to follow MUST
+    # carry a non-empty `authoring` string — else the agent guesses and ships
+    # the wrong medium (the composer "blank hero" / shader→CSS / section
+    # no-grid failure class). `editTarget` additionally needs a `canonical`
+    # file template. `assetWrite` is handled per-assetKind below; `folderWrite`
+    # is intentionally schema-less (folder = arbitrary files; prototype carries
+    # its own delegation block) so it is exempt.
+    _AUTHORING_REQUIRED = {"editTarget", "sectionWrite"}
+    problems = []
+    for kind, io in KIND_IO.items():
+        for accept in (io.get("accepts") or []):
+            ingest = accept.get("ingest")
+            if ingest not in _AUTHORING_REQUIRED:
+                continue
+            port = accept.get("port", "?")
+            if ingest == "editTarget" and not accept.get("canonical"):
+                problems.append(
+                    f"{kind}.{port}: editTarget accept has no `canonical` file template")
+            authoring = accept.get("authoring")
+            if not (isinstance(authoring, str) and authoring.strip()):
+                problems.append(
+                    f"{kind}.{port}: {ingest} accept is missing a non-empty `authoring` "
+                    f"contract — an agent wired here would have to GUESS what to produce. "
+                    f"Add an `authoring` instruction (see _SPLINE_AUTHORING / "
+                    f"_COMPOSER_AUTHORING / _SECTION_AUTHORING; NODE_IO_FRAMEWORK.md step 4).")
+
+    # Same rule for asset MEDIA: every assetKind an agent can be told to produce
+    # must carry a per-medium authoring string, else the dispatch is medium-blind
+    # and the agent defaults to HTML/CSS (the shader→backdrop-filter failure).
+    asset_kind_spec = (KINDS.get("asset", {}).get("inputs", {}).get("assetKind", {}))
+    for ak in (asset_kind_spec.get("values") or []):
+        auth = ASSET_KIND_AUTHORING.get(ak)
+        if not (isinstance(auth, str) and auth.strip()):
+            problems.append(
+                f"asset.assetKind={ak!r}: no entry in ASSET_KIND_AUTHORING — an agent wired to "
+                f"a {ak!r} asset would not be told what the medium is or how to produce it. Add "
+                f"an ASSET_KIND_AUTHORING[{ak!r}] entry (NODE_IO_FRAMEWORK.md step 4).")
+    return problems
+
+
+_io_problems = io_contract_violations()
+if _io_problems:
+    raise RuntimeError(
+        "KIND_IO contract integrity check failed — productive ingests (editTarget / "
+        "sectionWrite / asset media) need an `authoring` contract (see NODE_IO_FRAMEWORK.md):"
+        "\n  - " + "\n  - ".join(_io_problems))
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────
@@ -2828,4 +3030,5 @@ def editable_field_keys(node) -> list:
 def to_jsonable():
     """Return the registry as a plain JSON-serializable dict, for the
     /__kinds/registry endpoint and offline tooling."""
-    return {"KINDS": KINDS, "STAGES": STAGES}
+    return {"KINDS": KINDS, "STAGES": STAGES,
+            "ASSET_KIND_AUTHORING": ASSET_KIND_AUTHORING}

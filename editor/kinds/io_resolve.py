@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import re
 
-from kinds.registry import kind_contract
+from kinds.registry import kind_contract, ASSET_KIND_AUTHORING
 
 
 # ── small helpers ───────────────────────────────────────────────────────────
@@ -260,18 +260,22 @@ def resolve_upstream(wf, node_id, ctx) -> str:
 # ── downstream instructors: consumer node -> instruction (str) or None ───────
 
 def _section_grid_instr(node_id, dn):
+    """Build the sectionWrite instruction from the declared `authoring` contract
+    (single source of truth in registry._SECTION_AUTHORING), injecting the live
+    canvas rect + this section's node id. Falls back to a minimal line if the
+    contract somehow lacks authoring (the import-time check forbids that)."""
     sx = float(dn.get("x") or 0); sy = float(dn.get("y") or 0)
     sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
     dlabel = _label(dn)
-    return (
-        f"- Generate INTO the section frame “{dlabel}” (canvas rect x={sx:.0f} y={sy:.0f} "
-        f"w={sw:.0f} h={sh:.0f}). After writing each output file under source/, register it as an "
-        f"asset node INSIDE that rect via POST /__workflow/node/{node_id}/commit with "
-        "addNodes: [{\"id\": \"<fresh id>\", \"kind\": \"asset\", \"assetKind\": \"image|html|svg|…\", "
-        "\"path\": \"source/…\", \"x\": …, \"y\": …, \"w\": 320, \"h\": 240}]. Lay the nodes out as a "
-        "grid inside the section bounds: start ~24px in from the left edge and ~48px below the top "
-        "(the title strip), step by node width/height + 40px gaps, and keep every node FULLY inside "
-        "the rect. If they don't fit, shrink w/h per node rather than overflowing the frame.")
+    rect = f"“{dlabel}” — canvas rect x={sx:.0f} y={sy:.0f} w={sw:.0f} h={sh:.0f}"
+    accepts = _io(dn).get("accepts") or []
+    sw_accept = next((a for a in accepts if a.get("ingest") == "sectionWrite"), None)
+    authoring = (sw_accept or {}).get("authoring") or ""
+    if authoring:
+        body = authoring.replace("{rect}", rect).replace("{id}", str(node_id))
+        return "- " + body
+    return (f"- Generate INTO the section frame {rect}. Register each output as an asset node "
+            f"inside that rect via POST /__workflow/node/{node_id}/commit addNodes:[…].")
 
 
 def resolve_downstream(wf, node_id, node, ctx) -> str:
@@ -323,7 +327,13 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
         aw = next((a for a in accepts if a.get("ingest") == "assetWrite"), None)
         if aw and dpath:
             ak = dn.get("assetKind") or "file"
-            targets.append(f"- Write your {ak} output to `{dpath}` (wired to asset node “{dlabel}”).")
+            line = f"- Write your {ak} output to `{dpath}` (wired to asset node “{dlabel}”)."
+            # Per-medium authoring — what a {ak} asset IS + how to produce it, so the
+            # agent doesn't default to HTML/CSS for a shader/3d/etc.
+            medium = ASSET_KIND_AUTHORING.get(ak)
+            if medium:
+                line += "\n  " + _resolve_tpl(medium, dn, proto_slug)
+            targets.append(line)
             continue
 
         fw = next((a for a in accepts if a.get("ingest") == "folderWrite"), None)

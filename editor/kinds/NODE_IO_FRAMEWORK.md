@@ -150,6 +150,38 @@ contract-driven:
 4. If it's **agent-editable**, add an `edit` accept with `ingest: "editTarget"`
    and a `canonical` JSON sidecar template; in its editor component, bake the
    JSON sidecar AND add a `th:asset-refresh` listener that re-imports it.
+   **REQUIRED — every `editTarget` accept MUST also carry an `authoring`
+   string** that spells out the canonical file's schema *and* production rules
+   (the medium it is, what it can/can't express, any "wire X first" precondition,
+   the exact JSON keys + per-entry shape). `editTarget` without `authoring` only
+   hands the agent a path with no schema, so it GUESSES and ships something the
+   node can't render — the composer "blank hero" / spline "2D-instead-of-3D"
+   failure class. Use `{branch}`/`{id}` placeholders (resolved per-target by
+   `io_resolve`); follow `_SPLINE_AUTHORING` / `_COMPOSER_AUTHORING` /
+   `_VECTOR_AUTHORING` in `registry.py`. This rule is enforced: `registry.py`
+   calls `io_contract_violations()` at import and **raises** if any `editTarget`
+   lacks a non-empty `authoring`, so `check-compat.sh` (which imports `serve`)
+   fails before the contract can be synced. `kinds/test_io_contract.py` is the
+   runnable form of the same check.
+   - The SAME rule applies to **asset media**: an `asset` node's `assetKind`
+     (`shader`/`3d`/`svg`/`image`/`video`/…) is the medium an agent is told to
+     produce, and "Write your `<assetKind>` output to `<path>`" alone leaks no
+     schema — so a shader node gets the same generic instruction as an image
+     and the agent defaults to HTML/CSS (the "glassmorphic button became
+     `backdrop-filter`, not GLSL" failure). **Every `assetKind` enum value MUST
+     have an `ASSET_KIND_AUTHORING[<kind>]` entry** in `registry.py` stating what
+     the medium is + how to produce it + the do-not-substitute guard. It feeds
+     both dispatch paths (`io_resolve` assetWrite + the frontend typed-output
+     builder via the `/__kinds/registry` payload) and is enforced by the same
+     import-time `io_contract_violations()` check.
+   - And to **`sectionWrite`**: a `section` is a FRAME, not a medium, so its
+     `authoring` (`_SECTION_AUTHORING`) is a placement+registration PROTOCOL —
+     register children into the frame's grid — and is medium-agnostic: each
+     child is an `asset` node that delegates to its OWN `assetKind` authoring.
+     `io_resolve._section_grid_instr` injects the live canvas rect into that
+     contract. It is under the same import-time check (`editTarget` and
+     `sectionWrite` both require `authoring`; `folderWrite` is exempt by design
+     — `folder` = arbitrary files, `prototype` carries its own delegation block).
 5. Frontend: add the `WORKFLOW_NODE_FACTORY` defaults + a render block +
    (optionally) a `WORKFLOW_CONNECT_DEFS` entry mirroring the `io` tags so the
    connect menu offers it. (Edge-drag already allows it via wildcard flavor.)
