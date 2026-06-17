@@ -8897,6 +8897,25 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
     }
   }, []);
 
+  // Delete a run — stop it if live, then purge its chat history server-side.
+  // Optimistically drops it from the list, then reconciles via reload().
+  const deleteRun = useCallback(async (r) => {
+    const label = r.title || r.kind || "this run";
+    if (!window.confirm(`Delete run "${label}"?\nThis stops it if running and removes its chat history.`)) return;
+    setRuns(prev => prev.filter(x => x.runId !== r.runId));
+    try {
+      const resp = await fetch(apiUrl(`/__run/${r.runId}/delete`), { method: "POST" });
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${resp.status}`);
+      }
+    } catch (e) {
+      alert("Delete failed: " + (e.message || e));
+    } finally {
+      reload();
+    }
+  }, [reload]);
+
   // Fast poll while the panel is open so live dots tick without manual refresh.
   useEffect(() => {
     if (active !== "runs") return;
@@ -9012,16 +9031,25 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
                             : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
                             : "fail";
           return html`
-            <button
-              key=${r.runId}
-              className="runs-row"
-              onClick=${() => { onOpenRun(r); setActive(null); }}
-              title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
-            >
-              <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
-              <span className="runs-row-title">${r.title || r.kind}</span>
-              <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
-            </button>
+            <div className="runs-row-wrap" key=${r.runId}>
+              <button
+                className="runs-row"
+                onClick=${() => { onOpenRun(r); setActive(null); }}
+                title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
+              >
+                <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
+                <span className="runs-row-title">${r.title || r.kind}</span>
+                <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
+              </button>
+              <button
+                className="runs-row-del"
+                title="Delete this run"
+                aria-label=${`Delete run ${r.title || r.kind}`}
+                onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
+              >
+                <${Icon.Trash}/>
+              </button>
+            </div>
           `;
         })}
       </div>
@@ -16597,7 +16625,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
    a live preview of the bundled DS gallery (served at /__default_ds/) with
    the computed `:root{}` override + webfont injected into its iframe head,
    updated on every settings change (no reload, no flash). */
-function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate, confirmLabel, busyLabel }) {
+function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate, confirmLabel, busyLabel, previewOnly }) {
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
   const [previewFile, setPreviewFile] = useState("templates/landing.html");
@@ -16675,8 +16703,10 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       <div className="dscz-card">
         <header className="dscz-head">
           <div className="dscz-head-titles">
-            <h2>Tune your design system</h2>
-            <p>Adjust the tokens — the preview updates live. Untouched controls keep the default. Confirm to bake these into the project's design system.</p>
+            <h2>${previewOnly ? "Preview the default library" : "Tune your design system"}</h2>
+            <p>${previewOnly
+              ? "Adjust the tokens — the preview updates live. This is a sandbox preview of the bundled default design system; nothing is saved. Use “Use template design system” on a project's design-system node to bake a tuned copy."
+              : "Adjust the tokens — the preview updates live. Untouched controls keep the default. Confirm to bake these into the project's design system."}</p>
           </div>
           <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
         </header>
@@ -16853,14 +16883,14 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         <footer className="dscz-foot">
           ${onBack
             ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
-            : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>`}
+            : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
           <div className="dscz-foot-right">
             ${dirty
               ? html`<span className="dscz-foot-note">Customized</span>`
               : html`<span className="dscz-foot-note dscz-foot-note-muted">Defaults</span>`}
-            <button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
+            ${!previewOnly && html`<button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
               ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
-            </button>
+            </button>`}
           </div>
         </footer>
       </div>
@@ -16916,6 +16946,67 @@ function DsTemplateModal({ projectId, dsId, dsLabel, onClose, onApplied }) {
     onCreate=${apply}
     confirmLabel="Apply template"
     busyLabel="Applying…"/>`;
+}
+
+/* ────────── Capabilities → "Default library" landing section ──────────
+   The bundled default design system surfaced as a first-class capability:
+   a live, scrollable preview of the shipped gallery + a "Tune" button that
+   reuses the very same customizer as the "Use template design system" flow,
+   in preview-only mode (no project context on the landing page → nothing to
+   bake). Lets the user see + play with the default tokens before they ever
+   create a project. */
+function DefaultLibraryLanding() {
+  const [tuneOpen, setTuneOpen] = useState(false);
+  const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
+  const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
+  const [previewFile, setPreviewFile] = useState("templates/landing.html");
+  const [frameReady, setFrameReady] = useState(false);
+
+  return html`
+    <div className="ref-root">
+      <${SystemSectionHead}
+        name="Default library"
+        count=${DS_PREVIEW_VIEWS.length}
+        desc=${html`The design system every new project can inherit — tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates (landing, storefront, dashboard, app shell, forms, profile, login…). Preview it below, then <strong>Tune</strong> to retune the tokens against a live preview. To bake a tuned copy into a project, use <code>Use template design system</code> on that project's design-system node.`}
+        action=${html`<button className="sysadd-bar-btn" type="button"
+          onClick=${() => setTuneOpen(true)}
+          title="Open the token customizer against a live preview (sandbox — nothing is saved)">
+          <${Icon.Palette}/><span>Tune</span></button>`}
+      />
+
+      <div className="deflib-preview">
+        <div className="dscz-preview-tabs" role="tablist">
+          ${DS_PREVIEW_VIEWS.map(v => html`
+            <button
+              key=${v.id}
+              type="button"
+              role="tab"
+              aria-selected=${previewFile === v.id}
+              className=${"dscz-preview-tab" + (previewFile === v.id ? " is-active" : "")}
+              onClick=${() => { if (previewFile !== v.id) { setFrameReady(false); setPreviewFile(v.id); } }}>
+              ${v.label}
+            </button>
+          `)}
+        </div>
+        <iframe
+          className="deflib-preview-frame"
+          title="Default design system preview"
+          style=${{ opacity: frameReady ? 1 : 0 }}
+          src=${apiUrl("/__default_ds/" + previewFile)}
+          onLoad=${() => setFrameReady(true)}/>
+      </div>
+
+      ${tuneOpen && html`<${DsCustomizerStep}
+        settings=${dsSettings}
+        setSettings=${setDsSettings}
+        custom=${dsCustom}
+        busy=${false}
+        err=${null}
+        onBack=${null}
+        onClose=${() => setTuneOpen(false)}
+        previewOnly=${true}/>`}
+    </div>
+  `;
 }
 
 /* Logo uploader row: drop/pick an image, read it to a data URL for live
@@ -18212,7 +18303,7 @@ function SystemAgentThreadButton({ threads, onOpen }) {
 
 
 function SystemLanding({ onSpawnSystemThread }) {
-  const [activeSection, setActiveSection] = useState("prototype");
+  const [activeSection, setActiveSection] = useState("default-library");
 
   // Live counts for the sidebar — hydrate from /__capabilities (cheap GET).
   const [caps, setCaps]         = useState(null);
@@ -18253,12 +18344,14 @@ function SystemLanding({ onSpawnSystemThread }) {
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
 
   const sections = [
+    { id: "default-library", label: "Default library", count: DS_PREVIEW_VIEWS.length,
+      hint: "The bundled default design system — preview its templates + tune the tokens against a live preview" },
     { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials — the design-library/ visual catalog" },
-    { id: "fonts",      label: "Custom fonts",   count: globalFonts ? globalFonts.count : 0,
-      hint: "Your uploaded font collection — shared across every project; agents check these first when proposing typography" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
+    { id: "fonts",      label: "Custom fonts",   count: globalFonts ? globalFonts.count : 0,
+      hint: "Your uploaded font collection — shared across every project; agents check these first when proposing typography" },
     { id: "skills",     label: "Skills",     count: skills.length,
       hint: "Generators — Pathway A (vendor API) or B (Claude writes file)" },
     { id: "subagents",  label: "Subagents",  count: caps ? caps.subagents.length : 63,
@@ -18289,6 +18382,7 @@ function SystemLanding({ onSpawnSystemThread }) {
         `)}
       </nav>
       <div className="system-content">
+        ${activeSection === "default-library" && html`<${DefaultLibraryLanding}/>`}
         ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace" onSpawnSystemThread=${onSpawnSystemThread}/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
         ${activeSection === "fonts"      && html`<div className="system-fonts"><${DSFontsPanel} scope="global"/></div>`}
