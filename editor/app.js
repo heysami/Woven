@@ -11802,8 +11802,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         const msg = String(j.error || "").toLowerCase();
         if (!usedResume) {
           const processGone = r.status === 404 || r.status === 410
+            || r.status === 409
             || msg.includes("not found") || msg.includes("not running")
-            || msg.includes("exited")   || msg.includes("no such");
+            || msg.includes("exited")   || msg.includes("no such")
+            || msg.includes("finished");
           if (processGone) {
             r = await postTo("resume");
             usedResume = true;
