@@ -5218,6 +5218,13 @@ def _drain_stdout(state: "RunState") -> None:
     can show "done, you can reply" without killing the process. The hard
     `state.done` flag only flips when the subprocess actually exits (user
     clicks Stop, or daemon shuts down).
+
+    NOTE: every `state.proc.<x>` in this function is safe WITHOUT an is_live
+    guard — this thread is started only after a successful Popen in the spawn
+    path, so `state.proc` is guaranteed non-None for its whole lifetime. The
+    is_live gate is for REQUEST handlers, which can run against a ghost run
+    (proc=None) rehydrated from history after a restart. Don't copy this
+    unguarded pattern into a handler.
     """
     try:
         for raw in state.proc.stdout:
@@ -18373,6 +18380,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         # this the UI would render user-initiated stops as "failed" (because
         # SIGTERM = exit 143 ≠ 0).
         state.stop_reason = "user-stop"
+        # A non-live run (history-rehydrated ghost, proc=None) has no subprocess
+        # to signal — its process died with the previous daemon. Don't call
+        # .terminate() on None (that 500'd with a misleading "terminate failed"
+        # AttributeError); just settle the record so the UI stops showing it as
+        # mid-flight. See RunState.is_live.
+        if not state.is_live:
+            state.finish(state.exit_code if state.exit_code is not None else 143)
+            state.append("status", {"label": "interrupted"})
+            return self._reply(200, {"ok": True, "wasGhost": True})
         try:
             state.proc.terminate()
         except Exception as e:
@@ -18432,9 +18448,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
         if state.done:
             return self._reply(409, {"error": "run already finished"})
-        # See _run_tool_result: state.proc is None for history-rehydrated ghost
-        # runs; guard it before .stdin so we 409 cleanly instead of crashing.
-        if not state.proc or not state.proc.stdin or state.proc.stdin.closed:
+        # Non-live runs route to /resume rather than erroring (see is_live).
+        if not state.is_live:
             return self._reply(409, {"error": "agent stdin not available", "needsResume": True})
         try:
             state.proc.stdin.write(_claude_user_frame(text))
