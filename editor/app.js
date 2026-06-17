@@ -54639,13 +54639,16 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
   }, [allEdges, allNodes]);
   const sidecarPath = `source/${branch}/spline-${node.id}.scene.json`;
 
-  // Wired .glb/.gltf imports — resolved through the shared io-contract resolver
-  // (no bespoke edge walk). Reactive: a new wired model re-hydrates by itself.
+  // Imports = wired .glb/.gltf assets (resolved via the shared io-contract
+  // resolver — no bespoke edge walk) PLUS any models an agent generated and
+  // registered on node.imports (the editTarget "Option B" path). Both reactive.
   const inputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
-  const importUrls = useMemo(
-    () => inputs.filter(i => i.type === "glb-import").map(i => i.url),
-    [inputs]
-  );
+  const ownImports = Array.isArray(node.imports) ? node.imports : [];
+  const importUrls = useMemo(() => {
+    const wired = inputs.filter(i => i.type === "glb-import").map(i => i.url);
+    const own = ownImports.map(p => /^(https?:)?\//.test(p) ? p : apiUrl("/" + String(p).replace(/^\//, "")));
+    return Array.from(new Set([...wired, ...own]));
+  }, [inputs, ownImports.join("|")]);
   const importKey = importUrls.join("|");
 
   // Param-light iframe URL — scene + imports flow over postMessage, not the URL,

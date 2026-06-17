@@ -2557,6 +2557,30 @@ KINDS = {
 # `tags` is the single merged vocabulary (text/text-gen/asset/asset-gen/palette/
 # typography/folder/section/3d/remixable/blendable/folder-write/…). Two ports
 # are compatible when their tag sets intersect (or either is empty = wildcard).
+#
+# `authoring` (editTarget ports only) is the instruction an agent receives so it
+# can actually PRODUCE the target's content — what the node IS, the canonical
+# file's SCHEMA, and the production modes. Without this an agent wired to a
+# complex editor has no idea what format to write and falls back to generic
+# motion/HTML generation (the "agent made a 2D thing in the 3D editor" bug).
+# {branch}/{id} are resolved like outputsRoot; JSON braces in the schema are
+# left intact (token-replace, not str.format).
+_SPLINE_AUTHORING = (
+    "This node is a Spline-style 3D SCENE EDITOR. Produce its 3D CONTENT — do NOT "
+    "create a generic motion/HTML/image/2D-canvas asset, and do NOT dispatch the "
+    "visual/motion orchestrators. Pick ONE mode for the request:\n"
+    "  (A) AUTHOR THE SCENE — write the canonical file `source/{branch}/spline-{id}.scene.json` "
+    "as JSON in EXACTLY this schema (the editor loads it directly; re-import is automatic):\n"
+    "      {\"v\":1,\"objects\":[{\"kind\":\"box|sphere|cylinder|cone|torus|torusknot|icosahedron|pyramid|helix\","
+    "\"pos\":[x,y,z],\"rot\":[x,y,z],\"scl\":[x,y,z],\"mode\":\"solid|toon|matcap|normal|fresnel\","
+    "\"color\":\"#rrggbb\",\"rough\":0.0,\"metal\":0.0,\"trans\":0.0,\"ior\":1.5}],\"blob\":null}\n"
+    "      Compose the subject out of these primitives (translate/rotate/scale/colour them). "
+    "Units are ~metres; the camera frames roughly -3..3. Omit material fields you don't need.\n"
+    "  (B) REAL MODEL — if a realistic mesh is required AND a 3D-generation model is wired/available, "
+    "generate a textured .glb under `source/{branch}/spline-imports/` and register its source-relative "
+    "path on THIS node by POSTing /__workflow/node/{id}/status with {\"imports\":[\"source/{branch}/spline-imports/<file>.glb\"]}. "
+    "The editor imports it live. Never invent a .glb path you didn't create."
+)
 KIND_IO = {
     "prompt": {
         "provides": [{"port": "out", "label": "Text", "tags": ["text", "runnable", "blendable"],
@@ -2676,9 +2700,16 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "3D scene", "tags": ["asset", "3d"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "scene.json"}}],
         "accepts":  [
-            {"port": "in", "label": "Import 3D model", "tags": ["asset", "3d"], "ingest": "context"},
+            # A .glb asset wired here imports directly; an AGENT wired here is told
+            # to AUTHOR the scene (or generate+register a model) — both via the
+            # editTarget authoring instruction. The frontend resolver routes a
+            # .glb asset → import and the node consumes node.imports the agent sets.
+            {"port": "in", "label": "Model / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json",
+              "authoring": _SPLINE_AUTHORING},
             {"port": "edit", "label": "Edit 3D scene", "tags": ["text-gen", "asset-gen", "3d"],
-              "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json"},
+              "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json",
+              "authoring": _SPLINE_AUTHORING},
         ],
     },
 }

@@ -302,12 +302,20 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
         edit = next((a for a in accepts if a.get("ingest") == "editTarget"), None)
         if edit:
             resolved = _resolve_tpl(edit.get("canonical") or "", dn, proto_slug)
-            targets.append(
-                f"- EDIT the {dkind} node “{dlabel}”: write its canonical source file "
-                f"`{resolved}` (a JSON document describing the node's contents — read the "
-                f"existing file first, then write the modified JSON back). The editor "
-                f"re-imports this file automatically, so your changes appear live on the "
-                f"canvas. Edit this exact path; do NOT write a sibling file.")
+            authoring = edit.get("authoring")
+            if authoring:
+                # The contract carries the target's schema + production modes, so the
+                # agent produces VALID content for this node instead of a generic asset.
+                targets.append(
+                    f"- WIRED TARGET — the {dkind} node “{dlabel}” (canonical file `{resolved}`).\n  "
+                    + _resolve_tpl(authoring, dn, proto_slug))
+            else:
+                targets.append(
+                    f"- EDIT the {dkind} node “{dlabel}”: write its canonical source file "
+                    f"`{resolved}` (a JSON document describing the node's contents — read the "
+                    f"existing file first, then write the modified JSON back). The editor "
+                    f"re-imports this file automatically, so your changes appear live on the "
+                    f"canvas. Edit this exact path; do NOT write a sibling file.")
             continue
 
         # Asset destination: write the file the asset node points at. The
