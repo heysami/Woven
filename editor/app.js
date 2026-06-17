@@ -58423,6 +58423,22 @@ function workflowNodeIsWorking(n, chatBusy, activeProto, workingPaths) {
       const m = p.match(/^(.*?design-systems\/[^/]+)\//);
       if (m && !np.includes(m[1])) np.push(m[1]);
     }
+    // editTarget container nodes (composer / vector-editor / spline-3d) carry
+    // NO `path` on disk — their deliverable is the canonical sidecar an agent
+    // writes (composer-<id>.json, vector-<id>.json, spline-<id>.scene.json).
+    // Derive that filename from the io contract and match it against touched
+    // paths by BASENAME (branch-agnostic) so the worker badge tethers to the
+    // node the agent is actually authoring, just like an asset node's `path`.
+    const _io = workflowKindIo(n.kind);
+    const _edit = _io && (_io.accepts || []).find(a => a.ingest === "editTarget" && a.canonical);
+    if (_edit) {
+      const fname = _edit.canonical.replace(/\{id\}/g, n.id).split("/").pop();
+      if (fname) {
+        for (const w of workingPaths) {
+          if (typeof w === "string" && (w === fname || w.endsWith("/" + fname))) return true;
+        }
+      }
+    }
     for (const p of np) {
       for (const w of workingPaths) {
         if (w === p || w.startsWith(p + "/") || p.startsWith(w + "/")) return true;
