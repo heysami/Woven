@@ -5375,6 +5375,16 @@ def _drain_stdout(state: "RunState") -> None:
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
+                        # v4.0 — lint shaders at TURN-done, not just process-exit.
+                        # Freeform/chat agents stay alive across turns (stream-json),
+                        # so the process-exit hook in `finally` wouldn't fire until
+                        # the chat closes; the file is written by THIS turn, so
+                        # repair it now. Idempotent across turns (re-linting a
+                        # fixed file is a no-op).
+                        try:
+                            _lint_touched_shaders(state)
+                        except Exception:
+                            pass
                         # v2.24 + v2.26 — for node-agent dispatches: fire the
                         # canvas completion hook ONLY on `status: done`
                         # (genuine success). Status: error covers a wide range
