@@ -5271,6 +5271,50 @@ def _fire_node_completion_hook(state, *, exit_code):
     except Exception: pass
 
 
+def _lint_touched_shaders(state: "RunState") -> None:
+    """v4.0 — post-run static GLSL validate + auto-repair. The smart agent
+    routes to the shader medium correctly but its one-shot GLSL keeps shipping
+    the same compile-error classes (reserved-word identifiers, gl_FragColor
+    under #version 300, precision ordering) → the shader never compiles → flat/
+    blank frame. After ANY run, lint each touched shader-HTML file: auto-fix the
+    safe class (reserved-word rename, scoped to GLSL regions only) and write it
+    back so the asset actually renders; surface the rest as run events so the
+    failure is visible instead of silent. Best-effort — never affects the run."""
+    try:
+        from kinds import shader_lint
+    except Exception:
+        return
+    root = getattr(state, "project_root", None)
+    if not root:
+        return
+    for rel in list(getattr(state, "touched_paths", []) or []):
+        if not isinstance(rel, str) or not rel.lower().endswith((".html", ".htm")):
+            continue
+        path = os.path.join(root, rel)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read()
+        except Exception:
+            continue
+        if not shader_lint.looks_like_shader_html(text):
+            continue
+        try:
+            res = shader_lint.validate_and_repair(text)
+        except Exception:
+            continue
+        if res.get("fixed"):
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(res["repaired"])
+                state.append("status", {"label": "shader-autofix",
+                                         "detail": rel + ": " + "; ".join(res["fixed"])})
+            except Exception:
+                pass
+        if res.get("errors"):
+            state.append("status", {"label": "shader-lint-error",
+                                     "detail": rel + ": " + "; ".join(res["errors"])})
+
+
 def _drain_stdout(state: "RunState") -> None:
     """Read newline-delimited JSON from the child, normalise, append events.
 
@@ -5400,6 +5444,12 @@ def _drain_stdout(state: "RunState") -> None:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
+        # v4.0 — auto-repair any shader HTML the run wrote (before the history
+        # snapshot below, so the repaired bytes are what gets captured).
+        try:
+            _lint_touched_shaders(state)
+        except Exception:
+            pass
         # ── v2.1 — workflow-node auto-completion hook ────────────────────
         # v2.24 — guarded by _node_completion_fired so we don't double-flip
         # when the turn_done branch above already called the hook. (The
