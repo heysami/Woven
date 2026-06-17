@@ -43,13 +43,33 @@ def test_gl_fragcolor_under_300_flagged():
     assert not r["fixed"]
 
 
-def test_precision_after_out_flagged():
+def test_precision_after_out_autofixed():
     text = (
         "<script>const F = `#version 300 es\nout vec4 fragColor;\n"
-        "precision highp float;\nvoid main(){ fragColor = vec4(1.0); }`;</script>"
+        "void main(){ fragColor = vec4(1.0); }`;</script>"
     )
     r = validate_and_repair(text)
-    assert any("precision" in e for e in r["errors"]), r
+    assert any("precision" in f for f in r["fixed"]), r
+    # precision now precedes the out declaration
+    assert r["repaired"].index("precision highp float;") < r["repaired"].index("out vec4 fragColor;")
+    # and it no longer trips the error path
+    assert not r["errors"], r
+
+
+def test_dual_path_webgl1_and_webgl2_not_flagged():
+    """A file that ships BOTH a WebGL1 variant (gl_FragColor, no #version) and a
+    WebGL2 variant (#version 300 es, out vec4) in SEPARATE literals is correct —
+    must NOT be flagged (the cross-region false-positive regression)."""
+    text = (
+        "<script>\n"
+        "const FRAG2 = `#version 300 es\nprecision highp float;\nout vec4 fragColor;\n"
+        "void main(){ fragColor = vec4(1.0); }`;\n"
+        "const FRAG1 = `precision highp float;\nvoid main(){ gl_FragColor = vec4(1.0); }`;\n"
+        "const gl = c.getContext('webgl2');</script>"
+    )
+    r = validate_and_repair(text)
+    assert not r["errors"], r
+    assert not r["fixed"], r
 
 
 def test_clean_shader_untouched():
@@ -72,7 +92,8 @@ def test_looks_like_shader_html():
 def main():
     tests = [test_reserved_word_half_autofixed_in_glsl_only,
              test_gl_fragcolor_under_300_flagged,
-             test_precision_after_out_flagged,
+             test_precision_after_out_autofixed,
+             test_dual_path_webgl1_and_webgl2_not_flagged,
              test_clean_shader_untouched,
              test_looks_like_shader_html]
     for t in tests:

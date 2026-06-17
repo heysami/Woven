@@ -78,8 +78,11 @@ def validate_and_repair(text: str) -> dict:
     fixed: List[str] = []
     errors: List[str] = []
 
-    # ── 1. reserved-word identifiers — auto-rename inside each GLSL region ──
-    # Rebuild the text region-by-region so renames never touch the JS around them.
+    # ── 1. auto-repair inside each GLSL region (never touches the JS around it) ──
+    # Rebuild the text region-by-region. Two safe, deterministic fixes:
+    #   a) reserved-word identifier rename (`half` → `half_`)
+    #   b) precision-before-out in a 300-es shader: insert `precision highp float;`
+    #      right after the `#version 300 es` directive.
     out = []
     last = 0
     for (s, e) in sorted(regions):
@@ -90,28 +93,34 @@ def validate_and_repair(text: str) -> dict:
         for kw in _reserved_in_region(region):
             region = re.sub(rf"\b{kw}\b", kw + "_", region)
             fixed.append(f"renamed reserved GLSL identifier `{kw}` → `{kw}_`")
+        # precision-before-out fix
+        if re.search(r"#version\s+300\s+es", region):
+            m_out = re.search(r"\bout\s+(?:lowp\s+|mediump\s+|highp\s+)?vec4\s+\w+\s*;", region)
+            m_prec = re.search(r"\bprecision\s+(?:lowp|mediump|highp)\s+float\s*;", region)
+            if m_out and (not m_prec or m_prec.start() > m_out.start()):
+                region = re.sub(r"(#version\s+300\s+es[^\n]*\n)",
+                                r"\1precision highp float;\n", region, count=1)
+                fixed.append("inserted `precision highp float;` after `#version 300 es` "
+                             "(float-precision must precede the `out vec4` declaration)")
         out.append(region)
         last = e
     out.append(text[last:])
     repaired = "".join(out)
 
     # ── 2 & 3. detect-only signatures (auto-rewrite too risky) ──
-    # Re-scan the repaired GLSL regions.
-    glsl = "\n".join(repaired[s:e] for (s, e) in _glsl_regions(repaired))
-    is_es300 = bool(re.search(r"#version\s+300\s+es", glsl))
-    if is_es300 and re.search(r"\bgl_FragColor\b", glsl):
-        errors.append(
-            "uses `gl_FragColor` under `#version 300 es` — removed in GLSL ES 3.00. "
-            "Declare `out vec4 fragColor;` and write to it instead.")
-    # precision-before-out: an `out vec4 …;` that appears before any
-    # `precision … float;` in a 300-es shader.
-    if is_es300:
-        m_out = re.search(r"\bout\s+(?:lowp|mediump|highp\s+)?vec4\s+\w+\s*;", glsl)
-        m_prec = re.search(r"\bprecision\s+(?:lowp|mediump|highp)\s+float\s*;", glsl)
-        if m_out and (not m_prec or m_prec.start() > m_out.start()):
-            errors.append(
-                "fragment `out vec4` is declared before `precision highp float;` — GLSL ES "
-                "3.00 has no default float precision, so declare precision FIRST.")
+    # Check PER REGION — a file legitimately ships separate WebGL1 (gl_FragColor,
+    # no #version) and WebGL2 (#version 300 es, out vec4) shader variants; only a
+    # SINGLE shader that mixes them is an error. (Joining regions would falsely
+    # flag the correct dual-path pattern.)
+    for (s, e) in _glsl_regions(repaired):
+        region = repaired[s:e]
+        if not re.search(r"#version\s+300\s+es", region):
+            continue
+        if re.search(r"\bgl_FragColor\b", region):
+            msg = ("uses `gl_FragColor` under `#version 300 es` — removed in GLSL ES 3.00. "
+                   "Declare `out vec4 fragColor;` and write to it instead.")
+            if msg not in errors:
+                errors.append(msg)
 
     return {"repaired": repaired, "fixed": fixed, "errors": errors}
 
