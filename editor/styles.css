@@ -6883,6 +6883,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   isolation: isolate;
   display: grid;
   grid-template-rows: 32px 1fr;
+  /* Horizontal-blowout fix — declare the single column explicitly as
+     `minmax(0, 1fr)` so the track is EXACTLY the node's set width and its
+     children may shrink below content size. Without this the implicit column
+     is `auto`, which sizes to the widest child's MAX-content — the header bar,
+     whose max-content is the UNtruncated title (e.g. "MAKE ME APPLE
+     GLASSMORPHIC BUTTON" + SAVE + ×). A flex title's `min-width:0` + ellipsis
+     only zeroes its MIN-content, so the auto column still blew out to the full
+     title width whenever the title was longer than the node's fixed width; the
+     body (textarea / iframe / asset) then painted up to 64px past the node's
+     right edge via `overflow-clip-margin`. `minmax(0, 1fr)` pins the column to
+     the container and lets the title ellipsis do its job. Applies to every
+     node kind (all are single-column header-over-body stacks). */
+  grid-template-columns: minmax(0, 1fr);
   /* v2.50 — graceful header→body transition. Instead of a tinted header +
      hard 1px divider, the whole node is one subtle vertical gradient: the
      warm surface-2 tint at the very top fades into the white body by ~72px,
