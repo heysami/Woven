@@ -1688,9 +1688,13 @@ KINDS = {
         "title":        "Composer (responsive canvas)",
         "category":     "container",
         "inputs": {
+            # Real node fields are canvasW/canvasH (the factory + sidecar
+            # re-import use these); the old width/height keys never matched
+            # anything on the node, so editable-field tracking missed the
+            # canvas size. Mirror the actual schema.
             "layers":     {"type": "array",  "userEditable": True},
-            "width":      {"type": "number", "userEditable": True},
-            "height":     {"type": "number", "userEditable": True},
+            "canvasW":    {"type": "number", "userEditable": True},
+            "canvasH":    {"type": "number", "userEditable": True},
             "maxWidth":   {"type": "number", "userEditable": True},
             "maxHeight":  {"type": "number", "userEditable": True},
             "background": {"type": "text",   "userEditable": True},
@@ -2647,8 +2651,15 @@ _COMPOSER_AUTHORING = (
     "  Array order is z-order (later = on top). `width`/`height` null = natural size; `fill` covers "
     "the canvas, `stretch-h`/`stretch-v` span one axis. Preserve the assetIds of layers already "
     "present. Any other key (type/text/shape/button/css/responsive/layout) is ignored — there is no "
-    "such thing as a text or shape layer here. For a hero SECTION with live text + CTAs, the composer "
-    "is the WRONG medium; that is a prototype/HTML job."
+    "such thing as a text or shape layer here.\n"
+    "  TEXT — the composer has NO text primitive, so raw text NEVER renders. To put a headline / "
+    "label / body text into the composition you MUST first produce a text-bearing ASSET and wire it "
+    "in as a layer: either a `formatted-text` node (it bakes to an HTML asset) or an `svg` asset that "
+    "renders the words as <text>/paths (a raster image with the text baked in also works). Create that "
+    "asset, wire its output into this composer's input, then add a layer referencing its assetId. Do "
+    "NOT write the text as a layer field and expect it to show — it will be dropped.\n"
+    "  For a hero SECTION with live, selectable text + CTAs, the composer is the WRONG medium; that "
+    "is a prototype/HTML job."
 )
 
 _VECTOR_AUTHORING = (
