@@ -1,9 +1,10 @@
 """editor/kinds/shader_compile.py — real GLSL compile check via glslang.
 
-Where shader_lint.py is a PATTERN matcher for the specific compile bugs we've
-seen, this runs the Khronos reference compiler (`glslangValidator`, installed
-via `brew install glslang`) so it catches ANY compile error for ANY shader —
-undeclared vars, type mismatches, removed builtins, etc. — not just a fixed list.
+Runs the Khronos reference compiler (`glslangValidator`, installed via
+`brew install glslang`) so it catches ANY compile error for ANY shader —
+undeclared vars, type mismatches, removed builtins, reserved words, etc. — not
+a fixed pattern list. (This + the headless render-verify replace the earlier
+static regex lint, which only matched the handful of bugs we'd seen.)
 
 Two limits (by design, covered by the headless render-verify):
   • Extraction — we can pull GLSL out of <script type=x-shader> blocks and

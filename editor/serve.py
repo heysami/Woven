@@ -5271,22 +5271,24 @@ def _fire_node_completion_hook(state, *, exit_code):
     except Exception: pass
 
 
-def _lint_touched_shaders(state: "RunState") -> None:
-    """v4.0 — post-run static GLSL validate + auto-repair. The smart agent
-    routes to the shader medium correctly but its one-shot GLSL keeps shipping
-    the same compile-error classes (reserved-word identifiers, gl_FragColor
-    under #version 300, precision ordering) → the shader never compiles → flat/
-    blank frame. After ANY run, lint each touched shader-HTML file: auto-fix the
-    safe class (reserved-word rename, scoped to GLSL regions only) and write it
-    back so the asset actually renders; surface the rest as run events so the
-    failure is visible instead of silent. Best-effort — never affects the run."""
-    try:
-        from kinds import shader_lint
-    except Exception:
-        return
+def _verify_touched_shaders(state: "RunState") -> None:
+    """v4.0 — post-run shader VERIFICATION via real tools (optional, gated on
+    availability — Settings → local tools). For each touched shader-HTML file:
+      1) glslang compile-check of <script type=x-shader> blocks (real compile
+         errors for any shader), and
+      2) headless Playwright render-verify (compile + link + blank detection).
+    Emits shader-compile-error / shader-render-error run events so a broken
+    shader surfaces the REAL error instead of silently rendering flat. Both
+    best-effort — never affects the run; no-op when neither tool is installed.
+
+    Replaces the earlier static pattern-lint + auto-repair: a real compiler /
+    render check generalizes to ANY shader, so the regex band-aid (which only
+    matched the handful of bugs we'd seen, and silently rewrote the agent's
+    code) is retired in favour of surfacing the true error."""
     root = getattr(state, "project_root", None)
     if not root:
         return
+    import re as _re
     for rel in list(getattr(state, "touched_paths", []) or []):
         if not isinstance(rel, str) or not rel.lower().endswith((".html", ".htm")):
             continue
@@ -5296,33 +5298,14 @@ def _lint_touched_shaders(state: "RunState") -> None:
                 text = f.read()
         except Exception:
             continue
-        if not shader_lint.looks_like_shader_html(text):
+        # Cheap gate: a file with an inline WebGL shader worth verifying.
+        if not (_re.search(r"getContext\(\s*['\"]webgl", text)
+                and _re.search(r"\b(?:gl_FragColor|fragColor|void\s+main)\b", text)):
             continue
-        try:
-            res = shader_lint.validate_and_repair(text)
-        except Exception:
-            continue
-        if res.get("fixed"):
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(res["repaired"])
-                state.append("status", {"label": "shader-autofix",
-                                         "detail": rel + ": " + "; ".join(res["fixed"])})
-            except Exception:
-                pass
-        if res.get("errors"):
-            state.append("status", {"label": "shader-lint-error",
-                                     "detail": rel + ": " + "; ".join(res["errors"])})
-
-        # Escalate beyond the static pattern lint when the optional verifiers
-        # are installed (Settings → local tools). Both best-effort + gated on
-        # availability, so a fresh install with neither present behaves exactly
-        # as before. Use the repaired bytes (what's now on disk).
-        repaired = res.get("repaired") or text
         # 1) glslang — real compile errors for <script type=x-shader> blocks.
         try:
             from kinds import shader_compile
-            cerrs = shader_compile.compile_check(repaired)   # [] when glslang absent
+            cerrs = shader_compile.compile_check(text)   # [] when glslang absent
             if cerrs:
                 state.append("status", {"label": "shader-compile-error",
                                          "detail": rel + ": " + "; ".join(cerrs[:6])})
@@ -5413,14 +5396,13 @@ def _drain_stdout(state: "RunState") -> None:
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
-                        # v4.0 — lint shaders at TURN-done, not just process-exit.
+                        # v4.0 — verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
                         # so the process-exit hook in `finally` wouldn't fire until
                         # the chat closes; the file is written by THIS turn, so
-                        # repair it now. Idempotent across turns (re-linting a
-                        # fixed file is a no-op).
+                        # verify it now. Idempotent across turns.
                         try:
-                            _lint_touched_shaders(state)
+                            _verify_touched_shaders(state)
                         except Exception:
                             pass
                         # v2.24 + v2.26 — for node-agent dispatches: fire the
@@ -5492,10 +5474,10 @@ def _drain_stdout(state: "RunState") -> None:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
-        # v4.0 — auto-repair any shader HTML the run wrote (before the history
-        # snapshot below, so the repaired bytes are what gets captured).
+        # v4.0 — verify any shader HTML the run wrote (process-exit fallback for
+        # single-shot runs that never emitted a turn-done status).
         try:
-            _lint_touched_shaders(state)
+            _verify_touched_shaders(state)
         except Exception:
             pass
         # ── v2.1 — workflow-node auto-completion hook ────────────────────
