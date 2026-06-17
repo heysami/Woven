@@ -21129,6 +21129,17 @@ function WorkflowCanvas() {
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
   const [chatPermissionMode, setChatPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
+  // Single-docked-chat invariant (see the node dialogs' matching effects).
+  // This top-level chat shares the docked slot with the per-node dialogs, so
+  // opening it must close any open node chat and vice versa. Owner = "main".
+  useEffect(() => {
+    if (chatRun) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: "main" } }));
+  }, [chatRun]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== "main") setChatRun(null); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, []);
   // Resizable panels: library (left) + chat (right). Minimums baked in:
   // 240px for the library, 644px for the chat (~70% of the old floating
   // drawer max width). The CHAT width persists to localStorage so the
@@ -55586,6 +55597,22 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // We no longer maintain an inline streamEvents log on the canvas — the
   // chat dialog has more space and already handles pause / stop / attach.
   const [chatOpen, setChatOpen] = useState(false);
+  // Single-docked-chat invariant. The per-node chat dialog and the top-level
+  // workflow chat all render a variant="dock" ChatDrawer into the SAME docked
+  // slot, so two of them open at once just stack — opening node B (or the
+  // main canvas chat) wouldn't visibly replace node A's chat. A lightweight
+  // window-level "claim" bus enforces one-at-a-time: opening this chat claims
+  // the slot (owner = node.id); any surface holding it with a different owner
+  // closes itself. (Closing only unmounts the drawer — the run keeps going on
+  // the daemon and reattaches by runId on reopen.)
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   // Native folder picker for the spec.referenceFolder field — mirrors the
   // agent node's outputPath picker. Lets the user point at a folder of
   // reference materials (existing DS, brand kit, screenshots) instead of
@@ -57515,6 +57542,22 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   // Chat dialog — same UX as the agent node. Opens via 💬 Chat. Live log,
   // pause/stop, attachments, and follow-up briefs all happen in there.
   const [chatOpen, setChatOpen] = useState(false);
+  // Single-docked-chat invariant. The per-node chat dialog and the top-level
+  // workflow chat all render a variant="dock" ChatDrawer into the SAME docked
+  // slot, so two of them open at once just stack — opening node B (or the
+  // main canvas chat) wouldn't visibly replace node A's chat. A lightweight
+  // window-level "claim" bus enforces one-at-a-time: opening this chat claims
+  // the slot (owner = node.id); any surface holding it with a different owner
+  // closes itself. (Closing only unmounts the drawer — the run keeps going on
+  // the daemon and reattaches by runId on reopen.)
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   // Native folder picker for spec.referenceFolder (mirrors the DS-generator
   // affordance). Points the agent at a folder of reference materials so
   // the user doesn't have to attach files individually.
@@ -60764,6 +60807,22 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
 function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, derivedSummary, onPatchNode, onSpawnOutput }) {
   const [dragging, setDragging] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  // Single-docked-chat invariant. The per-node chat dialog and the top-level
+  // workflow chat all render a variant="dock" ChatDrawer into the SAME docked
+  // slot, so two of them open at once just stack — opening node B (or the
+  // main canvas chat) wouldn't visibly replace node A's chat. A lightweight
+  // window-level "claim" bus enforces one-at-a-time: opening this chat claims
+  // the slot (owner = node.id); any surface holding it with a different owner
+  // closes itself. (Closing only unmounts the drawer — the run keeps going on
+  // the daemon and reattaches by runId on reopen.)
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   // convoOpen toggles an inline transcript view inside the card showing
   // `node.conversation` (populated by Refiner / other in-canvas loops that
   // bypass the Claude Code SSE runId path). The chat dialog only renders
@@ -62052,6 +62111,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     onPermissionModeChange=${setPermissionMode}
     onStartNewChat=${spawnFromComposer}
     preamble=${preamble}
+    variant="dock"
   />`, document.body);
 }
 

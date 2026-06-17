@@ -10074,6 +10074,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
+  /* Grid blowout fix — the textarea is the `1fr` row of the node's
+     `grid-template-rows: 32px 1fr`. Grid items default to `min-height: auto`,
+     so as the user types the track refuses to shrink below the textarea's
+     intrinsic content height: it expands past the node's fixed height and,
+     because the node uses `overflow: clip; overflow-clip-margin: 64px`,
+     that overflow PAINTS up to 64px outside the node (the input box visibly
+     spilling out the bottom). `min-height: 0` pins the track to its
+     distributed size; the textarea then scrolls internally via overflow-y. */
+  min-height: 0;
   /* Make long content scrollable inside the textarea — browsers do this
      by default, but stating overflow-y explicit guards against parent
      CSS or scrollbar-style resets that might strip it. */
