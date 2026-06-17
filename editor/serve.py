@@ -5314,6 +5314,44 @@ def _lint_touched_shaders(state: "RunState") -> None:
             state.append("status", {"label": "shader-lint-error",
                                      "detail": rel + ": " + "; ".join(res["errors"])})
 
+        # Escalate beyond the static pattern lint when the optional verifiers
+        # are installed (Settings → local tools). Both best-effort + gated on
+        # availability, so a fresh install with neither present behaves exactly
+        # as before. Use the repaired bytes (what's now on disk).
+        repaired = res.get("repaired") or text
+        # 1) glslang — real compile errors for <script type=x-shader> blocks.
+        try:
+            from kinds import shader_compile
+            cerrs = shader_compile.compile_check(repaired)   # [] when glslang absent
+            if cerrs:
+                state.append("status", {"label": "shader-compile-error",
+                                         "detail": rel + ": " + "; ".join(cerrs[:6])})
+        except Exception:
+            pass
+        # 2) headless render-verify — runs the real page; catches JS-assembled
+        #    compile errors + compiles-but-blank. Only when Playwright is set up.
+        try:
+            tools_dir = os.path.join(EDITOR_DIR, "tools")
+            node_bin = (shutil.which("node")
+                        or next((c for c in ("/opt/homebrew/bin/node", "/usr/local/bin/node")
+                                 if os.path.isfile(c) and os.access(c, os.X_OK)), None))
+            if node_bin and os.path.isdir(os.path.join(tools_dir, "node_modules", "playwright")):
+                vproc = subprocess.run(
+                    [node_bin, os.path.join(tools_dir, "verify-shader.mjs"), path],
+                    capture_output=True, text=True, timeout=30)
+                if vproc.stdout.strip():
+                    v = json.loads(vproc.stdout.strip())
+                    if not v.get("ok"):
+                        bits = []
+                        if v.get("compileErrors"): bits.append("compile: " + " | ".join(v["compileErrors"])[:300])
+                        if v.get("linkErrors"):    bits.append("link: " + " | ".join(v["linkErrors"])[:200])
+                        if v.get("blank"):         bits.append("renders BLANK (compiles but draws nothing)")
+                        if bits:
+                            state.append("status", {"label": "shader-render-error",
+                                                     "detail": rel + ": " + "; ".join(bits)})
+        except Exception:
+            pass
+
 
 def _drain_stdout(state: "RunState") -> None:
     """Read newline-delimited JSON from the child, normalise, append events.
@@ -12449,6 +12487,12 @@ class H(http.server.SimpleHTTPRequestHandler):
     _LOCAL_PACKAGES = {
         "rembg":       {"kind": "pip", "packages": ["rembg", "onnxruntime"], "import": "rembg"},
         "cloudflared": {"kind": "binary", "bin": "cloudflared", "brew": "cloudflared"},
+        # Shader validators (optional). glslang = real GLSL compile errors via
+        # the Khronos reference compiler; shader-verify = headless Playwright
+        # render check (compile + blank). Both feed the post-run shader lint.
+        "glslang":     {"kind": "binary", "bin": "glslangValidator", "brew": "glslang"},
+        "shader-verify": {"kind": "npm", "npm": ["playwright", "pngjs"], "browser": "chromium",
+                          "probe": "playwright"},
     }
 
     # Class-level memo of POSITIVE probe results, keyed by package id. Probing
@@ -15038,6 +15082,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             if bin_path:
                 type(self)._LOCAL_STATUS_CACHE[pkg] = result
             return self._reply(200, result)
+        # npm packages (shader-verify): installed = node present AND the package
+        # dir exists under editor/tools/node_modules. No subprocess needed.
+        if spec.get("kind") == "npm":
+            tools_dir = os.path.join(EDITOR_DIR, "tools")
+            have_node = bool(self._find_local_binary("node"))
+            have_pkg = os.path.isdir(os.path.join(tools_dir, "node_modules", spec.get("probe", "playwright")))
+            result = {"package": pkg, "installed": bool(have_node and have_pkg),
+                      "version": None, "needsNode": not have_node}
+            if result["installed"]:
+                type(self)._LOCAL_STATUS_CACHE[pkg] = result
+            return self._reply(200, result)
         import_name = spec["import"]
         try:
             r = subprocess.run(
@@ -15113,6 +15168,40 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "path": bin_path,
                 "stdout": (r.stdout or b"").decode("utf-8", "replace")[-4000:],
                 "stderr": (r.stderr or b"").decode("utf-8", "replace")[-4000:],
+            })
+        # npm packages install into editor/tools/node_modules (self-contained),
+        # plus a Playwright browser download. Needs node + npm on PATH.
+        if spec.get("kind") == "npm":
+            tools_dir = os.path.join(EDITOR_DIR, "tools")
+            npm = self._find_local_binary("npm")
+            node = self._find_local_binary("node")
+            if not npm or not node:
+                return self._reply(502, {"ok": False, "package": pkg,
+                    "error": "node + npm not found on PATH — install Node.js (https://nodejs.org) then retry."})
+            try:
+                os.makedirs(tools_dir, exist_ok=True)
+                # 1) the npm packages, 2) the Playwright browser binary.
+                r1 = subprocess.run([npm, "install", "--no-audit", "--no-fund", *spec["npm"]],
+                                    cwd=tools_dir, capture_output=True, timeout=600, check=False)
+                out = (r1.stdout or b"").decode("utf-8", "replace")
+                err = (r1.stderr or b"").decode("utf-8", "replace")
+                if spec.get("browser"):
+                    npx = self._find_local_binary("npx") or npm
+                    r2 = subprocess.run([npx, "playwright", "install", spec["browser"]],
+                                        cwd=tools_dir, capture_output=True, timeout=600, check=False)
+                    out += "\n" + (r2.stdout or b"").decode("utf-8", "replace")
+                    err += "\n" + (r2.stderr or b"").decode("utf-8", "replace")
+            except subprocess.TimeoutExpired:
+                return self._reply(504, {"ok": False, "package": pkg,
+                                         "error": "npm install timed out after 10 minutes"})
+            except Exception as e:
+                return self._reply(500, {"ok": False, "package": pkg, "error": f"npm spawn failed: {e}"})
+            installed = os.path.isdir(os.path.join(tools_dir, "node_modules", spec.get("probe", "playwright")))
+            if installed:
+                type(self)._LOCAL_STATUS_CACHE[pkg] = {"package": pkg, "installed": True}
+            return self._reply(200 if installed else 502, {
+                "ok": installed, "package": pkg,
+                "stdout": out[-4000:], "stderr": err[-4000:],
             })
         packages = spec["packages"]
         # --user installs into ~/Library/Python/.../site-packages on macOS

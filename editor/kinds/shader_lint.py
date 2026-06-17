@@ -55,6 +55,11 @@ def _glsl_regions(text: str) -> List[Tuple[int, int]]:
     return spans
 
 
+# Public alias — shader_compile.py reuses the same GLSL-region detection.
+def glsl_regions(text: str) -> List[Tuple[int, int]]:
+    return _glsl_regions(text)
+
+
 def _reserved_in_region(region: str) -> List[str]:
     """Reserved words used as an identifier in a `TYPE name` declaration."""
     found = []

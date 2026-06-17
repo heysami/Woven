@@ -1,0 +1,3 @@
+# Playwright + pngjs are installed on demand via Settings → local tools
+# (the /__local_install "npm" kind), per daemon location — never committed.
+node_modules/

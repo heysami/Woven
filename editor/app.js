@@ -60428,6 +60428,28 @@ const LOCAL_PACKAGES = [
     // on it like rembg.
     required: false,
   },
+  {
+    id: "glslang",
+    label: "glslang",
+    installKind: "brew",   // glslangValidator binary via Homebrew
+    hint: "GLSL reference compiler · brew install glslang · real shader compile errors (any shader, no browser)",
+    skills: "Shader compile-check",
+    docsUrl: "https://github.com/KhronosGroup/glslang",
+    // Optional — shaders degrade to the static lint when absent. When present,
+    // the post-run shader lint compile-checks every <script type=x-shader> block.
+    required: false,
+  },
+  {
+    id: "shader-verify",
+    label: "Shader render-verify",
+    installKind: "npm",    // Playwright + pngjs into editor/tools + a Chromium download
+    hint: "Headless Playwright + Chromium · runs the shader and checks it compiles AND isn't blank · ~150 MB browser",
+    skills: "Shader render-check",
+    docsUrl: "https://playwright.dev",
+    // Optional + heaviest. Catches what glslang can't: JS-assembled shaders and
+    // compiles-but-renders-blank. Requires Node.js on PATH.
+    required: false,
+  },
 ];
 
 function WorkflowLocalSkillsSection() {
@@ -60685,6 +60707,8 @@ function WorkflowLocalPackageRow({ pkg }) {
       <div className="workflow-settings-hint">
         ${pkg.installKind === "brew"
           ? html`Installs via Homebrew: <code>${"brew install " + pkg.id}</code> (needs Homebrew — brew.sh).`
+          : pkg.installKind === "npm"
+          ? html`Installs Playwright + a Chromium build into <code>editor/tools</code> (needs Node.js — nodejs.org). ~150 MB browser download.`
           : html`Installs to your user-site (no sudo) via <code>${"pip install --user " + pkg.id}</code>.`}${" "}
         Docs: <a href=${pkg.docsUrl} target="_blank" rel="noopener">${pkg.docsUrl.replace(/^https?:\/\//, "")}</a>.
       </div>

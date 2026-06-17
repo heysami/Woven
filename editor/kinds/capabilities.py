@@ -530,6 +530,28 @@ def _local_tool_availability() -> dict:
     except Exception:
         out["imagemagick"] = False
         out["ffmpeg"]      = False
+    # Shader validators (optional; the post-run shader lint escalates to them
+    # when present). glslang = real GLSL compile errors; shader_verify =
+    # headless Playwright render check (compile + blank detection).
+    try:
+        import shutil, os
+        def _bin(name):
+            p = shutil.which(name)
+            if p:
+                return True
+            for c in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}"):
+                if os.path.isfile(c) and os.access(c, os.X_OK):
+                    return True
+            return False
+        out["glslang"] = _bin("glslangValidator")
+        _tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+        out["shader_verify"] = (
+            _bin("node")
+            and os.path.isdir(os.path.join(_tools, "node_modules", "playwright"))
+        )
+    except Exception:
+        out["glslang"] = False
+        out["shader_verify"] = False
     return out
 
 
@@ -640,7 +662,9 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     tool_status = (
         f"  • rembg          {'✓ INSTALLED' if tools.get('rembg') else '⚠ NOT INSTALLED — pip install rembg'}\n"
         f"  • ImageMagick    {'✓ INSTALLED' if tools.get('imagemagick') else '⚠ NOT INSTALLED'}\n"
-        f"  • ffmpeg         {'✓ INSTALLED' if tools.get('ffmpeg') else '⚠ NOT INSTALLED'}"
+        f"  • ffmpeg         {'✓ INSTALLED' if tools.get('ffmpeg') else '⚠ NOT INSTALLED'}\n"
+        f"  • glslang        {'✓ INSTALLED — shaders are compile-checked' if tools.get('glslang') else '⚠ NOT INSTALLED — brew install glslang'}\n"
+        f"  • shader-verify  {'✓ INSTALLED — shaders are render-checked' if tools.get('shader_verify') else '⚠ NOT INSTALLED (optional headless render check)'}"
     )
     # v3.10 — LOCAL FONT LIBRARY. Fonts the user uploaded (custom / licensed
     # faces the CDNs don't carry) are collected under design-systems/<ds>/fonts/.
