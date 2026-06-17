@@ -198,9 +198,36 @@
       </div>
 
       <div class="group" id="anim-group" style="display:none">
-        <div class="label">Animation <span class="tag">imported clip</span></div>
-        <div class="field"><label>Clip</label><select id="anim-clip"></select></div>
-        <div class="row"><button class="btn on full" id="anim-play">Pause</button></div>
+        <div class="label">Animation <span class="tag">procedural</span></div>
+        <div class="field"><label>Motion</label><select id="anim-motion">
+          <option value="">None (static)</option>
+          <option value="spin">Spin · turntable</option>
+          <option value="bob">Bob · up &amp; down</option>
+          <option value="float">Float · idle hover</option>
+          <option value="sway">Sway · gentle roll</option>
+          <option value="swim">Swim · undulate</option>
+          <option value="pulse">Pulse · breathe</option>
+        </select></div>
+        <div class="field"><label>Speed</label><input type="range" id="anim-speed" min="0.1" max="4" step="0.1" value="1"/><span class="val" id="anim-speed-v">1.0</span></div>
+        <div class="field"><label>Amount</label><input type="range" id="anim-amp" min="0" max="1" step="0.05" value="0.5"/><span class="val" id="anim-amp-v">.50</span></div>
+        <div id="anim-clip-block" style="display:none;margin-top:6px">
+          <div class="label">Rigged clip <span class="tag">imported</span></div>
+          <div class="field"><label>Clip</label><select id="anim-clip"></select></div>
+          <div class="row"><button class="btn on full" id="anim-play">Pause</button></div>
+        </div>
+      </div>
+
+      <div class="group" id="rig-group" style="display:none">
+        <div class="label">Skeleton <span class="tag">rig + IK</span></div>
+        <div class="field"><label>Bones</label><input type="range" id="rig-bones" min="2" max="14" step="1" value="6"/><span class="val" id="rig-bones-v">6</span></div>
+        <div class="row"><button class="btn full" id="rig-make">Auto-rig skeleton</button></div>
+        <div id="rig-controls" style="display:none;margin-top:6px">
+          <div class="empty" style="padding:4px 2px;font-size:11px">Rigged · Swim/Sway under Motion now bend the body. Export bakes the motion into a glTF clip.</div>
+          <div class="row">
+            <button class="btn" id="rig-ik">IK target</button>
+            <button class="btn ghost" id="rig-reset">Reset pose</button>
+          </div>
+        </div>
       </div>
 
       <div class="group">
@@ -285,6 +312,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { CCDIKSolver } from 'three/addons/animation/CCDIKSolver.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -352,7 +380,17 @@ const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true; orbit.dampingFactor = 0.08; orbit.target.set(0, 0.4, 0); orbit.maxPolarAngle = Math.PI * 0.495;
 const gizmo = new TransformControls(camera, renderer.domElement);
 gizmo.setSize(0.85);
-gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
+gizmo.addEventListener('dragging-changed', e => {
+  orbit.enabled = !e.value;
+  // Procedural motion drives the transform every frame from a captured rest
+  // pose. While the gizmo drags, freeze the animation on the selected objects
+  // and edit the rest pose directly; on release, re-capture it as the new base.
+  for (const o of selection) {
+    if (!o.userData.proc || o.userData.ikActive) continue;
+    if (e.value) { restProcBase(o); o.userData.procDrag = true; }
+    else { captureProcBase(o, true); o.userData.procDrag = false; }
+  }
+});
 scene.add(gizmo);
 
 // ── State ───────────────────────────────────────────────────────────────
@@ -603,7 +641,10 @@ function select(list) {
   selection.forEach(b => setOutline(b, false));
   selection = list.filter(Boolean);
   selection.forEach(b => setOutline(b, true));
-  if (selection.length === 1) gizmo.attach(selection[0]); else gizmo.detach();
+  if (selection.length === 1) {
+    const s = selection[0];
+    gizmo.attach(s.userData.ikActive && s.userData.ik ? s.userData.ik.handle : s);
+  } else gizmo.detach();
   refresh();
 }
 renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
@@ -1054,6 +1095,199 @@ $('#anim-play').addEventListener('click', () => {
   $('#anim-play').classList.toggle('on', s.userData.animPlaying);
 });
 
+// ── Procedural animation ────────────────────────────────────────────────────
+// Rig-free motion for ANY object (a static Meshy import, a shape, an SVG
+// extrusion). Meshy's auto-rig only handles humanoid walk/run; anything else —
+// a swimming orca, a spinning logo, a hovering icon — never gets a baked clip,
+// so we synthesise the motion here. Each frame we rewrite the object's
+// transform from a captured rest pose (`procBase`), so toggling Motion → None
+// restores it exactly and motions never compound.
+let procT = 0;
+function captureProcBase(o, force) {
+  if (!o || (o.userData.procBase && !force)) return;
+  o.userData.procBase = { p: o.position.clone(), r: o.rotation.clone(), s: o.scale.clone() };
+  const sz = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+  o.userData.procSize = Math.max(0.01, (sz.x + sz.y + sz.z) / 3);
+}
+function restProcBase(o) {
+  const b = o.userData.procBase; if (!b) return;
+  o.position.copy(b.p); o.rotation.copy(b.r); o.scale.copy(b.s);
+}
+function restBones(o) { const rig = o.userData.rig; if (rig) for (let i = 1; i <= rig.deformCount; i++) rig.bones[i].rotation.set(0, 0, 0); }
+function setProcAnim(o, kind, speed, amount) {
+  if (!o) return;
+  if (!kind) { restProcBase(o); restBones(o); o.userData.proc = null; o.userData.procBase = null; o.userData.procDrag = false; return; }
+  captureProcBase(o);
+  const prev = o.userData.proc || {};
+  o.userData.proc = { kind, speed: speed != null ? speed : (prev.speed != null ? prev.speed : 1), amount: amount != null ? amount : (prev.amount != null ? prev.amount : 0.5) };
+}
+// One pose at absolute time `tAbs`. Used live (per frame) AND for export baking
+// (sampled over one loop period). When the object is rigged, swim/sway bend the
+// BONES as a travelling wave; everything else moves the whole object.
+function applyProcPose(o, tAbs) {
+  const pa = o.userData.proc, b = o.userData.procBase; if (!pa || !b) return;
+  const rig = o.userData.rig;
+  const sz = o.userData.procSize || 1, sp = pa.speed || 1, amp = pa.amount != null ? pa.amount : 0.5, t = tAbs * sp;
+  o.position.copy(b.p); o.rotation.copy(b.r); o.scale.copy(b.s);   // root starts at rest
+  if (rig && (pa.kind === 'swim' || pa.kind === 'sway')) {
+    const ax = rig.bendAxis, k = pa.kind === 'sway' ? 0.6 : 1;
+    for (let i = 1; i <= rig.deformCount; i++) {
+      rig.bones[i].rotation.set(0, 0, 0);
+      rig.bones[i].rotation[ax] = Math.sin(t * 1.6 - i * 0.55) * amp * 0.5 * k;   // phase offset per joint ⇒ undulation
+    }
+    if (pa.kind === 'swim') o.position.y = b.p.y + Math.sin(t * 3.2) * amp * sz * 0.05;
+    return;
+  }
+  restBones(o);   // rigged but a whole-object motion ⇒ hold the skeleton straight
+  switch (pa.kind) {
+    case 'spin':  o.rotation.y = b.r.y + tAbs * sp * 0.9; break;
+    case 'bob':   o.position.y = b.p.y + Math.sin(t * 2) * amp * sz * 0.22; break;
+    case 'float': o.position.y = b.p.y + Math.sin(t * 1.5) * amp * sz * 0.16; o.rotation.y = b.r.y + Math.sin(t * 0.6) * amp * 0.35; break;
+    case 'sway':  o.rotation.z = b.r.z + Math.sin(t) * amp * 0.4; o.rotation.x = b.r.x + Math.cos(t * 0.8) * amp * 0.16; break;
+    case 'swim':  o.rotation.y = b.r.y + Math.sin(t * 1.6) * amp * 0.5; o.rotation.z = b.r.z + Math.sin(t * 1.6 + 1.1) * amp * 0.22; o.position.y = b.p.y + Math.sin(t * 3.2) * amp * sz * 0.1; o.position.x = b.p.x + Math.sin(t * 1.6) * amp * sz * 0.07; break;
+    case 'pulse': { const kk = 1 + Math.sin(t * 2) * amp * 0.12; o.scale.set(b.s.x * kk, b.s.y * kk, b.s.z * kk); break; }
+  }
+}
+function driveProcAnim(dt) {
+  procT += dt;
+  for (const o of objects) {
+    if (o.userData.ikActive && o.userData.ik) {   // IK drives the chain from the draggable handle
+      const rig = o.userData.rig, h = o.userData.ik.handle;
+      o.updateMatrixWorld(true);
+      rig.targetBone.position.copy(rig.bones[0].worldToLocal(h.position.clone()));
+      o.updateMatrixWorld(true);   // refresh target bone's world matrix before the solver reads it
+      o.userData.ik.solver.update();
+      continue;
+    }
+
+    if (o.userData.proc && o.userData.procBase && !o.userData.procDrag) applyProcPose(o, procT);
+  }
+}
+
+// ── Skeletal rig + Inverse Kinematics ───────────────────────────────────────
+// Auto-rig: a bone chain down the mesh's long axis + envelope (distance-along-
+// axis) skinning that turns the Mesh into a SkinnedMesh. Best for elongated
+// organic shapes (orca, fish, snake, a limb). IK uses three.js' CCDIKSolver
+// driven by a draggable target handle.
+function autoRig(o, boneCount) {
+  if (!o || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) { flash('Select a mesh to rig'); return null; }
+  boneCount = Math.max(2, Math.min(14, (boneCount | 0) || 6));
+  if (o.userData.fur) { try { detachFur(o); } catch (e) {} }
+  if (o.userData.ikActive) disableIK(o);
+  const geo = o.geometry, prevProc = o.userData.proc;
+  geo.computeBoundingBox(); const bb = geo.boundingBox;
+  const dims = [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z];
+  let a = 0; if (dims[1] > dims[a]) a = 1; if (dims[2] > dims[a]) a = 2;
+  const axisName = ['x', 'y', 'z'][a];
+  const minA = [bb.min.x, bb.min.y, bb.min.z][a], len = Math.max(1e-4, dims[a]), seg = len / boneCount;
+  // bone chain (indices 0..boneCount) + a non-deforming IK target bone
+  const bones = [];
+  for (let i = 0; i <= boneCount; i++) {
+    const bn = new THREE.Bone(), v = new THREE.Vector3();
+    v.setComponent(a, i === 0 ? minA : seg);
+    bn.position.copy(v);
+    if (i > 0) bones[i - 1].add(bn);
+    bones.push(bn);
+  }
+  const targetBone = new THREE.Bone(); targetBone.position.setComponent(a, len); bones[0].add(targetBone);
+  const allBones = bones.concat([targetBone]);
+  const targetIndex = allBones.length - 1, effectorIndex = boneCount;
+  // envelope skin weights — 2 bones per vertex, blended along the axis
+  const pos = geo.attributes.position, n = pos.count;
+  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const pv = a === 0 ? pos.getX(i) : a === 1 ? pos.getY(i) : pos.getZ(i);
+    const param = (pv - minA) / seg;
+    let b0 = Math.floor(param); if (b0 < 0) b0 = 0; if (b0 > boneCount - 1) b0 = boneCount - 1;
+    let frac = param - b0; if (frac < 0) frac = 0; if (frac > 1) frac = 1;
+    si[i * 4] = b0; si[i * 4 + 1] = b0 + 1; sw[i * 4] = 1 - frac; sw[i * 4 + 1] = frac;
+  }
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  const sk = new THREE.SkinnedMesh(geo, Array.isArray(o.material) ? o.material[0] : o.material);
+  sk.position.copy(o.position); sk.quaternion.copy(o.quaternion); sk.scale.copy(o.scale);
+  sk.castShadow = sk.receiveShadow = true;
+  sk.name = o.name || ('rig-' + (objects.length + 1));
+  sk.userData.mode = o.userData.mode || 'imported';
+  if (o.userData.importUrl) sk.userData.importUrl = o.userData.importUrl;
+  if (o.userData.deform) sk.userData.deform = o.userData.deform;
+  allBones.forEach((b, i) => { b.name = sk.name + (i === targetIndex ? '_ik_target' : '_bone_' + i); });
+  sk.add(bones[0]);
+  sk.bind(new THREE.Skeleton(allBones));
+  sk.userData.rig = { bones, allBones, skeleton: sk.skeleton, axisName, axisIdx: a, bendAxis: axisName === 'y' ? 'x' : 'y', deformCount: boneCount, targetBone, targetIndex, effectorIndex, len };
+  const idx = objects.indexOf(o);
+  scene.add(sk); if (idx !== -1) objects[idx] = sk; else objects.push(sk);
+  scene.remove(o);
+  select([sk]);
+  if (prevProc) { setProcAnim(sk, prevProc.kind, prevProc.speed, prevProc.amount); const sel = $('#anim-motion'); if (sel) sel.value = prevProc.kind; }
+  flash('Rigged · ' + boneCount + ' bones along ' + axisName.toUpperCase() + ' — pick Swim under Motion, or IK target');
+  refresh(); saveSoon();
+  return sk;
+}
+function enableIK(o) {
+  const rig = o.userData.rig; if (!rig) return;
+  o.updateMatrixWorld(true);
+  const tip = rig.bones[rig.effectorIndex].getWorldPosition(new THREE.Vector3());
+  const handle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshBasicMaterial({ color: 0x37e0a0, depthTest: false, transparent: true, opacity: 0.92 }));
+  handle.renderOrder = 999; handle.name = '__ik_handle'; handle.position.copy(tip); scene.add(handle);
+  const iks = [{ target: rig.targetIndex, effector: rig.effectorIndex, links: [], iteration: 12, minAngle: -1.6, maxAngle: 1.6 }];
+  for (let i = rig.effectorIndex - 1; i >= 1; i--) iks[0].links.push({ index: i });
+  o.userData.ik = { solver: new CCDIKSolver(o, iks), handle };
+  o.userData.ikActive = true;
+  setTool('move'); gizmo.attach(handle);
+  flash('IK on — drag the green handle to pose the chain');
+}
+function disableIK(o) {
+  const ik = o.userData.ik;
+  if (ik) { try { scene.remove(ik.handle); ik.handle.geometry.dispose(); ik.handle.material.dispose(); } catch (e) {} }
+  o.userData.ik = null; o.userData.ikActive = false;
+  if (selection[0] === o) gizmo.attach(o);
+}
+$('#anim-motion').addEventListener('change', e => {
+  const kind = e.target.value, sp = parseFloat($('#anim-speed').value), amp = parseFloat($('#anim-amp').value);
+  if (!selection.length) return;
+  selection.forEach(o => setProcAnim(o, kind, sp, amp));
+  saveSoon();
+});
+$('#anim-speed').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#anim-speed-v').textContent = v.toFixed(1);
+  selection.forEach(o => { if (o.userData.proc) o.userData.proc.speed = v; });
+  saveSoon();
+});
+$('#anim-amp').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#anim-amp-v').textContent = v.toFixed(2).slice(1);
+  selection.forEach(o => { if (o.userData.proc) o.userData.proc.amount = v; });
+  saveSoon();
+});
+$('#rig-bones').addEventListener('input', e => { $('#rig-bones-v').textContent = e.target.value; });
+$('#rig-make').addEventListener('click', () => { const s = selection[0]; if (s) autoRig(s, parseInt($('#rig-bones').value)); });
+$('#rig-ik').addEventListener('click', () => {
+  const s = selection[0]; if (!s || !s.userData.rig) return;
+  if (s.userData.ikActive) disableIK(s); else enableIK(s);
+  refresh();
+});
+$('#rig-reset').addEventListener('click', () => {
+  const s = selection[0]; if (!s || !s.userData.rig) return;
+  restBones(s);
+  if (s.userData.ikActive && s.userData.ik) { s.updateMatrixWorld(true); s.userData.ik.handle.position.copy(s.userData.rig.bones[s.userData.rig.effectorIndex].getWorldPosition(new THREE.Vector3())); }
+});
+$('#anim-motion').addEventListener('change', e => {
+  const kind = e.target.value, sp = parseFloat($('#anim-speed').value), amp = parseFloat($('#anim-amp').value);
+  if (!selection.length) return;
+  selection.forEach(o => setProcAnim(o, kind, sp, amp));
+  saveSoon();
+});
+$('#anim-speed').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#anim-speed-v').textContent = v.toFixed(1);
+  selection.forEach(o => { if (o.userData.proc) o.userData.proc.speed = v; });
+  saveSoon();
+});
+$('#anim-amp').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#anim-amp-v').textContent = v.toFixed(2).slice(1);
+  selection.forEach(o => { if (o.userData.proc) o.userData.proc.amount = v; });
+  saveSoon();
+});
+
 // Deform sliders (non-destructive — re-applied from cached base each change)
 [['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
   $(sel).addEventListener('input', e => {
@@ -1143,10 +1377,49 @@ function switchCamera(mode) {
 }
 
 // Export
+// Bake one object's active procedural/bone motion into a glTF AnimationClip,
+// sampled over exactly one loop period so it loops seamlessly in <model-viewer>
+// or any GLTFLoader + AnimationMixer host. Returns null when the object is static.
+function bakeClipFor(o) {
+  if (!o.userData.proc || !o.userData.procBase) return null;
+  const pa = o.userData.proc, rig = o.userData.rig, sp = pa.speed || 1;
+  const baseFreq = ({ spin: sp * 0.9, bob: sp * 2, pulse: sp * 2, sway: sp * 1.6, swim: sp * 1.6, float: sp * 0.6 })[pa.kind] || sp;
+  const dur = Math.max(0.2, (2 * Math.PI) / baseFreq), fps = 30, frames = Math.max(2, Math.round(dur * fps));
+  const boneBend = rig && (pa.kind === 'swim' || pa.kind === 'sway');
+  const times = [], posA = [], quatA = [], sclA = [], boneA = boneBend ? rig.bones.map(() => []) : null;
+  for (let f = 0; f < frames; f++) {
+    const t = f * dur / frames; times.push(t);
+    applyProcPose(o, t);
+    posA.push(o.position.x, o.position.y, o.position.z);
+    quatA.push(o.quaternion.x, o.quaternion.y, o.quaternion.z, o.quaternion.w);
+    sclA.push(o.scale.x, o.scale.y, o.scale.z);
+    if (boneBend) rig.bones.forEach((bn, i) => { boneA[i].push(bn.quaternion.x, bn.quaternion.y, bn.quaternion.z, bn.quaternion.w); });
+  }
+  applyProcPose(o, procT);   // restore the live pose
+  const nm = o.name, tracks = [
+    new THREE.VectorKeyframeTrack(nm + '.position', times, posA),
+    new THREE.QuaternionKeyframeTrack(nm + '.quaternion', times, quatA),
+    new THREE.VectorKeyframeTrack(nm + '.scale', times, sclA),
+  ];
+  if (boneBend) rig.bones.forEach((bn, i) => tracks.push(new THREE.QuaternionKeyframeTrack(bn.name + '.quaternion', times, boneA[i])));
+  return new THREE.AnimationClip(nm + '_motion', dur, tracks);
+}
 $('#export').addEventListener('click', () => {
-  const exporter = new GLTFExporter(); const group = new THREE.Group();
-  objects.forEach(o => { if (!o.userData.isBlobDot) group.add(o.clone()); }); sims.forEach(s => group.add(s.mesh.clone()));
-  exporter.parse(group, glb => { const blob = new Blob([glb], { type: 'model/gltf-binary' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'scene.glb'; a.click(); URL.revokeObjectURL(a.href); }, err => { flash('Export failed'); console.error(err); }, { binary: true });
+  const exporter = new GLTFExporter(), group = new THREE.Group();
+  // Reparent the real objects (not clones) into a temporary group so SkinnedMesh
+  // skeletons + bone hierarchies export intact; the group sits at the origin so
+  // world transforms are preserved, and everything is reparented back after.
+  scene.add(group);
+  const clips = [], moved = [];
+  objects.forEach(o => { if (o.userData.isBlobDot) return; const c = bakeClipFor(o); if (c) clips.push(c); moved.push({ o, p: o.parent || scene }); group.add(o); });
+  sims.forEach(s => { moved.push({ o: s.mesh, p: s.mesh.parent || scene }); group.add(s.mesh); });
+  const restore = () => { moved.forEach(({ o, p }) => p.add(o)); scene.remove(group); };
+  exporter.parse(group, glb => {
+    restore();
+    const blob = new Blob([glb], { type: 'model/gltf-binary' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'scene.glb'; a.click(); URL.revokeObjectURL(a.href);
+    flash('Exported .glb' + (clips.length ? ' · ' + clips.length + ' clip' + (clips.length === 1 ? '' : 's') : ''));
+  }, err => { restore(); flash('Export failed'); console.error(err); }, { binary: true, animations: clips });
 });
 $('#save-now').addEventListener('click', () => { persist(); flash('Scene saved'); });
 $('#save-clear').addEventListener('click', clearSave);
@@ -1199,17 +1472,38 @@ function refresh() {
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
     if (m) { set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5); }
     $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
-    // Animation controls — shown only for animated/rigged imports (a mixer).
+    // Animation controls — procedural motion for ANY object, plus rigged-clip
+    // controls when the import carries baked animation.
     const anim = $('#anim-group');
     if (anim) {
+      anim.style.display = 'block';
+      const pa = s.userData.proc || {};
+      $('#anim-motion').value = pa.kind || '';
+      const psp = pa.speed != null ? pa.speed : 1, pamp = pa.amount != null ? pa.amount : 0.5;
+      $('#anim-speed').value = psp; $('#anim-speed-v').textContent = (+psp).toFixed(1);
+      $('#anim-amp').value = pamp; $('#anim-amp-v').textContent = (+pamp).toFixed(2).slice(1);
+      const clipBlock = $('#anim-clip-block');
       if (s.userData.mixer && s.userData.clips && s.userData.clips.length) {
-        anim.style.display = 'block';
+        clipBlock.style.display = 'block';
         const sel = $('#anim-clip'); sel.innerHTML = '';
         s.userData.clips.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = c.name || ('clip ' + (i + 1)); sel.appendChild(o); });
         sel.value = s.userData.animIndex || 0;
         $('#anim-play').textContent = s.userData.animPlaying ? 'Pause' : 'Play';
         $('#anim-play').classList.toggle('on', !!s.userData.animPlaying);
-      } else { anim.style.display = 'none'; }
+      } else { clipBlock.style.display = 'none'; }
+    }
+    // Skeletal rig — offer auto-rig for any single mesh; show rig + IK controls
+    // once rigged. (Groups / imported-rigged glbs have no editable geometry.)
+    const rg = $('#rig-group');
+    if (rg) {
+      const isRigged = !!s.userData.rig;
+      const canRig = isRigged || (s.geometry && s.geometry.attributes && s.geometry.attributes.position && !s.userData.mixer && !s.userData.isBlobDot);
+      rg.style.display = canRig ? 'block' : 'none';
+      if (canRig) {
+        $('#rig-controls').style.display = isRigged ? 'block' : 'none';
+        $('#rig-make').textContent = isRigged ? 'Re-rig skeleton' : 'Auto-rig skeleton';
+        $('#rig-ik').classList.toggle('on', !!s.userData.ikActive);
+      }
     }
     // Sync deform sliders to the selected object's stored deform state.
     const df = s.userData.deform || {};
@@ -1272,6 +1566,7 @@ function tick(now) {
   stepPhysics(dt);
   updateFurDynamics();
   for (const o of objects) { if (o.userData.mixer) o.userData.mixer.update(dt); }   // animated glb playback
+  driveProcAnim(dt);   // rig-free procedural motion (spin / bob / swim / …)
   for (const s of sims) s.update(dt);
   orbit.update();
   renderer.render(scene, camera);
@@ -1345,13 +1640,20 @@ function serializeScene() {
     if (o.userData.isBlobDot) continue;
     if (!o.userData.kind && !o.userData.svgText) continue;   // only reconstructable
     const m = o.material;
+    // For a procedurally-animated object the live transform is mid-motion;
+    // persist the captured rest pose so reload reconstructs the resting state.
+    const b = o.userData.procBase;
+    const pos = b ? b.p.toArray() : o.position.toArray();
+    const rot = b ? [b.r.x, b.r.y, b.r.z] : [o.rotation.x, o.rotation.y, o.rotation.z];
+    const scl = b ? b.s.toArray() : o.scale.toArray();
     objs.push({
       kind: o.userData.kind || null, svgText: o.userData.svgText || null, extrude: o.userData.extrude || null,
-      pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scl: o.scale.toArray(),
+      pos, rot, scl,
       mode: o.userData.mode || 'solid', color: (m && m.color) ? '#' + m.color.getHexString() : '#cccccc',
       rough: m && 'roughness' in m ? m.roughness : null, metal: m && 'metalness' in m ? m.metalness : null,
       trans: m && 'transmission' in m ? m.transmission : null, ior: m && 'ior' in m ? m.ior : null,
       deform: o.userData.deform || null, fur: o.userData.fur ? (o.userData.fur.userData.furLen || 0.28) : null,
+      proc: o.userData.proc ? { kind: o.userData.proc.kind, speed: o.userData.proc.speed, amount: o.userData.proc.amount } : null,
     });
   }
   const blob = liveBlob && liveBlob.sources.length
@@ -1376,6 +1678,7 @@ function restoreScene(data) {
     o.material.needsUpdate = true;
     if (d.deform) { o.userData.deform = d.deform; applyDeformers(o); }
     if (d.fur) buildFur(o, d.fur);
+    if (d.proc && d.proc.kind) setProcAnim(o, d.proc.kind, d.proc.speed, d.proc.amount);
   }
   if (data.blob && Array.isArray(data.blob.sources)) data.blob.sources.forEach(sp => addBlobSource(new THREE.Vector3().fromArray(sp.p), sp.r, data.blob.color));
   select([]); return true;
@@ -1539,7 +1842,7 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
   try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}
 })();
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, autoRig, enableIK, disableIK, bakeClipFor, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
 </script>
 </body>
 </html>
