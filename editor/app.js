@@ -55511,10 +55511,10 @@ const APP_NODE_TOOLS = {
     glyph: "⬚", label: "Voxel editor", tool: "/editor/tools/voxel3d/index.html",
     prefix: "voxel", stateField: "grid",
     canonical: (b, id) => `source/${b}/voxel-${id}.json`,
-    baked:     (b, id) => `source/${b}/voxel-${id}.json`,
-    canonicalIsBaked: true, imports: true,
+    baked:     (b, id) => `source/${b}/models/voxel-${id}.glb`,
+    canonicalIsBaked: false, imports: true,
     inTitle: "Wire a 3D-gen / .glb asset to import, or an Agent to edit.",
-    outTitle: "Pipe the voxel scene (.json) into a downstream consumer.",
+    outTitle: "Pipe the baked .glb mesh into a 3D consumer (model-viewer / 3D editor / prototype).",
   },
   "synth": {
     glyph: "∿", label: "Synth / percussion", tool: "/editor/tools/synth/index.html",

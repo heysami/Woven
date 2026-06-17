@@ -3299,8 +3299,8 @@ KIND_IO = {
         ],
     },
     "voxel-3d": {
-        "provides": [{"port": "out", "label": "Voxel scene", "tags": ["asset", "3d"],
-                       "resolve": "bakedFile", "resolveArgs": {"ext": "json"}}],
+        "provides": [{"port": "out", "label": "3D mesh (.glb)", "tags": ["asset", "3d"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "glb"}}],
         "accepts":  [
             {"port": "in", "label": "Model / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/voxel-{id}.json",

@@ -199,6 +199,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const $ = s => document.querySelector(s);
 
@@ -673,15 +674,42 @@ let lastEmitted = '', emitTimer = null, gotInit = false;
 function post(type, extra) {
   try { parent.postMessage(Object.assign({ type, nodeId }, extra || {}), '*'); } catch (e) {}
 }
-// USER edit → debounce ~700ms → emit voxel:state (guarded against echo).
+// Export the live voxel meshes to a binary glTF (.glb) data URL. This is the
+// node's downstream DELIVERABLE — a real 3D object usable by model-viewer /
+// the 3D editor's import / a prototype — while the JSON sidecar stays the
+// agent-editable canonical. Clones the per-palette meshes into a detached
+// group (a mesh can't live in two parents); clones share geometry/material,
+// which the exporter reads fine. Resolves null on an empty scene / failure.
+const _gltfExporter = new GLTFExporter();
+function _abToB64(buf) {
+  let bin = ''; const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function exportGLB() {
+  return new Promise((resolve) => {
+    try {
+      const grp = new THREE.Group();
+      for (const m of meshes.values()) { if (m && m.geometry) grp.add(m.clone()); }
+      if (grp.children.length === 0) { resolve(null); return; }
+      _gltfExporter.parse(grp,
+        (result) => { try { resolve('data:model/gltf-binary;base64,' + _abToB64(result)); } catch (e) { resolve(null); } },
+        () => resolve(null),
+        { binary: true });
+    } catch (e) { resolve(null); }
+  });
+}
+// USER edit → debounce ~700ms → emit voxel:state {state, baked:.glb} (echo-guarded).
 function scheduleEmit() {
   if (!EMBEDDED) { blip('Saved'); return; }
   clearTimeout(emitTimer);
-  emitTimer = setTimeout(() => {
+  emitTimer = setTimeout(async () => {
     const s = JSON.stringify(serializeState());
     if (s === lastEmitted) return;
     lastEmitted = s;
-    post('voxel:state', { state: JSON.parse(s) });
+    let baked = null;
+    try { const glb = await exportGLB(); if (glb) baked = { dataUrl: glb }; } catch (e) {}
+    post('voxel:state', { state: JSON.parse(s), baked: baked || undefined });
   }, 700);
 }
 
