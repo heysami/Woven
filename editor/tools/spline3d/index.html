@@ -123,6 +123,21 @@
       </div>
       <div class="empty" style="padding:6px 4px;font-size:11px">Autosaves in this browser per node. <b>Bake</b> writes the scene into the project (a .scene.json sidecar) so it travels with the repo and loads on any machine. Imported .glb / baked meshes aren't serialised.</div>
     </div>
+    <div class="group" id="scene-anim-group">
+      <div class="label">Scene motion <span class="tag">whole model</span></div>
+      <div class="field"><label>Motion</label><select id="scene-motion">
+        <option value="">None (static)</option>
+        <option value="swim">Swim · undulate as one</option>
+        <option value="sway">Sway · gentle roll</option>
+        <option value="bob">Bob · up &amp; down</option>
+        <option value="float">Float · idle hover</option>
+        <option value="spin">Spin · turntable</option>
+        <option value="pulse">Pulse · breathe</option>
+      </select></div>
+      <div class="field"><label>Speed</label><input type="range" id="scene-speed" min="0.1" max="4" step="0.1" value="1"/><span class="val" id="scene-speed-v">1.0</span></div>
+      <div class="field"><label>Amount</label><input type="range" id="scene-amp" min="0" max="1" step="0.05" value="0.5"/><span class="val" id="scene-amp-v">.50</span></div>
+      <div class="empty" style="padding:4px 2px;font-size:11px">Animates every object together around a shared pivot — for multi-part models (a finned orca, a robot). Bakes into the .glb on export.</div>
+    </div>
     <div id="empty" class="empty">Add a shape from the toolbar.<br/>Shift-click two objects for a <b>Boolean</b> op.<br/>Try the <b>Cloth</b> &amp; <b>Liquid</b> tools at the bottom.</div>
 
     <div id="inspector" style="display:none">
@@ -1162,7 +1177,68 @@ function driveProcAnim(dt) {
 
     if (o.userData.proc && o.userData.procBase && !o.userData.procDrag) applyProcPose(o, procT);
   }
+  if (sceneAnim) applyScenePose(procT);
 }
+
+// ── Scene-level (whole-model) animation ─────────────────────────────────────
+// Moves EVERY object together as one rigid body around a shared pivot — the
+// right motion for a multi-part assembly (a finned orca, a robot) where per-
+// object motion would fling the pieces apart. An object that owns a per-object
+// `proc` is left to its own motion. Authored by hand in the .scene.json via a
+// top-level `anim` field, or set from the Scene-motion control.
+let sceneAnim = null;   // { kind, speed, amount, pivot, bases:Map<obj,{p,r,s}> }
+const _sa = { q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3() };
+function restoreSceneBases() { if (sceneAnim) for (const [o, b] of sceneAnim.bases) { o.position.copy(b.p); o.quaternion.copy(b.r); o.scale.copy(b.s); } }
+function setSceneAnim(kind, speed, amount) {
+  restoreSceneBases();
+  if (!kind) { sceneAnim = null; return; }
+  const bases = new Map(), box = new THREE.Box3();
+  for (const o of objects) { if (o.userData.isBlobDot) continue; bases.set(o, { p: o.position.clone(), r: o.quaternion.clone(), s: o.scale.clone() }); box.expandByObject(o); }
+  const pivot = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+  sceneAnim = { kind, speed: speed != null ? speed : 1, amount: amount != null ? amount : 0.5, pivot, bases };
+}
+function applyScenePose(tAbs) {
+  if (!sceneAnim) return;
+  const sp = sceneAnim.speed || 1, amp = sceneAnim.amount != null ? sceneAnim.amount : 0.5, t = tAbs * sp, pivot = sceneAnim.pivot;
+  let yaw = 0, roll = 0, dy = 0, k = 1;
+  switch (sceneAnim.kind) {
+    case 'spin':  yaw = tAbs * sp * 0.9; break;
+    case 'sway':  yaw = Math.sin(t) * amp * 0.5; roll = Math.cos(t * 0.8) * amp * 0.18; break;
+    case 'swim':  yaw = Math.sin(t * 1.4) * amp * 0.6; roll = Math.sin(t * 1.4 + 1.1) * amp * 0.12; dy = Math.sin(t * 2.8) * amp * 0.18; break;
+    case 'bob':   dy = Math.sin(t * 2) * amp * 0.3; break;
+    case 'float': dy = Math.sin(t * 1.5) * amp * 0.22; yaw = Math.sin(t * 0.6) * amp * 0.25; break;
+    case 'pulse': k = 1 + Math.sin(t * 2) * amp * 0.12; break;
+  }
+  _sa.e.set(0, yaw, roll); _sa.q.setFromEuler(_sa.e);
+  for (const [o, b] of sceneAnim.bases) {
+    if (o.userData.proc) continue;   // object owns its own motion
+    _sa.v.copy(b.p).sub(pivot).multiplyScalar(k).applyQuaternion(_sa.q).add(pivot); _sa.v.y += dy;
+    o.position.copy(_sa.v);
+    o.quaternion.copy(_sa.q).multiply(b.r);
+    o.scale.copy(b.s).multiplyScalar(k);
+  }
+}
+// Bake the whole-model motion into ONE glTF clip carrying a track per object.
+function bakeSceneClips() {
+  if (!sceneAnim) return [];
+  const sp = sceneAnim.speed || 1, kind = sceneAnim.kind;
+  const baseFreq = ({ spin: sp * 0.9, bob: sp * 2, pulse: sp * 2, sway: sp, swim: sp * 1.4, float: sp * 0.6 })[kind] || sp;
+  const dur = Math.max(0.2, (2 * Math.PI) / baseFreq), fps = 30, frames = Math.max(2, Math.round(dur * fps));
+  const govern = [...sceneAnim.bases.keys()].filter(o => !o.userData.proc && !o.userData.isBlobDot && o.name);
+  if (!govern.length) return [];
+  const times = [], buf = govern.map(() => ({ p: [], q: [], s: [] }));
+  for (let f = 0; f < frames; f++) {
+    const t = f * dur / frames; times.push(t); applyScenePose(t);
+    govern.forEach((o, i) => { buf[i].p.push(o.position.x, o.position.y, o.position.z); buf[i].q.push(o.quaternion.x, o.quaternion.y, o.quaternion.z, o.quaternion.w); buf[i].s.push(o.scale.x, o.scale.y, o.scale.z); });
+  }
+  applyScenePose(procT);   // restore live pose
+  const tracks = [];
+  govern.forEach((o, i) => { const nm = o.name; tracks.push(new THREE.VectorKeyframeTrack(nm + '.position', times, buf[i].p), new THREE.QuaternionKeyframeTrack(nm + '.quaternion', times, buf[i].q), new THREE.VectorKeyframeTrack(nm + '.scale', times, buf[i].s)); });
+  return [new THREE.AnimationClip('scene_' + kind, dur, tracks)];
+}
+$('#scene-motion').addEventListener('change', e => { setSceneAnim(e.target.value, parseFloat($('#scene-speed').value), parseFloat($('#scene-amp').value)); saveSoon(); });
+$('#scene-speed').addEventListener('input', e => { $('#scene-speed-v').textContent = (+e.target.value).toFixed(1); if (sceneAnim) sceneAnim.speed = +e.target.value; saveSoon(); });
+$('#scene-amp').addEventListener('input', e => { $('#scene-amp-v').textContent = (+e.target.value).toFixed(2).slice(1); if (sceneAnim) sceneAnim.amount = +e.target.value; saveSoon(); });
 
 // ── Skeletal rig + Inverse Kinematics ───────────────────────────────────────
 // Auto-rig: a bone chain down the mesh's long axis + envelope (distance-along-
@@ -1413,6 +1489,7 @@ $('#export').addEventListener('click', () => {
   const clips = [], moved = [];
   objects.forEach(o => { if (o.userData.isBlobDot) return; const c = bakeClipFor(o); if (c) clips.push(c); moved.push({ o, p: o.parent || scene }); group.add(o); });
   sims.forEach(s => { moved.push({ o: s.mesh, p: s.mesh.parent || scene }); group.add(s.mesh); });
+  clips.push(...bakeSceneClips());   // whole-model motion → one clip with a track per object
   const restore = () => { moved.forEach(({ o, p }) => p.add(o)); scene.remove(group); };
   exporter.parse(group, glb => {
     restore();
@@ -1640,12 +1717,13 @@ function serializeScene() {
     if (o.userData.isBlobDot) continue;
     if (!o.userData.kind && !o.userData.svgText) continue;   // only reconstructable
     const m = o.material;
-    // For a procedurally-animated object the live transform is mid-motion;
-    // persist the captured rest pose so reload reconstructs the resting state.
-    const b = o.userData.procBase;
-    const pos = b ? b.p.toArray() : o.position.toArray();
-    const rot = b ? [b.r.x, b.r.y, b.r.z] : [o.rotation.x, o.rotation.y, o.rotation.z];
-    const scl = b ? b.s.toArray() : o.scale.toArray();
+    // A procedurally / scene animated object's live transform is mid-motion;
+    // persist its captured REST pose so reload reconstructs the resting state.
+    const b = o.userData.procBase, sb = (sceneAnim && !o.userData.proc) ? sceneAnim.bases.get(o) : null;
+    let pos, rot, scl;
+    if (b) { pos = b.p.toArray(); rot = [b.r.x, b.r.y, b.r.z]; scl = b.s.toArray(); }
+    else if (sb) { pos = sb.p.toArray(); const e = new THREE.Euler().setFromQuaternion(sb.r); rot = [e.x, e.y, e.z]; scl = sb.s.toArray(); }
+    else { pos = o.position.toArray(); rot = [o.rotation.x, o.rotation.y, o.rotation.z]; scl = o.scale.toArray(); }
     objs.push({
       kind: o.userData.kind || null, svgText: o.userData.svgText || null, extrude: o.userData.extrude || null,
       pos, rot, scl,
@@ -1659,7 +1737,13 @@ function serializeScene() {
   const blob = liveBlob && liveBlob.sources.length
     ? { color: '#' + liveBlob.mc.material.color.getHexString(), sources: liveBlob.sources.map(s => ({ p: s.dot.position.toArray(), r: s.dot.userData.r })) }
     : null;
-  return { v: 1, objects: objs, blob };
+  const anim = sceneAnim ? { kind: sceneAnim.kind, speed: sceneAnim.speed, amount: sceneAnim.amount } : null;
+  return {
+    v: 1,
+    // Self-documenting schema hint for agents that author/edit this file. Ignored on import.
+    _doc: "objects[]: {kind:box|sphere|cylinder|cone|torus|torusknot|icosahedron|pyramid|helix, pos:[x,y,z], rot:[x,y,z], scl:[x,y,z], color:'#hex', rough, metal, trans, ior}. ANIMATION: per-object 'proc':{kind,speed,amount} animates ONE object; top-level 'anim':{kind,speed,amount} animates the WHOLE model together (use this for multi-part creatures). motion kinds: spin|bob|float|sway|swim|pulse. speed 0.1-4, amount 0-1. Both bake into glTF clips on export and play live in the editor.",
+    objects: objs, anim, blob,
+  };
 }
 function restoreScene(data) {
   if (!data || !Array.isArray(data.objects)) return false;
@@ -1681,6 +1765,12 @@ function restoreScene(data) {
     if (d.proc && d.proc.kind) setProcAnim(o, d.proc.kind, d.proc.speed, d.proc.amount);
   }
   if (data.blob && Array.isArray(data.blob.sources)) data.blob.sources.forEach(sp => addBlobSource(new THREE.Vector3().fromArray(sp.p), sp.r, data.blob.color));
+  if (data.anim && data.anim.kind) {
+    setSceneAnim(data.anim.kind, data.anim.speed, data.anim.amount);
+    const sm = $('#scene-motion'); if (sm) sm.value = data.anim.kind;
+    if ($('#scene-speed')) { $('#scene-speed').value = sceneAnim.speed; $('#scene-speed-v').textContent = (+sceneAnim.speed).toFixed(1); }
+    if ($('#scene-amp')) { $('#scene-amp').value = sceneAnim.amount; $('#scene-amp-v').textContent = (+sceneAnim.amount).toFixed(2).slice(1); }
+  }
   select([]); return true;
 }
 gizmo.addEventListener('objectChange', saveSoon);
@@ -1842,7 +1932,7 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
   try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}
 })();
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, autoRig, enableIK, disableIK, bakeClipFor, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, autoRig, enableIK, disableIK, bakeClipFor, setSceneAnim, bakeSceneClips, get sceneAnim(){ return sceneAnim; }, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
 </script>
 </body>
 </html>

@@ -164,6 +164,16 @@ node's `io` contract (see [NODE_IO_FRAMEWORK.md](NODE_IO_FRAMEWORK.md)). Honour 
   that path is a **JSON document**. Read it, modify the JSON, write it back to the
   **same path**. Do NOT write a sibling file and do NOT hand-edit the baked
   `.html`/`.svg` — the editor re-imports the JSON, not the presentation file.
+  - **spline-3d scenes are ANIMATABLE — never tell the user the format is
+    static/posed-only.** The `.scene.json` accepts a top-level
+    `"anim": {"kind","speed","amount"}` that animates the WHOLE model as one
+    body (the right choice for a multi-part creature like an orca — per-part
+    motion would fling the pieces apart) and a per-object
+    `"proc": {"kind","speed","amount"}` for single-object motion. Motion kinds:
+    `spin | bob | float | sway | swim | pulse`. Both play live AND bake into
+    glTF clips on export. A swimming orca = author the parts + add
+    `"anim": {"kind":"swim","speed":1,"amount":0.6}`. See the `spline-3d` entry
+    in `registry.py` for the full schema.
 - When it says **"Write your `<assetKind>` output to `<path>`"**, produce exactly
   that format (the `assetKind` tells you svg vs html vs png vs …).
 - Upstream context already carries baked composer/vector/spline content and

@@ -1769,7 +1769,20 @@ KINDS = {
             "the scene to source/<branch>/spline-<id>.scene.json; downstream "
             "consumers read that sidecar as a 3D asset via bakedPath. An agent "
             "wired to the `edit` port may rewrite the .scene.json (read it, edit "
-            "the JSON, write it back) and the node re-imports it live."
+            "the JSON, write it back) and the node re-imports it live. "
+            "SCENE JSON IS ANIMATABLE — do NOT tell the user it's a static/posed "
+            "format. Schema: {v:1, objects:[{kind, pos:[x,y,z], rot:[x,y,z], "
+            "scl:[x,y,z], color:'#hex', rough, metal, trans, ior, "
+            "proc:{kind,speed,amount}|null}], anim:{kind,speed,amount}|null}. "
+            "ANIMATION: set a top-level `anim` to move the WHOLE model together "
+            "as one body (use this for multi-part creatures — a finned orca, a "
+            "robot — where per-part motion would fling pieces apart); set a "
+            "per-object `proc` to animate ONE object. motion kinds: spin | bob | "
+            "float | sway | swim | pulse (speed 0.1-4, amount 0-1). Both play "
+            "live in the editor AND bake into glTF AnimationClips on Export .glb, "
+            "so they survive into <model-viewer> / GLTFLoader on a website. "
+            "For a swimming orca: author the parts, then add "
+            "\"anim\": {\"kind\": \"swim\", \"speed\": 1, \"amount\": 0.6}."
         ),
     },
 
