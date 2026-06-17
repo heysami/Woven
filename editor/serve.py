@@ -18448,9 +18448,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
         if state.done:
             return self._reply(409, {"error": "run already finished"})
-        # Non-live runs route to /resume rather than erroring (see is_live).
+        # Non-live runs (history-rehydrated ghost, proc=None) have no stdin to
+        # write — the continuation path is /resume (re-spawn with --resume). The
+        # message text is chosen so the composer's dispatch() fallback treats it
+        # as "process gone" and auto-retries via /resume (it matches on "not
+        # running"); needsResume is the explicit signal for any future caller.
+        # See RunState.is_live and app.js dispatch().
         if not state.is_live:
-            return self._reply(409, {"error": "agent stdin not available", "needsResume": True})
+            return self._reply(409, {
+                "error": "agent process is not running — resume to continue",
+                "needsResume": True,
+            })
         try:
             state.proc.stdin.write(_claude_user_frame(text))
             state.proc.stdin.flush()
@@ -18600,7 +18608,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not state:
                 return self._reply(404, {"error": "unknown runId", "runId": run_id,
                                           "hint": "tried to rehydrate from JSONL but the run wasn't found in any branch under the project"})
-        if not state.done:
+        # Reject resume only when a LIVE process is attached — then the caller
+        # must write to its stdin via /user-message. A non-live run (cleanly
+        # finished, OR a history-rehydrated ghost with proc=None and possibly
+        # done=False) is exactly what resume exists for: re-spawn with --resume
+        # <session_id>. Gating on `done` alone stranded ghost mid-flight runs
+        # (done=False + proc=None), which /user-message ALSO refuses — a
+        # two-endpoint deadlock the user saw as "agent stdin not available".
+        # See RunState.is_live.
+        if state.is_live:
             return self._reply(409, {
                 "error": "run is still active; use /user-message instead",
             })
