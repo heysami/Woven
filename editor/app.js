@@ -51459,11 +51459,31 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   // and non-asset inputs (text/agent edit) are excluded — matching the prior
   // per-kind walk exactly. .glb assets surface as `glb-import` (still an asset
   // node), preserved here for parity though the composer can't render them.
-  const _composerInputs = useUpstreamInputs(node, allNodes, allEdges);
+  const _composerInputsRaw = useUpstreamInputs(node, allNodes, allEdges);
+  // v4.1 — a wired Layer node IS a composer layer: expand it into its child
+  // asset (the asset wired into the Layer's in-port), carrying the layer's
+  // spec (opacity/blend/visible) so "Layer = one composer layer" works.
+  const _composerInputs = useMemo(() => {
+    const out = [];
+    for (const i of _composerInputsRaw) {
+      if (i.type === "layer") {
+        const child = (i.children || []).find(c => c.type === "asset" || c.type === "glb-import");
+        if (child) out.push({ ...child, _layerSpec: i.spec || {} });
+        continue;
+      }
+      out.push(i);
+    }
+    return out;
+  }, [_composerInputsRaw]);
   const wiredAssetIds = useMemo(
     () => _composerInputs.filter(i => i.type === "asset" || i.type === "glb-import").map(i => i.fromId),
     [_composerInputs]
   );
+  const _layerSpecById = useMemo(() => {
+    const m = {};
+    for (const i of _composerInputs) if (i._layerSpec && i.fromId) m[i.fromId] = i._layerSpec;
+    return m;
+  }, [_composerInputs]);
 
   // v3.4.44 — Merge: layers state defines render ORDER + per-layer settings.
   //   1. Drop layer entries whose edge is gone (orphans). Previously these
@@ -51480,15 +51500,16 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const known = new Set(existing.map(l => l.assetId));
     for (const aid of wiredAssetIds) {
       if (!known.has(aid)) {
+        const ls = _layerSpecById[aid] || {};
         existing.push({
-          assetId: aid, opacity: 1, anchor: "center",
-          offsetX: 0, offsetY: 0, width: null, height: null, visible: true,
+          assetId: aid, opacity: typeof ls.opacity === "number" ? ls.opacity : 1, anchor: "center",
+          offsetX: 0, offsetY: 0, width: null, height: null, visible: ls.visible !== false,
         });
         known.add(aid);
       }
     }
     return existing;
-  }, [node.layers, wiredAssetIds]);
+  }, [node.layers, wiredAssetIds, _layerSpecById]);
 
   // Push the synthesised layers back onto the node when new edges arrived
   // so the state persists across reloads. Only triggers when something

@@ -212,21 +212,22 @@ function buildWiredRuntimeLayers(){
     const posK   = kids.find(k=>k&&k.type==='position');
     const trigK  = kids.find(k=>k&&k.type==='trigger');
     const effK   = kids.filter(k=>k&&k.type==='effect');
-    // content from the asset child (fall back to a label/text marker)
+    // content from the asset child. NOTE the resolved asset child carries
+    // `kind:"asset"` (the NODE kind) + `assetKind` as a RENDER type
+    // ("img"/"video"/"iframe") + a ready `url` — so key off the url and the
+    // render type, defaulting any wired asset with a url to an image.
     let content;
-    if(assetK){
-      const kind=assetK.kind||assetK.assetKind;
-      if(kind==='image'||kind==='video'){
-        // register so Assets.meta/.image/.video can resolve it
-        const aid=assetK.id||assetK.assetId||('wa'+wi);
-        if(assetK.url && !CONTENT.find(c=>c.id===aid))
-          CONTENT.push({id:aid,url:assetK.url,kind,label:assetK.label||aid});
-        content={kind:'asset',assetId:aid};
-      } else if(kind==='text'||assetK.text!=null){
-        content={kind:'text',text:assetK.text||assetK.label||'WIRED',color:assetK.color||'#ffffff'};
-      } else {
-        content={kind:'shape',shape:'rect',color:assetK.color||'#b388ff'};
-      }
+    if(assetK && assetK.url){
+      const rk=String(assetK.assetKind||assetK.kind||'').toLowerCase();
+      const vis=(rk==='video'||rk==='mp4'||rk==='webm') ? 'video' : 'image';
+      const aid=assetK.fromId||assetK.id||assetK.assetId||('wa'+wi);
+      if(!CONTENT.find(c=>c.id===aid))
+        CONTENT.push({id:aid,url:assetK.url,kind:vis,label:assetK.label||aid});
+      content={kind:'asset',assetId:aid};
+    } else if(assetK && assetK.text!=null){
+      content={kind:'text',text:assetK.text||assetK.label||'WIRED',color:assetK.color||'#ffffff'};
+    } else if(assetK){
+      content={kind:'shape',shape:'rect',color:assetK.color||'#b388ff'};
     } else {
       content={kind:'generator',color:'#b388ff'};
     }
