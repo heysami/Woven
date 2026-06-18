@@ -23515,7 +23515,6 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Vector editor",
     provides: { out: { label: "Baked SVG", tags: ["asset"] } },
     accepts:  { in:   { label: "Trace image", tags: ["asset", "layer"] },
-                pos:  { label: "Position", tags: ["position"] },
                 edit: { label: "Edit vector", tags: ["text-gen", "asset-gen"] } },
   },
   "spline-3d": {
@@ -51485,6 +51484,16 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     return m;
   }, [_composerInputs]);
 
+  // v4.1 — Wired Position node. Composer positioning is HTML/anchor-based by
+  // default; when a Position is wired it can arrange the layers on a grid
+  // instead. `node.positionMode` toggles between "html" (manual anchors) and
+  // "grid" (position-driven); default = apply the wired position unless the
+  // user opted back to "html".
+  const _posSpec = useMemo(
+    () => (_composerInputs.find(i => i.type === "position") || {}).spec || null,
+    [_composerInputs]
+  );
+  const _posActive = !!_posSpec && node.positionMode !== "html";
   // v3.4.44 — Merge: layers state defines render ORDER + per-layer settings.
   //   1. Drop layer entries whose edge is gone (orphans). Previously these
   //      were preserved as "ghost" entries so a re-wire would restore their
@@ -51524,6 +51533,39 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
 
   const canvasW = node.canvasW || 1600;
   const canvasH = node.canvasH || 900;
+  // When a Position is active, map a layer index → grid-cell geometry that
+  // overrides the layer's manual anchor/offset/size (live render + bake).
+  const _gridGeomFor = useMemo(() => {
+    if (!_posActive) return null;
+    const p = (_posSpec && _posSpec.params) || {};
+    const mode = _posSpec && _posSpec.mode;
+    const count = Math.max(1, layers.length);
+    const cols = Math.max(1, Math.round(p.cols || Math.ceil(Math.sqrt(count))));
+    const rows = Math.max(1, Math.round(p.rows || Math.ceil(count / cols)));
+    const gap = p.gap != null ? p.gap : 0;
+    const cellW = (canvasW - gap * (cols + 1)) / cols;
+    const cellH = (canvasH - gap * (rows + 1)) / rows;
+    // optional deterministic shuffle for placement:"random"
+    const order = layers.map((_, i) => i);
+    if (p.placement === "random") {
+      for (let i = order.length - 1; i > 0; i--) { const j = (i * 1103515245 + 12345) % (i + 1); const t = order[i]; order[i] = order[j]; order[j] = t; }
+    }
+    const slotByLayer = {}; order.forEach((layerIdx, slot) => { slotByLayer[layerIdx] = slot; });
+    return (i) => {
+      if (mode && mode !== "grid" && mode !== "single") {
+        // non-grid 2D modes fall back to a single centered placement
+        return { anchor: "center", offsetX: 0, offsetY: 0, width: null, height: null };
+      }
+      const slot = slotByLayer[i] != null ? slotByLayer[i] : i;
+      const col = slot % cols, row = Math.floor(slot / cols);
+      return {
+        anchor: "top-left",
+        offsetX: gap + col * (cellW + gap),
+        offsetY: gap + row * (cellH + gap),
+        width: cellW, height: cellH,
+      };
+    };
+  }, [_posActive, _posSpec, layers.length, canvasW, canvasH]);
   const [activeLayerIdx, setActiveLayerIdx] = useState(null);
   // v3.4.39 — Live drag state (uncommitted offsets/sizing during a
   // mousemove). We mutate this ref inline on every frame and read it in
@@ -51851,7 +51893,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       // so the rest of the composition still bakes successfully.
       for (let i = 0; i < layers.length; i++) {
         try {
-          const layer = layers[i];
+          const layer = _gridGeomFor ? { ...layers[i], ..._gridGeomFor(i) } : layers[i];
           if (!layer.visible) continue;
           if (!wiredAssetIds.includes(layer.assetId)) continue;
           const assetNode = (allNodes || []).find(n => n.id === layer.assetId);
@@ -52067,7 +52109,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         : baseMsg;
       setBakeState({ phase: "error", error: fullMsg, warnings: errs });
     }
-  }, [node.id, node.maxWidth, node.maxHeight, node.background, canvasW, canvasH, layers, wiredAssetIds, allNodes, allEdges, onChange, onBakeAutoCreateOutput, bakeBranch, composerSidecarPath]);
+  }, [node.id, node.maxWidth, node.maxHeight, node.background, canvasW, canvasH, layers, wiredAssetIds, allNodes, allEdges, onChange, onBakeAutoCreateOutput, bakeBranch, composerSidecarPath, _gridGeomFor]);
 
   return html`
     <div
@@ -52189,7 +52231,9 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
             const kind = _composerAssetKind(assetNode);
             // v3.4.39 — use the live (drag-overridden) layer for paint so
             // dragging is real-time without React state per frame.
-            const liveLayer = liveLayerAt(i);
+            // v4.1 — when a Position is active, grid geometry overrides the
+            // manual anchor/offset/size.
+            const liveLayer = _gridGeomFor ? { ...liveLayerAt(i), ..._gridGeomFor(i) } : liveLayerAt(i);
             const style = _composerLayerStyle(liveLayer, canvasW, canvasH);
             // Allow pointer events on the layer wrapper so the user can grab
             // it and drag to move; let inner img/video keep their default
@@ -52307,6 +52351,26 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           </div>
         `}
         <div className="workflow-composer-canvas-controls">
+          ${_posSpec && html`
+            <div className="workflow-composer-section">
+              <div className="workflow-composer-section-head">Layout</div>
+              <div className="workflow-composer-seg" role="radiogroup" aria-label="Layout mode" style=${{ display: "flex", gap: "4px" }}>
+                <button
+                  className=${"workflow-composer-seg-btn" + (!_posActive ? " is-on" : "")}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onClick=${(e) => { e.stopPropagation(); onChange({ positionMode: "html" }); }}
+                  title="HTML/anchor layout — drag layers freely on the stage."
+                >HTML</button>
+                <button
+                  className=${"workflow-composer-seg-btn" + (_posActive ? " is-on" : "")}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onClick=${(e) => { e.stopPropagation(); onChange({ positionMode: "grid" }); }}
+                  title=${"Position-driven layout — arrange layers via the wired Position node (" + (_posSpec.mode || "grid") + ")."}
+                >Position</button>
+              </div>
+              <div className="workflow-composer-hint">${_posActive ? "Layers arranged by the wired Position node." : "Manual anchors; wire-driven layout off."}</div>
+            </div>
+          `}
           <div className="workflow-composer-section">
             <div className="workflow-composer-section-head">Canvas</div>
             <div className="workflow-composer-pos-grid">
