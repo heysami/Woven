@@ -204,6 +204,9 @@ function wiredRuntimeLayers(){
   _wiredCacheVer = _wiredVer;
   return _wiredCache;
 }
+function wiredChildSpec(k){
+  return (k && k.spec && typeof k.spec === 'object') ? k.spec : (k || {});
+}
 function buildWiredRuntimeLayers(){
   return (WIRED.layers||[]).map((wl,wi)=>{
     const spec=wl.spec||{};
@@ -231,16 +234,19 @@ function buildWiredRuntimeLayers(){
     } else {
       content={kind:'generator',color:'#b388ff'};
     }
+    const posSpec = wiredChildSpec(posK);
+    const trigSpec = wiredChildSpec(trigK);
     const positioning = posK
-      ? Object.assign({mode:posK.mode||'single'}, posK.params||{})
+      ? Object.assign({mode:posSpec.mode||'single'}, posSpec.params||{})
       : {mode:'single',x:0.5,y:0.5,scale:1,rot:0};
     const trigger = trigK
-      ? Object.assign({source:trigK.source||'none', impacts:trigK.impacts||[]}, trigK.params||{})
+      ? Object.assign({source:trigSpec.source||'none', impacts:trigSpec.impacts||[]}, trigSpec.params||{})
       : {source:'none',impacts:[]};
     // map fx.js taxonomy → the editor GLFx built-in shader set for layer effects
     const stack = effK.map(e=>{
-      const ty = e.glsl ? 'shader' : mapGLFxType(e.type);
-      return {type:ty, params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl};
+      const fx = wiredChildSpec(e);
+      const ty = fx.glsl ? 'shader' : mapGLFxType(fx.type);
+      return {type:ty, params:fx.params||{}, intensity:fx.intensity??1, glsl:fx.glsl};
     });
     const L = fillLayer({
       id: wl.id || ('W'+wi),

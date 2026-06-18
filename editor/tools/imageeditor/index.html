@@ -472,6 +472,9 @@ function compose(targetCanvas){
       const src = layerById(l.maskBy);
       if(src && src.canvas && src.visible!==false) applyMask(_tmp, src.canvas);
     }
+    if(l.source==='wired' && l.wiredEffects && l.wiredEffects.length){
+      applyEffectStack(_tmp, l.wiredEffects);
+    }
 
     ctx.save();
     ctx.globalAlpha = (l.opacity==null?1:l.opacity);
@@ -488,8 +491,7 @@ function compose(targetCanvas){
 
 // Run the wired shader-lab effect chain over an already-flattened canvas, in
 // place. intensity 0 / empty list / missing fx are exact passthroughs.
-function applyWiredEffects(canvas){
-  const fx = WIRED.effects;
+function applyEffectStack(canvas, fx){
   if(!fx || !fx.length || !fxChain) return;
   try{
     const result = fxChain.apply(canvas, fx);   // -> a detached HTMLCanvasElement
@@ -499,6 +501,9 @@ function applyWiredEffects(canvas){
       ctx.drawImage(result,0,0,canvas.width,canvas.height);
     }
   }catch(e){ console.warn('[imageeditor] effect chain failed; skipped',e); }
+}
+function applyWiredEffects(canvas){
+  applyEffectStack(canvas, WIRED.effects);
 }
 
 // Dispatch an adjustment layer onto the working canvas.
@@ -1282,10 +1287,28 @@ function wiredAssetUrl(node){
   // tolerate a flatter shape: {url} directly on the node
   return node && (node.url||node.src) || null;
 }
+function wiredChildSpec(k){
+  return (k && k.spec && typeof k.spec === 'object') ? k.spec : (k || {});
+}
+function wiredLayerPosition(node){
+  const kids = (node && Array.isArray(node.children)) ? node.children : [];
+  const child = kids.find(c=>c && c.type==='position');
+  return child ? wiredChildSpec(child) : null;
+}
+function wiredLayerEffects(node){
+  const kids = (node && Array.isArray(node.children)) ? node.children : [];
+  return kids.filter(c=>c && c.type==='effect').map(wiredChildSpec).filter(Boolean);
+}
+function hasAnyWiredEffects(){
+  if(WIRED.effects && WIRED.effects.length) return true;
+  return (WIRED.layers||[]).some(n=>wiredLayerEffects(n).length);
+}
 function loadWiredLayer(node){
   const spec = (node && node.spec) || {};
   const url = wiredAssetUrl(node);
   const lid = 'wired-'+(node&&node.id!=null?node.id:uid('w'));
+  const wiredPosition = wiredLayerPosition(node);
+  const wiredEffects = wiredLayerEffects(node);
   return new Promise((resolve)=>{
     const finish=(canvas)=>resolve({
       id:lid, name:spec.name||'Wired layer', type:'raster',
@@ -1293,7 +1316,7 @@ function loadWiredLayer(node){
       blend:spec.blend||'normal',
       visible:spec.visible!==false,
       canvas, srcCanvas:canvas, source:'wired', wiredId:(node&&node.id),
-      wiredZ:(spec.z==null?0:spec.z), assetUrl:url,
+      wiredZ:(spec.z==null?0:spec.z), assetUrl:url, wiredPosition, wiredEffects,
     });
     if(!url){ finish(newCanvas(DOC.w,DOC.h)); return; }   // empty layer, still managed
     const img=new Image(); img.crossOrigin='anonymous';
@@ -1330,6 +1353,8 @@ async function reconcileWiredLayers(list){
       existing.blend=spec.blend||'normal';
       existing.visible=spec.visible!==false;
       existing.wiredZ=(spec.z==null?0:spec.z);
+      existing.wiredPosition=wiredLayerPosition(node);
+      existing.wiredEffects=wiredLayerEffects(node);
       continue;
     }
     const nl=await loadWiredLayer(node);
@@ -1356,17 +1381,20 @@ function orderWiredByZ(){
 function applyWiredPositions(){
   const wired = DOC.layers.filter(l=>l.source==='wired');
   if(!wired.length) return;
-  const pos = (WIRED.positions||[]).find(p=>p && p.mode==='grid');
-  // No grid wired → restore each wired layer to its pristine full-frame pixels.
-  if(!pos){ wired.forEach(l=>{ if(l._gridded && l.srcCanvas){ l.canvas=l.srcCanvas; l._gridded=false; } }); return; }
-  const p = pos.params||{};
-  const cols = (p.cols|0)>0 ? (p.cols|0) : Math.ceil(Math.sqrt(wired.length));
-  const rows = (p.rows|0)>0 ? (p.rows|0) : Math.ceil(wired.length/cols);
-  const gap = Math.max(0, num(p.gap,0));
-  const cellW = (DOC.w - gap*(cols+1))/cols;
-  const cellH = (DOC.h - gap*(rows+1))/rows;
-  if(cellW<=0 || cellH<=0) return;
+  const globalPos = (WIRED.positions||[]).find(p=>p && p.mode==='grid');
   wired.forEach((l,i)=>{
+    const pos = l.wiredPosition || globalPos;
+    if(!pos || pos.mode!=='grid'){
+      if(l._gridded && l.srcCanvas){ l.canvas=l.srcCanvas; l._gridded=false; }
+      return;
+    }
+    const p = pos.params||{};
+    const cols = (p.cols|0)>0 ? (p.cols|0) : Math.ceil(Math.sqrt(wired.length));
+    const rows = (p.rows|0)>0 ? (p.rows|0) : Math.ceil(wired.length/cols);
+    const gap = Math.max(0, num(p.gap,0));
+    const cellW = (DOC.w - gap*(cols+1))/cols;
+    const cellH = (DOC.h - gap*(rows+1))/rows;
+    if(cellW<=0 || cellH<=0) return;
     const col=i%cols, row=Math.floor(i/cols)%rows;
     const dx=gap + col*(cellW+gap), dy=gap + row*(cellH+gap);
     // Always derive from the pristine pixels so re-gridding stays idempotent.
@@ -1521,7 +1549,7 @@ function storeWired(d){
 // Kick the fx import (if effects are wired) and re-render once it settles so the
 // post-process shows even though import resolves after the first paint.
 function ensureFXThenRender(){
-  if(WIRED.effects && WIRED.effects.length && !fxReady){
+  if(hasAnyWiredEffects() && !fxReady){
     return loadFX().then(()=>{ render(); });
   }
   render();
