@@ -870,18 +870,35 @@ function emit(){
   }, 600);
 }
 
+// A wired Layer node carries its content as children; surface a layer's child
+// image into CONTENT so the material can use it as the card image / backdrop.
+function _layerImagesToContent(d){
+  const ls = Array.isArray(d.layers) ? d.layers : [];
+  for(const wl of ls){
+    const kids = (wl && Array.isArray(wl.children)) ? wl.children : [];
+    const img = kids.find(c => c && c.type==='asset' && c.url
+      && (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(c.url) || /img|image/i.test(c.assetKind||'')));
+    if(img){
+      const id = img.fromId || img.id || ('wl-'+(wl.id||CONTENT.length));
+      if(!CONTENT.find(c=>c.id===id)) CONTENT.push({id, url:img.url, kind:'image', label:img.label||'layer image'});
+    }
+  }
+}
+
 if(EMBEDDED){
   window.addEventListener('message', ev=>{
     const d=ev.data; if(!d||typeof d!=='object') return;
     if(d.nodeId && d.nodeId!==NODE) return;
     if(d.type==='material:init'){
       if(d.content) CONTENT=d.content||[];
+      _layerImagesToContent(d);        // a wired Layer's child image is usable too
       if('effects' in d) setEffects(d.effects);
       suppressEmit=true; loadState(d.state||null); suppressEmit=false;
     } else if(d.type==='material:set-state'){
       suppressEmit=true; loadState(d.state||null); suppressEmit=false;
     } else if(d.type==='material:content'){
       CONTENT=d.content||[];
+      _layerImagesToContent(d);
       if('effects' in d) setEffects(d.effects);
       renderAll(); syncScene();
     }

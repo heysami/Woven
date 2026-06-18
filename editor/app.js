@@ -52826,11 +52826,20 @@ function WorkflowVectorEditorNode({
 
   // Wired "in" port — first image asset feeds the tracer.
   const inPortInputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
-  const wiredImageInput = useMemo(
-    () => inPortInputs.find(i => i.type === "asset" && i.url
-      && (/^image$/i.test(i.assetKind || "") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(i.url || i.path || ""))),
-    [inPortInputs]
-  );
+  const wiredImageInput = useMemo(() => {
+    const isImg = (i) => i && i.url
+      && (/^image$/i.test(i.assetKind || "") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(i.url || i.path || ""));
+    const direct = inPortInputs.find(i => i.type === "asset" && isImg(i));
+    if (direct) return direct;
+    // A wired Layer node → trace its child image (so Layer → vector works).
+    for (const i of inPortInputs) {
+      if (i.type === "layer") {
+        const child = (i.children || []).find(c => c.type === "asset" && isImg(c));
+        if (child) return child;
+      }
+    }
+    return null;
+  }, [inPortInputs]);
   const traceFileRef = useRef(null);
 
   const dragRef = useRef(null);
@@ -56078,6 +56087,23 @@ const APP_NODE_TOOLS = {
   },
 };
 
+// Normalize a resolved asset input to its MEDIUM kind (image/video/audio/svg/
+// 3d/html/…) for forwarding to tools — i.assetKind is the RENDER type
+// ("img"/"iframe"), while the asset node carries the real medium.
+function _appNodeMediumKind(i) {
+  const m = i && i.node && i.node.assetKind;
+  if (typeof m === "string" && m) return m;
+  const u = ((i && i.url) || "").toLowerCase().split("?")[0];
+  const ext = u.includes(".") ? u.split(".").pop() : "";
+  if (["png", "jpg", "jpeg", "webp", "gif", "avif"].includes(ext)) return "image";
+  if (ext === "svg") return "svg";
+  if (["mp4", "webm", "mov", "m4v"].includes(ext)) return "video";
+  if (["wav", "mp3", "ogg", "flac", "m4a"].includes(ext)) return "audio";
+  if (["glb", "gltf"].includes(ext)) return "3d";
+  if (["html", "htm"].includes(ext)) return "html";
+  return (i && i.assetKind) || "image";
+}
+
 function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
   const cfg = APP_NODE_TOOLS[node.kind];
   const w = node.w || 720;
@@ -56107,7 +56133,11 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
   const inputs = useUpstreamInputs(node, allNodes, allEdges);
   const contentAssets = useMemo(() => inputs
     .filter(i => i.type === "asset")
-    .map(i => ({ id: i.fromId, url: i.url, kind: i.assetKind, label: i.label })),
+    // Forward the MEDIUM kind (image/video/audio/svg/3d/html — from the asset
+    // node) NOT the render-type ("img"/"iframe" that i.assetKind carries), so
+    // tools that branch on kind==="image" work. Fall back to deriving a medium
+    // from the render-type / extension.
+    .map(i => ({ id: i.fromId, url: i.url, kind: _appNodeMediumKind(i), label: i.label })),
     [inputs]);
   const importUrls = useMemo(() => {
     if (!cfg.imports) return [];

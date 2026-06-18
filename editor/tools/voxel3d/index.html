@@ -1088,6 +1088,8 @@ if (EMBEDDED) {
       imports = Array.isArray(d.imports) ? d.imports : [];
       if (d.state) loadState(d.state);
       else { applyDefaults(); seedDemo(); rebuildAll(); }   // null → empty + tiny demo
+      setWiredEffects(d.effects);       // wired Effect specs → post-process chain
+      setWiredPositions(d.positions);   // wired 3D Position specs → replication
       try { lastEmitted = JSON.stringify(serializeState()); } catch (e) {}
     } else if (d.type === 'voxel:set-state') {
       gotInit = true;
@@ -1096,6 +1098,8 @@ if (EMBEDDED) {
     } else if (d.type === 'voxel:content') {
       gotInit = true;
       if (Array.isArray(d.imports)) imports = d.imports;
+      setWiredEffects(d.effects);
+      setWiredPositions(d.positions);
     }
   });
 }
