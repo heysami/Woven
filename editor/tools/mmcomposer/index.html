@@ -1038,8 +1038,12 @@ const Engine = {
     this.W=STATE.canvasW; this.H=STATE.canvasH;
     for(const cv of [this.c2d,this.cgl]){ cv.width=this.W; cv.height=this.H; }
     this.layerBuf.width=this.W; this.layerBuf.height=this.H;
-    // CSS aspect fit
-    const host=stageHost; const maxW=host.parentElement.clientWidth, maxH=host.parentElement.clientHeight;
+    // CSS aspect fit — measure from the .col.center (grandparent), not .stagewrap,
+    // because .stagewrap has no intrinsic height (its children are all absolute).
+    const host=stageHost;
+    const col=host.parentElement.parentElement;
+    const maxW=col.clientWidth||host.parentElement.clientWidth,
+          maxH=col.clientHeight||host.parentElement.clientHeight;
     const ar=this.W/this.H; let w=maxW, h=maxW/ar; if(h>maxH){ h=maxH; w=maxH*ar; }
     host.style.width=w+'px'; host.style.height=h+'px';
     refreshHostRect();
