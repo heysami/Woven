@@ -2988,10 +2988,10 @@ _MATERIAL_AUTHORING = (
     "the edge chromatic aberration, `frost` the blur, `specular` the rim light. `palette` are the accent "
     "colours the components use. There is NO `elements` array and no per-element placement — editing the "
     "material is the whole job.\n"
-    "  WIRED INPUTS augment the material, they do not place UI: a wired EFFECT node (the `fx` port) "
-    "becomes part of the material itself (e.g. a glitch / halftone / chromatic material laid over the "
-    "components); a wired IMAGE (the `in` port) becomes the card's image AND the backdrop the glass "
-    "refracts/interacts with, so you can see how the material behaves over real content."
+    "  WIRED INPUTS augment the material, they do not place UI: a wired IMAGE or LAYER (the `in` port) "
+    "becomes the card's image AND the backdrop the glass refracts/interacts with, so you can see how "
+    "the material behaves over real content. If that content needs its own position/effect/trigger, "
+    "wire those specs into a LAYER first, then wire the layer here."
 )
 
 _MM_AUTHORING = (
@@ -3330,7 +3330,6 @@ KIND_IO = {
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
             {"port": "in", "label": "Layer", "tags": ["asset", "layer"], "ingest": "context"},
-            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit composer", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/composer-{id}.json",
               "authoring": _COMPOSER_AUTHORING},
@@ -3384,8 +3383,6 @@ KIND_IO = {
                        "resolve": "bakedFile", "resolveArgs": {"ext": "png"}}],
         "accepts":  [
             {"port": "in", "label": "Layer", "tags": ["asset", "layer"], "ingest": "context"},
-            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
-            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit image", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/image-{id}.json",
               "authoring": _IMAGE_AUTHORING},
@@ -3397,7 +3394,6 @@ KIND_IO = {
         "accepts":  [
             {"port": "in", "label": "Source image", "tags": ["asset"], "ingest": "context"},
             {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
-            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
             {"port": "edit", "label": "Edit pixels", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/pixel-{id}.json",
               "authoring": _PIXEL_AUTHORING},
@@ -3440,7 +3436,6 @@ KIND_IO = {
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
             {"port": "in", "label": "Element content", "tags": ["asset", "layer"], "ingest": "context"},
-            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
             {"port": "edit", "label": "Edit materials", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/material-{id}.json",
               "authoring": _MATERIAL_AUTHORING},
@@ -3451,9 +3446,6 @@ KIND_IO = {
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
             {"port": "in", "label": "Layer content", "tags": ["asset", "layer"], "ingest": "context"},
-            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
-            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
-            {"port": "trig", "label": "Trigger", "tags": ["trigger"], "ingest": "context"},
             {"port": "edit", "label": "Edit composition", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/mm-{id}.json",
               "authoring": _MM_AUTHORING},

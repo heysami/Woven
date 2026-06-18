@@ -89,10 +89,37 @@ def test_specific_pathway_b_media_models_have_authoring():
     assert not missing, f"media models with no MEDIA_MODEL_AUTHORING entry: {missing}"
 
 
+def test_layer_specs_flow_through_layer_except_no_layer_position_hosts():
+    """Position/effect/trigger specs describe a layer by default.
+
+    Direct position ports are allowed only on editors that lack a layer model and
+    therefore need placement as host-level context. Effects and triggers should
+    not bypass the layer node.
+    """
+    direct_position_hosts = {"layer", "pixel-editor", "spline-3d", "voxel-3d"}
+    direct_effect_hosts = {"layer"}
+    direct_trigger_hosts = {"layer"}
+
+    offenders = []
+    for kind, io in KIND_IO.items():
+        for accept in io.get("accepts") or []:
+            tags = set(accept.get("tags") or [])
+            port = accept.get("port")
+            if "position" in tags and kind not in direct_position_hosts:
+                offenders.append(f"{kind}.{port} accepts position")
+            if "effect" in tags and kind not in direct_effect_hosts:
+                offenders.append(f"{kind}.{port} accepts effect")
+            if "trigger" in tags and kind not in direct_trigger_hosts:
+                offenders.append(f"{kind}.{port} accepts trigger")
+
+    assert not offenders, "spec nodes must flow through layer:\n  - " + "\n  - ".join(offenders)
+
+
 def main():
     tests = [test_every_edit_target_has_authoring, test_known_edit_target_kinds_covered,
              test_section_write_has_authoring, test_every_asset_kind_has_authoring,
-             test_specific_pathway_b_media_models_have_authoring]
+             test_specific_pathway_b_media_models_have_authoring,
+             test_layer_specs_flow_through_layer_except_no_layer_position_hosts]
     for t in tests:
         try:
             t()
