@@ -63,6 +63,7 @@
   #stageWrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
   #stageHost{position:relative;box-shadow:0 30px 90px #000a,0 0 0 1px #ffffff10;border-radius:4px;overflow:hidden}
   #glcanvas{display:block;position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #fxcanvas{display:none;position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   #overlay{position:absolute;inset:0;cursor:default}
   .handle{position:absolute;width:12px;height:12px;background:#fff;border:1.5px solid var(--acc);border-radius:3px;
     transform:translate(-50%,-50%);box-shadow:0 1px 4px #0008}
@@ -168,6 +169,7 @@
       <div id="stageWrap">
         <div id="stageHost">
           <canvas id="glcanvas"></canvas>
+          <canvas id="fxcanvas"></canvas>
           <div id="overlay"></div>
         </div>
       </div>
@@ -199,6 +201,8 @@ const EMBEDDED = window.parent !== window;
 /* ---------- DOM ---------- */
 const host = document.getElementById('stageHost');
 const gl_canvas = document.getElementById('glcanvas');
+const fx_canvas = document.getElementById('fxcanvas');
+const fx_ctx = fx_canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
 const center = document.getElementById('center');
 const elList = document.getElementById('elList');
@@ -229,6 +233,39 @@ const assetTex = {};    // assetId -> {tex, w, h, loaded}
 let suppressEmit = false;
 let emitTimer = null;
 let idCounter = 1;
+
+/* ---------- wired effects (shader-lab post-process chain) ----------
+   Top-level effects array forwarded by the host on material:init AND
+   material:content. Applied as a FINAL full-screen post-process over the
+   rendered glass composite (after all refraction passes). Stored on receipt;
+   the continuous render loop picks up changes automatically. External-input
+   changes never echo material:state. */
+let EFFECTS = [];                 // [{type,intensity,params,glsl?}]
+let fxChain = null;               // fx.js chain instance | null (graceful)
+let fxReady = false;              // import settled (ok or failed)
+let fxLoading = null;             // in-flight import promise (dedupes)
+let FX_SRC = '';                  // cached fx.js source text, for the bake
+function loadFX(){
+  if(fxReady || fxLoading) return fxLoading || Promise.resolve();
+  fxLoading = import('../_shared/fx.js')
+    .then(mod=>{ try{ fxChain = mod.createFXChain(); }catch(e){ console.warn('[materiallab] fx chain init failed; effects disabled',e); fxChain=null; } })
+    .catch(e=>{ console.warn('[materiallab] fx.js import failed; effects disabled',e); fxChain=null; })
+    .finally(()=>{ fxReady=true; fxLoading=null; });
+  // Also fetch the raw source so the BAKED standalone file can inline it
+  // (single source of truth). Best-effort; bake falls back if this is empty.
+  fetch('../_shared/fx.js').then(r=>r.ok?r.text():'').then(t=>{ FX_SRC=t||''; }).catch(()=>{});
+  return fxLoading;
+}
+function normEffects(arr){
+  if(!Array.isArray(arr)) return [];
+  return arr.filter(e=>e&&typeof e==='object'&&typeof e.type==='string').map(e=>({
+    type:e.type,
+    intensity: e.intensity==null?1:Number(e.intensity),
+    params: (e.params&&typeof e.params==='object')?e.params:{},
+    glsl: typeof e.glsl==='string'?e.glsl:undefined,
+  }));
+}
+function setEffects(arr){ EFFECTS = normEffects(arr); if(EFFECTS.length) loadFX(); }
 
 /* default scene: dark + colorful gradient + one liquid-glass card */
 function defaultState(){
@@ -797,6 +834,27 @@ function render(){
   gl.disable(gl.BLEND);
   gl.drawArrays(gl.TRIANGLES,0,3);
 
+  // 4) FINAL post-process: apply the wired shader-lab effects chain over the
+  //    rendered glass canvas. fxChain.apply() reads gl_canvas as a source and
+  //    returns a detached 2D canvas; we blit it onto #fxcanvas (shown over the
+  //    gl canvas). When there are no effects (or fx unavailable) we show the raw
+  //    gl canvas. Graceful: any failure falls back to the raw canvas.
+  let showFx = false;
+  if(EFFECTS.length && fxChain){
+    try{
+      fxChain.setTime(t);
+      const out = fxChain.apply(gl_canvas, EFFECTS);
+      if(out){
+        if(fx_canvas.width!==W || fx_canvas.height!==H){ fx_canvas.width=W; fx_canvas.height=H; }
+        fx_ctx.clearRect(0,0,W,H);
+        fx_ctx.drawImage(out, 0,0, W,H);
+        showFx = true;
+      }
+    }catch(err){ /* graceful: fall back to raw gl canvas this frame */ }
+  }
+  fx_canvas.style.display = showFx? 'block':'none';
+  gl_canvas.style.visibility = showFx? 'hidden':'visible';
+
   requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
@@ -814,6 +872,7 @@ function fitStage(){
   const w = STATE.canvasW*stageScale, h = STATE.canvasH*stageScale;
   host.style.width = w+'px'; host.style.height = h+'px';
   gl_canvas.style.width = w+'px'; gl_canvas.style.height = h+'px';
+  fx_canvas.style.width = w+'px'; fx_canvas.style.height = h+'px';
   cacheStageRect();
   drawHandles();
   zoomInfo.textContent = `${STATE.canvasW}×${STATE.canvasH}  ·  ${Math.round(stageScale*100)}%`;
@@ -1195,11 +1254,14 @@ if(EMBEDDED){
     if(d.nodeId && d.nodeId!==NODE) return;
     if(d.type==='material:init'){
       if(d.content){ CONTENT=d.content||[]; }
+      if('effects' in d){ setEffects(d.effects); }   // wired post-process chain
       suppressEmit=true; loadState(d.state||null); suppressEmit=false;
     } else if(d.type==='material:set-state'){
       suppressEmit=true; loadState(d.state||null); suppressEmit=false;
     } else if(d.type==='material:content'){
-      CONTENT=d.content||[]; loadAllAssets(); if(STATE&&STATE.backdrop==='photo') setPhotoFromAsset(); refreshUI();
+      CONTENT=d.content||[]; loadAllAssets(); if(STATE&&STATE.backdrop==='photo') setPhotoFromAsset();
+      if('effects' in d){ setEffects(d.effects); }   // effects may change with content; re-render (no state echo)
+      refreshUI();
     }
   });
   const announce=()=>{ try{ parent.postMessage({type:'material:ready', nodeId:NODE}, '*'); }catch(e){} };
@@ -1213,6 +1275,9 @@ if(EMBEDDED){
 if(!EMBEDDED){ loadState(null); }
 else { loadState(null); }   // show default until init arrives; init overwrites
 
+/* warm the fx module + cache its source so an early bake is standalone-ready */
+loadFX();
+
 window.addEventListener('resize', ()=>{ fitStage(); });
 new ResizeObserver(()=>{ fitStage(); }).observe(center);
 
@@ -1223,8 +1288,61 @@ function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); cle
 /*  Embeds the same WebGL2 liquid-glass renderer + the config so the page  */
 /*  plays standalone (refracting its own background) when opened/embedded. */
 /* ====================================================================== */
+// Make the baked file's effects standalone. fx.js is an ES module loaded by
+// the live editor via dynamic import; a baked file opened from disk (file://)
+// cannot reliably resolve ../_shared/fx.js. So we INLINE the fetched fx.js
+// source (stripped of its `export` keywords) directly into the baked runtime —
+// a single source of truth. If the fetch hasn't landed (FX_SRC empty), we fall
+// back to a tiny inline chromatic-aberration + posterize subset so the baked
+// file still applies *something* and remains truly standalone.
+function inlineFXBlock(){
+  if(FX_SRC && /createFXChain/.test(FX_SRC)){
+    // Strip ES export keywords so the source runs as a plain script and define
+    // createFXChain on the local scope.
+    const body = FX_SRC.replace(/^\s*export\s+/gm, '');
+    return body + '\n';
+  }
+  // Minimal fallback chain (chromatic-aberration + posterize). Same call shape
+  // as fx.js: createFXChain().apply(source, effects) -> 2D canvas; setTime(t).
+  return `
+function createFXChain(){
+  var cv=document.createElement('canvas'); var gl=cv.getContext('webgl2',{premultipliedAlpha:false,preserveDrawingBuffer:true,antialias:false});
+  if(!gl){ return { apply:function(s){var o=document.createElement('canvas');o.width=s.width;o.height=s.height;o.getContext('2d').drawImage(s,0,0);return o;}, setTime:function(){}, resize:function(){}, dispose:function(){} }; }
+  var W=2,H=2,T=0;
+  var VS='#version 300 es\\nlayout(location=0) in vec2 a;out vec2 vUv;void main(){vUv=a*0.5+0.5;gl_Position=vec4(a,0.,1.);}';
+  function frag(b){return '#version 300 es\\nprecision highp float;in vec2 vUv;out vec4 o;uniform sampler2D uTex;uniform vec2 uRes;uniform float uTime;uniform float uI;\\n'+b;}
+  var FCA=frag('uniform float uAmount;uniform float uAngle;void main(){vec2 d=vec2(cos(uAngle),sin(uAngle))*uAmount;vec4 s=texture(uTex,vUv);vec3 c=vec3(texture(uTex,vUv+d).r,s.g,texture(uTex,vUv-d).b);o=mix(s,vec4(c,s.a),clamp(uI,0.,1.));}');
+  var FPO=frag('uniform float uLevels;void main(){vec4 s=texture(uTex,vUv);float lv=max(uLevels,2.);vec3 q=floor(s.rgb*lv)/lv;o=mix(s,vec4(q,s.a),clamp(uI,0.,1.));}');
+  function sh(t,src){var s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);return s;}
+  function pr(f){var p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.bindAttribLocation(p,0,'a');gl.linkProgram(p);return p;}
+  var pCA=pr(FCA),pPO=pr(FPO);
+  var q=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,q);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+  var tex=gl.createTexture();function st(t){gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);}st(tex);
+  var fbo=[mkF(),mkF()];function mkF(){var t=gl.createTexture();st(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null);var f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);return {f:f,t:t,w:1,h:1};}
+  function size(w,h){w=Math.max(1,w|0);h=Math.max(1,h|0);if(w===W&&h===H)return;W=w;H=h;cv.width=w;cv.height=h;fbo.forEach(function(o){o.w=w;o.h=h;gl.bindTexture(gl.TEXTURE_2D,o.t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);});}
+  function setU(p,i){gl.uniform1i(gl.getUniformLocation(p,'uTex'),0);gl.uniform2f(gl.getUniformLocation(p,'uRes'),W,H);gl.uniform1f(gl.getUniformLocation(p,'uTime'),T);gl.uniform1f(gl.getUniformLocation(p,'uI'),Math.max(0,Math.min(1,i)));}
+  function apply(src,effects){
+    if(!effects||!effects.length){var o=document.createElement('canvas');o.width=src.width;o.height=src.height;o.getContext('2d').drawImage(src,0,0);return o;}
+    size(src.width,src.height);
+    gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    gl.bindBuffer(gl.ARRAY_BUFFER,q);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,W,H);gl.disable(gl.BLEND);
+    var inT=tex,ping=0;
+    var list=effects.filter(function(e){return e&&(e.type==='chromatic-aberration'||e.type==='posterize');});
+    if(!list.length){var o=document.createElement('canvas');o.width=src.width;o.height=src.height;o.getContext('2d').drawImage(src,0,0);return o;}
+    list.forEach(function(e,i){var last=i===list.length-1;gl.bindFramebuffer(gl.FRAMEBUFFER,last?null:fbo[ping].f);
+      var p,pa=e.params||{};if(e.type==='chromatic-aberration'){p=pCA;gl.useProgram(p);setU(p,e.intensity==null?1:e.intensity);gl.uniform1f(gl.getUniformLocation(p,'uAmount'),(+pa.amount||0.01));gl.uniform1f(gl.getUniformLocation(p,'uAngle'),(+pa.angle||0));}
+      else{p=pPO;gl.useProgram(p);setU(p,e.intensity==null?1:e.intensity);gl.uniform1f(gl.getUniformLocation(p,'uLevels'),(+pa.levels||5));}
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.drawArrays(gl.TRIANGLES,0,3);if(!last){inT=fbo[ping].t;ping=1-ping;}});
+    var out=document.createElement('canvas');out.width=W;out.height=H;out.getContext('2d').drawImage(cv,0,0);return out;
+  }
+  return { apply:apply, setTime:function(t){T=+t||0;}, resize:size, dispose:function(){} };
+}
+`;
+}
+
 function bakeHTML(){
   const cfg = serializeState();
+  cfg.effects = normEffects(EFFECTS);   // carry the wired post-process chain into the standalone file
   const cfgJSON = JSON.stringify(cfg);
   // The baked runtime is a trimmed version of this renderer: it builds the
   // backdrop + content + glass passes and presents to a canvas sized to the
@@ -1235,13 +1353,20 @@ function bakeHTML(){
 <style>
   html,body{margin:0;height:100%;background:${cfg.background};overflow:hidden}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-  canvas{display:block;max-width:100%;max-height:100%;box-shadow:0 30px 90px #0008}
+  #stack{position:relative;max-width:100%;max-height:100%;box-shadow:0 30px 90px #0008}
+  #stack canvas{display:block;max-width:100%;max-height:100%}
+  #fx{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}
 </style></head><body>
-<div id="wrap"><canvas id="c"></canvas></div>
+<div id="wrap"><div id="stack"><canvas id="c"></canvas><canvas id="fx"></canvas></div></div>
 <script>
 var CFG=${cfgJSON};
 ${RUNTIME_SRC}
-window.MaterialLabRuntime(document.getElementById('c'), CFG, {});
+/* --- inlined shader-lab effect chain (standalone: no module import) --- */
+${inlineFXBlock()}
+window.MaterialLabRuntime(document.getElementById('c'), CFG, {
+  fxCanvas: document.getElementById('fx'),
+  makeChain: (typeof createFXChain==='function') ? createFXChain : null,
+});
 <\/script></body></html>`;
 }
 
@@ -1291,6 +1416,9 @@ window.MaterialLabRuntime = function(canvas, CFG, opts){
   var mouse={x:.5,y:.5,in:false};
   window.addEventListener('pointermove',function(ev){var r=canvas.getBoundingClientRect();
     mouse.x=Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width));mouse.y=Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height));mouse.in=true;});
+  // wired shader-lab post-process chain (inlined, standalone)
+  var EFFECTS=(CFG.effects||[]); var fxCv=opts&&opts.fxCanvas||null; var fxCtx=fxCv?fxCv.getContext('2d'):null;
+  var fxChain=null; if(EFFECTS.length && opts && opts.makeChain){ try{ fxChain=opts.makeChain(); }catch(_){ fxChain=null; } }
   var t0=performance.now();
   function frame(){var t=(performance.now()-t0)/1000;gl.bindVertexArray(vao);gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.FRAMEBUFFER,fA);gl.viewport(0,0,W,H);gl.useProgram(pBG);
@@ -1316,6 +1444,10 @@ window.MaterialLabRuntime = function(canvas, CFG, opts){
       gl.uniform1f(ug.uMouseRef,mref);gl.drawArrays(gl.TRIANGLES,0,3);gl.disable(gl.BLEND);
       var tt=srcT;srcT=dstT;dstT=tt;var tf=srcF;srcF=dstF;dstF=tf;});
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.useProgram(pBlit);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcT);gl.uniform1i(ublit.uTex,0);gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
+    // FINAL post-process: apply the wired effects chain over the gl canvas.
+    var showFx=false;
+    if(fxChain && EFFECTS.length && fxCtx){ try{ fxChain.setTime(t); var out=fxChain.apply(canvas,EFFECTS); if(out){ if(fxCv.width!==W||fxCv.height!==H){fxCv.width=W;fxCv.height=H;} fxCtx.clearRect(0,0,W,H); fxCtx.drawImage(out,0,0,W,H); showFx=true; } }catch(_){} }
+    if(fxCv){ fxCv.style.display=showFx?'block':'none'; canvas.style.visibility=showFx?'hidden':'visible'; }
     requestAnimationFrame(frame);}
   requestAnimationFrame(frame);
 };`;

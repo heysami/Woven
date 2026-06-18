@@ -367,6 +367,41 @@
   let imgAutoSync = false; // re-run downsample on content change
   let lastSyncedUrl = null;// guard so auto-sync only fires on real url changes
 
+  // wired spec nodes forwarded by the host (shader-lab taxonomy + position specs)
+  let EFFECTS = [];        // array of {type,intensity,params,glsl?}
+  let POSITIONS = [];      // array of {mode,params}
+
+  // ---------------- Wired FX (post-process over the upscaled render) ----------------
+  let fxChain = null;      // lazily-imported chain; null = unavailable / not yet loaded
+  let fxReady = false;     // import attempted
+  async function ensureFX(){
+    if(fxReady) return fxChain;
+    fxReady = true;
+    try {
+      const fx = await import("../_shared/fx.js");
+      fxChain = fx.createFXChain();
+    } catch(e){
+      console.warn("[pixeleditor] fx.js unavailable; effects skipped.", e);
+      fxChain = null;
+    }
+    return fxChain;
+  }
+  function hasEffects(){ return Array.isArray(EFFECTS) && EFFECTS.length > 0; }
+
+  // Resolve a wired `grid` position spec -> {cols,rows} for tiling, else null.
+  function gridTiling(){
+    if(!Array.isArray(POSITIONS)) return null;
+    for(const p of POSITIONS){
+      if(!p || typeof p!=="object") continue;
+      if(p.mode !== "grid") continue;            // other modes: skip gracefully
+      const pr = p.params || {};
+      const cols = Math.max(1, Math.min(16, parseInt(pr.cols ?? pr.columns ?? 1, 10) || 1));
+      const rows = Math.max(1, Math.min(16, parseInt(pr.rows ?? 1, 10) || 1));
+      if(cols>1 || rows>1) return {cols, rows};
+    }
+    return null;
+  }
+
   // ---------------- Pixel buffer helpers ----------------
   function freshPixels(){ return new Array(M.w * M.h).fill(0); }
   function ensurePixels(){
@@ -462,6 +497,62 @@
     panY = Math.round((stage.clientHeight - M.h*zoom)/2);
     render();
   }
+  // Draw a single upscaled sprite (the w×h grid at cell size `s`) into `o`,
+  // offset by (ox,oy). Shared by live render, tiled compositor, and bake.
+  function drawSprite(o, s, ox, oy){
+    ox = ox||0; oy = oy||0;
+    if(M.ascii){
+      o.fillStyle = "#dfe6f0";
+      o.font = Math.floor(s*0.82)+"px "+getComputedStyle(document.body).getPropertyValue("--mono");
+      o.textAlign = "center"; o.textBaseline = "middle";
+      for(let y=0;y<M.h;y++) for(let x=0;x<M.w;x++){
+        const idx = getPx(x,y);
+        const g = M.palette[idx];
+        if(idx===0 || g===" " || g===undefined) continue;
+        o.fillText(String(g)[0]||"?", ox+x*s+s/2, oy+y*s+s/2+0.5);
+      }
+    } else {
+      for(let y=0;y<M.h;y++) for(let x=0;x<M.w;x++){
+        const idx = getPx(x,y);
+        if(isTransparent(idx)) continue;
+        const c = parseColor(M.palette[idx]);
+        o.fillStyle = "rgba("+c.r+","+c.g+","+c.b+","+(c.a/255)+")";
+        o.fillRect(ox+x*s, oy+y*s, s, s);
+      }
+    }
+  }
+
+  // Build an offscreen canvas of the full upscaled artwork (tiled if a `grid`
+  // position is wired) at cell size `s`. Returns {canvas,cols,rows}.
+  function renderArtwork(s){
+    const tile = gridTiling();
+    const cols = tile ? tile.cols : 1, rows = tile ? tile.rows : 1;
+    const off = document.createElement("canvas");
+    off.width = M.w*s*cols; off.height = M.h*s*rows;
+    const o = off.getContext("2d");
+    o.imageSmoothingEnabled = false;
+    if(M.ascii){ o.fillStyle = "#0b0d11"; o.fillRect(0,0,off.width,off.height); }
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      drawSprite(o, s, c*M.w*s, r*M.h*s);
+    }
+    return {canvas:off, cols, rows};
+  }
+
+  // Apply the wired effects chain over an upscaled artwork canvas. Async because
+  // fx.js is dynamically imported. Returns a canvas (post-FX, or input on miss).
+  async function applyFX(srcCanvas){
+    if(!hasEffects()) return srcCanvas;
+    const chain = await ensureFX();
+    if(!chain) return srcCanvas;
+    try {
+      const out = chain.apply(srcCanvas, EFFECTS);
+      return out || srcCanvas;
+    } catch(e){
+      console.warn("[pixeleditor] effects apply failed; passthrough.", e);
+      return srcCanvas;
+    }
+  }
+
   function render(){
     const cw = M.w*zoom, ch = M.h*zoom;
     canvas.width = cw; canvas.height = ch;
@@ -469,28 +560,38 @@
     ctx.clearRect(0,0,cw,ch);
     ctx.imageSmoothingEnabled = false;
 
+    const tile = gridTiling();
+    if(tile || hasEffects()){
+      // Post-process / tiled path: render the upscaled artwork offscreen, run the
+      // wired FX chain over it, then fit the result onto the display canvas.
+      const art = renderArtwork(zoom);
+      const seq = ++renderSeq;
+      // Draw the pre-FX artwork immediately so the canvas isn't blank while the
+      // async FX import resolves; FX result swaps in when ready.
+      ctx.drawImage(art.canvas, 0, 0, cw, ch);
+      drawGridAndPreview(cw, ch);
+      applyFX(art.canvas).then(out=>{
+        if(seq !== renderSeq) return;            // a newer render superseded us
+        ctx.clearRect(0,0,cw,ch);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(out, 0, 0, cw, ch);
+        drawGridAndPreview(cw, ch);
+      });
+      hud.textContent = M.w+" × "+M.h+" · "+Math.round(zoom/16*100)+"%";
+      return;
+    }
+
     if(M.ascii){
       // background dark for legibility
       ctx.fillStyle = "#0b0d11"; ctx.fillRect(0,0,cw,ch);
-      ctx.fillStyle = "#dfe6f0";
-      ctx.font = Math.floor(zoom*0.82)+"px "+getComputedStyle(document.body).getPropertyValue("--mono");
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      for(let y=0;y<M.h;y++) for(let x=0;x<M.w;x++){
-        const idx = getPx(x,y);
-        const g = M.palette[idx];
-        if(idx===0 || g===" " || g===undefined) continue;
-        ctx.fillText(String(g)[0]||"?", x*zoom+zoom/2, y*zoom+zoom/2+0.5);
-      }
-    } else {
-      for(let y=0;y<M.h;y++) for(let x=0;x<M.w;x++){
-        const idx = getPx(x,y);
-        if(isTransparent(idx)) continue;
-        const c = parseColor(M.palette[idx]);
-        ctx.fillStyle = "rgba("+c.r+","+c.g+","+c.b+","+(c.a/255)+")";
-        ctx.fillRect(x*zoom, y*zoom, zoom, zoom);
-      }
     }
+    drawSprite(ctx, zoom, 0, 0);
+    drawGridAndPreview(cw, ch);
+    hud.textContent = M.w+" × "+M.h+" · "+Math.round(zoom/16*100)+"%";
+  }
+  let renderSeq = 0;       // monotonic guard so stale async FX results are dropped
 
+  function drawGridAndPreview(cw, ch){
     if(showGrid && zoom>=6){
       ctx.strokeStyle = "rgba(255,255,255,0.07)";
       ctx.lineWidth = 1;
@@ -501,7 +602,6 @@
     }
     // preview overlay for line/rect drag
     if(preview){ drawPreview(); }
-    hud.textContent = M.w+" × "+M.h+" · "+Math.round(zoom/16*100)+"%";
   }
 
   let preview = null; // {tool,x0,y0,x1,y1}
@@ -902,6 +1002,23 @@
     }
   }
 
+  // ---------------- Wired spec nodes (effects + positions) ----------------
+  // The host forwards top-level `effects` / `positions` arrays on pixel:init and
+  // pixel:content. We store them and re-render the preview; we never echo a
+  // pixel:state back for these external-input changes.
+  function setWiredSpecs(data, rerender){
+    let changed = false;
+    if("effects" in data){
+      const next = Array.isArray(data.effects) ? data.effects : [];
+      if(JSON.stringify(next) !== JSON.stringify(EFFECTS)){ EFFECTS = next; changed = true; }
+    }
+    if("positions" in data){
+      const next = Array.isArray(data.positions) ? data.positions : [];
+      if(JSON.stringify(next) !== JSON.stringify(POSITIONS)){ POSITIONS = next; changed = true; }
+    }
+    if(changed && rerender){ render(); }   // re-render only; no emitState() echo
+  }
+
   // ---------------- Palette UI ----------------
   function renderPalette(){
     palEl.innerHTML="";
@@ -1076,36 +1193,24 @@
   $("#code").addEventListener("input", ()=>{ clearTimeout(codeDeb); codeDeb=setTimeout(()=>{ runCode(); refreshJson(); }, 400); });
 
   // ---------------- Bake to PNG (nearest-neighbor) ----------------
+  // Nearest-neighbor upscale + grid tiling. Shares renderArtwork() with the live
+  // view so bake and preview stay identical.
   function bakeCanvas(scaleOverride){
     const s = scaleOverride || M.scale || 12;
-    const off = document.createElement("canvas");
-    off.width = M.w*s; off.height = M.h*s;
-    const o = off.getContext("2d");
-    o.imageSmoothingEnabled = false;
-    if(M.ascii){
-      o.fillStyle="#0b0d11"; o.fillRect(0,0,off.width,off.height);
-      o.fillStyle="#e6ecf5";
-      o.font = Math.floor(s*0.82)+"px "+getComputedStyle(document.body).getPropertyValue("--mono");
-      o.textAlign="center"; o.textBaseline="middle";
-      for(let y=0;y<M.h;y++)for(let x=0;x<M.w;x++){
-        const idx=getPx(x,y); const g=M.palette[idx];
-        if(idx===0||g===" "||g===undefined) continue;
-        o.fillText(String(g)[0]||"?", x*s+s/2, y*s+s/2+0.5);
-      }
-    } else {
-      for(let y=0;y<M.h;y++)for(let x=0;x<M.w;x++){
-        const idx=getPx(x,y); if(isTransparent(idx)) continue;
-        const c=parseColor(M.palette[idx]);
-        o.fillStyle="rgba("+c.r+","+c.g+","+c.b+","+(c.a/255)+")";
-        o.fillRect(x*s,y*s,s,s);
-      }
-    }
-    return off;
+    return renderArtwork(s).canvas;
   }
-  function bakedDataUrl(){ try{ return bakeCanvas().toDataURL("image/png"); }catch(e){ return null; } }
+  // Bake including wired post-process effects over the upscaled render.
+  async function bakeCanvasFX(scaleOverride){
+    return applyFX(bakeCanvas(scaleOverride));
+  }
+  async function bakedDataUrl(){
+    try{ const c = await bakeCanvasFX(); return c.toDataURL("image/png"); }
+    catch(e){ console.warn("[pixeleditor] bake failed.", e); return null; }
+  }
 
-  $("#btnPng").addEventListener("click", ()=>{
-    const url = bakeCanvas().toDataURL("image/png");
+  $("#btnPng").addEventListener("click", async ()=>{
+    const c = await bakeCanvasFX();
+    let url; try{ url = c.toDataURL("image/png"); }catch(e){ toast("Export failed"); return; }
     const a=document.createElement("a"); a.href=url; a.download="pixelart.png"; a.click();
     toast("PNG exported");
   });
@@ -1184,9 +1289,9 @@
     refreshJson();
     if(!EMBEDDED || applyingExternal) return;
     clearTimeout(emitTimer);
-    emitTimer = setTimeout(()=>{
+    emitTimer = setTimeout(async ()=>{
       const state = buildState();
-      const dataUrl = bakedDataUrl();
+      const dataUrl = await bakedDataUrl();
       parent.postMessage({ type:"pixel:state", nodeId:NODE_ID, state, baked:{dataUrl} }, "*");
     }, 500);
   }
@@ -1197,13 +1302,16 @@
     if(!data || typeof data!=="object") return;
     if(data.nodeId !== NODE_ID) return;   // ignore other nodes
     if(data.type==="pixel:init"){
+      setWiredSpecs(data, false);          // store first so the initial render picks up FX/tiling
       if(data.state) applyState(data.state); else applyState(null);
       if("content" in data) setContent(data.content);
     } else if(data.type==="pixel:set-state"){
-      applyState(data.state||null);        // rebuild, no echo
+      setWiredSpecs(data, false);
+      applyState(data.state||null);        // rebuild (render via fit), no echo
       if("content" in data) setContent(data.content);
     } else if(data.type==="pixel:content"){
       setContent(data.content);            // wired assets changed
+      setWiredSpecs(data, true);           // effects/positions may ride along; re-render if changed
     }
   });
 

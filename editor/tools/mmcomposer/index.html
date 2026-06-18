@@ -137,6 +137,20 @@ function loadMod(key){
   return _modCache[key];
 }
 
+/* ---------- Shared FX chain (../_shared/fx.js) for WIRED top-level effects --
+   Loaded lazily; resolves relative to this tool's index.html. Graceful: if it
+   fails to load, wired top-level effects are skipped (console.warn) and the
+   inline composition still plays. */
+let _fxChain=null, _fxLoad=null, _fxFailed=false;
+function ensureFXChain(){
+  if(_fxChain || _fxFailed) return Promise.resolve(_fxChain);
+  if(_fxLoad) return _fxLoad;
+  _fxLoad = import('../_shared/fx.js')
+    .then(fx=>{ try{ _fxChain=fx.createFXChain(); }catch(e){ _fxFailed=true; console.warn('fx.createFXChain failed',e); } return _fxChain; })
+    .catch(e=>{ _fxFailed=true; console.warn('shared fx.js failed to load — wired top-level effects disabled',e); return null; });
+  return _fxLoad;
+}
+
 /* ---------- Parent-node bridge -------------------------------------------- */
 const Q = new URLSearchParams(location.search);
 const NODE = Q.get('nodeId') || '';
@@ -157,6 +171,95 @@ let CONTENT = [];          // wired assets [{id,url,kind,label}]
 let IMPORTS = {};
 let suppressEmit=false;    // guard programmatic rebuilds
 let gotInit=false;
+
+/* ---------- WIRED SPEC NODES (external inputs, forwarded by the host) -------
+   These are NOT user edits: they arrive on mm:init / mm:content and must never
+   be echoed back in an mm:state. They DRIVE the composition alongside the
+   inline STATE.layers:
+     WIRED.effects   [{type,intensity,params,glsl?}]  final post-process pass
+     WIRED.positions [{mode,params}]                  selectable position schemes
+     WIRED.triggers  [{source,params,impacts}]        global triggers
+     WIRED.layers    [{id,spec:{name,z,opacity,blend,visible},children:[...]}]
+                      each child = {type:'asset'|'position'|'trigger'|'effect',...}
+   ------------------------------------------------------------------------- */
+let WIRED = { effects:[], positions:[], triggers:[], layers:[] };
+let _wiredVer=0, _wiredCache=null, _wiredCacheVer=-1;
+function storeWired(d){
+  WIRED = {
+    effects:   Array.isArray(d.effects)   ? d.effects   : [],
+    positions: Array.isArray(d.positions) ? d.positions : [],
+    triggers:  Array.isArray(d.triggers)  ? d.triggers  : [],
+    layers:    Array.isArray(d.layers)    ? d.layers    : [],
+  };
+  _wiredVer++; _wiredCache=null;   // invalidate synthesized-layer cache
+}
+/* Synthesize runtime layers from WIRED.layers: a wired layer is a node that
+   wires content+position+trigger+effect via its `children`. Returns layers in
+   the same shape Engine.render / Positioning / Triggers already consume, so
+   they render alongside the inline STATE.layers. */
+// Cached accessor (rebuilds only when WIRED changes) — used on the hot render path.
+function wiredRuntimeLayers(){
+  if(_wiredCache && _wiredCacheVer===_wiredVer) return _wiredCache;
+  _wiredCache = buildWiredRuntimeLayers();
+  _wiredCacheVer = _wiredVer;
+  return _wiredCache;
+}
+function buildWiredRuntimeLayers(){
+  return (WIRED.layers||[]).map((wl,wi)=>{
+    const spec=wl.spec||{};
+    const kids=Array.isArray(wl.children)?wl.children:[];
+    const assetK = kids.find(k=>k&&k.type==='asset');
+    const posK   = kids.find(k=>k&&k.type==='position');
+    const trigK  = kids.find(k=>k&&k.type==='trigger');
+    const effK   = kids.filter(k=>k&&k.type==='effect');
+    // content from the asset child (fall back to a label/text marker)
+    let content;
+    if(assetK){
+      const kind=assetK.kind||assetK.assetKind;
+      if(kind==='image'||kind==='video'){
+        // register so Assets.meta/.image/.video can resolve it
+        const aid=assetK.id||assetK.assetId||('wa'+wi);
+        if(assetK.url && !CONTENT.find(c=>c.id===aid))
+          CONTENT.push({id:aid,url:assetK.url,kind,label:assetK.label||aid});
+        content={kind:'asset',assetId:aid};
+      } else if(kind==='text'||assetK.text!=null){
+        content={kind:'text',text:assetK.text||assetK.label||'WIRED',color:assetK.color||'#ffffff'};
+      } else {
+        content={kind:'shape',shape:'rect',color:assetK.color||'#b388ff'};
+      }
+    } else {
+      content={kind:'generator',color:'#b388ff'};
+    }
+    const positioning = posK
+      ? Object.assign({mode:posK.mode||'single'}, posK.params||{})
+      : {mode:'single',x:0.5,y:0.5,scale:1,rot:0};
+    const trigger = trigK
+      ? Object.assign({source:trigK.source||'none', impacts:trigK.impacts||[]}, trigK.params||{})
+      : {source:'none',impacts:[]};
+    // map fx.js taxonomy → the editor GLFx built-in shader set for layer effects
+    const stack = effK.map(e=>{
+      const ty = e.glsl ? 'shader' : mapGLFxType(e.type);
+      return {type:ty, params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl};
+    });
+    const L = fillLayer({
+      id: wl.id || ('W'+wi),
+      name: spec.name || ('Wired '+(wi+1)),
+      z: spec.z ?? (100+wi),
+      visible: spec.visible!==false,
+      content, positioning, trigger,
+      effects:{stack},
+    });
+    L._wired=true;
+    L._opacity = spec.opacity!=null?spec.opacity:1;
+    L._blend = spec.blend||'source-over';
+    return L;
+  });
+}
+/* Inline + wired layers, the full set the runtime renders this frame. */
+function allRuntimeLayers(){
+  const wired=wiredRuntimeLayers();
+  return wired.length ? STATE.layers.concat(wired) : STATE.layers;
+}
 
 function defaultState(){
   return {v:1,canvasW:1280,canvasH:720,background:'#000',inputs:{camera:false,mic:false},
@@ -626,12 +729,12 @@ function applyMap(v, map, range){
   if(map==='threshold') return v>=0.5 ? hi : lo;
   return lerp(lo,hi,clamp(v,0,1));
 }
-function computeImpacts(triggerVals){
+function computeImpacts(triggerVals, layers, globalTrig){
   // returns { layerId: { opacity?, scale?, position?:[dx,dy], effIntensity?:[..per effect or global..] } }
+  const ls = layers || STATE.layers;
   const ov={};
-  for(const L of STATE.layers){
-    const tv=triggerVals[L.id]; if(!tv) continue;
-    for(const im of (L.trigger.impacts||[])){
+  function route(impacts, tv){
+    for(const im of (impacts||[])){
       if(!im||!im.target) continue;
       const val=applyMap(tv.v, im.map, im.range);
       const o=ov[im.target]||(ov[im.target]={});
@@ -641,7 +744,48 @@ function computeImpacts(triggerVals){
       else if(im.param==='effect.intensity') o.effIntensity=val;
     }
   }
+  for(const L of ls){
+    const tv=triggerVals[L.id]; if(!tv) continue;
+    route(L.trigger.impacts, tv);
+  }
+  // WIRED top-level triggers route their own impacts onto targeted layers.
+  if(globalTrig && globalTrig._impacts && globalTrig._impacts.length){
+    route(globalTrig._impacts, globalTrig);
+  }
   return ov;
+}
+
+/* ---------- WIRED top-level position / trigger application ----------------- */
+// First wired position becomes the default scheme: a layer whose positioning is
+// the untouched 'single' default inherits it (so a wired position visibly
+// takes effect rather than being ignored).
+function wiredDefaultPositioning(){
+  const wp=WIRED.positions && WIRED.positions[0];
+  if(!wp) return null;
+  const p=Object.assign({mode:wp.mode||'single'}, wp.params||{});
+  fillPositioning(p);
+  return p;
+}
+function isDefaultSingle(p){
+  return p && p.mode==='single' && p.x===0.5 && p.y===0.5 && p.scale===1 && (p.rot===0||p.rot==null);
+}
+function positionedLayer(L){
+  const wp=wiredDefaultPositioning();
+  if(wp && !L._wired && isDefaultSingle(L.positioning)){
+    return Object.assign({}, L, {positioning:wp});
+  }
+  return L;
+}
+// First wired trigger becomes a global trigger value (with its impacts attached
+// so it can drive other layers). Evaluated through the same Triggers engine.
+function wiredGlobalTrigger(){
+  const wt=WIRED.triggers && WIRED.triggers[0];
+  if(!wt) return null;
+  const tspec=Object.assign({source:wt.source||'none', impacts:[]}, wt.params||{});
+  fillTrigger(tspec);
+  const r=Triggers.eval({trigger:tspec});
+  r._impacts = wt.impacts || [];
+  return r;
 }
 
 /* ===========================================================================
@@ -714,6 +858,20 @@ const EFFECT_SRC={
       vec4 c=texture(tex,suv);
       o=vec4(c.rgb, c.a*(1.0 - mod(rise+ph,1.0)*uIntensity*0.6)); }`,
 };
+/* Map shared fx.js taxonomy type names → the editor GLFx EFFECT_SRC keys.
+   Function declaration (hoisted) so wiredRuntimeLayers() can call it. */
+function mapGLFxType(t){
+  const m={
+    'chromatic-aberration':'chromatic-aberration',
+    'displacement':'displace','displace':'displace',
+    'pixelate':'pixel-mosh','pixel-sort':'pixel-mosh','dither':'pixel-mosh',
+    'halftone':'halftone','ascii':'ascii','crt':'halftone',
+    'edge-detect':'displace','ink':'halftone','posterize':'halftone',
+    'directional-blur':'bloom','pattern':'particle-float','particle-grid':'particle-float',
+    'bloom':'bloom','custom':'shader','shader':'shader',
+  };
+  return m[t] || (EFFECT_SRC[t]?t:'bloom');
+}
 function fragFor(eff){
   if(eff.type==='shader' && eff.glsl && eff.glsl.trim()){
     // custom: if user didn't include a version/header, prepend ours.
@@ -898,21 +1056,32 @@ const Engine = {
     const W=this.W,H=this.H, ctx=this.ctx, time=Input.clock;
     // run camera detectors if any layer needs them
     this.runDetectors();
-    // 1) evaluate triggers
-    const tvals={}; for(const L of STATE.layers) tvals[L.id]=Triggers.eval(L);
-    // 2) compute cross-layer impacts
-    const overrides=computeImpacts(tvals);
+    // inline + wired-spec layers form the full runtime set this frame
+    const layers=allRuntimeLayers();
+    // WIRED top-level positions/triggers take effect as global defaults:
+    //   first wired position → default scheme for layers in 'single' default
+    //   first wired trigger  → a global trigger value broadcast to all layers
+    const globalTrig = wiredGlobalTrigger();
+    // 1) evaluate triggers (per-layer), then fold in the global wired trigger
+    const tvals={}; for(const L of layers) tvals[L.id]=Triggers.eval(L);
+    if(globalTrig){ for(const L of layers){ if(!tvals[L.id]||tvals[L.id].v===0) tvals[L.id]=globalTrig; } }
+    // 2) compute cross-layer impacts (inline impacts + wired global trigger impacts)
+    const overrides=computeImpacts(tvals, layers, globalTrig);
     // 3) clear base canvases
     ctx.clearRect(0,0,W,H); ctx.fillStyle=STATE.background; ctx.fillRect(0,0,W,H);
     if(this.fx&&this.fx.gl){ this.fx.gl.clearColor(0,0,0,0); this.fx.gl.clear(this.fx.gl.COLOR_BUFFER_BIT); }
     // 4) render layers in z-order
-    const ordered=[...STATE.layers].sort((a,b)=>(a.z||0)-(b.z||0));
+    const ordered=[...layers].sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ordered){
       if(!L.visible) continue;
       const ov=overrides[L.id]||{};
-      const insts=Positioning.resolve(L,W,H,dt);
-      // base transforms can be overridden by impacts
-      const opacity = ov.opacity!=null?ov.opacity:1;
+      // wired layers with a default 'single' positioning can inherit the first
+      // wired top-level position scheme.
+      const insts=Positioning.resolve(positionedLayer(L),W,H,dt);
+      // base transforms can be overridden by impacts; wired layers carry their
+      // own spec.opacity (multiplied with any impact opacity).
+      const baseOp = L._wired ? (L._opacity!=null?L._opacity:1) : 1;
+      const opacity = (ov.opacity!=null?ov.opacity:1) * baseOp;
       const scaleMul = ov.scale!=null?ov.scale:1;
       const posOff = ov.position; // [nx,ny] absolute reposition of whole layer
       // draw instances into the per-layer buffer
@@ -923,29 +1092,52 @@ const Engine = {
         if(posOff){ it={...inst, x:posOff[0], y:posOff[1]}; }
         drawContent(this.lctx, L, it, W, H, scaleMul);
       }
-      // 5) effects chain on this layer buffer, then composite to screen
+      // 5) per-layer effects chain on this layer buffer, then composite
       const hasFx = L.effects.stack.length>0 && this.fx && this.fx.gl;
+      ctx.save();
+      ctx.globalAlpha=opacity;
+      ctx.globalCompositeOperation = (L._wired && L._blend) ? L._blend : 'source-over';
       if(hasFx){
-        // effect-intensity impact: if present, scale ALL effect intensities
         const eInt = ov.effIntensity!=null?ov.effIntensity:null;
         this.fx.apply(this.layerBuf, L.effects.stack, W, H, time, eInt);
-        ctx.save(); ctx.globalAlpha=opacity;
-        ctx.drawImage(this.cgl,0,0,W,H); ctx.restore();
-        // clear gl after compositing so next layer starts clean
+        ctx.drawImage(this.cgl,0,0,W,H);
       } else {
-        ctx.save(); ctx.globalAlpha=opacity;
-        ctx.drawImage(this.layerBuf,0,0); ctx.restore();
+        ctx.drawImage(this.layerBuf,0,0);
       }
+      ctx.restore();
     }
+    // 6) WIRED top-level effects: a FINAL post-process pass over the whole
+    //    composited 2D canvas, via the shared fx.js chain.
+    this.applyWiredEffects(W,H,time);
     document.getElementById('badge').textContent =
-      `${STATE.layers.length} layers · t=${time.toFixed(1)}s`+
+      `${STATE.layers.length}+${layers.length-STATE.layers.length} layers · t=${time.toFixed(1)}s`+
+      (WIRED.effects.length?` · fx:${WIRED.effects.length}`:'')+
       (Input.cam.on?' · cam':'')+(Input.mic.on?' · mic':'');
+  },
+  // Final wired top-level effects pass: run the composited 2D canvas through
+  // the shared FX chain and draw the result back over it. Skipped silently if
+  // fx.js failed to load.
+  _fxRequested:false,
+  applyWiredEffects(W,H,time){
+    const stack=WIRED.effects;
+    if(!stack || !stack.length) return;
+    if(!_fxChain){ if(!this._fxRequested){ this._fxRequested=true; ensureFXChain(); } return; }
+    try{
+      _fxChain.setTime(time);
+      const out=_fxChain.apply(this.c2d, stack);
+      if(out && out!==this.c2d){
+        this.ctx.save();
+        this.ctx.globalCompositeOperation='copy';
+        this.ctx.drawImage(out,0,0,W,H);
+        this.ctx.restore();
+      }
+    }catch(e){ console.warn('wired fx apply failed',e); }
   },
   _detNeed:null,
   runDetectors(){
     // gather which detector + source is needed this frame
     let need=null, srcVideo=null;
-    for(const L of STATE.layers){
+    for(const L of allRuntimeLayers()){
       if(!L.visible) continue;
       if(L.positioning.mode==='camera-feed'){
         need=L.positioning.detector;
@@ -1304,12 +1496,18 @@ if(EMBEDDED){
     if(d.type==='mm:init'){
       gotInit=true; suppressEmit=true;
       CONTENT=d.content||[]; IMPORTS=d.imports||{}; Assets.reset();
+      storeWired(d);                       // wired spec nodes are external inputs
       STATE = d.state?normalizeState(d.state):defaultState();
-      rebuild(); suppressEmit=false;
+      if(WIRED.effects.length) ensureFXChain();   // warm the shared FX chain
+      rebuild(); suppressEmit=false;       // NOTE: never echo an mm:state for wired inputs
     } else if(d.type==='mm:set-state'){
       suppressEmit=true; STATE=normalizeState(d.state); Assets.reset(); rebuild(); suppressEmit=false;
     } else if(d.type==='mm:content'){
-      CONTENT=d.content||CONTENT; IMPORTS=d.imports||IMPORTS; Assets.reset(); renderAll();
+      CONTENT=d.content||CONTENT; IMPORTS=d.imports||IMPORTS;
+      storeWired(d);                       // re-receive wired arrays; re-render
+      Assets.reset();
+      if(WIRED.effects.length) ensureFXChain();
+      renderAll();                         // no mm:state echo (external inputs changed)
     }
   });
 }
@@ -1321,12 +1519,30 @@ if(EMBEDDED){
    ===========================================================================*/
 function bake(){
   const cfg=deep(STATE);
-  // inline wired asset urls so the standalone file is self-contained-ish
+  // Merge the WIRED runtime layers into the baked config so the standalone
+  // file plays the SAME composition (inline + wired layers). wiredRuntimeLayers
+  // also pushes any wired asset urls into CONTENT, so assets[] below is complete.
+  const wiredLayers=wiredRuntimeLayers().map(L=>{
+    const o=deep(L);
+    // carry the wired spec opacity/blend the slim player understands
+    o._wired=true; o._opacity=L._opacity; o._blend=L._blend;
+    return o;
+  });
+  cfg.layers = cfg.layers.concat(wiredLayers);
+  // inline wired asset urls (incl. wired-layer asset children) so the file is self-contained-ish
   const assets=CONTENT.map(c=>({id:c.id,url:c.url,kind:c.kind,label:c.label}));
+  // WIRED top-level effects → final post-process stack, mapped from the
+  // shared fx.js taxonomy onto the slim player's built-in shader set so the
+  // standalone file applies them without depending on ../_shared/fx.js.
+  const topFx=(WIRED.effects||[]).map(e=>({type:mapFxType(e.type), params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl}));
   return BAKED_TEMPLATE
     .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
-    .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';');
+    .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';')
+    .replace('/*__TOPFX__*/','window.__MM_TOPFX__='+JSON.stringify(topFx)+';');
 }
+/* Map shared fx.js effect-type names onto the slim player's built-in shader
+   keys (EFFECT_SRC) — reuse the same table the editor GLFx uses. */
+function mapFxType(t){ return mapGLFxType(t); }
 
 /* The baked runtime re-uses the SAME engine source by serializing the relevant
    module functions into a compact player. To keep it truly self-contained and
@@ -1345,14 +1561,17 @@ const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
 <script>
 /*__CFG__*/
 /*__ASSETS__*/
+/*__TOPFX__*/
 ${'/* ===== slim player ===== */'}
 (${slimPlayer.toString()})(window.__MM_CFG__, window.__MM_ASSETS__||[],
-  ${JSON.stringify(EFFECT_SRC)}, ${JSON.stringify(FRAG_HEAD)}, ${JSON.stringify(VERT)});
+  ${JSON.stringify(EFFECT_SRC)}, ${JSON.stringify(FRAG_HEAD)}, ${JSON.stringify(VERT)},
+  window.__MM_TOPFX__||[]);
 <\/script></body></html>`;
 
 /* slimPlayer: a self-contained reimplementation of the core runtime. It is a
    FUNCTION (stringified into the baked file). It must not reference outer scope. */
-function slimPlayer(CFG, ASSETS, EFF, FH, VS){
+function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
+  TOPFX=TOPFX||[];
   const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
   const host=document.getElementById('h'), stage=document.getElementById('s');
   const c2d=document.getElementById('c2d'), cgl=document.getElementById('cgl');
@@ -1450,7 +1669,11 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS){
   function progOf(e){const k=e.type==='shader'?('c'+hash(e.glsl||'')):e.type;if(progs[k])return progs[k];const p=comp(fragOf(e));if(p)progs[k]=p;return p;}
   function ensure(w,h){if(_w===w&&_h===h&&fbos.length)return;_w=w;_h=h;fbos.forEach(f=>gl.deleteFramebuffer(f));texs.forEach(t=>gl.deleteTexture(t));fbos=[];texs=[];for(let i=0;i<2;i++){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);texs.push(t);fbos.push(fb);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
   function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(FH+'void main(){o=texture(tex,uv);}'));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);const l=gl.getAttribLocation(p,'p');gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'tex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uRes'),w,h);gl.drawArrays(gl.TRIANGLES,0,3);}
-  function applyFx(stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,lb);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type);if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  function applyFx(stack,time,iOv){ applyFxFrom(lb,stack,time,iOv); }
+  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
+  const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
+  function applyTop(time){ if(!GLOK||!TOP.length)return; applyFxFrom(c2d,TOP,time,null); ctx.save(); ctx.globalCompositeOperation='copy'; ctx.drawImage(cgl,0,0,W,H); ctx.restore(); }
   /* loop */
   let last=performance.now();
   function frame(now){const dt=Math.min((now-last)/1000,0.05);last=now;IN.clock=(now-IN.t0)/1000;IN.clickPulse*=0.9;
@@ -1458,10 +1681,15 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS){
     ctx.clearRect(0,0,W,H);ctx.fillStyle=CFG.background||'#000';ctx.fillRect(0,0,W,H);
     const ord=[...CFG.layers].sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ord){if(L.visible===false)continue;const o=ov[L.id]||{};const ins=positions(L,dt);
-      const op=o.opacity!=null?o.opacity:1,sm=o.scale!=null?o.scale:1,pf=o.position;
+      const baseOp=L._wired?(L._opacity!=null?L._opacity:1):1;
+      const op=(o.opacity!=null?o.opacity:1)*baseOp,sm=o.scale!=null?o.scale:1,pf=o.position;
+      const blend=(L._wired&&L._blend)?L._blend:'source-over';
       lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
-      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null);ctx.save();ctx.globalAlpha=op;ctx.drawImage(cgl,0,0,W,H);ctx.restore();}
-      else{ctx.save();ctx.globalAlpha=op;ctx.drawImage(lb,0,0);ctx.restore();}}
+      ctx.save();ctx.globalAlpha=op;ctx.globalCompositeOperation=blend;
+      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null);ctx.drawImage(cgl,0,0,W,H);}
+      else{ctx.drawImage(lb,0,0);}
+      ctx.restore();}
+    applyTop(IN.clock);
     requestAnimationFrame(frame);}
   requestAnimationFrame(frame);
 }

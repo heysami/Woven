@@ -331,6 +331,30 @@ let gotInit = false;
 let uidc = 1;
 const uid = (p)=> p + (Date.now().toString(36).slice(-4)) + (uidc++).toString(36);
 
+// ── Wired spec state (forwarded from the host node graph) ───────────────────
+// The host now forwards wired spec children to this iframe alongside the doc:
+//   effects   — [{type,intensity,params,glsl?}]  shader-lab post-process chain
+//   positions — [{mode,params}]                  arrangement hints (e.g. grid)
+//   layers    — [{id,spec:{name,z,opacity,blend,visible},children:[{type:'asset',url}]}]
+// These are EXTERNAL inputs: storing/applying them must NOT echo image:state.
+// Wired raster layers are a managed group tagged source:'wired' so user-painted
+// layers are never clobbered on reconcile.
+const WIRED = { effects:[], positions:[], layers:[] };
+
+// fx.js (shared GPU effect catalog) is loaded lazily; the chain is reused.
+// Graceful: if the import or WebGL2 setup fails, effects are skipped silently.
+let fxChain = null;          // { apply, applyToImageData, ... } | null
+let fxReady = false;         // import settled (success or failure)
+let fxLoading = null;        // in-flight import promise (dedupes)
+function loadFX(){
+  if(fxReady || fxLoading) return fxLoading || Promise.resolve();
+  fxLoading = import('../_shared/fx.js')
+    .then(mod=>{ try{ fxChain = mod.createFXChain(); }catch(e){ console.warn('[imageeditor] fx chain init failed; effects disabled',e); fxChain=null; } })
+    .catch(e=>{ console.warn('[imageeditor] fx.js import failed; effects disabled',e); fxChain=null; })
+    .finally(()=>{ fxReady=true; fxLoading=null; });
+  return fxLoading;
+}
+
 function newCanvas(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
 function layerById(id){ return DOC.layers.find(l=>l.id===id); }
 function activeLayer(){ return layerById(activeId); }
@@ -455,7 +479,26 @@ function compose(targetCanvas){
     ctx.drawImage(_tmp,0,0);
     ctx.restore();
   }
+
+  // FINAL post-process: apply the wired effects chain over the flattened image.
+  // Shows in the live preview AND in the baked PNG (both go through compose()).
+  applyWiredEffects(out);
   return out;
+}
+
+// Run the wired shader-lab effect chain over an already-flattened canvas, in
+// place. intensity 0 / empty list / missing fx are exact passthroughs.
+function applyWiredEffects(canvas){
+  const fx = WIRED.effects;
+  if(!fx || !fx.length || !fxChain) return;
+  try{
+    const result = fxChain.apply(canvas, fx);   // -> a detached HTMLCanvasElement
+    if(result && (result.width|0)>0){
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(result,0,0,canvas.width,canvas.height);
+    }
+  }catch(e){ console.warn('[imageeditor] effect chain failed; skipped',e); }
 }
 
 // Dispatch an adjustment layer onto the working canvas.
@@ -1224,11 +1267,126 @@ async function reconcileAssets(content){
   buildLayers(); render();
 }
 
+// ── Wired Layer nodes (from the `layers` spec array) ───────────────────────
+// Each wired Layer is {id, spec:{name,z,opacity,blend,visible}, children:[...]}.
+// We materialize the layer's `asset` child (the content image url) as a raster
+// layer tagged source:'wired', honoring the spec's opacity/blend/visible/z.
+// These form a managed group: reconcile adds/refreshes/drops wired layers only,
+// never touching user-painted or content-asset layers.
+function wiredAssetUrl(node){
+  const kids = (node && Array.isArray(node.children)) ? node.children : [];
+  for(const c of kids){
+    if(!c) continue;
+    if(c.type==='asset'){ return c.url || c.src || (c.asset && (c.asset.url||c.asset.src)) || null; }
+  }
+  // tolerate a flatter shape: {url} directly on the node
+  return node && (node.url||node.src) || null;
+}
+function loadWiredLayer(node){
+  const spec = (node && node.spec) || {};
+  const url = wiredAssetUrl(node);
+  const lid = 'wired-'+(node&&node.id!=null?node.id:uid('w'));
+  return new Promise((resolve)=>{
+    const finish=(canvas)=>resolve({
+      id:lid, name:spec.name||'Wired layer', type:'raster',
+      opacity:(spec.opacity==null?1:spec.opacity),
+      blend:spec.blend||'normal',
+      visible:spec.visible!==false,
+      canvas, srcCanvas:canvas, source:'wired', wiredId:(node&&node.id),
+      wiredZ:(spec.z==null?0:spec.z), assetUrl:url,
+    });
+    if(!url){ finish(newCanvas(DOC.w,DOC.h)); return; }   // empty layer, still managed
+    const img=new Image(); img.crossOrigin='anonymous';
+    img.onload=()=>{ const c=newCanvas(DOC.w,DOC.h); try{
+        const cx=c.getContext('2d');
+        const s=Math.min(DOC.w/img.width, DOC.h/img.height);
+        const dw=img.width*s, dh=img.height*s;
+        cx.drawImage(img,(DOC.w-dw)/2,(DOC.h-dh)/2,dw,dh);
+      }catch(e){ console.warn('[imageeditor] wired layer draw failed',e); } finish(c); };
+    img.onerror=(e)=>{ console.warn('[imageeditor] wired layer load failed',url,e); finish(newCanvas(DOC.w,DOC.h)); };
+    try{ img.src=url; }catch(e){ finish(newCanvas(DOC.w,DOC.h)); }
+  });
+}
+async function reconcileWiredLayers(list){
+  const nodes = Array.isArray(list) ? list.filter(n=>n && (n.id!=null)) : [];
+  WIRED.layers = nodes;
+  const wantById = new Map(nodes.map(n=>['wired-'+n.id, n]));
+  // drop wired layers no longer present (user/content layers untouched)
+  DOC.layers = DOC.layers.filter(l => l.source!=='wired' || wantById.has(l.id));
+  // add new / refresh changed
+  for(const node of nodes){
+    const id='wired-'+node.id;
+    const existing=DOC.layers.find(l=>l.id===id && l.source==='wired');
+    const url=wiredAssetUrl(node);
+    const spec=node.spec||{};
+    if(existing){
+      // refresh pixels only if the asset url changed
+      if(existing.assetUrl!==url){
+        const nl=await loadWiredLayer(node);
+        if(nl){ existing.canvas=nl.canvas; existing.srcCanvas=nl.srcCanvas; existing.assetUrl=url; }
+      }
+      existing.name=spec.name||existing.name;
+      existing.opacity=(spec.opacity==null?1:spec.opacity);
+      existing.blend=spec.blend||'normal';
+      existing.visible=spec.visible!==false;
+      existing.wiredZ=(spec.z==null?0:spec.z);
+      continue;
+    }
+    const nl=await loadWiredLayer(node);
+    if(nl) DOC.layers.push(nl);
+  }
+  // honor z: order wired layers among themselves by spec.z (low z = bottom).
+  orderWiredByZ();
+  applyWiredPositions();
+  if(!activeId && DOC.layers.length) activeId=DOC.layers[DOC.layers.length-1].id;
+  buildLayers(); render();
+}
+// Keep the wired group internally sorted by z, anchored where the first wired
+// layer currently sits, without disturbing user/content layer ordering.
+function orderWiredByZ(){
+  const idxs = DOC.layers.map((l,i)=>l.source==='wired'?i:-1).filter(i=>i>=0);
+  if(idxs.length<2) return;
+  const wired = idxs.map(i=>DOC.layers[i]).sort((a,b)=>(a.wiredZ||0)-(b.wiredZ||0));
+  idxs.forEach((slot,k)=>{ DOC.layers[slot]=wired[k]; });
+}
+
+// ── Wired positions (light): arrange wired layers into a grid of cells ──────
+// Supports {mode:'grid', params:{cols,rows,gap}}. Other modes are skipped
+// gracefully. Re-runs on every reconcile so it tracks layer add/remove.
+function applyWiredPositions(){
+  const wired = DOC.layers.filter(l=>l.source==='wired');
+  if(!wired.length) return;
+  const pos = (WIRED.positions||[]).find(p=>p && p.mode==='grid');
+  // No grid wired → restore each wired layer to its pristine full-frame pixels.
+  if(!pos){ wired.forEach(l=>{ if(l._gridded && l.srcCanvas){ l.canvas=l.srcCanvas; l._gridded=false; } }); return; }
+  const p = pos.params||{};
+  const cols = (p.cols|0)>0 ? (p.cols|0) : Math.ceil(Math.sqrt(wired.length));
+  const rows = (p.rows|0)>0 ? (p.rows|0) : Math.ceil(wired.length/cols);
+  const gap = Math.max(0, num(p.gap,0));
+  const cellW = (DOC.w - gap*(cols+1))/cols;
+  const cellH = (DOC.h - gap*(rows+1))/rows;
+  if(cellW<=0 || cellH<=0) return;
+  wired.forEach((l,i)=>{
+    const col=i%cols, row=Math.floor(i/cols)%rows;
+    const dx=gap + col*(cellW+gap), dy=gap + row*(cellH+gap);
+    // Always derive from the pristine pixels so re-gridding stays idempotent.
+    const src=l.srcCanvas || l.canvas;
+    const dst=newCanvas(DOC.w,DOC.h); const g=dst.getContext('2d');
+    const s=Math.min(cellW/src.width, cellH/src.height);
+    const dw=src.width*s, dh=src.height*s;
+    g.drawImage(src,0,0,src.width,src.height, dx+(cellW-dw)/2, dy+(cellH-dh)/2, dw, dh);
+    l.canvas=dst; l._gridded=true;
+  });
+}
+function num(v,d){ const n=Number(v); return Number.isFinite(n)?n:d; }
+
 // ============================================================================
 // STATE (serialize / deserialize per the canonical schema)
 // ============================================================================
 function serializeState(){
-  const layers=DOC.layers.map(l=>{
+  // Wired layers are external inputs (rematerialized from WIRED.layers on each
+  // message), so they're excluded from user state — only user edits persist.
+  const layers=DOC.layers.filter(l=>l.source!=='wired').map(l=>{
     if(l.type==='raster'){
       const o={ id:l.id, name:l.name, type:'raster',
         src:'image-'+(NODE||'doc')+'/'+l.id+'.png',
@@ -1353,6 +1511,23 @@ function withSuppressed(fn){
   Promise.resolve(fn()).finally(()=>{ setTimeout(()=>{ suppressEmit=false; },0); });
 }
 
+// Capture wired spec arrays off an incoming message (only when present, so a
+// content refresh that omits a field doesn't wipe the prior value).
+function storeWired(d){
+  if(Array.isArray(d.effects))   WIRED.effects   = d.effects;
+  if(Array.isArray(d.positions)) WIRED.positions = d.positions;
+  if(Array.isArray(d.layers))    WIRED.layers    = d.layers;
+}
+// Kick the fx import (if effects are wired) and re-render once it settles so the
+// post-process shows even though import resolves after the first paint.
+function ensureFXThenRender(){
+  if(WIRED.effects && WIRED.effects.length && !fxReady){
+    return loadFX().then(()=>{ render(); });
+  }
+  render();
+  return Promise.resolve();
+}
+
 if(EMBEDDED){
   window.addEventListener('message',(ev)=>{
     const d=ev&&ev.data;
@@ -1361,15 +1536,25 @@ if(EMBEDDED){
     if(d.type==='image:init'){
       gotInit=true;
       suppressEmit=true;
+      // Store wired spec arrays up front so the first compose() already reflects
+      // them. fx.js loads in parallel; effects re-render once it settles.
+      storeWired(d);
       const p = loadFromState(d.state||null);
       p.then(()=> reconcileAssets(d.content||[]))
+       .then(()=> reconcileWiredLayers(WIRED.layers))
+       .then(()=> ensureFXThenRender())
        .finally(()=>{ HIST.length=0; REDO.length=0; updateUndo(); setTimeout(()=>{suppressEmit=false;},0); });
     } else if(d.type==='image:set-state'){
       gotInit=true; suppressEmit=true;
       loadFromState(d.state||null).finally(()=>{ HIST.length=0; REDO.length=0; updateUndo(); setTimeout(()=>{suppressEmit=false;},0); });
     } else if(d.type==='image:content'){
       suppressEmit=true;
-      reconcileAssets(d.content||[]).finally(()=>{ setTimeout(()=>{suppressEmit=false;},0); });
+      // image:content may carry refreshed wired effects/positions/layers too.
+      storeWired(d);
+      reconcileAssets(d.content||[])
+        .then(()=> reconcileWiredLayers(WIRED.layers))
+        .then(()=> ensureFXThenRender())
+        .finally(()=>{ setTimeout(()=>{suppressEmit=false;},0); });
     }
   });
 }
@@ -1482,6 +1667,7 @@ function buildLayers(){
     const nm=document.createElement('div'); nm.className='nm';
     nm.textContent=l.name;
     if(l.asset){ const b=document.createElement('span'); b.className='badge asset'; b.textContent='wired'; nm.appendChild(b); }
+    if(l.source==='wired'){ const b=document.createElement('span'); b.className='badge asset'; b.textContent='wired'; nm.appendChild(b); }
     if(l.type==='alpha-mask'){ const b=document.createElement('span'); b.className='badge mask'; b.textContent='mask'; nm.appendChild(b); }
     if(l.type==='gradient-map'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='grade'; nm.appendChild(b); }
     if(l.type==='levels-rgb'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='levels'; nm.appendChild(b); }
@@ -1749,11 +1935,16 @@ document.getElementById('exportBtn').onclick=()=>{
     toast('Exported PNG');
   }catch(e){ toast('Export failed'); }
 };
+function doBake(){
+  let baked=null; try{ const flat=newCanvas(DOC.w,DOC.h); compose(flat); baked={dataUrl:flat.toDataURL('image/png')}; }catch(e){}
+  try{ parent.postMessage({ type:'image:state', nodeId:NODE, state:serializeState(), baked }, '*'); }catch(e){}
+  toast('Saved into node ✓');
+}
 document.getElementById('bakeBtn').onclick=()=>{
   if(EMBEDDED){ clearTimeout(emitTimer);
-    let baked=null; try{ const flat=newCanvas(DOC.w,DOC.h); compose(flat); baked={dataUrl:flat.toDataURL('image/png')}; }catch(e){}
-    try{ parent.postMessage({ type:'image:state', nodeId:NODE, state:serializeState(), baked }, '*'); }catch(e){}
-    toast('Saved into node ✓');
+    // Ensure the wired effect chain is loaded so the baked PNG includes it.
+    if(WIRED.effects && WIRED.effects.length && !fxReady){ loadFX().finally(doBake); }
+    else doBake();
   } else { document.getElementById('exportBtn').click(); }
 };
 
