@@ -8406,11 +8406,11 @@ function DaemonIndicator({ compact }) {
     "data-state": ok ? "ok" : (loading ? "loading" : "down"),
     "aria-live": "polite",
   };
-  const body = html`
+  const body = html`<>
     <span className="cli-dot"/>
     ${!compact && html`<span className="cli-label">${label}</span>`}
     <span className="tab-tip">${tipShort}</span>
-  `;
+  </>`;
   return html`
     ${interactive
       ? html`<button type="button" ...${common} onClick=${() => setDialogOpen(true)} aria-label="Daemon down — open restart instructions">${body}</button>`
@@ -47428,7 +47428,7 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
           aria-label=${ariaLabel}
           onClick=${onClick}
           onMouseDown=${onMouseDown}
-          tabindex="-1"
+          tabIndex="-1"
         >${children}</button>
         ${bubble}
       </span>
@@ -49764,7 +49764,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           value=${path}
           onInput=${(e) => onChange && onChange({ path: e.target.value })}
           onMouseDown=${(e) => e.stopPropagation()}
-          spellcheck=${false}
+          spellCheck=${false}
           title="Output path — Run writes bytes here. Must start with source/<prototype>/"
         />
       `}
@@ -55225,7 +55225,7 @@ function VectorPropertiesPanel({ shape, onPatch }) {
       <div className="workflow-vector-row">
         <label className="workflow-vector-checkbox">
           <input type="checkbox" checked=${!!shape.shadow}
-            onInput=${(e) => onPatch({ shadow: e.target.checked
+            onChange=${(e) => onPatch({ shadow: e.target.checked
               ? (shape.shadow || { dx: 4, dy: 4, blur: 6, color: "#000000", opacity: 0.35 })
               : null })}/>
           <span>shadow</span>
@@ -57998,7 +57998,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
                 : "Folder of reference materials — moodboards, screenshots, brand sheets, an existing DS folder, etc. The agent gets a 'read scope' for this path in the Build prompt and walks the folder for context. Leave empty if you'd rather attach individual files below."}
               onInput=${(e) => patchSpec({ referenceFolder: e.target.value })}
               onMouseDown=${(e) => e.stopPropagation()}
-              spellcheck=${false}
+              spellCheck=${false}
             />
             <button
               className="workflow-node-agent-output-browse"
@@ -59770,7 +59770,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
                 : "Folder of reference materials. Agent walks it for context during the brainstorm."}
               onInput=${(e) => patchSpec({ referenceFolder: e.target.value })}
               onMouseDown=${(e) => e.stopPropagation()}
-              spellcheck=${false}
+              spellCheck=${false}
             />
             <button
               className="workflow-node-agent-output-browse"
@@ -62555,7 +62555,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
               ? html`<span className="workflow-node-skill-spinner"/><span>Running…</span>`
               : status === "done" ? "Run again ↺"
               : status === "error" ? "Retry"
-              : html`<${Icon.Play}/> Run`}
+              : html`<><${Icon.Play}/> Run</>`}
           </button>
         </div>
         <div className="workflow-node-port workflow-node-port-in"  data-side="in"  onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}/>
@@ -62718,7 +62718,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
             ? html`<span className="workflow-node-skill-spinner"/><span>Running…</span>`
             : status === "done" ? "Run again ↺"
             : status === "error" ? "Retry"
-            : html`<${Icon.Play}/> Run`}
+            : html`<><${Icon.Play}/> Run</>`}
         </button>
         ${status === "error" && error && html`
           <div className="workflow-node-skill-msg workflow-node-skill-msg-error" title=${error}>
@@ -63263,7 +63263,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                         : "Reference folder the agent reads from. Type a project-relative or absolute path, or click 📂 to pick. A wired upstream (Folder node, DS, or Prototype) overrides this field.")}
                   onInput=${(e) => onChange && onChange({ referenceFolder: e.target.value })}
                   onMouseDown=${(e) => e.stopPropagation()}
-                  spellcheck=${false}/>
+                  spellCheck=${false}/>
                 <button
                   className="workflow-node-agent-output-browse"
                   disabled=${!!wiredFlag}
@@ -63285,7 +63285,8 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
             <span className="workflow-node-agent-row-label">outputs</span>
             <span className="workflow-node-agent-row-summary"
                   title=${outputTargets.map(t => `${t.targetType}: ${t.label}`).join("  ·  ")}>
-              ${outputTargets.map((t, i) => html`${i > 0 && " · "}<span className="workflow-node-agent-out-chip" data-type=${t.targetType}>${t.targetType}</span> ${t.label}`)}
+              ${outputTargets.map((t, i) => html`<${React.Fragment} key=${t.targetType + "-" + i}>${i > 0 && " · "}<span className="workflow-node-agent-out-chip" data-type=${t.targetType}>${t.targetType}</span> ${t.label}<//>`)}
+
             </span>
           </div>
         ` : html`
@@ -63320,7 +63321,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                       : "Folder the agent may freely write inside. Use absolute path for outside-project."}
                   onInput=${(e) => onChange && onChange({ outputPath: e.target.value })}
                   onMouseDown=${(e) => e.stopPropagation()}
-                  spellcheck=${false}/>
+                  spellCheck=${false}/>
               `}
               ${(isPrototypePreset || node.outputMode === "folder") && html`
                 <button
@@ -63482,7 +63483,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
               }
             }}
             onMouseDown=${(e) => e.stopPropagation()}
-          >${running ? html`<span className="workflow-node-skill-spinner"/> running…` : html`<${Icon.Play}/> Run`}</button>
+          >${running ? html`<span className="workflow-node-skill-spinner"/> running…` : html`<><${Icon.Play}/> Run</>`}</button>
           ${outputTargets.length > 0 && html`
             <button
               className="workflow-node-skill-run workflow-node-agent-apply-btn"
