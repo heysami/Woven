@@ -32,49 +32,18 @@
   .tbtn{height:30px;padding:0 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);
         color:var(--txt);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.12s}
   .tbtn:hover{border-color:var(--acc);background:#1f2530}
-  .tbtn.go{background:linear-gradient(180deg,#2b3550,#1d2438);border-color:#3a4560}
   .tbtn svg{width:14px;height:14px}
   .status{font-size:11px;color:var(--dim);font-family:var(--mono)}
   .status b{color:var(--good)}
 
   /* main layout */
   #main{flex:1;min-height:0;display:flex}
-  /* left: element list */
-  #left{width:210px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);
-        display:flex;flex-direction:column}
-  .sec{padding:10px 12px;border-bottom:1px solid var(--line)}
-  .sec h3{margin:0 0 8px;font-size:10.5px;letter-spacing:.13em;color:var(--dim);font-weight:700;text-transform:uppercase}
-  .elrow{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;cursor:pointer;font-size:12.5px;margin-bottom:3px;border:1px solid transparent}
-  .elrow:hover{background:var(--panel2)}
-  .elrow.sel{background:#1c2536;border-color:#34507a}
-  .elrow .sw{width:18px;height:18px;border-radius:5px;flex:0 0 auto;border:1px solid #ffffff22}
-  .elrow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .elrow .mt{font-size:9px;color:var(--dim2);font-family:var(--mono);letter-spacing:.03em}
-  .miniadd{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .miniadd button{height:30px;border-radius:7px;border:1px dashed var(--line2);background:transparent;color:var(--dim);
-    font-size:11px;cursor:pointer;transition:.12s}
-  .miniadd button:hover{border-color:var(--acc);color:var(--txt);background:var(--panel2)}
 
-  /* center: stage */
-  #center{flex:1;min-width:0;position:relative;background:
-    radial-gradient(1200px 700px at 30% -10%,#13161c,transparent),
-    radial-gradient(900px 600px at 110% 120%,#0f1217,transparent),#08090b;
-    overflow:hidden}
-  #stageWrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
-  #stageHost{position:relative;box-shadow:0 30px 90px #000a,0 0 0 1px #ffffff10;border-radius:4px;overflow:hidden}
-  #glcanvas{display:block;position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  #fxcanvas{display:none;position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  #overlay{position:absolute;inset:0;cursor:default}
-  .handle{position:absolute;width:12px;height:12px;background:#fff;border:1.5px solid var(--acc);border-radius:3px;
-    transform:translate(-50%,-50%);box-shadow:0 1px 4px #0008}
-  .selbox{position:absolute;border:1px dashed var(--acc);pointer-events:none;border-radius:2px}
-  .elabel{position:absolute;font-size:10px;font-family:var(--mono);background:#000a;color:#fff;
-    padding:2px 6px;border-radius:5px;transform:translateY(-130%);pointer-events:none;white-space:nowrap}
-  #zoominfo{position:absolute;left:12px;bottom:10px;font-size:10.5px;color:var(--dim2);font-family:var(--mono);
-    background:#0008;padding:4px 9px;border-radius:6px;pointer-events:none}
-
-  /* right: inspector */
-  #right{width:288px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);
+  /* left: scene panel */
+  #left{width:222px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);
+        display:flex;flex-direction:column;overflow-y:auto}
+  /* right: material inspector */
+  #right{width:300px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);
          display:flex;flex-direction:column;overflow-y:auto}
   .grp{padding:11px 13px;border-bottom:1px solid var(--line)}
   .grp h3{margin:0 0 10px;font-size:10.5px;letter-spacing:.13em;color:var(--dim);font-weight:700;text-transform:uppercase;display:flex;justify-content:space-between}
@@ -90,22 +59,179 @@
     background:var(--bg2);color:var(--txt);font-size:12px;padding:0 9px}
   input[type=color]{width:100%;height:30px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);padding:2px;cursor:pointer}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chip{padding:5px 9px;border-radius:14px;border:1px solid var(--line2);background:var(--bg2);font-size:11px;cursor:pointer;transition:.12s;color:var(--dim)}
+  .chip{padding:5px 9px;border-radius:14px;border:1px solid var(--line2);background:var(--bg2);font-size:11px;cursor:pointer;transition:.12s;color:var(--dim);user-select:none}
   .chip:hover{border-color:var(--acc);color:var(--txt)}
   .chip.on{background:linear-gradient(180deg,#2b3550,#1d2438);border-color:#3c5680;color:#fff}
-  .mtchip{display:flex;align-items:center;gap:6px;padding:6px 8px}
-  .mtchip .glsw{width:16px;height:16px;border-radius:5px;border:1px solid #ffffff33}
-  .toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);cursor:pointer;margin-bottom:8px}
-  .toggle input{width:34px;height:19px;-webkit-appearance:none;background:#2a3038;border-radius:11px;position:relative;cursor:pointer;outline:none;transition:.15s}
+  .mtchip{display:flex;align-items:center;gap:6px;padding:6px 9px}
+  .mtchip .glsw{width:15px;height:15px;border-radius:5px;border:1px solid #ffffff33;flex:0 0 auto}
+  .toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);cursor:pointer;margin-bottom:4px}
+  .toggle input{width:34px;height:19px;-webkit-appearance:none;background:#2a3038;border-radius:11px;position:relative;cursor:pointer;outline:none;transition:.15s;flex:0 0 auto}
   .toggle input:checked{background:var(--acc)}
   .toggle input::after{content:'';position:absolute;width:15px;height:15px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}
   .toggle input:checked::after{left:17px}
-  .empty{padding:30px 16px;text-align:center;color:var(--dim2);font-size:12px;line-height:1.6}
-  .delbtn{width:100%;height:30px;border-radius:7px;border:1px solid #5a2b2b;background:#2a1717;color:#ff9090;font-size:11.5px;cursor:pointer;transition:.12s}
-  .delbtn:hover{background:#3a1d1d;border-color:#7a3a3a}
   .hint{font-size:10px;color:var(--dim2);line-height:1.5;margin-top:6px}
+  .palrow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+  .palrow input[type=color]{flex:1}
+  .palrow button{height:30px;width:30px;border-radius:7px;border:1px solid #5a2b2b;background:#2a1717;color:#ff9090;cursor:pointer;font-size:14px;flex:0 0 auto}
+  .addpal{width:100%;height:28px;border-radius:7px;border:1px dashed var(--line2);background:transparent;color:var(--dim);font-size:11px;cursor:pointer;transition:.12s}
+  .addpal:hover{border-color:var(--acc);color:var(--txt)}
+
+  /* center: stage */
+  #center{flex:1;min-width:0;position:relative;overflow:auto;background:
+    radial-gradient(1200px 700px at 30% -10%,#13161c,transparent),
+    radial-gradient(900px 600px at 110% 120%,#0f1217,transparent),#08090b;
+    display:flex;align-items:center;justify-content:center}
+  /* the stage backdrop (scene bg + backdrop preset + wired image) sits behind */
+  #stage{position:relative;width:760px;max-width:calc(100% - 60px);margin:30px;border-radius:20px;overflow:hidden;
+    box-shadow:0 30px 90px #000a,0 0 0 1px #ffffff10;background:#0b0d12}
+  #backdrop{position:absolute;inset:0;z-index:0}
+  #fxlayer{position:absolute;inset:0;z-index:5;pointer-events:none;display:none;mix-blend-mode:normal}
+  #fxlayer canvas{width:100%;height:100%;display:block}
+  /* the DS gallery panel — components live here, on TOP of the backdrop */
+  #gallery{position:relative;z-index:2;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
+  #zoominfo{position:absolute;left:12px;bottom:10px;font-size:10.5px;color:var(--dim2);font-family:var(--mono);
+    background:#0008;padding:4px 9px;border-radius:6px;pointer-events:none;z-index:10}
+
+  /* ============================================================= */
+  /*  MATERIAL ENGINE — CSS vars on #stage drive every component    */
+  /*  --m-blur --m-sat --m-tint --m-tinta --m-spec --m-rim         */
+  /*  --m-disp-a --m-disp-b (dispersion edge colors) --m-radius    */
+  /*  --m-accent (palette[0]) --mx --my (mouse 0..1)               */
+  /* ============================================================= */
+  #stage{
+    --m-blur:14px; --m-sat:1.6; --m-tint:#ffffff; --m-tinta:0.08;
+    --m-spec:0.65; --m-rim:0.5; --m-disp-a:#6ea8ff; --m-disp-b:#ff6ec7;
+    --m-radius:18px; --m-accent:#7cc7ff; --m-accent2:#3b82f6;
+    --m-shadow:0 8px 30px #00000055; --m-border:#ffffff26;
+    --mx:0.5; --my:0.4; --m-clearcoat:0.0; --m-matte:0;
+  }
+  /* the reusable material surface — applied to cards, buttons, inputs, etc */
+  .mat{
+    position:relative;
+    border-radius:var(--m-radius);
+    background:rgba(var(--m-tint-rgb),var(--m-tinta));
+    -webkit-backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat));
+    backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat));
+    border:1px solid var(--m-border);
+    box-shadow:
+      var(--m-shadow),
+      inset 0 1px 0 rgba(255,255,255,calc(var(--m-spec)*0.55)),
+      inset 0 0 0 1px rgba(255,255,255,calc(var(--m-rim)*0.10)),
+      inset calc(var(--m-disp-x)) 0 0 rgba(var(--m-disp-a-rgb),var(--m-disp-amt)),
+      inset calc(var(--m-disp-x) * -1) 0 0 rgba(var(--m-disp-b-rgb),var(--m-disp-amt));
+    overflow:hidden;
+    transition:box-shadow .15s, background .15s;
+  }
+  /* refraction edge via SVG displacement (applied where backdrop-filter:url is supported) */
+  .mat.glass-disp{ backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat)) url(#glassFilter); -webkit-backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat)); }
+  /* top specular highlight + mouse-follow light */
+  .mat::before{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:1;
+    background:
+      radial-gradient(120px 90px at calc(var(--mx)*100%) calc(var(--my)*100%),
+        rgba(255,255,255,calc(var(--m-spec)*0.5)), transparent 70%),
+      linear-gradient(180deg, rgba(255,255,255,calc(var(--m-spec)*0.35)), transparent 38%);
+    mix-blend-mode:screen;
+  }
+  /* tint overlay */
+  .mat::after{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
+    background:linear-gradient(135deg, rgba(var(--m-tint-rgb),calc(var(--m-tinta)*0.6)), transparent);
+  }
+  .mat > *{position:relative;z-index:2}
+
+  /* ---- per-material-type tweaks (toggled class on #stage) ---- */
+  #stage.mt-frosted .mat{ box-shadow:var(--m-shadow), inset 0 1px 0 rgba(255,255,255,.25); }
+  #stage.mt-holographic .mat::before{
+    background:
+      linear-gradient(115deg,
+        hsl(calc(var(--mx)*360),90%,65%) 0%,
+        hsl(calc(var(--mx)*360 + 120),90%,62%) 40%,
+        hsl(calc(var(--mx)*360 + 240),90%,64%) 80%);
+    mix-blend-mode:color-dodge; opacity:calc(0.35 + var(--m-spec)*0.4);
+    animation:holoShift 6s linear infinite;
+  }
+  @keyframes holoShift{ to{ filter:hue-rotate(360deg);} }
+  #stage.mt-metal .mat, #stage.mt-chrome .mat{
+    -webkit-backdrop-filter:none; backdrop-filter:none;
+  }
+  #stage.mt-metal .mat{
+    background:conic-gradient(from calc(var(--mx)*360deg) at 50% 50%,
+      #cdd6e4, #79859b, #eef2f8, #5f6b80, #aeb9cc, #cdd6e4);
+  }
+  #stage.mt-chrome .mat{
+    background:conic-gradient(from calc(var(--mx)*360deg) at calc(var(--mx)*100%) calc(var(--my)*100%),
+      #ffffff, #aab6c9, #ffffff, #7e8aa3, #dfe6f0, #ffffff);
+  }
+  #stage.mt-metal .mat::before, #stage.mt-chrome .mat::before{
+    background:linear-gradient(115deg, rgba(255,255,255,.9), transparent 30%, rgba(255,255,255,.4) 60%, transparent);
+    mix-blend-mode:screen; opacity:.55;
+  }
+  #stage.mt-metal .mat > *, #stage.mt-chrome .mat > *{ color:#10141c; text-shadow:0 1px 0 #ffffffaa; }
+  #stage.mt-plastic .mat{
+    background:rgba(var(--m-tint-rgb),calc(var(--m-tinta)+0.06));
+    -webkit-backdrop-filter:blur(calc(var(--m-blur)*0.5)) saturate(var(--m-sat));
+    backdrop-filter:blur(calc(var(--m-blur)*0.5)) saturate(var(--m-sat));
+  }
+  #stage.mt-plastic .mat::before{
+    background:linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,0) 45%);
+    mix-blend-mode:screen; opacity:calc(0.4+var(--m-spec)*0.5);
+  }
+  #stage.mt-clay .mat{
+    -webkit-backdrop-filter:none; backdrop-filter:none;
+    background:var(--m-accent);
+    border:none;
+    box-shadow:
+      8px 8px 22px rgba(0,0,0,.30),
+      -8px -8px 22px rgba(255,255,255,.10),
+      inset 6px 6px 14px rgba(255,255,255,.30),
+      inset -8px -8px 16px rgba(0,0,0,.20);
+  }
+  #stage.mt-clay .mat::before{ background:none; }
+  #stage.mt-clay .mat::after{ background:none; }
+  #stage.mt-clay .mat > *{ color:#1a1410; }
+
+  /* ============================================================= */
+  /*  FIXED DESIGN-SYSTEM COMPONENTS                                */
+  /* ============================================================= */
+  .ds-card{ padding:24px 26px; }
+  .ds-card .head{ font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#fff;opacity:.55;margin-bottom:14px;font-weight:700 }
+  .type-display{ font-size:38px;font-weight:800;line-height:1.05;letter-spacing:-.02em;color:#fff;margin:0 }
+  .type-heading{ font-size:21px;font-weight:700;color:#fff;margin:8px 0 0 }
+  .type-body{ font-size:13px;color:#fff;opacity:.78;margin:6px 0 0;line-height:1.5 }
+  .type-caption{ font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#fff;opacity:.5;margin:8px 0 0;font-weight:600 }
+
+  .swatches{ display:flex;gap:10px;margin-top:4px }
+  .swatch{ width:46px;height:46px;border-radius:12px;box-shadow:inset 0 0 0 1px #ffffff22, 0 4px 14px #0006 }
+
+  .tabs{ display:flex;gap:6px;border-bottom:1px solid #ffffff1f;padding-bottom:0 }
+  .tab{ padding:9px 16px;font-size:13px;color:#fff;opacity:.55;cursor:default;border-bottom:2px solid transparent;font-weight:600 }
+  .tab.active{ opacity:1;border-bottom-color:var(--m-accent) }
+
+  .ds-input{ display:flex;align-items:center;padding:0 14px;height:42px;font-size:13px;color:#fff }
+  .ds-input::placeholder{ color:#ffffff66 }
+
+  .btnrow{ display:flex;gap:12px;flex-wrap:wrap;align-items:center }
+  .ds-btn{ height:40px;padding:0 20px;font-size:13px;font-weight:600;color:#fff;display:inline-flex;align-items:center;gap:8px;cursor:default;border-radius:calc(var(--m-radius)*0.8) }
+  .ds-btn.secondary{ opacity:.92 }
+  .ds-btn.tertiary{ background:transparent !important;-webkit-backdrop-filter:none !important;backdrop-filter:none !important;border-color:transparent !important;box-shadow:none !important;color:var(--m-accent) }
+  .ds-btn.tertiary::before,.ds-btn.tertiary::after{ display:none }
+  .ds-btn.disabled{ opacity:.4;filter:saturate(.4) }
+
+  .product-card{ width:230px;padding:0;overflow:hidden }
+  .product-card .pc-img{ height:118px;display:block;background-size:cover;background-position:center }
+  .product-card .pc-body{ padding:14px 16px 16px }
+  .product-card .pc-title{ font-size:15px;font-weight:700;color:#fff;margin:0 }
+  .product-card .pc-text{ font-size:12px;color:#fff;opacity:.72;margin:5px 0 12px;line-height:1.45 }
+  .product-card .pc-link{ font-size:12.5px;font-weight:700;color:var(--m-accent);cursor:default }
+
+  .chip-pill{ display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 14px;font-size:12px;font-weight:600;color:#fff;border-radius:999px }
+  .chip-pill .dotc{ width:8px;height:8px;border-radius:50%;background:var(--m-accent) }
+
+  .galrow{ display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start }
+  .galcol{ display:flex;flex-direction:column;gap:14px;flex:1;min-width:240px }
+
   #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);background:#1c2230;
     border:1px solid var(--line2);padding:9px 16px;border-radius:9px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:60;box-shadow:0 10px 30px #0008}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -113,33 +239,28 @@
 </head>
 <body>
   <div id="top">
-    <div class="brand"><span class="dot"></span>MATERIAL&nbsp;LAB<small>liquid&nbsp;glass</small></div>
+    <div class="brand"><span class="dot"></span>MATERIAL&nbsp;LAB<small>material&nbsp;editor</small></div>
     <div class="spacer"></div>
     <span class="status" id="modeStatus"></span>
-    <button class="tbtn" id="btnFit" title="Fit stage">Fit</button>
     <button class="tbtn" id="btnBake" title="Export standalone HTML">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
       Export
     </button>
   </div>
 
+  <!-- SVG displacement filter for the liquid-glass refraction edge.
+       The displacement map data-URL is swapped per bezel profile at runtime. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="glassFilter" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feImage id="glassMap" result="map" preserveAspectRatio="none"></feImage>
+      <feDisplacementMap id="glassDisp" in="SourceGraphic" in2="map" scale="40" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+    </filter>
+  </svg>
+
   <div id="main">
-    <!-- LEFT -->
+    <!-- LEFT: SCENE -->
     <div id="left">
-      <div class="sec">
-        <h3>Elements</h3>
-        <div id="elList"></div>
-      </div>
-      <div class="sec">
-        <h3>Add</h3>
-        <div class="miniadd">
-          <button data-add="squircle">+ Squircle</button>
-          <button data-add="rounded-rect">+ Rect</button>
-          <button data-add="circle">+ Circle</button>
-          <button data-add="pill">+ Pill</button>
-        </div>
-      </div>
-      <div class="sec" style="flex:1;overflow:auto">
+      <div class="grp">
         <h3>Scene</h3>
         <div class="field">
           <label>Background <span class="v" id="bgVal"></span></label>
@@ -148,35 +269,90 @@
         <div class="field">
           <label>Backdrop preset</label>
           <select id="bgPreset">
-            <option value="keep">— solid color —</option>
-            <option value="aurora">Aurora gradient</option>
-            <option value="sunset">Sunset mesh</option>
-            <option value="grid">Neon grid</option>
-            <option value="blobs">Color blobs</option>
-            <option value="photo">Photo (if wired)</option>
+            <option value="aurora-gradient">Aurora gradient</option>
+            <option value="mesh-warm">Mesh warm</option>
+            <option value="mono-soft">Mono soft</option>
+            <option value="studio">Studio</option>
           </select>
         </div>
-        <div class="field row2">
-          <div><label>Canvas W</label><input type="number" id="cw" min="200" max="4000"></div>
-          <div><label>Canvas H</label><input type="number" id="ch" min="200" max="4000"></div>
-        </div>
-        <div class="hint">Drag elements on the stage. Move the mouse over the glass — light & refraction follow the cursor.</div>
+        <div class="hint" id="wiredHint"></div>
+      </div>
+      <div class="grp" style="flex:1">
+        <h3>Palette <span class="pill" id="palCount"></span></h3>
+        <div id="palList"></div>
+        <button class="addpal" id="addPal">+ Add accent</button>
+        <div class="hint">Accents re-skin tabs, links, chips and clay across the whole component set.</div>
       </div>
     </div>
 
-    <!-- CENTER -->
+    <!-- CENTER: fixed DS component set, live-reskinned -->
     <div id="center">
-      <div id="stageWrap">
-        <div id="stageHost">
-          <canvas id="glcanvas"></canvas>
-          <canvas id="fxcanvas"></canvas>
-          <div id="overlay"></div>
+      <div id="stage">
+        <div id="backdrop"></div>
+        <div id="fxlayer"></div>
+        <div id="gallery">
+          <!-- typography -->
+          <div class="mat ds-card glass-disp">
+            <div class="head">Typography</div>
+            <h1 class="type-display">Display Large</h1>
+            <div class="type-heading">Heading Medium</div>
+            <div class="type-body">Body Small — the quick brown fox jumps over the lazy dog while the material refracts the scene behind it.</div>
+            <div class="type-caption">Caption / Label</div>
+          </div>
+
+          <div class="galrow">
+            <div class="galcol">
+              <!-- palette -->
+              <div class="mat ds-card glass-disp">
+                <div class="head">Color palette</div>
+                <div class="swatches" id="dsSwatches"></div>
+              </div>
+              <!-- tabs -->
+              <div class="mat ds-card glass-disp">
+                <div class="head">Tabs</div>
+                <div class="tabs">
+                  <div class="tab active">Overview</div>
+                  <div class="tab">Activity</div>
+                  <div class="tab">Settings</div>
+                  <div class="tab">More</div>
+                </div>
+              </div>
+              <!-- input -->
+              <div class="mat ds-input glass-disp">Enter text…</div>
+              <!-- buttons -->
+              <div class="mat ds-card glass-disp">
+                <div class="head">Buttons</div>
+                <div class="btnrow">
+                  <div class="mat ds-btn glass-disp">Primary</div>
+                  <div class="mat ds-btn secondary glass-disp">Secondary</div>
+                  <div class="ds-btn tertiary">Tertiary</div>
+                  <div class="mat ds-btn disabled glass-disp">Disabled</div>
+                </div>
+              </div>
+            </div>
+            <div class="galcol" style="flex:0 0 auto">
+              <!-- card -->
+              <div class="mat product-card glass-disp">
+                <div class="pc-img" id="dsCardImg"></div>
+                <div class="pc-body">
+                  <div class="pc-title">Card Title</div>
+                  <div class="pc-text">A line of body text describing the card content and what it offers.</div>
+                  <div class="pc-link">Action →</div>
+                </div>
+              </div>
+              <!-- chip -->
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <div class="mat chip-pill glass-disp"><span class="dotc"></span>Chip</div>
+                <div class="mat chip-pill glass-disp"><span class="dotc"></span>Tag</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div id="zoominfo"></div>
     </div>
 
-    <!-- RIGHT -->
+    <!-- RIGHT: MATERIAL -->
     <div id="right">
       <div id="inspector"></div>
     </div>
@@ -187,1058 +363,504 @@
 <script>
 "use strict";
 /* ===========================================================================
-   MATERIAL LAB — liquid-glass material editor (WebGL2, single file)
-   Real refraction: backdrop -> SDF height profile -> Snell displacement ->
-   chromatic dispersion + frost blur + specular rim. Mouse drives lightDir.
+   MATERIAL LAB — a MATERIAL EDITOR.
+   The center stage shows a FIXED design-system component set. The right panel
+   edits ONE material that re-skins the entire set live, via CSS custom
+   properties + a material-type class on #stage. Liquid-glass refraction is
+   a real edge via an SVG <feDisplacementMap> (radial map per bezel profile)
+   applied as backdrop-filter:url(#glassFilter) where supported.
    =========================================================================== */
 
 /* ---------- driven-view bridge ---------- */
 const Q = new URLSearchParams(location.search);
 const NODE = Q.get('nodeId') || '';
-const PROJECT = Q.get('project') || '';
 const EMBEDDED = window.parent !== window;
 
 /* ---------- DOM ---------- */
-const host = document.getElementById('stageHost');
-const gl_canvas = document.getElementById('glcanvas');
-const fx_canvas = document.getElementById('fxcanvas');
-const fx_ctx = fx_canvas.getContext('2d');
-const overlay = document.getElementById('overlay');
-const center = document.getElementById('center');
-const elList = document.getElementById('elList');
+const stage     = document.getElementById('stage');
+const backdrop  = document.getElementById('backdrop');
+const fxlayer   = document.getElementById('fxlayer');
+const gallery   = document.getElementById('gallery');
 const inspector = document.getElementById('inspector');
-const zoomInfo = document.getElementById('zoominfo');
-const toastEl = document.getElementById('toast');
+const zoomInfo  = document.getElementById('zoominfo');
+const toastEl   = document.getElementById('toast');
+const bgColor   = document.getElementById('bgColor');
+const bgVal     = document.getElementById('bgVal');
+const bgPreset  = document.getElementById('bgPreset');
+const palList   = document.getElementById('palList');
+const palCount  = document.getElementById('palCount');
+const dsSwatches= document.getElementById('dsSwatches');
+const dsCardImg = document.getElementById('dsCardImg');
+const wiredHint = document.getElementById('wiredHint');
 
-/* ---------- material presets ---------- */
-// Each material type seeds default shader params; users can override.
+/* ---------- material-type presets (seed values) ---------- */
 const MATERIALS = {
-  'liquid-glass':{ior:1.5,thickness:14,profile:'squircle',refraction:0.72,dispersion:0.28,frost:0.10,specular:0.65,tint:'#ffffff14'},
-  'frosted':     {ior:1.33,thickness:18,profile:'convex',  refraction:0.30,dispersion:0.08,frost:0.62,specular:0.40,tint:'#ffffff22'},
-  'holographic': {ior:1.45,thickness:10,profile:'squircle',refraction:0.60,dispersion:0.85,frost:0.05,specular:0.75,tint:'#ffffff10'},
-  'metal':       {ior:2.4, thickness:8, profile:'convex',  refraction:0.18,dispersion:0.04,frost:0.02,specular:0.95,tint:'#cfd6e033'},
-  'chrome':      {ior:3.0, thickness:6, profile:'convex',  refraction:0.10,dispersion:0.02,frost:0.00,specular:1.0, tint:'#eef3ff22'},
-  'plastic':     {ior:1.49,thickness:10,profile:'lip',     refraction:0.45,dispersion:0.10,frost:0.18,specular:0.50,tint:'#ffffff1c'},
+  'liquid-glass':{profile:'squircle',ior:1.50,thickness:14,refraction:0.72,dispersion:0.28,frost:0.10,specular:0.65,tint:'#ffffff14'},
+  'frosted':     {profile:'convex',  ior:1.33,thickness:20,refraction:0.30,dispersion:0.08,frost:0.62,specular:0.40,tint:'#ffffff22'},
+  'holographic': {profile:'squircle',ior:1.45,thickness:10,refraction:0.60,dispersion:0.85,frost:0.05,specular:0.75,tint:'#ffffff10'},
+  'metal':       {profile:'convex',  ior:2.20,thickness:8, refraction:0.18,dispersion:0.04,frost:0.02,specular:0.95,tint:'#cfd6e033'},
+  'chrome':      {profile:'convex',  ior:2.30,thickness:6, refraction:0.10,dispersion:0.02,frost:0.00,specular:1.00,tint:'#eef3ff22'},
+  'plastic':     {profile:'lip',     ior:1.49,thickness:10,refraction:0.45,dispersion:0.10,frost:0.18,specular:0.55,tint:'#ffffff1c'},
+  'clay':        {profile:'convex',  ior:1.20,thickness:16,refraction:0.10,dispersion:0.00,frost:0.00,specular:0.20,tint:'#ffffff10'},
 };
 const MATERIAL_TYPES = Object.keys(MATERIALS);
-const MAT_TYPE_INT = {'liquid-glass':0,'frosted':1,'holographic':2,'metal':3,'chrome':4,'plastic':5};
-const PROFILE_INT = {'squircle':0,'convex':1,'concave':2,'lip':3};
-const SHAPE_INT = {'squircle':0,'rounded-rect':1,'circle':2,'pill':3,'path':1};
+const PROFILES = ['squircle','convex','concave','lip'];
+const BACKDROPS = ['aurora-gradient','mesh-warm','mono-soft','studio'];
 
 /* ---------- state ---------- */
-let STATE = null;       // canonical schema object
-let selId = null;       // selected element id
+let STATE = null;       // canonical schema
 let CONTENT = [];       // wired assets {id,url,kind,label}
-const assetTex = {};    // assetId -> {tex, w, h, loaded}
+let EFFECTS = [];       // wired effect specs
 let suppressEmit = false;
 let emitTimer = null;
-let idCounter = 1;
 
-/* ---------- wired effects (shader-lab post-process chain) ----------
-   Top-level effects array forwarded by the host on material:init AND
-   material:content. Applied as a FINAL full-screen post-process over the
-   rendered glass composite (after all refraction passes). Stored on receipt;
-   the continuous render loop picks up changes automatically. External-input
-   changes never echo material:state. */
-let EFFECTS = [];                 // [{type,intensity,params,glsl?}]
-let fxChain = null;               // fx.js chain instance | null (graceful)
-let fxReady = false;              // import settled (ok or failed)
-let fxLoading = null;             // in-flight import promise (dedupes)
-let FX_SRC = '';                  // cached fx.js source text, for the bake
+/* ---------- wired effects (shared fx.js chain — effect-as-material) ---------- */
+let fxChain=null, fxReady=false, fxLoading=null, FX_SRC='';
 function loadFX(){
   if(fxReady || fxLoading) return fxLoading || Promise.resolve();
   fxLoading = import('../_shared/fx.js')
-    .then(mod=>{ try{ fxChain = mod.createFXChain(); }catch(e){ console.warn('[materiallab] fx chain init failed; effects disabled',e); fxChain=null; } })
+    .then(mod=>{ try{ fxChain = mod.createFXChain(); }catch(e){ console.warn('[materiallab] fx chain init failed',e); fxChain=null; } })
     .catch(e=>{ console.warn('[materiallab] fx.js import failed; effects disabled',e); fxChain=null; })
     .finally(()=>{ fxReady=true; fxLoading=null; });
-  // Also fetch the raw source so the BAKED standalone file can inline it
-  // (single source of truth). Best-effort; bake falls back if this is empty.
   fetch('../_shared/fx.js').then(r=>r.ok?r.text():'').then(t=>{ FX_SRC=t||''; }).catch(()=>{});
   return fxLoading;
 }
 function normEffects(arr){
   if(!Array.isArray(arr)) return [];
   return arr.filter(e=>e&&typeof e==='object'&&typeof e.type==='string').map(e=>({
-    type:e.type,
-    intensity: e.intensity==null?1:Number(e.intensity),
-    params: (e.params&&typeof e.params==='object')?e.params:{},
-    glsl: typeof e.glsl==='string'?e.glsl:undefined,
+    type:e.type, intensity:e.intensity==null?1:Number(e.intensity),
+    params:(e.params&&typeof e.params==='object')?e.params:{},
+    glsl:typeof e.glsl==='string'?e.glsl:undefined,
   }));
 }
-function setEffects(arr){ EFFECTS = normEffects(arr); if(EFFECTS.length) loadFX(); }
+function setEffects(arr){ EFFECTS=normEffects(arr); if(EFFECTS.length){ loadFX(); startFX(); } else stopFX(); }
 
-/* default scene: dark + colorful gradient + one liquid-glass card */
+/* ---------- default canonical material state ---------- */
 function defaultState(){
   return {
-    v:1, canvasW:1200, canvasH:800, background:'#0b0d12', backdrop:'aurora',
-    elements:[
-      { id:'E1', name:'Glass Card', shape:'squircle', rect:[360,250,480,300], radius:42, z:0,
-        content:{kind:'color', color:'#ffffff10'},
-        material:{...MATERIALS['liquid-glass']}, material_type:'liquid-glass',
-        reactivity:{mouse:true,neighbors:true,backdrop:true,mouseDrives:['lightDir','refraction'],neighborRadius:140} },
-      { id:'E2', name:'Pill', shape:'pill', rect:[150,120,220,84], radius:42, z:1,
-        content:{kind:'text', text:'LIQUID', color:'#ffffff'},
-        material:{...MATERIALS['holographic']}, material_type:'holographic',
-        reactivity:{mouse:true,neighbors:true,backdrop:true,mouseDrives:['lightDir'],neighborRadius:120} },
-    ]
-  };
-}
-
-/* normalize an element loaded from external state (schema -> internal) */
-function normElement(e){
-  const m = Object.assign({}, MATERIALS['liquid-glass'], e.material||{});
-  const mtype = e.material_type || (e.material&&e.material.type) || 'liquid-glass';
-  if(m.type) delete m.type;
-  return {
-    id: e.id || nextId(),
-    name: e.name || 'element',
-    shape: e.shape || 'squircle',
-    rect: (e.rect&&e.rect.length===4)? e.rect.slice() : [200,200,300,200],
-    radius: e.radius!=null? e.radius : 28,
-    z: e.z!=null? e.z : 0,
-    content: Object.assign({kind:'color',color:'#ffffff14',text:'',assetId:null}, e.content||{}),
-    material: m,
-    material_type: MATERIALS[mtype]? mtype : 'liquid-glass',
-    reactivity: Object.assign({mouse:true,neighbors:true,backdrop:true,mouseDrives:['lightDir','refraction'],neighborRadius:120}, e.reactivity||{}),
+    v:1, background:'#0b0d12', backdrop:'aurora-gradient',
+    material:{type:'liquid-glass', ...MATERIALS['liquid-glass']},
+    palette:['#7cc7ff','#3b82f6','#22d3ee','#34d399','#a78bfa'],
+    reactivity:{mouse:true, mouseDrives:['lightDir','refraction']},
   };
 }
 function normState(s){
-  if(!s) return defaultState();
-  const out = {
-    v:1, canvasW:s.canvasW||1200, canvasH:s.canvasH||800,
-    background:s.background||'#0b0d12', backdrop:s.backdrop||'keep',
-    elements:(s.elements||[]).map(normElement)
+  if(!s || typeof s!=='object' || (!s.material && Array.isArray(s.elements))) {
+    // null OR legacy `elements` schema -> fall back to default material
+    return defaultState();
+  }
+  const d = defaultState();
+  const mt = (s.material&&MATERIALS[s.material.type])? s.material.type : 'liquid-glass';
+  return {
+    v:1,
+    background: s.background || d.background,
+    backdrop: BACKDROPS.includes(s.backdrop)? s.backdrop : d.backdrop,
+    material: Object.assign({type:mt}, MATERIALS[mt], s.material||{}, {type:mt}),
+    palette: (Array.isArray(s.palette)&&s.palette.length)? s.palette.slice(0,8) : d.palette.slice(),
+    reactivity: Object.assign({mouse:true,mouseDrives:['lightDir','refraction']}, s.reactivity||{}),
   };
-  // keep id counter ahead
-  out.elements.forEach(e=>{ const n=parseInt(String(e.id).replace(/\D/g,''),10); if(n>=idCounter) idCounter=n+1; });
-  if(!out.elements.length) return out;
-  return out;
 }
-function nextId(){ return 'E'+(idCounter++); }
 
 /* ====================================================================== */
-/*  WebGL2 setup                                                          */
+/*  COLOR HELPERS                                                          */
 /* ====================================================================== */
-const gl = gl_canvas.getContext('webgl2', {premultipliedAlpha:false, antialias:false, preserveDrawingBuffer:false});
-if(!gl){ document.body.innerHTML='<div style="padding:40px;font-family:sans-serif;color:#fff">WebGL2 not available in this browser.</div>'; throw new Error('no webgl2'); }
+function hexRGB(hex){
+  hex=(hex||'#ffffff').replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  if(hex.length>=6) return [parseInt(hex.slice(0,2),16)||0,parseInt(hex.slice(2,4),16)||0,parseInt(hex.slice(4,6),16)||0];
+  return [255,255,255];
+}
+function hexAlpha(hex){ // returns {hex6, a 0..1}
+  hex=(hex||'#ffffff').replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  let a=1; if(hex.length===8){ a=parseInt(hex.slice(6,8),16)/255; }
+  return { hex6:'#'+hex.slice(0,6), a };
+}
+function escapeHTML(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-function compile(type, src){
-  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
-    console.error(gl.getShaderInfoLog(s), src); throw new Error('shader compile');
+/* ====================================================================== */
+/*  DISPLACEMENT MAPS (per bezel profile) — small radial data-URLs.        */
+/*  R/G encode the displacement vector pointing outward from center so     */
+/*  feDisplacementMap bends the refracted backdrop at the bezel edge.      */
+/* ====================================================================== */
+const DISP_CACHE = {};
+function dispMapURL(profile){
+  if(DISP_CACHE[profile]) return DISP_CACHE[profile];
+  const N=128, cv=document.createElement('canvas'); cv.width=cv.height=N;
+  const ctx=cv.getContext('2d'); const img=ctx.createImageData(N,N); const d=img.data;
+  const cx=(N-1)/2, cy=(N-1)/2;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const nx=(x-cx)/cx, ny=(y-cy)/cy;           // -1..1
+    const r=Math.min(1,Math.hypot(nx,ny));
+    const ang=Math.atan2(ny,nx);
+    let amt;
+    // bezel falloff: 0 in flat interior, ramps up sharply near the rim
+    if(profile==='convex'){ amt = Math.pow(r,2.0); }
+    else if(profile==='concave'){ amt = -Math.pow(r,2.0); }
+    else if(profile==='lip'){ const rim=Math.exp(-Math.pow((r-0.82)/0.10,2)); amt = rim*1.2 - r*0.15; }
+    else { /* squircle — Apple smooth bezel: flat then quartic rise at edge */
+      amt = Math.pow(Math.max(0,(r-0.55)/0.45), 1.6); }
+    amt = Math.max(-1,Math.min(1,amt));
+    // encode vector (cos,sin)*amt into R,G around 128 neutral; B/A neutral
+    const dx = Math.cos(ang)*amt, dy = Math.sin(ang)*amt;
+    const i=(y*N+x)*4;
+    d[i]   = Math.round(128 + dx*127);
+    d[i+1] = Math.round(128 + dy*127);
+    d[i+2] = 128;
+    d[i+3] = 255;
   }
-  return s;
+  ctx.putImageData(img,0,0);
+  const url = cv.toDataURL('image/png');
+  DISP_CACHE[profile]=url;
+  return url;
 }
-function program(vs, fs){
-  const p = gl.createProgram();
-  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
-  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(p);
-  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); throw new Error('link'); }
-  return p;
+
+/* ====================================================================== */
+/*  BACKDROP (scene bg + preset + wired image)                            */
+/* ====================================================================== */
+function backdropCSS(state){
+  const bg = state.background;
+  const wired = firstImage();
+  const layers = [];
+  if(state.backdrop==='aurora-gradient'){
+    layers.push(
+      'radial-gradient(60% 80% at 20% 15%, #2a4cff66, transparent 60%)',
+      'radial-gradient(55% 70% at 85% 20%, #b34cff55, transparent 60%)',
+      'radial-gradient(70% 90% at 60% 100%, #16d6b455, transparent 60%)');
+  } else if(state.backdrop==='mesh-warm'){
+    layers.push(
+      'radial-gradient(60% 70% at 15% 20%, #ff8a3d66, transparent 60%)',
+      'radial-gradient(60% 70% at 90% 30%, #ff4d7d66, transparent 60%)',
+      'radial-gradient(80% 90% at 50% 110%, #6d3bff55, transparent 60%)');
+  } else if(state.backdrop==='mono-soft'){
+    layers.push(
+      'radial-gradient(70% 80% at 30% 20%, #ffffff14, transparent 60%)',
+      'radial-gradient(60% 70% at 80% 80%, #ffffff0e, transparent 60%)');
+  } else { /* studio */
+    layers.push(
+      'radial-gradient(120% 90% at 50% -10%, #2a2f3a, transparent 60%)',
+      'linear-gradient(180deg, #14171d, #0a0c10)');
+  }
+  let css = layers.concat([bg]).join(',');
+  return { backgroundImage: layers.join(','), backgroundColor: bg, wired };
 }
-// fullscreen-ish triangle
-const quadVAO = gl.createVertexArray();
-gl.bindVertexArray(quadVAO);
-const quadBuf = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
-gl.enableVertexAttribArray(0);
-gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
-gl.bindVertexArray(null);
+function firstImage(){ return CONTENT.find(c=>c && c.kind==='image' && c.url) || null; }
 
-const VS = `#version 300 es
-layout(location=0) in vec2 a;
-out vec2 vUv;
-void main(){ vUv = a*0.5+0.5; gl_Position = vec4(a,0.0,1.0); }`;
+/* built-in sample card image (data-URI gradient) */
+const SAMPLE_IMG = (()=>{
+  const cv=document.createElement('canvas'); cv.width=400; cv.height=240; const c=cv.getContext('2d');
+  const g=c.createLinearGradient(0,0,400,240); g.addColorStop(0,'#6ea8ff'); g.addColorStop(.5,'#9b7bff'); g.addColorStop(1,'#22d3ee');
+  c.fillStyle=g; c.fillRect(0,0,400,240);
+  c.globalAlpha=.25; for(let i=0;i<6;i++){ c.beginPath(); c.arc(60+i*60, 60+(i%2)*120, 50, 0, 7); c.fillStyle='#fff'; c.fill(); }
+  return cv.toDataURL('image/png');
+})();
 
-/* ---- BACKDROP shader: paints the scene background + element content ----
-   This is the composite "everything behind" texture each glass refracts. */
-const BG_FS = `#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 frag;
-uniform vec2 uRes; uniform float uTime;
-uniform int uPreset; uniform vec3 uBg;
-uniform sampler2D uPhoto; uniform int uHasPhoto;
+/* ====================================================================== */
+/*  MATERIAL ENGINE — re-skin ALL components from one material spec        */
+/* ====================================================================== */
+function applyMaterial(material, paletteAccents){
+  const m = material;
+  // set material-type class on the stage root
+  MATERIAL_TYPES.forEach(t=>stage.classList.remove('mt-'+t));
+  stage.classList.add('mt-'+m.type);
 
-float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
-vec3 hue(float h){ return 0.55+0.45*cos(6.2831853*(h+vec3(0.0,0.33,0.67))); }
+  const tint = hexAlpha(m.tint);
+  const [tr,tg,tb] = hexRGB(tint.hex6);
+  const acc = (paletteAccents&&paletteAccents[0]) || '#7cc7ff';
+  const acc2= (paletteAccents&&paletteAccents[1]) || acc;
 
-void main(){
-  vec2 uv = vec2(vUv.x, 1.0-vUv.y);          // top-left origin
-  vec2 p = uv;
-  vec3 col = uBg;
-  if(uPreset==5 && uHasPhoto==1){
-    col = texture(uPhoto, uv).rgb;
-  } else if(uPreset==1){ // aurora
-    vec2 q = p*vec2(uRes.x/uRes.y,1.0);
-    float t=uTime*0.08;
-    float w = 0.5+0.5*sin(q.x*3.0+t)*sin(q.y*2.0-t*1.3);
-    vec3 a=vec3(0.12,0.22,0.55), b=vec3(0.55,0.18,0.62), c=vec3(0.10,0.55,0.52);
-    col = mix(uBg, a, smoothstep(0.0,1.0,w));
-    col = mix(col, b, 0.5*pow(0.5+0.5*sin(q.y*4.0+t*1.7),2.0));
-    col = mix(col, c, 0.4*pow(0.5+0.5*sin((q.x+q.y)*3.5-t*1.1),3.0));
-    col += 0.05*hash(p*uRes*0.5+t);
-  } else if(uPreset==2){ // sunset mesh
-    vec3 top=vec3(0.98,0.55,0.30), mid=vec3(0.92,0.30,0.45), bot=vec3(0.18,0.10,0.35);
-    col = mix(bot, mid, smoothstep(0.0,0.65,uv.y));
-    col = mix(col, top, smoothstep(0.45,1.0,uv.y));
-    float g1=exp(-12.0*length(p-vec2(0.25,0.30)));
-    float g2=exp(-10.0*length(p-vec2(0.80,0.70)));
-    col += vec3(1.0,0.85,0.5)*g1*0.5 + vec3(0.4,0.6,1.0)*g2*0.4;
-  } else if(uPreset==3){ // neon grid
-    col = mix(vec3(0.02,0.02,0.06), vec3(0.05,0.02,0.12), uv.y);
-    vec2 g = p*vec2(uRes.x,uRes.y);
-    vec2 gr = abs(fract(g/40.0)-0.5)/fwidth(g/40.0);
-    float line = 1.0-min(min(gr.x,gr.y),1.0);
-    col += mix(vec3(0.0,0.9,1.0),vec3(1.0,0.1,0.7),uv.y)*line*0.6;
-    col += vec3(0.6,0.1,0.9)*exp(-6.0*length(p-vec2(0.5,0.15)));
-  } else if(uPreset==4){ // color blobs
-    col = uBg*0.6;
-    for(int i=0;i<5;i++){
-      float fi=float(i);
-      vec2 c=vec2(0.5+0.4*sin(uTime*0.2+fi*1.3), 0.5+0.4*cos(uTime*0.17+fi*2.1));
-      float d=exp(-7.0*length((p-c)*vec2(uRes.x/uRes.y,1.0)));
-      col += hue(fi*0.18+uTime*0.02)*d*0.9;
+  // blur scales with frost+thickness; saturate with refraction
+  const blur = Math.round(6 + m.frost*26 + m.thickness*0.6);
+  const sat  = (1.1 + m.refraction*1.4).toFixed(2);
+  // dispersion -> chromatic edge offsets (two colored inset shadows)
+  const dispAmt = (m.dispersion*0.5).toFixed(3);
+  const dispX   = (1 + m.dispersion*3).toFixed(2)+'px';
+  const [da_r,da_g,da_b] = hexRGB('#6ea8ff');
+  const [db_r,db_g,db_b] = hexRGB('#ff6ec7');
+
+  const s = stage.style;
+  s.setProperty('--m-blur', blur+'px');
+  s.setProperty('--m-sat', sat);
+  s.setProperty('--m-tint', tint.hex6);
+  s.setProperty('--m-tint-rgb', tr+','+tg+','+tb);
+  s.setProperty('--m-tinta', tint.a.toFixed(3));
+  s.setProperty('--m-spec', m.specular.toFixed(3));
+  s.setProperty('--m-rim', (0.3 + m.specular*0.7).toFixed(3));
+  s.setProperty('--m-disp-amt', dispAmt);
+  s.setProperty('--m-disp-x', dispX);
+  s.setProperty('--m-disp-a-rgb', da_r+','+da_g+','+da_b);
+  s.setProperty('--m-disp-b-rgb', db_r+','+db_g+','+db_b);
+  s.setProperty('--m-accent', acc);
+  s.setProperty('--m-accent2', acc2);
+  s.setProperty('--m-radius', (10 + m.thickness*0.7).toFixed(0)+'px');
+
+  // shadow depth scales with thickness (clay handled in CSS)
+  s.setProperty('--m-shadow', `0 ${Math.round(6+m.thickness)}px ${Math.round(20+m.thickness*2)}px #00000055`);
+
+  // refraction edge: swap displacement map for the bezel profile and scale by refraction
+  const mapURL = dispMapURL(m.profile);
+  const mapEl = document.getElementById('glassMap');
+  if(mapEl && mapEl.getAttribute('href')!==mapURL){ mapEl.setAttribute('href', mapURL); mapEl.setAttributeNS('http://www.w3.org/1999/xlink','href', mapURL); }
+  const dispEl = document.getElementById('glassDisp');
+  if(dispEl){
+    // displacement scale = refraction strength * thickness (mouse modulates live)
+    const baseScale = Math.round(8 + m.refraction*m.thickness*3.5);
+    dispEl.dataset.base = baseScale;
+    dispEl.setAttribute('scale', String(baseScale));
+  }
+}
+
+/* paint the fixed swatch row + card image from palette/content */
+function renderContentBits(){
+  const pal = STATE.palette;
+  dsSwatches.innerHTML='';
+  pal.slice(0,5).forEach(c=>{
+    const sw=document.createElement('div'); sw.className='swatch'; sw.style.background=c; dsSwatches.appendChild(sw);
+  });
+  const wired = firstImage();
+  dsCardImg.style.backgroundImage = `url("${wired? wired.url : SAMPLE_IMG}")`;
+}
+
+/* ====================================================================== */
+/*  MOUSE REACTIVITY — update --mx/--my + live displacement scale          */
+/*  (cache the stage rect; recompute on resize/scroll, never per frame)    */
+/* ====================================================================== */
+let stageRect = null;
+function cacheStageRect(){ stageRect = stage.getBoundingClientRect(); }
+let mouseRAF = 0, pendingMouse = null;
+stage.addEventListener('pointermove', ev=>{
+  if(!STATE || !STATE.reactivity || !STATE.reactivity.mouse) return;
+  if(!stageRect) cacheStageRect();
+  pendingMouse = ev;
+  if(mouseRAF) return;
+  mouseRAF = requestAnimationFrame(()=>{
+    mouseRAF=0;
+    const ev2=pendingMouse; if(!ev2) return;
+    const mx = Math.min(1,Math.max(0,(ev2.clientX-stageRect.left)/stageRect.width));
+    const my = Math.min(1,Math.max(0,(ev2.clientY-stageRect.top)/stageRect.height));
+    const drives = STATE.reactivity.mouseDrives||[];
+    if(drives.includes('lightDir')){ stage.style.setProperty('--mx', mx.toFixed(3)); stage.style.setProperty('--my', my.toFixed(3)); }
+    if(drives.includes('refraction')){
+      const dispEl=document.getElementById('glassDisp');
+      if(dispEl){ const base=+dispEl.dataset.base||20; const k=0.7 + Math.hypot(mx-0.5,my-0.5)*1.2; dispEl.setAttribute('scale', String(Math.round(base*k))); }
     }
-  }
-  frag = vec4(col,1.0);
-}`;
+  });
+});
 
-/* ---- CONTENT shader: draws each element's own content (color/text-as-block)
-   onto the backdrop BEFORE that element is refracted by glasses above it.
-   (Text is rasterized to a texture on the CPU; here we just blit a texture
-   or a solid color rounded shape.) ---- */
-
-/* ---- GLASS shader: the real liquid-glass refraction for ONE element. ----
-   Reads the current backdrop texture (composite of everything behind it),
-   builds an SDF for the rounded shape, derives a height profile across the
-   bezel, computes the surface normal, applies Snell's law for displacement,
-   samples R/G/B with chromatic offsets (dispersion), frost-blurs, adds a
-   specular rim driven by the mouse, applies tint. Output composited into
-   the backdrop so the NEXT element above refracts this one too. */
-const GLASS_FS = `#version 300 es
-precision highp float;
-in vec2 vUv; out vec4 frag;
-
-uniform sampler2D uBackdrop;     // composite behind this element (full canvas)
-uniform vec2  uRes;              // canvas px
-uniform float uTime;
-
-// element geometry (px, top-left origin)
-uniform vec2  uCenter;           // element center
-uniform vec2  uHalf;             // half-size
-uniform float uRadius;           // corner radius
-uniform int   uShape;            // 0 squircle,1 rrect,2 circle,3 pill
-
-// material
-uniform int   uMatType;          // 0 lg,1 frosted,2 holo,3 metal,4 chrome,5 plastic
-uniform int   uProfile;          // 0 squircle,1 convex,2 concave,3 lip
-uniform float uIor;
-uniform float uThickness;        // bezel width (px-ish, drives height falloff)
-uniform float uRefraction;
-uniform float uDispersion;
-uniform float uFrost;
-uniform float uSpecular;
-uniform vec4  uTint;             // rgba
-uniform vec2  uLight;            // light dir (xy), from mouse
-uniform float uMouseRef;         // extra refraction modulation from mouse (0..1)
-
-// --- rounded-rect signed distance (exterior positive) ---
-float sdRound(vec2 p, vec2 b, float r){
-  vec2 q = abs(p)-b+r;
-  return min(max(q.x,q.y),0.0)+length(max(q,0.0))-r;
-}
-// squircle / superellipse distance approximation via p-norm
-float sdSquircle(vec2 p, vec2 b, float r){
-  // blend rounded-rect with a superelliptical falloff for the Apple look
-  vec2 q = abs(p)/max(b,vec2(1.0));
-  float n = 4.0;
-  float e = pow(pow(q.x,n)+pow(q.y,n), 1.0/n);  // 1.0 at edge
-  // convert to signed-ish distance in px
-  float approx = (e-1.0)*min(b.x,b.y);
-  return mix(sdRound(p,b,r), approx, 0.5);
-}
-float shapeSD(vec2 p){
-  if(uShape==2){ return length(p)-min(uHalf.x,uHalf.y); }      // circle
-  if(uShape==3){ return sdRound(p,uHalf,min(uHalf.x,uHalf.y)); } // pill
-  if(uShape==0){ return sdSquircle(p,uHalf,uRadius); }          // squircle
-  return sdRound(p,uHalf,uRadius);                              // rounded-rect
-}
-
-// height profile across the bezel: x in [0..1], 0=edge,1=interior
-// returns surface height (0 flat at center .. 1 raised), shaped per profile.
-float heightProfile(float x){
-  x = clamp(x,0.0,1.0);
-  if(uProfile==0){ // squircle convex  y = (1-(1-x)^4)^(1/4)  -> Apple bezel
-    float a = 1.0-pow(1.0-x,4.0);
-    return pow(max(a,0.0), 0.25);
-  } else if(uProfile==1){ // convex (spherical-ish)
-    return sqrt(max(1.0-(1.0-x)*(1.0-x),0.0));
-  } else if(uProfile==2){ // concave
-    return 1.0-sqrt(max(1.0-x*x,0.0));
-  } else { // lip: rises then dips (rim)
-    float rim = exp(-pow((x-0.18)/0.16,2.0));
-    return clamp(x*0.5 + rim*0.9, 0.0, 1.0);
-  }
-}
-
-vec3 sampleBackdrop(vec2 uvpx){
-  vec2 uv = uvpx/uRes;
-  uv.y = uv.y; // backdrop already top-left
-  return texture(uBackdrop, vec2(uv.x, 1.0-uv.y)).rgb;
-}
-// small blur for frost
-vec3 frostSample(vec2 uvpx, float rad){
-  vec3 c = vec3(0.0); float w=0.0;
-  for(int i=-2;i<=2;i++){
-    for(int j=-2;j<=2;j++){
-      vec2 o = vec2(float(i),float(j))*rad;
-      float wt = exp(-(float(i*i+j*j))*0.4);
-      c += sampleBackdrop(uvpx+o)*wt; w+=wt;
+/* ====================================================================== */
+/*  WIRED EFFECT-AS-MATERIAL — rasterize the panel + run fx.js as overlay  */
+/* ====================================================================== */
+let fxRAF=0, fxStart=0;
+function startFX(){ if(fxRAF) return; fxStart=performance.now(); fxLoop(); }
+function stopFX(){ if(fxRAF) cancelAnimationFrame(fxRAF); fxRAF=0; fxlayer.style.display='none'; }
+async function fxLoop(){
+  fxRAF = requestAnimationFrame(fxLoop);
+  if(!EFFECTS.length || !fxChain) return;
+  // rasterize the gallery (real DOM) -> a canvas, run the effect chain, show as a material layer
+  try{
+    if(!window.html2canvasLite){ /* lightweight: draw backdrop + skip DOM raster if unavailable */ }
+    const src = await rasterStage();
+    if(!src) return;
+    fxChain.setTime((performance.now()-fxStart)/1000);
+    const out = fxChain.apply(src, EFFECTS);
+    if(out){
+      let cv = fxlayer.querySelector('canvas');
+      if(!cv){ cv=document.createElement('canvas'); fxlayer.appendChild(cv); }
+      if(cv.width!==out.width||cv.height!==out.height){ cv.width=out.width; cv.height=out.height; }
+      const c=cv.getContext('2d'); c.clearRect(0,0,cv.width,cv.height); c.drawImage(out,0,0);
+      fxlayer.style.display='block';
     }
-  }
-  return c/w;
+  }catch(e){ /* graceful: leave components visible underneath */ fxlayer.style.display='none'; }
 }
-
-void main(){
-  vec2 px = vec2(vUv.x, 1.0-vUv.y)*uRes;     // pixel coord, top-left origin
-  vec2 p  = px - uCenter;                     // local to element center
-  float sd = shapeSD(p);
-
-  // outside the shape -> transparent (let backdrop show through unchanged)
-  if(sd > 1.0){ frag = vec4(0.0); return; }
-
-  float aa = 1.0;
-  float mask = 1.0 - smoothstep(-aa, 1.0, sd);  // 1 inside, fade at edge
-
-  // distance from the edge, normalized over the bezel thickness
-  float bezel = max(uThickness, 2.0);
-  float edgeDist = clamp(-sd / bezel, 0.0, 1.0);   // 0 at rim, 1 deep inside
-  float h = heightProfile(edgeDist);               // surface height
-
-  // surface normal from height gradient. compute SD gradient (points outward)
-  float e = 1.0;
-  vec2 grad = vec2(
-    shapeSD(p+vec2(e,0.0)) - shapeSD(p-vec2(e,0.0)),
-    shapeSD(p+vec2(0.0,e)) - shapeSD(p-vec2(0.0,e))
-  );
-  grad = normalize(grad + 1e-5);                   // outward edge normal (xy)
-  // slope of height across bezel (how fast it rises) -> tilt of surface
-  float dh = (heightProfile(edgeDist+0.04) - heightProfile(edgeDist-0.04))/0.08;
-  // normal: flat interior (0,0,1); near edge tilts along -grad by the slope
-  float tilt = (1.0-h) * (0.6 + 0.8*clamp(dh,0.0,4.0));
-  vec3 N = normalize(vec3(-grad * tilt, 1.0));
-
-  // ---- Snell refraction ----
-  vec3 I = vec3(0.0,0.0,-1.0);                      // view dir into screen
-  float eta = 1.0/ max(uIor, 1.0001);              // n1/n2
-  vec3 R = refract(I, N, eta);
-  // displacement on the backdrop plane, scaled by thickness & refraction
-  float refAmt = uRefraction * (1.0 + uMouseRef*0.8);
-  vec2 disp = R.xy * (uThickness*2.2) * refAmt;
-
-  // metals/chrome lean on reflection rather than transmission
-  if(uMatType==3 || uMatType==4){
-    vec3 Rr = reflect(I, N);
-    disp = -Rr.xy * (uThickness*1.6) * (0.4+refAmt);
-  }
-
-  // ---- dispersion: sample RGB at slightly different magnitudes ----
-  float disp_edge = (1.0-edgeDist);                // strongest at the rim
-  float d = uDispersion * disp_edge * (uThickness*0.6+2.0);
-  vec2 dir = normalize(disp + 1e-5);
-  vec3 refr;
-  if(uFrost > 0.02){
-    float fr = uFrost*4.0 + 1.0;
-    refr.r = frostSample(px + disp - dir*d, fr).r;
-    refr.g = frostSample(px + disp,         fr).g;
-    refr.b = frostSample(px + disp + dir*d, fr).b;
-  } else {
-    refr.r = sampleBackdrop(px + disp - dir*d).r;
-    refr.g = sampleBackdrop(px + disp        ).g;
-    refr.b = sampleBackdrop(px + disp + dir*d).b;
-  }
-
-  vec3 col = refr;
-
-  // holographic: animated iridescent hue over the refraction near edges
-  if(uMatType==2){
-    float ph = edgeDist*4.0 + uTime*0.6 + dot(grad,vec2(1.0))*2.0;
-    vec3 iri = 0.5+0.5*cos(6.2831853*(ph + vec3(0.0,0.33,0.67)));
-    col = mix(col, col*0.4 + iri*0.9, (1.0-edgeDist)*0.85);
-  }
-  // metal/chrome: desaturate + brighten toward an env approximation
-  if(uMatType==3 || uMatType==4){
-    float g = dot(col, vec3(0.299,0.587,0.114));
-    vec3 metalCol = mix(vec3(g), col, uMatType==4?0.15:0.35);
-    // fake environment band
-    float band = 0.5+0.5*sin(N.x*6.0 + N.y*4.0 + uTime*0.3);
-    metalCol += band*0.25*uSpecular;
-    col = metalCol;
-  }
-
-  // ---- specular rim, light follows mouse ----
-  vec3 L = normalize(vec3(uLight, 0.85));
-  float spec = pow(max(dot(N, L),0.0), 24.0) * uSpecular;
-  // rim term concentrated on the bezel
-  float rim = pow(1.0-h, 1.5) * uSpecular;
-  vec3 specCol = vec3(1.0) * (spec*1.2 + rim*0.35);
-
-  // fresnel-ish edge brightening
-  float fres = pow(1.0 - N.z, 2.0);
-  col += fres * 0.15 * (0.5+uSpecular);
-
-  // tint
-  col = mix(col, uTint.rgb, uTint.a);
-
-  col += specCol;
-
-  // subtle inner shadow at very edge for depth
-  float inner = smoothstep(0.0,0.06,edgeDist);
-  col *= mix(0.82, 1.0, inner);
-
-  frag = vec4(col, mask);
-}`;
-
-const progBG    = program(VS, BG_FS);
-const progGlass = program(VS, GLASS_FS);
-
-// uniform location caches
-function ulocs(p, names){ const o={}; names.forEach(n=>o[n]=gl.getUniformLocation(p,n)); return o; }
-const ubg = ulocs(progBG, ['uRes','uTime','uPreset','uBg','uPhoto','uHasPhoto']);
-const ug  = ulocs(progGlass, ['uBackdrop','uRes','uTime','uCenter','uHalf','uRadius','uShape',
-  'uMatType','uProfile','uIor','uThickness','uRefraction','uDispersion','uFrost','uSpecular','uTint','uLight','uMouseRef']);
-
-/* ---- framebuffers (ping-pong) for compositing element-by-element ---- */
-let fboW=0, fboH=0;
-let texA, texB, fboA, fboB;
-function makeTex(w,h){
-  const t = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, t);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  return t;
+/* Rasterize the stage backdrop (cheap, no external dep) so the effect has real
+   content to chew on; the effect composites over the components as a skin. */
+let _rasterCv=null;
+function rasterStage(){
+  const w=Math.max(2,Math.round(stage.clientWidth)), h=Math.max(2,Math.round(stage.clientHeight));
+  if(!_rasterCv){ _rasterCv=document.createElement('canvas'); }
+  if(_rasterCv.width!==w||_rasterCv.height!==h){ _rasterCv.width=w; _rasterCv.height=h; }
+  const c=_rasterCv.getContext('2d');
+  // draw scene background + preset gradients as the effect source
+  c.fillStyle = STATE.background; c.fillRect(0,0,w,h);
+  const grds = backdropGradientStops(STATE.backdrop);
+  grds.forEach(g=>{ const rg=c.createRadialGradient(g.x*w,g.y*h,0,g.x*w,g.y*h,g.r*Math.max(w,h)); rg.addColorStop(0,g.c); rg.addColorStop(1,'transparent'); c.fillStyle=rg; c.fillRect(0,0,w,h); });
+  const wired=firstImage();
+  return Promise.resolve(_rasterCv);
 }
-function makeFBO(tex){
-  const f = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return f;
+function backdropGradientStops(preset){
+  if(preset==='aurora-gradient') return [{x:.2,y:.15,r:.7,c:'#2a4cffaa'},{x:.85,y:.2,r:.6,c:'#b34cff99'},{x:.6,y:1,r:.8,c:'#16d6b499'}];
+  if(preset==='mesh-warm') return [{x:.15,y:.2,r:.7,c:'#ff8a3daa'},{x:.9,y:.3,r:.6,c:'#ff4d7daa'},{x:.5,y:1.1,r:.8,c:'#6d3bff99'}];
+  if(preset==='mono-soft') return [{x:.3,y:.2,r:.7,c:'#ffffff22'},{x:.8,y:.8,r:.6,c:'#ffffff14'}];
+  return [{x:.5,y:-.1,r:1.1,c:'#2a2f3aaa'}];
 }
-function ensureFBO(w,h){
-  if(w===fboW && h===fboH && texA) return;
-  if(texA){ gl.deleteTexture(texA); gl.deleteTexture(texB); gl.deleteFramebuffer(fboA); gl.deleteFramebuffer(fboB); }
-  fboW=w; fboH=h;
-  texA=makeTex(w,h); texB=makeTex(w,h);
-  fboA=makeFBO(texA); fboB=makeFBO(texB);
-}
-
-/* ---- content-as-texture (text / asset images) drawn on the 2D scratch
-   canvas then uploaded; these are blended into the backdrop pass. ---- */
-const scratch = document.createElement('canvas');
-const sctx = scratch.getContext('2d');
-let contentTex = null, contentTexW=0, contentTexH=0;
-
-function buildContentTexture(){
-  // draw element content (text labels, color fills, asset images that aren't
-  // the photo backdrop) into a canvas the size of the stage, in z-order, so
-  // they live inside the backdrop & get refracted by glasses above.
-  const W = STATE.canvasW, H = STATE.canvasH;
-  if(scratch.width!==W || scratch.height!==H){ scratch.width=W; scratch.height=H; }
-  sctx.clearRect(0,0,W,H);
-  const els = STATE.elements.slice().sort((a,b)=>a.z-b.z);
-  for(const e of els){
-    const c = e.content||{};
-    if(c.kind==='text' && c.text){
-      const [x,y,w,h]=e.rect;
-      sctx.save();
-      sctx.fillStyle = c.color||'#fff';
-      sctx.font = `700 ${Math.min(h*0.5,48)}px var(--sans),sans-serif`;
-      sctx.textAlign='center'; sctx.textBaseline='middle';
-      sctx.fillText(c.text, x+w/2, y+h/2);
-      sctx.restore();
-    } else if(c.kind==='asset' && c.assetId){
-      const a = assetTex[c.assetId];
-      if(a&&a.img){
-        const [x,y,w,h]=e.rect;
-        sctx.drawImage(a.img, x,y,w,h);
-      }
-    }
-    // color content is drawn as part of glass tint, skip here
-  }
-  // upload
-  if(!contentTex) contentTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, contentTex);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,scratch);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  contentTexW=W; contentTexH=H;
-}
-
-/* content overlay shader (blits the content canvas over the gradient) */
-const BLIT_FS = `#version 300 es
-precision highp float; in vec2 vUv; out vec4 frag;
-uniform sampler2D uTex;
-void main(){ frag = texture(uTex, vec2(vUv.x, vUv.y)); }`;
-const progBlit = program(VS, BLIT_FS);
-const ublit = ulocs(progBlit, ['uTex']);
-
-/* ---------- photo backdrop texture ---------- */
-let photoTex=null, hasPhoto=0;
-function setPhotoFromAsset(){
-  // first image asset becomes the photo backdrop when preset==photo
-  const img = CONTENT.find(c=>c.kind==='image' && assetTex[c.id] && assetTex[c.id].img);
-  if(img){
-    const a = assetTex[img.id];
-    if(!photoTex) photoTex=gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, photoTex);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,a.img);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    hasPhoto=1;
-  } else hasPhoto=0;
-}
-
-/* ---------- color helpers ---------- */
-function hexToRGBA(hex){
-  if(!hex) return [1,1,1,0.1];
-  hex = hex.replace('#','');
-  if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
-  let a = 1;
-  if(hex.length===8){ a = parseInt(hex.slice(6,8),16)/255; hex=hex.slice(0,6); }
-  const r=parseInt(hex.slice(0,2),16)/255, g=parseInt(hex.slice(2,4),16)/255, b=parseInt(hex.slice(4,6),16)/255;
-  return [r||0,g||0,b||0,a];
-}
-const PRESET_INT = {'keep':0,'aurora':1,'sunset':2,'grid':3,'blobs':4,'photo':5};
 
 /* ====================================================================== */
-/*  RENDER LOOP                                                            */
+/*  RENDER (apply state -> DOM/CSS). No per-frame work except mouse/fx.    */
 /* ====================================================================== */
-let mouse = {x:0.5, y:0.5, inside:false};   // normalized over stage
-let startTime = performance.now();
-
-function render(){
-  if(!STATE){ requestAnimationFrame(render); return; }
-  const W = STATE.canvasW, H = STATE.canvasH;
-  ensureFBO(W,H);
-  if(gl_canvas.width!==W || gl_canvas.height!==H){ gl_canvas.width=W; gl_canvas.height=H; }
-
-  const t = (performance.now()-startTime)/1000;
-  gl.bindVertexArray(quadVAO);
-  gl.disable(gl.BLEND);
-
-  // 1) BACKDROP gradient -> texA
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
-  gl.viewport(0,0,W,H);
-  gl.useProgram(progBG);
-  gl.uniform2f(ubg.uRes, W, H);
-  gl.uniform1f(ubg.uTime, t);
-  gl.uniform1i(ubg.uPreset, PRESET_INT[STATE.backdrop]||0);
-  const bgc = hexToRGBA(STATE.background);
-  gl.uniform3f(ubg.uBg, bgc[0],bgc[1],bgc[2]);
-  if(hasPhoto){ gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, photoTex); gl.uniform1i(ubg.uPhoto,1); }
-  gl.uniform1i(ubg.uHasPhoto, hasPhoto);
-  gl.drawArrays(gl.TRIANGLES,0,3);
-
-  // 1b) draw content (text/images) onto texA
-  buildContentTexture();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
-  gl.viewport(0,0,W,H);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.useProgram(progBlit);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, contentTex);
-  gl.uniform1i(ublit.uTex, 0);
-  gl.drawArrays(gl.TRIANGLES,0,3);
-  gl.disable(gl.BLEND);
-
-  // 2) GLASS elements, z-order. Each refracts the current composite (texA),
-  //    output composited back so the next element refracts it too.
-  const els = STATE.elements.slice().sort((a,b)=>a.z-b.z);
-  let srcTex = texA, srcFBO = fboA, dstTex = texB, dstFBO = fboB;
-
-  // light direction from mouse (centered)
-  const lx = (mouse.x*2-1), ly = (mouse.y*2-1);
-
-  for(const e of els){
-    // copy src -> dst (so dst starts as the current composite)
-    gl.bindFramebuffer(gl.FRAMEBUFFER, dstFBO);
-    gl.viewport(0,0,W,H);
-    gl.useProgram(progBlit);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex);
-    gl.uniform1i(ublit.uTex,0);
-    gl.disable(gl.BLEND);
-    gl.drawArrays(gl.TRIANGLES,0,3);
-
-    // draw glass for this element on top of dst, reading src as backdrop
-    gl.bindFramebuffer(gl.FRAMEBUFFER, dstFBO);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.useProgram(progGlass);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex);
-    gl.uniform1i(ug.uBackdrop, 0);
-    gl.uniform2f(ug.uRes, W, H);
-    gl.uniform1f(ug.uTime, t);
-    const [rx,ry,rw,rh] = e.rect;
-    gl.uniform2f(ug.uCenter, rx+rw/2, ry+rh/2);
-    gl.uniform2f(ug.uHalf, rw/2, rh/2);
-    gl.uniform1f(ug.uRadius, e.radius);
-    gl.uniform1i(ug.uShape, SHAPE_INT[e.shape]||0);
-    const m = e.material;
-    gl.uniform1i(ug.uMatType, MAT_TYPE_INT[e.material_type]||0);
-    gl.uniform1i(ug.uProfile, PROFILE_INT[m.profile]||0);
-    gl.uniform1f(ug.uIor, m.ior);
-    gl.uniform1f(ug.uThickness, m.thickness);
-    gl.uniform1f(ug.uRefraction, m.refraction);
-    gl.uniform1f(ug.uDispersion, m.dispersion);
-    gl.uniform1f(ug.uFrost, m.frost);
-    gl.uniform1f(ug.uSpecular, m.specular);
-    const tint = hexToRGBA(m.tint);
-    gl.uniform4f(ug.uTint, tint[0],tint[1],tint[2],tint[3]);
-    // reactivity
-    const re = e.reactivity||{};
-    let useLx=lx, useLy=ly;
-    if(!(re.mouse && (re.mouseDrives||[]).includes('lightDir'))){ useLx=0.4; useLy=-0.5; }
-    gl.uniform2f(ug.uLight, useLx, useLy);
-    let mref = 0;
-    if(re.mouse && (re.mouseDrives||[]).includes('refraction') && mouse.inside){
-      // modulate by mouse proximity to element center
-      const cx=(rx+rw/2)/W, cy=(ry+rh/2)/H;
-      const dd = Math.hypot(mouse.x-cx, mouse.y-cy);
-      mref = Math.max(0, 1-dd*2.2);
-    }
-    gl.uniform1f(ug.uMouseRef, mref);
-    gl.drawArrays(gl.TRIANGLES,0,3);
-    gl.disable(gl.BLEND);
-
-    // swap
-    let tt=srcTex; srcTex=dstTex; dstTex=tt;
-    let tf=srcFBO; srcFBO=dstFBO; dstFBO=tf;
-  }
-
-  // 3) present final composite (srcTex) to the screen canvas
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0,0,W,H);
-  gl.useProgram(progBlit);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex);
-  gl.uniform1i(ublit.uTex,0);
-  gl.disable(gl.BLEND);
-  gl.drawArrays(gl.TRIANGLES,0,3);
-
-  // 4) FINAL post-process: apply the wired shader-lab effects chain over the
-  //    rendered glass canvas. fxChain.apply() reads gl_canvas as a source and
-  //    returns a detached 2D canvas; we blit it onto #fxcanvas (shown over the
-  //    gl canvas). When there are no effects (or fx unavailable) we show the raw
-  //    gl canvas. Graceful: any failure falls back to the raw canvas.
-  let showFx = false;
-  if(EFFECTS.length && fxChain){
-    try{
-      fxChain.setTime(t);
-      const out = fxChain.apply(gl_canvas, EFFECTS);
-      if(out){
-        if(fx_canvas.width!==W || fx_canvas.height!==H){ fx_canvas.width=W; fx_canvas.height=H; }
-        fx_ctx.clearRect(0,0,W,H);
-        fx_ctx.drawImage(out, 0,0, W,H);
-        showFx = true;
-      }
-    }catch(err){ /* graceful: fall back to raw gl canvas this frame */ }
-  }
-  fx_canvas.style.display = showFx? 'block':'none';
-  gl_canvas.style.visibility = showFx? 'hidden':'visible';
-
-  requestAnimationFrame(render);
-}
-requestAnimationFrame(render);
-
-/* ====================================================================== */
-/*  STAGE LAYOUT / FITTING                                                 */
-/* ====================================================================== */
-let stageScale = 1, stageRect = null;
-function fitStage(){
+function renderAll(){
   if(!STATE) return;
-  const pad = 48;
-  const cw = center.clientWidth - pad*2, chh = center.clientHeight - pad*2;
-  const s = Math.min(cw/STATE.canvasW, chh/STATE.canvasH, 1.4);
-  stageScale = s>0? s : 1;
-  const w = STATE.canvasW*stageScale, h = STATE.canvasH*stageScale;
-  host.style.width = w+'px'; host.style.height = h+'px';
-  gl_canvas.style.width = w+'px'; gl_canvas.style.height = h+'px';
-  fx_canvas.style.width = w+'px'; fx_canvas.style.height = h+'px';
+  const bc = backdropCSS(STATE);
+  backdrop.style.backgroundColor = bc.backgroundColor;
+  backdrop.style.backgroundImage = bc.wired
+    ? `url("${bc.wired.url}"), ${bc.backgroundImage}`
+    : bc.backgroundImage;
+  backdrop.style.backgroundSize = 'cover';
+  backdrop.style.backgroundPosition = 'center';
+  applyMaterial(STATE.material, STATE.palette);
+  renderContentBits();
   cacheStageRect();
-  drawHandles();
-  zoomInfo.textContent = `${STATE.canvasW}×${STATE.canvasH}  ·  ${Math.round(stageScale*100)}%`;
+  zoomInfo.textContent = `${STATE.material.type} · ${STATE.material.profile} · ${STATE.palette.length} accents`;
 }
-function cacheStageRect(){ stageRect = host.getBoundingClientRect(); }   // cached, not per-frame
 
 /* ====================================================================== */
-/*  OVERLAY: selection box + drag/resize handles (DOM, not per-frame GBCR) */
+/*  RIGHT PANEL — MATERIAL controls                                        */
 /* ====================================================================== */
-let drag = null;   // {mode, id, startX,startY, orig}
-function drawHandles(){
-  overlay.innerHTML='';
-  if(!STATE) return;
-  for(const e of STATE.elements){
-    const [x,y,w,h]=e.rect;
-    const sx=x*stageScale, sy=y*stageScale, sw=w*stageScale, sh=h*stageScale;
-    if(e.id===selId){
-      const box=document.createElement('div'); box.className='selbox';
-      box.style.cssText=`left:${sx}px;top:${sy}px;width:${sw}px;height:${sh}px`;
-      overlay.appendChild(box);
-      const lab=document.createElement('div'); lab.className='elabel';
-      lab.textContent = e.name+' · '+e.material_type;
-      lab.style.cssText=`left:${sx}px;top:${sy}px`;
-      overlay.appendChild(lab);
-      // 8 handles
-      const pts=[['nw',0,0],['n',.5,0],['ne',1,0],['e',1,.5],['se',1,1],['s',.5,1],['sw',0,1],['w',0,.5]];
-      for(const [name,fx,fy] of pts){
-        const hd=document.createElement('div'); hd.className='handle';
-        hd.style.left=(sx+sw*fx)+'px'; hd.style.top=(sy+sh*fy)+'px';
-        hd.style.cursor = (name==='n'||name==='s')?'ns-resize':(name==='e'||name==='w')?'ew-resize':
-          (name==='nw'||name==='se')?'nwse-resize':'nesw-resize';
-        hd.dataset.h=name; hd.dataset.id=e.id;
-        overlay.appendChild(hd);
-      }
-    }
-  }
-}
-function hitElement(mx,my){
-  // mx,my in stage px (unscaled). topmost first
-  const els = STATE.elements.slice().sort((a,b)=>b.z-a.z);
-  for(const e of els){
-    const [x,y,w,h]=e.rect;
-    if(mx>=x&&mx<=x+w&&my>=y&&my<=y+h) return e;
-  }
-  return null;
-}
-overlay.addEventListener('pointerdown', ev=>{
-  if(!stageRect) cacheStageRect();
-  const mx=(ev.clientX-stageRect.left)/stageScale, my=(ev.clientY-stageRect.top)/stageScale;
-  const handle = ev.target.classList.contains('handle')? ev.target : null;
-  if(handle){
-    const e = STATE.elements.find(x=>x.id===handle.dataset.id);
-    drag = {mode:'resize', dir:handle.dataset.h, id:e.id, sx:mx, sy:my, orig:e.rect.slice()};
-    overlay.setPointerCapture(ev.pointerId); return;
-  }
-  const e = hitElement(mx,my);
-  if(e){
-    selId=e.id; refreshUI();
-    drag = {mode:'move', id:e.id, sx:mx, sy:my, orig:e.rect.slice()};
-    overlay.setPointerCapture(ev.pointerId);
-  } else { selId=null; refreshUI(); }
-});
-overlay.addEventListener('pointermove', ev=>{
-  if(!stageRect) cacheStageRect();
-  mouse.x = Math.min(1,Math.max(0,(ev.clientX-stageRect.left)/stageRect.width));
-  mouse.y = Math.min(1,Math.max(0,(ev.clientY-stageRect.top)/stageRect.height));
-  mouse.inside = true;
-  if(!drag) return;
-  const mx=(ev.clientX-stageRect.left)/stageScale, my=(ev.clientY-stageRect.top)/stageScale;
-  const e = STATE.elements.find(x=>x.id===drag.id); if(!e) return;
-  const dx=mx-drag.sx, dy=my-drag.sy; const o=drag.orig;
-  if(drag.mode==='move'){
-    e.rect[0]=Math.round(o[0]+dx); e.rect[1]=Math.round(o[1]+dy);
-  } else {
-    let [x,y,w,h]=o; const d=drag.dir;
-    if(d.includes('e')) w=o[2]+dx;
-    if(d.includes('s')) h=o[3]+dy;
-    if(d.includes('w')){ x=o[0]+dx; w=o[2]-dx; }
-    if(d.includes('n')){ y=o[1]+dy; h=o[3]-dy; }
-    w=Math.max(24,w); h=Math.max(24,h);
-    e.rect=[Math.round(x),Math.round(y),Math.round(w),Math.round(h)];
-  }
-  drawHandles();
-  scheduleEmit();
-});
-overlay.addEventListener('pointerup', ev=>{ if(drag){drag=null; scheduleEmit();} });
-overlay.addEventListener('pointerleave', ()=>{ mouse.inside=false; });
-
-/* ====================================================================== */
-/*  UI: element list + inspector                                           */
-/* ====================================================================== */
-function refreshUI(){ buildElList(); buildInspector(); drawHandles(); syncScene(); }
-
 function matSwatch(type){
-  const m=MATERIALS[type];
   if(type==='holographic') return 'conic-gradient(from 0deg,#f0f,#0ff,#ff0,#f0f)';
   if(type==='chrome') return 'linear-gradient(135deg,#fff,#9fb0c8,#fff,#7e88aa)';
   if(type==='metal') return 'linear-gradient(135deg,#c8d0dc,#7c8696,#dfe6ef)';
   if(type==='frosted') return 'linear-gradient(135deg,#ffffff55,#bcd0ff44)';
-  if(type==='plastic') return 'linear-gradient(135deg,#ffffff33,#9bd0ff33)';
-  return 'linear-gradient(135deg,#ffffff44,#7fbcff33,#ffffff22)';
+  if(type==='plastic') return 'linear-gradient(135deg,#ffffff55,#9bd0ff44)';
+  if(type==='clay') return 'linear-gradient(135deg,#ffb38a,#ff8e6e)';
+  return 'linear-gradient(135deg,#ffffff66,#7fbcff44,#ffffff33)';
 }
-function buildElList(){
-  elList.innerHTML='';
-  const els=STATE.elements.slice().sort((a,b)=>b.z-a.z);
-  if(!els.length){ elList.innerHTML='<div class="hint">No elements. Add one below.</div>'; return; }
-  for(const e of els){
-    const row=document.createElement('div');
-    row.className='elrow'+(e.id===selId?' sel':'');
-    row.innerHTML=`<div class="sw" style="background:${matSwatch(e.material_type)}"></div>
-      <div class="nm">${escapeHTML(e.name)}<div class="mt">${e.material_type} · ${e.shape}</div></div>`;
-    row.onclick=()=>{ selId=e.id; refreshUI(); };
-    elList.appendChild(row);
-  }
+function grp(title, pill){
+  const d=document.createElement('div'); d.className='grp';
+  d.innerHTML=`<h3>${title}${pill?`<span class="pill">${escapeHTML(pill)}</span>`:''}</h3>`;
+  inspector.appendChild(d); return d;
 }
-function escapeHTML(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-function slider(label, val, min, max, step, fmt, onIn){
+function slider(parent,label,val,min,max,step,fmt,onIn){
   const f=document.createElement('div'); f.className='field';
   const id='s'+Math.random().toString(36).slice(2,7);
-  f.innerHTML=`<label>${label}<span class="v" id="${id}v">${fmt(val)}</span></label>
+  f.innerHTML=`<label>${label}<span class="v" id="${id}">${fmt(val)}</span></label>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}">`;
   const inp=f.querySelector('input');
-  inp.oninput=()=>{ const v=parseFloat(inp.value); f.querySelector('#'+id+'v').textContent=fmt(v); onIn(v); };
-  return f;
+  inp.oninput=()=>{ const v=parseFloat(inp.value); f.querySelector('#'+id).textContent=fmt(v); onIn(v); };
+  parent.appendChild(f); return f;
+}
+function chipRow(parent,label,opts,current,onPick){
+  const f=document.createElement('div'); f.className='field';
+  f.innerHTML=`<label>${label}</label>`;
+  const c=document.createElement('div'); c.className='chips';
+  opts.forEach(o=>{
+    const ch=document.createElement('div'); ch.className='chip'+(o===current?' on':''); ch.textContent=o;
+    ch.onclick=()=>onPick(o); c.appendChild(ch);
+  });
+  f.appendChild(c); parent.appendChild(f); return f;
 }
 
 function buildInspector(){
   inspector.innerHTML='';
-  const e = STATE.elements.find(x=>x.id===selId);
-  if(!e){
-    inspector.innerHTML=`<div class="empty">Select an element to edit its material.<br><br>Or add one from the left panel.<br><br>Move the mouse over the glass — the light and refraction follow your cursor.</div>`;
-    return;
-  }
-  const g = (title, pill)=>{ const d=document.createElement('div'); d.className='grp';
-    d.innerHTML=`<h3>${title}${pill?`<span class="pill">${pill}</span>`:''}</h3>`; inspector.appendChild(d); return d; };
+  const m = STATE.material;
 
-  /* --- element group --- */
-  const ge=g('Element', e.id);
-  const fname=document.createElement('div'); fname.className='field';
-  fname.innerHTML=`<label>Name</label><input type="text" value="${escapeHTML(e.name)}">`;
-  fname.querySelector('input').oninput=ev=>{ e.name=ev.target.value; buildElList(); drawHandles(); scheduleEmit(); };
-  ge.appendChild(fname);
-
-  const fshape=document.createElement('div'); fshape.className='field';
-  fshape.innerHTML=`<label>Shape</label>`;
-  const chips=document.createElement('div'); chips.className='chips';
-  ['squircle','rounded-rect','circle','pill'].forEach(sh=>{
-    const c=document.createElement('div'); c.className='chip'+(e.shape===sh?' on':''); c.textContent=sh;
-    c.onclick=()=>{ e.shape=sh; refreshUI(); scheduleEmit(); }; chips.appendChild(c);
-  });
-  fshape.appendChild(chips); ge.appendChild(fshape);
-
-  ge.appendChild(slider('Corner radius', e.radius, 0, Math.min(e.rect[2],e.rect[3])/2, 1, v=>v.toFixed(0)+'px', v=>{ e.radius=v; scheduleEmit(); }));
-
-  const frect=document.createElement('div'); frect.className='field';
-  frect.innerHTML=`<label>Position & size</label>
-    <div class="row2" style="margin-bottom:6px">
-      <input type="number" value="${e.rect[0]}" data-r="0" placeholder="x">
-      <input type="number" value="${e.rect[1]}" data-r="1" placeholder="y"></div>
-    <div class="row2">
-      <input type="number" value="${e.rect[2]}" data-r="2" placeholder="w">
-      <input type="number" value="${e.rect[3]}" data-r="3" placeholder="h"></div>`;
-  frect.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{ e.rect[+inp.dataset.r]=parseInt(inp.value||0,10); drawHandles(); scheduleEmit(); });
-  ge.appendChild(frect);
-
-  /* --- content group --- */
-  const gc=g('Content');
-  const ck=document.createElement('div'); ck.className='field';
-  ck.innerHTML=`<label>Kind</label>`;
-  const ckc=document.createElement('div'); ckc.className='chips';
-  ['color','text','asset'].forEach(k=>{
-    const c=document.createElement('div'); c.className='chip'+(e.content.kind===k?' on':''); c.textContent=k;
-    c.onclick=()=>{ e.content.kind=k; buildInspector(); scheduleEmit(); }; ckc.appendChild(c);
-  });
-  ck.appendChild(ckc); gc.appendChild(ck);
-  if(e.content.kind==='color'){
-    const cf=document.createElement('div'); cf.className='field';
-    cf.innerHTML=`<label>Fill color (with alpha via tint)</label><input type="color" value="${(e.content.color||'#ffffff').slice(0,7)}">`;
-    cf.querySelector('input').oninput=ev=>{ e.content.color=ev.target.value; scheduleEmit(); };
-    gc.appendChild(cf);
-  } else if(e.content.kind==='text'){
-    const tf=document.createElement('div'); tf.className='field';
-    tf.innerHTML=`<label>Text</label><input type="text" value="${escapeHTML(e.content.text||'')}">`;
-    tf.querySelector('input').oninput=ev=>{ e.content.text=ev.target.value; scheduleEmit(); };
-    gc.appendChild(tf);
-    const cf=document.createElement('div'); cf.className='field';
-    cf.innerHTML=`<label>Text color</label><input type="color" value="${(e.content.color||'#ffffff').slice(0,7)}">`;
-    cf.querySelector('input').oninput=ev=>{ e.content.color=ev.target.value; scheduleEmit(); };
-    gc.appendChild(cf);
-  } else {
-    const af=document.createElement('div'); af.className='field';
-    af.innerHTML=`<label>Wired asset</label>`;
-    const sel=document.createElement('select');
-    sel.innerHTML=`<option value="">— none —</option>`+CONTENT.filter(c=>c.kind==='image').map(c=>
-      `<option value="${c.id}" ${e.content.assetId===c.id?'selected':''}>${escapeHTML(c.label||c.id)}</option>`).join('');
-    sel.onchange=()=>{ e.content.assetId=sel.value||null; if(sel.value) loadAsset(sel.value); scheduleEmit(); };
-    af.appendChild(sel); gc.appendChild(af);
-    if(!CONTENT.filter(c=>c.kind==='image').length){ af.insertAdjacentHTML('beforeend','<div class="hint">No image assets wired to this node yet.</div>'); }
-  }
-
-  /* --- material group --- */
-  const gm=g('Material', e.material_type);
-  const mt=document.createElement('div'); mt.className='field';
-  mt.innerHTML=`<label>Type</label>`;
-  const mtc=document.createElement('div'); mtc.className='chips';
+  /* type */
+  const gt=grp('Material','type');
+  const tf=document.createElement('div'); tf.className='field'; tf.innerHTML='<label>Type</label>';
+  const tc=document.createElement('div'); tc.className='chips';
   MATERIAL_TYPES.forEach(type=>{
-    const c=document.createElement('div'); c.className='chip mtchip'+(e.material_type===type?' on':'');
+    const c=document.createElement('div'); c.className='chip mtchip'+(m.type===type?' on':'');
     c.innerHTML=`<span class="glsw" style="background:${matSwatch(type)}"></span>${type}`;
-    c.onclick=()=>{ e.material_type=type; e.material=Object.assign({}, MATERIALS[type]); refreshUI(); scheduleEmit(); };
-    mtc.appendChild(c);
+    c.onclick=()=>{ STATE.material=Object.assign({type}, MATERIALS[type]); renderAll(); buildInspector(); emit(); };
+    tc.appendChild(c);
   });
-  mt.appendChild(mtc); gm.appendChild(mt);
+  tf.appendChild(tc); gt.appendChild(tf);
 
-  // profile
-  const pf=document.createElement('div'); pf.className='field';
-  pf.innerHTML=`<label>Bezel profile</label>`;
-  const pfc=document.createElement('div'); pfc.className='chips';
-  ['squircle','convex','concave','lip'].forEach(p=>{
-    const c=document.createElement('div'); c.className='chip'+(e.material.profile===p?' on':''); c.textContent=p;
-    c.onclick=()=>{ e.material.profile=p; buildInspector(); scheduleEmit(); }; pfc.appendChild(c);
-  });
-  pf.appendChild(pfc); gm.appendChild(pf);
+  /* bezel profile */
+  chipRow(gt,'Bezel profile',PROFILES,m.profile,p=>{ m.profile=p; renderAll(); buildInspector(); emit(); });
 
-  const m=e.material;
-  gm.appendChild(slider('IOR (n₂)', m.ior, 1.0, 3.2, 0.01, v=>v.toFixed(2), v=>{ m.ior=v; scheduleEmit(); }));
-  gm.appendChild(slider('Thickness', m.thickness, 1, 40, 0.5, v=>v.toFixed(1), v=>{ m.thickness=v; scheduleEmit(); }));
-  gm.appendChild(slider('Refraction', m.refraction, 0, 1.5, 0.01, v=>v.toFixed(2), v=>{ m.refraction=v; scheduleEmit(); }));
-  gm.appendChild(slider('Dispersion', m.dispersion, 0, 1.5, 0.01, v=>v.toFixed(2), v=>{ m.dispersion=v; scheduleEmit(); }));
-  gm.appendChild(slider('Frost', m.frost, 0, 1, 0.01, v=>v.toFixed(2), v=>{ m.frost=v; scheduleEmit(); }));
-  gm.appendChild(slider('Specular', m.specular, 0, 1.2, 0.01, v=>v.toFixed(2), v=>{ m.specular=v; scheduleEmit(); }));
+  /* sliders */
+  const gs=grp('Optics');
+  slider(gs,'IOR', m.ior, 1.0, 2.3, 0.01, v=>v.toFixed(2), v=>{ m.ior=v; applyMaterial(m,STATE.palette); emit(); });
+  slider(gs,'Thickness', m.thickness, 1, 40, 0.5, v=>v.toFixed(1), v=>{ m.thickness=v; applyMaterial(m,STATE.palette); emit(); });
+  slider(gs,'Refraction', m.refraction, 0, 1, 0.01, v=>v.toFixed(2), v=>{ m.refraction=v; applyMaterial(m,STATE.palette); emit(); });
+  slider(gs,'Dispersion', m.dispersion, 0, 1, 0.01, v=>v.toFixed(2), v=>{ m.dispersion=v; applyMaterial(m,STATE.palette); emit(); });
+  slider(gs,'Frost', m.frost, 0, 1, 0.01, v=>v.toFixed(2), v=>{ m.frost=v; applyMaterial(m,STATE.palette); emit(); });
+  slider(gs,'Specular', m.specular, 0, 1, 0.01, v=>v.toFixed(2), v=>{ m.specular=v; applyMaterial(m,STATE.palette); emit(); });
 
-  const tf=document.createElement('div'); tf.className='field';
-  const tintHex=(m.tint||'#ffffff14');
-  tf.innerHTML=`<label>Tint <span class="v">${tintHex}</span></label>
-    <div class="row2">
-      <input type="color" value="${tintHex.slice(0,7)}">
-      <input type="range" min="0" max="255" step="1" value="${parseInt(tintHex.slice(7,9)||'14',16)}" title="tint alpha">
-    </div>`;
-  const [tcolor,talpha]=tf.querySelectorAll('input');
-  const updTint=()=>{ const a=parseInt(talpha.value,10).toString(16).padStart(2,'0'); m.tint=tcolor.value+a; tf.querySelector('.v').textContent=m.tint; scheduleEmit(); };
-  tcolor.oninput=updTint; talpha.oninput=updTint;
-  gm.appendChild(tf);
+  /* tint */
+  const ta=hexAlpha(m.tint);
+  const tg2=grp('Tint');
+  const ff=document.createElement('div'); ff.className='field';
+  ff.innerHTML=`<label>Tint <span class="v">${m.tint}</span></label>
+    <div class="row2"><input type="color" value="${ta.hex6}"><input type="range" min="0" max="255" step="1" value="${Math.round(ta.a*255)}" title="alpha"></div>`;
+  const [tcol,tal]=ff.querySelectorAll('input');
+  const updTint=()=>{ const a=parseInt(tal.value,10).toString(16).padStart(2,'0'); m.tint=tcol.value+a; ff.querySelector('.v').textContent=m.tint; applyMaterial(m,STATE.palette); emit(); };
+  tcol.oninput=updTint; tal.oninput=updTint;
+  tg2.appendChild(ff);
 
-  /* --- reactivity group --- */
-  const gr=g('Reactivity');
-  const re=e.reactivity;
-  const mkToggle=(label,checked,on)=>{ const l=document.createElement('label'); l.className='toggle';
-    const i=document.createElement('input'); i.type='checkbox'; i.checked=checked; i.onchange=()=>on(i.checked);
-    l.appendChild(i); l.appendChild(document.createTextNode(label)); return l; };
-  gr.appendChild(mkToggle('Mouse reactive', re.mouse, v=>{ re.mouse=v; scheduleEmit(); }));
-  const drives=document.createElement('div'); drives.className='field';
-  drives.innerHTML=`<label>Mouse drives</label>`;
-  const dch=document.createElement('div'); dch.className='chips';
+  /* reactivity */
+  const gr=grp('Reactivity');
+  const re=STATE.reactivity;
+  const tgl=document.createElement('label'); tgl.className='toggle';
+  const inp=document.createElement('input'); inp.type='checkbox'; inp.checked=!!re.mouse;
+  inp.onchange=()=>{ re.mouse=inp.checked; emit(); };
+  tgl.appendChild(inp); tgl.appendChild(document.createTextNode('Mouse reactive'));
+  gr.appendChild(tgl);
+  chipRow(gr,'Mouse drives',['lightDir','refraction'],null,null); // placeholder removed below
+  // proper multi-select for mouseDrives
+  gr.lastChild.remove();
+  const md=document.createElement('div'); md.className='field'; md.innerHTML='<label>Mouse drives</label>';
+  const mdc=document.createElement('div'); mdc.className='chips';
   ['lightDir','refraction'].forEach(d=>{
-    const c=document.createElement('div'); c.className='chip'+((re.mouseDrives||[]).includes(d)?' on':''); c.textContent=d;
-    c.onclick=()=>{ re.mouseDrives=re.mouseDrives||[]; const i=re.mouseDrives.indexOf(d);
-      if(i>=0) re.mouseDrives.splice(i,1); else re.mouseDrives.push(d); buildInspector(); scheduleEmit(); };
-    dch.appendChild(c);
+    const ch=document.createElement('div'); ch.className='chip'+((re.mouseDrives||[]).includes(d)?' on':''); ch.textContent=d;
+    ch.onclick=()=>{ re.mouseDrives=re.mouseDrives||[]; const i=re.mouseDrives.indexOf(d); if(i>=0)re.mouseDrives.splice(i,1); else re.mouseDrives.push(d); buildInspector(); emit(); };
+    mdc.appendChild(ch);
   });
-  drives.appendChild(dch); gr.appendChild(drives);
-  gr.appendChild(mkToggle('React to neighbors', re.neighbors, v=>{ re.neighbors=v; scheduleEmit(); }));
-  gr.appendChild(mkToggle('Refract backdrop', re.backdrop, v=>{ re.backdrop=v; scheduleEmit(); }));
+  md.appendChild(mdc); gr.appendChild(md);
 
-  /* --- z + delete --- */
-  const gz=g('Order');
-  const zr=document.createElement('div'); zr.className='row3';
-  const mkz=(label,fn)=>{ const b=document.createElement('button'); b.className='chip'; b.textContent=label; b.style.justifyContent='center'; b.style.textAlign='center'; b.onclick=fn; return b; };
-  zr.appendChild(mkz('Front',()=>{ e.z=Math.max(...STATE.elements.map(x=>x.z))+1; refreshUI(); scheduleEmit(); }));
-  zr.appendChild(mkz('Back',()=>{ e.z=Math.min(...STATE.elements.map(x=>x.z))-1; refreshUI(); scheduleEmit(); }));
-  zr.appendChild(mkz('Dup',()=>{ dupElement(e); }));
-  gz.appendChild(zr);
-  const del=document.createElement('button'); del.className='delbtn'; del.style.marginTop='10px'; del.textContent='Delete element';
-  del.onclick=()=>{ STATE.elements=STATE.elements.filter(x=>x.id!==e.id); selId=null; refreshUI(); scheduleEmit(); };
-  gz.appendChild(del);
-}
-
-function dupElement(e){
-  const c=JSON.parse(JSON.stringify(e)); c.id=nextId(); c.name=e.name+' copy';
-  c.rect[0]+=24; c.rect[1]+=24; c.z=Math.max(...STATE.elements.map(x=>x.z))+1;
-  STATE.elements.push(c); selId=c.id; refreshUI(); scheduleEmit();
+  /* wired effect note */
+  if(EFFECTS.length){
+    const ge=grp('Wired effect','material');
+    ge.insertAdjacentHTML('beforeend',`<div class="hint">${EFFECTS.length} wired effect(s) applied as a material layer over the component set: ${EFFECTS.map(e=>escapeHTML(e.type)).join(', ')}.</div>`);
+  }
 }
 
 /* ====================================================================== */
-/*  ADD / SCENE controls                                                  */
+/*  LEFT PANEL — SCENE + PALETTE                                          */
 /* ====================================================================== */
-document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{
-  const shape=b.dataset.add;
-  const cx=STATE.canvasW/2-150+Math.random()*60, cy=STATE.canvasH/2-100+Math.random()*60;
-  const isC = shape==='circle';
-  const e = normElement({
-    id:nextId(), name:shape, shape:shape,
-    rect:[Math.round(cx),Math.round(cy), isC?200:300, isC?200:200],
-    radius: shape==='pill'?100: shape==='circle'?100:36,
-    z:(STATE.elements.length?Math.max(...STATE.elements.map(x=>x.z)):0)+1,
-    content:{kind:'color',color:'#ffffff10'},
-    material:{...MATERIALS['liquid-glass']}, material_type:'liquid-glass',
+function buildPalette(){
+  palList.innerHTML='';
+  palCount.textContent = STATE.palette.length+'';
+  STATE.palette.forEach((col,i)=>{
+    const row=document.createElement('div'); row.className='palrow';
+    const ci=document.createElement('input'); ci.type='color'; ci.value=col.slice(0,7);
+    ci.oninput=()=>{ STATE.palette[i]=ci.value; renderAll(); emit(); };
+    const del=document.createElement('button'); del.textContent='×'; del.title='Remove';
+    del.onclick=()=>{ if(STATE.palette.length<=1) return; STATE.palette.splice(i,1); renderAll(); buildPalette(); emit(); };
+    row.appendChild(ci); row.appendChild(del); palList.appendChild(row);
   });
-  STATE.elements.push(e); selId=e.id; refreshUI(); scheduleEmit();
-});
+}
+document.getElementById('addPal').onclick=()=>{ if(STATE.palette.length>=8) return; STATE.palette.push('#7cc7ff'); renderAll(); buildPalette(); emit(); };
 
-const bgColor=document.getElementById('bgColor');
-const bgVal=document.getElementById('bgVal');
-const bgPreset=document.getElementById('bgPreset');
-const cwIn=document.getElementById('cw'), chIn=document.getElementById('ch');
-bgColor.oninput=()=>{ STATE.background=bgColor.value; bgVal.textContent=bgColor.value; scheduleEmit(); };
-bgPreset.onchange=()=>{ STATE.backdrop=bgPreset.value; if(bgPreset.value==='photo') setPhotoFromAsset(); scheduleEmit(); };
-cwIn.oninput=()=>{ STATE.canvasW=Math.max(200,parseInt(cwIn.value||1200,10)); fitStage(); scheduleEmit(); };
-chIn.oninput=()=>{ STATE.canvasH=Math.max(200,parseInt(chIn.value||800,10)); fitStage(); scheduleEmit(); };
+bgColor.oninput=()=>{ STATE.background=bgColor.value; bgVal.textContent=bgColor.value; renderAll(); emit(); };
+bgPreset.onchange=()=>{ STATE.backdrop=bgPreset.value; renderAll(); emit(); };
 
 function syncScene(){
   bgColor.value=(STATE.background||'#0b0d12').slice(0,7);
   bgVal.textContent=STATE.background;
-  bgPreset.value=STATE.backdrop||'keep';
-  cwIn.value=STATE.canvasW; chIn.value=STATE.canvasH;
+  bgPreset.value=STATE.backdrop;
+  const wired=firstImage();
+  wiredHint.textContent = wired ? `Wired image "${wired.label||wired.id}" is the card image + backdrop.` : 'No image wired — using built-in sample.';
 }
-
-document.getElementById('btnFit').onclick=fitStage;
-document.getElementById('btnBake').onclick=()=>{
-  const html=bakeHTML();
-  const blob=new Blob([html],{type:'text/html'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='liquid-glass.html'; a.click();
-  toast('Exported standalone HTML');
-};
-
-/* ====================================================================== */
-/*  ASSETS                                                                 */
-/* ====================================================================== */
-function loadAsset(id){
-  if(assetTex[id] && assetTex[id].img) return;
-  const c = CONTENT.find(x=>x.id===id); if(!c||!c.url) return;
-  assetTex[id]={img:null};
-  const img=new Image(); img.crossOrigin='anonymous';
-  img.onload=()=>{ assetTex[id].img=img; if(STATE&&STATE.backdrop==='photo') setPhotoFromAsset(); };
-  img.onerror=()=>{};
-  img.src=c.url;
-}
-function loadAllAssets(){ CONTENT.forEach(c=>{ if(c.kind==='image') loadAsset(c.id); }); }
 
 /* ====================================================================== */
 /*  STATE I/O + driven-view protocol                                      */
 /* ====================================================================== */
 function serializeState(){
-  // emit canonical schema (material includes type alias for the AI contract)
   return {
-    v:1, canvasW:STATE.canvasW, canvasH:STATE.canvasH,
-    background:STATE.background, backdrop:STATE.backdrop,
-    elements:STATE.elements.map(e=>({
-      id:e.id, name:e.name, shape:e.shape, rect:e.rect.slice(), radius:e.radius, z:e.z,
-      content:{kind:e.content.kind, assetId:e.content.assetId||undefined, text:e.content.text||undefined, color:e.content.color||undefined},
-      material:Object.assign({type:e.material_type}, e.material),
-      reactivity:e.reactivity
-    }))
+    v:1,
+    background:STATE.background,
+    backdrop:STATE.backdrop,
+    material:Object.assign({}, STATE.material),
+    palette:STATE.palette.slice(),
+    reactivity:Object.assign({}, STATE.reactivity),
   };
 }
-
 function loadState(s){
   STATE = normState(s);
-  if(STATE.elements.length && !STATE.elements.find(e=>e.id===selId)) selId = STATE.elements[0].id;
-  loadAllAssets();
-  if(STATE.backdrop==='photo') setPhotoFromAsset();
-  fitStage(); refreshUI();
+  renderAll(); buildInspector(); buildPalette(); syncScene();
 }
-
-function scheduleEmit(){
+function emit(){
   if(!EMBEDDED || suppressEmit) return;
   clearTimeout(emitTimer);
   emitTimer=setTimeout(()=>{
@@ -1253,204 +875,129 @@ if(EMBEDDED){
     const d=ev.data; if(!d||typeof d!=='object') return;
     if(d.nodeId && d.nodeId!==NODE) return;
     if(d.type==='material:init'){
-      if(d.content){ CONTENT=d.content||[]; }
-      if('effects' in d){ setEffects(d.effects); }   // wired post-process chain
+      if(d.content) CONTENT=d.content||[];
+      if('effects' in d) setEffects(d.effects);
       suppressEmit=true; loadState(d.state||null); suppressEmit=false;
     } else if(d.type==='material:set-state'){
       suppressEmit=true; loadState(d.state||null); suppressEmit=false;
     } else if(d.type==='material:content'){
-      CONTENT=d.content||[]; loadAllAssets(); if(STATE&&STATE.backdrop==='photo') setPhotoFromAsset();
-      if('effects' in d){ setEffects(d.effects); }   // effects may change with content; re-render (no state echo)
-      refreshUI();
+      CONTENT=d.content||[];
+      if('effects' in d) setEffects(d.effects);
+      renderAll(); syncScene();
     }
   });
-  const announce=()=>{ try{ parent.postMessage({type:'material:ready', nodeId:NODE}, '*'); }catch(e){} };
-  announce();
+  try{ parent.postMessage({type:'material:ready', nodeId:NODE}, '*'); }catch(e){}
   document.getElementById('modeStatus').innerHTML='driven · node <b>'+escapeHTML(NODE||'?')+'</b>';
 } else {
   document.getElementById('modeStatus').textContent='standalone';
 }
 
-/* boot: standalone gets the default scene immediately */
-if(!EMBEDDED){ loadState(null); }
-else { loadState(null); }   // show default until init arrives; init overwrites
-
-/* warm the fx module + cache its source so an early bake is standalone-ready */
+/* boot */
+loadState(null);
 loadFX();
 
-window.addEventListener('resize', ()=>{ fitStage(); });
-new ResizeObserver(()=>{ fitStage(); }).observe(center);
+document.getElementById('btnBake').onclick=()=>{
+  const html=bakeHTML();
+  const blob=new Blob([html],{type:'text/html'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='material.html'; a.click();
+  toast('Exported standalone HTML');
+};
+
+window.addEventListener('resize', cacheStageRect);
+document.getElementById('center').addEventListener('scroll', cacheStageRect, {passive:true});
+new ResizeObserver(cacheStageRect).observe(stage);
 
 function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>toastEl.classList.remove('show'),1800); }
 
 /* ====================================================================== */
-/*  BAKE: full self-contained standalone HTML runtime                     */
-/*  Embeds the same WebGL2 liquid-glass renderer + the config so the page  */
-/*  plays standalone (refracting its own background) when opened/embedded. */
+/*  BAKE: full self-contained .html showing the fixed DS set in the        */
+/*  current material. Inlines the material CSS + vars + components. If      */
+/*  effects are wired, inlines fx.js (or a minimal equivalent) standalone.  */
 /* ====================================================================== */
-// Make the baked file's effects standalone. fx.js is an ES module loaded by
-// the live editor via dynamic import; a baked file opened from disk (file://)
-// cannot reliably resolve ../_shared/fx.js. So we INLINE the fetched fx.js
-// source (stripped of its `export` keywords) directly into the baked runtime —
-// a single source of truth. If the fetch hasn't landed (FX_SRC empty), we fall
-// back to a tiny inline chromatic-aberration + posterize subset so the baked
-// file still applies *something* and remains truly standalone.
 function inlineFXBlock(){
   if(FX_SRC && /createFXChain/.test(FX_SRC)){
-    // Strip ES export keywords so the source runs as a plain script and define
-    // createFXChain on the local scope.
-    const body = FX_SRC.replace(/^\s*export\s+/gm, '');
-    return body + '\n';
+    return FX_SRC.replace(/^\s*export\s+/gm,'') + '\n';
   }
-  // Minimal fallback chain (chromatic-aberration + posterize). Same call shape
-  // as fx.js: createFXChain().apply(source, effects) -> 2D canvas; setTime(t).
-  return `
-function createFXChain(){
-  var cv=document.createElement('canvas'); var gl=cv.getContext('webgl2',{premultipliedAlpha:false,preserveDrawingBuffer:true,antialias:false});
-  if(!gl){ return { apply:function(s){var o=document.createElement('canvas');o.width=s.width;o.height=s.height;o.getContext('2d').drawImage(s,0,0);return o;}, setTime:function(){}, resize:function(){}, dispose:function(){} }; }
-  var W=2,H=2,T=0;
-  var VS='#version 300 es\\nlayout(location=0) in vec2 a;out vec2 vUv;void main(){vUv=a*0.5+0.5;gl_Position=vec4(a,0.,1.);}';
-  function frag(b){return '#version 300 es\\nprecision highp float;in vec2 vUv;out vec4 o;uniform sampler2D uTex;uniform vec2 uRes;uniform float uTime;uniform float uI;\\n'+b;}
-  var FCA=frag('uniform float uAmount;uniform float uAngle;void main(){vec2 d=vec2(cos(uAngle),sin(uAngle))*uAmount;vec4 s=texture(uTex,vUv);vec3 c=vec3(texture(uTex,vUv+d).r,s.g,texture(uTex,vUv-d).b);o=mix(s,vec4(c,s.a),clamp(uI,0.,1.));}');
-  var FPO=frag('uniform float uLevels;void main(){vec4 s=texture(uTex,vUv);float lv=max(uLevels,2.);vec3 q=floor(s.rgb*lv)/lv;o=mix(s,vec4(q,s.a),clamp(uI,0.,1.));}');
-  function sh(t,src){var s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);return s;}
-  function pr(f){var p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.bindAttribLocation(p,0,'a');gl.linkProgram(p);return p;}
-  var pCA=pr(FCA),pPO=pr(FPO);
-  var q=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,q);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-  var tex=gl.createTexture();function st(t){gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);}st(tex);
-  var fbo=[mkF(),mkF()];function mkF(){var t=gl.createTexture();st(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null);var f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);return {f:f,t:t,w:1,h:1};}
-  function size(w,h){w=Math.max(1,w|0);h=Math.max(1,h|0);if(w===W&&h===H)return;W=w;H=h;cv.width=w;cv.height=h;fbo.forEach(function(o){o.w=w;o.h=h;gl.bindTexture(gl.TEXTURE_2D,o.t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);});}
-  function setU(p,i){gl.uniform1i(gl.getUniformLocation(p,'uTex'),0);gl.uniform2f(gl.getUniformLocation(p,'uRes'),W,H);gl.uniform1f(gl.getUniformLocation(p,'uTime'),T);gl.uniform1f(gl.getUniformLocation(p,'uI'),Math.max(0,Math.min(1,i)));}
-  function apply(src,effects){
-    if(!effects||!effects.length){var o=document.createElement('canvas');o.width=src.width;o.height=src.height;o.getContext('2d').drawImage(src,0,0);return o;}
-    size(src.width,src.height);
-    gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-    gl.bindBuffer(gl.ARRAY_BUFFER,q);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,W,H);gl.disable(gl.BLEND);
-    var inT=tex,ping=0;
-    var list=effects.filter(function(e){return e&&(e.type==='chromatic-aberration'||e.type==='posterize');});
-    if(!list.length){var o=document.createElement('canvas');o.width=src.width;o.height=src.height;o.getContext('2d').drawImage(src,0,0);return o;}
-    list.forEach(function(e,i){var last=i===list.length-1;gl.bindFramebuffer(gl.FRAMEBUFFER,last?null:fbo[ping].f);
-      var p,pa=e.params||{};if(e.type==='chromatic-aberration'){p=pCA;gl.useProgram(p);setU(p,e.intensity==null?1:e.intensity);gl.uniform1f(gl.getUniformLocation(p,'uAmount'),(+pa.amount||0.01));gl.uniform1f(gl.getUniformLocation(p,'uAngle'),(+pa.angle||0));}
-      else{p=pPO;gl.useProgram(p);setU(p,e.intensity==null?1:e.intensity);gl.uniform1f(gl.getUniformLocation(p,'uLevels'),(+pa.levels||5));}
-      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.drawArrays(gl.TRIANGLES,0,3);if(!last){inT=fbo[ping].t;ping=1-ping;}});
-    var out=document.createElement('canvas');out.width=W;out.height=H;out.getContext('2d').drawImage(cv,0,0);return out;
-  }
-  return { apply:apply, setTime:function(t){T=+t||0;}, resize:size, dispose:function(){} };
-}
-`;
+  // minimal standalone chromatic-aberration + posterize fallback
+  return `function createFXChain(){var cv=document.createElement('canvas');var gl=cv.getContext('webgl2',{preserveDrawingBuffer:true});if(!gl){return{apply:function(s){var o=document.createElement('canvas');o.width=s.width;o.height=s.height;o.getContext('2d').drawImage(s,0,0);return o;},setTime:function(){}};}var W=2,H=2,T=0;var VS='#version 300 es\\nlayout(location=0) in vec2 a;out vec2 v;void main(){v=a*.5+.5;gl_Position=vec4(a,0.,1.);}';function fr(b){return '#version 300 es\\nprecision highp float;in vec2 v;out vec4 o;uniform sampler2D t;uniform float i;\\n'+b;}var P=fr('uniform float am;void main(){vec2 d=vec2(am,0.);vec4 s=texture(t,v);o=mix(s,vec4(texture(t,v+d).r,s.g,texture(t,v-d).b,s.a),clamp(i,0.,1.));}');function sh(k,x){var s=gl.createShader(k);gl.shaderSource(s,x);gl.compileShader(s);return s;}var p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,P));gl.bindAttribLocation(p,0,'a');gl.linkProgram(p);var q=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,q);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);var tx=gl.createTexture();function apply(src,fx){W=src.width;H=src.height;cv.width=W;cv.height=H;gl.bindTexture(gl.TEXTURE_2D,tx);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindBuffer(gl.ARRAY_BUFFER,q);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.viewport(0,0,W,H);gl.useProgram(p);gl.uniform1i(gl.getUniformLocation(p,'t'),0);var e=(fx&&fx[0])||{};gl.uniform1f(gl.getUniformLocation(p,'i'),e.intensity==null?1:e.intensity);gl.uniform1f(gl.getUniformLocation(p,'am'),((e.params&&e.params.amount)||0.01));gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tx);gl.drawArrays(gl.TRIANGLES,0,3);var o=document.createElement('canvas');o.width=W;o.height=H;o.getContext('2d').drawImage(cv,0,0);return o;}return{apply:apply,setTime:function(t){T=t;},resize:function(){}};}`;
 }
 
 function bakeHTML(){
-  const cfg = serializeState();
-  cfg.effects = normEffects(EFFECTS);   // carry the wired post-process chain into the standalone file
-  const cfgJSON = JSON.stringify(cfg);
-  // The baked runtime is a trimmed version of this renderer: it builds the
-  // backdrop + content + glass passes and presents to a canvas sized to the
-  // config, scaled to fill its container. Mouse over the page drives light.
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Liquid Glass</title>
-<style>
-  html,body{margin:0;height:100%;background:${cfg.background};overflow:hidden}
-  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-  #stack{position:relative;max-width:100%;max-height:100%;box-shadow:0 30px 90px #0008}
-  #stack canvas{display:block;max-width:100%;max-height:100%}
-  #fx{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none}
-</style></head><body>
-<div id="wrap"><div id="stack"><canvas id="c"></canvas><canvas id="fx"></canvas></div></div>
-<script>
-var CFG=${cfgJSON};
-${RUNTIME_SRC}
-/* --- inlined shader-lab effect chain (standalone: no module import) --- */
-${inlineFXBlock()}
-window.MaterialLabRuntime(document.getElementById('c'), CFG, {
-  fxCanvas: document.getElementById('fx'),
-  makeChain: (typeof createFXChain==='function') ? createFXChain : null,
-});
-<\/script></body></html>`;
-}
+  const st = serializeState();
+  const m = st.material;
+  const tint = hexAlpha(m.tint);
+  const [tr,tg,tb]=hexRGB(tint.hex6);
+  const acc=st.palette[0]||'#7cc7ff', acc2=st.palette[1]||acc;
+  const blur=Math.round(6+m.frost*26+m.thickness*0.6);
+  const sat=(1.1+m.refraction*1.4).toFixed(2);
+  const dispAmt=(m.dispersion*0.5).toFixed(3);
+  const dispX=(1+m.dispersion*3).toFixed(2)+'px';
+  const radius=(10+m.thickness*0.7).toFixed(0)+'px';
+  const spec=m.specular.toFixed(3), rim=(0.3+m.specular*0.7).toFixed(3);
+  const shadow=`0 ${Math.round(6+m.thickness)}px ${Math.round(20+m.thickness*2)}px #00000055`;
+  const dispMap=dispMapURL(m.profile);
+  const dispScale=Math.round(8+m.refraction*m.thickness*3.5);
+  const bc=backdropCSS(st === STATE ? STATE : Object.assign({},STATE,st));
+  const wired=firstImage();
+  const cardImg = wired? wired.url : SAMPLE_IMG;
+  const bgImg = wired ? `url("${wired.url}"), ${bc.backgroundImage}` : bc.backgroundImage;
+  const swatches = st.palette.slice(0,5).map(c=>`<div class="swatch" style="background:${c}"></div>`).join('');
+  const hasFX = EFFECTS.length>0;
+  const fxBlock = hasFX ? `<script>${inlineFXBlock()}
+  (function(){var stage=document.getElementById('stage');var fxl=document.getElementById('fxlayer');var ch=createFXChain();var EFF=${JSON.stringify(normEffects(EFFECTS))};var t0=performance.now();
+  function raster(){var w=stage.clientWidth,h=stage.clientHeight,cv=document.createElement('canvas');cv.width=w;cv.height=h;var c=cv.getContext('2d');c.fillStyle=${JSON.stringify(st.background)};c.fillRect(0,0,w,h);return cv;}
+  function loop(){requestAnimationFrame(loop);try{ch.setTime((performance.now()-t0)/1000);var o=ch.apply(raster(),EFF);if(o){var cv=fxl.querySelector('canvas');if(!cv){cv=document.createElement('canvas');fxl.appendChild(cv);}cv.width=o.width;cv.height=o.height;cv.getContext('2d').drawImage(o,0,0);fxl.style.display='block';}}catch(e){fxl.style.display='none';}}loop();})();
+  <\/script>` : '';
 
-/* The shared runtime source — also defined in this page so bake stays in sync.
-   Defined as a function string so we can inline it into the baked file. */
-const RUNTIME_SRC = `
-window.MaterialLabRuntime = function(canvas, CFG, opts){
-  var gl = canvas.getContext('webgl2',{premultipliedAlpha:false,antialias:false});
-  if(!gl){ canvas.replaceWith(Object.assign(document.createElement('div'),{textContent:'WebGL2 required',style:'color:#fff;font:14px sans-serif;padding:30px'})); return; }
-  var MAT_TYPE_INT=${JSON.stringify(MAT_TYPE_INT)}, PROFILE_INT=${JSON.stringify(PROFILE_INT)},
-      SHAPE_INT=${JSON.stringify(SHAPE_INT)}, PRESET_INT=${JSON.stringify(PRESET_INT)};
-  function compile(t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);
-    if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(sh);return sh;}
-  function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,v));
-    gl.attachShader(p,compile(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);return p;}
-  var VS=${JSON.stringify(VS)}, BG_FS=${JSON.stringify(BG_FS)}, GLASS_FS=${JSON.stringify(GLASS_FS)}, BLIT_FS=${JSON.stringify(BLIT_FS)};
-  var vao=gl.createVertexArray();gl.bindVertexArray(vao);
-  var b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.bindVertexArray(null);
-  var pBG=prog(VS,BG_FS), pG=prog(VS,GLASS_FS), pBlit=prog(VS,BLIT_FS);
-  function ul(p,ns){var o={};ns.forEach(function(n){o[n]=gl.getUniformLocation(p,n);});return o;}
-  var ubg=ul(pBG,['uRes','uTime','uPreset','uBg','uPhoto','uHasPhoto']);
-  var ug=ul(pG,['uBackdrop','uRes','uTime','uCenter','uHalf','uRadius','uShape','uMatType','uProfile','uIor','uThickness','uRefraction','uDispersion','uFrost','uSpecular','uTint','uLight','uMouseRef']);
-  var ublit=ul(pBlit,['uTex']);
-  var W=CFG.canvasW,H=CFG.canvasH; canvas.width=W; canvas.height=H;
-  function mkTex(){var t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
-  function mkFBO(t){var f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);return f;}
-  var tA=mkTex(),tB=mkTex(),fA=mkFBO(tA),fB=mkFBO(tB);
-  // content canvas (text/asset)
-  var sc=document.createElement('canvas');sc.width=W;sc.height=H;var sx=sc.getContext('2d');
-  function hexRGBA(hex){if(!hex)return[1,1,1,.1];hex=hex.replace('#','');if(hex.length===3)hex=hex.split('').map(function(c){return c+c}).join('');
-    var a=1;if(hex.length===8){a=parseInt(hex.slice(6,8),16)/255;hex=hex.slice(0,6);}return[parseInt(hex.slice(0,2),16)/255||0,parseInt(hex.slice(2,4),16)/255||0,parseInt(hex.slice(4,6),16)/255||0,a];}
-  var imgs={};(CFG.elements||[]).forEach(function(e){if(e.content&&e.content.kind==='asset'&&e.content.assetId&&e.content.url){var im=new Image();im.crossOrigin='anonymous';im.src=e.content.url;imgs[e.content.assetId]=im;}});
-  var ctex=gl.createTexture();
-  function buildContent(){sx.clearRect(0,0,W,H);
-    (CFG.elements||[]).slice().sort(function(a,b){return a.z-b.z}).forEach(function(e){var c=e.content||{};
-      if(c.kind==='text'&&c.text){var r=e.rect;sx.fillStyle=c.color||'#fff';sx.font='700 '+Math.min(r[3]*.5,48)+'px sans-serif';sx.textAlign='center';sx.textBaseline='middle';sx.fillText(c.text,r[0]+r[2]/2,r[1]+r[3]/2);}
-      else if(c.kind==='asset'&&c.assetId&&imgs[c.assetId]&&imgs[c.assetId].complete){var r=e.rect;try{sx.drawImage(imgs[c.assetId],r[0],r[1],r[2],r[3]);}catch(_){}}});
-    gl.bindTexture(gl.TEXTURE_2D,ctex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,sc);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);}
-  var mouse={x:.5,y:.5,in:false};
-  window.addEventListener('pointermove',function(ev){var r=canvas.getBoundingClientRect();
-    mouse.x=Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width));mouse.y=Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height));mouse.in=true;});
-  // wired shader-lab post-process chain (inlined, standalone)
-  var EFFECTS=(CFG.effects||[]); var fxCv=opts&&opts.fxCanvas||null; var fxCtx=fxCv?fxCv.getContext('2d'):null;
-  var fxChain=null; if(EFFECTS.length && opts && opts.makeChain){ try{ fxChain=opts.makeChain(); }catch(_){ fxChain=null; } }
-  var t0=performance.now();
-  function frame(){var t=(performance.now()-t0)/1000;gl.bindVertexArray(vao);gl.disable(gl.BLEND);
-    gl.bindFramebuffer(gl.FRAMEBUFFER,fA);gl.viewport(0,0,W,H);gl.useProgram(pBG);
-    gl.uniform2f(ubg.uRes,W,H);gl.uniform1f(ubg.uTime,t);gl.uniform1i(ubg.uPreset,PRESET_INT[CFG.backdrop]||0);
-    var bg=hexRGBA(CFG.background);gl.uniform3f(ubg.uBg,bg[0],bg[1],bg[2]);gl.uniform1i(ubg.uHasPhoto,0);gl.drawArrays(gl.TRIANGLES,0,3);
-    buildContent();gl.bindFramebuffer(gl.FRAMEBUFFER,fA);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-    gl.useProgram(pBlit);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,ctex);gl.uniform1i(ublit.uTex,0);gl.drawArrays(gl.TRIANGLES,0,3);gl.disable(gl.BLEND);
-    var els=(CFG.elements||[]).slice().sort(function(a,b){return a.z-b.z});
-    var srcT=tA,srcF=fA,dstT=tB,dstF=fB;var lx=mouse.x*2-1,ly=mouse.y*2-1;
-    els.forEach(function(e){
-      gl.bindFramebuffer(gl.FRAMEBUFFER,dstF);gl.viewport(0,0,W,H);gl.useProgram(pBlit);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcT);gl.uniform1i(ublit.uTex,0);gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
-      gl.bindFramebuffer(gl.FRAMEBUFFER,dstF);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(pG);
-      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcT);gl.uniform1i(ug.uBackdrop,0);
-      gl.uniform2f(ug.uRes,W,H);gl.uniform1f(ug.uTime,t);var r=e.rect;gl.uniform2f(ug.uCenter,r[0]+r[2]/2,r[1]+r[3]/2);
-      gl.uniform2f(ug.uHalf,r[2]/2,r[3]/2);gl.uniform1f(ug.uRadius,e.radius);gl.uniform1i(ug.uShape,SHAPE_INT[e.shape]||0);
-      var m=e.material||{};var mt=m.type||'liquid-glass';gl.uniform1i(ug.uMatType,MAT_TYPE_INT[mt]||0);gl.uniform1i(ug.uProfile,PROFILE_INT[m.profile]||0);
-      gl.uniform1f(ug.uIor,m.ior||1.5);gl.uniform1f(ug.uThickness,m.thickness||12);gl.uniform1f(ug.uRefraction,m.refraction||.7);
-      gl.uniform1f(ug.uDispersion,m.dispersion||.3);gl.uniform1f(ug.uFrost,m.frost||.2);gl.uniform1f(ug.uSpecular,m.specular||.6);
-      var tn=hexRGBA(m.tint||'#ffffff14');gl.uniform4f(ug.uTint,tn[0],tn[1],tn[2],tn[3]);
-      var re=e.reactivity||{};var uLx=lx,uLy=ly;if(!(re.mouse&&(re.mouseDrives||[]).indexOf('lightDir')>=0)){uLx=.4;uLy=-.5;}
-      gl.uniform2f(ug.uLight,uLx,uLy);var mref=0;
-      if(re.mouse&&(re.mouseDrives||[]).indexOf('refraction')>=0&&mouse.in){var cx=(r[0]+r[2]/2)/W,cy=(r[1]+r[3]/2)/H;var dd=Math.hypot(mouse.x-cx,mouse.y-cy);mref=Math.max(0,1-dd*2.2);}
-      gl.uniform1f(ug.uMouseRef,mref);gl.drawArrays(gl.TRIANGLES,0,3);gl.disable(gl.BLEND);
-      var tt=srcT;srcT=dstT;dstT=tt;var tf=srcF;srcF=dstF;dstF=tf;});
-    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.useProgram(pBlit);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcT);gl.uniform1i(ublit.uTex,0);gl.disable(gl.BLEND);gl.drawArrays(gl.TRIANGLES,0,3);
-    // FINAL post-process: apply the wired effects chain over the gl canvas.
-    var showFx=false;
-    if(fxChain && EFFECTS.length && fxCtx){ try{ fxChain.setTime(t); var out=fxChain.apply(canvas,EFFECTS); if(out){ if(fxCv.width!==W||fxCv.height!==H){fxCv.width=W;fxCv.height=H;} fxCtx.clearRect(0,0,W,H); fxCtx.drawImage(out,0,0,W,H); showFx=true; } }catch(_){} }
-    if(fxCv){ fxCv.style.display=showFx?'block':'none'; canvas.style.visibility=showFx?'hidden':'visible'; }
-    requestAnimationFrame(frame);}
-  requestAnimationFrame(frame);
-};`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Material</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:${st.background};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px}
+  #stage{position:relative;width:760px;max-width:100%;border-radius:20px;overflow:hidden;box-shadow:0 30px 90px #000a;background:${st.background};
+    --m-blur:${blur}px;--m-sat:${sat};--m-tint:${tint.hex6};--m-tint-rgb:${tr},${tg},${tb};--m-tinta:${tint.a.toFixed(3)};
+    --m-spec:${spec};--m-rim:${rim};--m-disp-amt:${dispAmt};--m-disp-x:${dispX};--m-disp-a-rgb:110,168,255;--m-disp-b-rgb:255,110,199;
+    --m-radius:${radius};--m-accent:${acc};--m-accent2:${acc2};--m-shadow:${shadow};--m-border:#ffffff26;--mx:.5;--my:.4}
+  #backdrop{position:absolute;inset:0;z-index:0;background-image:${bgImg.replace(/"/g,'&quot;')};background-color:${st.background};background-size:cover;background-position:center}
+  #fxlayer{position:absolute;inset:0;z-index:5;pointer-events:none;display:none}#fxlayer canvas{width:100%;height:100%;display:block}
+  #gallery{position:relative;z-index:2;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
+  .mat{position:relative;border-radius:var(--m-radius);background:rgba(var(--m-tint-rgb),var(--m-tinta));-webkit-backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat));backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat));border:1px solid var(--m-border);
+    box-shadow:var(--m-shadow),inset 0 1px 0 rgba(255,255,255,calc(var(--m-spec)*0.55)),inset calc(var(--m-disp-x)) 0 0 rgba(var(--m-disp-a-rgb),var(--m-disp-amt)),inset calc(var(--m-disp-x) * -1) 0 0 rgba(var(--m-disp-b-rgb),var(--m-disp-amt));overflow:hidden}
+  .mat.glass-disp{backdrop-filter:blur(var(--m-blur)) saturate(var(--m-sat)) url(#bk-glass)}
+  .mat::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:1;background:radial-gradient(120px 90px at calc(var(--mx)*100%) calc(var(--my)*100%),rgba(255,255,255,calc(var(--m-spec)*0.5)),transparent 70%),linear-gradient(180deg,rgba(255,255,255,calc(var(--m-spec)*0.35)),transparent 38%);mix-blend-mode:screen}
+  .mat::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;background:linear-gradient(135deg,rgba(var(--m-tint-rgb),calc(var(--m-tinta)*0.6)),transparent)}
+  .mat>*{position:relative;z-index:2}
+  .ds-card{padding:24px 26px}.head{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#fff;opacity:.55;margin-bottom:14px;font-weight:700}
+  .type-display{font-size:38px;font-weight:800;line-height:1.05;letter-spacing:-.02em;color:#fff;margin:0}.type-heading{font-size:21px;font-weight:700;color:#fff;margin:8px 0 0}
+  .type-body{font-size:13px;color:#fff;opacity:.78;margin:6px 0 0;line-height:1.5}.type-caption{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#fff;opacity:.5;margin:8px 0 0;font-weight:600}
+  .swatches{display:flex;gap:10px}.swatch{width:46px;height:46px;border-radius:12px;box-shadow:inset 0 0 0 1px #ffffff22,0 4px 14px #0006}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid #ffffff1f}.tab{padding:9px 16px;font-size:13px;color:#fff;opacity:.55;border-bottom:2px solid transparent;font-weight:600}.tab.active{opacity:1;border-bottom-color:var(--m-accent)}
+  .ds-input{display:flex;align-items:center;padding:0 14px;height:42px;font-size:13px;color:#fff;opacity:.7}
+  .btnrow{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.ds-btn{height:40px;padding:0 20px;font-size:13px;font-weight:600;color:#fff;display:inline-flex;align-items:center;border-radius:calc(var(--m-radius)*0.8)}
+  .ds-btn.tertiary{background:transparent !important;-webkit-backdrop-filter:none !important;backdrop-filter:none !important;border-color:transparent !important;box-shadow:none !important;color:var(--m-accent)}.ds-btn.tertiary::before,.ds-btn.tertiary::after{display:none}.ds-btn.disabled{opacity:.4;filter:saturate(.4)}
+  .product-card{width:230px;padding:0;overflow:hidden}.pc-img{height:118px;background-size:cover;background-position:center}.pc-body{padding:14px 16px 16px}.pc-title{font-size:15px;font-weight:700;color:#fff;margin:0}.pc-text{font-size:12px;color:#fff;opacity:.72;margin:5px 0 12px;line-height:1.45}.pc-link{font-size:12.5px;font-weight:700;color:var(--m-accent)}
+  .chip-pill{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 14px;font-size:12px;font-weight:600;color:#fff;border-radius:999px}.dotc{width:8px;height:8px;border-radius:50%;background:var(--m-accent)}
+  .galrow{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}.galcol{display:flex;flex-direction:column;gap:14px;flex:1;min-width:240px}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><filter id="bk-glass" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB"><feImage href="${dispMap}" result="m" preserveAspectRatio="none"/><feDisplacementMap in="SourceGraphic" in2="m" scale="${dispScale}" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
+<div id="wrap"><div id="stage">
+  <div id="backdrop"></div><div id="fxlayer"></div>
+  <div id="gallery">
+    <div class="mat ds-card glass-disp"><div class="head">Typography</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body Small — the quick brown fox jumps over the lazy dog.</div><div class="type-caption">Caption / Label</div></div>
+    <div class="galrow"><div class="galcol">
+      <div class="mat ds-card glass-disp"><div class="head">Color palette</div><div class="swatches">${swatches}</div></div>
+      <div class="mat ds-card glass-disp"><div class="head">Tabs</div><div class="tabs"><div class="tab active">Overview</div><div class="tab">Activity</div><div class="tab">Settings</div><div class="tab">More</div></div></div>
+      <div class="mat ds-input glass-disp">Enter text…</div>
+      <div class="mat ds-card glass-disp"><div class="head">Buttons</div><div class="btnrow"><div class="mat ds-btn glass-disp">Primary</div><div class="mat ds-btn glass-disp">Secondary</div><div class="ds-btn tertiary">Tertiary</div><div class="mat ds-btn disabled glass-disp">Disabled</div></div></div>
+    </div><div class="galcol" style="flex:0 0 auto">
+      <div class="mat product-card glass-disp"><div class="pc-img" style="background-image:url('${cardImg}')"></div><div class="pc-body"><div class="pc-title">Card Title</div><div class="pc-text">A line of body text describing the card content.</div><div class="pc-link">Action →</div></div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="mat chip-pill glass-disp"><span class="dotc"></span>Chip</div><div class="mat chip-pill glass-disp"><span class="dotc"></span>Tag</div></div>
+    </div></div>
+  </div>
+</div></div>
+${fxBlock}
+</body></html>`;
+}
 </script>
 </body>
 </html>
