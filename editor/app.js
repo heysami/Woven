@@ -23287,6 +23287,11 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "mm-composer", w: 960, h: 640,
     doc: p.doc || null,
   }),
+  // ── Composable spec nodes (typed providers; spec lives on node.spec) ────
+  "effect":   (p) => ({ kind: "effect",   w: 260, h: 300, spec: p.spec || { v: 1, type: "chromatic-aberration", intensity: 0.5, params: {} } }),
+  "position": (p) => ({ kind: "position", w: 260, h: 300, spec: p.spec || { v: 1, mode: "grid", params: { cols: 4, rows: 4, placement: "fixed" } } }),
+  "trigger":  (p) => ({ kind: "trigger",  w: 260, h: 300, spec: p.spec || { v: 1, source: "hover", params: {}, impacts: [] } }),
+  "layer":    (p) => ({ kind: "layer",    w: 240, h: 240, spec: p.spec || { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true } }),
   "formatted-text": (p) => ({
     kind: "formatted-text", w: 380, h: 320,
     html: p.html || "<p>Type or wire a prompt here.</p>",
@@ -23502,19 +23507,22 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
     // v4.0 — `edit` port: wire an Agent in to EDIT the composition (it rewrites
     // the composer-<id>.json sidecar, which the node re-imports live).
-    accepts:  { in:  { label: "Layer", tags: ["asset"] },
+    accepts:  { in:  { label: "Layer", tags: ["asset", "layer"] },
+                pos: { label: "Position", tags: ["position"] },
                 edit: { label: "Edit composer", tags: ["text-gen", "asset-gen"] } },
   },
   "vector-editor": {
     label: "Vector editor",
     provides: { out: { label: "Baked SVG", tags: ["asset"] } },
-    accepts:  { in:   { label: "Trace image", tags: ["asset"] },
+    accepts:  { in:   { label: "Trace image", tags: ["asset", "layer"] },
+                pos:  { label: "Position", tags: ["position"] },
                 edit: { label: "Edit vector", tags: ["text-gen", "asset-gen"] } },
   },
   "spline-3d": {
     label: "3D editor",
     provides: { out: { label: "3D scene", tags: ["asset", "3d"] } },
     accepts:  { in:   { label: "Import 3D model", tags: ["asset", "3d"] },
+                pos:  { label: "Position (3D)", tags: ["position"] },
                 edit: { label: "Edit 3D scene", tags: ["text-gen", "asset-gen", "3d"] } },
   },
   "formatted-text": {
@@ -23532,18 +23540,24 @@ const WORKFLOW_CONNECT_DEFS = {
   "image-editor": {
     label: "Image editor",
     provides: { out: { label: "Baked image", tags: ["asset", "remixable", "blendable"] } },
-    accepts:  { in:   { label: "Layer", tags: ["asset"] },
+    accepts:  { in:   { label: "Layer", tags: ["asset", "layer"] },
+                fx:   { label: "Effect", tags: ["effect"] },
+                pos:  { label: "Position", tags: ["position"] },
                 edit: { label: "Edit image", tags: ["text-gen", "asset-gen"] } },
   },
   "pixel-editor": {
     label: "Pixel editor",
     provides: { out: { label: "Baked pixels", tags: ["asset", "remixable"] } },
-    accepts:  { edit: { label: "Edit pixels", tags: ["text-gen", "asset-gen"] } },
+    accepts:  { in:   { label: "Source image", tags: ["asset"] },
+                pos:  { label: "Position", tags: ["position"] },
+                fx:   { label: "Effect", tags: ["effect"] },
+                edit: { label: "Edit pixels", tags: ["text-gen", "asset-gen"] } },
   },
   "voxel-3d": {
     label: "Voxel editor",
     provides: { out: { label: "Voxel scene", tags: ["asset", "3d"] } },
     accepts:  { in:   { label: "Import 3D model", tags: ["asset", "3d"] },
+                pos:  { label: "Position (3D)", tags: ["position"] },
                 edit: { label: "Edit voxels", tags: ["text-gen", "asset-gen", "3d"] } },
   },
   "synth": {
@@ -23560,14 +23574,40 @@ const WORKFLOW_CONNECT_DEFS = {
   "material-lab": {
     label: "Material Lab",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
-    accepts:  { in:   { label: "Element content", tags: ["asset"] },
+    accepts:  { in:   { label: "Element content", tags: ["asset", "layer"] },
+                fx:   { label: "Effect", tags: ["effect"] },
                 edit: { label: "Edit materials", tags: ["text-gen", "asset-gen"] } },
   },
   "mm-composer": {
     label: "Interactive composer",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
-    accepts:  { in:   { label: "Layer content", tags: ["asset"] },
+    accepts:  { in:   { label: "Layer content", tags: ["asset", "layer"] },
+                fx:   { label: "Effect", tags: ["effect"] },
+                pos:  { label: "Position", tags: ["position"] },
+                trig: { label: "Trigger", tags: ["trigger"] },
                 edit: { label: "Edit composition", tags: ["text-gen", "asset-gen"] } },
+  },
+  // ── Composable spec nodes ─────────────────────────────────────────────
+  "effect": {
+    label: "Effect",
+    provides: { out: { label: "Effect", tags: ["effect"] } },
+    accepts:  { edit: { label: "Edit effect", tags: ["text-gen", "asset-gen"] } },
+  },
+  "position": {
+    label: "Position",
+    provides: { out: { label: "Position", tags: ["position"] } },
+    accepts:  { edit: { label: "Edit position", tags: ["text-gen", "asset-gen"] } },
+  },
+  "trigger": {
+    label: "Trigger",
+    provides: { out: { label: "Trigger", tags: ["trigger"] } },
+    accepts:  { edit: { label: "Edit trigger", tags: ["text-gen", "asset-gen"] } },
+  },
+  "layer": {
+    label: "Layer",
+    provides: { out: { label: "Layer", tags: ["layer"] } },
+    accepts:  { in:   { label: "Content + behaviour", tags: ["asset", "position", "trigger", "effect"] },
+                edit: { label: "Edit layer", tags: ["text-gen", "asset-gen"] } },
   },
 };
 
@@ -38241,6 +38281,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => SPEC_NODE_DEFS[n.kind]).map(n => html`
+              <${WorkflowSpecNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "iterator-repeater").map(n => html`
               <${WorkflowRepeaterNode}
                 key=${n.id}
@@ -39911,6 +39969,37 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">❖</span>
             <span className="workflow-library-item-label">Interactive composer</span>
             <span className="workflow-library-item-id">layers · triggers · fx</span>
+          </div>
+        </div>
+        <div className="workflow-library-section-head">Building blocks</div>
+        <div className="workflow-library-list">
+          <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "layer" })); }}
+            title="Drag onto canvas — a Layer. Wire an asset (content) + optional Position / Trigger / Effect into it, then wire it into a host (Interactive composer / Image editor / Composer).">
+            <span className="workflow-library-item-glyph">▤</span>
+            <span className="workflow-library-item-label">Layer</span>
+            <span className="workflow-library-item-id">content + behaviour</span>
+          </div>
+          <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "position" })); }}
+            title="Drag onto canvas — a Position scheme (grid / instances / physics / drawn / rope / camera-feed + 3D modes). Wire into a host editor to arrange its content.">
+            <span className="workflow-library-item-glyph">⊞</span>
+            <span className="workflow-library-item-label">Position</span>
+            <span className="workflow-library-item-id">placement scheme</span>
+          </div>
+          <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "trigger" })); }}
+            title="Drag onto canvas — a Trigger (mouse / hover / position / timeline / audio / camera) with cross-layer impacts. Wire into a layer or host.">
+            <span className="workflow-library-item-glyph">◇</span>
+            <span className="workflow-library-item-label">Trigger</span>
+            <span className="workflow-library-item-id">reactivity + impacts</span>
+          </div>
+          <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "effect" })); }}
+            title="Drag onto canvas — a GPU/shader Effect (shader-lab taxonomy: chromatic aberration, pixelate, halftone, ascii, …). Wire into a host editor to apply it to the output.">
+            <span className="workflow-library-item-glyph">✲</span>
+            <span className="workflow-library-item-label">Effect</span>
+            <span className="workflow-library-item-id">shader post-effect</span>
           </div>
         </div>
       </div>
@@ -51168,6 +51257,27 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
         out.push({ ...base, type: "typography", label, fontFamily: up.fontFamily, monoFamily: up.monoFamily, levels: up.levels || [] });
         continue;
       }
+      // Composable spec nodes (effect / position / trigger / layer). The
+      // node's `spec` JSON flows to the host, which applies it. A `layer`
+      // additionally recurses its own upstream (asset/position/trigger/effect)
+      // so the host gets the layer's bound content as `children` (mirrors the
+      // section-bundle recursion).
+      if (flavor === "effect" || flavor === "position" || flavor === "trigger") {
+        out.push({ ...base, type: flavor, label, spec: up.spec || {} });
+        continue;
+      }
+      if (flavor === "layer") {
+        const depth = opts._depth || 0;
+        let children = [];
+        if (depth < 3) {
+          const synth = (allEdges || [])
+            .filter(e => (e.to || "").split(".", 1)[0] === up.id)
+            .map(e => ({ from: e.from, to: "__layer__." + ((e.to || "").split(".")[1] || "in") }));
+          children = resolveUpstreamInputs({ id: "__layer__" }, allNodes, synth, { _depth: depth + 1, toPort: "in" });
+        }
+        out.push({ ...base, type: "layer", label, spec: up.spec || {}, layerId: up.id, children });
+        continue;
+      }
     }
     if (resolve === "dsRef" || up.kind === "design-system") {
       out.push({ ...base, type: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, version: up.version });
@@ -55970,7 +56080,10 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
   // shared io-contract resolver, reactive. Content assets flow to the tool as a
   // simple {id, url, kind, label} list so layer/element editors can reference
   // them by node id; glb imports flow as URLs (voxel).
-  const inputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
+  // Resolve ALL incoming edges (not just the `in` port) so wired Effect /
+  // Position / Trigger / Layer spec nodes (on the fx/pos/trig ports) reach
+  // the iframe alongside content assets + glb imports.
+  const inputs = useUpstreamInputs(node, allNodes, allEdges);
   const contentAssets = useMemo(() => inputs
     .filter(i => i.type === "asset")
     .map(i => ({ id: i.fromId, url: i.url, kind: i.assetKind, label: i.label })),
@@ -55982,8 +56095,16 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
       .map(p => /^(https?:)?\//.test(p) ? p : apiUrl("/" + String(p).replace(/^\//, "")));
     return Array.from(new Set([...wired, ...own]));
   }, [inputs, cfg.imports, (node.imports || []).join("|")]);
+  // Wired spec nodes → arrays of their JSON specs (Layer carries children).
+  const specs = useMemo(() => ({
+    effects:   inputs.filter(i => i.type === "effect").map(i => i.spec || {}),
+    positions: inputs.filter(i => i.type === "position").map(i => i.spec || {}),
+    triggers:  inputs.filter(i => i.type === "trigger").map(i => i.spec || {}),
+    layers:    inputs.filter(i => i.type === "layer").map(i => ({ id: i.layerId, spec: i.spec || {}, children: i.children || [] })),
+  }), [inputs]);
   const contentKey = JSON.stringify(contentAssets);
   const importKey = importUrls.join("|");
+  const specKey = JSON.stringify(specs);
 
   const iframeSrc = useMemo(() => {
     const p = new URLSearchParams();
@@ -55997,6 +56118,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
   const stateRef = useRef(node[cfg.stateField]); stateRef.current = node[cfg.stateField];
   const contentRef = useRef(contentAssets); contentRef.current = contentAssets;
   const importsRef = useRef(importUrls); importsRef.current = importUrls;
+  const specsRef = useRef(specs); specsRef.current = specs;
   const lastWrittenRef = useRef("");
   const saveTimerRef = useRef(null);
   const pendingRef = useRef(null);
@@ -56058,7 +56180,9 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
       if (d.type === cfg.prefix + ":ready") {
         readyRef.current = true;
         postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
-                       content: contentRef.current, imports: importsRef.current, branch });
+                       content: contentRef.current, imports: importsRef.current,
+                       effects: specsRef.current.effects, positions: specsRef.current.positions,
+                       triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
       } else if (d.type === cfg.prefix + ":state") {
         persistState(d.state, d.baked || null);
       }
@@ -56067,11 +56191,12 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
     return () => window.removeEventListener("message", onMsg);
   }, [node.id, cfg.prefix, branch, postToIframe, persistState]);
 
-  // Reactive content/imports push.
+  // Reactive content/imports/specs push.
   useEffect(() => {
-    if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls });
+    if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls,
+      effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentKey, importKey, cfg.prefix, postToIframe]);
+  }, [contentKey, importKey, specKey, cfg.prefix, postToIframe]);
 
   // Agent edited the canonical file → re-import live (ignore our own echo).
   useEffect(() => {
@@ -56176,6 +56301,168 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
       edges: [...edges, { from: `${n.id}.out`, to: `${assetId}.in` }],
     };
   });
+}
+
+/* ── Composable spec nodes: Layer / Position / Trigger / Effect ────────────
+   Form-based "typed" providers (like color-palette/typography): the node's
+   `spec` JSON flows into a host editor (resolveUpstreamInputs' typed branch)
+   which APPLIES it. Also agent-editable — the node mirrors `spec` into a JSON
+   sidecar source/<branch>/<kind>-<id>.json so an Agent wired to its `edit`
+   port can rewrite it; th:asset-refresh re-imports it. SPEC_NODE_DEFS gives
+   the per-kind glyph + form fields; ONE generic component renders them all. */
+const SPEC_NODE_DEFS = {
+  "effect": {
+    glyph: "✲", label: "Effect", canonical: (b, id) => `source/${b}/effect-${id}.json`,
+    fields: [
+      { key: "type", label: "Type", type: "select", options: [
+        "chromatic-aberration","pixelate","dither","posterize","pixel-sort","ascii","crt",
+        "halftone","ink","edge-detect","directional-blur","displacement","particle-grid","pattern","custom"] },
+      { key: "intensity", label: "Intensity", type: "range", min: 0, max: 1, step: 0.01 },
+      { key: "params", label: "Params (JSON)", type: "json" },
+      { key: "glsl", label: "Custom GLSL (type=custom)", type: "textarea" },
+    ],
+  },
+  "position": {
+    glyph: "⊞", label: "Position", canonical: (b, id) => `source/${b}/position-${id}.json`,
+    fields: [
+      { key: "mode", label: "Mode", type: "select", options: [
+        "single","grid","instances","physics","drawn","rope","camera-feed","grid-3d","scatter-3d","surface"] },
+      { key: "params", label: "Params (JSON)", type: "json" },
+    ],
+  },
+  "trigger": {
+    glyph: "◇", label: "Trigger", canonical: (b, id) => `source/${b}/trigger-${id}.json`,
+    fields: [
+      { key: "source", label: "Source", type: "select", options: [
+        "none","mouse-click","hover","position","timeline","audio","camera"] },
+      { key: "params", label: "Params (JSON)", type: "json" },
+      { key: "impacts", label: "Impacts (JSON array)", type: "json" },
+    ],
+  },
+  "layer": {
+    glyph: "▤", label: "Layer", canonical: (b, id) => `source/${b}/layer-${id}.json`,
+    fields: [
+      { key: "name", label: "Name", type: "text" },
+      { key: "z", label: "Z", type: "number" },
+      { key: "opacity", label: "Opacity", type: "range", min: 0, max: 1, step: 0.01 },
+      { key: "blend", label: "Blend", type: "select", options: ["normal","multiply","screen","overlay"] },
+      { key: "visible", label: "Visible", type: "checkbox" },
+    ],
+  },
+};
+
+function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+  const cfg = SPEC_NODE_DEFS[node.kind];
+  const w = node.w || 260;
+  const h = node.h || 300;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const spec = node.spec || {};
+
+  const branch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+  const canonicalPath = cfg.canonical(branch, node.id);
+
+  // Mirror spec → sidecar (debounced) so agents can read/edit it; re-import on
+  // agent edits (th:asset-refresh), echo-suppressed.
+  const lastWrittenRef = useRef("");
+  const saveTimerRef = useRef(null);
+  const writeSidecar = useCallback((nextSpec) => {
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const text = JSON.stringify(nextSpec);
+      if (text === lastWrittenRef.current) return;
+      lastWrittenRef.current = text;
+      fetch(apiUrl("/__write_text"), { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: canonicalPath, text }) }).catch(() => {});
+    }, 700);
+  }, [canonicalPath]);
+  const patchSpec = useCallback((patch) => {
+    const next = { ...(node.spec || {}), ...patch };
+    onChange({ spec: next });
+    writeSidecar(next);
+  }, [node.spec, onChange, writeSidecar]);
+
+  useEffect(() => {
+    const onRefresh = async (ev) => {
+      const paths = (ev && ev.detail && ev.detail.paths) || [];
+      if (!paths.includes(canonicalPath)) return;
+      try {
+        const r = await fetch(apiUrl("/" + canonicalPath), { cache: "no-store" });
+        if (!r.ok) return;
+        const text = await r.text();
+        if (text === lastWrittenRef.current) return;
+        lastWrittenRef.current = text;
+        onChange({ spec: JSON.parse(text) });
+      } catch (_e) {}
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [canonicalPath, onChange]);
+
+  const renderField = (f) => {
+    const val = spec[f.key];
+    if (f.type === "select") return html`<select className="workflow-spec-input" value=${val || f.options[0]}
+        onChange=${(e) => patchSpec({ [f.key]: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}>
+        ${f.options.map(o => html`<option key=${o} value=${o}>${o}</option>`)}</select>`;
+    if (f.type === "range") return html`<div className="workflow-spec-range"><input type="range" min=${f.min} max=${f.max} step=${f.step}
+        value=${val != null ? val : f.max} onInput=${(e) => patchSpec({ [f.key]: +e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/><span>${(val != null ? val : f.max)}</span></div>`;
+    if (f.type === "number") return html`<input className="workflow-spec-input" type="number" value=${val != null ? val : 0}
+        onInput=${(e) => patchSpec({ [f.key]: +e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/>`;
+    if (f.type === "checkbox") return html`<input type="checkbox" checked=${val !== false}
+        onChange=${(e) => patchSpec({ [f.key]: e.target.checked })} onMouseDown=${(e) => e.stopPropagation()}/>`;
+    if (f.type === "json") return html`<${SpecJsonField} value=${val} onCommit=${(v) => patchSpec({ [f.key]: v })}/>`;
+    if (f.type === "textarea") return html`<textarea className="workflow-spec-input workflow-spec-textarea" value=${val || ""}
+        onInput=${(e) => patchSpec({ [f.key]: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/>`;
+    return html`<input className="workflow-spec-input" type="text" value=${val || ""}
+        onInput=${(e) => patchSpec({ [f.key]: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/>`;
+  };
+
+  const hasIn = node.kind === "layer";
+  return html`
+    <div className=${"workflow-node workflow-node-spec workflow-node-spec-" + node.kind}
+      data-selected=${selected ? "true" : "false"} onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph">${cfg.glyph}</span>
+        <span className="workflow-node-label">${cfg.label}</span>
+        <span className="workflow-node-bar-spacer"/>
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <div className="workflow-spec-body" onMouseDown=${(e) => e.stopPropagation()} style=${{ padding: "8px 10px", overflow: "auto", height: "calc(100% - 30px)" }}>
+        ${cfg.fields.map(f => html`<label key=${f.key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
+          <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${f.label}</span>
+          ${renderField(f)}
+        </label>`)}
+      </div>
+      ${hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+        title="Wire an asset (content) + optional Position / Trigger / Effect into this layer."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}><div className="workflow-port-dot"/></div>`}
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+        title=${"Wire this " + cfg.label + " into a host editor."}
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+// A JSON textarea that only commits valid JSON (red border while invalid).
+function SpecJsonField({ value, onCommit }) {
+  const [text, setText] = useState(() => { try { return JSON.stringify(value ?? {}, null, 0); } catch { return "{}"; } });
+  const [bad, setBad] = useState(false);
+  useEffect(() => { try { setText(JSON.stringify(value ?? {}, null, 0)); setBad(false); } catch {} }, [JSON.stringify(value ?? {})]);
+  return html`<textarea className="workflow-spec-input workflow-spec-textarea"
+    style=${bad ? { borderColor: "var(--danger, #e5484d)" } : null}
+    value=${text}
+    onInput=${(e) => { const v = e.target.value; setText(v); try { onCommit(JSON.parse(v)); setBad(false); } catch { setBad(true); } }}
+    onMouseDown=${(e) => e.stopPropagation()}/>`;
 }
 
 /* v3.4.38 — Mermaid diagram node.

@@ -21,6 +21,7 @@ importing the giant ``serve.py``.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 
@@ -152,6 +153,16 @@ def _r_typed(up, prov, ctx):
                        for l in (up.get("levels") or []) if isinstance(l, dict))
         head = f"### {_label(up)} (typography)\nsans={up.get('fontFamily') or ''}, mono={up.get('monoFamily') or ''}"
         return head + (f". Scale: {lv}" if lv else "")
+    # Composable spec nodes (effect / position / trigger / layer) — the node's
+    # `spec` JSON IS the payload; hand the agent the literal spec so it can
+    # reason about (or replace) it.
+    if flavor in ("effect", "position", "trigger", "layer"):
+        spec = up.get("spec")
+        try:
+            body = json.dumps(spec, ensure_ascii=False) if spec is not None else "{}"
+        except (TypeError, ValueError):
+            body = "{}"
+        return f"### {_label(up)} ({flavor} spec)\n{body}"
     return None
 
 

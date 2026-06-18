@@ -1949,6 +1949,55 @@ KINDS = {
         "notes": "User-driven layered interactive surface. Each layer = {positioning · trigger · effects}: grid/instance/physics/drawn/rope/camera-feed positioning, mouse/timeline/audio/camera triggers that cross-affect layers, and GPU/shader effects (shader-lab taxonomy). Bakes interactive source/<branch>/mm-<id>.html. Agent edits source/<branch>/mm-<id>.json.",
     },
 
+    # ── Composable spec nodes (Layer / Position / Trigger / Effect) ────────
+    # Typed providers (like color-palette/typography): a small JSON `spec` on
+    # the node flows into a host editor which APPLIES it. Also agent-editable
+    # (editTarget → a JSON sidecar the node re-imports). io contracts in KIND_IO.
+    "effect": {
+        "title":        "Effect",
+        "category":     "container",
+        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "Composable GPU/shader post-effect (shader-lab taxonomy). Wire into a host editor's effect port; agent edits source/<branch>/effect-<id>.json.",
+    },
+    "position": {
+        "title":        "Position",
+        "category":     "container",
+        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "Composable placement scheme (grid/instances/physics/drawn/rope/camera-feed + 3D modes). Wire into a host's position port; agent edits source/<branch>/position-<id>.json.",
+    },
+    "trigger": {
+        "title":        "Trigger",
+        "category":     "container",
+        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "Composable reactivity source + cross-layer impacts (mouse/hover/position/timeline/audio/camera). Wire into a layer/host; agent edits source/<branch>/trigger-<id>.json.",
+    },
+    "layer": {
+        "title":        "Layer",
+        "category":     "container",
+        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "One composition layer. Wire asset (content) + optional position/trigger/effect into its in-port, then wire its out into a host (mm-composer/image/composer). Agent edits source/<branch>/layer-<id>.json.",
+    },
+
     # ── formatted-text ───────────────────────────────────────────────────
     # v3.4.37 — Rich text node. The body is edited in-place via
     # contentEditable, and the user can select a range to apply a
@@ -2960,6 +3009,47 @@ _MM_AUTHORING = (
     "that is how layers cross-affect. Effects are a post-process chain (shader-lab taxonomy)."
 )
 
+# ── Composable spec-node authoring (Layer / Position / Trigger / Effect) ──────
+# These four are "typed" providers (like color-palette/typography) whose JSON
+# spec flows into a host editor which APPLIES it. They are ALSO agent-editable
+# (editTarget): the agent writes the canonical file, the node re-imports it.
+_EFFECT_AUTHORING = (
+    "This is an EFFECT spec node — a GPU/shader post-effect (shader-lab taxonomy) that a host "
+    "editor applies to its output. Write `source/{branch}/effect-{id}.json`: "
+    "{\"v\":1,\"type\":\"chromatic-aberration|pixelate|dither|posterize|pixel-sort|ascii|crt|halftone|"
+    "ink|edge-detect|directional-blur|displacement|particle-grid|pattern|custom\","
+    "\"intensity\":0..1,\"params\":{ ...effect-specific... },"
+    "\"glsl\":\"<optional custom WebGL2 fragment shader, used only when type=custom>\"}. "
+    "Wire this node's out into a host (image / pixel / voxel / mm-composer / material-lab); the host "
+    "runs it as a fullscreen pass over its rendered frame. Keep `intensity` in 0..1."
+)
+_POSITION_AUTHORING = (
+    "This is a POSITION spec node — how a host places its content/instances. Write "
+    "`source/{branch}/position-{id}.json`: {\"v\":1,\"mode\":\"single|grid|instances|physics|drawn|rope|"
+    "camera-feed|grid-3d|scatter-3d|surface\",\"params\":{ ... }}. 2D modes: grid{cols,rows,placement:"
+    "'fixed|random'}; instances{source:'mouse|random',count}; physics{gravity:[x,y]}; drawn{paths:"
+    "[[x,y]]}; rope{anchors,segments,stiffness}; camera-feed{detector:'hand|face|object|ocr'}. 3D modes "
+    "(voxel/spline): grid-3d{cols,rows,layers,spacing}; scatter-3d{count,bounds:[x,y,z]}; surface{meshId}. "
+    "Wire out into a host editor to arrange its content."
+)
+_TRIGGER_AUTHORING = (
+    "This is a TRIGGER spec node — what drives reactivity and which other layers it impacts. Write "
+    "`source/{branch}/trigger-{id}.json`: {\"v\":1,\"source\":\"none|mouse-click|hover|position|timeline|"
+    "audio|camera\",\"params\":{ ... },\"impacts\":[{\"target\":\"<layer id>\",\"param\":\"opacity|scale|"
+    "position|effect.intensity\",\"map\":\"linear|threshold\",\"range\":[0,1]}]}. params per source: "
+    "timeline{keys:[{t,...}],loop}; audio{sourceId,feature:'loudness|pitch|band'}; camera{detector,event:"
+    "'present|gesture|count'}. Wire out into a layer or a host; `impacts` routes the trigger's value onto "
+    "other layers' params."
+)
+_LAYER_AUTHORING = (
+    "This is a LAYER node — one layer of a composition. Write `source/{branch}/layer-{id}.json`: "
+    "{\"v\":1,\"name\":\"...\",\"z\":0,\"opacity\":0..1,\"blend\":\"normal|multiply|screen|overlay\","
+    "\"visible\":true}. The layer's CONTENT + behaviour come from what you WIRE into its in-port: an "
+    "asset (the content), and optionally a position / trigger / effect spec node. Then wire this layer's "
+    "out into a host (mm-composer / image / composer). The layer binds content+position+trigger+effect "
+    "together as one stackable unit — do not inline content here, wire it."
+)
+
 # Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
 # An `asset` node carries an `assetKind` (see KINDS["asset"].inputs.assetKind enum);
 # "Write your <assetKind> output to <path>" names the medium but leaks no schema, so
@@ -3232,7 +3322,8 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
-            {"port": "in", "label": "Layer", "tags": ["asset"], "ingest": "context"},
+            {"port": "in", "label": "Layer", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit composer", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/composer-{id}.json",
               "authoring": _COMPOSER_AUTHORING},
@@ -3242,7 +3333,8 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked SVG", "tags": ["asset"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "svg"}}],
         "accepts":  [
-            {"port": "in", "label": "Trace image", "tags": ["asset"], "ingest": "context"},
+            {"port": "in", "label": "Trace image", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit vector", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/svg/vector-{id}.json",
               "authoring": _VECTOR_AUTHORING},
@@ -3265,6 +3357,7 @@ KIND_IO = {
             {"port": "in", "label": "Model / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json",
               "authoring": _SPLINE_AUTHORING},
+            {"port": "pos", "label": "Position (3D)", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit 3D scene", "tags": ["text-gen", "asset-gen", "3d"],
               "ingest": "editTarget", "canonical": "source/{branch}/spline-{id}.scene.json",
               "authoring": _SPLINE_AUTHORING},
@@ -3284,7 +3377,9 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked image", "tags": ["asset", "remixable", "blendable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "png"}}],
         "accepts":  [
-            {"port": "in", "label": "Layer", "tags": ["asset"], "ingest": "context"},
+            {"port": "in", "label": "Layer", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
+            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit image", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/image-{id}.json",
               "authoring": _IMAGE_AUTHORING},
@@ -3294,6 +3389,9 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked pixels", "tags": ["asset", "remixable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "png"}}],
         "accepts":  [
+            {"port": "in", "label": "Source image", "tags": ["asset"], "ingest": "context"},
+            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
+            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
             {"port": "edit", "label": "Edit pixels", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/pixel-{id}.json",
               "authoring": _PIXEL_AUTHORING},
@@ -3306,6 +3404,7 @@ KIND_IO = {
             {"port": "in", "label": "Model / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/voxel-{id}.json",
               "authoring": _VOXEL_AUTHORING},
+            {"port": "pos", "label": "Position (3D)", "tags": ["position"], "ingest": "context"},
             {"port": "edit", "label": "Edit voxels", "tags": ["text-gen", "asset-gen", "3d"],
               "ingest": "editTarget", "canonical": "source/{branch}/voxel-{id}.json",
               "authoring": _VOXEL_AUTHORING},
@@ -3334,7 +3433,8 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
-            {"port": "in", "label": "Element content", "tags": ["asset"], "ingest": "context"},
+            {"port": "in", "label": "Element content", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
             {"port": "edit", "label": "Edit materials", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/material-{id}.json",
               "authoring": _MATERIAL_AUTHORING},
@@ -3344,10 +3444,51 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
-            {"port": "in", "label": "Layer content", "tags": ["asset"], "ingest": "context"},
+            {"port": "in", "label": "Layer content", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "fx", "label": "Effect", "tags": ["effect"], "ingest": "context"},
+            {"port": "pos", "label": "Position", "tags": ["position"], "ingest": "context"},
+            {"port": "trig", "label": "Trigger", "tags": ["trigger"], "ingest": "context"},
             {"port": "edit", "label": "Edit composition", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/mm-{id}.json",
               "authoring": _MM_AUTHORING},
+        ],
+    },
+    # ── Composable spec nodes (typed providers + agent-editable) ───────────
+    "effect": {
+        "provides": [{"port": "out", "label": "Effect", "tags": ["effect"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "effect"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit effect", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/effect-{id}.json",
+              "authoring": _EFFECT_AUTHORING},
+        ],
+    },
+    "position": {
+        "provides": [{"port": "out", "label": "Position", "tags": ["position"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "position"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit position", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/position-{id}.json",
+              "authoring": _POSITION_AUTHORING},
+        ],
+    },
+    "trigger": {
+        "provides": [{"port": "out", "label": "Trigger", "tags": ["trigger"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "trigger"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit trigger", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/trigger-{id}.json",
+              "authoring": _TRIGGER_AUTHORING},
+        ],
+    },
+    "layer": {
+        "provides": [{"port": "out", "label": "Layer", "tags": ["layer"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "layer"}}],
+        "accepts":  [
+            {"port": "in", "label": "Content + behaviour", "tags": ["asset", "position", "trigger", "effect"], "ingest": "context"},
+            {"port": "edit", "label": "Edit layer", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/layer-{id}.json",
+              "authoring": _LAYER_AUTHORING},
         ],
     },
 }
