@@ -97,10 +97,14 @@
   .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; }
   .badge b { color: var(--accent-2); }
   #flash { transition: opacity .3s; }
+  /* Wired-effect post-process overlay: a 2D canvas stacked above the WebGL
+     canvas. Only shown when a non-passthrough effects chain is active. */
+  #fx-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 1; display: none; }
 </style>
 </head>
 <body>
 <div id="stage"></div>
+<canvas id="fx-overlay"></canvas>
 
 <div class="toolbar" id="toolbar">
   <button class="tool active" data-tool="add" title="Add voxel (A)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M12 6v5M9.5 8.5h5" stroke-width="1.2"/></svg></button>
@@ -370,6 +374,9 @@ function remesh() {
   }
   if (fur) applyFurAll();   // re-coat the freshly rebuilt meshes
   refreshCount();
+  // A remesh replaced the per-slot meshes the arrangement clones reference, so
+  // rebuild the live 3D arrangement (if any) against the fresh model.
+  if (typeof reconcileArrangement === 'function') { _arrangeSig = ''; reconcileArrangement(); }
 }
 // Lightweight material refresh when only a palette entry's look changes (no
 // topology change) — avoids a full remesh.
@@ -866,6 +873,161 @@ function seedDemo() {
   }
   setVoxel(c, 1, c, 2); setVoxel(c, 2, c, 2); setVoxel(c, 3, c, 3);
   setVoxel(c + 2, 1, c, 3); setVoxel(c - 2, 1, c, 2);
+}
+
+// ── WIRED EFFECTS (screen post-process) ──────────────────────────────────────
+// The host forwards a shader-lab `effects` chain on voxel:init / voxel:content.
+// We run it over the rendered WebGL image each frame via the shared fx.js module
+// and blit the result onto a 2D overlay canvas stacked above the GL canvas.
+// intensity 0 / empty chain = passthrough (overlay hidden, GL shows through).
+// These are EXTERNAL inputs — never echoed back as voxel:state.
+let wiredEffects = [];          // [{type, intensity, params, glsl?}]
+let _fxChain = null;            // lazily-created fx.js chain (or null on failure)
+let _fxFailed = false;          // true once import/WebGL2 failed (stop retrying)
+const _fxOverlay = $('#fx-overlay');
+const _fxCtx = _fxOverlay.getContext('2d');
+
+function fxActive() {
+  // Any effect with a usable type and intensity != 0 makes the chain non-trivial.
+  return wiredEffects.some(e => e && e.type && (e.intensity == null || +e.intensity !== 0));
+}
+async function ensureFXChain() {
+  if (_fxChain || _fxFailed) return _fxChain;
+  try {
+    const fx = await import('../_shared/fx.js');
+    _fxChain = fx.createFXChain();
+  } catch (e) {
+    _fxFailed = true;
+    console.warn('[voxel3d] wired effects unavailable (fx.js / WebGL2 failed):', e);
+  }
+  return _fxChain;
+}
+function setWiredEffects(list) {
+  wiredEffects = Array.isArray(list) ? list.filter(e => e && typeof e === 'object') : [];
+  if (fxActive()) ensureFXChain();   // warm up (async) so first frame can apply
+  else hideFXOverlay();
+}
+function hideFXOverlay() { if (_fxOverlay.style.display !== 'none') _fxOverlay.style.display = 'none'; }
+function sizeFXOverlay() {
+  const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
+  if (_fxOverlay.width !== w || _fxOverlay.height !== h) { _fxOverlay.width = w; _fxOverlay.height = h; }
+}
+// Run the chain over the freshly-rendered GL canvas and draw onto the overlay.
+function applyWiredEffects(tSeconds) {
+  if (!fxActive()) { hideFXOverlay(); return; }
+  if (!_fxChain) { ensureFXChain(); return; }   // not ready yet → passthrough this frame
+  try {
+    _fxChain.setTime(tSeconds);
+    const out = _fxChain.apply(renderer.domElement, wiredEffects);
+    if (!out) { hideFXOverlay(); return; }
+    sizeFXOverlay();
+    _fxCtx.clearRect(0, 0, _fxOverlay.width, _fxOverlay.height);
+    // out is sized to the GL drawing buffer; stretch to the overlay's CSS pixels.
+    _fxCtx.drawImage(out, 0, 0, out.width, out.height, 0, 0, _fxOverlay.width, _fxOverlay.height);
+    _fxOverlay.style.display = 'block';
+  } catch (e) {
+    console.warn('[voxel3d] wired-effect apply failed:', e);
+    _fxFailed = true; hideFXOverlay();
+  }
+}
+
+// ── WIRED POSITION (3D arrangement) ───────────────────────────────────────────
+// The host forwards 3D-aware `positions` on voxel:init / voxel:content. When a
+// grid-3d / scatter-3d position is wired, we REPLICATE the built voxel model
+// (the merged per-slot meshes) into a live, non-destructive arrangement. The
+// canonical voxel JSON is never mutated; this is a view-only overlay group.
+// Reconciled whenever the position spec or the underlying model changes.
+let wiredPositions = [];        // [{mode, params}]
+let _arrangeGroup = null;       // THREE.Group holding the replicated clones, or null
+let _arrangeSig = '';           // signature to skip redundant rebuilds
+
+function setWiredPositions(list) {
+  wiredPositions = Array.isArray(list) ? list.filter(p => p && typeof p === 'object') : [];
+  _arrangeSig = '';             // force reconcile
+  reconcileArrangement();
+}
+// The first applicable 3D position spec wins (grid-3d preferred, then scatter-3d).
+function activePositionSpec() {
+  return wiredPositions.find(p => p.mode === 'grid-3d')
+      || wiredPositions.find(p => p.mode === 'scatter-3d')
+      || null;
+}
+function clearArrangement() {
+  if (!_arrangeGroup) return;
+  _arrangeGroup.traverse(o => { if (o.isMesh && o.geometry && o.userData._cloneGeo) o.geometry.dispose(); });
+  scene.remove(_arrangeGroup); _arrangeGroup = null;
+  // restore the base meshes' visibility
+  for (const m of meshes.values()) m.visible = true;
+}
+// Build one detached clone of the current merged voxel model, centred on origin
+// so instances can be offset cleanly. Returns a Group (or null if empty).
+function buildModelClone() {
+  if (meshes.size === 0) return null;
+  const g = new THREE.Group();
+  for (const m of meshes.values()) {
+    if (!m.geometry) continue;
+    const c = new THREE.Mesh(m.geometry, m.material);  // share geo+mat (view-only)
+    c.castShadow = c.receiveShadow = true;
+    g.add(c);
+  }
+  return g.children.length ? g : null;
+}
+function reconcileArrangement() {
+  const spec = activePositionSpec();
+  if (!spec) { if (_arrangeGroup) { _arrangeSig = ''; clearArrangement(); } return; }
+  const sig = JSON.stringify({ s: spec, n: voxels.size, g: G, v: VOXEL });
+  if (sig === _arrangeSig && _arrangeGroup) return;   // nothing changed
+  _arrangeSig = sig;
+  clearArrangement();
+  const proto = buildModelClone();
+  if (!proto) return;   // nothing built yet → skip gracefully
+
+  const grp = new THREE.Group();
+  const P = spec.params || {};
+  const modelSpan = G * VOXEL;   // footprint of one instance
+
+  if (spec.mode === 'grid-3d') {
+    const cols = Math.max(1, P.cols | 0 || 1);
+    const rows = Math.max(1, P.rows | 0 || 1);
+    const layers = Math.max(1, P.layers | 0 || 1);
+    const spacing = (typeof P.spacing === 'number' && P.spacing > 0) ? P.spacing : modelSpan * 1.2;
+    const cx = (cols - 1) / 2, cy = (rows - 1) / 2, cz = (layers - 1) / 2;
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) for (let k = 0; k < layers; k++) {
+      const inst = (i === 0 && j === 0 && k === 0) ? proto : cloneArrangeInstance(proto);
+      inst.position.set((i - cx) * spacing, (j - cy) * spacing, (k - cz) * spacing);
+      grp.add(inst);
+    }
+  } else if (spec.mode === 'scatter-3d') {
+    const count = Math.max(1, P.count | 0 || 1);
+    const b = P.bounds || {};
+    const bx = (typeof b.x === 'number') ? b.x : (typeof b === 'number' ? b : modelSpan * 3);
+    const by = (typeof b.y === 'number') ? b.y : bx;
+    const bz = (typeof b.z === 'number') ? b.z : bx;
+    // deterministic-ish scatter so reconcile is stable frame-to-frame.
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < count; i++) {
+      const inst = (i === 0) ? proto : cloneArrangeInstance(proto);
+      inst.position.set((rnd() - 0.5) * bx, (rnd() - 0.5) * by + by * 0.5, (rnd() - 0.5) * bz);
+      grp.add(inst);
+    }
+  } else { return; }   // unknown mode → skip gracefully
+
+  // Hide the base meshes (the arrangement now represents the model); the proto
+  // clone reuses their geometry/material so the look is identical.
+  for (const m of meshes.values()) m.visible = false;
+  _arrangeGroup = grp; scene.add(grp);
+}
+// Deep-ish clone of a model group: new Meshes sharing the (immutable) geometry +
+// material of the prototype, so N instances cost almost nothing.
+function cloneArrangeInstance(proto) {
+  const g = new THREE.Group();
+  for (const c of proto.children) {
+    const m = new THREE.Mesh(c.geometry, c.material);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+  }
+  return g;
 }
 
 // ── DRIVEN-VIEW protocol (adapted from spline3d's embedded bridge) ───────────

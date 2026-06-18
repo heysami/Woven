@@ -15,6 +15,10 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
   #stage { position: fixed; inset: 0; }
   canvas { display: block; outline: none; }
+  /* Wired-FX overlay — a 2D canvas blitted above the WebGL render. Pointer-
+     transparent so orbit/select still hit the live canvas underneath. Hidden
+     (display:none) whenever no wired effects are active, so it's a true no-op. */
+  #fx-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 5; display: none; }
 
   .toolbar {
     position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
@@ -92,6 +96,7 @@
 </head>
 <body>
 <div id="stage"></div>
+<canvas id="fx-overlay"></canvas>
 
 <div class="toolbar" id="toolbar">
   <button class="tool active" data-tool="select" title="Move (W)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg></button>
@@ -520,7 +525,7 @@ function addImportedScene(gltf, label, srcUrl) {
     if (srcUrl) { const arr = __loadedImports.get(srcUrl) || []; arr.push(root); __loadedImports.set(srcUrl, arr); }
     select([root]);
     flash('Imported · ' + (label || 'model') + (clips.length ? ' · ' + clips.length + ' animation' + (clips.length === 1 ? '' : 's') : ' (rigged)'));
-    refresh(); return;
+    refresh(); rebuildWiredPositionsIfActive(); return;
   }
 
   // ── Static glb: bake each mesh to world space → individually editable. ──────
@@ -549,6 +554,7 @@ function addImportedScene(gltf, label, srcUrl) {
   if (last) select([last]);
   flash('Imported · ' + (label || 'model') + ' (' + meshes.length + ' mesh' + (meshes.length === 1 ? '' : 'es') + ')');
   refresh();
+  rebuildWiredPositionsIfActive();   // late-arriving imports → fold into any wired arrangement
 }
 function importGLBfromURL(url, label) {
   gltfLoader.load(url, g => addImportedScene(g, label, url), undefined, err => { flash('Import failed: ' + url.split('/').pop()); console.error(err); });
@@ -1412,6 +1418,146 @@ function stepPhysics(dt) {
   }
 }
 
+// ── Wired spec consumption (effects + positions) ───────────────────────────
+// ADDITIVE layers driven by spec nodes the host forwards alongside scene/imports
+// (effects[] = shader-lab post-effects, positions[] = grid-3d/scatter-3d
+// arrangements). Both are tolerant: absent → exactly the original behaviour.
+// Neither mutates the scene JSON / serialization, and neither echoes a scene
+// edit back to the host (these are EXTERNAL inputs, not user edits).
+let WIRED_EFFECTS = [];     // [{type,intensity,params,glsl?}]
+let WIRED_POSITIONS = [];   // [{mode,params}] (3D: grid-3d / scatter-3d)
+
+// Tolerant reader — pulls `effects` / `positions` off any handshake/content
+// message if present, ignores them otherwise. Returns true if either changed.
+function setWiredSpecs(d) {
+  let changed = false;
+  if (d && 'effects' in d) {
+    const next = Array.isArray(d.effects) ? d.effects : [];
+    if (JSON.stringify(next) !== JSON.stringify(WIRED_EFFECTS)) { WIRED_EFFECTS = next; changed = true; }
+  }
+  if (d && 'positions' in d) {
+    const next = Array.isArray(d.positions) ? d.positions : [];
+    if (JSON.stringify(next) !== JSON.stringify(WIRED_POSITIONS)) { WIRED_POSITIONS = next; changed = true; }
+  }
+  if (changed) { applyWiredPositions(); refreshFXOverlayVisibility(); }
+  return changed;
+}
+
+// ── Wired effects: screen post-process blitted onto an overlay 2D canvas ─────
+// fx.js owns the GLSL chain; we feed it the WebGL canvas each frame and draw the
+// result on top. intensity 0 / empty array ⇒ passthrough ⇒ overlay hidden.
+const fxOverlay = document.getElementById('fx-overlay');
+const fxOverlayCtx = fxOverlay.getContext('2d');
+let fxChain = null, fxImportTried = false, fxWarned = false;
+async function ensureFXChain() {
+  if (fxImportTried) return fxChain;
+  fxImportTried = true;
+  try { const fx = await import('../_shared/fx.js'); fxChain = fx.createFXChain(); }
+  catch (e) { fxChain = null; if (!fxWarned) { fxWarned = true; console.warn('[spline3d] fx.js unavailable; wired effects skipped.', e); } }
+  return fxChain;
+}
+function activeEffects() {
+  // Drop passthrough/zero-intensity entries so an all-zero chain is a true no-op.
+  return (Array.isArray(WIRED_EFFECTS) ? WIRED_EFFECTS : [])
+    .filter(e => e && typeof e === 'object' && (e.intensity == null || +e.intensity > 0));
+}
+function refreshFXOverlayVisibility() {
+  const on = activeEffects().length > 0;
+  if (!on) { fxOverlay.style.display = 'none'; fxOverlayCtx.clearRect(0, 0, fxOverlay.width, fxOverlay.height); }
+}
+let fxBusy = false;
+function applyWiredFX(t) {
+  const fx = activeEffects();
+  if (!fx.length) { if (fxOverlay.style.display !== 'none') refreshFXOverlayVisibility(); return; }
+  if (fxBusy) return;   // skip frames while the chain (re-)imports; never block the GL loop
+  fxBusy = true;
+  ensureFXChain().then(chain => {
+    fxBusy = false;
+    if (!chain) { fxOverlay.style.display = 'none'; return; }
+    try {
+      chain.setTime(t);
+      const out = chain.apply(renderer.domElement, fx);   // -> a detached canvas
+      if (!out) { fxOverlay.style.display = 'none'; return; }
+      if (fxOverlay.width !== renderer.domElement.width || fxOverlay.height !== renderer.domElement.height) {
+        fxOverlay.width = renderer.domElement.width; fxOverlay.height = renderer.domElement.height;
+      }
+      fxOverlay.style.display = 'block';
+      fxOverlayCtx.clearRect(0, 0, fxOverlay.width, fxOverlay.height);
+      fxOverlayCtx.drawImage(out, 0, 0, fxOverlay.width, fxOverlay.height);
+    } catch (e) {
+      if (!fxWarned) { fxWarned = true; console.warn('[spline3d] wired effects apply failed; passthrough.', e); }
+      fxOverlay.style.display = 'none';
+    }
+  }, () => { fxBusy = false; });
+}
+
+// ── Wired positions: NON-DESTRUCTIVE replication of the scene into a 3D arrangement
+// (grid-3d / scatter-3d). The originals stay put; we add a sibling group of
+// clones — never touching `objects`, the rig, sims, or serialization. Rebuilt
+// whenever the spec changes; skipped modes are ignored gracefully.
+let wiredPosGroup = null;
+function clearWiredPositions() {
+  if (!wiredPosGroup) return;
+  // Clones SHARE the originals' geometry + material (clone(true) copies the
+  // graph but keeps those refs), so we must NOT dispose them here — just detach.
+  try { scene.remove(wiredPosGroup); } catch (e) {}
+  wiredPosGroup = null;
+}
+// Source meshes to replicate: the current editable objects (+ imported meshes),
+// minus blob handles. Read-only — we clone geometry/material refs.
+function wiredPosSources() {
+  const out = [];
+  for (const o of objects) { if (o && !o.userData.isBlobDot && (o.isMesh || o.isGroup)) out.push(o); }
+  return out;
+}
+function num(v, d) { const n = +v; return Number.isFinite(n) ? n : d; }
+function applyWiredPositions() {
+  clearWiredPositions();
+  const specs = (Array.isArray(WIRED_POSITIONS) ? WIRED_POSITIONS : [])
+    .filter(p => p && (p.mode === 'grid-3d' || p.mode === 'scatter-3d'));
+  if (!specs.length) return;
+  const sources = wiredPosSources();
+  if (!sources.length) return;
+  const spec = specs[0];   // one arrangement; first wins (others ignored)
+  const pr = spec.params || {};
+  const group = new THREE.Group(); group.name = 'wired-positions'; group.userData.wiredPositions = true;
+  const place = (x, y, z, i) => {
+    const src = sources[i % sources.length];
+    const c = src.clone(true);            // clone subtree; shares geometry/material (cheap, read-only)
+    c.position.set(x, y, z);
+    c.traverse(o => { o.userData = Object.assign({}, o.userData); });   // detach userData refs so we never mutate originals
+    group.add(c);
+  };
+  if (spec.mode === 'grid-3d') {
+    const cols = Math.max(1, Math.min(32, num(pr.cols, 3) | 0));
+    const rows = Math.max(1, Math.min(32, num(pr.rows, 1) | 0));
+    const layers = Math.max(1, Math.min(32, num(pr.layers, 1) | 0));
+    const sp = num(pr.spacing, 2.2) || 2.2;
+    let i = 0;
+    const ox = (cols - 1) * sp / 2, oy = (layers - 1) * sp / 2, oz = (rows - 1) * sp / 2;
+    for (let ly = 0; ly < layers; ly++) for (let r = 0; r < rows; r++) for (let cc = 0; cc < cols; cc++) {
+      // skip the origin cell so the originals aren't doubled-up at (0,0,0)-ish
+      place(cc * sp - ox, ly * sp - oy, r * sp - oz, i++);
+    }
+  } else if (spec.mode === 'scatter-3d') {
+    const count = Math.max(0, Math.min(512, num(pr.count, 12) | 0));
+    const b = Array.isArray(pr.bounds) ? pr.bounds : [6, 6, 6];
+    const bx = num(b[0], 6), by = num(b[1], 6), bz = num(b[2], 6);
+    // deterministic pseudo-random so the arrangement is stable across rebuilds
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (let i = 0; i < count; i++) {
+      place((rnd() - 0.5) * bx, num(pr.lift, 0.6) + (rnd() - 0.5) * by, (rnd() - 0.5) * bz, i);
+    }
+  }
+  if (group.children.length) { wiredPosGroup = group; scene.add(group); }
+}
+// Re-replicate only when a wired arrangement is actually active (cheap no-op
+// otherwise) — used by late-arriving async imports.
+function rebuildWiredPositionsIfActive() {
+  if (Array.isArray(WIRED_POSITIONS) && WIRED_POSITIONS.some(p => p && (p.mode === 'grid-3d' || p.mode === 'scatter-3d'))) applyWiredPositions();
+}
+
 // Resize + loop
 addEventListener('resize', () => {
   const a = innerWidth / innerHeight;
@@ -1433,6 +1579,7 @@ function tick(now) {
   for (const s of sims) s.update(dt);
   orbit.update();
   renderer.render(scene, camera);
+  applyWiredFX(now / 1000);   // ADDITIVE: wired post-process onto the overlay (no-op when none)
 }
 
 // Linked image textures (window.__SPLINE3D_TEXTURES = ["../images/x.png", …]),
@@ -1564,6 +1711,7 @@ setInterval(persist, 1200);
 // (init / agent edit). Reuses the dispose pattern proven in removeSelected/boolOp.
 function resetScene() {
   select([]);
+  clearWiredPositions();   // drop replicated clones — they reference objects we're about to dispose
   clearRig(); currentRig = null; currentAnim = null;
   for (const o of objects.slice()) {
     try {
@@ -1631,15 +1779,25 @@ if (EMBEDDED) {
       // Fresh node (no saved scene, no wired model) → friendly demo so the
       // editor never looks dead.
       if (!d.scene && (!d.imports || !d.imports.length) && objects.length === 0) seedDemo();
+      setWiredSpecs(d);   // tolerant: reads effects/positions if present (rebuilds AFTER scene exists)
       try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
     } else if (d.type === 'spline:set-scene') {
       __gotInit = true;
       const keep = Array.from(__loadedImports.keys());
       resetScene(); if (d.scene) restoreScene(d.scene); applyImports(keep);
+      setWiredSpecs(d);   // re-read specs; positions re-replicate against the new scene
+      applyWiredPositions();   // ensure replication matches the rebuilt object set
       try { lastEmitted = JSON.stringify(serializeScene()); } catch (e) {}
     } else if (d.type === 'spline:imports') {
       __gotInit = true;
       applyImports(d.urls || []);
+      setWiredSpecs(d);
+    } else if (d.type === 'spline:content') {
+      // Tolerant content channel — host may push effects/positions (and/or
+      // imports) here without a full scene re-drive. Ignore absent fields.
+      __gotInit = true;
+      if ('imports' in d || 'urls' in d) applyImports(d.imports || d.urls || []);
+      setWiredSpecs(d);
     }
   });
 }
