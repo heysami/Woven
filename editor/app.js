@@ -52167,7 +52167,10 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
               ${layers.slice().reverse().map((layer, revIdx) => {
                 const i = layers.length - 1 - revIdx;
                 const assetNode = (allNodes || []).find(n => n.id === layer.assetId);
-                const label = assetNode ? (_composerLayerLabel(assetNode) || assetNode.id) : `(missing) ${layer.assetId}`;
+                // Prefer the wired Layer NODE's name; fall back to the asset's.
+                const _ls = _layerSpecById[layer.assetId];
+                const label = (_ls && _ls.name)
+                  || (assetNode ? (_composerLayerLabel(assetNode) || assetNode.id) : `(missing) ${layer.assetId}`);
                 const orphan = !wiredAssetIds.includes(layer.assetId);
                 const isActive = i === activeLayerIdx;
                 return html`
@@ -52904,6 +52907,20 @@ function WorkflowVectorEditorNode({
     }
     return null;
   }, [inPortInputs]);
+  // Wired SVG/vector asset (direct or via a Layer's child) → IMPORT as shapes.
+  const wiredVectorInput = useMemo(() => {
+    const isSvg = (i) => i && i.url
+      && (/^(svg|vector)$/i.test(i.assetKind || "") || /\.svg(\?|$)/i.test(i.url || i.path || ""));
+    const direct = inPortInputs.find(i => i.type === "asset" && isSvg(i));
+    if (direct) return direct;
+    for (const i of inPortInputs) {
+      if (i.type === "layer") {
+        const child = (i.children || []).find(c => c.type === "asset" && isSvg(c));
+        if (child) return child;
+      }
+    }
+    return null;
+  }, [inPortInputs]);
   const traceFileRef = useRef(null);
 
   const dragRef = useRef(null);
@@ -53416,6 +53433,61 @@ function WorkflowVectorEditorNode({
     traceImageSrc(url, true);
   };
 
+  // ── SVG import ──────────────────────────────────────────────────
+  // A wired SVG/vector asset (direct or via a Layer's child) is IMPORTED
+  // as editable shapes (not traced): fetch the file, parse path / rect /
+  // ellipse / circle / line / polygon / polyline into the shape model,
+  // scaled from the source viewBox into canvasW×canvasH.
+  const importSvgSrc = async (url) => {
+    setOpState({ phase: "working", message: "Importing SVG…" });
+    try {
+      const txt = await fetch(url).then(r => { if (!r.ok) throw new Error("fetch " + r.status); return r.text(); });
+      const doc = new DOMParser().parseFromString(txt, "image/svg+xml");
+      const svg = doc.querySelector("svg");
+      if (!svg) throw new Error("No <svg> root.");
+      // Source extent: prefer viewBox, else width/height.
+      let sx = 0, sy = 0, sw = 0, sh = 0;
+      const vb = (svg.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
+      if (vb.length === 4 && vb.every(n => Number.isFinite(n))) { sx = vb[0]; sy = vb[1]; sw = vb[2]; sh = vb[3]; }
+      else { sw = parseFloat(svg.getAttribute("width")) || canvasW; sh = parseFloat(svg.getAttribute("height")) || canvasH; }
+      const scale = Math.min(canvasW / (sw || canvasW), canvasH / (sh || canvasH)) || 1;
+      const ox = (canvasW - sw * scale) / 2 - sx * scale;
+      const oy = (canvasH - sh * scale) / 2 - sy * scale;
+      const X = (v) => v * scale + ox, Y = (v) => v * scale + oy, S = (v) => v * scale;
+      const num = (el, a, d) => { const v = parseFloat(el.getAttribute(a)); return Number.isFinite(v) ? v : d; };
+      const styleOf = (el) => {
+        const o = {};
+        const f = el.getAttribute("fill"); if (f) o.fill = f;
+        const st = el.getAttribute("stroke"); if (st && st !== "none") { o.stroke = st; o.strokeWidth = S(num(el, "stroke-width", 1)); }
+        const op = el.getAttribute("opacity"); if (op != null && op !== "") o.opacity = parseFloat(op);
+        return o;
+      };
+      const out = [];
+      const ptsToPath = (raw, close) => {
+        const nums = (raw || "").trim().split(/[\s,]+/).map(Number).filter(n => Number.isFinite(n));
+        let d = ""; for (let i = 0; i + 1 < nums.length; i += 2) d += (i === 0 ? "M" : "L") + X(nums[i]) + " " + Y(nums[i + 1]) + " ";
+        return d ? (d + (close ? "Z" : "")) : null;
+      };
+      svg.querySelectorAll("path,rect,circle,ellipse,line,polygon,polyline").forEach((el) => {
+        const tag = el.tagName.toLowerCase(); const st = styleOf(el); let sh2 = null;
+        if (tag === "path") { const d = _vecScaleTranslatePathD(el.getAttribute("d") || "", scale, ox, oy); if (d) sh2 = _makeShape("path", { d }); }
+        else if (tag === "rect") sh2 = _makeShape("rect", { x: X(num(el, "x", 0)), y: Y(num(el, "y", 0)), w: S(num(el, "width", 0)), h: S(num(el, "height", 0)), rx: S(num(el, "rx", 0)) });
+        else if (tag === "circle") sh2 = _makeShape("ellipse", { cx: X(num(el, "cx", 0)), cy: Y(num(el, "cy", 0)), rx: S(num(el, "r", 0)), ry: S(num(el, "r", 0)) });
+        else if (tag === "ellipse") sh2 = _makeShape("ellipse", { cx: X(num(el, "cx", 0)), cy: Y(num(el, "cy", 0)), rx: S(num(el, "rx", 0)), ry: S(num(el, "ry", 0)) });
+        else if (tag === "line") sh2 = _makeShape("line", { x1: X(num(el, "x1", 0)), y1: Y(num(el, "y1", 0)), x2: X(num(el, "x2", 0)), y2: Y(num(el, "y2", 0)) });
+        else if (tag === "polygon" || tag === "polyline") { const d = ptsToPath(el.getAttribute("points"), tag === "polygon"); if (d) sh2 = _makeShape("path", { d }); }
+        if (sh2) { Object.assign(sh2, st); out.push(sh2); }
+      });
+      if (!out.length) throw new Error("No importable shapes in the SVG.");
+      commitShapes([...shapes, ...out], { selection: out.map(s => s.id) });
+      setOpState({ phase: "done", message: `imported ${out.length} shapes ✓` });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1200);
+    } catch (err) {
+      setOpState({ phase: "error", message: "SVG import failed: " + String(err && err.message || err) });
+    }
+  };
+  const onImportSvg = () => { if (wiredVectorInput && wiredVectorInput.url) importSvgSrc(wiredVectorInput.url); };
+
   // ── Glyph import ────────────────────────────────────────────────
   // Fetch a Google font, parse with opentype.js, and add the requested
   // character(s) as a single path shape laid out left-to-right.
@@ -53792,6 +53864,11 @@ function WorkflowVectorEditorNode({
               disabled=${opState.phase === "working"}
               onClick=${(e) => { e.stopPropagation(); onTraceImage(); }}
             >▦ Trace image${wiredImageInput ? " (wired)" : ""}</button>
+            ${wiredVectorInput && html`<button className="workflow-vector-outline-btn"
+              title="Import the wired SVG / vector asset as editable shapes."
+              disabled=${opState.phase === "working"}
+              onClick=${(e) => { e.stopPropagation(); onImportSvg(); }}
+            >◈ Import SVG (wired)</button>`}
             <input ref=${traceFileRef} type="file" accept="image/*"
               style=${{ display: "none" }}
               onChange=${onTraceFilePicked}/>

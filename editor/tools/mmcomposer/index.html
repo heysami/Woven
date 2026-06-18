@@ -1215,6 +1215,29 @@ function renderLayerList(){
     el.querySelector('[data-act=del]').onclick=()=>{ delLayer(L); };
     root.appendChild(el);
   });
+  // Wired LAYER nodes appear here too — read-only rows (driven by the wired
+  // node graph), labelled with the Layer NODE's name + a "wired" badge.
+  const wired=wiredRuntimeLayers();
+  if(wired.length){
+    [...wired].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
+      const el=document.createElement('div'); el.className='layer'+(L.id===selId?' sel':'');
+      el.style.borderStyle='dashed'; el.style.opacity='.92';
+      el.innerHTML=`<div class="top">
+          <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
+          <input class="nm" value="${esc(L.name)}" readonly title="Driven by a wired Layer node — edit it on the canvas">
+          <span class="tag" style="border-color:var(--acc2);color:var(--acc2)">wired</span>
+        </div>
+        <div class="meta">
+          <span class="tag">${L.content.kind}</span>
+          <span class="tag">pos:${L.positioning.mode}</span>
+          <span class="tag">trig:${L.trigger.source}</span>
+          <span class="tag">fx:${L.effects.stack.length}</span>
+          ${(L.trigger.impacts||[]).length?`<span class="tag" style="border-color:var(--acc2);color:var(--acc2)">→${L.trigger.impacts.length}</span>`:''}
+        </div>`;
+      el.onclick=()=>{ selId=L.id; renderAll(); };
+      root.appendChild(el);
+    });
+  }
 }
 function moveZ(L,dir){ L.z=(L.z||0)+dir; emit(); renderAll(); }
 function delLayer(L){ STATE.layers=STATE.layers.filter(x=>x.id!==L.id);
