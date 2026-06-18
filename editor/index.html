@@ -63,6 +63,11 @@
        synchronously on first user interaction. -->
   <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
+  <!-- ImageTracer — raster → SVG path tracing for the vector editor's
+       "trace image" action (wire an image into the node's in-port, or pick a
+       file). Loaded eagerly alongside opentype/polygon-clipping so the vector
+       node can call window.ImageTracer synchronously. -->
+  <script src="https://unpkg.com/imagetracerjs@1.2.6/imagetracer_v1.2.6.js"></script>
   <!-- Phase 6 / v3.7 — data.js is a per-project file (with per-prototype
        overrides at editor/<slug>.data.js when ?prototype=<slug> is set).
        In workspace mode the daemon routes them under the active project

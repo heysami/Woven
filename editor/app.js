@@ -23508,7 +23508,8 @@ const WORKFLOW_CONNECT_DEFS = {
   "vector-editor": {
     label: "Vector editor",
     provides: { out: { label: "Baked SVG", tags: ["asset"] } },
-    accepts:  { edit: { label: "Edit vector", tags: ["text-gen", "asset-gen"] } },
+    accepts:  { in:   { label: "Trace image", tags: ["asset"] },
+                edit: { label: "Edit vector", tags: ["text-gen", "asset-gen"] } },
   },
   "spline-3d": {
     label: "3D editor",
@@ -52692,6 +52693,15 @@ function WorkflowVectorEditorNode({
     return () => window.removeEventListener("th:asset-refresh", onRefresh);
   }, [vectorSidecarPath, onChange]);
 
+  // Wired "in" port — first image asset feeds the tracer.
+  const inPortInputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
+  const wiredImageInput = useMemo(
+    () => inPortInputs.find(i => i.type === "asset" && i.url
+      && (/^image$/i.test(i.assetKind || "") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(i.url || i.path || ""))),
+    [inPortInputs]
+  );
+  const traceFileRef = useRef(null);
+
   const dragRef = useRef(null);
   const [, forceRerender] = useState(0);
   const [draftShape, setDraftShape] = useState(null);
@@ -53012,6 +53022,18 @@ function WorkflowVectorEditorNode({
         setDraftShape(null);
         return;
       }
+      // In node-edit mode with an anchor selected, Backspace/Delete
+      // removes that anchor (not the whole shape).
+      if ((e.key === "Backspace" || e.key === "Delete") && nodeEditId && selectedAnchor) {
+        const tgt = shapes.find(s => s.id === nodeEditId);
+        if (tgt && tgt.type === "path") {
+          const parsed = _vecGetAnchorStruct(tgt);
+          const [subIdxStr, anchorIdxStr] = selectedAnchor.split(":");
+          deleteSelectedAnchor(tgt, parsed, +subIdxStr, +anchorIdxStr);
+          e.preventDefault();
+          return;
+        }
+      }
       if ((e.key === "Backspace" || e.key === "Delete") && selection.length) {
         commitShapes(shapes.filter(s => !selection.includes(s.id)), { selection: [] });
         e.preventDefault();
@@ -53046,7 +53068,7 @@ function WorkflowVectorEditorNode({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selection, selectedShapes, shapes, draftShape, editingTextId, tool]);
+  }, [selected, selection, selectedShapes, shapes, draftShape, editingTextId, tool, nodeEditId, selectedAnchor]);
 
   const runBooleanOp = (op) => {
     if (selectedShapes.length < 2) {
@@ -53117,6 +53139,110 @@ function WorkflowVectorEditorNode({
       setTimeout(() => setOpState({ phase: "idle", message: "" }), 1000);
     } catch (err) {
       setOpState({ phase: "error", message: String(err && err.message || err) });
+    }
+  };
+
+  // ── Image → vector (trace) ──────────────────────────────────────
+  // Trace an image bitmap to vector paths via ImageTracer. Source is a
+  // wired image asset (preferred) or a hidden file picker. Each traced
+  // <path> becomes a path shape, scaled to fit canvasW×canvasH.
+  const traceImageSrc = async (src, revoke) => {
+    if (!window.ImageTracer) {
+      setOpState({ phase: "error", message: "ImageTracer not loaded yet." });
+      return;
+    }
+    setOpState({ phase: "working", message: "Tracing image…" });
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.crossOrigin = "anonymous";
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error("Could not load image."));
+        im.src = src;
+      });
+      const iw = img.naturalWidth || img.width;
+      const ih = img.naturalHeight || img.height;
+      if (!iw || !ih) throw new Error("Image has no dimensions.");
+      const cv = document.createElement("canvas");
+      cv.width = iw; cv.height = ih;
+      const ctx = cv.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const imgdata = ctx.getImageData(0, 0, iw, ih);
+      const svgStr = window.ImageTracer.imagedataToSVG(imgdata, { ltres: 1, qtres: 1, numberofcolors: 16, pathomit: 8 });
+      const doc = new DOMParser().parseFromString(svgStr, "image/svg+xml");
+      const paths = Array.from(doc.querySelectorAll("path"));
+      if (!paths.length) throw new Error("Tracer returned no paths.");
+      // Fit the traced bitmap (iw×ih) into the canvas while preserving
+      // aspect ratio, centered.
+      const scale = Math.min(canvasW / iw, canvasH / ih);
+      const ox = (canvasW - iw * scale) / 2;
+      const oy = (canvasH - ih * scale) / 2;
+      const newShapes = [];
+      paths.forEach((p, i) => {
+        const d0 = p.getAttribute("d");
+        if (!d0) return;
+        const d = _vecScaleTranslatePathD(d0, scale, ox, oy);
+        if (!d) return;
+        const sh = _makeShape("path", { d, closed: true });
+        sh.name = "Traced " + (i + 1);
+        const fill = p.getAttribute("fill");
+        if (fill && fill !== "none") sh.fill = fill;
+        sh.stroke = "none";
+        newShapes.push(sh);
+      });
+      if (!newShapes.length) throw new Error("No usable paths after scaling.");
+      commitShapes([...shapes, ...newShapes], { selection: newShapes.map(s => s.id) });
+      setOpState({ phase: "done", message: `traced ${newShapes.length} paths ✓` });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1200);
+    } catch (err) {
+      setOpState({ phase: "error", message: "Trace failed: " + String(err && err.message || err) });
+    } finally {
+      if (revoke) { try { URL.revokeObjectURL(src); } catch {} }
+    }
+  };
+  const onTraceImage = () => {
+    if (wiredImageInput && wiredImageInput.url) { traceImageSrc(wiredImageInput.url, false); return; }
+    if (traceFileRef.current) traceFileRef.current.click();
+  };
+  const onTraceFilePicked = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    traceImageSrc(url, true);
+  };
+
+  // ── Glyph import ────────────────────────────────────────────────
+  // Fetch a Google font, parse with opentype.js, and add the requested
+  // character(s) as a single path shape laid out left-to-right.
+  const [glyphForm, setGlyphForm] = useState({ family: "Roboto", weight: "400", char: "A" });
+  const importGlyph = async () => {
+    if (!window.opentype) {
+      setOpState({ phase: "error", message: "opentype.js not loaded yet." });
+      return;
+    }
+    const text = (glyphForm.char || "").trim();
+    if (!text) { setOpState({ phase: "error", message: "Enter a character." }); return; }
+    setOpState({ phase: "working", message: "Fetching font…" });
+    try {
+      const url = await _vecFetchFontUrl(glyphForm.family || "Roboto", glyphForm.weight || "400");
+      if (!url) throw new Error("Could not resolve font URL.");
+      const buf = await fetch(url).then(r => r.arrayBuffer());
+      const font = window.opentype.parse(buf);
+      const fontSize = Math.round(canvasH * 0.6);
+      // Baseline ~ vertically centered: ascent above baseline ≈ fontSize.
+      const ascender = font.ascender / font.unitsPerEm * fontSize;
+      const y = (canvasH - fontSize) / 2 + ascender;
+      const x = Math.max(0, (canvasW - font.getAdvanceWidth(text, fontSize)) / 2);
+      const d = font.getPath(text, x, y, fontSize).toPathData(3);
+      if (!d) throw new Error("Empty outline (char not in font?).");
+      const sh = _makeShape("path", { d, closed: true });
+      sh.name = "Glyph: " + text;
+      commitShapes([...shapes, sh], { selection: [sh.id] });
+      setOpState({ phase: "done", message: "glyph imported ✓" });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1200);
+    } catch (err) {
+      setOpState({ phase: "error", message: "Glyph import failed: " + String(err && err.message || err) });
     }
   };
 
@@ -53293,6 +53419,65 @@ function WorkflowVectorEditorNode({
     window.addEventListener("mouseup", onUp);
   };
 
+  // Insert a new anchor on a clicked segment. Computes the curve
+  // parameter t nearest the click by sampling the segment, then splits
+  // via _vecInsertAnchorAt (de Casteljau for cubics, lerp for lines).
+  const onInsertAnchor = (target, parsed, subIdx, segIdx, ev) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const p = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
+    const sub = parsed.subpaths[subIdx];
+    if (!sub) return;
+    const anchors = sub.anchors || [];
+    const N = anchors.length;
+    const cur = anchors[segIdx];
+    const nxt = anchors[(segIdx + 1) % N];
+    if (!cur || !nxt) return;
+    const curved = (cur.outX != null && cur.outY != null) || (nxt.inX != null && nxt.inY != null);
+    // Sample the segment at fine granularity, pick the t whose point is
+    // closest to the click.
+    const at = (t) => {
+      if (!curved) return { x: cur.x + (nxt.x - cur.x) * t, y: cur.y + (nxt.y - cur.y) * t };
+      const c1x = cur.outX != null ? cur.outX : cur.x;
+      const c1y = cur.outY != null ? cur.outY : cur.y;
+      const c2x = nxt.inX  != null ? nxt.inX  : nxt.x;
+      const c2y = nxt.inY  != null ? nxt.inY  : nxt.y;
+      const u = 1 - t;
+      return {
+        x: u*u*u*cur.x + 3*u*u*t*c1x + 3*u*t*t*c2x + t*t*t*nxt.x,
+        y: u*u*u*cur.y + 3*u*u*t*c1y + 3*u*t*t*c2y + t*t*t*nxt.y,
+      };
+    };
+    let bestT = 0.5, bestD = Infinity;
+    for (let i = 1; i < 64; i++) {
+      const t = i / 64;
+      const pt = at(t);
+      const dd = (pt.x - p.x) ** 2 + (pt.y - p.y) ** 2;
+      if (dd < bestD) { bestD = dd; bestT = t; }
+    }
+    const next = _vecInsertAnchorAt(parsed, subIdx, segIdx, bestT);
+    _commitPath(target.id, next);
+    setSelectedAnchor(subIdx + ":" + (segIdx + 1));
+  };
+
+  // Delete the currently selected anchor (panel button + Backspace/Delete).
+  // Drops the subpath if it falls below 2 anchors; drops the shape if no
+  // subpaths remain.
+  const deleteSelectedAnchor = (target, parsed, subIdx, anchorIdx) => {
+    const next = _vecDeleteAnchor(parsed, subIdx, anchorIdx);
+    if (!next.subpaths.length) {
+      removeShape(target.id);
+      setNodeEditId(null);
+      setSelectedAnchor(null);
+      return;
+    }
+    _commitPath(target.id, next);
+    setSelectedAnchor(null);
+  };
+
   return html`
     <div
       className="workflow-node workflow-node-vector"
@@ -53393,6 +53578,47 @@ function WorkflowVectorEditorNode({
             ${opState.phase !== "idle" && html`
               <div className=${"workflow-vector-op-banner workflow-vector-op-" + opState.phase}>${opState.message}</div>
             `}
+          </div>
+          <div className="workflow-vector-section">
+            <div className="workflow-vector-section-head">Import</div>
+            <button className="workflow-vector-outline-btn"
+              title=${wiredImageInput
+                ? "Trace the wired image asset to vector paths."
+                : "Pick an image file and trace it to vector paths."}
+              disabled=${opState.phase === "working"}
+              onClick=${(e) => { e.stopPropagation(); onTraceImage(); }}
+            >▦ Trace image${wiredImageInput ? " (wired)" : ""}</button>
+            <input ref=${traceFileRef} type="file" accept="image/*"
+              style=${{ display: "none" }}
+              onChange=${onTraceFilePicked}/>
+            <div className="workflow-vector-subhead">Import glyph</div>
+            <div className="workflow-vector-pos-grid">
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>Font</span>
+                <input type="text" value=${glyphForm.family}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onInput=${(e) => setGlyphForm(f => ({ ...f, family: e.target.value }))}/>
+              </label>
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>Weight</span>
+                <input type="text" value=${glyphForm.weight}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onInput=${(e) => setGlyphForm(f => ({ ...f, weight: e.target.value }))}/>
+              </label>
+            </div>
+            <div className="workflow-vector-pos-grid">
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>Char</span>
+                <input type="text" value=${glyphForm.char} maxLength="8"
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onInput=${(e) => setGlyphForm(f => ({ ...f, char: e.target.value }))}/>
+              </label>
+            </div>
+            <button className="workflow-vector-outline-btn"
+              title="Fetch the font, outline the character via opentype.js, and add it as a path."
+              disabled=${opState.phase === "working"}
+              onClick=${(e) => { e.stopPropagation(); importGlyph(); }}
+            >A Import glyph</button>
           </div>
           <div className="workflow-vector-section workflow-vector-layers-section">
             <div className="workflow-vector-section-head">Layers <span className="workflow-vector-count">${shapes.length}</span></div>
@@ -53505,6 +53731,9 @@ function WorkflowVectorEditorNode({
                   onHandleMouseDown: (subIdx, anchorIdx, side, ev, phantomOpts) => {
                     onHandleMouseDown(target, parsed, subIdx, anchorIdx, side, ev, phantomOpts);
                   },
+                  onSegmentMouseDown: (subIdx, segIdx, ev) => {
+                    onInsertAnchor(target, parsed, subIdx, segIdx, ev);
+                  },
                 });
               })()}
             </svg>
@@ -53537,6 +53766,7 @@ function WorkflowVectorEditorNode({
                 })) };
                 _commitPath(target.id, next);
               }}
+              onDelete=${() => deleteSelectedAnchor(target, parsed, subIdx, anchorIdx)}
             />`;
           })()}
           ${singleSel
@@ -53946,6 +54176,123 @@ function _vecBuildPathD(parsed) {
   return out.join(" ");
 }
 
+// Scale + translate every coordinate in an SVG path `d` string:
+// x' = x*scale + ox, y' = y*scale + oy. Assumes ABSOLUTE commands with
+// (x,y) coordinate pairs (M L C S Q T Z) — which is what ImageTracer
+// emits. H/V are handled as single-axis; A scales radii + endpoint.
+// Lowercase (relative) commands scale by `scale` only (no offset, since
+// they're deltas). Returns the transformed string, or "" on failure.
+function _vecScaleTranslatePathD(d, scale, ox, oy) {
+  if (!d) return "";
+  try {
+    const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
+    if (!tokens) return "";
+    const fmt = (n) => (Math.round(n * 1000) / 1000).toString();
+    const out = [];
+    let cmd = "";
+    let i = 0;
+    const num = () => parseFloat(tokens[i++]);
+    while (i < tokens.length) {
+      const tk = tokens[i];
+      if (/[a-zA-Z]/.test(tk)) { cmd = tk; out.push(cmd); i++; if (cmd === "Z" || cmd === "z") continue; }
+      const isRel = cmd === cmd.toLowerCase();
+      const sx = (v) => isRel ? v * scale : v * scale + ox;
+      const sy = (v) => isRel ? v * scale : v * scale + oy;
+      const c = cmd.toUpperCase();
+      if (c === "H") { out.push(fmt(sx(num()))); }
+      else if (c === "V") { out.push(fmt(sy(num()))); }
+      else if (c === "A") {
+        out.push(fmt(num() * scale), fmt(num() * scale)); // rx ry
+        out.push(fmt(num()));                              // x-axis-rotation
+        out.push(fmt(num()), fmt(num()));                  // large-arc, sweep
+        out.push(fmt(sx(num())), fmt(sy(num())));          // endpoint
+      } else {
+        // M L T C S Q — pairs of x,y until next command letter.
+        out.push(fmt(sx(num())), fmt(sy(num())));
+      }
+    }
+    return out.join(" ");
+  } catch (_e) { return ""; }
+}
+
+// Insert a new anchor on the segment leaving anchors[segIdx] (toward its
+// neighbour) at parameter t ∈ (0,1), returning a brand-new parsed struct.
+// Cubic segments are split via de Casteljau so the curve shape is exactly
+// preserved: the new anchor gets in/out handles and the two flanking
+// anchors' adjacent handles are pulled in. Straight segments just get a
+// plain corner anchor at the lerp point.
+function _vecInsertAnchorAt(parsed, subIdx, segIdx, t) {
+  if (!parsed || !parsed.subpaths || !parsed.subpaths[subIdx]) return parsed;
+  const sub = parsed.subpaths[subIdx];
+  const anchors = sub.anchors || [];
+  const N = anchors.length;
+  if (N < 2) return parsed;
+  const closed = !!sub.closed;
+  const toIdx = (segIdx + 1) % N;
+  // Open subpath has no wrap-around segment.
+  if (!closed && toIdx === 0) return parsed;
+  const cur = anchors[segIdx];
+  const nxt = anchors[toIdx];
+  const tt = Math.max(0.001, Math.min(0.999, t));
+  const segCurved = (cur.outX != null && cur.outY != null) || (nxt.inX != null && nxt.inY != null);
+
+  let newAnchor, curPatch, nxtPatch;
+  if (segCurved) {
+    // Control points of the cubic (fall back to the anchor itself).
+    const p0 = { x: cur.x, y: cur.y };
+    const p1 = { x: cur.outX != null ? cur.outX : cur.x, y: cur.outY != null ? cur.outY : cur.y };
+    const p2 = { x: nxt.inX  != null ? nxt.inX  : nxt.x, y: nxt.inY  != null ? nxt.inY  : nxt.y };
+    const p3 = { x: nxt.x, y: nxt.y };
+    const lerp = (a, b) => ({ x: a.x + (b.x - a.x) * tt, y: a.y + (b.y - a.y) * tt });
+    const a01 = lerp(p0, p1), a12 = lerp(p1, p2), a23 = lerp(p2, p3);
+    const b0 = lerp(a01, a12), b1 = lerp(a12, a23);
+    const mid = lerp(b0, b1);           // the new anchor point on the curve
+    // First sub-curve: p0, a01, b0, mid → cur.out = a01, newAnchor.in = b0
+    // Second sub-curve: mid, b1, a23, p3 → newAnchor.out = b1, nxt.in = a23
+    newAnchor = {
+      x: mid.x, y: mid.y,
+      inX: b0.x, inY: b0.y, outX: b1.x, outY: b1.y, radius: 0,
+    };
+    curPatch = { outX: a01.x, outY: a01.y };
+    nxtPatch = { inX: a23.x, inY: a23.y };
+  } else {
+    const mx = cur.x + (nxt.x - cur.x) * tt;
+    const my = cur.y + (nxt.y - cur.y) * tt;
+    newAnchor = { x: mx, y: my, inX: null, inY: null, outX: null, outY: null, radius: 0 };
+    curPatch = null;
+    nxtPatch = null;
+  }
+
+  const nextAnchors = anchors.map((a, i) => {
+    if (i === segIdx && curPatch) return { ...a, ...curPatch };
+    if (i === toIdx  && nxtPatch) return { ...a, ...nxtPatch };
+    return a;
+  });
+  // Splice the new anchor in right after segIdx.
+  nextAnchors.splice(segIdx + 1, 0, newAnchor);
+
+  return {
+    ...parsed,
+    subpaths: parsed.subpaths.map((s, si) => si !== subIdx ? s : ({ ...s, anchors: nextAnchors })),
+  };
+}
+
+// Remove anchors[anchorIdx] from subpath subIdx. If the subpath drops
+// below 2 anchors it's removed entirely; the returned struct may have
+// zero subpaths (caller decides whether to keep an empty path / drop
+// the shape).
+function _vecDeleteAnchor(parsed, subIdx, anchorIdx) {
+  if (!parsed || !parsed.subpaths || !parsed.subpaths[subIdx]) return parsed;
+  const nextSubpaths = [];
+  parsed.subpaths.forEach((s, si) => {
+    if (si !== subIdx) { nextSubpaths.push(s); return; }
+    const anchors = (s.anchors || []).filter((_a, ai) => ai !== anchorIdx);
+    if (anchors.length >= 2) nextSubpaths.push({ ...s, anchors });
+    // <2 anchors → drop the subpath.
+  });
+  return { ...parsed, subpaths: nextSubpaths };
+}
+
 // Convert a primitive shape (rect / ellipse / line) into an editable
 // path shape with the same fill/stroke/effects. Rounded rects emit
 // 8 anchors with cubic Bézier handles approximating the arc;
@@ -54043,7 +54390,7 @@ function _vecPrimitiveToPath(shape) {
 // always shown (even if the segments are straight on both sides) so
 // the user has a visible affordance to drag them out and add curvature.
 function _vecRenderNodeEditOverlay(opts) {
-  const { parsed, target, selectedAnchor, onAnchorMouseDown, onHandleMouseDown } = opts;
+  const { parsed, target, selectedAnchor, onAnchorMouseDown, onHandleMouseDown, onSegmentMouseDown } = opts;
   const items = [];
   // Subtle outline of the path itself so anchors aren't floating in space.
   items.push(html`
@@ -54056,6 +54403,43 @@ function _vecRenderNodeEditOverlay(opts) {
           strokeDasharray="3 3"
           pointerEvents="none"/>
   `);
+  // Clickable per-segment hit paths — a click inserts an anchor at the
+  // clicked parameter, splitting that segment. Rendered beneath the
+  // anchor / handle dots (which stopPropagation) so dragging a point
+  // never triggers an insert. Wide transparent stroke = easy target.
+  if (onSegmentMouseDown) {
+    parsed.subpaths.forEach((sub, subIdx) => {
+      const anchors = sub.anchors || [];
+      const N = anchors.length;
+      if (N < 2) return;
+      const segCount = sub.closed ? N : N - 1;
+      for (let segIdx = 0; segIdx < segCount; segIdx++) {
+        const cur = anchors[segIdx];
+        const nxt = anchors[(segIdx + 1) % N];
+        const curved = (cur.outX != null && cur.outY != null) || (nxt.inX != null && nxt.inY != null);
+        let segD;
+        if (curved) {
+          const c1x = cur.outX != null ? cur.outX : cur.x;
+          const c1y = cur.outY != null ? cur.outY : cur.y;
+          const c2x = nxt.inX  != null ? nxt.inX  : nxt.x;
+          const c2y = nxt.inY  != null ? nxt.inY  : nxt.y;
+          segD = `M ${cur.x} ${cur.y} C ${c1x} ${c1y} ${c2x} ${c2y} ${nxt.x} ${nxt.y}`;
+        } else {
+          segD = `M ${cur.x} ${cur.y} L ${nxt.x} ${nxt.y}`;
+        }
+        items.push(html`
+          <path key=${"ne-seg-" + subIdx + "-" + segIdx}
+                d=${segD}
+                fill="none"
+                stroke="rgba(0,0,0,0.001)"
+                strokeWidth="10"
+                vectorEffect="non-scaling-stroke"
+                style=${{ cursor: "copy" }}
+                onMouseDown=${(ev) => onSegmentMouseDown(subIdx, segIdx, ev)}/>
+        `);
+      }
+    });
+  }
   // Default offset (in canvas units) for "phantom" handles that the
   // user can grab on a corner anchor to pull out a curve. Calibrated
   // against the path's bounding-box diagonal so the affordance scales
@@ -54602,7 +54986,7 @@ function VectorPropertiesPanel({ shape, onPatch }) {
 // selected. Mirrors Figma's "selected node" inspector: anchor type
 // (corner / smooth / asymmetric), corner radius (when no handles),
 // position, and per-handle x/y.
-function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange }) {
+function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange, onDelete }) {
   const hasIn  = anchor.inX != null && anchor.inY != null;
   const hasOut = anchor.outX != null && anchor.outY != null;
   // Anchor type heuristic:
@@ -54776,8 +55160,17 @@ function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange }
         </div>
       `}
 
+      ${onDelete && html`
+        <div className="workflow-vector-row">
+          <button className="workflow-vector-outline-btn"
+            title="Delete this anchor point (Backspace / Delete)."
+            onClick=${(e) => { e.stopPropagation(); onDelete(); }}
+          >− Delete point</button>
+        </div>
+      `}
+
       <div className="workflow-vector-hint workflow-vector-tip">
-        Tip: alt-drag a handle to break symmetry; drag the anchor square to move + carry handles with it.
+        Tip: alt-drag a handle to break symmetry; drag the anchor square to move + carry handles with it. Click a segment to add a point.
       </div>
     </div>
   `;

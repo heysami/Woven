@@ -264,6 +264,25 @@
     </div>
 
     <div class="side">
+      <section id="imgSection" style="display:none">
+        <h3>From Image <span class="act" id="imgResync" style="display:none">Re-sync</span></h3>
+        <div class="code-wrap">
+          <div class="field" style="width:100%">Source
+            <select id="imgSource" style="flex:1; background:var(--panel-2); border:1px solid var(--line); color:var(--txt); border-radius:4px; padding:4px 5px; font-family:var(--mono); font-size:12px; min-width:0;"></select>
+          </div>
+          <div class="row">
+            <label class="check" title="Build a palette from the image automatically"><input type="checkbox" id="imgAutoPal"> Auto-palette</label>
+            <div class="field">Colors <input type="number" id="imgPalN" min="2" max="64" value="16"></div>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="imgApply" style="flex:2">From image</button>
+            <label class="check" style="flex:1" title="Re-run downsample whenever the wired image changes"><input type="checkbox" id="imgAutoSync"> Auto-sync</label>
+          </div>
+          <div class="code-status" id="imgStatus"></div>
+          <div class="hint" id="imgHint">Wire an image asset to downsample it into the current <span id="imgDims"></span> grid. In ASCII mode it maps brightness to the glyph ramp.</div>
+        </div>
+      </section>
+
       <section>
         <h3>Palette <span class="act" id="palHint"></span></h3>
         <div class="palette" id="palette"></div>
@@ -342,6 +361,11 @@
   let showGrid = true;
   let zoom = 16;           // px per cell on screen
   let panX = 0, panY = 0;
+
+  // wired content (images, etc.) forwarded by the host
+  let CONTENT = [];        // array of {id,url,kind,label}
+  let imgAutoSync = false; // re-run downsample on content change
+  let lastSyncedUrl = null;// guard so auto-sync only fires on real url changes
 
   // ---------------- Pixel buffer helpers ----------------
   function freshPixels(){ return new Array(M.w * M.h).fill(0); }
@@ -678,6 +702,206 @@
     render(); emitState();
   }
 
+  // ---------------- Image input → downsample ----------------
+  function imageContent(){
+    return (CONTENT||[]).filter(c=>{
+      if(!c || !c.url) return false;
+      if(c.kind && /image/i.test(c.kind)) return true;
+      // fall back to extension sniff when kind missing
+      return /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(c.url);
+    });
+  }
+  function renderContentUI(){
+    const imgs = imageContent();
+    const sec = $("#imgSection");
+    sec.style.display = imgs.length ? "" : "none";
+    const sel = $("#imgSource");
+    const prev = sel.value;
+    sel.innerHTML = "";
+    imgs.forEach(c=>{
+      const o=document.createElement("option");
+      o.value=c.id || c.url;
+      o.textContent = c.label || c.id || c.url.split("/").pop();
+      sel.appendChild(o);
+    });
+    // keep selection if still present, else default to first
+    if(imgs.some(c=>(c.id||c.url)===prev)) sel.value = prev;
+    $("#imgResync").style.display = imgAutoSync ? "" : "none";
+    $("#imgDims").textContent = M.w+"×"+M.h;
+  }
+  function selectedImage(){
+    const imgs = imageContent();
+    if(!imgs.length) return null;
+    const v = $("#imgSource").value;
+    return imgs.find(c=>(c.id||c.url)===v) || imgs[0];
+  }
+  function loadImage(url){
+    return new Promise((resolve,reject)=>{
+      const im = new Image();
+      try { im.crossOrigin = "anonymous"; } catch(e){}
+      im.onload = ()=>resolve(im);
+      im.onerror = ()=>reject(new Error("load failed"));
+      im.src = url;
+    });
+  }
+  // average each grid cell of the image into {r,g,b,a} samples (length w*h)
+  function sampleCells(img){
+    const off = document.createElement("canvas");
+    off.width = M.w; off.height = M.h;
+    const o = off.getContext("2d");
+    o.imageSmoothingEnabled = true;
+    // draw the source scaled down to the grid; the browser averages for us
+    o.clearRect(0,0,M.w,M.h);
+    o.drawImage(img, 0, 0, M.w, M.h);
+    const data = o.getImageData(0,0,M.w,M.h).data; // may throw if tainted
+    const cells = new Array(M.w*M.h);
+    for(let i=0;i<M.w*M.h;i++){
+      const p=i*4;
+      cells[i] = {r:data[p],g:data[p+1],b:data[p+2],a:data[p+3]};
+    }
+    return cells;
+  }
+  function lum(c){ return 0.2126*c.r + 0.7152*c.g + 0.0722*c.b; }
+  function colorDist(a,b){
+    const dr=a.r-b.r, dg=a.g-b.g, db=a.b-b.b;
+    return dr*dr + dg*dg + db*db;
+  }
+  // nearest opaque palette index for a sampled color (skips index 0 / transparent)
+  function nearestPaletteIdx(c, pcols){
+    let best=1, bd=Infinity;
+    for(let i=1;i<pcols.length;i++){
+      const pc=pcols[i];
+      if(!pc) continue;
+      const d=colorDist(c,pc);
+      if(d<bd){ bd=d; best=i; }
+    }
+    return best;
+  }
+  // median-cut: reduce sampled opaque colors to n buckets -> [{r,g,b}]
+  function medianCut(samples, n){
+    let pts = samples.filter(c=>c.a>8).map(c=>({r:c.r,g:c.g,b:c.b}));
+    if(!pts.length) return [{r:0,g:0,b:0}];
+    let boxes = [pts];
+    while(boxes.length < n){
+      // pick box with largest channel spread
+      let bi=-1, bspread=-1;
+      for(let i=0;i<boxes.length;i++){
+        const box=boxes[i];
+        if(box.length<2) continue;
+        let mn=[255,255,255], mx=[0,0,0];
+        for(const p of box){
+          mn[0]=Math.min(mn[0],p.r); mx[0]=Math.max(mx[0],p.r);
+          mn[1]=Math.min(mn[1],p.g); mx[1]=Math.max(mx[1],p.g);
+          mn[2]=Math.min(mn[2],p.b); mx[2]=Math.max(mx[2],p.b);
+        }
+        const spread=Math.max(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]);
+        if(spread>bspread){ bspread=spread; bi=i; }
+      }
+      if(bi<0) break; // nothing left to split
+      const box=boxes[bi];
+      // find channel of greatest spread, sort, split at median
+      let mn=[255,255,255], mx=[0,0,0];
+      for(const p of box){
+        mn[0]=Math.min(mn[0],p.r); mx[0]=Math.max(mx[0],p.r);
+        mn[1]=Math.min(mn[1],p.g); mx[1]=Math.max(mx[1],p.g);
+        mn[2]=Math.min(mn[2],p.b); mx[2]=Math.max(mx[2],p.b);
+      }
+      const ch = (mx[0]-mn[0])>=(mx[1]-mn[1]) && (mx[0]-mn[0])>=(mx[2]-mn[2]) ? "r"
+               : (mx[1]-mn[1])>=(mx[2]-mn[2]) ? "g" : "b";
+      box.sort((a,b)=>a[ch]-b[ch]);
+      const mid = box.length>>1;
+      boxes.splice(bi,1, box.slice(0,mid), box.slice(mid));
+    }
+    // average each box -> representative color
+    return boxes.map(box=>{
+      let r=0,g=0,b=0; for(const p of box){ r+=p.r; g+=p.g; b+=p.b; }
+      const k=box.length||1;
+      return {r:Math.round(r/k),g:Math.round(g/k),b:Math.round(b/k)};
+    });
+  }
+  function hex2(n){ return (n&255).toString(16).padStart(2,"0"); }
+  function rgb2hex(c){ return "#"+hex2(c.r)+hex2(c.g)+hex2(c.b); }
+
+  async function downsampleFromImage(auto){
+    const status = $("#imgStatus");
+    const item = selectedImage();
+    if(!item){ status.textContent="No image wired"; status.className="code-status err"; return; }
+    status.textContent="Sampling…"; status.className="code-status";
+    let img, cells;
+    try {
+      img = await loadImage(item.url);
+      cells = sampleCells(img); // may throw on taint / decode
+    } catch(e){
+      status.textContent = "Couldn't read image ("+(e.message||"error")+")";
+      status.className="code-status err";
+      return;
+    }
+
+    M.mode = "draw"; syncModeUI();
+
+    if(M.ascii){
+      // map luminance -> glyph ramp (palette index)
+      const ramp = M.palette; // glyphs, index 0 = blank
+      const n = Math.max(1, ramp.length);
+      const out = new Array(M.w*M.h).fill(0);
+      for(let i=0;i<cells.length;i++){
+        const c=cells[i];
+        if(c.a < 8){ out[i]=0; continue; }
+        const t = lum(c)/255;          // 0 dark .. 1 bright
+        // brighter -> later (denser) glyphs; clamp to range
+        let gi = Math.round(t*(n-1));
+        if(gi<0) gi=0; if(gi>=n) gi=n-1;
+        out[i]=gi;
+      }
+      M.pixels = out; M._pw=M.w; M._ph=M.h;
+      status.textContent = "Mapped "+M.w+"×"+M.h+" → glyph ramp";
+      status.className="code-status ok";
+    } else {
+      const wantAuto = $("#imgAutoPal").checked;
+      if(wantAuto){
+        const n = Math.max(2, Math.min(64, parseInt($("#imgPalN").value,10)||16));
+        const reps = medianCut(cells, n);
+        // rebuild palette: index 0 stays transparent, then the built colors
+        M.palette = ["#00000000"].concat(reps.map(rgb2hex));
+      }
+      // snap each cell to nearest opaque palette color
+      const pcols = M.palette.map(parseColor);
+      const out = new Array(M.w*M.h).fill(0);
+      for(let i=0;i<cells.length;i++){
+        const c=cells[i];
+        if(c.a < 8){ out[i]=0; continue; } // transparent source -> empty
+        out[i]=nearestPaletteIdx(c, pcols);
+      }
+      M.pixels = out; M._pw=M.w; M._ph=M.h;
+      curColor = Math.min(Math.max(1,curColor), M.palette.length-1);
+      status.textContent = "Downsampled "+M.w+"×"+M.h+(wantAuto?" · auto-palette":" · snapped");
+      status.className="code-status ok";
+    }
+
+    lastSyncedUrl = item.url;
+    renderPalette(); render(); commitEdit();
+    if(!auto) toast("Image downsampled");
+  }
+
+  $("#imgApply").addEventListener("click", ()=>downsampleFromImage(false));
+  $("#imgResync").addEventListener("click", ()=>downsampleFromImage(false));
+  $("#imgSource").addEventListener("change", ()=>{ lastSyncedUrl=null; });
+  $("#imgAutoSync").addEventListener("change", e=>{
+    imgAutoSync = e.target.checked;
+    $("#imgResync").style.display = imgAutoSync ? "" : "none";
+    if(imgAutoSync) downsampleFromImage(true);
+  });
+
+  // host pushes/updates wired content; re-run if auto-sync is on and the image changed
+  function setContent(arr){
+    CONTENT = Array.isArray(arr) ? arr : [];
+    renderContentUI();
+    if(imgAutoSync){
+      const item = selectedImage();
+      if(item && item.url !== lastSyncedUrl){ downsampleFromImage(true); }
+    }
+  }
+
   // ---------------- Palette UI ----------------
   function renderPalette(){
     palEl.innerHTML="";
@@ -808,6 +1032,7 @@
   function onDim(){
     let w = clampDim($("#w").value), h = clampDim($("#h").value);
     M.w=w; M.h=h; ensurePixels(); fit(); refreshJson(); emitState();
+    $("#imgDims").textContent = M.w+"×"+M.h;
   }
   function clampDim(v){ v=parseInt(v,10)||1; return Math.max(1,Math.min(256,v)); }
   $("#w").addEventListener("change", onDim);
@@ -973,10 +1198,12 @@
     if(data.nodeId !== NODE_ID) return;   // ignore other nodes
     if(data.type==="pixel:init"){
       if(data.state) applyState(data.state); else applyState(null);
+      if("content" in data) setContent(data.content);
     } else if(data.type==="pixel:set-state"){
       applyState(data.state||null);        // rebuild, no echo
+      if("content" in data) setContent(data.content);
     } else if(data.type==="pixel:content"){
-      /* ignore */
+      setContent(data.content);            // wired assets changed
     }
   });
 
@@ -1010,6 +1237,7 @@
     renderPresets();
     ensurePixels();
     renderPalette();
+    renderContentUI();
     syncModeUI();
     $("#embedNote").textContent = EMBEDDED
       ? "Embedded — changes sync to the parent node (id: "+(NODE_ID||"?")+")."

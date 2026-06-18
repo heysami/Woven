@@ -162,6 +162,20 @@
     </div>
 
     <div class="group">
+      <div class="label">Fur <span class="tag">shell coat · all voxels</span></div>
+      <div class="row"><button class="btn ghost full" id="fur-toggle">Enable fur</button></div>
+      <div class="field"><label>Length</label><input type="range" id="fur-len" min="0.05" max="1.2" step="0.01" value="0.4"/><span class="val" id="fur-len-v">0.40</span></div>
+      <div class="field"><label>Gravity</label><input type="range" id="fur-grav" min="0" max="2" step="0.01" value="0.55"/><span class="val" id="fur-grav-v">0.55</span></div>
+    </div>
+
+    <div class="group">
+      <div class="label">Metaball <span class="tag">live blob</span></div>
+      <div class="row"><button class="btn ghost" id="blob-add">＋ metaball source</button><button class="btn ghost warn" id="blob-clear">Clear</button></div>
+      <div class="field"><label>Strength (radius)</label><input type="range" id="blob-str" min="0.05" max="0.4" step="0.01" value="0.12"/><span class="val" id="blob-str-v">0.12</span></div>
+      <div class="empty" style="padding:6px 4px;font-size:11px"><span id="blob-count">0 sources</span> · sources fuse into one smooth blob, rendered with the active slot's material.</div>
+    </div>
+
+    <div class="group">
       <div class="label">Lighting &amp; environment</div>
       <div class="field"><label>Environment</label><input type="range" id="l-env" min="0" max="3" step="0.05" value="1"/><span class="val" id="l-env-v">1.0</span></div>
       <div class="field"><label>Key light</label><input type="range" id="l-key" min="0" max="5" step="0.05" value="2"/><span class="val" id="l-key-v">2.0</span></div>
@@ -200,6 +214,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
 
 const $ = s => document.querySelector(s);
 
@@ -303,8 +318,8 @@ function physicalMat(hex) {
 }
 const MODE = {
   solid:   (m, e) => Object.assign(m, { transmission: 0, metalness: e.metal ?? 0, roughness: e.rough ?? 0.5, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true }),
-  glass:   (m, e) => Object.assign(m, { transmission: e.trans != null ? e.trans : 1, metalness: 0, roughness: e.rough ?? 0.05, ior: 1.5, thickness: VOXEL, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true, envMapIntensity: 0.85 }),
-  metal:   (m, e) => Object.assign(m, { transmission: 0, metalness: 1, roughness: e.rough ?? 0.2, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true }),
+  glass:   (m, e) => Object.assign(m, { transmission: e.trans != null ? e.trans : 1, metalness: 0, roughness: e.rough ?? 0.05, ior: 1.5, thickness: VOXEL, clearcoat: 0, transparent: true, opacity: 1, depthWrite: false, envMapIntensity: 0.85 }),
+  metal:   (m, e) => Object.assign(m, { transmission: 0, metalness: 1, roughness: e.rough ?? 0.2, clearcoat: 0, transparent: false, opacity: 1, depthWrite: true, envMapIntensity: 1.1 }),
   plastic: (m, e) => Object.assign(m, { transmission: 0, metalness: e.metal ?? 0, roughness: e.rough ?? 0.4, clearcoat: 0.8, clearcoatRoughness: 0.2, transparent: false, opacity: 1, depthWrite: true }),
 };
 // Build a material for a palette entry (same applyMode shape as spline3d).
@@ -353,6 +368,7 @@ function remesh() {
     mesh.userData.slot = idx;
     scene.add(mesh); meshes.set(idx, mesh);
   }
+  if (fur) applyFurAll();   // re-coat the freshly rebuilt meshes
   refreshCount();
 }
 // Lightweight material refresh when only a palette entry's look changes (no
@@ -361,6 +377,131 @@ function refreshSlotMaterial(idx) {
   const mesh = meshes.get(idx); if (!mesh) return;
   const e = palette[idx]; if (!e) return;
   mesh.material.dispose(); mesh.material = matForEntry(e);
+  if (fur) applyFurToMesh(mesh);   // material swap drops the fur child — rebuild it
+}
+
+// ── Fur (shell fur, ported from spline3d) ─────────────────────────────────────
+// One coat per merged palette mesh. 32 concentric shells offset along the normal
+// in the vertex shader; a shared per-coat uForce uniform droops them under
+// gravity + lags behind motion. A distinct customProgramCacheKey per shell is
+// CRITICAL — without it three reuses one program and every shell collapses to
+// the surface. `fur` (schema field) is {len,gravity} | null.
+let fur = null;   // {len, gravity} or null — global coat applied to every voxel mesh
+function furAlpha() {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0, 0, N, N);
+  for (let i = 0; i < 9000; i++) { const v = Math.random() * 255 | 0; x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(Math.random()*N|0, Math.random()*N|0, 2, 2); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); return t;
+}
+const FUR_ALPHA = furAlpha();
+function buildFurCoat(mesh, length) {
+  detachFur(mesh);
+  const group = new THREE.Group(); const SHELLS = 32;
+  const base = '#' + (mesh.material.color ? mesh.material.color.getHexString() : 'cccccc');
+  mesh.geometry.computeBoundingSphere();
+  const r = (mesh.geometry.boundingSphere ? mesh.geometry.boundingSphere.radius : 1);
+  const forceU = { value: new THREE.Vector3() };
+  group.userData.forceUniform = forceU;
+  group.userData.furLen = length * r;
+  group.userData.prevPos = mesh.getWorldPosition(new THREE.Vector3());
+  for (let i = 1; i <= SHELLS; i++) {
+    const f = i / SHELLS;
+    const off = f * length * r;
+    const tip = (f * f).toFixed(4);   // tips bend most, roots stay put
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(base).multiplyScalar(0.45 + 0.55 * f),
+      roughness: 0.95, transparent: true, alphaMap: FUR_ALPHA, alphaTest: 0.01 + f * 0.45, depthWrite: false,
+    });
+    mat.onBeforeCompile = sh => {
+      sh.uniforms.uForce = forceU;
+      sh.vertexShader = 'uniform vec3 uForce;\n' + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\ntransformed += normalize(objectNormal) * ' + off.toFixed(5) + ' + uForce * ' + tip + ';'
+      );
+    };
+    mat.customProgramCacheKey = () => 'furd' + off.toFixed(5) + '_' + tip;
+    const shell = new THREE.Mesh(mesh.geometry, mat); shell.castShadow = i < 8;
+    group.add(shell);
+  }
+  mesh.add(group); mesh.userData.fur = group;
+}
+function detachFur(mesh) {
+  if (mesh.userData && mesh.userData.fur) {
+    mesh.userData.fur.traverse(o => { if (o.material) o.material.dispose(); });
+    mesh.remove(mesh.userData.fur); mesh.userData.fur = null;
+  }
+}
+function applyFurToMesh(mesh) { if (fur) buildFurCoat(mesh, fur.len); else detachFur(mesh); }
+function applyFurAll() { for (const m of meshes.values()) applyFurToMesh(m); }
+// Per-frame dynamics: gravity droop (always) + inertial sway, shared uForce.
+const _fwForce = new THREE.Vector3(), _fwQuat = new THREE.Quaternion(), _fwPos = new THREE.Vector3();
+function updateFurDynamics() {
+  if (!fur) return;
+  const grav = fur.gravity;
+  for (const o of meshes.values()) {
+    const g = o.userData.fur; if (!g || !g.userData.forceUniform) continue;
+    o.getWorldPosition(_fwPos);
+    const pv = g.userData.prevPos;
+    const vx = _fwPos.x - pv.x, vy = _fwPos.y - pv.y, vz = _fwPos.z - pv.z;
+    pv.copy(_fwPos);
+    const len = g.userData.furLen || 0.2, K = 5;
+    _fwForce.set(-vx * K, -grav * len - vy * K, -vz * K);
+    o.getWorldQuaternion(_fwQuat).invert();
+    _fwForce.applyQuaternion(_fwQuat);
+    g.userData.forceUniform.value.lerp(_fwForce, 0.18);
+  }
+}
+
+// ── Live metaball blob (ported from spline3d) ─────────────────────────────────
+// A set of source points fused via MarchingCubes.addBall + update() each frame,
+// rendered with the active palette material. Serialized as
+// blob:{color, sources:[{p:[x,y,z], r}]} | null.
+let liveBlob = null, blobDirty = true;
+let BLOB_VOL = G;                   // field cube spans the grid
+let BLOB_CENTER = new THREE.Vector3(0, G * VOXEL * 0.4, 0);
+function ensureLiveBlob(color) {
+  if (liveBlob) return liveBlob;
+  const mat = matForEntry(palette[activeSlot] || palette[0] || { color: color || '#8b93ff', mode: 'solid' });
+  const mc = new MarchingCubes(64, mat, true, false, 250000);
+  mc.isolation = 46; mc.castShadow = mc.receiveShadow = true;
+  mc.position.copy(BLOB_CENTER); mc.scale.setScalar(BLOB_VOL * VOXEL / 2);
+  scene.add(mc);
+  liveBlob = { mc, sources: [], color: new THREE.Color(color || '#8b93ff') };
+  liveBlob.mc.material.color.copy(liveBlob.color);
+  blobDirty = true;
+  return liveBlob;
+}
+function addBlobSource(pos, r, color) {
+  const lb = ensureLiveBlob(color);
+  lb.sources.push({ p: (pos || BLOB_CENTER.clone()), r: r || G * 0.12 });
+  if (color) { lb.color.set(color); lb.mc.material.color.copy(lb.color); }
+  blobDirty = true; refreshBlobUI();
+}
+function clearBlob() {
+  if (!liveBlob) return;
+  scene.remove(liveBlob.mc); liveBlob.mc.material.dispose(); liveBlob.mc.geometry && liveBlob.mc.geometry.dispose();
+  liveBlob = null; refreshBlobUI();
+}
+function updateLiveBlob() {
+  const lb = liveBlob; if (!lb) return;
+  if (!lb.sources.length) { lb.mc.visible = false; return; }
+  if (!blobDirty) return;
+  blobDirty = false;
+  lb.mc.visible = true; lb.mc.reset();
+  const span = BLOB_VOL * VOXEL;
+  for (const s of lb.sources) {
+    const p = s.p;
+    const nx = (p.x - BLOB_CENTER.x) / span + 0.5;
+    const ny = (p.y - BLOB_CENTER.y) / span + 0.5;
+    const nz = (p.z - BLOB_CENTER.z) / span + 0.5;
+    const str = 0.95 * (s.r / (G * 0.12 || 1));
+    if (nx > 0 && nx < 1 && ny > 0 && ny < 1 && nz > 0 && nz < 1) lb.mc.addBall(nx, ny, nz, str, 12);
+  }
+  lb.mc.update();
+}
+function recenterBlobField() {
+  BLOB_VOL = G; BLOB_CENTER.set(0, G * VOXEL * 0.4, 0);
+  if (liveBlob) { liveBlob.mc.position.copy(BLOB_CENTER); liveBlob.mc.scale.setScalar(BLOB_VOL * VOXEL / 2); blobDirty = true; }
 }
 
 // ── Editing ──────────────────────────────────────────────────────────────────
@@ -547,10 +688,50 @@ $('#grid-size').addEventListener('change', ev => {
   const next = new Map();
   for (const [k, idx] of voxels) { const [x, y, z] = k.split(',').map(Number); if (inBounds(x, y, z)) next.set(k, idx); }
   voxels = next;
-  rebuildGridHelper(); fitGroundPlane(); recenterTarget(); remesh(); scheduleEmit();
+  rebuildGridHelper(); fitGroundPlane(); recenterTarget(); recenterBlobField(); remesh(); scheduleEmit();
 });
 $('#show-grid').addEventListener('change', rebuildGridHelper);
 $('#clear-all').addEventListener('click', () => { voxels.clear(); boxAnchor = null; remesh(); scheduleEmit(); flash('Cleared'); });
+
+// Fur controls
+$('#fur-toggle').addEventListener('click', () => {
+  if (fur) { fur = null; applyFurAll(); }
+  else { fur = { len: parseFloat($('#fur-len').value), gravity: parseFloat($('#fur-grav').value) }; applyFurAll(); }
+  syncFxUI(); scheduleEmit();
+});
+$('#fur-len').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#fur-len-v').textContent = v.toFixed(2);
+  if (fur) { fur.len = v; applyFurAll(); scheduleEmit(); }
+});
+$('#fur-grav').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#fur-grav-v').textContent = v.toFixed(2);
+  if (fur) { fur.gravity = v; scheduleEmit(); }
+});
+
+// Metaball controls — add sources around the field center, jittered so they fuse.
+$('#blob-add').addEventListener('click', () => {
+  const r = parseFloat($('#blob-str').value) * G;
+  const j = G * 0.12;
+  const p = BLOB_CENTER.clone().add(new THREE.Vector3((Math.random()-0.5)*j, (Math.random()-0.5)*j, (Math.random()-0.5)*j));
+  addBlobSource(p, r, '#' + (palette[activeSlot] && palette[activeSlot].color || '#8b93ff').replace('#',''));
+  flash('Metaball source added'); scheduleEmit();
+});
+$('#blob-clear').addEventListener('click', () => { clearBlob(); flash('Blob cleared'); scheduleEmit(); });
+$('#blob-str').addEventListener('input', e => { $('#blob-str-v').textContent = parseFloat(e.target.value).toFixed(2); });
+
+function refreshBlobUI() {
+  const n = liveBlob ? liveBlob.sources.length : 0;
+  const el = $('#blob-count'); if (el) el.textContent = n + ' source' + (n === 1 ? '' : 's');
+}
+function syncFxUI() {
+  const on = !!fur;
+  const tb = $('#fur-toggle'); if (tb) { tb.textContent = on ? 'Disable fur' : 'Enable fur'; tb.classList.toggle('on', on); }
+  if (fur) {
+    $('#fur-len').value = fur.len; $('#fur-len-v').textContent = (+fur.len).toFixed(2);
+    $('#fur-grav').value = fur.gravity; $('#fur-grav-v').textContent = (+fur.gravity).toFixed(2);
+  }
+  refreshBlobUI();
+}
 
 // Lighting (reused from spline3d)
 $('#l-env').addEventListener('input', e => { scene.environmentIntensity = +e.target.value; $('#l-env-v').textContent = (+e.target.value).toFixed(2); });
@@ -613,7 +794,16 @@ function serializeState() {
     voxelSize: VOXEL,
     palette: palette.map(e => ({ color: e.color, mode: e.mode, rough: e.rough ?? 0.5, metal: e.metal ?? 0, trans: e.trans ?? 0 })),
     voxels: vox,
-    blob: null, fur: null, cloth: null,
+    blob: serializeBlob(),
+    fur: fur ? { len: fur.len, gravity: fur.gravity } : null,
+    cloth: null,
+  };
+}
+function serializeBlob() {
+  if (!liveBlob || !liveBlob.sources.length) return null;
+  return {
+    color: '#' + liveBlob.color.getHexString(),
+    sources: liveBlob.sources.map(s => ({ p: [s.p.x, s.p.y, s.p.z], r: s.r })),
   };
 }
 // Accept either array-of-arrays voxels OR a compact "x,y,z,idx;..." string.
@@ -645,9 +835,23 @@ function loadState(state) {
   activeSlot = Math.min(activeSlot, palette.length - 1);
   // sync grid-size select if it matches an option
   const gs = $('#grid-size'); if ([...gs.options].some(o => +o.value === G)) gs.value = String(G);
+  // fur (global coat)
+  fur = (state.fur && typeof state.fur === 'object')
+    ? { len: (+state.fur.len > 0 ? +state.fur.len : 0.4), gravity: (state.fur.gravity != null ? +state.fur.gravity : 0.55) }
+    : null;
+  // blob (live metaball)
+  clearBlob();
+  if (state.blob && typeof state.blob === 'object' && Array.isArray(state.blob.sources)) {
+    for (const s of state.blob.sources) {
+      const p = Array.isArray(s.p) ? new THREE.Vector3(s.p[0] || 0, s.p[1] || 0, s.p[2] || 0) : null;
+      addBlobSource(p, (+s.r > 0 ? +s.r : G * 0.12), state.blob.color);
+    }
+  }
+  recenterBlobField();
   rebuildAll();
+  syncFxUI();
 }
-function applyDefaults() { G = 32; VOXEL = 1; palette = defaultPalette(); voxels = new Map(); activeSlot = 0; }
+function applyDefaults() { G = 32; VOXEL = 1; palette = defaultPalette(); voxels = new Map(); activeSlot = 0; fur = null; clearBlob(); recenterBlobField(); }
 function rebuildAll() {
   rebuildGridHelper(); fitGroundPlane(); recenterTarget();
   renderPalette(); syncSlotInspector(); remesh();
@@ -756,6 +960,8 @@ function tick(now) {
   const dt = now - last; last = now; fpsT += dt; frames++;
   if (fpsT > 500) { $('#fps').textContent = Math.round(frames / (fpsT / 1000)) + ' fps'; fpsT = 0; frames = 0; }
   orbit.update();
+  updateFurDynamics();
+  updateLiveBlob();
   renderer.render(scene, camera);
 }
 

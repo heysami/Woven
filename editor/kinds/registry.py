@@ -3242,6 +3242,7 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked SVG", "tags": ["asset"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "svg"}}],
         "accepts":  [
+            {"port": "in", "label": "Trace image", "tags": ["asset"], "ingest": "context"},
             {"port": "edit", "label": "Edit vector", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/svg/vector-{id}.json",
               "authoring": _VECTOR_AUTHORING},
