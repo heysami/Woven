@@ -51149,6 +51149,7 @@ function _composerLayerStyle(layer, canvasW, canvasH) {
     opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
     pointerEvents: "none",
   };
+  if (layer.blend && layer.blend !== "normal") style.mixBlendMode = layer.blend;
   // Width / height — null means "natural" (auto). For stretch modes the
   // stretched axis is forced full-bleed; the other axis honors the override.
   if (a === "fill" || a === "stretch-h") {
@@ -51504,15 +51505,31 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   //      new layer on top of the stack).
   const layers = useMemo(() => {
     const wiredSet = new Set(wiredAssetIds);
+    // Apply spec overrides (opacity/blend/visible) to existing layers so wired
+    // Layer node properties stay authoritative even after the node is saved.
     const existing = (Array.isArray(node.layers) ? node.layers : [])
-      .filter(l => wiredSet.has(l.assetId));
+      .filter(l => wiredSet.has(l.assetId))
+      .map(l => {
+        const ls = _layerSpecById[l.assetId];
+        if (!ls) return l;
+        return {
+          ...l,
+          opacity: typeof ls.opacity === "number" ? ls.opacity : l.opacity,
+          blend:   ls.blend || l.blend || "normal",
+          visible: ls.visible !== undefined ? (ls.visible !== false) : (l.visible !== false),
+        };
+      });
     const known = new Set(existing.map(l => l.assetId));
     for (const aid of wiredAssetIds) {
       if (!known.has(aid)) {
         const ls = _layerSpecById[aid] || {};
         existing.push({
-          assetId: aid, opacity: typeof ls.opacity === "number" ? ls.opacity : 1, anchor: "center",
-          offsetX: 0, offsetY: 0, width: null, height: null, visible: ls.visible !== false,
+          assetId: aid,
+          opacity: typeof ls.opacity === "number" ? ls.opacity : 1,
+          blend:   ls.blend || "normal",
+          anchor:  "center",
+          offsetX: 0, offsetY: 0, width: null, height: null,
+          visible: ls.visible !== false,
         });
         known.add(aid);
       }
@@ -51525,9 +51542,10 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   // actually changed (new entry appeared) to avoid a feedback loop with
   // the useMemo above.
   useEffect(() => {
-    const sigSaved = JSON.stringify((node.layers || []).map(l => l.assetId));
-    const sigDerived = JSON.stringify(layers.map(l => l.assetId));
-    if (sigSaved !== sigDerived) onChange({ layers });
+    // Broadened signature: also detect spec-driven changes to opacity/blend/visible
+    // so the stored node.layers stays in sync with wired Layer node specs.
+    const sig = (arr) => JSON.stringify((arr || []).map(l => `${l.assetId}:${l.opacity}:${l.blend}:${l.visible}`));
+    if (sig(node.layers) !== sig(layers)) onChange({ layers });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers]);
 
@@ -51906,6 +51924,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           const rules = [];
           rules.push(`position: absolute`);
           rules.push(`opacity: ${typeof layer.opacity === "number" ? layer.opacity : 1}`);
+          if (layer.blend && layer.blend !== "normal") rules.push(`mix-blend-mode: ${layer.blend}`);
           if (a === "fill" || a === "stretch-h") {
             rules.push(`left: 0; right: 0`);
             if (h != null) rules.push(`height: ${pY(h)}`); else if (a === "fill") rules.push(`top: 0; bottom: 0`);
@@ -53487,6 +53506,15 @@ function WorkflowVectorEditorNode({
     }
   };
   const onImportSvg = () => { if (wiredVectorInput && wiredVectorInput.url) importSvgSrc(wiredVectorInput.url); };
+  // Auto-import when a wired SVG input first appears or changes URL.
+  const _lastImportedSvgUrl = useRef(null);
+  useEffect(() => {
+    const url = wiredVectorInput && wiredVectorInput.url;
+    if (url && url !== _lastImportedSvgUrl.current) {
+      _lastImportedSvgUrl.current = url;
+      importSvgSrc(url);
+    }
+  }, [wiredVectorInput]);
 
   // ── Glyph import ────────────────────────────────────────────────
   // Fetch a Google font, parse with opentype.js, and add the requested
