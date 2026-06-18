@@ -8406,11 +8406,11 @@ function DaemonIndicator({ compact }) {
     "data-state": ok ? "ok" : (loading ? "loading" : "down"),
     "aria-live": "polite",
   };
-  const body = html`<>
+  const body = html`
     <span className="cli-dot"/>
     ${!compact && html`<span className="cli-label">${label}</span>`}
     <span className="tab-tip">${tipShort}</span>
-  </>`;
+  `;
   return html`
     ${interactive
       ? html`<button type="button" ...${common} onClick=${() => setDialogOpen(true)} aria-label="Daemon down — open restart instructions">${body}</button>`
@@ -62555,7 +62555,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
               ? html`<span className="workflow-node-skill-spinner"/><span>Running…</span>`
               : status === "done" ? "Run again ↺"
               : status === "error" ? "Retry"
-              : html`<><${Icon.Play}/> Run</>`}
+              : html`<${Icon.Play}/> Run`}
           </button>
         </div>
         <div className="workflow-node-port workflow-node-port-in"  data-side="in"  onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}/>
@@ -62718,7 +62718,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
             ? html`<span className="workflow-node-skill-spinner"/><span>Running…</span>`
             : status === "done" ? "Run again ↺"
             : status === "error" ? "Retry"
-            : html`<><${Icon.Play}/> Run</>`}
+            : html`<${Icon.Play}/> Run`}
         </button>
         ${status === "error" && error && html`
           <div className="workflow-node-skill-msg workflow-node-skill-msg-error" title=${error}>
@@ -63483,7 +63483,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
               }
             }}
             onMouseDown=${(e) => e.stopPropagation()}
-          >${running ? html`<span className="workflow-node-skill-spinner"/> running…` : html`<><${Icon.Play}/> Run</>`}</button>
+          >${running ? html`<span className="workflow-node-skill-spinner"/> running…` : html`<${Icon.Play}/> Run`}</button>
           ${outputTargets.length > 0 && html`
             <button
               className="workflow-node-skill-run workflow-node-agent-apply-btn"
