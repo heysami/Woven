@@ -239,6 +239,15 @@ let current = "A";              // selected glyph char
 /* base font cache: family name -> opentype.Font */
 const fontCache = {};           // ref -> {font, unitsPerEm}
 let baseFontObj = null;         // the currently-loaded base font object
+let wiredFontUrl = null;        // a font asset wired into the `in` port → base font
+
+// Pick a wired font asset from a host message's `content` array.
+function _pickWiredFontUrl(d){
+  const cs = Array.isArray(d && d.content) ? d.content : [];
+  const f = cs.find(c => c && c.url
+    && (/^font$/i.test(c.kind || c.assetKind || "") || /\.(otf|ttf|woff2?)(\?|$)/i.test(c.url)));
+  return f ? f.url : null;
+}
 
 /* =========================================================================
  * Google Fonts loading -> opentype.Font
@@ -928,6 +937,16 @@ function applyDocToToolbar(){
 }
 
 async function ensureBaseFontLoaded(){
+  // A font asset wired into the `in` port takes precedence as the base font.
+  if(wiredFontUrl){
+    try{
+      setStatus("loading wired base font…","busy");
+      const buf=await fetch(wiredFontUrl).then(r=>{ if(!r.ok) throw new Error("font "+r.status); return r.arrayBuffer(); });
+      baseFontObj=loadFontFromBuffer("__wired__:"+wiredFontUrl, buf);
+      setStatus("base font: wired","ok");
+      return;
+    }catch(err){ setStatus("wired base load failed: "+err.message,"err"); /* fall through */ }
+  }
   const bf=doc.baseFont;
   if(!bf || bf.source==="none") { baseFontObj=null; return; }
   try{
@@ -990,14 +1009,25 @@ window.addEventListener("message", async (ev)=>{
   if(data.nodeId !== nodeId) return;   // ignore foreign nodes
   switch(data.type){
     case "font:init":
+      wiredFontUrl = _pickWiredFontUrl(data);   // a wired font asset → base font
       await initFromState(data.state||null);
       break;
     case "font:set-state":
       await initFromState(data.state||null);   // MUST NOT echo font:state (suppress guard handles it)
       break;
-    case "font:content":
-      // ignore for fonts
+    case "font:content": {
+      // A font asset wired/unwired on the `in` port → reload the base font.
+      const nextUrl = _pickWiredFontUrl(data);
+      if(nextUrl !== wiredFontUrl){
+        wiredFontUrl = nextUrl;
+        suppressEmit = true;
+        await ensureBaseFontLoaded();
+        try{ renderGrid(); }catch(e){}
+        try{ drawCanvas(); }catch(e){}
+        suppressEmit = false;
+      }
       break;
+    }
   }
 });
 

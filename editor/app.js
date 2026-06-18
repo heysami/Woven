@@ -55985,7 +55985,9 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
   // Imports = wired .glb/.gltf assets (resolved via the shared io-contract
   // resolver — no bespoke edge walk) PLUS any models an agent generated and
   // registered on node.imports (the editTarget "Option B" path). Both reactive.
-  const inputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
+  // Resolve ALL ports (not just `in`) so a wired Position node on the `pos`
+  // port reaches the iframe alongside .glb imports.
+  const inputs = useUpstreamInputs(node, allNodes, allEdges);
   const ownImports = Array.isArray(node.imports) ? node.imports : [];
   const importUrls = useMemo(() => {
     const wired = inputs.filter(i => i.type === "glb-import").map(i => i.url);
@@ -55993,6 +55995,12 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
     return Array.from(new Set([...wired, ...own]));
   }, [inputs, ownImports.join("|")]);
   const importKey = importUrls.join("|");
+  // Wired Effect / Position spec nodes (the spline tool reads these tolerantly).
+  const splineSpecs = useMemo(() => ({
+    effects:   inputs.filter(i => i.type === "effect").map(i => i.spec || {}),
+    positions: inputs.filter(i => i.type === "position").map(i => i.spec || {}),
+  }), [inputs]);
+  const splineSpecKey = JSON.stringify(splineSpecs);
 
   // Param-light iframe URL — scene + imports flow over postMessage, not the URL,
   // so changing imports never reloads the iframe.
@@ -56008,6 +56016,7 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
   const readyRef = useRef(false);
   const sceneRef = useRef(node.scene); sceneRef.current = node.scene;
   const importsRef = useRef(importUrls); importsRef.current = importUrls;
+  const splineSpecsRef = useRef(splineSpecs); splineSpecsRef.current = splineSpecs;
   const lastWrittenRef = useRef("");      // last sidecar bytes WE wrote (ignore our own echo)
   const saveTimerRef = useRef(null);
   const pendingSceneRef = useRef(null);
@@ -56048,7 +56057,8 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
       if (!d || d.nodeId !== node.id) return;
       if (d.type === "spline:ready") {
         readyRef.current = true;
-        postToIframe({ type: "spline:init", scene: sceneRef.current || null, imports: importsRef.current });
+        postToIframe({ type: "spline:init", scene: sceneRef.current || null, imports: importsRef.current,
+                       effects: splineSpecsRef.current.effects, positions: splineSpecsRef.current.positions });
       } else if (d.type === "spline:scene") {
         persistScene(d.scene);
       }
@@ -56062,6 +56072,12 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
     if (readyRef.current) postToIframe({ type: "spline:imports", urls: importUrls });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [importKey, postToIframe]);
+
+  // Reactive specs: push wired Effect/Position specs (spline:content) when they change.
+  useEffect(() => {
+    if (readyRef.current) postToIframe({ type: "spline:content", effects: splineSpecs.effects, positions: splineSpecs.positions });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splineSpecKey, postToIframe]);
 
   // Agent edited the canonical sidecar (io editTarget) → re-import it live via
   // set-scene (reset+restore, no reload). Ignore the echo of our own write.
