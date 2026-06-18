@@ -8411,12 +8411,12 @@ function DaemonIndicator({ compact }) {
     ${!compact && html`<span className="cli-label">${label}</span>`}
     <span className="tab-tip">${tipShort}</span>
   <//>`;
-  return html`
+  return html`<${React.Fragment}>
     ${interactive
       ? html`<button type="button" ...${common} onClick=${() => setDialogOpen(true)} aria-label="Daemon down — open restart instructions">${body}</button>`
       : html`<span ...${common}>${body}</span>`}
     ${dialogOpen && html`<${DaemonDownDialog} onClose=${() => setDialogOpen(false)}/>`}
-  `;
+  <//>`;
 }
 
 /* Status chip showing whether the user's picked CLI is reachable. Drives the
@@ -9061,7 +9061,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
     </div>
   `, document.body) : null;
 
-  return html`
+  return html`<${React.Fragment}>
     <nav className="th-right-rail" ref=${railRef} aria-label="Panels">
       <${HoverTip}
         placement="left"
@@ -9143,7 +9143,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
       panelRef=${panelRef}
       onStartChatWithPrompt=${onStartChatWithPrompt}
     />`}
-  `;
+  <//>`;
 }
 
 /* extractRunSubagents / extractRunTasks — pull the subagent dispatches and the
@@ -22497,7 +22497,7 @@ function WorkflowCanvas() {
       </div>
     `;
   }
-  return html`
+  return html`<${React.Fragment}>
     ${saveFailedAt && html`
       <div className="workflow-save-failed-banner" style=${{
         position: "fixed", top: "12px", left: "50%", transform: "translateX(-50%)",
@@ -22563,7 +22563,7 @@ function WorkflowCanvas() {
       onResizeStart=${startChatResize}
       variant="dock"
     />
-  `;
+  <//>`;
 }
 
 /* ────────── Phase 3.5c helpers ────────── */
@@ -49469,10 +49469,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       ${galleryReminderOpen && html`
         <div className="workflow-ds-reminder" onMouseDown=${(e) => e.stopPropagation()}>
           <div className="workflow-ds-reminder-body">
-            ${dsChangedFiles.map((f, i) => html`${i ? ", " : ""}<code>${f}</code>`)}
+            ${dsChangedFiles.map((f, i) => html`<${React.Fragment} key=${f}>${i ? ", " : ""}<code>${f}</code><//>`)}
             ${dsChangedFiles.length === 1 ? " was" : " were"} updated — remember to update the others if needed${
               dsUnchangedFiles.length
-                ? html`: ${dsUnchangedFiles.map((f, i) => html`${i ? ", " : ""}<code>${f}</code>`)}`
+                ? html`: ${dsUnchangedFiles.map((f, i) => html`<${React.Fragment} key=${f}>${i ? ", " : ""}<code>${f}</code><//>`)}`
                 : ""}.
           </div>
           <button
