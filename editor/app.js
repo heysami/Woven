@@ -49499,7 +49499,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             aria-disabled=${!_isCustom}
           >↺<//>
         `}
-        ${(kind === "html" || kind === "html-set") && html`
+        ${(kind === "html" || kind === "html-set") && html`<${React.Fragment}>
           <${HoverTip}
             className="workflow-node-action workflow-node-action-nav"
             tip="Back — step back through this asset's nav history, or reload the iframe when there's nothing to step back to."
@@ -49528,7 +49528,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
               onMouseDown=${(e) => e.stopPropagation()}
             >${htmlFit === "scale" ? "⊡" : "⤢"}<//>
           `}
-        `}
+        <//>`}
         <span className="workflow-node-asset-name" title=${path}>${basename}</span>
         ${node.animated && html`<span className="workflow-node-asset-tag" title="SMIL animation detected">◐</span>`}
         <span className="workflow-node-bar-spacer"/>

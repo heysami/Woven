@@ -263,7 +263,7 @@ function allRuntimeLayers(){
 }
 
 function defaultState(){
-  return {v:1,canvasW:1280,canvasH:720,background:'#000',inputs:{camera:false,mic:false},
+  return {v:1,canvasW:1280,canvasH:720,background:'#000000',inputs:{camera:false,mic:false},
     layers:[
       { id:'L1', name:'Grid pulse', z:0, visible:true,
         content:{kind:'shape', shape:'rect', color:'#6ee7ff', text:''},
@@ -320,7 +320,7 @@ function fillTrigger(t){
 function normalizeState(s){
   s=s||defaultState();
   s.v=1; s.canvasW=s.canvasW||1280; s.canvasH=s.canvasH||720;
-  s.background=s.background||'#000';
+  s.background=hexOf(s.background||'#000000');
   s.inputs=Object.assign({camera:false,mic:false},s.inputs||{});
   s.layers=(s.layers||[]).map(fillLayer);
   if(!s.layers.length) s=defaultState();
@@ -1496,14 +1496,13 @@ function html(s){ const d=document.createElement('div'); d.innerHTML=s; return d
 function renderCanvasControls(){
   document.getElementById('canvasW').value=STATE.canvasW;
   document.getElementById('canvasH').value=STATE.canvasH;
-  document.getElementById('bgcol') && (document.getElementById('bgcol').value=STATE.background);
   const bc=document.getElementById('bgcol'); if(bc){ bc.value=hexOf(STATE.background); }
   document.getElementById('bgHex').textContent=STATE.background;
   document.getElementById('dimLbl').textContent=STATE.canvasW+'×'+STATE.canvasH;
   document.getElementById('permCam').className='chip '+(Input.cam.on?'on':'off');
   document.getElementById('permMic').className='chip '+(Input.mic.on?'on':'off');
 }
-function hexOf(c){ if(/^#/.test(c)) return c.slice(0,7); return '#000000'; }
+function hexOf(c){ if(/^#[0-9a-fA-F]{3}$/.test(c)) return '#'+c[1]+c[1]+c[2]+c[2]+c[3]+c[3]; if(/^#/.test(c)) return c.slice(0,7); return '#000000'; }
 document.getElementById('canvasW').onchange=e=>{ STATE.canvasW=clamp(+e.target.value|0,16,4096); Engine.resize(); emit(); };
 document.getElementById('canvasH').onchange=e=>{ STATE.canvasH=clamp(+e.target.value|0,16,4096); Engine.resize(); emit(); };
 document.getElementById('bgcol') && (document.getElementById('bgcol').oninput=e=>{ STATE.background=e.target.value; document.getElementById('bgHex').textContent=e.target.value; emit(); });
