@@ -354,6 +354,11 @@ function fillLayer(L){
   fillPositioning(L.positioning);
   L.trigger = Object.assign({source:'none',impacts:[]}, L.trigger||{});
   fillTrigger(L.trigger);
+  // mask: use another layer's rendered pixels to multiply a channel of this one.
+  //   by  — id of the layer to read as a mask ('' = no mask)
+  //   src — channel READ off the mask layer: lum|alpha|r|g|b
+  //   dst — channel DRIVEN on this layer: alpha|rgb|r|g|b
+  L.mask = Object.assign({by:'',src:'lum',dst:'alpha'}, L.mask||{});
   L.effects = L.effects||{stack:[]}; L.effects.stack = L.effects.stack||[];
   L.effects.stack.forEach(e=>{ e.params=e.params||{}; e.intensity=e.intensity??1; });
   return L;
@@ -1168,6 +1173,34 @@ function drawContent(ctx, L, inst, W, H, baseScale){
 function getSans(){ return getComputedStyle(document.body).fontFamily; }
 function getMono(){ return 'ui-monospace,Menlo,monospace'; }
 
+// Multiply a channel of `dctx` (w×h) by a channel read from `maskCv`.
+//   src — channel READ off the mask: lum (default, luminance × own alpha)|alpha|r|g|b
+//   dst — channel DRIVEN on the target: alpha (default)|rgb|r|g|b
+function maskByChannel(dctx, w, h, maskCv, src, dst){
+  src=src||'lum'; dst=dst||'alpha';
+  const base=dctx.getImageData(0,0,w,h);
+  const md=maskCv.getContext('2d').getImageData(0,0,w,h);
+  const bd=base.data, mdd=md.data;
+  for(let i=0;i<bd.length;i+=4){
+    let mv;
+    switch(src){
+      case 'alpha': mv=mdd[i+3]/255; break;
+      case 'r': mv=mdd[i]/255; break;
+      case 'g': mv=mdd[i+1]/255; break;
+      case 'b': mv=mdd[i+2]/255; break;
+      default: { const ma=mdd[i+3]/255; mv=((0.2126*mdd[i]+0.7152*mdd[i+1]+0.0722*mdd[i+2])/255)*ma; }
+    }
+    switch(dst){
+      case 'r': bd[i]*=mv; break;
+      case 'g': bd[i+1]*=mv; break;
+      case 'b': bd[i+2]*=mv; break;
+      case 'rgb': bd[i]*=mv; bd[i+1]*=mv; bd[i+2]*=mv; break;
+      default: bd[i+3]*=mv;
+    }
+  }
+  dctx.putImageData(base,0,0);
+}
+
 /* ===========================================================================
    ENGINE  — the requestAnimationFrame runtime tying it all together
    ===========================================================================*/
@@ -1225,28 +1258,55 @@ const Engine = {
     // 3) clear base canvases
     ctx.clearRect(0,0,W,H); ctx.fillStyle=STATE.background; ctx.fillRect(0,0,W,H);
     if(this.fx&&this.fx.gl){ this.fx.gl.clearColor(0,0,0,0); this.fx.gl.clear(this.fx.gl.COLOR_BUFFER_BIT); }
-    // 4) render layers in z-order
-    const ordered=[...layers].sort((a,b)=>(a.z||0)-(b.z||0));
-    for(const L of ordered){
-      if(!L.visible) continue;
+    // layers any other layer reads as a mask — these must be rendered in pass A
+    // even when hidden, so a mask source can drive without being composited.
+    const maskRefs=new Set(); for(const L of layers){ if(L.mask&&L.mask.by) maskRefs.add(L.mask.by); }
+    // per-layer offscreen buffer pool (id → {cv,cx}); lets one layer mask another.
+    this._bufs=this._bufs||{};
+    const getBuf=(id)=>{
+      let b=this._bufs[id];
+      if(!b){ const cv=document.createElement('canvas'); b=this._bufs[id]={cv,cx:cv.getContext('2d')}; }
+      if(b.cv.width!==W||b.cv.height!==H){ b.cv.width=W; b.cv.height=H; }
+      return b;
+    };
+    // 4a) PASS A — draw each layer's content into its own buffer. Physics/instances
+    //     resolve exactly once here (a mask-source layer is NOT stepped twice).
+    const rendered={};
+    for(const L of layers){
+      if(!L.visible && !maskRefs.has(L.id)) continue;
       const ov=overrides[L.id]||{};
-      // wired layers with a default 'single' positioning can inherit the first
-      // wired top-level position scheme.
       const insts=Positioning.resolve(positionedLayer(L),W,H,dt);
+      const scaleMul = ov.scale!=null?ov.scale:1;
+      const posOff = ov.position; // [nx,ny] absolute reposition of whole layer
+      const buf=getBuf(L.id);
+      buf.cx.clearRect(0,0,W,H); buf.cx.globalAlpha=1;
+      for(const inst of insts){
+        let it=inst;
+        if(posOff){ it={...inst, x:posOff[0], y:posOff[1]}; }
+        drawContent(buf.cx, L, it, W, H, scaleMul);
+      }
+      rendered[L.id]=buf;
+    }
+    // prune buffers for layers that no longer exist
+    const live=new Set(layers.map(L=>L.id));
+    for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
+    // 4b) PASS B — composite visible layers in z-order, applying channel masks.
+    const ordered=[...layers].filter(L=>L.visible).sort((a,b)=>(a.z||0)-(b.z||0));
+    for(const L of ordered){
+      const buf=rendered[L.id]; if(!buf) continue;
+      const ov=overrides[L.id]||{};
+      // Copy into the scratch buffer so masking/effects never mutate this layer's
+      // stored pixels — another layer may still read it as a mask source.
+      this.lctx.clearRect(0,0,W,H); this.lctx.drawImage(buf.cv,0,0);
+      // mask: multiply a channel of this layer by a channel of another layer
+      if(L.mask && L.mask.by){
+        const mb=rendered[L.mask.by];
+        if(mb) maskByChannel(this.lctx, W, H, mb.cv, L.mask.src, L.mask.dst);
+      }
       // base transforms can be overridden by impacts; wired layers carry their
       // own spec.opacity (multiplied with any impact opacity).
       const baseOp = L._wired ? (L._opacity!=null?L._opacity:1) : 1;
       const opacity = (ov.opacity!=null?ov.opacity:1) * baseOp;
-      const scaleMul = ov.scale!=null?ov.scale:1;
-      const posOff = ov.position; // [nx,ny] absolute reposition of whole layer
-      // draw instances into the per-layer buffer
-      this.lctx.clearRect(0,0,W,H);
-      this.lctx.globalAlpha=1;
-      for(const inst of insts){
-        let it=inst;
-        if(posOff){ it={...inst, x:posOff[0], y:posOff[1]}; }
-        drawContent(this.lctx, L, it, W, H, scaleMul);
-      }
       // 5) per-layer effects chain on this layer buffer, then composite
       const hasFx = L.effects.stack.length>0 && this.fx && this.fx.gl;
       ctx.save();
@@ -1628,6 +1688,26 @@ function renderInspector(){
     b.appendChild(add);
   },'trig'));
 
+  /* MASK accordion — use another layer's pixels to mask this one */
+  body.appendChild(accordion('Mask',(b)=>{
+    const m=L.mask;
+    const cands=allRuntimeLayers().filter(x=>x.id!==L.id);
+    b.appendChild(fSelect('Masked by',m.by||'',
+      [['','None'],...cands.map(x=>[x.id,x.name])],
+      v=>{ m.by=v; renderInspector(); }));
+    if(m.by){
+      b.appendChild(fSelect('Read',m.src||'lum',
+        [['lum','Luminance'],['alpha','Alpha'],['r','Red'],['g','Green'],['b','Blue']],
+        v=>m.src=v));
+      b.appendChild(fSelect('Apply to',m.dst||'alpha',
+        [['alpha','Alpha (cutout)'],['rgb','Color (RGB)'],['r','Red'],['g','Green'],['b','Blue']],
+        v=>m.dst=v));
+      b.appendChild(html('<p class="hint">Multiplies this layer\'s "Apply to" channel by the mask layer\'s "Read" channel. The mask layer can be hidden.</p>'));
+    } else {
+      b.appendChild(html('<p class="hint">Pick a layer whose pixels mask this one.</p>'));
+    }
+  },'mask'));
+
   /* EFFECTS accordion */
   body.appendChild(accordion('Effects',(b)=>{
     const stack=L.effects.stack;
@@ -1902,6 +1982,11 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   function ensure(w,h){if(_w===w&&_h===h&&fbos.length)return;_w=w;_h=h;fbos.forEach(f=>gl.deleteFramebuffer(f));texs.forEach(t=>gl.deleteTexture(t));fbos=[];texs=[];for(let i=0;i<2;i++){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);texs.push(t);fbos.push(fb);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
   function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(FH+'void main(){o=texture(tex,uv);}'));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);const l=gl.getAttribLocation(p,'p');gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'tex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uRes'),w,h);gl.drawArrays(gl.TRIANGLES,0,3);}
   function applyFx(stack,time,iOv){ applyFxFrom(lb,stack,time,iOv); }
+  function maskCh(dctx,maskCv,src,dst){src=src||'lum';dst=dst||'alpha';const base=dctx.getImageData(0,0,W,H),md=maskCv.getContext('2d').getImageData(0,0,W,H),bd=base.data,mdd=md.data;
+    for(let i=0;i<bd.length;i+=4){let mv;switch(src){case'alpha':mv=mdd[i+3]/255;break;case'r':mv=mdd[i]/255;break;case'g':mv=mdd[i+1]/255;break;case'b':mv=mdd[i+2]/255;break;default:{const ma=mdd[i+3]/255;mv=((0.2126*mdd[i]+0.7152*mdd[i+1]+0.0722*mdd[i+2])/255)*ma;}}
+      switch(dst){case'r':bd[i]*=mv;break;case'g':bd[i+1]*=mv;break;case'b':bd[i+2]*=mv;break;case'rgb':bd[i]*=mv;bd[i+1]*=mv;bd[i+2]*=mv;break;default:bd[i+3]*=mv;}}
+    dctx.putImageData(base,0,0);}
+  const BUFS={};
   function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
@@ -1911,12 +1996,24 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   function frame(now){const dt=Math.min((now-last)/1000,0.05);last=now;IN.clock=(now-IN.t0)/1000;IN.clickPulse*=0.9;
     const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);const ov=impacts(tv);
     ctx.clearRect(0,0,W,H);ctx.fillStyle=CFG.background||'#000';ctx.fillRect(0,0,W,H);
-    const ord=[...CFG.layers].sort((a,b)=>(a.z||0)-(b.z||0));
-    for(const L of ord){if(L.visible===false)continue;const o=ov[L.id]||{};const ins=positions(L,dt);
-      const baseOp=L._wired?(L._opacity!=null?L._opacity:1):1;
-      const op=(o.opacity!=null?o.opacity:1)*baseOp,sm=o.scale!=null?o.scale:1,pf=o.position;
-      const blend=(L._wired&&L._blend)?L._blend:'source-over';
+    // layers read as a mask must render even when hidden
+    const maskRefs=new Set();for(const L of CFG.layers){if(L.mask&&L.mask.by)maskRefs.add(L.mask.by);}
+    const getBuf=(id)=>{let b=BUFS[id];if(!b){const cv=document.createElement('canvas');cv.width=W;cv.height=H;b=BUFS[id]={cv,cx:cv.getContext('2d')};}if(b.cv.width!==W||b.cv.height!==H){b.cv.width=W;b.cv.height=H;}return b;};
+    // PASS A — draw each needed layer into lb, copy to its own buffer (positions resolve once)
+    const rendered={};
+    for(const L of CFG.layers){if(L.visible===false&&!maskRefs.has(L.id))continue;
+      const o=ov[L.id]||{};const ins=positions(L,dt);const sm=o.scale!=null?o.scale:1,pf=o.position;
       lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
+      const b=getBuf(L.id);b.cx.clearRect(0,0,W,H);b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
+    const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}
+    // PASS B — composite visible layers in z-order, applying channel masks
+    const ord=[...CFG.layers].filter(L=>L.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
+    for(const L of ord){const b=rendered[L.id];if(!b)continue;const o=ov[L.id]||{};
+      lctx.clearRect(0,0,W,H);lctx.drawImage(b.cv,0,0);
+      if(L.mask&&L.mask.by){const mb=rendered[L.mask.by];if(mb)maskCh(lctx,mb.cv,L.mask.src,L.mask.dst);}
+      const baseOp=L._wired?(L._opacity!=null?L._opacity:1):1;
+      const op=(o.opacity!=null?o.opacity:1)*baseOp;
+      const blend=(L._wired&&L._blend)?L._blend:'source-over';
       ctx.save();ctx.globalAlpha=op;ctx.globalCompositeOperation=blend;
       if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null);ctx.drawImage(cgl,0,0,W,H);}
       else{ctx.drawImage(lb,0,0);}
