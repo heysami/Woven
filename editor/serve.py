@@ -15673,6 +15673,13 @@ class H(http.server.SimpleHTTPRequestHandler):
     _WEB_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
+    # Pick overlay injected into proxied pages (opaque origin). It runs
+    # inside the walled-off iframe and posts the clicked element (with
+    # computed styles baked inline, so it is self-contained) + selection
+    # text back to the editor over postMessage. See WorkflowBrowserNode +
+    # the WorkflowSurface message bridge in app.js.
+    _WEB_PICK_OVERLAY = '<script>(function(){\nif(window.__thWebPick)return;window.__thWebPick=true;\nvar EDITOR=window.parent,pickOn=false,hover=null,sel=null,styleEl=null;\nfunction post(m){try{EDITOR&&EDITOR.postMessage(m,"*");}catch(e){}}\nfunction ensureStyle(){if(styleEl)return;styleEl=document.createElement("style");styleEl.setAttribute("data-th-web-pick","1");styleEl.textContent=".th-wp-hover{outline:2px solid #3b82f6 !important;outline-offset:-2px !important;cursor:crosshair !important;}.th-wp-sel{outline:2px solid #ef4444 !important;outline-offset:-2px !important;}body.th-wp-on,body.th-wp-on *{cursor:crosshair !important;}";(document.head||document.documentElement).appendChild(styleEl);}\nfunction cssPath(el){var parts=[],cur=el,depth=0;while(cur&&cur.nodeType===1&&cur.tagName&&depth<8){var tag=cur.tagName.toLowerCase();if(tag==="body"||tag==="html")break;var part=tag,parent=cur.parentElement;if(parent){var sibs=Array.prototype.filter.call(parent.children,function(c){return c.tagName===cur.tagName;});if(sibs.length>1)part+=":nth-of-type("+(sibs.indexOf(cur)+1)+")";}if(cur.id)part="#"+cur.id;parts.unshift(part);cur=cur.parentElement;depth++;}return parts.join(" > ");}\nvar SKIP=/^(inline-size|block-size|perspective-origin|transform-origin)$/;\nfunction bake(src){var clone=src.cloneNode(true);var lt=[src].concat(Array.prototype.slice.call(src.querySelectorAll("*")));var ct=[clone].concat(Array.prototype.slice.call(clone.querySelectorAll("*")));var n=Math.min(lt.length,ct.length);for(var i=0;i<n;i++){var live=lt[i],dst=ct[i];if(!dst||dst.nodeType!==1)continue;try{if(live.tagName==="IMG"){if(live.currentSrc||live.src)dst.setAttribute("src",live.currentSrc||live.src);if(dst.getAttribute("srcset"))dst.removeAttribute("srcset");}}catch(e){}try{if(live.tagName==="A"&&live.href)dst.setAttribute("href",live.href);}catch(e){}try{if(live.tagName==="SOURCE"&&live.src)dst.setAttribute("src",live.src);}catch(e){}var cs=null;try{cs=window.getComputedStyle(live);}catch(e){}if(cs){var css="";for(var k=0;k<cs.length;k++){var prop=cs[k];if(SKIP.test(prop))continue;var val=cs.getPropertyValue(prop);if(val)css+=prop+":"+val+";";}var ex=dst.getAttribute("style")||"";dst.setAttribute("style",css+ex);}if(dst.classList){dst.classList.remove("th-wp-hover");dst.classList.remove("th-wp-sel");}}return clone.outerHTML;}\nfunction onMove(e){if(!pickOn)return;var t=e.target;if(hover&&hover!==t&&hover.classList)hover.classList.remove("th-wp-hover");if(t&&t!==document.body&&t!==document.documentElement&&t.classList){t.classList.add("th-wp-hover");hover=t;}}\nfunction onClick(e){if(!pickOn)return;e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();var t=e.target;if(!t||t===document.body||t===document.documentElement)return;if(sel&&sel.classList)sel.classList.remove("th-wp-sel");if(hover&&hover.classList){hover.classList.remove("th-wp-hover");hover=null;}if(t.classList)t.classList.add("th-wp-sel");sel=t;var html="";try{html=bake(t);}catch(e2){html=t.outerHTML||"";}post({type:"th-web-picked",path:cssPath(t),tagName:(t.tagName||"").toLowerCase(),html:html});}\nfunction onDown(e){if(pickOn){e.preventDefault();e.stopPropagation();}}\ndocument.addEventListener("mousemove",onMove,true);\ndocument.addEventListener("click",onClick,true);\ndocument.addEventListener("mousedown",onDown,true);\nfunction setMode(on){pickOn=!!on;if(pickOn){ensureStyle();if(document.body)document.body.classList.add("th-wp-on");}else{if(document.body)document.body.classList.remove("th-wp-on");if(hover&&hover.classList){hover.classList.remove("th-wp-hover");hover=null;}if(sel&&sel.classList){sel.classList.remove("th-wp-sel");sel=null;}}}\nwindow.addEventListener("message",function(e){var d=e&&e.data;if(!d||typeof d!=="object")return;if(d.type==="th-pick-mode")setMode(d.on);else if(d.type==="th-get-selection"){var txt="";try{txt=String(window.getSelection()||"").trim();}catch(e3){}post({type:"th-web-selection",reqId:d.reqId,text:txt});}});\npost({type:"th-web-ready"});\n})();</script>'
+
     def _web_fetch(self, url, max_bytes=2_500_000, timeout=12):
         req = urllib.request.Request(url, headers={
             "User-Agent": self._WEB_UA,
@@ -15752,11 +15759,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         # against the REAL origin (sub-resources load directly from the site;
         # only the document itself is re-served from our origin).
         base_tag = '<base href="%s">' % page["finalUrl"].replace('"', "%22")
+        # base first (so relative assets resolve to the real origin), then the
+        # pick overlay (registers its capture-phase listeners before the page's
+        # own scripts run). The iframe sandbox runs this in an OPAQUE origin, so
+        # the page is walled off from the editor; picks come back via postMessage.
+        inject = base_tag + self._WEB_PICK_OVERLAY
         m = re.search(r"(?is)<head[^>]*>", body)
         if m:
-            body = body[:m.end()] + base_tag + body[m.end():]
+            body = body[:m.end()] + inject + body[m.end():]
         else:
-            body = base_tag + body
+            body = inject + body
         data = body.encode("utf-8", errors="replace")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

@@ -30101,6 +30101,104 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:element-picked", onPicked);
     return () => window.removeEventListener("th:element-picked", onPicked);
   }, []);
+  // ── Cross-origin browser-node element pick (opaque proxy + postMessage).
+  // Proxied browser pages run in an OPAQUE-origin iframe (scripts on, walled
+  // off from the editor) so SPAs render without being able to reach
+  // window.top. The editor can't read into them, so the daemon proxy injects
+  // a pick overlay that posts the clicked element (computed-style-baked, so
+  // it's self-contained) back here; we drop it onto the canvas as an HTML
+  // snippet asset. Selection text (the browser node's scissors button) is
+  // fetched the same way (request/reply keyed by reqId; waiters live on
+  // window so WorkflowBrowserNode can register them).
+  const spawnWebSnippet = useCallback(async (htmlFrag, srcNodeId) => {
+    const frag = (htmlFrag || "").trim();
+    if (!frag) return;
+    try {
+      const project = activeProjectId();
+      const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const branch = nodePrototype((data.nodes || []).find(n => n.kind === "prototype"));
+      const assetId = `n${stamp}`;
+      const relPath = `source/${branch}/components/web-snippet-${stamp}.html`;
+      const standaloneHtml = [
+        "<!doctype html>",
+        '<html lang="en"><head>',
+        '  <meta charset="utf-8">',
+        `  <title>Web snippet ${stamp}</title>`,
+        "  <style>body{margin:16px;background:#fff}</style>",
+        "</head>",
+        "<body>",
+        frag,
+        "</body></html>",
+        "",
+      ].join("\n");
+      const resp = await fetch(apiUrl("/__component_export"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: relPath, html: standaloneHtml, overwrite: false, project }),
+      });
+      if (!resp.ok) {
+        const eb = await resp.json().catch(() => ({}));
+        flashPickOp("error", "Copy failed: " + (eb.error || `HTTP ${resp.status}`));
+        return;
+      }
+      const src = (data.nodes || []).find(n => n.id === srcNodeId);
+      const tx = src ? (src.x || 0) + (src.w || 720) + 40 : lastCanvasCursorRef.current.x + 30;
+      const ty = src ? (src.y || 0) : lastCanvasCursorRef.current.y + 30;
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), {
+          id: assetId, kind: "asset", assetKind: "html",
+          x: tx, y: ty, w: 320, h: 240,
+          path: relPath, spawnedBy: "web-pick",
+        }],
+      }));
+      flashPickOp("done", "Element copied \u2192 HTML snippet");
+    } catch (err) {
+      console.error("[web snippet]", err);
+      flashPickOp("error", "Copy failed: " + (err.message || err));
+    }
+  }, [data, setData]);  // project/flashPickOp resolved at call time
+  useEffect(() => {
+    const waiters = (window.__thWebSelWaiters = window.__thWebSelWaiters || new Map());
+    const findBrowserIframe = (src) => {
+      let hit = null;
+      try {
+        document.querySelectorAll("iframe[data-browser-id]").forEach(f => {
+          try { if (f.contentWindow === src) hit = f; } catch {}
+        });
+      } catch {}
+      return hit;
+    };
+    const onMsg = (e) => {
+      const d = e && e.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type !== "th-web-picked" && d.type !== "th-web-ready" && d.type !== "th-web-selection") return;
+      const ifr = findBrowserIframe(e.source);
+      if (!ifr) return;
+      if (d.type === "th-web-ready") {
+        try { ifr.contentWindow.postMessage({ type: "th-pick-mode", on: !!window.__thPickModeNodeId }, "*"); } catch {}
+        return;
+      }
+      if (d.type === "th-web-selection") {
+        const cb = waiters.get(d.reqId);
+        if (cb) { waiters.delete(d.reqId); try { cb(d.text || ""); } catch {} }
+        return;
+      }
+      if (d.type === "th-web-picked") {
+        spawnWebSnippet(d.html || "", ifr.getAttribute("data-browser-id") || "");
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [spawnWebSnippet]);
+  useEffect(() => {
+    const on = !!pickModeNodeId;
+    try {
+      document.querySelectorAll("iframe[data-browser-id]").forEach(f => {
+        try { f.contentWindow && f.contentWindow.postMessage({ type: "th-pick-mode", on }, "*"); } catch {}
+      });
+    } catch {}
+  }, [pickModeNodeId]);
   // v3.3 — Quick-action listeners for WorkflowAssetActionBar. Each handler
   // owns the mutation or chat-dispatch so the popover can stay a pure
   // dispatch site. Wired into the same surface where setData / chat-spawn
@@ -50382,23 +50480,32 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
   // this node's out port. Reading the selection needs a same-origin
   // document — true in proxy mode; direct embeds throw, so we hint at ⌘C.
   const clipSelection = () => {
-    let text = "";
-    try {
-      const win = iframeRef.current && iframeRef.current.contentWindow;
-      text = String((win && win.getSelection && win.getSelection()) || "").trim();
-    } catch { /* cross-origin direct embed */ }
-    if (!text) {
-      flashClipNote(mode === "proxy"
-        ? "Select some text in the page first"
-        : "Direct embeds hide their selection — ⌘C still works, or reload via proxy");
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (!win) return;
+    if (mode !== "proxy") {
+      flashClipNote("Direct embeds hide their selection — ⌘C still works, or reload via proxy");
       return;
     }
-    const newId = onSpawnOutput && onSpawnOutput(node.id, "prompt", {
-      fromPort: "out", toPort: "in",
-      title: "Web clip",
-      text: text + "\n\n— clipped from " + liveUrl,
+    // Opaque proxy: the page is cross-origin, so ask the injected overlay for
+    // the current selection and resolve via the WorkflowSurface message bridge.
+    const waiters = (window.__thWebSelWaiters = window.__thWebSelWaiters || new Map());
+    const reqId = "sel" + Date.now() + Math.random().toString(36).slice(2, 6);
+    let done = false;
+    waiters.set(reqId, (txt) => {
+      done = true;
+      const t = (txt || "").trim();
+      if (!t) { flashClipNote("Select some text in the page first"); return; }
+      const newId = onSpawnOutput && onSpawnOutput(node.id, "prompt", {
+        fromPort: "out", toPort: "in",
+        title: "Web clip",
+        text: t + "\n\n— clipped from " + liveUrl,
+      });
+      if (newId) flashClipNote("Clipped → prompt node");
     });
-    if (newId) flashClipNote("Clipped → prompt node");
+    try { win.postMessage({ type: "th-get-selection", reqId }, "*"); } catch {}
+    setTimeout(() => {
+      if (!done && waiters.has(reqId)) { waiters.delete(reqId); flashClipNote("Select some text in the page first"); }
+    }, 700);
   };
 
   const iframeSrc = !hasUrl ? null
@@ -50452,13 +50559,14 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
             src=${iframeSrc}
             title=${"Browser: " + liveUrl}
             sandbox=${mode === "proxy"
-              /* Proxied pages are SAME-ORIGIN with the editor — their
-                 scripts could reach window.parent and hijack the app (seen
-                 live with github.com). So proxy mode renders SCRIPT-LESS:
-                 static reader-style page, selection still readable by ✂.
-                 Direct embeds are cross-origin-isolated, so scripts are
-                 safe there; top-navigation stays blocked in both modes. */
-              ? "allow-same-origin allow-forms"
+              /* Proxied pages run in an OPAQUE origin (NO allow-same-origin):
+                 scripts run so SPAs render, but the page is walled off from the
+                 editor — it can't reach window.top/parent or read editor DOM,
+                 and allow-top-navigation stays off so it can't navigate us away.
+                 The daemon proxy injects a pick overlay that posts picked
+                 elements + selection text back over postMessage. Direct embeds
+                 are cross-origin-isolated, so same-origin scripts are safe. */
+              ? "allow-scripts allow-forms allow-popups"
               : "allow-scripts allow-same-origin allow-forms allow-popups"}
             referrerPolicy="no-referrer"
             style=${{ pointerEvents: selected ? "auto" : "none" }}
