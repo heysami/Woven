@@ -51551,6 +51551,60 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const p = (_posSpec && _posSpec.params) || {};
     const mode = _posSpec && _posSpec.mode;
     const count = Math.max(1, layers.length);
+    const hashUnit = (seed) => {
+      const n = Math.sin(seed * 12.9898) * 43758.5453;
+      return n - Math.floor(n);
+    };
+    const boxSize = (scale = 1) => {
+      const base = Math.min(canvasW, canvasH) * 0.18 * scale;
+      return Math.max(48, Math.min(base, Math.min(canvasW, canvasH) * 0.42));
+    };
+    if (mode === "scatter-3d") {
+      const b = Array.isArray(p.bounds) ? p.bounds : [p.boundsX, p.boundsY, p.boundsZ];
+      const bx = Math.max(0.01, Number(b[0]) || 6);
+      const by = Math.max(0.01, Number(b[1]) || 6);
+      const bz = Math.max(0.01, Number(b[2]) || 6);
+      const maxB = Math.max(bx, by, bz, 0.01);
+      const sx = Math.min(0.88, (bx / maxB) * 0.88);
+      const sy = Math.min(0.88, (by / maxB) * 0.88);
+      return (i) => {
+        const x = 0.5 + (hashUnit(i * 3 + 1) - 0.5) * sx;
+        const y = 0.5 + (hashUnit(i * 3 + 2) - 0.5) * sy;
+        const z = hashUnit(i * 3 + 3) * bz / maxB;
+        const size = boxSize(0.72 + z * 0.42);
+        return {
+          anchor: "top-left",
+          offsetX: Math.max(0, Math.min(canvasW - size, x * canvasW - size / 2)),
+          offsetY: Math.max(0, Math.min(canvasH - size, y * canvasH - size / 2)),
+          width: size, height: size,
+        };
+      };
+    }
+    if (mode === "grid-3d") {
+      const cols3 = Math.max(1, Math.round(p.cols || Math.ceil(Math.sqrt(count))));
+      const rows3 = Math.max(1, Math.round(p.rows || Math.ceil(count / cols3)));
+      const layers3 = Math.max(1, Math.round(p.layers || 1));
+      const gap3 = p.gap != null ? p.gap : 0;
+      const cellW3 = (canvasW - gap3 * (cols3 + 1)) / cols3;
+      const cellH3 = (canvasH - gap3 * (rows3 + 1)) / rows3;
+      const depthOffset = Math.min(canvasW, canvasH) * 0.035;
+      return (i) => {
+        const col = i % cols3;
+        const row = Math.floor(i / cols3) % rows3;
+        const layer = Math.floor(i / (cols3 * rows3)) % layers3;
+        const z = layers3 > 1 ? layer / (layers3 - 1) : 0;
+        const width = cellW3 * (1 - z * 0.16);
+        const height = cellH3 * (1 - z * 0.16);
+        const x = gap3 + col * (cellW3 + gap3) + (z - 0.5) * depthOffset;
+        const y = gap3 + row * (cellH3 + gap3) + (z - 0.5) * depthOffset;
+        return {
+          anchor: "top-left",
+          offsetX: Math.max(0, Math.min(canvasW - width, x)),
+          offsetY: Math.max(0, Math.min(canvasH - height, y)),
+          width, height,
+        };
+      };
+    }
     const cols = Math.max(1, Math.round(p.cols || Math.ceil(Math.sqrt(count))));
     const rows = Math.max(1, Math.round(p.rows || Math.ceil(count / cols)));
     const gap = p.gap != null ? p.gap : 0;

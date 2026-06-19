@@ -216,17 +216,13 @@ function composerPositioningFromSpec(spec){
   const p=Object.assign({mode:src.mode||'single'}, src.params||{});
   if(p.rotation!=null && p.rot==null) p.rot=finiteNumber(p.rotation,0)*Math.PI/180;
   if(p.mode==='grid-3d'){
-    const layers=Math.max(1,finiteNumber(p.layers,1)|0);
-    p.mode='grid';
-    p.rows=Math.max(1,finiteNumber(p.rows,1)|0)*layers;
     p.cols=Math.max(1,finiteNumber(p.cols,1)|0);
-    p.size=p.size??0.6;
+    p.rows=Math.max(1,finiteNumber(p.rows,1)|0);
+    p.layers=Math.max(1,finiteNumber(p.layers,1)|0);
+    p.size=p.size??0.08;
   }else if(p.mode==='scatter-3d'){
-    p.mode='instances';
-    p.source=p.source||'random';
     p.count=p.count??80;
     p.size=p.size??0.05;
-    p.spread=p.spread??0.4;
   }else if(p.mode==='surface'){
     p.mode='face-3d';
     p.size=p.size??1;
@@ -366,6 +362,8 @@ function fillPositioning(p){
   const d={
     single:{x:0.5,y:0.5,scale:1,rot:0},
     grid:{cols:6,rows:4,placement:'fixed',gap:0.1,size:0.6},
+    'grid-3d':{cols:4,rows:4,layers:3,spacing:1,size:0.08},
+    'scatter-3d':{count:80,bounds:[6,6,6],size:0.05},
     instances:{source:'mouse',count:40,physics:false,size:0.05,spread:0.4},
     physics:{engine:'matter',gravity:[0,1],count:30,size:0.05,bounce:0.4},
     drawn:{paths:[],count:30,size:0.04},
@@ -614,6 +612,8 @@ const Positioning = {
     switch(p.mode){
       case 'single':      return [{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
       case 'grid':        return this.grid(L,p);
+      case 'grid-3d':     return this.grid3d(L,p);
+      case 'scatter-3d':  return this.scatter3d(L,p);
       case 'instances':   return this.instances(L,p,dt);
       case 'physics':     return this.physics(L,p,W,H,dt);
       case 'drawn':       return this.drawn(L,p);
@@ -630,6 +630,53 @@ const Positioning = {
       if(p.placement==='random' && rng()<0.25) continue;
       out.push({x:(c+0.5)/cols, y:(r+0.5)/rows,
         scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1), rot:0});
+    }
+    return out;
+  },
+  grid3d(L,p){
+    const out=[];
+    const cols=Math.max(1,finiteNumber(p.cols,4)|0);
+    const rows=Math.max(1,finiteNumber(p.rows,4)|0);
+    const layers=Math.max(1,finiteNumber(p.layers,3)|0);
+    const total=Math.min(cols*rows*layers, 600);
+    const depthStep=0.035;
+    const baseSize=finiteNumber(p.size,0.08);
+    for(let i=0;i<total;i++){
+      const col=i%cols;
+      const row=Math.floor(i/cols)%rows;
+      const layer=Math.floor(i/(cols*rows))%layers;
+      const z=layers>1 ? layer/(layers-1) : 0;
+      out.push({
+        x:clamp((col+0.5)/cols + (z-0.5)*depthStep,0.02,0.98),
+        y:clamp((row+0.5)/rows + (z-0.5)*depthStep,0.02,0.98),
+        scale:baseSize*(1.18-z*0.36),
+        rot:(z-0.5)*0.35,
+      });
+    }
+    return out;
+  },
+  scatter3d(L,p){
+    const out=[];
+    const count=Math.min(Math.max(1,finiteNumber(p.count,80)|0),600);
+    const b=Array.isArray(p.bounds)?p.bounds:[p.boundsX,p.boundsY,p.boundsZ];
+    const bx=Math.max(0.01,finiteNumber(b[0],6));
+    const by=Math.max(0.01,finiteNumber(b[1],6));
+    const bz=Math.max(0.01,finiteNumber(b[2],6));
+    const maxB=Math.max(bx,by,bz,0.01);
+    const sx=Math.min(0.92,bx/maxB*0.92);
+    const sy=Math.min(0.92,by/maxB*0.92);
+    const rng=mulberry(hash(L.id + ':scatter-3d'));
+    const baseSize=finiteNumber(p.size,0.05);
+    for(let i=0;i<count;i++){
+      const x=0.5+(rng()-0.5)*sx;
+      const y=0.5+(rng()-0.5)*sy;
+      const z=rng();
+      out.push({
+        x:clamp(x,0.02,0.98),
+        y:clamp(y,0.02,0.98),
+        scale:baseSize*(0.62+z*0.78),
+        rot:(rng()-0.5)*0.8,
+      });
     }
     return out;
   },
@@ -1425,7 +1472,7 @@ function renderInspector(){
     const p=L.positioning;
     b.appendChild(fSelect('Mode',p.mode,
       [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],
-       ['drawn','Drawn paths'],['rope','Rope'],['camera-feed','Camera feed'],['face-3d','Face 3D']],
+       ['drawn','Drawn paths'],['rope','Rope'],['camera-feed','Camera feed'],['grid-3d','3D grid'],['scatter-3d','3D scatter'],['face-3d','Face 3D']],
       v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; renderInspector(); }));
     if(p.mode==='single'){
       b.appendChild(fSlider('X',p.x,0,1,0.01,v=>p.x=v));
@@ -1437,6 +1484,18 @@ function renderInspector(){
       b.appendChild(fSlider('Rows',p.rows,1,24,1,v=>p.rows=v));
       b.appendChild(fSelect('Placement',p.placement,[['fixed','Fixed'],['random','Random occupancy']],v=>p.placement=v));
       b.appendChild(fSlider('Cell size',p.size,0.1,1.5,0.01,v=>p.size=v));
+    } else if(p.mode==='grid-3d'){
+      b.appendChild(fSlider('Columns',p.cols,1,24,1,v=>p.cols=v));
+      b.appendChild(fSlider('Rows',p.rows,1,24,1,v=>p.rows=v));
+      b.appendChild(fSlider('Layers',p.layers,1,24,1,v=>p.layers=v));
+      b.appendChild(fSlider('Cell size',p.size,0.01,0.3,0.005,v=>p.size=v));
+    } else if(p.mode==='scatter-3d'){
+      const bounds=Array.isArray(p.bounds)?p.bounds:(p.bounds=[p.boundsX||6,p.boundsY||6,p.boundsZ||6]);
+      b.appendChild(fSlider('Count',p.count,1,600,1,v=>p.count=v));
+      b.appendChild(fSlider('Size',p.size,0.005,0.3,0.005,v=>p.size=v));
+      b.appendChild(fSlider('Bounds X',bounds[0],0.1,20,0.1,v=>bounds[0]=v));
+      b.appendChild(fSlider('Bounds Y',bounds[1],0.1,20,0.1,v=>bounds[1]=v));
+      b.appendChild(fSlider('Bounds Z',bounds[2],0.1,20,0.1,v=>bounds[2]=v));
     } else if(p.mode==='instances'){
       b.appendChild(fSelect('Spawn',p.source,[['mouse','Mouse trail'],['random','Random'],['interaction','On click']],v=>p.source=v));
       b.appendChild(fSlider('Count',p.count,1,300,1,v=>p.count=v));
@@ -1727,6 +1786,7 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   /* hash/rng */
   function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
   function mb(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function num(v,f){const n=Number(v);return Number.isFinite(n)?n:f;}
   /* positioning (subset: single/grid/instances/rope/drawn/camera-feed; physics→grid fallback, face-3d→procedural) */
   const SIM={};
   function positions(L,dt){ const p=L.positioning;
@@ -1734,6 +1794,11 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
     if(p.mode==='grid'){ const out=[],cols=Math.max(1,p.cols|0),rows=Math.max(1,p.rows|0),rng=mb(hash(L.id));
       for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){ if(p.placement==='random'&&rng()<0.25)continue;
         out.push({x:(c+0.5)/cols,y:(r+0.5)/rows,scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1),rot:0});} return out; }
+    if(p.mode==='grid-3d'){ const out=[],cols=Math.max(1,num(p.cols,4)|0),rows=Math.max(1,num(p.rows,4)|0),layers=Math.max(1,num(p.layers,3)|0),total=Math.min(cols*rows*layers,600),base=num(p.size,0.08),depth=0.035;
+      for(let i=0;i<total;i++){const c=i%cols,r=Math.floor(i/cols)%rows,l=Math.floor(i/(cols*rows))%layers,z=layers>1?l/(layers-1):0;
+        out.push({x:clamp((c+0.5)/cols+(z-0.5)*depth,0.02,0.98),y:clamp((r+0.5)/rows+(z-0.5)*depth,0.02,0.98),scale:base*(1.18-z*0.36),rot:(z-0.5)*0.35});} return out; }
+    if(p.mode==='scatter-3d'){ const out=[],count=Math.min(Math.max(1,num(p.count,80)|0),600),b=Array.isArray(p.bounds)?p.bounds:[p.boundsX,p.boundsY,p.boundsZ],bx=Math.max(0.01,num(b[0],6)),by=Math.max(0.01,num(b[1],6)),bz=Math.max(0.01,num(b[2],6)),maxB=Math.max(bx,by,bz,0.01),sx=Math.min(0.92,bx/maxB*0.92),sy=Math.min(0.92,by/maxB*0.92),rng=mb(hash(L.id+':scatter-3d')),base=num(p.size,0.05);
+      for(let i=0;i<count;i++){const x=0.5+(rng()-0.5)*sx,y=0.5+(rng()-0.5)*sy,z=rng();out.push({x:clamp(x,0.02,0.98),y:clamp(y,0.02,0.98),scale:base*(0.62+z*0.78),rot:(rng()-0.5)*0.8});} return out; }
     if(p.mode==='instances'||p.mode==='physics'){ const s=SIM[L.id]||(SIM[L.id]={items:[]}); const want=p.count|0;
       if(p.source==='random'||p.mode==='physics'){while(s.items.length<want)s.items.push(spawn());}
       else if(p.source==='interaction'){if(IN.clickPulse>0.5&&s.items.length<want)for(let i=0;i<3&&s.items.length<want;i++)s.items.push(spawn(IN.px,IN.py));}
