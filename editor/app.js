@@ -30232,6 +30232,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       });
     } catch {}
   }, [pickModeNodeId]);
+  // Canvas-side Cmd/Ctrl+V for browser-node picks. The in-iframe overlay
+  // handles paste while focus is in the page, but the user usually clicks the
+  // canvas to position first — which moves focus to the editor, so the overlay
+  // never sees the keypress. Mirror it here, scoped to an active BROWSER-node
+  // pick session (so it never shadows prototype/asset paste), and stop
+  // propagation so the prototype Cmd+V handler doesn't also run.
+  useEffect(() => {
+    const onKey = (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta || (e.key !== "v" && e.key !== "V")) return;
+      const pid = window.__thPickModeNodeId;
+      if (!pid) return;
+      let isBrowser = false;
+      try {
+        const id = (window.CSS && CSS.escape) ? CSS.escape(pid) : pid;
+        isBrowser = !!document.querySelector('iframe[data-browser-id="' + id + '"]');
+      } catch {}
+      if (!isBrowser) return;
+      const clip = webClipRef.current;
+      if (!clip || !clip.html) return;
+      e.preventDefault(); e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      spawnWebSnippet(clip.html, clip.srcNodeId || pid);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [spawnWebSnippet]);
   // v3.3 — Quick-action listeners for WorkflowAssetActionBar. Each handler
   // owns the mutation or chat-dispatch so the popover can stay a pure
   // dispatch site. Wired into the same surface where setData / chat-spawn
