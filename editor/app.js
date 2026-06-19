@@ -30790,7 +30790,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return {
         id: n.id, kind: n.kind,
         label: n.title || n.name || (APP_NODE_TOOLS[n.kind] && APP_NODE_TOOLS[n.kind].label) || n.kind,
-        isEditor: !!APP_NODE_TOOLS[n.kind],
+        isEditor: WORKFLOW_BAKED_EDITABLE_KINDS.has(n.kind),
         canIn:  !!(eff.accepts && eff.accepts.in),
         canOut: !!(eff.provides && eff.provides.out),
       };
@@ -38848,7 +38848,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onChange=${(patch) => updateNode(n.id, patch)}
                 onTidy=${() => tidySection(n.id)}
                 hasContents=${!n._expandOwnerId && workflowSectionContainedNodes(n, data.nodes).length > 0}
-                hasEditorNode=${!n._expandOwnerId && workflowSectionContainedNodes(n, data.nodes).some(c => APP_NODE_TOOLS[c.kind])}
+                hasEditorNode=${!n._expandOwnerId && workflowSectionContainedNodes(n, data.nodes).some(c => WORKFLOW_BAKED_EDITABLE_KINDS.has(c.kind))}
                 onSaveToLibrary=${() => saveSectionToLibrary(n.id)}
                 onConvertToApp=${() => openConvertSectionModal(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
@@ -59547,6 +59547,14 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
     () => (subgraph.nodes || []).find(n => n && n.id === io.previewNodeId) || null,
     [subgraph.nodes, io.previewNodeId]);
   const cfg = previewNode ? APP_NODE_TOOLS[previewNode.kind] : null;
+  // Native (non-iframe) editors — composer / vector-editor / formatted-text /
+  // spline-3d — aren't hosted tools, so their preview is their BAKED output
+  // (a snapshot; it refreshes when the inner editor is re-baked in expand mode).
+  const bakedPreview = useMemo(() => {
+    if (cfg || !previewNode || !WORKFLOW_BAKED_EDITABLE_KINDS.has(previewNode.kind)) return null;
+    if (!previewNode.bakedPath) return { unbaked: true };
+    return { url: _composerAssetUrl(previewNode), render: _composerAssetKind(previewNode) };
+  }, [cfg, previewNode]);
 
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
@@ -59755,6 +59763,14 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
                 title=${(cfg.label || "Preview")}
                 onLoad=${() => sendInit()}
                 onMouseDown=${(e) => e.stopPropagation()} />`
+            : bakedPreview && bakedPreview.unbaked
+              ? html`<div className="workflow-customapp-empty">Bake the ${previewNode.kind} (open it and hit Bake) to preview it here.</div>`
+            : bakedPreview
+              ? (bakedPreview.render === "img"
+                  ? html`<img className="workflow-customapp-bakedimg" src=${bakedPreview.url} alt="preview"
+                      onMouseDown=${(e) => e.stopPropagation()} />`
+                  : html`<iframe className="workflow-apptool-frame workflow-customapp-frame" src=${bakedPreview.url}
+                      title="preview" onMouseDown=${(e) => e.stopPropagation()} />`)
             : html`<div className="workflow-customapp-empty">No preview node configured</div>`}
         </div>
         <div className="workflow-customapp-settings" onMouseDown=${(e) => e.stopPropagation()}>

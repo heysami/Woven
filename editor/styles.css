@@ -6651,6 +6651,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   display: block;
   background: #0b0b0f;
 }
+.workflow-customapp-bakedimg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #0b0b0f;
+}
 .workflow-customapp-empty {
   display: flex;
   align-items: center;
