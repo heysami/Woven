@@ -23516,6 +23516,11 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "mm-composer", w: 960, h: 640,
     doc: p.doc || null,
   }),
+  "gaussian-splat-3d": (p) => ({
+    kind: "gaussian-splat-3d", w: 820, h: 560,
+    scene: p.scene || null,
+    imports: p.imports || [],
+  }),
   // ── Composable spec nodes (typed providers; spec lives on node.spec) ────
   "effect":   (p) => ({ kind: "effect",   w: 260, h: 300, spec: p.spec || { v: 1, type: "chromatic-aberration", intensity: 0.5, params: {} } }),
   "position": (p) => ({ kind: "position", w: 260, h: 300, spec: p.spec || { v: 1, mode: "grid", params: { cols: 4, rows: 4, placement: "fixed" } } }),
@@ -23586,12 +23591,14 @@ const WORKFLOW_CONNECT_DEFS = {
   "color-palette": {
     label: "Color palette",
     provides: { out: { label: "Palette", tags: ["palette"] } },
-    accepts:  { in:  { label: "Generate with", tags: ["palette-gen"] } },
+    accepts:  { in:   { label: "Generate with", tags: ["palette-gen"] },
+                edit: { label: "Edit palette", tags: ["text-gen", "asset-gen"] } },
   },
   "typography": {
     label: "Typography",
     provides: { out: { label: "Type scale", tags: ["typography"] } },
-    accepts:  { in:  { label: "Generate with", tags: ["typography-gen"] } },
+    accepts:  { in:   { label: "Generate with", tags: ["typography-gen"] },
+                edit: { label: "Edit type scale", tags: ["text-gen", "asset-gen"] } },
   },
   "design-system": {
     label: "Design system",
@@ -23758,7 +23765,13 @@ const WORKFLOW_CONNECT_DEFS = {
   "formatted-text": {
     label: "Formatted text",
     provides: { out: { label: "Baked HTML", tags: ["asset"] } },
-    accepts:  { in:  { label: "Text / typography", tags: ["text", "typography"] } },
+    accepts:  { in:   { label: "Text / typography", tags: ["text", "typography"] },
+                edit: { label: "Edit text", tags: ["text-gen", "asset-gen"] } },
+  },
+  "mermaid": {
+    label: "Mermaid diagram",
+    provides: { out: { label: "Diagram", tags: [] } },
+    accepts:  { in:  { label: "Author diagram", tags: ["text-gen", "asset-gen"] } },
   },
   // ── App-node family ───────────────────────────────────────────────────
   "font-editor": {
@@ -23809,6 +23822,13 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
     accepts:  { in:   { label: "Layer content", tags: ["asset", "layer"] },
                 edit: { label: "Edit composition", tags: ["text-gen", "asset-gen"] } },
+  },
+  "gaussian-splat-3d": {
+    label: "Splat Lab",
+    provides: { out: { label: "Splat scene", tags: ["asset", "blendable", "3d"] } },
+    accepts:  { in:   { label: "Import splat (.ply/.splat/.ksplat)", tags: ["asset", "3d"] },
+                pos:  { label: "Position (3D)", tags: ["position"] },
+                edit: { label: "Edit splat scene", tags: ["text-gen", "asset-gen", "3d"] } },
   },
   // ── Composable spec nodes ─────────────────────────────────────────────
   "effect": {
@@ -38431,6 +38451,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "typography").map(n => html`
@@ -38445,6 +38467,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "composer").map(n => html`
@@ -38584,6 +38608,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
                 codeOpen=${codePanelNodeId === n.id}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "vector-editor").map(n => html`
@@ -40522,6 +40548,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">⬚</span>
             <span className="workflow-library-item-label">Voxel editor</span>
             <span className="workflow-library-item-id">grid voxels</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "gaussian-splat-3d" }));
+            }}
+            title="Drag onto canvas — Splat Lab. A Spline-style editor for 3D Gaussian Splat captures: load .ply / .splat / .ksplat, orbit, and move / rotate / scale each splat with a gizmo. Autosaves a .json scene; bakes a self-contained interactive viewer .html."
+          >
+            <span className="workflow-library-item-glyph">✦</span>
+            <span className="workflow-library-item-label">Splat Lab</span>
+            <span className="workflow-library-item-id">gaussian splats · 3d</span>
           </div>
           <div
             className="workflow-library-item"
@@ -51340,12 +51379,92 @@ function resizeHandler(zoom, onResize, onDragStart, onDragEnd) {
   };
 }
 
-function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
+// Shared agent edit-target plumbing for NATIVE editable nodes that keep their
+// content on the node (color-palette / typography / formatted-text / mermaid)
+// rather than in an iframe tool. Mirrors the composer sidecar pattern: keep the
+// canonical file in sync (debounced write, so an agent wired to the edit port
+// has current content to read), and re-import the agent's edit LIVE when the
+// daemon's asset-changed → th:asset-refresh bus fires. The io-contract editTarget
+// `canonical` path MUST match `path(branch,id)` here. `serialize` returns the
+// canonical text (or null to skip writing — e.g. an empty node); `apply` parses
+// the file text into an onChange patch (or null to ignore a malformed write).
+function useAgentEditTarget(node, allNodes, allEdges, { path, serialize, apply, onChange }) {
+  const branch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+  const canonicalPath = path(branch, node.id);
+  const selfWriteRef = useRef("  ");   // sentinel ≠ any real serialization
+  const writeTimer = useRef(null);
+  const applyRef = useRef(apply);  applyRef.current = apply;
+  const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
+
+  // Node → canonical file (debounced, echo-suppressed).
+  const text = serialize(node);
+  useEffect(() => {
+    if (text == null) return;
+    if (text === selfWriteRef.current) return;
+    clearTimeout(writeTimer.current);
+    writeTimer.current = setTimeout(() => {
+      selfWriteRef.current = text;
+      fetch(apiUrl("/__write_text"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: canonicalPath, text }),
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(writeTimer.current);
+  }, [text, canonicalPath]);
+
+  // Agent edited the canonical file → re-import live (ignore our own echo).
+  useEffect(() => {
+    const onRefresh = async (ev) => {
+      const paths = (ev && ev.detail && ev.detail.paths) || [];
+      if (!paths.includes(canonicalPath)) return;
+      try {
+        const r = await fetch(apiUrl("/" + canonicalPath), { cache: "no-store" });
+        if (!r.ok) return;
+        const raw = await r.text();
+        if (raw === selfWriteRef.current) return;   // our own write echo
+        const patch = applyRef.current(raw);
+        if (patch && typeof patch === "object" && Object.keys(patch).length) {
+          selfWriteRef.current = raw;
+          onChangeRef.current(patch);
+        }
+      } catch (_e) {}
+    };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => window.removeEventListener("th:asset-refresh", onRefresh);
+  }, [canonicalPath]);
+}
+
+function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
   const w = node.w || 320;
   const h = node.h || 280;
   const swatches = node.swatches || [];
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  useAgentEditTarget(node, allNodes, allEdges, {
+    path: (b, id) => `source/${b}/palette-${id}.json`,
+    serialize: (nd) => {
+      const sw = Array.isArray(nd.swatches) ? nd.swatches : [];
+      if (!sw.length) return null;
+      return JSON.stringify({ name: nd.name || "Palette", swatches: sw }, null, 2);
+    },
+    apply: (raw) => {
+      try {
+        const j = JSON.parse(raw);
+        if (!j || !Array.isArray(j.swatches)) return null;
+        const patch = { swatches: j.swatches.map(s => ({ name: String((s && s.name) || ""), value: String((s && s.value) || "") })) };
+        if (typeof j.name === "string") patch.name = j.name;
+        return patch;
+      } catch (_e) { return null; }
+    },
+    onChange,
+  });
   const updateSwatch = (i, patch) => {
     const next = swatches.slice();
     next[i] = { ...next[i], ...patch };
@@ -51486,12 +51605,38 @@ function typoResolverChip(status, label, currentSource, onUpload, currentUrl) {
   return html`<div className="workflow-node-typo-chip is-missing" title=${status.error || "Unknown error"}>${label} · ${status.error || "?"}</div>`;
 }
 
-function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
   const w = node.w || 360;
   const h = node.h || 360;
   const levels = node.levels || [];
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  useAgentEditTarget(node, allNodes, allEdges, {
+    path: (b, id) => `source/${b}/typography-${id}.json`,
+    serialize: (nd) => {
+      const lv = Array.isArray(nd.levels) ? nd.levels : [];
+      if (!lv.length && !nd.fontFamily && !nd.monoFamily) return null;
+      return JSON.stringify({ fontFamily: nd.fontFamily || "", monoFamily: nd.monoFamily || "", levels: lv }, null, 2);
+    },
+    apply: (raw) => {
+      try {
+        const j = JSON.parse(raw);
+        if (!j || typeof j !== "object") return null;
+        const patch = {};
+        if (typeof j.fontFamily === "string") patch.fontFamily = j.fontFamily;
+        if (typeof j.monoFamily === "string") patch.monoFamily = j.monoFamily;
+        if (Array.isArray(j.levels)) patch.levels = j.levels.map(l => ({
+          name: String((l && l.name) || ""),
+          size: Number((l && l.size) || 16),
+          weight: Number((l && l.weight) || 400),
+          lineHeight: Number((l && l.lineHeight) || 1.4),
+          mono: !!(l && l.mono),
+        }));
+        return Object.keys(patch).length ? patch : null;
+      } catch (_e) { return null; }
+    },
+    onChange,
+  });
   const sansStatus = useFontResolver(node.fontFamily, useCallback((res) => {
     onChange({ fontCdn: res.url, fontSource: res.source });
   }, [onChange]));
@@ -52092,7 +52237,7 @@ function useUpstreamInputs(node, allNodes, allEdges, opts) {
 const WORKFLOW_BAKED_EDITABLE_KINDS = new Set([
   "formatted-text", "composer", "vector-editor", "spline-3d",
   "font-editor", "image-editor", "pixel-editor", "voxel-3d",
-  "synth", "music", "material-lab", "mm-composer",
+  "synth", "music", "material-lab", "mm-composer", "gaussian-splat-3d",
 ]);
 function _composerAssetUrl(assetNode) {
   // Resolve the same kind of version-aware path the asset card iframe
@@ -56939,6 +57084,22 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const editorRef = useRef(null);
+  useAgentEditTarget(node, allNodes, allEdges, {
+    path: (b, id) => `source/${b}/formatted-text-${id}.json`,
+    serialize: (nd) => {
+      const h = (nd.html || "").trim();
+      if (!h) return null;
+      return JSON.stringify({ html: nd.html }, null, 2);
+    },
+    apply: (raw) => {
+      try {
+        const j = JSON.parse(raw);
+        if (!j || typeof j.html !== "string") return null;
+        return { html: j.html };
+      } catch (_e) { return null; }
+    },
+    onChange,
+  });
 
   // Resolve wired typography + text inputs via the shared io-contract resolver
   // (no bespoke walk). typo = first wired Typography node (full node, so bake
@@ -57492,6 +57653,15 @@ const APP_NODE_TOOLS = {
     canonicalIsBaked: false, imports: true,
     inTitle: "Wire asset / synth / music nodes as layer content, or an Agent to edit.",
     outTitle: "Pipe the interactive composition .html into a prototype.",
+  },
+  "gaussian-splat-3d": {
+    glyph: "✦", label: "Splat Lab", tool: "/editor/tools/gaussiansplat3d/index.html",
+    prefix: "gsplat", stateField: "scene",
+    canonical: (b, id) => `source/${b}/gsplat-${id}.json`,
+    baked:     (b, id) => `source/${b}/gsplat-${id}.html`,
+    canonicalIsBaked: false, imports: true,
+    inTitle: "Wire a .ply/.splat/.ksplat asset to import, or an Agent to edit the scene.",
+    outTitle: "Pipe the interactive Gaussian-splat viewer .html into a prototype.",
   },
 };
 
@@ -59168,11 +59338,24 @@ function _ensureMermaidInited() {
   return _mermaidInited;
 }
 
-function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onToggleCode, codeOpen }) {
+function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onToggleCode, codeOpen, allNodes, allEdges }) {
   const w = node.w || 420;
   const h = node.h || 320;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  useAgentEditTarget(node, allNodes, allEdges, {
+    path: (b, id) => `source/${b}/mermaid-${id}.mmd`,
+    serialize: (nd) => {
+      const c = (nd.code || "").trim();
+      return c ? nd.code : null;
+    },
+    apply: (raw) => {
+      const c = (raw || "").replace(/^```(?:mermaid)?\s*/i, "").replace(/```\s*$/, "");
+      if (!c.trim()) return null;
+      return { code: c, diagramType: _mermaidTypeFromSource(c.trim()) };
+    },
+    onChange,
+  });
   const hostRef = useRef(null);
   const [renderState, setRenderState] = useState({ phase: "idle", error: null });
 
@@ -59274,7 +59457,7 @@ function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize,
         className="workflow-port-zone workflow-port-zone-in"
         data-port-node=${node.id}
         data-port-side="in"
-        title="Mermaid is a leaf node — its source is edited inline. (Connections are unused, exposed for future variants.)"
+        title="Wire an Agent here to author the diagram source (it writes source/<branch>/mermaid-<id>.mmd, re-imported live), or edit it inline."
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
       ><div className="workflow-port-dot"/></div>
       <div

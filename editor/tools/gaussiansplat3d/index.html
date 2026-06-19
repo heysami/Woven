@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Splat Lab — Gaussian Splat 3D editor</title>
+<style>
+  :root{
+    --bg:#0c0d12; --panel:#14161d; --panel2:#191c25; --line:#262a36;
+    --ink:#e8eaf0; --dim:#878da0; --accent:#7cc7ff; --accent2:#a78bfa;
+    --danger:#ff6b81; --ok:#6ee7a8; --radius:8px;
+    --font: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;overflow:hidden}
+  button{font-family:inherit;color:inherit}
+  #app{display:flex;flex-direction:column;height:100vh;width:100vw}
+
+  /* ── top bar ───────────────────────────────────────────── */
+  #top{height:42px;flex:0 0 42px;display:flex;align-items:center;gap:10px;padding:0 12px;
+       background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{font-weight:650;letter-spacing:.3px;display:flex;align-items:center;gap:7px}
+  .brand .mk{color:var(--accent2)}
+  .spacer{flex:1}
+  .status{font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .status b{color:var(--ink);font-weight:600}
+  .tbtn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 11px;
+        font-size:12px;cursor:pointer;transition:.12s}
+  .tbtn:hover{border-color:var(--accent);color:#fff}
+  .tbtn.primary{background:linear-gradient(180deg,var(--accent),#4ea3ec);border-color:transparent;color:#06121f;font-weight:600}
+  .tbtn.primary:hover{filter:brightness(1.08)}
+
+  /* ── layout ────────────────────────────────────────────── */
+  #main{flex:1;display:flex;min-height:0}
+  #left{width:218px;flex:0 0 218px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  #right{width:262px;flex:0 0 262px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+  #center{flex:1;position:relative;min-width:0;background:
+      radial-gradient(120% 90% at 50% 0%, #1c2233 0%, #0c0d12 70%);overflow:hidden}
+  #stage{position:absolute;inset:0}
+  #stage canvas{display:block}
+
+  .sect{border-bottom:1px solid var(--line)}
+  .sect-h{display:flex;align-items:center;gap:6px;padding:8px 11px;font-size:11px;text-transform:uppercase;
+          letter-spacing:.6px;color:var(--dim);font-weight:600}
+  .sect-h .add{margin-left:auto;cursor:pointer;color:var(--accent);font-size:15px;line-height:1;user-select:none}
+  .sect-b{padding:6px 9px 11px}
+
+  /* scene list */
+  #splatList{flex:1;overflow-y:auto}
+  .splat-row{display:flex;align-items:center;gap:7px;padding:7px 11px;cursor:pointer;border-left:2px solid transparent}
+  .splat-row:hover{background:var(--panel2)}
+  .splat-row.sel{background:var(--panel2);border-left-color:var(--accent)}
+  .splat-row .eye{width:15px;text-align:center;opacity:.55;cursor:pointer}
+  .splat-row .eye.off{opacity:.2}
+  .splat-row .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .splat-row .del{opacity:0;color:var(--danger);cursor:pointer;padding:0 2px}
+  .splat-row:hover .del{opacity:.7}
+  .splat-row .del:hover{opacity:1}
+  .empty{padding:18px 14px;color:var(--dim);font-size:12px;line-height:1.55;text-align:center}
+
+  /* inspector controls */
+  .field{margin:9px 0}
+  .field label{display:block;font-size:11px;color:var(--dim);margin-bottom:4px}
+  .row3{display:flex;gap:5px}
+  .row3 input{width:0;flex:1}
+  input[type=text],input[type=number],select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:5px;padding:5px 7px;font-size:12px;width:100%;font-family:var(--mono)}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer}
+  .inline{display:flex;align-items:center;gap:8px}
+  .inline label{margin:0;flex:1}
+  .mini{font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .qbtns{display:flex;gap:5px;flex-wrap:wrap}
+  .qbtn{flex:1;min-width:62px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+        padding:6px;font-size:11px;cursor:pointer}
+  .qbtn:hover{border-color:var(--accent)}
+  .qbtn.on{border-color:var(--accent);color:#fff;background:#1d2735}
+
+  /* gizmo mode toolbar (floating, over stage) */
+  #gizbar{position:absolute;top:12px;left:12px;display:flex;gap:5px;background:rgba(20,22,29,.82);
+          border:1px solid var(--line);border-radius:8px;padding:5px;backdrop-filter:blur(8px)}
+  #gizbar button{width:30px;height:30px;border-radius:6px;border:1px solid transparent;background:none;
+          cursor:pointer;color:var(--dim);font-size:14px}
+  #gizbar button.on{background:var(--panel2);border-color:var(--accent);color:#fff}
+  #gizbar button:hover{color:#fff}
+
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+           pointer-events:none;color:var(--dim);font-size:13px;text-align:center;padding:40px}
+  #toast{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(20,22,29,.95);
+         border:1px solid var(--line);border-radius:7px;padding:7px 14px;font-size:12px;opacity:0;
+         transition:opacity .2s;pointer-events:none}
+  #toast.show{opacity:1}
+  .loadbar{position:absolute;top:0;left:0;height:2px;background:var(--accent);width:0;transition:width .2s}
+  .hint{font-size:10.5px;color:var(--dim);line-height:1.5;margin-top:4px}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.163.0",
+    "three/addons/": "https://esm.sh/three@0.163.0/examples/jsm/",
+    "@mkkellogg/gaussian-splats-3d": "https://esm.sh/@mkkellogg/gaussian-splats-3d@0.4.7?external=three"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <span class="brand"><span class="mk">✦</span> SPLAT LAB</span>
+    <span class="status" id="status"><b>booting…</b></span>
+    <span class="spacer"></span>
+    <button class="tbtn" id="frameBtn" title="Recenter camera on the scene">Recenter</button>
+    <button class="tbtn primary" id="saveBtn">Save into project</button>
+  </div>
+  <div id="main">
+    <div id="left">
+      <div class="sect" style="flex:0 0 auto">
+        <div class="sect-h">Scene <span class="add" id="addBtn" title="Add a splat">＋</span></div>
+        <div class="sect-b" id="addPanel" style="display:none">
+          <div class="field">
+            <label>From a wired / known source</label>
+            <select id="srcSelect"></select>
+          </div>
+          <div class="field">
+            <label>…or paste a .ply / .splat / .ksplat URL</label>
+            <input type="text" id="srcUrl" placeholder="https://…/model.splat" />
+          </div>
+          <button class="tbtn" id="addConfirm" style="width:100%">Add splat</button>
+          <div class="hint">Splats are point-cloud captures — drag-orbit to inspect, then select one to move / rotate / scale it.</div>
+        </div>
+      </div>
+      <div id="splatList"></div>
+    </div>
+
+    <div id="center">
+      <div id="stage"></div>
+      <div class="loadbar" id="loadbar"></div>
+      <div id="gizbar">
+        <button data-mode="translate" class="on" title="Move (W)">✥</button>
+        <button data-mode="rotate" title="Rotate (E)">⟳</button>
+        <button data-mode="scale" title="Scale (R)">⤡</button>
+      </div>
+      <div id="overlay"></div>
+      <div id="toast"></div>
+    </div>
+
+    <div id="right">
+      <div id="inspector"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import * as GS from '@mkkellogg/gaussian-splats-3d';
+
+const $ = s => document.querySelector(s);
+const DEG = Math.PI / 180;
+const Q = new URLSearchParams(location.search);
+const NODE_ID = Q.get('nodeId') || '';
+const PROJECT = Q.get('project') || '';
+const EMBEDDED = window.parent !== window && !!NODE_ID;
+
+// Known-good public demo splats so the editor is never empty (network-dependent).
+const SAMPLES = [
+  { label: 'Sample · Train (.splat)', url: 'https://huggingface.co/cakewalk/splat-data/resolve/main/train.splat' },
+  { label: 'Sample · Plush toy (.splat)', url: 'https://huggingface.co/cakewalk/splat-data/resolve/main/plush.splat' },
+  { label: 'Sample · Nike (.splat)', url: 'https://huggingface.co/cakewalk/splat-data/resolve/main/nike.splat' },
+];
+
+// ── Model ───────────────────────────────────────────────────────────────
+let model = defaultState();
+let selId = null;
+let availSources = [];   // [{label,url}] wired assets/imports surfaced in the Add picker
+let applyingExternal = false;
+
+function defaultState(){
+  return {
+    v: 1,
+    env: { background: '#11151f', grid: true, exposure: 1.0 },
+    camera: { position: [3.5, 2.2, 4.5], target: [0, 0.4, 0], fov: 55 },
+    splats: [],
+  };
+}
+function uid(){ return 's' + Math.random().toString(36).slice(2, 9); }
+function fmtOf(url){
+  const u = (url || '').toLowerCase().split('?')[0];
+  if (u.endsWith('.ply'))  return GS.SceneFormat.Ply;
+  if (u.endsWith('.ksplat')) return GS.SceneFormat.KSplat;
+  return GS.SceneFormat.Splat;
+}
+function nameOf(url){
+  try { return decodeURIComponent((url.split('?')[0].split('/').pop() || 'splat')); }
+  catch(_e){ return 'splat'; }
+}
+
+// ── three.js stage ──────────────────────────────────────────────────────
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 1000);
+camera.position.set(3.5, 2.2, 4.5);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+orbit.target.set(0, 0.4, 0);
+
+const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.setSize(0.82);
+gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
+scene.add(gizmo);
+
+const proxy = new THREE.Object3D();   // gizmo handle → mirrored onto the selected splat scene
+scene.add(proxy);
+
+const grid = new THREE.GridHelper(20, 40, 0x3a4154, 0x222632);
+grid.position.y = 0; grid.material.transparent = true; grid.material.opacity = 0.55;
+scene.add(grid);
+
+// Gizmo edits the proxy → write back into the model + live-update the splat.
+gizmo.addEventListener('objectChange', () => {
+  const sp = selectedSplat(); if (!sp) return;
+  sp.position = proxy.position.toArray().map(round);
+  sp.rotation = [proxy.rotation.x / DEG, proxy.rotation.y / DEG, proxy.rotation.z / DEG].map(round);
+  sp.scale = proxy.scale.toArray().map(round);
+  applyTransform(sp);
+  refreshInspectorValues();
+  scheduleCommit();
+});
+
+// ── Splat viewer (shared mode — we own renderer/camera/scene) ────────────
+const viewer = new GS.Viewer({
+  selfDrivenMode: false,
+  renderer, camera, threeScene: scene,
+  useBuiltInControls: false,
+  ignoreDevicePixelRatio: false,
+  gpuAcceleratedSort: false,        // CPU worker sort → no special GPU/header needs
+  sharedMemoryForWorkers: false,    // avoids COOP/COEP cross-origin-isolation headers
+  dynamicScene: true,               // lets us move/rotate/scale scenes after load
+});
+
+// id → loaded scene index (rebuilt every structural change)
+let sceneIndexById = new Map();
+let buildToken = 0;
+let building = false, structureDirty = false;
+
+function visibleSplats(){ return model.splats.filter(s => s.visible && s.src); }
+function structureKey(){
+  return visibleSplats().map(s => `${s.id}|${s.src}|${s.alphaThreshold}`).join('§');
+}
+let lastStructureKey = '';
+
+function toSceneOpts(sp){
+  const q = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(sp.rotation[0]*DEG, sp.rotation[1]*DEG, sp.rotation[2]*DEG, 'XYZ'));
+  return {
+    path: sp.src,
+    format: fmtOf(sp.src),
+    splatAlphaRemovalThreshold: sp.alphaThreshold ?? 1,
+    showLoadingUI: false,
+    progressiveLoad: false,
+    position: sp.position.slice(),
+    rotation: q.toArray(),            // [x,y,z,w]
+    scale: sp.scale.slice(),
+  };
+}
+
+async function rebuildScenes(){
+  if (building){ structureDirty = true; return; }
+  building = true;
+  const token = ++buildToken;
+  setLoad(0.15);
+  try {
+    const count = viewer.getSceneCount();
+    if (count > 0){
+      const idx = []; for (let i=0;i<count;i++) idx.push(i);
+      await viewer.removeSplatScenes(idx, false);
+    }
+    if (token !== buildToken) return;
+    const vis = visibleSplats();
+    setLoad(0.4);
+    if (vis.length){
+      await viewer.addSplatScenes(vis.map(toSceneOpts), false);
+    }
+    if (token !== buildToken) return;
+    sceneIndexById = new Map(vis.map((s, i) => [s.id, i]));
+    applyAllTransforms();
+    status();
+  } catch (e){
+    console.warn('[splat] rebuild failed', e);
+    toast('Could not load a splat — check the URL / CORS');
+  } finally {
+    setLoad(1); building = false;
+    refreshOverlay();
+    if (structureDirty){ structureDirty = false; lastStructureKey = ''; reconcile(); }
+  }
+}
+
+// Live transform update for one splat (no reparse).
+function applyTransform(sp){
+  const i = sceneIndexById.get(sp.id); if (i == null) return;
+  try {
+    const sc = viewer.getSplatScene(i); if (!sc) return;
+    sc.position.fromArray(sp.position);
+    sc.quaternion.setFromEuler(new THREE.Euler(sp.rotation[0]*DEG, sp.rotation[1]*DEG, sp.rotation[2]*DEG, 'XYZ'));
+    sc.scale.fromArray(sp.scale.map(v => v || 0.0001));
+    viewer.splatMesh && viewer.splatMesh.updateTransforms && viewer.splatMesh.updateTransforms();
+  } catch(_e){}
+}
+function applyAllTransforms(){ for (const s of visibleSplats()) applyTransform(s); }
+
+// Reconcile model → viewer. Structural changes rebuild; transforms are live.
+function reconcile(){
+  const k = structureKey();
+  if (k !== lastStructureKey){ lastStructureKey = k; rebuildScenes(); }
+  else { applyAllTransforms(); }
+}
+
+// ── Render loop ─────────────────────────────────────────────────────────
+function resize(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+function tick(){
+  requestAnimationFrame(tick);
+  orbit.update();
+  try { viewer.update(); viewer.render(); }
+  catch(_e){ renderer.render(scene, camera); }
+}
+tick();
+
+// ── UI: scene list ──────────────────────────────────────────────────────
+function selectedSplat(){ return model.splats.find(s => s.id === selId) || null; }
+
+function renderList(){
+  const list = $('#splatList');
+  list.innerHTML = '';
+  if (!model.splats.length){
+    list.innerHTML = '<div class="empty">No splats yet.<br/>Click <b style="color:var(--accent)">＋</b> above to add one.</div>';
+    return;
+  }
+  for (const sp of model.splats){
+    const row = document.createElement('div');
+    row.className = 'splat-row' + (sp.id === selId ? ' sel' : '');
+    row.innerHTML = `<span class="eye ${sp.visible?'':'off'}">${sp.visible?'◉':'○'}</span>
+                     <span class="nm">${esc(sp.name)}</span><span class="del">×</span>`;
+    row.querySelector('.eye').onclick = (e) => { e.stopPropagation(); sp.visible = !sp.visible; reconcile(); renderList(); scheduleCommit(); };
+    row.querySelector('.del').onclick = (e) => { e.stopPropagation(); removeSplat(sp.id); };
+    row.onclick = () => selectSplat(sp.id);
+    list.appendChild(row);
+  }
+}
+
+function selectSplat(id){
+  selId = id;
+  const sp = selectedSplat();
+  if (sp){
+    proxy.position.fromArray(sp.position);
+    proxy.rotation.set(sp.rotation[0]*DEG, sp.rotation[1]*DEG, sp.rotation[2]*DEG);
+    proxy.scale.fromArray(sp.scale);
+    gizmo.attach(proxy);
+  } else gizmo.detach();
+  renderList(); renderInspector();
+}
+
+function addSplat(url){
+  if (!url) return;
+  const sp = { id: uid(), src: url, name: nameOf(url), format: 'auto',
+               position:[0,0,0], rotation:[0,0,0], scale:[1,1,1], visible:true, alphaThreshold:1 };
+  model.splats.push(sp);
+  $('#addPanel').style.display = 'none';
+  reconcile(); renderList(); selectSplat(sp.id); scheduleCommit();
+  toast('Loading ' + sp.name + '…');
+}
+function removeSplat(id){
+  model.splats = model.splats.filter(s => s.id !== id);
+  if (selId === id){ selId = null; gizmo.detach(); }
+  reconcile(); renderList(); renderInspector(); scheduleCommit();
+}
+
+// ── UI: inspector ───────────────────────────────────────────────────────
+function renderInspector(){
+  const box = $('#inspector');
+  const sp = selectedSplat();
+  let html = `
+    <div class="sect"><div class="sect-h">Environment</div><div class="sect-b">
+      <div class="field inline"><label>Background</label>
+        <input type="color" id="bg" value="${model.env.background}"/></div>
+      <div class="field inline"><label>Grid</label>
+        <input type="checkbox" id="grid" ${model.env.grid?'checked':''}/></div>
+      <div class="field"><label>Exposure <span class="mini" id="expv">${model.env.exposure.toFixed(2)}</span></label>
+        <input type="range" id="exp" min="0.2" max="2.5" step="0.05" value="${model.env.exposure}"/></div>
+      <button class="tbtn" id="camcap" style="width:100%">Set this view as default camera</button>
+    </div></div>`;
+
+  if (sp){
+    html += `
+    <div class="sect"><div class="sect-h">Splat — ${esc(sp.name)}</div><div class="sect-b">
+      <div class="field"><label>Name</label><input type="text" id="spname" value="${escAttr(sp.name)}"/></div>
+      <div class="field"><label>Source</label><input type="text" id="spsrc" value="${escAttr(sp.src)}"/></div>
+      <div class="field"><label>Position (x / y / z)</label><div class="row3">
+        ${numIn('px', sp.position[0])}${numIn('py', sp.position[1])}${numIn('pz', sp.position[2])}</div></div>
+      <div class="field"><label>Rotation° (x / y / z)</label><div class="row3">
+        ${numIn('rx', sp.rotation[0])}${numIn('ry', sp.rotation[1])}${numIn('rz', sp.rotation[2])}</div></div>
+      <div class="field"><label>Scale <span class="mini" id="scv">${sp.scale[0].toFixed(2)}</span></label>
+        <input type="range" id="sc" min="0.05" max="5" step="0.05" value="${sp.scale[0]}"/></div>
+      <div class="field"><label>Alpha cutoff <span class="mini" id="acv">${sp.alphaThreshold}</span></label>
+        <input type="range" id="ac" min="0" max="50" step="1" value="${sp.alphaThreshold}"/></div>
+      <div class="field"><label>Quick fixes</label><div class="qbtns">
+        <button class="qbtn" id="flipx">Flip up (X 180°)</button>
+        <button class="qbtn" id="reset">Reset transform</button>
+      </div><div class="hint">Splat captures often load upside-down — use <b>Flip up</b> if it does.</div></div>
+    </div></div>`;
+  } else {
+    html += `<div class="empty" style="text-align:left">Select a splat in the list to edit its position, rotation and scale.</div>`;
+  }
+  box.innerHTML = html;
+  wireInspector();
+}
+
+function numIn(id, v){ return `<input type="number" step="0.05" id="${id}" value="${round(v)}"/>`; }
+
+function wireInspector(){
+  const on = (id, ev, fn) => { const el = $('#'+id); if (el) el.addEventListener(ev, fn); };
+  on('bg','input', e => { model.env.background = e.target.value; refreshOverlay(); scheduleCommit(); });
+  on('grid','change', e => { model.env.grid = e.target.checked; grid.visible = model.env.grid; scheduleCommit(); });
+  on('exp','input', e => { model.env.exposure = +e.target.value; $('#expv').textContent=(+e.target.value).toFixed(2);
+                           renderer.toneMappingExposure = model.env.exposure; scheduleCommit(); });
+  on('camcap','click', () => {
+    model.camera = { position: camera.position.toArray().map(round), target: orbit.target.toArray().map(round), fov: camera.fov };
+    toast('Default camera saved'); scheduleCommit();
+  });
+
+  const sp = selectedSplat(); if (!sp) return;
+  on('spname','input', e => { sp.name = e.target.value; renderList(); scheduleCommit(); });
+  on('spsrc','change', e => { sp.src = e.target.value.trim(); sp.name = nameOf(sp.src); reconcile(); renderList(); scheduleCommit(); });
+  const liveT = () => { syncProxy(sp); applyTransform(sp); scheduleCommit(); };
+  ['px','py','pz'].forEach((id,i)=> on(id,'input', e => { sp.position[i] = +e.target.value||0; liveT(); }));
+  ['rx','ry','rz'].forEach((id,i)=> on(id,'input', e => { sp.rotation[i] = +e.target.value||0; liveT(); }));
+  on('sc','input', e => { const v=+e.target.value; sp.scale=[v,v,v]; $('#scv').textContent=v.toFixed(2); liveT(); });
+  on('ac','input', e => { sp.alphaThreshold = +e.target.value; $('#acv').textContent = e.target.value; });
+  on('ac','change', () => { reconcile(); scheduleCommit(); });
+  on('flipx','click', () => { sp.rotation[0] = ((sp.rotation[0] + 180) % 360); renderInspector(); syncProxy(sp); applyTransform(sp); scheduleCommit(); });
+  on('reset','click', () => { sp.position=[0,0,0]; sp.rotation=[0,0,0]; sp.scale=[1,1,1]; renderInspector(); syncProxy(sp); applyTransform(sp); scheduleCommit(); });
+}
+
+function syncProxy(sp){
+  proxy.position.fromArray(sp.position);
+  proxy.rotation.set(sp.rotation[0]*DEG, sp.rotation[1]*DEG, sp.rotation[2]*DEG);
+  proxy.scale.fromArray(sp.scale);
+}
+function refreshInspectorValues(){
+  const sp = selectedSplat(); if (!sp) return;
+  const set = (id,v) => { const el=$('#'+id); if (el && document.activeElement!==el) el.value = round(v); };
+  set('px',sp.position[0]); set('py',sp.position[1]); set('pz',sp.position[2]);
+  set('rx',sp.rotation[0]); set('ry',sp.rotation[1]); set('rz',sp.rotation[2]);
+  const scEl=$('#sc'); if (scEl) { scEl.value=sp.scale[0]; const v=$('#scv'); if(v) v.textContent=sp.scale[0].toFixed(2); }
+}
+
+// ── env apply ───────────────────────────────────────────────────────────
+function refreshOverlay(){
+  $('#center').style.background =
+    `radial-gradient(120% 90% at 50% 0%, ${shade(model.env.background, 1.5)} 0%, ${shade(model.env.background,0.55)} 72%)`;
+  const ov = $('#overlay');
+  ov.textContent = (!model.splats.length && !building)
+    ? 'Add a Gaussian splat (.ply / .splat / .ksplat) from the Scene panel to begin.' : '';
+}
+function applyEnv(){
+  grid.visible = model.env.grid;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = model.env.exposure;
+  refreshOverlay();
+}
+
+// ── camera apply ────────────────────────────────────────────────────────
+function applyCamera(){
+  const c = model.camera || {};
+  if (c.position) camera.position.fromArray(c.position);
+  if (c.target) orbit.target.fromArray(c.target);
+  if (c.fov){ camera.fov = c.fov; camera.updateProjectionMatrix(); }
+  orbit.update();
+}
+function frameScene(){
+  // crude recenter: aim at origin-ish, pull back by current splat scale spread.
+  orbit.target.set(0, 0.4, 0);
+  camera.position.set(3.5, 2.2, 4.5);
+  orbit.update();
+}
+
+// ── gizmo mode toolbar ──────────────────────────────────────────────────
+$('#gizbar').querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    gizmo.setMode(b.dataset.mode);
+    $('#gizbar').querySelectorAll('button').forEach(x => x.classList.toggle('on', x===b));
+  };
+});
+window.addEventListener('keydown', e => {
+  if (/input|textarea|select/i.test(document.activeElement?.tagName||'')) return;
+  const m = { w:'translate', e:'rotate', r:'scale' }[e.key.toLowerCase()];
+  if (m){ gizmo.setMode(m); $('#gizbar').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.mode===m)); }
+});
+
+// ── Add picker ──────────────────────────────────────────────────────────
+$('#addBtn').onclick = () => {
+  const p = $('#addPanel'); p.style.display = p.style.display==='none' ? 'block' : 'none';
+  fillSourceSelect();
+};
+$('#addConfirm').onclick = () => {
+  const sel = $('#srcSelect').value, url = $('#srcUrl').value.trim();
+  addSplat(url || sel);
+  $('#srcUrl').value = '';
+};
+function fillSourceSelect(){
+  const sel = $('#srcSelect'); sel.innerHTML = '';
+  const opts = [...availSources, ...SAMPLES];
+  if (!opts.length){ sel.innerHTML = '<option value="">(no wired sources — paste a URL)</option>'; return; }
+  for (const o of opts){ const op=document.createElement('option'); op.value=o.url; op.textContent=o.label; sel.appendChild(op); }
+}
+
+$('#frameBtn').onclick = frameScene;
+$('#saveBtn').onclick = () => { commitNow(); toast('Saved into project ✓'); };
+
+// ── helpers ─────────────────────────────────────────────────────────────
+function round(v){ return Math.round((+v||0)*1000)/1000; }
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+function shade(hex, mul){
+  const c = new THREE.Color(hex);
+  if (mul <= 1) c.multiplyScalar(mul); else c.lerp(new THREE.Color('#ffffff'), Math.min(1,(mul-1)));
+  return '#' + c.getHexString();
+}
+let _toastT;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),2200); }
+function setLoad(p){ const b=$('#loadbar'); b.style.width=(p*100)+'%'; if (p>=1) setTimeout(()=>{b.style.width='0';},350); }
+function status(){ $('#status').innerHTML = `<b>${model.splats.length}</b> splat${model.splats.length===1?'':'s'} · ${viewer.getSceneCount()} loaded`; }
+
+// ── apply full state ────────────────────────────────────────────────────
+function applyState(s){
+  applyingExternal = true;
+  model = normalize(s);
+  selId = model.splats[0] ? model.splats[0].id : null;
+  applyEnv(); applyCamera();
+  lastStructureKey = ''; reconcile();
+  renderList(); selectSplat(selId); renderInspector();
+  applyingExternal = false;
+}
+function normalize(s){
+  const d = defaultState(); if (!s || typeof s!=='object') return d;
+  const m = { v:1, env:{...d.env, ...(s.env||{})}, camera:{...d.camera, ...(s.camera||{})}, splats:[] };
+  m.splats = (Array.isArray(s.splats)?s.splats:[]).map(x => ({
+    id: x.id || uid(), src: x.src || '', name: x.name || nameOf(x.src||'splat'),
+    format: x.format || 'auto',
+    position: Array.isArray(x.position)?x.position.slice(0,3):[0,0,0],
+    rotation: Array.isArray(x.rotation)?x.rotation.slice(0,3):[0,0,0],
+    scale: Array.isArray(x.scale)?x.scale.slice(0,3):(typeof x.scale==='number'?[x.scale,x.scale,x.scale]:[1,1,1]),
+    visible: x.visible !== false, alphaThreshold: x.alphaThreshold ?? 1,
+  }));
+  return m;
+}
+function serialize(){ return JSON.parse(JSON.stringify(model)); }
+
+// ── baked deliverable: a self-contained interactive viewer (.html) ───────
+function bakedHtml(){
+  const vis = model.splats.filter(s => s.visible && s.src);
+  const scenes = vis.map(sp => {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(sp.rotation[0]*DEG, sp.rotation[1]*DEG, sp.rotation[2]*DEG,'XYZ')).toArray();
+    return { path: sp.src, splatAlphaRemovalThreshold: sp.alphaThreshold ?? 1,
+             position: sp.position, rotation: q, scale: sp.scale };
+  });
+  const cam = model.camera || {};
+  const cfg = JSON.stringify({ scenes, camera: cam, background: model.env.background });
+  return `<!doctype html><html><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Gaussian Splat scene</title>
+<style>html,body{margin:0;height:100%;background:${model.env.background};overflow:hidden}</style>
+<script type="importmap">
+{"imports":{"three":"https://esm.sh/three@0.163.0","three/addons/":"https://esm.sh/three@0.163.0/examples/jsm/","@mkkellogg/gaussian-splats-3d":"https://esm.sh/@mkkellogg/gaussian-splats-3d@0.4.7?external=three"}}
+<\/script></head><body>
+<script type="module">
+import * as GS from '@mkkellogg/gaussian-splats-3d';
+const C = ${cfg};
+const v = new GS.Viewer({
+  cameraUp:[0,1,0],
+  initialCameraPosition: C.camera.position || [3.5,2.2,4.5],
+  initialCameraLookAt: C.camera.target || [0,0.4,0],
+  sharedMemoryForWorkers:false, gpuAcceleratedSort:false
+});
+function fmt(p){p=(p||'').toLowerCase().split('?')[0];return p.endsWith('.ply')?GS.SceneFormat.Ply:p.endsWith('.ksplat')?GS.SceneFormat.KSplat:GS.SceneFormat.Splat;}
+if (C.scenes.length){
+  v.addSplatScenes(C.scenes.map(s=>({path:s.path,format:fmt(s.path),splatAlphaRemovalThreshold:s.splatAlphaRemovalThreshold,position:s.position,rotation:s.rotation,scale:s.scale,showLoadingUI:true})))
+   .then(()=>v.start());
+}
+<\/script></body></html>`;
+}
+
+// ── node bridge ─────────────────────────────────────────────────────────
+let commitT;
+function scheduleCommit(){ if (applyingExternal) return; clearTimeout(commitT); commitT = setTimeout(commitNow, 700); }
+function commitNow(){
+  if (!EMBEDDED) return;
+  try { parent.postMessage({ type:'gsplat:state', nodeId:NODE_ID, state: serialize(), baked:{ text: bakedHtml() } }, '*'); } catch(_e){}
+}
+function ingestContent(d){
+  const urls = [];
+  for (const c of (d.content||[])) if (c && c.url) urls.push({ label:'Wired · '+(c.label||nameOf(c.url)), url:c.url });
+  for (const u of (d.imports||[])) if (u) urls.push({ label:'Import · '+nameOf(u), url:u });
+  // Keep only splat-ish sources for the picker, but allow all (user may know better).
+  availSources = urls.filter(o => /\.(ply|splat|ksplat)(\?|$)/i.test(o.url) || true);
+}
+
+if (EMBEDDED){
+  window.addEventListener('message', (ev) => {
+    const d = ev && ev.data; if (!d || (d.nodeId && d.nodeId !== NODE_ID)) return;
+    if (d.type === 'gsplat:init'){
+      ingestContent(d);
+      if (d.state) applyState(d.state); else { applyEnv(); applyCamera(); renderList(); renderInspector(); refreshOverlay(); }
+    } else if (d.type === 'gsplat:set-state'){
+      if (d.state) applyState(d.state);
+    } else if (d.type === 'gsplat:content'){
+      ingestContent(d); fillSourceSelect();
+    }
+  });
+  const announce = () => { try { parent.postMessage({ type:'gsplat:ready', nodeId:NODE_ID }, '*'); } catch(_e){} };
+  announce(); setTimeout(announce, 600);
+  applyEnv(); renderList(); renderInspector(); status();
+} else {
+  // Standalone (opened directly) → seed a sample so it's testable.
+  applyEnv(); renderList(); renderInspector();
+  model.splats.push({ id:uid(), src:SAMPLES[0].url, name:nameOf(SAMPLES[0].url), format:'auto',
+                      position:[0,0,0], rotation:[0,0,0], scale:[1,1,1], visible:true, alphaThreshold:1 });
+  reconcile(); renderList(); selectSplat(model.splats[0].id);
+  $('#saveBtn').textContent = 'Download viewer .html';
+  $('#saveBtn').onclick = () => {
+    const blob = new Blob([bakedHtml()], { type:'text/html' });
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='splat-viewer.html'; a.click(); URL.revokeObjectURL(a.href);
+  };
+}
+status();
+</script>
+</body>
+</html>

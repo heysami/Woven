@@ -1948,6 +1948,25 @@ KINDS = {
         "pauseAfter":   False,
         "notes": "User-driven layered interactive surface. Each layer = {positioning · trigger · effects}: grid/instance/physics/drawn/rope/camera-feed positioning, mouse/timeline/audio/camera triggers that cross-affect layers, and GPU/shader effects (shader-lab taxonomy). Bakes interactive source/<branch>/mm-<id>.html. Agent edits source/<branch>/mm-<id>.json.",
     },
+    "gaussian-splat-3d": {
+        "title":        "Splat Lab",
+        "category":     "container",
+        "inputs": {
+            "scene":     {"type": "object", "userEditable": True},
+            "imports":   {"type": "array",  "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven Gaussian-splat 3D editor (Spline-style) for radiance-field captures (.ply/.splat/.ksplat via @mkkellogg/gaussian-splats-3d). Load splats, orbit, and move/rotate/scale each with a gizmo. Autosaves source/<branch>/gsplat-<id>.json; bakes a self-contained interactive viewer source/<branch>/gsplat-<id>.html. Agent edits the JSON.",
+    },
 
     # ── Composable spec nodes (Layer / Position / Trigger / Effect) ────────
     # Source-code-first providers: the editable artifact is `source`, a small
@@ -3038,6 +3057,23 @@ _MUSIC_AUTHORING = (
     "wired audio asset or a wired synth node — do NOT fabricate sample sources."
 )
 
+_GSPLAT_AUTHORING = (
+    "This is a GAUSSIAN SPLAT 3D scene (Splat Lab) — a Spline-style editor for radiance-field captures "
+    "(.ply / .splat / .ksplat point clouds), NOT polygon meshes. Do NOT emit geometry/primitives; the "
+    "deliverable is a list of splat captures placed + transformed in a scene. Each splat references an "
+    "external file URL — reference a WIRED import/asset or a real URL; do NOT fabricate splat sources.\n"
+    "  Write the canonical file `source/{branch}/gsplat-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\n"
+    "       \"env\":{\"background\":\"#11151f\",\"grid\":true,\"exposure\":1.0},\n"
+    "       \"camera\":{\"position\":[3.5,2.2,4.5],\"target\":[0,0.4,0],\"fov\":55},\n"
+    "       \"splats\":[{\"id\":\"s1\",\"src\":\"<wired .ply|.splat|.ksplat path or URL>\",\"name\":\"capture\",\n"
+    "                  \"position\":[0,0,0],\"rotation\":[0,0,0],\"scale\":[1,1,1],\n"
+    "                  \"visible\":true,\"alphaThreshold\":1}]}\n"
+    "  `rotation` is Euler degrees (XYZ order); `scale` is per-axis (uniform is [s,s,s]). Splat captures "
+    "frequently load upside-down — a rotation of [180,0,0] is the usual fix. `alphaThreshold` (0–50) prunes "
+    "low-opacity splats. The bake produces a self-contained interactive viewer `source/{branch}/gsplat-{id}.html`."
+)
+
 _MATERIAL_AUTHORING = (
     "This is MATERIAL LAB — a MATERIAL editor. The UI is a FIXED design-system component set "
     "(typography scale, tabs, text input, primary/secondary/tertiary/disabled buttons, a card with "
@@ -3340,6 +3376,51 @@ _SECTION_AUTHORING = (
     "strip), step by node width/height + 40px gaps, and keep every node FULLY inside the rect. "
     "If they don't fit, shrink w/h per node rather than overflowing the frame."
 )
+
+_FORMATTED_AUTHORING = (
+    "This is a FORMATTED-TEXT node — rich text that bakes to an HTML asset. The deliverable is an "
+    "HTML body fragment (the editable content), NOT a full document.\n"
+    "  Write the canonical file `source/{branch}/formatted-text-{id}.json` (read it first if it exists; "
+    "re-imported live). Schema:\n"
+    "      {\"html\":\"<h1>Title</h1><p>Body copy with <strong>emphasis</strong>…</p>\"}\n"
+    "  Use only inline content tags (h1–h6, p, ul/ol/li, strong/em, a, br, blockquote, span). Do NOT "
+    "include <html>/<head>/<body>, scripts, or external styles — typography comes from a wired Typography "
+    "node. Keep it a clean semantic fragment."
+)
+
+_MERMAID_AUTHORING = (
+    "This is a MERMAID diagram node. The deliverable is Mermaid source text (the diagram renders inline "
+    "via mermaid.js).\n"
+    "  Write the canonical file `source/{branch}/mermaid-{id}.mmd` (read it first if it exists; re-imported "
+    "live). The file content is raw Mermaid source whose FIRST line declares the type, e.g.:\n"
+    "      flowchart TD\\n  A[Start] --> B{Decision}\\n  B -->|yes| C[Do thing]\\n  B -->|no| D[Stop]\n"
+    "  Supported first-line types include flowchart/graph, sequenceDiagram, classDiagram, stateDiagram-v2, "
+    "erDiagram, journey, gantt, pie, mindmap, timeline, quadrantChart, gitGraph. Emit ONLY the diagram "
+    "source — no Markdown fences, no prose."
+)
+
+_PALETTE_AUTHORING = (
+    "This is a COLOR-PALETTE node — a list of design-token swatches. The deliverable is the swatch list.\n"
+    "  Write the canonical file `source/{branch}/palette-{id}.json` (read it first if it exists; re-imported "
+    "live). Schema:\n"
+    "      {\"name\":\"Brand\",\"swatches\":[{\"name\":\"--bg\",\"value\":\"oklch(98% 0.01 250)\"},\n"
+    "                                      {\"name\":\"--accent\",\"value\":\"oklch(62% 0.19 25)\"}]}\n"
+    "  Each swatch is {name, value}: `name` is a CSS custom-property token (start with `--`), `value` is any "
+    "valid CSS color (prefer oklch(); hex/rgb/hsl also fine). Order tokens from background → surface → text → "
+    "accents. Do NOT invent extra fields."
+)
+
+_TYPOGRAPHY_AUTHORING = (
+    "This is a TYPOGRAPHY node — a type scale + font families. The deliverable is the scale + family names.\n"
+    "  Write the canonical file `source/{branch}/typography-{id}.json` (read it first if it exists; re-imported "
+    "live). Schema:\n"
+    "      {\"fontFamily\":\"Inter\",\"monoFamily\":\"JetBrains Mono\",\n"
+    "       \"levels\":[{\"name\":\"Display\",\"size\":56,\"weight\":700,\"lineHeight\":1.05,\"mono\":false},\n"
+    "                 {\"name\":\"Body\",\"size\":16,\"weight\":400,\"lineHeight\":1.6,\"mono\":false}]}\n"
+    "  `fontFamily`/`monoFamily` must be real family names (auto-resolved against Google/Bunny/Fontsource). "
+    "Each level is {name, size(px), weight(100–900), lineHeight, mono?}. Order levels largest → smallest. Do "
+    "NOT fabricate font URLs — names only."
+)
 KIND_IO = {
     "prompt": {
         "provides": [{"port": "out", "label": "Text", "tags": ["text", "runnable", "blendable"],
@@ -3364,12 +3445,22 @@ KIND_IO = {
     "color-palette": {
         "provides": [{"port": "out", "label": "Palette", "tags": ["palette"],
                        "resolve": "typed", "resolveArgs": {"flavor": "palette"}}],
-        "accepts":  [{"port": "in", "label": "Generate with", "tags": ["palette-gen"], "ingest": "context"}],
+        "accepts":  [
+            {"port": "in", "label": "Generate with", "tags": ["palette-gen"], "ingest": "context"},
+            {"port": "edit", "label": "Edit palette", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/palette-{id}.json",
+              "authoring": _PALETTE_AUTHORING},
+        ],
     },
     "typography": {
         "provides": [{"port": "out", "label": "Type scale", "tags": ["typography"],
                        "resolve": "typed", "resolveArgs": {"flavor": "typography"}}],
-        "accepts":  [{"port": "in", "label": "Generate with", "tags": ["typography-gen"], "ingest": "context"}],
+        "accepts":  [
+            {"port": "in", "label": "Generate with", "tags": ["typography-gen"], "ingest": "context"},
+            {"port": "edit", "label": "Edit type scale", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/typography-{id}.json",
+              "authoring": _TYPOGRAPHY_AUTHORING},
+        ],
     },
     "design-system": {
         "provides": [{"port": "out", "label": "DS reference", "tags": ["design-system", "folder"],
@@ -3456,8 +3547,23 @@ KIND_IO = {
     "formatted-text": {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
-        "accepts":  [{"port": "in", "label": "Text / typography", "tags": ["text", "typography"],
-                       "ingest": "context"}],
+        "accepts":  [
+            {"port": "in", "label": "Text / typography", "tags": ["text", "typography"],
+              "ingest": "context"},
+            {"port": "edit", "label": "Edit text", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/formatted-text-{id}.json",
+              "authoring": _FORMATTED_AUTHORING},
+        ],
+    },
+    "mermaid": {
+        # Leaf diagram node: no baked file output, but agent-authorable — an
+        # agent wired into the `in` port writes the .mmd source the node renders.
+        "provides": [],
+        "accepts":  [
+            {"port": "in", "label": "Author diagram", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/mermaid-{id}.mmd",
+              "authoring": _MERMAID_AUTHORING},
+        ],
     },
     "spline-3d": {
         "provides": [{"port": "out", "label": "3D scene", "tags": ["asset", "3d"],
@@ -3557,6 +3663,19 @@ KIND_IO = {
             {"port": "edit", "label": "Edit composition", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/mm-{id}.json",
               "authoring": _MM_AUTHORING},
+        ],
+    },
+    "gaussian-splat-3d": {
+        "provides": [{"port": "out", "label": "Splat viewer (.html)", "tags": ["asset", "blendable", "3d"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
+        "accepts":  [
+            {"port": "in", "label": "Import splat / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/gsplat-{id}.json",
+              "authoring": _GSPLAT_AUTHORING},
+            {"port": "pos", "label": "Position (3D)", "tags": ["position"], "ingest": "context"},
+            {"port": "edit", "label": "Edit splat scene", "tags": ["text-gen", "asset-gen", "3d"],
+              "ingest": "editTarget", "canonical": "source/{branch}/gsplat-{id}.json",
+              "authoring": _GSPLAT_AUTHORING},
         ],
     },
     # ── Composable source nodes (typed providers + agent-editable) ─────────
