@@ -51449,6 +51449,34 @@ function setCanvasDraggingSync(active) {
 function isReleasedDuringMove(ev) {
   return ev && typeof ev.buttons === "number" && ev.buttons === 0;
 }
+// Drag shield — a transparent, full-viewport overlay installed for the LIFETIME
+// of a node drag/resize. setCanvasDraggingSync + the data-node-dragging CSS try
+// to make node iframes pointer-events:none during a gesture, but that depends
+// on the attribute being in perfect sync (it has both a React-controlled and an
+// imperative writer) and still leaves a one-frame window at gesture START where
+// a same-origin iframe (app-node tool / spline / browser-proxy) can capture the
+// pointer. Once an iframe swallows the stream the parent's mousemove/mouseup go
+// dead — the gesture "sticks on", the listener never detaches, and it compounds
+// into the NEXT gesture (node moves AND resizes; drag overshoots). The shield
+// sits ABOVE every node (z-index max) and owns the events outright, so the
+// window listeners always fire and onUp always runs. Bulletproof regardless of
+// the attribute timing.
+let _thDragShield = null;
+function installDragShield(cursor) {
+  if (_thDragShield) return;
+  const el = document.createElement("div");
+  el.setAttribute("data-th-drag-shield", "1");
+  el.style.cssText =
+    "position:fixed;inset:0;z-index:2147483647;background:transparent;"
+    + "cursor:" + (cursor || "default") + ";";
+  (document.body || document.documentElement).appendChild(el);
+  _thDragShield = el;
+}
+function removeDragShield() {
+  if (!_thDragShield) return;
+  try { _thDragShield.remove(); } catch { /* already gone */ }
+  _thDragShield = null;
+}
 function dragHandler(zoom, onMove, onDragStart, onDragEnd) {
   // Shared drag-start handler used by every direction-node header bar; saves
   // the duplicate boilerplate that lives in WorkflowPromptNode etc. Same
@@ -51460,6 +51488,7 @@ function dragHandler(zoom, onMove, onDragStart, onDragEnd) {
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setCanvasDraggingSync(true);
+    installDragShield("grabbing");
     onDragStart && onDragStart();
     const onMv = (ev) => {
       if (isReleasedDuringMove(ev)) { onUp(); return; }
@@ -51470,6 +51499,7 @@ function dragHandler(zoom, onMove, onDragStart, onDragEnd) {
     };
     const onUp = () => {
       setCanvasDraggingSync(false);
+      removeDragShield();
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
@@ -51489,6 +51519,7 @@ function resizeHandler(zoom, onResize, onDragStart, onDragEnd) {
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setCanvasDraggingSync(true);
+    installDragShield("nwse-resize");
     onDragStart && onDragStart();
     const onMv = (ev) => {
       if (isReleasedDuringMove(ev)) { onUp(); return; }
@@ -51499,6 +51530,7 @@ function resizeHandler(zoom, onResize, onDragStart, onDragEnd) {
     };
     const onUp = () => {
       setCanvasDraggingSync(false);
+      removeDragShield();
       onDragEnd && onDragEnd();
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
