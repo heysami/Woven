@@ -166,6 +166,12 @@
   .hint{color:var(--ink3); font-size:11px; line-height:1.5;}
   /* layers list */
   #layersWrap{flex:1; overflow-y:auto; min-height:80px;}
+  /* Detached: the right panel floats at the node's height, which turns the
+     40%-capped #opts into a cramped scroll sliver. Drop the nested scrolls and
+     let the WHOLE floated panel scroll as one column (#rightcol gets overflow
+     from detached-panels.css). */
+  body.detached-panels #opts{max-height:none; overflow:visible; flex:0 0 auto;}
+  body.detached-panels #layersWrap{flex:0 0 auto; overflow:visible; min-height:0;}
   .layer{
     display:flex; align-items:center; gap:7px; padding:6px 8px; border-bottom:1px solid var(--line);
     cursor:pointer; position:relative;

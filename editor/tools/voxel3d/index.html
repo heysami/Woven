@@ -60,8 +60,9 @@
     bottom: auto !important;
     height: auto !important;
     width: auto !important;
+    max-height: calc(100% - 24px) !important;  /* cap to node height… */
+    overflow-y: auto !important;                /* …scroll when the tool list is taller */
     transform: translateY(-50%);
-    overflow: visible !important;
   }
 
   .panel {

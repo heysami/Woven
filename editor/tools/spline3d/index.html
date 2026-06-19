@@ -65,8 +65,9 @@
     bottom: auto !important;
     height: auto !important;
     width: auto !important;
+    max-height: calc(100% - 24px) !important;  /* cap to the node height… */
+    overflow-y: auto !important;                /* …and scroll when taller */
     transform: translateY(-50%);
-    overflow: visible !important;
     /* keep the toolbar's own Woven card (surface bg + hairline border + shadow);
        only the full-height stretch is overridden above. */
   }
