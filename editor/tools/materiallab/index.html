@@ -180,6 +180,30 @@
   .galrow{ display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start }
   .galcol{ display:flex;flex-direction:column;gap:14px;flex:1;min-width:240px }
 
+  /* ── adaptive text polarity ──────────────────────────────────────────────
+     Light materials (chrome, brushed metal, ceramic, paper, holo pearl…) flip
+     the UI text to dark ink with a faint light halo, so the design-system copy
+     reads ON the surface — matching the design-library references where the
+     type is black-on-metal, never the white-on-white the lab used to ship. */
+  #stage[data-surface="light"] .head,
+  #stage[data-surface="light"] .type-display,
+  #stage[data-surface="light"] .type-heading,
+  #stage[data-surface="light"] .type-body,
+  #stage[data-surface="light"] .type-caption,
+  #stage[data-surface="light"] .tab,
+  #stage[data-surface="light"] .ds-input,
+  #stage[data-surface="light"] .pc-title,
+  #stage[data-surface="light"] .pc-text,
+  #stage[data-surface="light"] .chip-pill,
+  #stage[data-surface="light"] .ds-btn{
+    color:#14181f;
+    text-shadow:0 1px 0 rgba(255,255,255,.55);
+  }
+  #stage[data-surface="light"] .ds-input::placeholder{ color:#14181f99 }
+  #stage[data-surface="light"] .tab.active{ color:#0a0d12 }
+  #stage[data-surface="light"] .ds-btn.tertiary,
+  #stage[data-surface="light"] .pc-link{ color:var(--m-accent2,#1c5bd6) }
+
   #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--wv-surface);color:var(--txt);
     border:1px solid var(--line);padding:9px 16px;border-radius:var(--wv-radius);font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:60;box-shadow:var(--wv-shadow-lg)}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -367,6 +391,11 @@ uniform float uRough;      // micro-surface roughness
 uniform float uAnis;       // anisotropy strength
 uniform float uGlow;       // emissive strength
 
+/* ---- interaction / simulation feed ---- */
+uniform vec2  uMouseVel;   // pointer velocity this frame (device px/frame)
+uniform sampler2D uState;  // ping-pong simulation state (fluid materials only)
+uniform int   uHasState;   // 1 when uState holds a live sim texture
+
 out vec4 frag;
 
 /* signed distance to a rounded rectangle (p relative to rect centre) */
@@ -421,7 +450,17 @@ struct Ctx {
   vec2  refr;   // base refraction uv offset through the bezel
   vec2  grad;   // outward 2D gradient of the rounded rect
   float aspect; // panel width / height
+  vec3  H;      // half-vector (light + view), normalised
+  float rim;    // 1 at the rim -> 0 across the flat interior (highlight mask)
+  float spec;   // Blinn-Phong term off the bezel normal (uShine exponent)
+  vec4  flow;   // sampled fluid state (rg = velocity, b = dye, a = pressure)
 };
+
+/* Edge-confined specular: keeps the hot highlight riding the rounded bezel
+   instead of blooming a readability-killing blob across the flat top where the
+   UI text sits. Every surface routes its sheen through this so presets stay
+   legible by construction. */
+float bezelSpec(Ctx c){ return c.spec * c.rim; }
 
 /* sample the refracted backdrop with per-channel dispersion + optional frost */
 vec3 sampleRefract(Ctx c){
@@ -488,12 +527,20 @@ void main(){
   vec2  off  = Rdir.xy * (uThick / uRes.y);      // lateral displacement in uv
 
   vec3  L = normalize(vec3((uLight - fc) / uRes.y, 0.55));
+  vec3  H = normalize(L + V);
 
   Ctx c;
   c.uv = uv; c.fc = fc; c.pos = (fc - cHit) / max(bHit, vec2(1.0));
   c.t = t; c.edge = edgePx; c.N = N; c.V = V; c.L = L;
   c.fres = pow(1.0 - N.z, 3.0); c.refr = off; c.grad = grad;
   c.aspect = bHit.x / max(1.0, bHit.y);
+  c.H = H;
+  // rim: hot at the bezel, ~0 across the flat interior. Squared falloff keeps
+  // the readable centre genuinely calm rather than just dimmer.
+  c.rim = pow(1.0 - t, 2.0);
+  c.spec = pow(max(dot(N, H), 0.0), max(1.0, uShine));
+  if(uHasState == 1){ vec4 st = texture(uState, uv); c.flow = vec4(st.rg*2.0-1.0, st.b, st.a); }
+  else c.flow = vec4(0.0);
 
   frag = shade(c);
 }
@@ -587,52 +634,54 @@ const DIALS = {
 /* ====================================================================== */
 const MATERIALS = {
 
+/* Each entry declares `lum`: the surface luminance the UI text must read against.
+   'light' surfaces get dark text (via #stage[data-surface=light]); 'dark' keep
+   white text. Every sheen routes through bezelSpec(c) so the hot highlight rides
+   the rounded edge and the flat interior — where the text lives — stays calm. */
+
 /* ---------------- GLASS / TRANSPARENT (refract the backdrop) ---------------- */
-'liquid-glass':{ name:'Liquid Glass', cat:'Glass', swatch:'linear-gradient(135deg,#ffffff99,#7fbcff66,#ffffff44)',
+'liquid-glass':{ name:'Liquid Glass', cat:'Glass', lum:'dark', swatch:'linear-gradient(135deg,#ffffff99,#7fbcff66,#ffffff44)',
   dials:['profile','ior','thickness','bezel','dispersion','frost','specular','shininess','fresnel','tint','tintAmt','alpha','holo'],
-  params:mp({profile:'convex',ior:1.50,thickness:38,bezel:0.45,dispersion:0.18,frost:0.08,specular:0.85,shininess:80,fresnel:0.60,tint:'#ffffff',tintAmt:0.04,alpha:0.92}),
+  params:mp({profile:'convex',ior:1.50,thickness:38,bezel:0.45,dispersion:0.16,frost:0.08,specular:0.55,shininess:90,fresnel:0.55,tint:'#ffffff',tintAmt:0.04,alpha:0.92}),
   shade:`vec4 shade(Ctx c){
   vec3 col = sampleRefract(c);
-  col = mix(col, col*uTint + uTint*0.12, clamp(uTintAmt*2.0,0.0,1.0));
-  col += c.fres*uFresnel;
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec;
-  col += (1.0-c.t)*0.05*uSpec;
-  if(uHolo==1){ float hue=fract(c.uv.x*0.6+c.uv.y*0.3+uTime*0.05+c.fres*uFresnel); col=mix(col,col+pal(hue)*0.45,0.35*uFresnel+0.18); }
-  return vec4(col, uAlpha);
-}` },
-
-'frosted-glass':{ name:'Frosted Glass', cat:'Glass', swatch:'linear-gradient(135deg,#ffffffcc,#cdd9ff88)',
-  dials:['ior','thickness','bezel','frost','specular','fresnel','tint','tintAmt','alpha'],
-  params:mp({ior:1.33,thickness:18,bezel:0.62,dispersion:0.04,frost:0.62,specular:0.4,shininess:30,fresnel:0.4,tint:'#eef3ff',tintAmt:0.1,alpha:0.96}),
-  shade:`vec4 shade(Ctx c){
-  vec3 col = sampleRefract(c);
-  col = mix(col, vec3(0.92,0.94,0.98), 0.20);      // milky scatter
-  col = mix(col, col*uTint, uTintAmt*2.0);
+  col = mix(col, col*uTint + uTint*0.10, clamp(uTintAmt*2.0,0.0,1.0));
   col += c.fres*uFresnel*0.6;
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec*0.5;
-  col += (1.0-c.t)*0.10;                            // bright top edge
+  col += bezelSpec(c)*uSpec;            // sheen confined to the rounded bezel
+  col += c.rim*0.06;                    // soft bright lip
+  if(uHolo==1){ float hue=fract(c.uv.x*0.5+c.uv.y*0.3+uTime*0.04+c.fres); col=mix(col,col+pal(hue)*0.4,0.28*c.rim+0.10); }
   return vec4(col, uAlpha);
 }` },
 
-'dispersion-prism':{ name:'Dispersion Prism', cat:'Glass', swatch:'conic-gradient(from 0deg,#ff5c8a,#5cd1ff,#ffe45c,#9b5cff,#ff5c8a)',
-  dials:['ior','thickness','bezel','dispersion','specular','shininess','fresnel','alpha'],
-  params:mp({ior:1.52,thickness:46,bezel:0.40,dispersion:0.42,frost:0.02,specular:0.9,shininess:90,fresnel:0.85,alpha:0.92}),
+'frosted-glass':{ name:'Frosted Glass', cat:'Glass', lum:'dark', swatch:'linear-gradient(135deg,#ffffffcc,#cdd9ff88)',
+  dials:['ior','thickness','bezel','frost','specular','fresnel','tint','tintAmt','alpha'],
+  params:mp({ior:1.33,thickness:18,bezel:0.62,dispersion:0.04,frost:0.62,specular:0.3,shininess:30,fresnel:0.35,tint:'#eef3ff',tintAmt:0.08,alpha:0.96}),
   shade:`vec4 shade(Ctx c){
-  float disp = uDisp*(0.3 + 1.8*c.fres);             // spectral split peaks at edges
+  vec3 col = sampleRefract(c);
+  col = mix(col, vec3(0.80,0.84,0.92), 0.18);   // light milky scatter
+  col = mix(col, col*uTint, uTintAmt*2.0);
+  col += c.fres*uFresnel*0.4;
+  col += bezelSpec(c)*uSpec*0.5;
+  col += c.rim*0.08;
+  return vec4(col, uAlpha);
+}` },
+
+'dispersion-prism':{ name:'Dispersion Prism', cat:'Glass', lum:'dark', swatch:'conic-gradient(from 0deg,#ff5c8a,#5cd1ff,#ffe45c,#9b5cff,#ff5c8a)',
+  dials:['ior','thickness','bezel','dispersion','specular','shininess','fresnel','alpha'],
+  params:mp({ior:1.52,thickness:46,bezel:0.40,dispersion:0.40,frost:0.02,specular:0.5,shininess:90,fresnel:0.8,alpha:0.92}),
+  shade:`vec4 shade(Ctx c){
+  float disp = uDisp*(0.25 + 1.6*c.fres);            // spectral split peaks at the rim
   vec2 off = c.refr;
   vec3 col = vec3(texture(uBackdrop,c.uv+off*(1.0+disp)).r, texture(uBackdrop,c.uv+off).g, texture(uBackdrop,c.uv+off*(1.0-disp)).b);
   float hue = fract(atan(c.grad.y,c.grad.x)/6.28318 + uTime*0.03);
-  col += pal(hue)*c.fres*uFresnel*0.7;               // caustic rainbow at the rim
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec;
+  col += pal(hue)*c.fres*uFresnel*0.7;               // caustic rainbow at the edge
+  col += bezelSpec(c)*uSpec;
   return vec4(col, uAlpha);
 }` },
 
-'reeded-glass':{ name:'Reeded / Fluted Glass', cat:'Glass', swatch:'repeating-linear-gradient(90deg,#cfe0ff,#cfe0ff 3px,#8fb4ff 6px)',
+'reeded-glass':{ name:'Reeded / Fluted Glass', cat:'Glass', lum:'dark', swatch:'repeating-linear-gradient(90deg,#cfe0ff,#cfe0ff 3px,#8fb4ff 6px)',
   dials:['scale','thickness','dispersion','specular','tint','tintAmt','alpha'],
-  params:mp({ior:1.5,thickness:40,scale:16,dispersion:0.12,specular:0.8,shininess:60,tint:'#eaf2ff',tintAmt:0.08,alpha:0.94}),
+  params:mp({ior:1.5,thickness:40,scale:16,dispersion:0.12,specular:0.55,shininess:60,tint:'#eaf2ff',tintAmt:0.08,alpha:0.94}),
   shade:`vec4 shade(Ctx c){
   float ph = c.uv.x*uScale*6.28318;
   float disp = sin(ph)*0.013*(uThick/40.0+0.3);
@@ -640,27 +689,26 @@ const MATERIALS = {
   vec3 col = vec3(texture(uBackdrop,c.uv+off*(1.0+uDisp)).r, texture(uBackdrop,c.uv+off).g, texture(uBackdrop,c.uv+off*(1.0-uDisp)).b);
   float rib = 0.5+0.5*cos(ph);
   col = mix(col, col*uTint, uTintAmt*2.0);
-  col *= 0.82+0.30*rib;
-  col += pow(rib,10.0)*uSpec*0.7;                    // hot specular line per flute
+  col *= 0.86+0.22*rib;
+  col += pow(rib,12.0)*uSpec*0.45;                   // restrained specular line per flute
   return vec4(col, uAlpha);
 }` },
 
-'displacement-ripple':{ name:'Displacement Ripple', cat:'Glass', swatch:'radial-gradient(circle at 35% 35%,#bfe0ff,#5a8fd6)',
+'displacement-ripple':{ name:'Displacement Ripple', cat:'Glass', lum:'dark', swatch:'radial-gradient(circle at 35% 35%,#bfe0ff,#5a8fd6)',
   dials:['scale','thickness','specular','shininess','alpha'],
-  params:mp({ior:1.4,thickness:34,scale:24,specular:0.6,shininess:60,alpha:0.95}),
+  params:mp({ior:1.4,thickness:34,scale:24,specular:0.45,shininess:60,alpha:0.95}),
   shade:`vec4 shade(Ctx c){
   vec2 d = c.uv - (uLight/uRes);
   float r = length(d*vec2(c.aspect,1.0));
   float wave = sin(r*uScale*2.2 - uTime*3.0)*exp(-r*3.5);
   vec2 off = normalize(d+1e-5)*wave*0.02*(uThick/40.0+0.4);
   vec3 col = texture(uBackdrop, c.uv+off).rgb;
-  col += wave*0.16;
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec*0.5;
+  col += wave*0.12;
+  col += bezelSpec(c)*uSpec*0.5;
   return vec4(col, uAlpha);
 }` },
 
-'heat-haze':{ name:'Heat Haze Shimmer', cat:'Glass', swatch:'linear-gradient(135deg,#ffd9a8,#ff9ea8,#c0a8ff)',
+'heat-haze':{ name:'Heat Haze Shimmer', cat:'Glass', lum:'dark', swatch:'linear-gradient(135deg,#ffd9a8,#ff9ea8,#c0a8ff)',
   dials:['scale','thickness','alpha'],
   params:mp({thickness:26,scale:10,alpha:0.96}),
   shade:`vec4 shade(Ctx c){
@@ -671,196 +719,232 @@ const MATERIALS = {
   return vec4(col, uAlpha);
 }` },
 
-/* ---------------- METAL (procedural reflection, no backdrop) ---------------- */
-'chrome-mirror':{ name:'Chrome Mirror', cat:'Metal', swatch:'linear-gradient(135deg,#f4f7ff,#9aa6bd 45%,#2b3242 60%,#cfd7e8)',
-  dials:['scale','specular','shininess','fresnel','tint','tintAmt','holo','alpha'],
-  params:mp({colorA:'#eef3ff',colorB:'#222a38',specular:1.0,shininess:140,fresnel:0.5,tint:'#dfe7ff',tintAmt:0.04,alpha:1.0}),
+/* ---------------- FLUID (mouse-driven simulation, ping-pong FBO) ---------------- */
+'liquid-flow':{ name:'Liquid Flow (interactive)', cat:'Fluid', lum:'dark', fluid:true, swatch:'radial-gradient(circle at 35% 35%,#3be0ff,#6a4cff 55%,#0a1430)',
+  dials:['scale','specular','glow','alpha'],
+  params:mp({colorA:'#34e0ff',colorB:'#0c1838',scale:18,specular:0.4,glow:1.0,alpha:0.97}),
   shade:`vec4 shade(Ctx c){
-  vec3 pn = normalize(vec3(c.pos*0.85, sqrt(max(0.04,1.0-dot(c.pos,c.pos)*0.6))));
-  vec3 nrm = normalize(pn + (c.N - vec3(0.0,0.0,1.0)));
+  vec2 vel = c.flow.rg;                               // advected velocity from the sim
+  float dye = c.flow.b;                               // injected where the pointer drags
+  float speed = length(vel);
+  // the backdrop is dragged along the live flow field -> it really moves with the mouse
+  vec3 bg = texture(uBackdrop, c.uv + vel*0.045).rgb;
+  vec3 fluid = mix(uColorB, uColorA, clamp(dye*1.4,0.0,1.0));
+  fluid += pal(fract(dye*0.6 + speed*0.4 + uTime*0.05))*clamp(speed*0.9,0.0,0.6)*uGlow; // colour shears with shear-rate
+  vec3 col = mix(bg*0.55, fluid, clamp(dye*1.6,0.0,1.0));
+  col += clamp(speed,0.0,1.0)*0.12*uGlow;             // brighten fast-moving sheets
+  col += bezelSpec(c)*uSpec*0.3;
+  return vec4(col, uAlpha);
+}` },
+
+/* ---------------- METAL (calm light field, highlights on the bezel) ---------------- */
+'chrome-mirror':{ name:'Chrome Mirror', cat:'Metal', lum:'light', swatch:'linear-gradient(135deg,#f4f7ff,#aab4c8 45%,#3a4254 62%,#dfe6f2)',
+  dials:['scale','specular','shininess','fresnel','tint','tintAmt','holo','alpha'],
+  params:mp({colorA:'#eef3fb',colorB:'#3a4153',specular:0.7,shininess:140,fresnel:0.4,tint:'#dfe7ff',tintAmt:0.04,alpha:1.0}),
+  shade:`vec4 shade(Ctx c){
+  // curvature only near the bezel — the flat interior stays a calm mirror plane
+  vec3 nrm = normalize(c.N + vec3(c.pos*0.28*c.rim, 0.0));
   vec3 r = reflect(-c.V, nrm);
   float y = r.y*0.5+0.5;
-  vec3 col = mix(uColorB, uColorA, smoothstep(0.0,1.0,y));      // studio gradient env
-  col += (smoothstep(0.47,0.5,y)-smoothstep(0.5,0.53,y))*1.4;   // horizon light band
-  col *= 0.55 + 0.7*smoothstep(0.0,0.35,abs(y-0.5));
+  vec3 env = mix(uColorB, uColorA, smoothstep(0.08,0.92,y));      // dark floor -> bright sky
+  env += (smoothstep(0.49,0.5,y)-smoothstep(0.5,0.52,y))*0.7*c.rim; // horizon glint, edge-only
+  vec3 calm = vec3(0.72,0.75,0.81);                               // legible light plane
+  vec3 col = mix(calm, env, 0.4 + 0.6*c.rim);
   col = mix(col, col*uTint, uTintAmt*3.0);
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(nrm,H),0.0), max(1.0,uShine))*uSpec;
-  if(uHolo==1) col = mix(col, col*pal(fract(r.y*0.5+uTime*0.05))*1.8, 0.3);
+  col += bezelSpec(c)*uSpec*0.8;
+  if(uHolo==1) col = mix(col, col*pal(fract(r.y*0.5+uTime*0.05))*1.4, 0.22*c.rim);
   return vec4(col, uAlpha);
 }` },
 
-'brushed-aluminum':{ name:'Brushed Aluminum', cat:'Metal', swatch:'repeating-linear-gradient(95deg,#c9cfd8,#c9cfd8 1px,#aab2bf 2px)',
-  dials:['scale','anis','specular','shininess','fresnel','alpha'],
-  params:mp({colorA:'#d6dbe3',colorB:'#9aa1ad',scale:60,anis:0.5,specular:0.7,shininess:40,fresnel:0.3,alpha:1.0}),
+'brushed-aluminum':{ name:'Brushed Aluminum', cat:'Metal', lum:'light', swatch:'repeating-linear-gradient(0deg,#d6dae1,#d6dae1 1px,#b6bcc6 2px)',
+  dials:['scale','anis','specular','fresnel','alpha'],
+  params:mp({colorA:'#dde1e7',colorB:'#aeb4be',scale:220,anis:0.6,specular:0.6,shininess:40,fresnel:0.3,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
-  float streak = vnoise(vec2(c.uv.x*uScale, c.uv.y*4.0));
-  vec3 nrm = normalize(c.N + vec3((streak-0.5)*uAnis, 0.0, 0.0));
-  vec3 base = mix(uColorB, uColorA, streak*0.6+0.3);
-  vec3 H = normalize(c.L+c.V);
-  float an = pow(max(dot(nrm,H),0.0), max(1.0,uShine));
-  vec3 col = base + an*uSpec;
-  col += c.fres*uFresnel*0.3;
-  return vec4(col, uAlpha);
+  // sub-mm grain that runs HORIZONTALLY: high frequency across x, coherent along y
+  float ng   = vnoise(vec2(c.uv.x*uScale, c.uv.y*2.5));
+  float fine = vnoise(vec2(c.uv.x*uScale*2.7, c.uv.y*1.4));
+  float grain = ng*0.7 + fine*0.3;
+  vec3 base = mix(uColorB, uColorA, 0.42 + grain*0.40);          // even silvery field
+  // anisotropic highlight: a soft band ELONGATED along the grain, never a circular blob
+  float ly = (uLight.y/uRes.y - c.uv.y);
+  float band = exp(-ly*ly*mix(140.0, 28.0, uAnis));
+  base += band*uSpec*0.30*(0.6+0.4*grain);
+  base += bezelSpec(c)*uSpec*0.5;                                // crisp machined bevel
+  base += c.fres*uFresnel*0.2;
+  base += c.rim*0.08;
+  return vec4(base, uAlpha);
 }` },
 
-'gold-leaf':{ name:'Gold Leaf', cat:'Metal', swatch:'linear-gradient(135deg,#fff0b0,#e8b94a 50%,#a9781f)',
+'gold-leaf':{ name:'Gold Leaf', cat:'Metal', lum:'light', swatch:'linear-gradient(135deg,#fbe9a8,#e6bf5c 50%,#bb8f36)',
   dials:['scale','rough','specular','shininess','alpha'],
-  params:mp({colorA:'#f6d56a',colorB:'#9c6e1e',scale:14,rough:0.5,specular:0.9,shininess:60,alpha:1.0}),
+  params:mp({colorA:'#f1d684',colorB:'#c89a40',scale:14,rough:0.4,specular:0.6,shininess:60,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
-  float wr = fbm(c.uv*uScale)*0.5 + fbm(c.uv*uScale*3.0)*0.5;
-  vec3 nrm = normalize(c.N + vec3((wr-0.5)*uRough, (fbm(c.uv*uScale+5.0)-0.5)*uRough, 0.0));
-  vec3 H = normalize(c.L+c.V);
-  float sp = pow(max(dot(nrm,H),0.0), max(1.0,uShine));
-  vec3 col = mix(uColorB, uColorA, sp*0.7+0.3);
-  col += sp*uSpec*vec3(1.0,0.85,0.5);
-  col += pow(wr,3.0)*0.3*uColorA;
-  return vec4(col, uAlpha);
+  float wr = fbm(c.uv*uScale)*0.6 + fbm(c.uv*uScale*3.0)*0.4;
+  vec3 base = mix(uColorB, uColorA, 0.45 + wr*0.40);             // warm leaf tones
+  base += bezelSpec(c)*uSpec*vec3(1.0,0.88,0.55);                // warm edge glint
+  base += pow(wr,4.0)*0.10*uColorA;                              // faint hammered flecks
+  base += c.rim*0.08*vec3(1.0,0.9,0.62);
+  return vec4(base, uAlpha);
 }` },
 
-'copper-patina':{ name:'Copper Patina', cat:'Metal', swatch:'linear-gradient(135deg,#c87a45,#3fae93 60%,#1f7d68)',
+'copper-patina':{ name:'Copper Patina', cat:'Metal', lum:'light', swatch:'linear-gradient(135deg,#d08a55,#56b89c 60%,#2c8f78)',
   dials:['scale','specular','shininess','alpha'],
-  params:mp({colorA:'#c0703f',colorB:'#3bae90',scale:9,specular:0.6,shininess:40,alpha:1.0}),
+  params:mp({colorA:'#cf8a55',colorB:'#54b596',scale:9,specular:0.5,shininess:40,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   float p = fbm(c.uv*uScale);
-  float patina = smoothstep(0.45,0.66,p);
+  float patina = smoothstep(0.42,0.66,p);
   vec3 base = mix(uColorA, uColorB, patina);
-  vec3 H = normalize(c.L+c.V);
-  float sp = pow(max(dot(c.N,H),0.0), max(1.0,uShine))*(1.0-patina);
-  vec3 col = base + sp*uSpec*vec3(1.0,0.7,0.5);
-  col *= 0.9 + 0.2*fbm(c.uv*uScale*5.0);
-  return vec4(col, uAlpha);
+  base *= 0.94 + 0.12*fbm(c.uv*uScale*5.0);                      // mottled verdigris
+  base += bezelSpec(c)*uSpec*(1.0-patina)*vec3(1.0,0.78,0.55);   // bare copper still glints
+  base += c.rim*0.06*vec3(1.0,0.8,0.6);
+  return vec4(base, uAlpha);
 }` },
 
-'liquid-chrome-silk':{ name:'Liquid Chrome Silk', cat:'Metal', swatch:'linear-gradient(135deg,#dfe6ff,#8a93c8 40%,#2a2f4a 70%,#c0b8ff)',
+'liquid-chrome-silk':{ name:'Liquid Chrome Silk', cat:'Metal', lum:'dark', swatch:'linear-gradient(135deg,#dfe6ff,#8a93c8 40%,#2a2f4a 70%,#c0b8ff)',
   dials:['scale','specular','shininess','holo','alpha'],
-  params:mp({colorA:'#e6ecff',colorB:'#272d49',scale:5,specular:0.9,shininess:120,holo:true,alpha:1.0}),
+  params:mp({colorA:'#cdd6f5',colorB:'#232845',scale:5,specular:0.6,shininess:120,holo:true,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec2 p = c.pos;
-  float flow = fbm(p*uScale + vec2(0.0, uTime*0.3));
-  vec3 nrm = normalize(vec3(p*0.7 + (flow-0.5)*0.6, 1.0));
-  vec3 r = reflect(-c.V, nrm);
-  float y = r.y*0.5+0.5;
-  vec3 col = mix(uColorB, uColorA, y);
-  col += smoothstep(0.48,0.5,y)*0.8;
-  col = mix(col, col*pal(fract(flow+y+uTime*0.05))*1.6, uHolo==1?0.4:0.18);
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(nrm,H),0.0), max(1.0,uShine))*uSpec;
-  return vec4(col, uAlpha);
+  float flow = fbm(p*uScale + vec2(uTime*0.16, uTime*0.10) + uMouseVel*0.015);
+  vec3 nrm = normalize(vec3(p*0.4*c.rim + (flow-0.5)*0.5, 1.0));
+  vec3 r = reflect(-c.V, nrm); float y=r.y*0.5+0.5;
+  vec3 col = mix(uColorB, uColorA, smoothstep(0.1,0.95,y));
+  col = mix(col, col*pal(fract(flow+y+uTime*0.05))*1.4, (uHolo==1?0.34:0.16));
+  col += bezelSpec(c)*uSpec*0.7;
+  return vec4(col*0.92, uAlpha);          // gently darkened so white UI text holds
 }` },
 
-'anodized-chainmail':{ name:'Anodized Chainmail', cat:'Metal', swatch:'radial-gradient(circle at 30% 30%,#8fa,#26304a 70%),radial-gradient(circle at 70% 70%,#f8a,#26304a 70%)',
+'anodized-chainmail':{ name:'Anodized Chainmail', cat:'Metal', lum:'dark', swatch:'radial-gradient(circle at 30% 30%,#8fa,#26304a 70%),radial-gradient(circle at 70% 70%,#f8a,#26304a 70%)',
   dials:['scale','specular','shininess','holo','alpha'],
-  params:mp({colorA:'#dfe6ff',colorB:'#222a40',scale:9,specular:0.9,shininess:90,holo:true,alpha:1.0}),
+  params:mp({colorA:'#dfe6ff',colorB:'#1f2738',scale:9,specular:0.7,shininess:90,holo:true,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec2 g = c.uv*uScale*vec2(c.aspect,1.0);
   vec2 id = floor(g); vec2 f = fract(g)-0.5;
-  f.x += mod(id.y,2.0)*0.0;
   float ring = abs(length(f)-0.32);
   float metal = smoothstep(0.13,0.0,ring);
   vec3 nrm = normalize(c.N + vec3(f*metal*2.2, 0.0));
   vec3 r = reflect(-c.V, nrm); float y = r.y*0.5+0.5;
-  vec3 chrome = mix(uColorB, uColorA, y) + smoothstep(0.49,0.5,y)*0.7;
-  vec3 col = mix(uColorB*0.35, chrome, metal);
-  col = mix(col, col*pal(fract(y+c.uv.x*0.3+uTime*0.03)), (uHolo==1?0.35:0.12)*metal);
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(nrm,H),0.0), max(1.0,uShine))*uSpec*metal;
+  vec3 chrome = mix(uColorB, uColorA, y) + smoothstep(0.49,0.5,y)*0.6;
+  vec3 col = mix(uColorB*0.30, chrome, metal);
+  col = mix(col, col*pal(fract(y+c.uv.x*0.3+uTime*0.03)), (uHolo==1?0.32:0.12)*metal);
+  col += pow(max(dot(nrm,c.H),0.0), max(1.0,uShine))*uSpec*metal*0.7;
   return vec4(col, uAlpha);
 }` },
 
 /* ---------------- IRIDESCENT ---------------- */
-'holographic-foil':{ name:'Holographic Foil', cat:'Iridescent', swatch:'conic-gradient(from 30deg,#ff7ad9,#7affd9,#fff07a,#7aa8ff,#ff7ad9)',
+'holographic-foil':{ name:'Holographic Foil', cat:'Iridescent', lum:'light', swatch:'conic-gradient(from 30deg,#ffc6ec,#c6fff0,#fff6c6,#c6d8ff,#ffc6ec)',
   dials:['scale','specular','shininess','fresnel','alpha'],
-  params:mp({scale:5,specular:0.6,shininess:60,fresnel:0.5,alpha:0.96}),
+  params:mp({scale:5,specular:0.5,shininess:60,fresnel:0.45,alpha:0.97}),
   shade:`vec4 shade(Ctx c){
-  vec3 nrm = normalize(vec3(c.pos*0.5,1.0) + (c.N-vec3(0.0,0.0,1.0)));
+  vec3 nrm = normalize(vec3(c.pos*0.3*c.rim,1.0) + (c.N-vec3(0.0,0.0,1.0)));
   float ang = dot(nrm, normalize(c.L));
-  float hue = fract(ang*uScale + c.uv.x*0.4 + c.uv.y*0.2 + uTime*0.04);
-  vec3 foil = pal(hue);
-  float spk = step(0.93, hash21(floor(c.fc/2.0) + floor(uTime*8.0)));
-  foil += spk*0.5;                                   // glitter
-  vec3 col = mix(sampleRefract(c), foil, 0.72);
-  col += c.fres*uFresnel*0.5;
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec;
+  // pearl: mostly bright neutral, hue travels a NARROW arc (tasteful, not a rave)
+  float hue = 0.55 + 0.14*sin(ang*uScale*0.5 + c.uv.x*1.2 + c.uv.y*0.6 + uTime*0.05);
+  vec3 pearl = mix(vec3(0.86,0.88,0.93), pal(hue), 0.30);
+  vec3 col = pearl;
+  col += bezelSpec(c)*uSpec*0.5;
+  col += c.fres*uFresnel*0.25;
+  col += c.rim*0.10;
   return vec4(col, uAlpha);
 }` },
 
-'oil-on-water':{ name:'Oil on Water', cat:'Iridescent', swatch:'radial-gradient(circle at 40% 40%,#7affe0,#7a8cff 40%,#ff7ad0 70%,#1a2030)',
+'holographic-glitch':{ name:'Holographic Glitch', cat:'Iridescent', lum:'dark', noBound:true, swatch:'linear-gradient(135deg,#ff2ec4,#2effd6 45%,#2e7bff 70%,#0a0a14)',
+  dials:['scale','dispersion','glow','alpha'],
+  params:mp({scale:8,dispersion:0.5,glow:1.0,alpha:1.0}),
+  shade:`vec4 shade(Ctx c){
+  float t = floor(uTime*9.0);
+  float row = floor(c.uv.y*36.0);
+  float jit = (hash21(vec2(row,t))-0.5);
+  float on  = step(0.72, hash21(vec2(row,t+1.0)));
+  vec2 sh = vec2(jit*on*0.07*(0.4+uDisp), 0.0);
+  // RGB-split datamosh
+  vec3 col;
+  col.r = texture(uBackdrop, c.uv + sh*1.3).r;
+  col.g = texture(uBackdrop, c.uv).g;
+  col.b = texture(uBackdrop, c.uv - sh*1.3).b;
+  float hue = fract(c.uv.x*0.4 + c.uv.y*0.2 + uTime*0.06 + jit);
+  col = mix(col, col*0.45 + pal(hue)*0.8, 0.55)*uGlow;            // holo wash
+  col *= 0.78 + 0.22*step(0.5, fract(c.uv.y*70.0));              // scanlines
+  col += on*0.22;
+  // boundary dissolve — the card has NO crisp edge: it frays + tears into the stage
+  float diss = hash21(floor(c.fc/3.0) + t);
+  float a = uAlpha * smoothstep(0.0, 0.55, c.t + (diss-0.5)*0.7);
+  a *= 1.0 - on*step(0.94, hash21(vec2(row*1.31, t)))*0.85;       // mid-card row tears
+  return vec4(col, a);
+}` },
+
+'oil-on-water':{ name:'Oil on Water', cat:'Iridescent', lum:'dark', swatch:'radial-gradient(circle at 40% 40%,#7affe0,#7a8cff 40%,#ff7ad0 70%,#1a2030)',
   dials:['scale','alpha'],
   params:mp({scale:7,alpha:0.95}),
   shade:`vec4 shade(Ctx c){
   float n = fbm(c.uv*uScale + uTime*0.1);
   float thick = n*6.0;
-  vec3 film = pal(fract(thick))*0.6 + pal(fract(thick*1.3+0.3))*0.5;
-  vec3 col = mix(sampleRefract(c)*0.55, film, 0.6);
+  vec3 film = pal(fract(thick))*0.55 + pal(fract(thick*1.3+0.3))*0.45;
+  vec3 col = mix(sampleRefract(c)*0.5, film, 0.6);
   return vec4(col, uAlpha);
 }` },
 
 /* ---------------- PLASTIC / CERAMIC / CLAY / FOAM ---------------- */
-'glossy-plastic':{ name:'Glossy Plastic (Aqua)', cat:'Plastic', swatch:'linear-gradient(180deg,#bfeaff,#2aa6ff 55%,#0a63c0)',
+'glossy-plastic':{ name:'Glossy Plastic (Aqua)', cat:'Plastic', lum:'dark', swatch:'linear-gradient(180deg,#bfeaff,#2aa6ff 55%,#0a63c0)',
   dials:['specular','shininess','fresnel','alpha'],
-  params:mp({colorA:'#2aa6ff',colorB:'#aef0ff',specular:1.0,shininess:120,fresnel:0.6,alpha:1.0}),
+  params:mp({colorA:'#2aa6ff',colorB:'#aef0ff',specular:0.7,shininess:120,fresnel:0.5,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec3 base = uColorA;
-  float top = smoothstep(0.0,1.0,-c.pos.y);
-  vec3 col = mix(base*0.8, base*1.1+0.15, top);
-  col += pow(top,2.0)*0.45;                          // glossy top sweep
-  col += smoothstep(0.3,1.0,c.pos.y)*uColorB*0.35;   // inner bottom glow
-  col += c.fres*uFresnel*0.5;
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec;
+  float topglow = smoothstep(0.0,1.0,-c.pos.y)*c.rim;            // sweep near the top rim only
+  vec3 col = mix(base*0.84, base, 0.5);
+  col += topglow*0.40;
+  col += smoothstep(0.4,1.0,c.pos.y)*uColorB*0.22;              // inner bottom tint
+  col += bezelSpec(c)*uSpec;
+  col += c.fres*uFresnel*0.4;
   return vec4(col, uAlpha);
 }` },
 
-'ceramic-glaze':{ name:'Ceramic Glaze', cat:'Plastic', swatch:'radial-gradient(circle at 35% 30%,#ffffff,#dfe9f5 30%,#9fb4cc)',
+'ceramic-glaze':{ name:'Ceramic Glaze', cat:'Plastic', lum:'light', swatch:'radial-gradient(circle at 35% 30%,#ffffff,#e6ecf4 30%,#b6c4d4)',
   dials:['specular','shininess','fresnel','alpha'],
-  params:mp({colorA:'#e9eef5',specular:1.1,shininess:180,fresnel:0.25,alpha:1.0}),
+  params:mp({colorA:'#eef1f6',specular:0.8,shininess:200,fresnel:0.2,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
-  vec3 nrm = normalize(vec3(c.pos*0.3,1.0));
-  vec3 base = uColorA*(0.85+0.2*c.t);                // glaze pools darker at the rim
-  vec3 H = normalize(c.L+c.V);
-  float sp = pow(max(dot(nrm,H),0.0), max(1.0,uShine));
-  vec3 col = base + sp*uSpec;                         // sharp porcelain highlight
-  col += c.fres*uFresnel*0.2;
-  return vec4(col, uAlpha);
+  vec3 base = uColorA*(0.94+0.06*c.t);                           // glaze pools faintly at the rim
+  base += bezelSpec(c)*uSpec*0.85;                              // crisp porcelain glint
+  base += c.fres*uFresnel*0.15;
+  base += c.rim*0.05;
+  return vec4(base, uAlpha);
 }` },
 
-'matte-clay':{ name:'Matte Clay', cat:'Plastic', swatch:'linear-gradient(135deg,#ff9f8a,#e8705a)',
+'matte-clay':{ name:'Matte Clay', cat:'Plastic', lum:'light', swatch:'linear-gradient(135deg,#f0ad97,#e08369)',
   dials:['alpha'],
-  params:mp({colorA:'#ee8a72',alpha:1.0}),
+  params:mp({colorA:'#eaa890',alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec3 base = uColorA;
   float lt = dot(normalize(c.N), normalize(vec3(-0.4,-0.6,1.0)));
-  vec3 col = base*(0.82+0.3*lt);                     // soft directional shading
-  col *= 0.9 + 0.16*c.t;                             // gentle edge rounding
+  vec3 col = base*(0.90+0.16*lt);                                // soft directional shading
+  col *= 0.94 + 0.10*c.t;                                        // gentle rounded rim
   return vec4(col, uAlpha);
 }` },
 
-'soft-ui-foam':{ name:'Soft-UI Foam', cat:'Plastic', swatch:'linear-gradient(135deg,#e7ecf3,#c8d0db)',
+'soft-ui-foam':{ name:'Soft-UI Foam', cat:'Plastic', lum:'light', swatch:'linear-gradient(135deg,#eef2f8,#d2dae4)',
   dials:[],
-  params:mp({colorA:'#e3e8f0',alpha:1.0}),
+  params:mp({colorA:'#e9eef5',alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec3 base = uColorA;
   float lt = dot(normalize(c.N), normalize(vec3(-0.5,-0.5,1.0)));
-  vec3 col = base + lt*0.14;                          // neumorphic dual emboss
+  vec3 col = base + lt*0.12;                                     // neumorphic dual emboss
   col = mix(col, base, c.t*0.5);
   return vec4(col, 1.0);
 }` },
 
 /* ---------------- EMISSIVE ---------------- */
-'edge-lit-acrylic':{ name:'Edge-lit Acrylic', cat:'Emissive', swatch:'linear-gradient(135deg,#0d1430,#2bd6ff 90%)',
+'edge-lit-acrylic':{ name:'Edge-lit Acrylic', cat:'Emissive', lum:'dark', swatch:'linear-gradient(135deg,#0d1430,#2bd6ff 90%)',
   dials:['frost','glow','fresnel','alpha'],
-  params:mp({colorA:'#16304a',colorB:'#3bdcff',frost:0.3,glow:1.2,fresnel:0.7,alpha:0.95}),
+  params:mp({colorA:'#13263c',colorB:'#3bdcff',frost:0.3,glow:1.1,fresnel:0.7,alpha:0.95}),
   shade:`vec4 shade(Ctx c){
-  vec3 inside = sampleRefract(c)*0.4 + uColorA*0.6;
-  float edge = smoothstep(0.0,0.25,1.0-c.t);
-  vec3 col = inside + uColorB*edge*uGlow*2.0;         // light piped to the rim
+  vec3 inside = sampleRefract(c)*0.35 + uColorA*0.65;
+  float edge = smoothstep(0.0,0.22,1.0-c.t);
+  vec3 col = inside + uColorB*edge*uGlow*1.9;                    // light piped to the rim
   col += c.fres*uFresnel*uColorB;
   return vec4(col, uAlpha);
 }` },
 
-'bioluminescent':{ name:'Bioluminescent Membrane', cat:'Emissive', swatch:'radial-gradient(circle at 50% 50%,#7affd0,#0a2a30 70%)',
+'bioluminescent':{ name:'Bioluminescent Membrane', cat:'Emissive', lum:'dark', swatch:'radial-gradient(circle at 50% 50%,#7affd0,#0a2a30 70%)',
   dials:['scale','glow','alpha'],
   params:mp({colorA:'#46ffc8',colorB:'#1aa0ff',scale:6,glow:1.3,alpha:0.97}),
   shade:`vec4 shade(Ctx c){
@@ -873,60 +957,59 @@ const MATERIALS = {
   return vec4(col, uAlpha);
 }` },
 
-'atmosphere-rim':{ name:'Atmosphere Rim Glow', cat:'Emissive', swatch:'radial-gradient(circle at 50% 60%,#05070d,#05070d 55%,#5aa0ff 90%)',
+'atmosphere-rim':{ name:'Atmosphere Rim Glow', cat:'Emissive', lum:'dark', swatch:'radial-gradient(circle at 50% 60%,#05070d,#05070d 55%,#5aa0ff 90%)',
   dials:['glow','fresnel','alpha'],
   params:mp({colorA:'#070a12',colorB:'#5aa6ff',glow:1.3,fresnel:0.7,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
-  vec3 col = uColorA*0.6;                             // dark planet body
+  vec3 col = uColorA*0.6;                                        // dark planet body
   float rim = smoothstep(0.0,0.18,1.0-c.t);
-  col += uColorB*pow(rim,1.5)*uGlow*1.6;             // scattering limb
+  col += uColorB*pow(rim,1.5)*uGlow*1.6;                        // scattering limb
   col += c.fres*uFresnel*uColorB;
   return vec4(col, uAlpha);
 }` },
 
-'aurora-mesh':{ name:'Aurora Mesh', cat:'Emissive', swatch:'linear-gradient(135deg,#5a4cff,#22d6c0 50%,#ff4d9d)',
+'aurora-mesh':{ name:'Aurora Mesh', cat:'Emissive', lum:'dark', swatch:'linear-gradient(135deg,#5a4cff,#22d6c0 50%,#ff4d9d)',
   dials:['scale','fresnel','alpha'],
-  params:mp({colorA:'#5a4cff',colorB:'#22d6c0',scale:3,fresnel:0.4,alpha:0.96}),
+  params:mp({colorA:'#4a3ee0',colorB:'#1cb8a6',scale:3,fresnel:0.4,alpha:0.96}),
   shade:`vec4 shade(Ctx c){
   float t = uTime*0.1;
   float m1 = fbm(c.uv*uScale + vec2(t,0.0));
   float m2 = fbm(c.uv*uScale*1.3 + vec2(-t,t));
   vec3 col = mix(uColorA, uColorB, m1);
-  col = mix(col, pal(m2), 0.3);
-  col = mix(sampleRefract(c)*0.4, col, 0.82);
+  col = mix(col, pal(m2)*0.8, 0.28);
+  col = mix(sampleRefract(c)*0.35, col, 0.84);
   col += c.fres*uFresnel*0.3;
-  return vec4(col, uAlpha);
+  return vec4(col*0.92, uAlpha);
 }` },
 
 /* ---------------- STONE / ORGANIC ---------------- */
-'concrete':{ name:'Concrete', cat:'Stone', swatch:'linear-gradient(135deg,#9a9d9f,#76797c)',
+'concrete':{ name:'Concrete', cat:'Stone', lum:'light', swatch:'linear-gradient(135deg,#c4c7c9,#a4a7aa)',
   dials:['scale','alpha'],
-  params:mp({colorA:'#9a9da0',colorB:'#6f7275',scale:7,alpha:1.0}),
+  params:mp({colorA:'#c6c9cc',colorB:'#a3a6a9',scale:7,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   float n = fbm(c.uv*uScale)*0.7 + fbm(c.uv*uScale*4.0)*0.3;
-  vec3 base = mix(uColorA, uColorB, n);
+  vec3 base = mix(uColorA, uColorB, n*0.7);
   float pore = smoothstep(0.72,0.74,hash21(floor(c.fc/2.0)));
-  base *= 1.0 - pore*0.3;
+  base *= 1.0 - pore*0.16;
   float lt = dot(normalize(c.N), normalize(vec3(-0.4,-0.5,1.0)));
-  base *= 0.85 + 0.2*lt;
+  base *= 0.90 + 0.14*lt;
   return vec4(base, uAlpha);
 }` },
 
-'marble':{ name:'Marble', cat:'Stone', swatch:'linear-gradient(135deg,#f3f0ea,#cfc8bd 60%,#8f8a80)',
+'marble':{ name:'Marble', cat:'Stone', lum:'light', swatch:'linear-gradient(135deg,#f3f0ea,#cfc8bd 60%,#8f8a80)',
   dials:['scale','specular','shininess','alpha'],
-  params:mp({colorA:'#f1eee8',colorB:'#5e5a52',scale:4,specular:0.4,shininess:60,alpha:1.0}),
+  params:mp({colorA:'#f3f0ea',colorB:'#6e6a60',scale:4,specular:0.35,shininess:60,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   float v = fbm(c.uv*uScale + fbm(c.uv*uScale*0.5)*3.0);
   float vein = abs(sin((c.uv.x+c.uv.y)*8.0 + v*8.0));
   vein = pow(1.0-vein, 8.0);
-  vec3 col = mix(uColorA, uColorB, vein);
-  vec3 H = normalize(c.L+c.V);
-  col += pow(max(dot(c.N,H),0.0), max(1.0,uShine))*uSpec*0.3;
+  vec3 col = mix(uColorA, uColorB, vein*0.7);                    // softer veining
+  col += bezelSpec(c)*uSpec*0.5;                                // polished-edge sheen
   return vec4(col, uAlpha);
 }` },
 
 /* ---------------- DIGITAL EFFECT ---------------- */
-'crt-phosphor':{ name:'CRT Phosphor', cat:'Digital', swatch:'repeating-linear-gradient(0deg,#0c2a12,#0c2a12 2px,#031206 4px)',
+'crt-phosphor':{ name:'CRT Phosphor', cat:'Digital', lum:'dark', swatch:'repeating-linear-gradient(0deg,#0c2a12,#0c2a12 2px,#031206 4px)',
   dials:['scale','glow','alpha'],
   params:mp({colorA:'#0d2a14',scale:18,glow:0.5,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
@@ -934,32 +1017,32 @@ const MATERIALS = {
   base = mix(base, uColorA, 0.3);
   float sx = mod(c.fc.x, 3.0);
   vec3 sub = vec3(step(sx,1.0), step(1.0,sx)*step(sx,2.0), step(2.0,sx));
-  base *= 0.5 + 1.0*sub;                              // RGB subpixel mask
+  base *= 0.5 + 1.0*sub;
   float scan = 0.7 + 0.3*sin(c.fc.y*3.14159/(uScale*0.3+1.0));
-  base *= scan;                                       // scanlines
-  base += base*uGlow;                                 // phosphor bloom
+  base *= scan;
+  base += base*uGlow;
   return vec4(base, uAlpha);
 }` },
 
-'halftone-cmyk':{ name:'Halftone CMYK', cat:'Digital', swatch:'radial-gradient(circle at 25% 25%,#111 25%,transparent 26%),radial-gradient(circle at 75% 75%,#111 25%,transparent 26%),#fff',
+'halftone-cmyk':{ name:'Halftone CMYK', cat:'Digital', lum:'light', swatch:'radial-gradient(circle at 25% 25%,#111 25%,transparent 26%),radial-gradient(circle at 75% 75%,#111 25%,transparent 26%),#fff',
   dials:['scale','alpha'],
-  params:mp({colorA:'#10131a',colorB:'#f3efe4',scale:6,alpha:1.0}),
+  params:mp({colorA:'#10131a',colorB:'#f5f1e8',scale:6,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec3 src = sampleRefract(c);
   vec2 g = c.fc/uScale;
   float dotd = length(fract(g)-0.5);
   float lum = dot(src, vec3(0.299,0.587,0.114));
-  float ink = step(dotd, (1.0-lum)*0.7);
-  vec3 col = mix(uColorB, src*0.6+uColorA*0.4, ink);  // ink dots on paper
+  float ink = step(dotd, (1.0-lum)*0.6);
+  vec3 col = mix(uColorB, src*0.5+uColorA*0.5, ink);             // ink dots on light paper
   return vec4(col, uAlpha);
 }` },
 
-'dither-1bit':{ name:'1-bit Dither', cat:'Digital', swatch:'repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0/6px 6px',
+'dither-1bit':{ name:'1-bit Dither', cat:'Digital', lum:'light', swatch:'repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0/6px 6px',
   dials:['alpha'],
-  params:mp({colorA:'#0c0f16',colorB:'#e8ead0',alpha:1.0}),
+  params:mp({colorA:'#0c0f16',colorB:'#edeee0',alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec3 src = sampleRefract(c);
-  float lum = dot(src, vec3(0.299,0.587,0.114));
+  float lum = dot(src, vec3(0.299,0.587,0.114)) + 0.25;         // bias bright -> mostly paper
   int ix = int(mod(c.fc.x,4.0)), iy = int(mod(c.fc.y,4.0));
   float th = BAYER[iy*4+ix]/16.0;
   float bw = step(th, lum);
@@ -967,7 +1050,7 @@ const MATERIALS = {
   return vec4(col, uAlpha);
 }` },
 
-'chromatic-aberration':{ name:'Chromatic Aberration', cat:'Digital', swatch:'linear-gradient(135deg,#ff5a5a,#5aff8c 50%,#5a8cff)',
+'chromatic-aberration':{ name:'Chromatic Aberration', cat:'Digital', lum:'dark', swatch:'linear-gradient(135deg,#ff5a5a,#5aff8c 50%,#5a8cff)',
   dials:['dispersion','alpha'],
   params:mp({dispersion:0.4,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
@@ -975,11 +1058,11 @@ const MATERIALS = {
   float r = length(d);
   vec2 off = d*r*uDisp*0.4;
   vec3 col = vec3(texture(uBackdrop,c.uv-off).r, texture(uBackdrop,c.uv).g, texture(uBackdrop,c.uv+off).b);
-  col *= 1.0 - r*r*0.5;                               // lens vignette
+  col *= 1.0 - r*r*0.5;
   return vec4(col, uAlpha);
 }` },
 
-'cad-blueprint':{ name:'CAD Blueprint', cat:'Digital', swatch:'linear-gradient(135deg,#143a8f,#0d2a6b)',
+'cad-blueprint':{ name:'CAD Blueprint', cat:'Digital', lum:'dark', swatch:'linear-gradient(135deg,#143a8f,#0d2a6b)',
   dials:['scale','alpha'],
   params:mp({colorA:'#123a86',colorB:'#cfe0ff',scale:10,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
@@ -987,13 +1070,13 @@ const MATERIALS = {
   vec2 g = c.uv*uScale*vec2(c.aspect,1.0);
   float grid = max(smoothstep(0.92,1.0,fract(g.x)), smoothstep(0.92,1.0,fract(g.y)));
   grid = max(grid, max(smoothstep(0.08,0.0,fract(g.x)), smoothstep(0.08,0.0,fract(g.y))));
-  vec3 col = mix(paper, uColorB, grid*0.5);
-  col = mix(col, uColorB, smoothstep(0.12,0.05,1.0-c.t));   // white frame at the edge
+  vec3 col = mix(paper, uColorB, grid*0.45);
+  col = mix(col, uColorB, smoothstep(0.12,0.05,1.0-c.t)*0.8);    // white frame at the edge
   return vec4(col, uAlpha);
 }` },
 
 /* ---------------- FABRIC / PAPER (analog) ---------------- */
-'denim':{ name:'Denim', cat:'Fabric', swatch:'linear-gradient(135deg,#3a5e96,#28456f)',
+'denim':{ name:'Denim', cat:'Fabric', lum:'dark', swatch:'linear-gradient(135deg,#3a5e96,#28456f)',
   dials:['scale','alpha'],
   params:mp({colorA:'#3f63a0',colorB:'#27446e',scale:120,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
@@ -1001,31 +1084,31 @@ const MATERIALS = {
   float twill = sin((p.x+p.y)*3.14159);
   float weave = 0.5 + 0.25*sin(p.x*6.28318) + 0.25*sin(p.y*6.28318);
   vec3 base = mix(uColorB, uColorA, 0.5+0.4*twill);
-  base = mix(base, vec3(0.9,0.92,0.96), smoothstep(0.62,0.92,fbm(c.uv*4.0))*0.2);  // indigo fade
+  base = mix(base, vec3(0.9,0.92,0.96), smoothstep(0.62,0.92,fbm(c.uv*4.0))*0.2);
   base *= 0.85 + 0.3*weave;
   return vec4(base, uAlpha);
 }` },
 
-'linen-weave':{ name:'Linen Weave', cat:'Fabric', swatch:'repeating-linear-gradient(0deg,#e7ddc9,#e7ddc9 2px,#d2c6ac 4px)',
+'linen-weave':{ name:'Linen Weave', cat:'Fabric', lum:'light', swatch:'repeating-linear-gradient(0deg,#ece2cf,#ece2cf 2px,#d8ccb2 4px)',
   dials:['scale','alpha'],
-  params:mp({colorA:'#e6dcc7',scale:160,alpha:1.0}),
+  params:mp({colorA:'#ece2cd',scale:160,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
   vec2 p = c.fc/(uScale*0.4+1.0);
   float warp = 0.5+0.5*sin(p.x*6.28318);
   float weft = 0.5+0.5*sin(p.y*6.28318);
   float weave = max(warp, weft);
-  vec3 base = uColorA*(0.8+0.3*weave);
-  base += (fbm(c.uv*30.0)-0.5)*0.06;                  // slub texture
+  vec3 base = uColorA*(0.86+0.18*weave);
+  base += (fbm(c.uv*30.0)-0.5)*0.05;                            // slub texture
   return vec4(base, uAlpha);
 }` },
 
-'letterpress':{ name:'Letterpress Paper', cat:'Fabric', swatch:'linear-gradient(135deg,#efe9dc,#ddd3c0)',
+'letterpress':{ name:'Letterpress Paper', cat:'Fabric', lum:'light', swatch:'linear-gradient(135deg,#efe9dc,#ddd3c0)',
   dials:['scale','alpha'],
-  params:mp({colorA:'#e8e1d2',scale:40,alpha:1.0}),
+  params:mp({colorA:'#ece5d6',scale:40,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
-  vec3 paper = uColorA + (fbm(c.uv*uScale)-0.5)*0.06;  // cotton-rag grain
+  vec3 paper = uColorA + (fbm(c.uv*uScale)-0.5)*0.05;            // cotton-rag grain
   float lt = dot(normalize(c.N), normalize(vec3(-0.5,-0.5,1.0)));
-  paper *= 0.9 + 0.18*lt;                              // pressed-edge emboss
+  paper *= 0.93 + 0.12*lt;                                       // pressed-edge emboss
   return vec4(paper, uAlpha);
 }` },
 
@@ -1310,8 +1393,60 @@ function glassRuntime(opts){
   let panels=[];                          // [x,y,w,h,r] in device px
   let dpr=Math.min(2, window.devicePixelRatio||1);
   let light=[0,0];
+  let lightPrev=[0,0], lightVel=[0,0];    // pointer velocity (css px/frame), for fluid + reactive metals
   let running=true; const t0=performance.now();
   let backdropDirty=true;
+
+  /* ---- interactive fluid: a ping-pong velocity+dye field advected each frame.
+     Only allocated when a fluid material is active (opts.isFluid()). State is
+     packed into RGBA8 (vel = rg*2-1, dye = b) so it runs without float-buffer
+     extensions. The pointer injects force + dye, so the field genuinely flows
+     where the mouse drags rather than playing a canned animation. ---- */
+  const FLUID_FRAG =
+    '#version 300 es\nprecision highp float;\n'+
+    'uniform sampler2D uPrev; uniform vec2 uRes; uniform vec2 uMouse; uniform vec2 uMouseVel; out vec4 o;\n'+
+    'void main(){ vec2 uv=gl_FragCoord.xy/uRes; vec2 px=1.0/uRes; vec4 s=texture(uPrev,uv);\n'+
+    '  vec2 vel=s.rg*2.0-1.0; vec2 src=uv - vel*px*6.0; vec4 a=texture(uPrev,src); vel=a.rg*2.0-1.0; float dye=a.b;\n'+
+    '  vec4 n=texture(uPrev,uv+vec2(0.0,px.y)),so=texture(uPrev,uv-vec2(0.0,px.y)),e=texture(uPrev,uv+vec2(px.x,0.0)),w=texture(uPrev,uv-vec2(px.x,0.0));\n'+
+    '  vec2 avgV=((n.rg+so.rg+e.rg+w.rg)*0.25)*2.0-1.0; vel=mix(vel,avgV,0.14); dye=mix(dye,(n.b+so.b+e.b+w.b)*0.25,0.12);\n'+
+    '  float d=length((uv-uMouse)*vec2(uRes.x/uRes.y,1.0)); float fall=exp(-d*d*90.0);\n'+
+    '  vel+=uMouseVel*fall*40.0; dye+=fall*min(length(uMouseVel)*120.0,1.0);\n'+
+    '  vel*=0.972; dye*=0.984; vel=clamp(vel,-1.0,1.0); o=vec4(vel*0.5+0.5,clamp(dye,0.0,1.0),1.0); }\n';
+  let simProg=null, simA=null, simB=null, simFA=null, simFB=null, simW=0, simH=0, simReady=false;
+  function ensureFluid(){
+    if(simReady) return true;
+    try{
+      simProg = buildProgram(FLUID_FRAG);
+      simW = Math.max(64, Math.round(canvas.width/2)); simH = Math.max(64, Math.round(canvas.height/2));
+      const mk=()=>{ const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,simW,simH,0,gl.RGBA,gl.UNSIGNED_BYTE, new Uint8Array(simW*simH*4).fill(128));
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; };
+      const mkfb=t=>{ const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); return f; };
+      // zero-velocity, zero-dye initial state: rg=128 (->0 vel), b=0 (->no dye)
+      const init=new Uint8Array(simW*simH*4); for(let i=0;i<simW*simH;i++){ init[i*4]=128; init[i*4+1]=128; init[i*4+2]=0; init[i*4+3]=255; }
+      simA=mk(); gl.bindTexture(gl.TEXTURE_2D,simA); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,simW,simH,0,gl.RGBA,gl.UNSIGNED_BYTE,init);
+      simB=mk(); gl.bindTexture(gl.TEXTURE_2D,simB); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,simW,simH,0,gl.RGBA,gl.UNSIGNED_BYTE,init);
+      simFA=mkfb(simA); simFB=mkfb(simB);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      simReady=true; return true;
+    }catch(e){ if(opts.onError) opts.onError('fluid init: '+(e.message||e)); simReady=false; return false; }
+  }
+  function stepFluid(){
+    // render sim into simB sampling simA, then swap
+    gl.useProgram(simProg);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,simFB); gl.viewport(0,0,simW,simH);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    const su=n=>gl.getUniformLocation(simProg,n);
+    gl.uniform2f(su('uRes'),simW,simH);
+    const cw=Math.max(1,stage.clientWidth), ch=Math.max(1,stage.clientHeight);
+    gl.uniform2f(su('uMouse'), light[0]/cw, light[1]/ch);
+    gl.uniform2f(su('uMouseVel'), lightVel[0]/cw, lightVel[1]/ch);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,simA); gl.uniform1i(su('uPrev'),1);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    const tA=simA,fA=simFA; simA=simB; simFA=simFB; simB=tA; simFB=fA;   // swap (display reads simA)
+  }
 
   function compileShader(type,src){
     const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -1377,6 +1512,12 @@ function glassRuntime(opts){
     requestAnimationFrame(frame);
     if(!prog) return;
     if(backdropDirty) updateBackdrop();
+    // pointer velocity (decays toward zero when the mouse is still)
+    lightVel[0]=light[0]-lightPrev[0]; lightVel[1]=light[1]-lightPrev[1];
+    lightPrev[0]=light[0]; lightPrev[1]=light[1];
+    // advance the fluid field (only if the active material requested it)
+    const fluid = opts.isFluid && opts.isFluid();
+    if(fluid && ensureFluid()) stepFluid();
     gl.viewport(0,0,canvas.width,canvas.height);
     gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(prog);
@@ -1396,7 +1537,10 @@ function glassRuntime(opts){
     gl.uniform1f(u('uAlpha'),U.alpha); gl.uniform1i(u('uHolo'),U.holo);
     gl.uniform3f(u('uColorA'),U.colorA[0],U.colorA[1],U.colorA[2]); gl.uniform3f(u('uColorB'),U.colorB[0],U.colorB[1],U.colorB[2]);
     gl.uniform1f(u('uScale'),U.scale); gl.uniform1f(u('uRough'),U.rough); gl.uniform1f(u('uAnis'),U.anis); gl.uniform1f(u('uGlow'),U.glow);
+    gl.uniform2f(u('uMouseVel'), lightVel[0]*dpr, lightVel[1]*dpr);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex); gl.uniform1i(u('uBackdrop'),0);
+    if(fluid && simReady){ gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,simA); gl.uniform1i(u('uState'),2); gl.uniform1i(u('uHasState'),1); }
+    else { gl.uniform1i(u('uHasState'),0); }
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
@@ -1475,6 +1619,10 @@ function applyAccents(){
   stage.style.setProperty('--m-accent',acc);
   stage.style.setProperty('--m-accent2',acc2);
   stage.style.setProperty('--m-radius',(10+STATE.material.thickness*0.35).toFixed(0)+'px');
+  // surface luminance drives text polarity: light materials get dark text so the
+  // UI stays legible ON the material, not just behind it.
+  const entry=MATERIALS[STATE.material.type]||MATERIALS['liquid-glass'];
+  stage.dataset.surface = entry.lum || 'dark';
 }
 function renderContentBits(){
   dsSwatches.innerHTML='';
@@ -1792,6 +1940,7 @@ function ensureRuntime(){
     canvas:glcanvas, stage, vsSrc:VS_SRC, panelSelector:'.mat',
     getFragSrc:()=> activeFrag(),
     getUniforms:()=> matToUniforms(STATE.material),
+    isFluid:()=> !!(MATERIALS[STATE.material.type] && MATERIALS[STATE.material.type].fluid),
     drawBackdrop:(ctx,w,h)=> drawBackdropInto(ctx,w,h,STATE,bgImg),
     onError:(msg)=>{ glcanvas.style.display='none'; glwarn.style.display='flex'; glwarn.textContent='Glass shader error: '+msg; },
   });
@@ -1917,6 +2066,9 @@ function bakeHTML(){
   const bc=backdropDOMCSS(st, bgUrl);
   const bcExtra = bc.backgroundSize ? `background-size:${bc.backgroundSize};background-position:${bc.backgroundPosition};background-repeat:${bc.backgroundRepeat};` : '';
   const fragSrc = st.material.shader || composeFrag(st.material);
+  const matEntry = MATERIALS[st.material.type] || MATERIALS['liquid-glass'];
+  const surface = matEntry.lum || 'dark';
+  const fluidFlag = !!matEntry.fluid;
   const ovl = (st.overlay && st.overlay.type && st.overlay.type!=='none') ? st.overlay : null;
   const ovlSrc = ovl ? composeOverlay(ovl) : '';
   const ovlBlend = ovl ? (OVERLAYS[ovl.type].blend||'normal') : 'normal';
@@ -1932,7 +2084,7 @@ function bakeHTML(){
     glassRuntime.toString(),
     'let bgImg=null;',
     'const RT=glassRuntime({canvas:document.getElementById("glcanvas"),stage:document.getElementById("stage"),vsSrc:VS_SRC,panelSelector:".mat",'+
-      'getFragSrc:()=>FRAG_SRC,getUniforms:()=>matToUniforms(STATE.material),drawBackdrop:(ctx,w,h)=>drawBackdropInto(ctx,w,h,STATE,bgImg),'+
+      'getFragSrc:()=>FRAG_SRC,getUniforms:()=>matToUniforms(STATE.material),isFluid:()=>'+(fluidFlag?'true':'false')+',drawBackdrop:(ctx,w,h)=>drawBackdropInto(ctx,w,h,STATE,bgImg),'+
       'onError:(m)=>{var w=document.getElementById("glwarn");if(w){w.style.display="flex";w.textContent="Glass shader error: "+m;}}});',
     bgUrl ? 'if(RT){bgImg=new Image();bgImg.crossOrigin="anonymous";bgImg.onload=function(){RT.refreshBackdrop();};bgImg.src='+JSON.stringify(bgUrl)+';}' : '',
     // full-stage overlay FX (only emitted when an effect is active)
@@ -1969,8 +2121,12 @@ function bakeHTML(){
   .product-card{width:230px;padding:0;overflow:hidden}.pc-img{height:118px;background-size:cover;background-position:center}.pc-body{padding:14px 16px 16px}.pc-title{font-size:15px;font-weight:700;color:#fff;margin:0;text-shadow:0 1px 4px #0007}.pc-text{font-size:12px;color:#fff;opacity:.8;margin:5px 0 12px;line-height:1.45;text-shadow:0 1px 3px #0006}.pc-link{font-size:12.5px;font-weight:700;color:var(--m-accent)}
   .chip-pill{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 14px;font-size:12px;font-weight:600;color:#fff;border-radius:999px;text-shadow:0 1px 3px #0006}.dotc{width:8px;height:8px;border-radius:50%;background:var(--m-accent)}
   .galrow{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}.galcol{display:flex;flex-direction:column;gap:14px;flex:1;min-width:240px}
+  #stage[data-surface="light"] .head,#stage[data-surface="light"] .type-display,#stage[data-surface="light"] .type-heading,#stage[data-surface="light"] .type-body,#stage[data-surface="light"] .type-caption,#stage[data-surface="light"] .tab,#stage[data-surface="light"] .ds-input,#stage[data-surface="light"] .pc-title,#stage[data-surface="light"] .pc-text,#stage[data-surface="light"] .chip-pill,#stage[data-surface="light"] .ds-btn{color:#14181f;text-shadow:0 1px 0 rgba(255,255,255,.55)}
+  #stage[data-surface="light"] .ds-input::placeholder{color:#14181f99}
+  #stage[data-surface="light"] .tab.active{color:#0a0d12}
+  #stage[data-surface="light"] .ds-btn.tertiary,#stage[data-surface="light"] .pc-link{color:${acc2}}
 </style></head><body>
-<div id="wrap"><div id="stage">
+<div id="wrap"><div id="stage" data-surface="${surface}">
   <div id="backdrop"></div><canvas id="glcanvas"></canvas><canvas id="fxcanvas"></canvas><div id="glwarn"></div>
   <div id="gallery">
     <div class="mat ds-card"><div class="head">Typography</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body Small — the quick brown fox jumps over the lazy dog.</div><div class="type-caption">Caption / Label</div></div>
