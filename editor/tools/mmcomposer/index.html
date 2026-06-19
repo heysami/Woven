@@ -137,18 +137,19 @@ function loadMod(key){
   return _modCache[key];
 }
 
-/* ---------- Shared FX chain (../_shared/fx.js) for WIRED top-level effects --
-   Loaded lazily; resolves relative to this tool's index.html. Graceful: if it
-   fails to load, wired top-level effects are skipped (console.warn) and the
-   inline composition still plays. */
-let _fxChain=null, _fxLoad=null, _fxFailed=false;
+/* ---------- Shared shader-lab catalog (../_shared/fx.js) -------------------
+   fx.js is the SINGLE source of truth for the effect catalog: the per-layer
+   GLFx (below) and the WIRED top-level chain both render the SAME faithful
+   shader-lab effects with the SAME param contract — no collapsing, no aliases.
+   EFFECT_SPECS is plain JSON ({type:{label,frag,uniforms[]}}) so it also bakes
+   into the standalone player verbatim. */
+import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue } from '../_shared/fx.js';
+const EFFECT_SPECS = fxProgramSpecs();
+let _fxChain=null, _fxFailed=false;
 function ensureFXChain(){
-  if(_fxChain || _fxFailed) return Promise.resolve(_fxChain);
-  if(_fxLoad) return _fxLoad;
-  _fxLoad = import('../_shared/fx.js')
-    .then(fx=>{ try{ _fxChain=fx.createFXChain(); }catch(e){ _fxFailed=true; console.warn('fx.createFXChain failed',e); } return _fxChain; })
-    .catch(e=>{ _fxFailed=true; console.warn('shared fx.js failed to load — wired top-level effects disabled',e); return null; });
-  return _fxLoad;
+  if(_fxChain || _fxFailed) return _fxChain;
+  try{ _fxChain=createFXChain(); }catch(e){ _fxFailed=true; console.warn('fx.createFXChain failed',e); }
+  return _fxChain;
 }
 
 /* ---------- Parent-node bridge -------------------------------------------- */
@@ -227,6 +228,9 @@ function composerPositioningFromSpec(spec){
     p.mode='face-3d';
     p.size=p.size??1;
   }
+  // Phase-1: carry parametric bindings (number-generator → param) onto the
+  // runtime positioning object so Positioning.resolve can evaluate them.
+  if(src._bindings) p._bindings=src._bindings;
   return p;
 }
 function normalizedCoord(v,size,fallback){
@@ -300,11 +304,21 @@ function buildWiredRuntimeLayers(){
     const trigger = trigK
       ? Object.assign({source:trigSpec.source||'none', impacts:trigSpec.impacts||[]}, trigSpec.params||{})
       : {source:'none',impacts:[]};
-    // map fx.js taxonomy → the editor GLFx built-in shader set for layer effects
+    // shader-lab effect children pass through verbatim — same catalog + same
+    // param contract the GLFx (and the WIRED top-level chain) already render.
     const stack = effK.map(e=>{
       const fx = wiredChildSpec(e);
-      const ty = fx.glsl ? 'shader' : mapGLFxType(fx.type);
-      return {type:ty, params:fx.params||{}, intensity:fx.intensity??1, glsl:fx.glsl};
+      const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fx.type==='custom' || fx.type==='shader';
+      // Phase-1: scalar number bindings → effect intensity / params. (Evaluated
+      // at build time; vector/animated effect drive is a later phase.)
+      let intensity = fx.intensity??1, params = fx.params||{};
+      const b = fx._bindings;
+      if(b){ params = Object.assign({}, params);
+        for(const k in b){ const src=b[k]; if(!src||Sources.isVector(src)) continue;
+          const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+          if(k==='intensity') intensity=val; else params[k]=val; }
+      }
+      return {type:isCustom?'custom':fx.type, params, intensity, glsl:fx.glsl};
     });
     const L = fillLayer({
       id: wl.id || ('W'+wi),
@@ -334,7 +348,7 @@ function defaultState(){
         positioning:{mode:'grid', cols:8, rows:5, placement:'fixed', gap:0.12, size:0.6},
         trigger:{source:'position', axis:'x',
           impacts:[{target:'L2', param:'effect.intensity', map:'linear', range:[0,1]}]},
-        effects:{stack:[{type:'bloom', params:{}, intensity:0.5}]} },
+        effects:{stack:[{type:'directional-blur', params:{angle:0,length:0.04}, intensity:0.5}]} },
       { id:'L2', name:'Reactive title', z:1, visible:true,
         content:{kind:'text', text:'WOVEN', color:'#ffffff'},
         positioning:{mode:'single', x:0.5, y:0.5, scale:1, rot:0},
@@ -614,19 +628,24 @@ const Positioning = {
   reset(){ this.sim={}; },
   resolve(L, W, H, dt){
     const p=normalizeRuntimePositioning(L.positioning,W,H);
+    // Phase-1: scalar bindings overlay onto params BEFORE mode resolve; vector
+    // (per-instance) bindings overlay onto each resolved transform AFTER.
+    Sources.applyScalar(p);
+    let out;
     switch(p.mode){
-      case 'single':      return [{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
-      case 'grid':        return this.grid(L,p,W,H);
-      case 'grid-3d':     return this.grid3d(L,p);
-      case 'scatter-3d':  return this.scatter3d(L,p);
-      case 'instances':   return this.instances(L,p,dt);
-      case 'physics':     return this.physics(L,p,W,H,dt);
-      case 'drawn':       return this.drawn(L,p);
-      case 'rope':        return this.rope(L,p,dt);
-      case 'camera-feed': return this.cameraFeed(L,p);
-      case 'face-3d':     return this.face3d(L,p);
-      default:            return [{x:.5,y:.5,scale:1,rot:0}];
+      case 'single':      out=[{x:p.x,y:p.y,scale:p.scale,rot:p.rot}]; break;
+      case 'grid':        out=this.grid(L,p,W,H); break;
+      case 'grid-3d':     out=this.grid3d(L,p); break;
+      case 'scatter-3d':  out=this.scatter3d(L,p); break;
+      case 'instances':   out=this.instances(L,p,dt); break;
+      case 'physics':     out=this.physics(L,p,W,H,dt); break;
+      case 'drawn':       out=this.drawn(L,p); break;
+      case 'rope':        out=this.rope(L,p,dt); break;
+      case 'camera-feed': out=this.cameraFeed(L,p); break;
+      case 'face-3d':     out=this.face3d(L,p); break;
+      default:            out=[{x:.5,y:.5,scale:1,rot:0}];
     }
+    return Sources.applyVector(p, out);
   },
   grid(L,p,W,H){
     const out=[], cols=Math.max(1,p.cols|0), rows=Math.max(1,p.rows|0);
@@ -821,6 +840,73 @@ function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
 /* ===========================================================================
+   SOURCES — parametric value sources (number-generator) that DRIVE a numeric
+   param of a position/effect/trigger block. A binding is baked onto the target
+   spec by the editor as spec._bindings[param] = { kind, spec:{ kind:'number',
+   sub, params, vector } }. evalSource(src, ctx) → number;
+   ctx = { index, count, time, u, v, cols, rows }. Scalar sources broadcast one
+   value; vector sources (algorithmic / random / pixel-map / timeline-perInst)
+   are evaluated PER INSTANCE so each grid cell / instance gets its own value.
+   ===========================================================================*/
+const Sources = {
+  _fnCache:new Map(), _imgCache:new Map(),
+  isVector(src){ const s=(src&&src.spec)||src||{}; if(s.vector) return true;
+    return s.sub==='algorithmic'||s.sub==='random'||s.sub==='pixel-map'||s.kind==='timeline'; },
+  eval(src, ctx){
+    const s=(src&&src.spec)||src||{}; const p=s.params||{}; ctx=ctx||{};
+    const i=ctx.index||0, t=ctx.time||0, n=ctx.count||1, u=ctx.u||0, v=ctx.v||0, cols=ctx.cols||1, rows=ctx.rows||1;
+    if(s.kind==='timeline') return 0;  // Phase 3
+    if(s.sub==='constant') return finiteNumber(p.value,0);
+    if(s.sub==='algorithmic'){ const fn=this._fn(p.expr); try{ return finiteNumber(fn(i,t,n,u,v,cols,rows),0); }catch(e){ return 0; } }
+    if(s.sub==='random'){ const min=finiteNumber(p.min,0),max=finiteNumber(p.max,1);
+      const r=mulberry(hash(String(p.seed||'r')+':'+i)); return min+(max-min)*r(); }
+    if(s.sub==='pixel-map') return this._pixel(s,ctx);
+    return 0;
+  },
+  _fn(expr){ let f=this._fnCache.get(expr); if(!f){ try{ f=new Function('i','t','n','u','v','cols','rows','return ('+String(expr||'0')+');'); }catch(e){ f=function(){return 0;}; } this._fnCache.set(expr,f); } return f; },
+  _pixel(s,ctx){ const p=s.params||{}; const url=p.assetUrl; const min=finiteNumber(p.min,0),max=finiteNumber(p.max,1);
+    if(!url) return min;
+    let rec=this._imgCache.get(url);
+    if(!rec){ rec={ready:false,data:null,w:0,h:0}; this._imgCache.set(url,rec);
+      const im=new Image(); try{ im.crossOrigin='anonymous'; }catch(e){}
+      im.onload=()=>{ try{ const w=Math.min(im.naturalWidth||1,128), h=Math.min(im.naturalHeight||1,128);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d');
+        cx.drawImage(im,0,0,w,h); rec.data=cx.getImageData(0,0,w,h).data; rec.w=w; rec.h=h; rec.ready=true; }catch(e){ rec.ready=false; } };
+      im.src=url; }
+    if(!rec.ready||!rec.data) return min;
+    let px,py;
+    if(ctx.u!=null||ctx.v!=null){ px=Math.max(0,Math.min(rec.w-1,Math.floor((ctx.u||0)*(rec.w-1)))); py=Math.max(0,Math.min(rec.h-1,Math.floor((ctx.v||0)*(rec.h-1)))); }
+    else { const idx=(ctx.index||0)%Math.max(1,rec.w*rec.h); px=idx%rec.w; py=Math.floor(idx/rec.w); }
+    const o=(py*rec.w+px)*4, d=rec.data, ch=p.channel||'luma';
+    let val; if(ch==='r') val=d[o]/255; else if(ch==='g') val=d[o+1]/255; else if(ch==='b') val=d[o+2]/255; else if(ch==='a') val=d[o+3]/255;
+    else val=(0.299*d[o]+0.587*d[o+1]+0.114*d[o+2])/255;
+    return min+(max-min)*val;
+  },
+  // SCALAR bindings (vector=false) overlaid onto a params object before resolve.
+  applyScalar(p){ const b=p&&p._bindings; if(!b) return p;
+    for(const k in b){ const src=b[k]; if(!src||this.isVector(src)) continue;
+      p[k]=this.eval(src,{index:0,time:Input.clock,count:1});
+      if(k==='rotation'||k==='rotateZ') p.rot=(finiteNumber(p.rotation,0)+finiteNumber(p.rotateZ,0))*Math.PI/180;
+    }
+    return p; },
+  // VECTOR bindings overlaid PER INSTANCE onto resolved transforms {x,y,scale,rot}.
+  applyVector(p, out){ const b=p&&p._bindings; if(!b||!Array.isArray(out)) return out;
+    const keys=Object.keys(b).filter(k=>b[k]&&this.isVector(b[k])); if(!keys.length) return out;
+    const n=out.length, time=Input.clock;
+    for(let i=0;i<n;i++){ const inst=out[i]; if(!inst) continue;
+      const ctx={index:i,count:n,time,u:inst.x,v:inst.y};
+      for(const k of keys){ const val=this.eval(b[k],ctx);
+        if(k==='rotation'||k==='rotateZ') inst.rot=val*Math.PI/180;
+        else if(k==='scale'||k==='size') inst.scale=val;
+        else if(k==='x') inst.x=val;
+        else if(k==='y') inst.y=val;
+        else inst[k]=val;
+      }
+    }
+    return out; },
+};
+
+/* ===========================================================================
    TRIGGERS  —  evaluate a layer's trigger → scalar 0..1 (+ vec for position)
    ===========================================================================*/
 const Triggers = {
@@ -928,96 +1014,24 @@ function wiredGlobalTrigger(){
 
 /* ===========================================================================
    EFFECTS  —  WebGL2 fullscreen fragment passes (ping-pong framebuffers)
-   Each effect reads previous pass texture + uTime/uIntensity/uRes.
+   The catalog + shaders + uniform contract all come from ../_shared/fx.js
+   (EFFECT_SPECS), so a layer effect renders identically to the same effect on
+   the WIRED top-level chain. The vertex shader + every fragment use fx.js's
+   convention: attribute aPos (location 0), varying vUv, uniforms uTex /
+   uResolution / uTime / uIntensity, plus the effect's own params as uniforms.
    ===========================================================================*/
-const VERT=`#version 300 es
-in vec2 p; out vec2 uv;
-void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`;
-
-const FRAG_HEAD=`#version 300 es
-precision highp float;
-in vec2 uv; out vec4 o;
-uniform sampler2D tex; uniform float uTime; uniform float uIntensity; uniform vec2 uRes;
-`;
-const EFFECT_SRC={
-  'chromatic-aberration':`
-    void main(){ vec2 d=(uv-0.5); float k=uIntensity*0.03;
-      float r=texture(tex,uv+d*k).r, g=texture(tex,uv).g, b=texture(tex,uv-d*k).b;
-      o=vec4(r,g,b, texture(tex,uv).a); }`,
-  'pixel-mosh':`
-    float h(vec2 p){ return fract(sin(dot(p,vec2(12.9,78.2)))*43758.5); }
-    void main(){ float bs=mix(1.0,40.0,uIntensity);
-      vec2 blk=floor(uv*uRes/bs);
-      vec2 off=vec2(h(blk+floor(uTime*4.)),h(blk.yx))*2.-1.;
-      off*=step(0.6,h(blk*1.3))*uIntensity*0.06;
-      vec4 c=texture(tex,uv+off); o=c; }`,
-  'halftone':`
-    void main(){ float s=mix(60.0,6.0,uIntensity);
-      vec2 g=uv*uRes/ (uRes.x/s); vec2 cell=floor(g)+0.5; vec2 d=g-cell;
-      vec4 c=texture(tex,cell/(uRes.x/s)*(uRes.x/uRes)/1.0 );
-      c=texture(tex,floor(g)/(uRes.x/s));
-      float lum=dot(c.rgb,vec3(0.299,0.587,0.114));
-      float r=length(d)*1.4; float dot=step(r, sqrt(1.0-lum)*0.9);
-      o=vec4(vec3(dot)*c.rgb + vec3(dot)*0.0, c.a*max(dot,0.05)+ (1.0-uIntensity)*c.a );
-      o.rgb=mix(c.rgb, vec3(dot), uIntensity); }`,
-  'ascii':`
-    float glyph(float l, vec2 f){
-      // crude luminance->density block
-      float d=step(0.5,l)*step(abs(f.x-0.5),0.3)*step(abs(f.y-0.5),0.4);
-      d+=step(0.25,l)*step(abs(f.x-0.5),0.12);
-      return clamp(d,0.,1.); }
-    void main(){ float cells=mix(160.0,40.0,uIntensity);
-      vec2 grid=uv*vec2(cells, cells*uRes.y/uRes.x);
-      vec2 cell=floor(grid); vec2 f=fract(grid);
-      vec4 c=texture(tex, cell/vec2(cells,cells*uRes.y/uRes.x));
-      float lum=dot(c.rgb,vec3(0.299,0.587,0.114));
-      float g=glyph(lum,f);
-      vec3 col=mix(c.rgb, c.rgb*g + vec3(g)*lum, uIntensity);
-      o=vec4(col, c.a); }`,
-  'displace':`
-    void main(){ float a=uTime*1.5;
-      vec2 d=vec2(sin(uv.y*20.+a),cos(uv.x*20.+a))*uIntensity*0.02;
-      o=texture(tex,uv+d); }`,
-  'bloom':`
-    void main(){ vec4 base=texture(tex,uv); vec3 sum=vec3(0.);
-      float r=uIntensity*0.012; float w=0.;
-      for(int i=-4;i<=4;i++)for(int j=-4;j<=4;j++){
-        vec2 off=vec2(float(i),float(j))*r;
-        vec3 s=texture(tex,uv+off).rgb;
-        float br=max(0.,dot(s,vec3(0.333))-0.5);
-        sum+=s*br; w+=1.; }
-      o=vec4(base.rgb + sum/w*uIntensity*4.0, base.a); }`,
-  'particle-float':`
-    float h(vec2 p){ return fract(sin(dot(p,vec2(41.3,289.1)))*43758.5); }
-    void main(){ float rise=uTime*uIntensity*0.15;
-      vec2 cell=floor(uv*uRes/6.0);
-      float ph=h(cell);
-      vec2 suv=uv + vec2(sin((uv.y+ph)*30.)*0.01, mod(rise+ph,0.3))*uIntensity;
-      vec4 c=texture(tex,suv);
-      o=vec4(c.rgb, c.a*(1.0 - mod(rise+ph,1.0)*uIntensity*0.6)); }`,
-};
-/* Map shared fx.js taxonomy type names → the editor GLFx EFFECT_SRC keys.
-   Function declaration (hoisted) so wiredRuntimeLayers() can call it. */
-function mapGLFxType(t){
-  const m={
-    'chromatic-aberration':'chromatic-aberration',
-    'displacement':'displace','displace':'displace',
-    'pixelate':'pixel-mosh','pixel-sort':'pixel-mosh','dither':'pixel-mosh',
-    'halftone':'halftone','ascii':'ascii','crt':'halftone',
-    'edge-detect':'displace','ink':'halftone','posterize':'halftone',
-    'directional-blur':'bloom','pattern':'particle-float','particle-grid':'particle-float',
-    'bloom':'bloom','custom':'shader','shader':'shader',
-  };
-  return m[t] || (EFFECT_SRC[t]?t:'bloom');
-}
+const VERT=FX_VERT;
+const EFFECT_COPY_FRAG=fxCustomFrag('return texture(uTex, vUv);');
+function isCustomFx(eff){ return eff && (eff.type==='custom' || eff.type==='shader') && eff.glsl && eff.glsl.trim(); }
 function fragFor(eff){
-  if(eff.type==='shader' && eff.glsl && eff.glsl.trim()){
-    // custom: if user didn't include a version/header, prepend ours.
-    let src=eff.glsl;
-    if(!/#version/.test(src)) src=FRAG_HEAD+src;
-    return src;
-  }
-  return FRAG_HEAD+(EFFECT_SRC[eff.type]||'void main(){ o=texture(tex,uv); }');
+  if(isCustomFx(eff)) return fxCustomFrag(eff.glsl);
+  const spec=EFFECT_SPECS[eff.type];
+  return spec ? spec.frag : EFFECT_COPY_FRAG;
+}
+function uniformsFor(eff){
+  if(isCustomFx(eff)) return [];
+  const spec=EFFECT_SPECS[eff.type];
+  return spec ? spec.uniforms : [];
 }
 
 class GLFx {
@@ -1042,7 +1056,7 @@ class GLFx {
     return pr;
   }
   progFor(eff){
-    const key=eff.type==='shader'?('custom:'+hash(eff.glsl||'')):eff.type;
+    const key=isCustomFx(eff)?('custom:'+hash(eff.glsl||'')):eff.type;
     if(this.progs[key]) return this.progs[key];
     const pr=this.compile(fragFor(eff)); if(pr){ this.progs[key]=pr; }
     return pr;
@@ -1097,7 +1111,7 @@ class GLFx {
   blit(inputTex,w,h,eff,time,intensity,targetFb){
     const gl=this.gl;
     let pr;
-    if(eff.type==='__copy'){ pr=this._copyProg||(this._copyProg=this.compile(FRAG_HEAD+'void main(){o=texture(tex,uv);}')); }
+    if(eff.type==='__copy'){ pr=this._copyProg||(this._copyProg=this.compile(EFFECT_COPY_FRAG)); }
     else pr=this.progFor(eff);
     if(!pr){ return; }
     gl.bindFramebuffer(gl.FRAMEBUFFER,targetFb);
@@ -1105,13 +1119,19 @@ class GLFx {
     gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(pr);
     gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);
-    const loc=gl.getAttribLocation(pr,'p');
-    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,inputTex);
-    gl.uniform1i(gl.getUniformLocation(pr,'tex'),0);
+    gl.uniform1i(gl.getUniformLocation(pr,'uTex'),0);
     gl.uniform1f(gl.getUniformLocation(pr,'uTime'),time);
     gl.uniform1f(gl.getUniformLocation(pr,'uIntensity'),intensity);
-    gl.uniform2f(gl.getUniformLocation(pr,'uRes'),w,h);
+    gl.uniform2f(gl.getUniformLocation(pr,'uResolution'),w,h);
+    // per-effect params → uniforms (the fx.js declarative contract)
+    const params=eff.params||{};
+    for(const u of uniformsFor(eff)){
+      const ul=gl.getUniformLocation(pr,u.name); if(ul==null) continue;
+      const val=fxUniformValue(u,params);
+      if(u.k==='1i') gl.uniform1i(ul, val|0); else gl.uniform1f(ul, val);
+    }
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
 }
@@ -1715,10 +1735,9 @@ function renderInspector(){
       const card=document.createElement('div'); card.className='effitem';
       const eh=document.createElement('div'); eh.className='eh';
       const sel=document.createElement('select');
-      sel.innerHTML=[['pixel-mosh','Pixel mosh'],['chromatic-aberration','Chromatic aberration'],
-        ['particle-float','Particle float'],['halftone','Halftone'],['ascii','ASCII'],
-        ['displace','Displace'],['bloom','Bloom'],['shader','Custom shader']]
-        .map(([v,l])=>`<option value="${v}" ${v===eff.type?'selected':''}>${l}</option>`).join('');
+      const selType=(eff.type==='shader')?'custom':eff.type;
+      sel.innerHTML=FX_TYPES
+        .map(v=>`<option value="${v}" ${v===selType?'selected':''}>${FX_LABELS[v]||v}</option>`).join('');
       sel.onchange=e=>{ eff.type=e.target.value; emit(); renderInspector(); };
       eh.appendChild(sel);
       const up=document.createElement('button'); up.className='iconbtn sm'; up.innerHTML=ICONS.up;
@@ -1730,14 +1749,23 @@ function renderInspector(){
       eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
       card.appendChild(eh);
       card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
-      if(eff.type==='shader'){
-        card.appendChild(fText('Fragment GLSL',eff.glsl||EFFECT_SRC['displace'],v=>{eff.glsl=v;},true));
-        card.appendChild(html('<p class="hint">Uniforms: tex, uTime, uIntensity, uRes. in vec2 uv; out vec4 o;</p>'));
+      // per-effect params (the fx.js declarative contract — these drive the shader)
+      for(const u of uniformsFor(eff)){
+        const cur=(eff.params&&eff.params[u.from]!=null)?eff.params[u.from]:u.def;
+        if(u.bool){
+          card.appendChild(fSelect(u.from,(cur?'1':''),[['','off'],['1','on']],v=>{ eff.params=eff.params||{}; eff.params[u.from]=!!v; }));
+        }else{
+          card.appendChild(numField(u.from,cur,v=>{ eff.params=eff.params||{}; eff.params[u.from]=v; }));
+        }
+      }
+      if(eff.type==='custom'||eff.type==='shader'){
+        card.appendChild(fText('Fragment GLSL',eff.glsl||'void main(){\n  vec2 d = (uv - 0.5) * 0.08 * sin(uTime);\n  o = texture(tex, uv + d);\n}',v=>{eff.glsl=v;},true));
+        card.appendChild(html('<p class="hint">Write a full void main(). Available: tex, uTime, uIntensity, uRes, in vec2 uv; out o (alias for fragColor). fx.js names (uTex, vUv, uResolution, fragColor) also work.</p>'));
       }
       b.appendChild(card);
     });
     const add=document.createElement('button'); add.className='sm'; add.textContent='+ Add effect';
-    add.onclick=()=>{ stack.push({type:'bloom',params:{},intensity:0.5}); emit(); renderInspector(); };
+    add.onclick=()=>{ stack.push({type:'chromatic-aberration',params:{},intensity:0.5}); emit(); renderInspector(); };
     b.appendChild(add);
   },'fx'));
 }
@@ -1833,20 +1861,27 @@ function bake(){
     return o;
   });
   cfg.layers = cfg.layers.concat(wiredLayers);
+  // Pre-bake custom effect fragments so the standalone player needs no fx.js
+  // import. Built-in effects are rendered from the embedded EFFECT_SPECS table.
+  for(const L of cfg.layers){ if(L.effects&&Array.isArray(L.effects.stack)) L.effects.stack=L.effects.stack.map(bakeEffect); }
   // inline wired asset urls (incl. wired-layer asset children) so the file is self-contained-ish
   const assets=CONTENT.map(c=>({id:c.id,url:c.url,kind:c.kind,label:c.label}));
-  // WIRED top-level effects → final post-process stack, mapped from the
-  // shared fx.js taxonomy onto the slim player's built-in shader set so the
-  // standalone file applies them without depending on ../_shared/fx.js.
-  const topFx=(WIRED.effects||[]).map(e=>({type:mapFxType(e.type), params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl}));
+  // WIRED top-level effects → final post-process stack (same shader-lab catalog,
+  // same param contract — no collapsing).
+  const topFx=(WIRED.effects||[]).map(e=>bakeEffect({type:(e.glsl&&String(e.glsl).trim())?'custom':e.type, params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl}));
   return BAKED_TEMPLATE
     .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
     .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';')
     .replace('/*__TOPFX__*/','window.__MM_TOPFX__='+JSON.stringify(topFx)+';');
 }
-/* Map shared fx.js effect-type names onto the slim player's built-in shader
-   keys (EFFECT_SRC) — reuse the same table the editor GLFx uses. */
-function mapFxType(t){ return mapGLFxType(t); }
+/* Serialize one effect for the baked player. Custom effects carry a precompiled
+   fragment (`_frag`); built-ins carry just type/params/intensity and resolve
+   against the embedded EFFECT_SPECS table. */
+function bakeEffect(e){
+  const out={type:e.type, params:e.params||{}, intensity:e.intensity!=null?e.intensity:1};
+  if(isCustomFx(e)){ out.type='custom'; out.glsl=e.glsl; out._frag=fxCustomFrag(e.glsl); }
+  return out;
+}
 
 /* The baked runtime re-uses the SAME engine source by serializing the relevant
    module functions into a compact player. To keep it truly self-contained and
@@ -1868,13 +1903,13 @@ const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
 /*__TOPFX__*/
 ${'/* ===== slim player ===== */'}
 (${slimPlayer.toString()})(window.__MM_CFG__, window.__MM_ASSETS__||[],
-  ${JSON.stringify(EFFECT_SRC)}, ${JSON.stringify(FRAG_HEAD)}, ${JSON.stringify(VERT)},
+  ${JSON.stringify(Object.assign({__copy:{frag:EFFECT_COPY_FRAG,uniforms:[]}}, EFFECT_SPECS))}, ${JSON.stringify(FX_VERT)},
   window.__MM_TOPFX__||[]);
 <\/script></body></html>`;
 
 /* slimPlayer: a self-contained reimplementation of the core runtime. It is a
    FUNCTION (stringified into the baked file). It must not reference outer scope. */
-function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
+function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
   TOPFX=TOPFX||[];
   const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
   const host=document.getElementById('h'), stage=document.getElementById('s');
@@ -1977,10 +2012,11 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   const gl=cgl.getContext('webgl2',{premultipliedAlpha:true,alpha:true}); let GLOK=!!gl,progs={},fbos=[],texs=[],quad,srcTex,_w,_h;
   if(GLOK){quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);srcTex=gl.createTexture();}
   function comp(src){const v=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(v,VS);gl.compileShader(v);const f=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(f,src);gl.compileShader(f);if(!gl.getShaderParameter(f,gl.COMPILE_STATUS))return null;const p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);return gl.getProgramParameter(p,gl.LINK_STATUS)?p:null;}
-  function fragOf(e){if(e.type==='shader'&&e.glsl&&e.glsl.trim()){let s=e.glsl;if(!/#version/.test(s))s=FH+s;return s;}return FH+(EFF[e.type]||'void main(){o=texture(tex,uv);}');}
-  function progOf(e){const k=e.type==='shader'?('c'+hash(e.glsl||'')):e.type;if(progs[k])return progs[k];const p=comp(fragOf(e));if(p)progs[k]=p;return p;}
+  function fragOf(e){ if(e._frag) return e._frag; const sp=SPECS[e.type]; return sp?sp.frag:SPECS.__copy.frag; }
+  function uval(u,p){ return u.bool?((p&&p[u.from])?1:0):num(p&&p[u.from],u.def); }
+  function progOf(e){const k=e._frag?('c'+hash(e._frag)):e.type;if(progs[k])return progs[k];const p=comp(fragOf(e));if(p)progs[k]=p;return p;}
   function ensure(w,h){if(_w===w&&_h===h&&fbos.length)return;_w=w;_h=h;fbos.forEach(f=>gl.deleteFramebuffer(f));texs.forEach(t=>gl.deleteTexture(t));fbos=[];texs=[];for(let i=0;i<2;i++){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);texs.push(t);fbos.push(fb);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
-  function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(FH+'void main(){o=texture(tex,uv);}'));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);const l=gl.getAttribLocation(p,'p');gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'tex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uRes'),w,h);gl.drawArrays(gl.TRIANGLES,0,3);}
+  function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(SPECS.__copy.frag));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'uTex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uResolution'),w,h);const pr=e.params||{},us=(SPECS[e.type]&&SPECS[e.type].uniforms)||[];for(let j=0;j<us.length;j++){const u=us[j],ul=gl.getUniformLocation(p,u.name);if(ul==null)continue;const val=uval(u,pr);if(u.k==='1i')gl.uniform1i(ul,val|0);else gl.uniform1f(ul,val);}gl.drawArrays(gl.TRIANGLES,0,3);}
   function applyFx(stack,time,iOv){ applyFxFrom(lb,stack,time,iOv); }
   function maskCh(dctx,maskCv,src,dst){src=src||'lum';dst=dst||'alpha';const base=dctx.getImageData(0,0,W,H),md=maskCv.getContext('2d').getImageData(0,0,W,H),bd=base.data,mdd=md.data;
     for(let i=0;i<bd.length;i+=4){let mv;switch(src){case'alpha':mv=mdd[i+3]/255;break;case'r':mv=mdd[i]/255;break;case'g':mv=mdd[i+1]/255;break;case'b':mv=mdd[i+2]/255;break;default:{const ma=mdd[i+3]/255;mv=((0.2126*mdd[i]+0.7152*mdd[i+1]+0.0722*mdd[i+2])/255)*ma;}}

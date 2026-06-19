@@ -2013,6 +2013,27 @@ KINDS = {
         "completion":   {"requires": []}, "pauseAfter": False,
         "notes": "One composition layer. Wire asset (content) + optional position/trigger/effect into its in-port, then wire its out into a host (mm-composer/image/composer). Author source/<branch>/layer-<id>.js.",
     },
+    # ── number-generator ──────────────────────────────────────────────────
+    # A value SOURCE: emits a number (constant / algorithmic / randomiser /
+    # pixel-map). Wire its `out` into any numeric param port of a
+    # position / effect / trigger block (the `param:<key>` ports those kinds
+    # auto-expose). Algorithmic / random / pixel-map sources are VECTOR sources
+    # — when the target is an instanced/grid position they map PER INSTANCE.
+    "number-generator": {
+        "title":        "Number",
+        "category":     "container",
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "Composable NUMBER source (constant/algorithmic/random/pixel-map). Wire out into a numeric param port of a position/effect/trigger block; author source/<branch>/number-<id>.js.",
+    },
 
     # ── formatted-text ───────────────────────────────────────────────────
     # v3.4.37 — Rich text node. The body is edited in-place via
@@ -3033,14 +3054,19 @@ _MM_AUTHORING = (
     "         \"positioning\":{\"mode\":\"single|grid|instances|physics|drawn|rope|camera-feed|face-3d\", ...mode params },\n"
     "         \"trigger\":{\"source\":\"none|mouse-click|hover|position|timeline|audio|camera\", ...source params,\n"
     "             \"impacts\":[{\"target\":\"<layer id>\",\"param\":\"opacity|scale|position|effect.intensity\",\"map\":\"linear|threshold\",\"range\":[0,1]}]},\n"
-    "         \"effects\":{\"stack\":[{\"type\":\"pixel-mosh|chromatic-aberration|particle-float|halftone|ascii|displace|bloom|shader\",\"params\":{},\"glsl\":\"<optional custom fragment shader>\",\"intensity\":1}]}\n"
+    "         \"effects\":{\"stack\":[{\"type\":\"chromatic-aberration|directional-blur|displacement|slice|pixelate|dither|posterize|pixel-sort|ascii|crt|halftone|ink|edge-detect|particle-grid|pattern|custom\",\"params\":{},\"glsl\":\"<custom fragment, type=custom only>\",\"intensity\":1}]}\n"
     "       }]}\n"
     "  positioning modes: grid {cols,rows,placement:'fixed|random'}; instances {source:'mouse|random|interaction',count,physics:true}; "
     "physics {engine:'matter',gravity:[0,1]}; drawn {paths:[[x,y]]}; rope {anchors,segments,stiffness}; "
     "camera-feed {detector:'hand|face|object|ocr',source:'camera|video:<assetId>'}; face-3d {meshId:'<voxel/spline node>'}. "
     "trigger.audio {sourceId:'<synth/music/audio node>',feature:'loudness|pitch|band'}; trigger.camera {detector,event:'present|gesture|count'}; "
     "trigger.timeline {keys:[{t,...}],loop:true}. A trigger's `impacts` route its value onto OTHER layers' params — "
-    "that is how layers cross-affect. Effects are a post-process chain (shader-lab taxonomy)."
+    "that is how layers cross-affect. Effects are a post-process chain (shader-lab taxonomy: one catalog, "
+    "rendered by editor/tools/_shared/fx.js). Per-type params: chromatic-aberration{amount,angle}, "
+    "directional-blur{angle,length}, displacement{scale}, slice{count,offset,vertical}, pixelate{size}, "
+    "dither{levels}, posterize{levels}, pixel-sort{threshold,vertical}, ascii{cell}, crt{scanline,curvature,vignette}, "
+    "halftone{cell,angle}, ink{threshold,levels}, edge-detect{}, particle-grid{cell,drift}, pattern{scale,mix}; "
+    "angles in radians."
 )
 
 # ── Composable spec-node authoring (Layer / Position / Trigger / Effect) ──────
@@ -3048,14 +3074,20 @@ _MM_AUTHORING = (
 # JavaScript source module; buildSpec(values) compiles to the strict JSON spec
 # host editors consume.
 _EFFECT_AUTHORING = (
-    "This is an EFFECT spec node — a GPU/shader post-effect (shader-lab taxonomy) that a host "
-    "editor applies to its output. Write `source/{branch}/effect-{id}.js`, not JSON. Shape:\n"
-    "export const controls = { intensity:{type:'number',value:0.5,min:0,max:1,step:0.01} };\n"
-    "export function fragmentShader(values) { return `#version 300 es ...`; }\n"
-    "export function buildSpec(values) { return {v:1,type:'custom',intensity:values.intensity,"
-    "params:{},glsl:fragmentShader(values)}; }\n"
-    "The editor compiles buildSpec(values) into source/{branch}/effect-{id}.json for strict host use. "
-    "Wire effect into a layer; keep intensity in 0..1."
+    "This is an EFFECT spec node — a composable GPU post-effect from the shared shader-lab "
+    "catalog (editor/tools/_shared/fx.js). Write `source/{branch}/effect-{id}.js`, not JSON. "
+    "Pick a built-in type and expose its params as controls, e.g.:\n"
+    "export const controls = { intensity:{type:'number',value:0.5,min:0,max:1,step:0.01}, "
+    "amount:{type:'number',value:0.01,min:0,max:0.1,step:0.001}, angle:{type:'number',value:0} };\n"
+    "export function buildSpec(values) { return {v:1,type:'chromatic-aberration',"
+    "intensity:values.intensity,params:{amount:values.amount,angle:values.angle}}; }\n"
+    "Catalog + per-type params: chromatic-aberration{amount,angle}, directional-blur{angle,length}, "
+    "displacement{scale}, slice{count,offset,vertical}, pixelate{size}, dither{levels}, posterize{levels}, "
+    "pixel-sort{threshold,vertical}, ascii{cell}, crt{scanline,curvature,vignette}, halftone{cell,angle}, "
+    "ink{threshold,levels}, edge-detect{}, particle-grid{cell,drift}, pattern{scale,mix}. For a bespoke "
+    "shader use type:'custom' + a `glsl` full fragment (a void main(){…}; uniforms uTex/uResolution/uTime/"
+    "uIntensity + varying vUv; legacy tex/uv/uRes/o aliases also work; no #version line). "
+    "The editor compiles buildSpec(values) into source/{branch}/effect-{id}.json. Keep intensity in 0..1."
 )
 _POSITION_AUTHORING = (
     "This is a POSITION spec node — real source code for placing content/instances. Write "
@@ -3089,6 +3121,18 @@ _LAYER_AUTHORING = (
     "blend:values.blend,visible:values.visible}; }\n"
     "The layer's content + behaviour come from what you wire into its in-port: an asset, and optionally "
     "position / trigger / effect nodes. The editor compiles buildSpec(values) into source/{branch}/layer-{id}.json."
+)
+_NUMBER_AUTHORING = (
+    "This is a NUMBER-GENERATOR spec node — a value SOURCE that drives a numeric param of another "
+    "block (position/effect/trigger). Write `source/{branch}/number-{id}.js`, not JSON. Shape:\n"
+    "export const controls = { expr:{type:'text',value:'Math.sin(i*0.3 + t)'} };\n"
+    "export function value(ctx) { return Math.sin(ctx.index*0.3 + ctx.time); }\n"
+    "export function buildSpec(values) { return {v:1,kind:'number',sub:'constant|algorithmic|random|pixel-map',"
+    "params:{value:0 | expr:'<js using i,t,n,u,v,cols,rows>' | min:0,max:1,seed:'s' | channel:'luma',min:0,max:1},"
+    "vector:true}; }\n"
+    "The editor compiles buildSpec(values) into source/{branch}/number-{id}.json. `vector:true` means the value "
+    "is evaluated PER INSTANCE (each grid cell / instance gets its own value via ctx.index); constant is scalar. "
+    "Wire `out` into a position/effect/trigger param port; for pixel-map, wire an image asset into the `pixmap` port."
 )
 
 # Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
@@ -3487,6 +3531,7 @@ KIND_IO = {
     },
     # ── Composable source nodes (typed providers + agent-editable) ─────────
     "effect": {
+        "paramPorts": True,   # numeric controls auto-expose `param:<key>` inputs (tag: number)
         "provides": [{"port": "out", "label": "Effect", "tags": ["effect"],
                        "resolve": "typed", "resolveArgs": {"flavor": "effect"}}],
         "accepts":  [
@@ -3496,6 +3541,7 @@ KIND_IO = {
         ],
     },
     "position": {
+        "paramPorts": True,   # numeric controls auto-expose `param:<key>` inputs (tag: number)
         "provides": [{"port": "out", "label": "Position", "tags": ["position"],
                        "resolve": "typed", "resolveArgs": {"flavor": "position"}}],
         "accepts":  [
@@ -3505,12 +3551,24 @@ KIND_IO = {
         ],
     },
     "trigger": {
+        "paramPorts": True,   # numeric controls auto-expose `param:<key>` inputs (tag: number)
         "provides": [{"port": "out", "label": "Trigger", "tags": ["trigger"],
                        "resolve": "typed", "resolveArgs": {"flavor": "trigger"}}],
         "accepts":  [
             {"port": "edit", "label": "Edit trigger", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/trigger-{id}.js",
               "authoring": _TRIGGER_AUTHORING},
+        ],
+    },
+    "number-generator": {
+        "paramPorts": True,   # numeric controls auto-expose `param:<key>` inputs (tag: number)
+        "provides": [{"port": "out", "label": "Number", "tags": ["number"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "number"}}],
+        "accepts":  [
+            {"port": "pixmap", "label": "Pixel map (image)", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Edit number", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/number-{id}.js",
+              "authoring": _NUMBER_AUTHORING},
         ],
     },
     "layer": {

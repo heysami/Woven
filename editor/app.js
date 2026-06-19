@@ -22899,6 +22899,19 @@ function workflowPortPosition(node, side) {
     if (side === "in")  return { x: node.x,     y: node.y + bodyTop + bodyH * 0.5 };
     if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
   }
+  // number-generator pixel-map image input — LEFT edge, near the top.
+  if (side === "pixmap") return { x: node.x, y: node.y + 24 };
+  // Auto-exposed numeric param ports on spec nodes — LEFT edge, spaced by the
+  // control's index among numeric controls (same ordering as the rendered rail).
+  if (typeof side === "string" && side.startsWith("param:")) {
+    const keys = _specParamKeys(node);
+    const bodyTop = 30;   // spec-node bar height
+    const bodyH = Math.max(0, h - bodyTop);
+    const total = Math.max(1, keys.length);
+    const i = keys.indexOf(side.slice(6));
+    const idx = i < 0 ? 0 : i;
+    return { x: node.x, y: node.y + bodyTop + bodyH * (idx + 0.5) / total };
+  }
   const cy = node.y + h / 2;
   return side === "in" ? { x: node.x, y: cy } : { x: node.x + w, y: cy };
 }
@@ -22983,6 +22996,9 @@ function workflowPortFlavor(node, side) {
   }
   if (kind === "folder") return "folder";   // both sides — out feeds folder-read / source-read
   if (kind === "browser") return "asset";   // out is a captured page asset (html / image snapshot)
+  // Parametric value source + the numeric param ports it feeds (Phase 1).
+  if (kind === "number-generator" && side === "out") return "number";
+  if (typeof side === "string" && side.startsWith("param:")) return "number";
   return null;
 }
 
@@ -23501,6 +23517,7 @@ const WORKFLOW_NODE_FACTORY = {
   "position": (p) => ({ kind: "position", w: 260, h: 300, spec: p.spec || { v: 1, mode: "grid", params: { cols: 4, rows: 4, placement: "fixed" } } }),
   "trigger":  (p) => ({ kind: "trigger",  w: 260, h: 300, spec: p.spec || { v: 1, source: "hover", params: {}, impacts: [] } }),
   "layer":    (p) => ({ kind: "layer",    w: 240, h: 240, spec: p.spec || { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true } }),
+  "number-generator": (p) => ({ kind: "number-generator", w: 240, h: 280, spec: p.spec || { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true } }),
   "formatted-text": (p) => ({
     kind: "formatted-text", w: 380, h: 320,
     html: p.html || "<p>Type or wire a prompt here.</p>",
@@ -23809,6 +23826,12 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Layer", tags: ["layer"] } },
     accepts:  { in:   { label: "Content + behaviour", tags: ["asset", "position", "trigger", "effect"] },
                 edit: { label: "Edit layer", tags: ["text-gen", "asset-gen"] } },
+  },
+  "number-generator": {
+    label: "Number",
+    provides: { out: { label: "Number", tags: ["number"] } },
+    accepts:  { pixmap: { label: "Pixel map", tags: ["asset"] },
+                edit:   { label: "Edit number", tags: ["text-gen", "asset-gen"] } },
   },
 };
 
@@ -40342,6 +40365,13 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">✲</span>
             <span className="workflow-library-item-label">Effect</span>
             <span className="workflow-library-item-id">shader post-effect</span>
+          </div>
+          <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "number-generator" })); }}
+            title="Drag onto canvas — a Number source (constant / algorithmic / randomiser / pixel-map). Wire its out into a numeric param port of a Position / Effect / Trigger block; algorithmic/random/pixel-map map per instance.">
+            <span className="workflow-library-item-glyph">#</span>
+            <span className="workflow-library-item-label">Number</span>
+            <span className="workflow-library-item-id">value source</span>
           </div>
         </div>
       </div>
@@ -57215,6 +57245,43 @@ function _appNodeMediumKind(i) {
   return (i && i.assetKind) || "image";
 }
 
+// ── Phase-1 parametric bindings ────────────────────────────────────────────
+// A numeric param of a position/effect/trigger block can be DRIVEN by a wired
+// number-generator (edge: number.out → block.param:<key>). We resolve those
+// edges into a `_bindings` map baked onto the spec sent to the host runtime, so
+// the runtime can evaluate the source per-frame / per-instance. A graph fact
+// recomputed each render — NOT persisted to the block's own spec JSON.
+function _numberPixmapUrl(srcNode, allNodes, allEdges) {
+  for (const e of (allEdges || [])) {
+    const to = workflowParseEdgeRef(e.to || ""); if (!to || to.node !== srcNode.id || to.port !== "pixmap") continue;
+    const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+    const img = (allNodes || []).find(n => n.id === from.node);
+    if (img && img.kind === "asset") { const u = _composerAssetUrl(img); if (u) return u; }
+  }
+  return null;
+}
+function _specParamBindings(specNodeId, allNodes, allEdges) {
+  const out = {};
+  for (const e of (allEdges || [])) {
+    const to = workflowParseEdgeRef(e.to || ""); if (!to || to.node !== specNodeId) continue;
+    if (!to.port.startsWith("param:")) continue;
+    const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+    const src = (allNodes || []).find(n => n.id === from.node);
+    if (!src || (src.kind !== "number-generator" && src.kind !== "timeline")) continue;
+    let spec = src.spec || {};
+    if (spec.sub === "pixel-map") {
+      const url = _numberPixmapUrl(src, allNodes, allEdges);
+      if (url) spec = { ...spec, params: { ...(spec.params || {}), assetUrl: url } };
+    }
+    out[to.port.slice("param:".length)] = { kind: src.kind, spec };
+  }
+  return Object.keys(out).length ? out : null;
+}
+function _specWithBindings(spec, specNodeId, allNodes, allEdges) {
+  const b = _specParamBindings(specNodeId, allNodes, allEdges);
+  return b ? { ...(spec || {}), _bindings: b } : (spec || {});
+}
+
 function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
   const cfg = APP_NODE_TOOLS[node.kind];
   const w = node.w || 720;
@@ -57258,12 +57325,21 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
     return Array.from(new Set([...wired, ...own]));
   }, [inputs, cfg.imports, (node.imports || []).join("|")]);
   // Wired spec nodes → arrays of their JSON specs (Layer carries children).
-  const specs = useMemo(() => ({
-    effects:   inputs.filter(i => i.type === "effect").map(i => i.spec || {}),
-    positions: inputs.filter(i => i.type === "position").map(i => i.spec || {}),
-    triggers:  inputs.filter(i => i.type === "trigger").map(i => i.spec || {}),
-    layers:    inputs.filter(i => i.type === "layer").map(i => ({ id: i.layerId, spec: i.spec || {}, children: i.children || [] })),
-  }), [inputs]);
+  const specs = useMemo(() => {
+    const wb = (spec, id) => _specWithBindings(spec, id, allNodes, allEdges);
+    return {
+      effects:   inputs.filter(i => i.type === "effect").map(i => wb(i.spec || {}, i.fromId)),
+      positions: inputs.filter(i => i.type === "position").map(i => wb(i.spec || {}, i.fromId)),
+      triggers:  inputs.filter(i => i.type === "trigger").map(i => wb(i.spec || {}, i.fromId)),
+      layers:    inputs.filter(i => i.type === "layer").map(i => ({
+        id: i.layerId, spec: i.spec || {},
+        children: (i.children || []).map(c => (
+          (c.type === "position" || c.type === "effect" || c.type === "trigger")
+            ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
+        )),
+      })),
+    };
+  }, [inputs, allNodes, allEdges]);
   const contentKey = JSON.stringify(contentAssets);
   const importKey = importUrls.join("|");
   const specKey = JSON.stringify(specs);
@@ -57475,8 +57551,10 @@ const SPEC_NODE_DEFS = {
     source: (b, id) => `source/${b}/effect-${id}.js`,
     fields: [
       { key: "type", label: "Type", type: "select", options: [
-        "chromatic-aberration","pixelate","dither","posterize","pixel-sort","ascii","crt",
-        "halftone","ink","edge-detect","directional-blur","displacement","particle-grid","pattern","custom"] },
+        "chromatic-aberration","directional-blur","displacement","slice",
+        "pixelate","dither","posterize","pixel-sort",
+        "ascii","crt","halftone","ink","edge-detect",
+        "particle-grid","pattern","custom"] },
       { key: "intensity", label: "Intensity", type: "range", min: 0, max: 1, step: 0.01 },
       { key: "params", label: "Params", type: "object" },
       { key: "glsl", label: "Custom GLSL (type=custom)", type: "textarea" },
@@ -57512,6 +57590,15 @@ const SPEC_NODE_DEFS = {
       { key: "visible", label: "Visible", type: "checkbox" },
     ],
   },
+  "number-generator": {
+    glyph: "#", label: "Number", canonical: (b, id) => `source/${b}/number-${id}.json`,
+    source: (b, id) => `source/${b}/number-${id}.js`,
+    fields: [
+      { key: "sub", label: "Type", type: "select", options: ["constant","algorithmic","random","pixel-map"] },
+      { key: "params", label: "Params", type: "object" },
+      { key: "vector", label: "Per-instance", type: "checkbox" },
+    ],
+  },
 };
 
 function _specDefault(kind) {
@@ -57519,6 +57606,7 @@ function _specDefault(kind) {
   if (kind === "position") return { v: 1, mode: "grid", params: { cols: 4, rows: 4, placement: "fixed" } };
   if (kind === "trigger")  return { v: 1, source: "hover", params: {}, impacts: [] };
   if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true };
+  if (kind === "number-generator") return { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true };
   return { v: 1 };
 }
 function _specInputValue(v) {
@@ -57643,120 +57731,65 @@ function _triggerTemplate(id, label, source, controls, params, helpers, impacts)
 
 const SPEC_SOURCE_TEMPLATES = {
   "effect": [
+    // Shader-lab catalog. Each template's control + buildSpec param names match
+    // the fx.js uniform contract EXACTLY (see editor/tools/_shared/fx.js), so
+    // every control drives the real shader on both the layer path and the wired
+    // top-level chain. Angles are authored in degrees and converted to the
+    // radians the shader expects.
     _effectTemplate("chromatic-aberration", "Chromatic aberration", "chromatic-aberration", {
-      offset: { type: "number", value: 4, min: 0, max: 80, step: 0.5 },
+      amount: { type: "number", value: 0.01, min: 0, max: 0.1, step: 0.001 },
       angle: { type: "number", value: 0, min: -180, max: 180, step: 1 }
-    }, ["offset: values.offset", "angle: values.angle"], `export function channelOffsets(values) {
-  const radians = values.angle * Math.PI / 180;
-  return {
-    red: [Math.cos(radians) * values.offset, Math.sin(radians) * values.offset],
-    blue: [-Math.cos(radians) * values.offset, -Math.sin(radians) * values.offset]
-  };
-}`),
-    _effectTemplate("pixelate", "Pixelate", "pixelate", {
-      cellSize: { type: "number", value: 12, min: 2, max: 120, step: 1 }
-    }, ["cellSize: values.cellSize"], `export function snapUv(uv, resolution, values) {
-  const cell = values.cellSize / Math.max(resolution[0], resolution[1]);
-  return [
-    Math.floor(uv[0] / cell) * cell + cell * 0.5,
-    Math.floor(uv[1] / cell) * cell + cell * 0.5
-  ];
-}`),
-    _effectTemplate("dither", "Dither", "dither", {
-      levels: { type: "number", value: 4, min: 2, max: 16, step: 1 },
-      matrixSize: { type: "select", value: "bayer-4", options: ["bayer-2", "bayer-4", "bayer-8"] }
-    }, ["levels: values.levels", "matrixSize: values.matrixSize"], `export function quantizeChannel(channel, threshold, values) {
-  const shifted = channel + (threshold - 0.5) / values.levels;
-  return Math.round(shifted * (values.levels - 1)) / (values.levels - 1);
-}`),
-    _effectTemplate("posterize", "Posterize", "posterize", {
-      levels: { type: "number", value: 5, min: 2, max: 32, step: 1 },
-      gamma: { type: "number", value: 1, min: 0.2, max: 3, step: 0.05 }
-    }, ["levels: values.levels", "gamma: values.gamma"], `export function posterizeColor(rgb, values) {
-  return rgb.map((channel) => {
-    const corrected = Math.pow(channel, values.gamma);
-    return Math.round(corrected * (values.levels - 1)) / (values.levels - 1);
-  });
-}`),
-    _effectTemplate("pixel-sort", "Pixel sort", "pixel-sort", {
-      direction: { type: "select", value: "horizontal", options: ["horizontal", "vertical"] },
-      threshold: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
-      bandSize: { type: "number", value: 24, min: 1, max: 240, step: 1 }
-    }, ["direction: values.direction", "threshold: values.threshold", "bandSize: values.bandSize"], `export function shouldSortPixel(luma, values) {
-  return luma >= values.threshold;
-}`),
-    _effectTemplate("ascii", "ASCII", "ascii", {
-      cellSize: { type: "number", value: 10, min: 4, max: 48, step: 1 },
-      chars: { type: "text", value: " .:-=+*#%@" },
-      monochrome: { type: "boolean", value: false }
-    }, ["cellSize: values.cellSize", "chars: values.chars", "monochrome: values.monochrome"], `export function glyphForLuma(luma, values) {
-  const chars = String(values.chars || "@");
-  const index = Math.max(0, Math.min(chars.length - 1, Math.floor(luma * chars.length)));
-  return chars[index];
-}`),
-    _effectTemplate("crt", "CRT scanline", "crt", {
-      scanline: { type: "number", value: 0.35, min: 0, max: 1, step: 0.01 },
-      curvature: { type: "number", value: 0.12, min: 0, max: 0.6, step: 0.01 },
-      vignette: { type: "number", value: 0.22, min: 0, max: 1, step: 0.01 }
-    }, ["scanline: values.scanline", "curvature: values.curvature", "vignette: values.vignette"], `export function warpUv(uv, values) {
-  const centered = [uv[0] * 2 - 1, uv[1] * 2 - 1];
-  const bend = 1 + values.curvature * (centered[0] * centered[0] + centered[1] * centered[1]);
-  return [(centered[0] * bend + 1) * 0.5, (centered[1] * bend + 1) * 0.5];
-}`),
-    _effectTemplate("halftone", "Halftone", "halftone", {
-      dotSize: { type: "number", value: 8, min: 2, max: 80, step: 1 },
-      angle: { type: "number", value: 15, min: -90, max: 90, step: 1 },
-      shape: { type: "select", value: "round", options: ["round", "diamond", "line"] }
-    }, ["dotSize: values.dotSize", "angle: values.angle", "shape: values.shape"], `export function dotRadius(luma, values) {
-  return (1 - luma) * values.dotSize * 0.5;
-}`),
-    _effectTemplate("ink", "Ink wash", "ink", {
-      edge: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 },
-      wash: { type: "number", value: 0.35, min: 0, max: 1, step: 0.01 },
-      grain: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 }
-    }, ["edge: values.edge", "wash: values.wash", "grain: values.grain"], `export function inkMix(luma, edgeStrength, values) {
-  return Math.max(edgeStrength * values.edge, (1 - luma) * values.wash);
-}`),
-    _effectTemplate("edge-detect", "Edge detect", "edge-detect", {
-      threshold: { type: "number", value: 0.18, min: 0, max: 1, step: 0.01 },
-      invert: { type: "boolean", value: false }
-    }, ["threshold: values.threshold", "invert: values.invert"], `export function isEdge(gradientMagnitude, values) {
-  const edge = gradientMagnitude > values.threshold ? 1 : 0;
-  return values.invert ? 1 - edge : edge;
-}`),
+    }, ["amount: values.amount", "angle: values.angle * Math.PI / 180"]),
     _effectTemplate("directional-blur", "Directional blur", "directional-blur", {
-      distance: { type: "number", value: 12, min: 0, max: 180, step: 1 },
-      angle: { type: "number", value: 0, min: -180, max: 180, step: 1 },
-      samples: { type: "number", value: 9, min: 3, max: 31, step: 2 }
-    }, ["distance: values.distance", "angle: values.angle", "samples: values.samples"], `export function blurVector(values) {
-  const radians = values.angle * Math.PI / 180;
-  return [Math.cos(radians) * values.distance, Math.sin(radians) * values.distance];
-}`),
+      length: { type: "number", value: 0.02, min: 0, max: 0.2, step: 0.005 },
+      angle: { type: "number", value: 0, min: -180, max: 180, step: 1 }
+    }, ["length: values.length", "angle: values.angle * Math.PI / 180"]),
     _effectTemplate("displacement", "Displacement", "displacement", {
-      amount: { type: "number", value: 18, min: -120, max: 120, step: 1 },
-      scale: { type: "number", value: 0.08, min: 0.001, max: 1, step: 0.001 },
-      source: { type: "select", value: "noise", options: ["noise", "luma", "mouse", "audio"] }
-    }, ["amount: values.amount", "scale: values.scale", "source: values.source"], `export function displaceUv(uv, signal, values) {
-  const offset = (signal - 0.5) * values.amount * values.scale;
-  return [uv[0] + offset, uv[1] - offset];
-}`),
+      scale: { type: "number", value: 0.03, min: 0, max: 0.3, step: 0.005 }
+    }, ["scale: values.scale"]),
+    _effectTemplate("slice", "Slice", "slice", {
+      count: { type: "number", value: 16, min: 1, max: 128, step: 1 },
+      offset: { type: "number", value: 0.1, min: 0, max: 0.5, step: 0.01 },
+      vertical: { type: "boolean", value: false }
+    }, ["count: values.count", "offset: values.offset", "vertical: values.vertical"]),
+    _effectTemplate("pixelate", "Pixelate", "pixelate", {
+      size: { type: "number", value: 8, min: 1, max: 120, step: 1 }
+    }, ["size: values.size"]),
+    _effectTemplate("dither", "Dither", "dither", {
+      levels: { type: "number", value: 4, min: 2, max: 16, step: 1 }
+    }, ["levels: values.levels"]),
+    _effectTemplate("posterize", "Posterize", "posterize", {
+      levels: { type: "number", value: 5, min: 2, max: 32, step: 1 }
+    }, ["levels: values.levels"]),
+    _effectTemplate("pixel-sort", "Pixel sort", "pixel-sort", {
+      threshold: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
+      vertical: { type: "boolean", value: false }
+    }, ["threshold: values.threshold", "vertical: values.vertical"]),
+    _effectTemplate("ascii", "ASCII", "ascii", {
+      cell: { type: "number", value: 8, min: 2, max: 48, step: 1 }
+    }, ["cell: values.cell"]),
+    _effectTemplate("crt", "CRT scanline", "crt", {
+      scanline: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      curvature: { type: "number", value: 0.15, min: 0, max: 0.6, step: 0.01 },
+      vignette: { type: "number", value: 0.4, min: 0, max: 1, step: 0.01 }
+    }, ["scanline: values.scanline", "curvature: values.curvature", "vignette: values.vignette"]),
+    _effectTemplate("halftone", "Halftone", "halftone", {
+      cell: { type: "number", value: 8, min: 2, max: 48, step: 1 },
+      angle: { type: "number", value: 15, min: -90, max: 90, step: 1 }
+    }, ["cell: values.cell", "angle: values.angle * Math.PI / 180"]),
+    _effectTemplate("ink", "Ink", "ink", {
+      threshold: { type: "number", value: 0.25, min: 0, max: 1, step: 0.01 },
+      levels: { type: "number", value: 4, min: 2, max: 16, step: 1 }
+    }, ["threshold: values.threshold", "levels: values.levels"]),
+    _effectTemplate("edge-detect", "Edge detect", "edge-detect", {}, []),
     _effectTemplate("particle-grid", "Particle grid", "particle-grid", {
-      count: { type: "number", value: 160, min: 4, max: 5000, step: 1 },
-      jitter: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
-      speed: { type: "number", value: 0.35, min: 0, max: 4, step: 0.01 }
-    }, ["count: values.count", "jitter: values.jitter", "speed: values.speed"], `export function particleOffset(index, time, values) {
-  const phase = index * 12.9898 + time * values.speed;
-  return [Math.sin(phase) * values.jitter, Math.cos(phase * 1.37) * values.jitter];
-}`),
+      cell: { type: "number", value: 12, min: 2, max: 64, step: 1 },
+      drift: { type: "number", value: 0, min: 0, max: 1, step: 0.01 }
+    }, ["cell: values.cell", "drift: values.drift"]),
     _effectTemplate("pattern", "Pattern overlay", "pattern", {
-      motif: { type: "select", value: "waves", options: ["waves", "checker", "rings", "stripes"] },
-      scale: { type: "number", value: 1, min: 0.05, max: 8, step: 0.05 },
-      rotation: { type: "number", value: 0, min: -180, max: 180, step: 1 }
-    }, ["motif: values.motif", "scale: values.scale", "rotation: values.rotation"], `export function patternCoord(uv, values) {
-  const radians = values.rotation * Math.PI / 180;
-  const c = Math.cos(radians), s = Math.sin(radians);
-  return [(uv[0] * c - uv[1] * s) * values.scale, (uv[0] * s + uv[1] * c) * values.scale];
-}`),
+      scale: { type: "number", value: 12, min: 1, max: 64, step: 1 },
+      mix: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 }
+    }, ["scale: values.scale", "mix: values.mix"]),
     {
       id: "custom-shader",
       label: "Custom shader effect",
@@ -57764,20 +57797,15 @@ const SPEC_SOURCE_TEMPLATES = {
         intensity: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
         cellSize: { type: "number", value: 9, min: 2, max: 64, step: 1 }
       }, `export function fragmentShader(values) {
+  // A full fragment using the friendly aliases (tex / uv / uRes / o) that the
+  // host wraps with the shared header. fx.js names (uTex / vUv / uResolution /
+  // fragColor) also work. No #version line - the runtime supplies the header.
   const cellSize = Number(values.cellSize || 9).toFixed(1);
   return [
-    "#version 300 es",
-    "precision highp float;",
-    "uniform sampler2D tex;",
-    "uniform vec2 uRes;",
-    "uniform float uIntensity;",
-    "in vec2 uv;",
-    "out vec4 outColor;",
     "void main() {",
     "  vec2 cell = vec2(" + cellSize + ") / uRes;",
     "  vec2 snapped = floor(uv / cell) * cell + cell * 0.5;",
-    "  vec4 color = texture(tex, mix(uv, snapped, uIntensity));",
-    "  outColor = color;",
+    "  o = texture(tex, mix(uv, snapped, uIntensity));",
     "}"
   ].join("\\n");
 }
@@ -58057,6 +58085,63 @@ export function solveSegment(prev, next, values) {
   };
 }`)
     }
+  ],
+  "number-generator": [
+    {
+      id: "constant",
+      label: "Constant",
+      source: _sourceModule({
+        value: { type: "number", value: 1, step: 0.01 },
+        vector: { type: "boolean", value: false }
+      }, `export function value(ctx) { return values.value; }
+export function buildSpec(values) {
+  return { v: 1, kind: "number", sub: "constant", params: { value: values.value }, vector: !!values.vector };
+}`)
+    },
+    {
+      id: "algorithmic",
+      label: "Algorithmic",
+      source: _sourceModule({
+        expr: { type: "text", value: "Math.sin(i*0.3 + t)" },
+        vector: { type: "boolean", value: true }
+      }, `// ctx fields you can use in the expression: i (index), t (time, s),
+// n (count), u, v (0..1 instance position), cols, rows.
+export function value(ctx) {
+  const i = ctx.index || 0, t = ctx.time || 0, n = ctx.count || 1;
+  const u = ctx.u || 0, v = ctx.v || 0, cols = ctx.cols || 1, rows = ctx.rows || 1;
+  return (Math.sin(i*0.3 + t));
+}
+export function buildSpec(values) {
+  return { v: 1, kind: "number", sub: "algorithmic", params: { expr: values.expr }, vector: !!values.vector };
+}`)
+    },
+    {
+      id: "random",
+      label: "Randomiser",
+      source: _sourceModule({
+        min: { type: "number", value: 0, step: 0.01 },
+        max: { type: "number", value: 1, step: 0.01 },
+        seed: { type: "text", value: "seed" },
+        vector: { type: "boolean", value: true }
+      }, `// Stable per-instance random in [min,max] — seeded by (seed + instance index).
+export function buildSpec(values) {
+  return { v: 1, kind: "number", sub: "random", params: { min: values.min, max: values.max, seed: values.seed }, vector: !!values.vector };
+}`)
+    },
+    {
+      id: "pixel-map",
+      label: "Pixel map",
+      source: _sourceModule({
+        channel: { type: "select", value: "luma", options: ["luma", "r", "g", "b", "a"] },
+        min: { type: "number", value: 0, step: 0.01 },
+        max: { type: "number", value: 1, step: 0.01 },
+        vector: { type: "boolean", value: true }
+      }, `// Wire an image asset into this node's "pixel map" port. Each instance samples
+// the image (by its u,v position, else by index); channel value maps to [min,max].
+export function buildSpec(values) {
+  return { v: 1, kind: "number", sub: "pixel-map", params: { channel: values.channel, min: values.min, max: values.max }, vector: !!values.vector };
+}`)
+    }
   ]
 };
 function _specTemplate(kind, id) {
@@ -58136,6 +58221,9 @@ function _sourceWithSpecValues(kind, source, spec) {
     }
   } else if (kind === "layer") {
     for (const key of ["name", "z", "opacity", "blend", "visible"]) if (controls[key]) controls[key].value = spec[key];
+  } else if (kind === "number-generator") {
+    for (const [k, v] of Object.entries(spec.params || {})) if (controls[k]) controls[k].value = v;
+    if (controls.vector) controls.vector.value = spec.vector !== false;
   }
   return _replaceSourceControls(source, controls);
 }
@@ -58146,10 +58234,38 @@ function _specToScript(kind, raw) {
   if (kind === "position" && spec.mode === "physics") tpl = _specTemplate(kind, "gravity");
   else if (kind === "position") tpl = _specTemplate(kind, spec.mode);
   if (kind === "trigger") tpl = _specTemplate(kind, spec.source === "hover" ? "hover-opacity" : spec.source);
+  if (kind === "number-generator") tpl = _specTemplate(kind, spec.sub || "constant");
   return _sourceWithSpecValues(kind, tpl.source, spec);
 }
 function _scriptToSpec(kind, script) {
   return _compileSpecSource(kind, script).spec;
+}
+
+// Phase-1 parametric blocks: these kinds auto-expose each of their NUMERIC
+// controls as a `param:<key>` input port (tag: number). Mirrors registry.py
+// KIND_IO[...].paramPorts (the backend source of truth). Layer is excluded.
+const WORKFLOW_PARAM_PORT_KINDS = new Set(["position", "effect", "trigger", "number-generator"]);
+const _PARAM_KEYS_CACHE = new Map();
+// Ordered list of numeric control keys for a paramPorts node — used by BOTH the
+// edge geometry (workflowPortPosition) and the rendered port rail so the dots
+// and the wire endpoints always line up. Cached by (kind + source) since
+// compiling the source evals a Function.
+function _specParamKeys(node) {
+  if (!node || !WORKFLOW_PARAM_PORT_KINDS.has(node.kind)) return [];
+  let src = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : null);
+  if (!src) { try { src = _specToScript(node.kind, node.spec || {}); } catch (_e) { src = ""; } }
+  const cacheKey = node.kind + "\n" + String(src || "");
+  if (_PARAM_KEYS_CACHE.has(cacheKey)) return _PARAM_KEYS_CACHE.get(cacheKey);
+  let keys = [];
+  try {
+    const { controls } = _compileSpecSource(node.kind, src);
+    keys = Object.entries(controls || {})
+      .filter(([, d]) => { const t = (d && d.type) || "text"; return t === "number" || t === "range"; })
+      .map(([k]) => k);
+  } catch (_e) { keys = []; }
+  if (_PARAM_KEYS_CACHE.size > 500) _PARAM_KEYS_CACHE.clear();
+  _PARAM_KEYS_CACHE.set(cacheKey, keys);
+  return keys;
 }
 
 function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
@@ -58274,11 +58390,27 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     return () => window.removeEventListener("th:asset-refresh", onRefresh);
   }, [canonicalPath, sourcePath, node.kind, scriptSource, onChange]);
 
+  // Phase-1 parametric ports: numeric controls this kind auto-exposes, and the
+  // subset currently driven by a wired Number (those rows go read-only).
+  const paramKeys = useMemo(() => _specParamKeys(node), [node.kind, scriptSource]);
+  const boundParams = useMemo(() => {
+    const s = new Set();
+    for (const e of (allEdges || [])) {
+      const to = e && e.to ? String(e.to) : "";
+      const dot = to.lastIndexOf(".");
+      if (dot < 0 || to.slice(0, dot) !== node.id) continue;
+      const port = to.slice(dot + 1);
+      if (port.startsWith("param:")) s.add(port.slice(6));
+    }
+    return s;
+  }, [allEdges, node.id]);
+
   const renderControl = ([key, def]) => {
     const d = def && typeof def === "object" ? def : { type: "text", value: def };
     const type = d.type || "text";
     const value = Object.prototype.hasOwnProperty.call(d, "value") ? d.value : "";
-    const label = d.label || key;
+    const driven = boundParams.has(key);
+    const label = driven ? (d.label || key) + " · wired" : (d.label || key);
     if (type === "select") return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
       <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${label}</span>
       <select className="workflow-spec-input" value=${value} onChange=${(e) => updateControl(key, e.target.value)} onMouseDown=${(e) => e.stopPropagation()}>
@@ -58299,13 +58431,13 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
         const n = Number(raw);
         updateControl(key, Number.isFinite(n) ? n : 0);
       };
-      return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "10px", fontSize: "11px" }}>
-        <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "4px" }}>${label}</span>
-        <input type="range" min=${bounds.min} max=${bounds.max} step=${step} value=${sliderValue}
+      return html`<label key=${key} className=${"workflow-spec-row" + (driven ? " is-driven" : "")} style=${{ display: "block", marginBottom: "10px", fontSize: "11px", opacity: driven ? 0.6 : 1 }}>
+        <span className="workflow-spec-label" style=${{ display: "block", color: driven ? "var(--accent, #79f)" : "var(--muted, #888)", marginBottom: "4px" }}>${label}</span>
+        <input type="range" min=${bounds.min} max=${bounds.max} step=${step} value=${sliderValue} disabled=${driven}
           style=${{ width: "100%", margin: "0 0 5px" }}
           onInput=${(e) => setNumber(e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
         <div style=${{ display: "grid", gridTemplateColumns: unit ? "1fr auto" : "1fr", gap: "6px", alignItems: "center" }}>
-          <input className="workflow-spec-input" type="number" step=${step} value=${value}
+          <input className="workflow-spec-input" type="number" step=${step} value=${value} readOnly=${driven}
             onInput=${(e) => setNumber(e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
           ${unit && html`<span style=${{ color: "var(--muted, #888)", fontSize: "10px", minWidth: "32px" }}>${unit}</span>`}
         </div>
@@ -58372,6 +58504,22 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       ${hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
         title="Wire an asset (content) + optional Position / Trigger / Effect into this layer."
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}><div className="workflow-port-dot"/></div>`}
+      ${paramKeys.map((key, i) => {
+        const total = Math.max(1, paramKeys.length);
+        const topPx = 30 + (h - 30) * (i + 0.5) / total;
+        const bound = boundParams.has(key);
+        return html`<div key=${"pp-" + key}
+          className=${"workflow-port-zone workflow-port-zone-in workflow-port-zone-param" + (bound ? " is-bound" : "")}
+          data-port-node=${node.id} data-port-side=${"param:" + key}
+          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
+          title=${(bound ? "Driven by a wired Number — param: " : "Bind a Number into param: ") + key}
+          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("param:" + key, e); }}><div className="workflow-port-dot"/></div>`;
+      })}
+      ${node.kind === "number-generator" && (spec.sub === "pixel-map") && html`<div
+        className="workflow-port-zone workflow-port-zone-in workflow-port-zone-pixmap" data-port-node=${node.id} data-port-side="pixmap"
+        style=${{ top: "15px", bottom: "auto", height: "18px" }}
+        title="Wire an image asset here — sampled by the pixel-map sub-type."
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("pixmap", e); }}><div className="workflow-port-dot"/></div>`}
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
         title=${"Wire this " + cfg.label + " into a host editor."}
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/></div>

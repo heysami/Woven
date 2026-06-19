@@ -36,7 +36,7 @@
 //
 // Effect types (FX_TYPES)
 // -----------------------
-//   distortion: chromatic-aberration, directional-blur, displacement
+//   distortion: chromatic-aberration, directional-blur, displacement, slice
 //   pixel:      pixelate, dither, posterize, pixel-sort
 //   artistic:   ascii, crt, halftone, ink, edge-detect
 //   generative: particle-grid, pattern
@@ -46,7 +46,7 @@
 
 export const FX_TYPES = [
   // distortion
-  'chromatic-aberration', 'directional-blur', 'displacement',
+  'chromatic-aberration', 'directional-blur', 'displacement', 'slice',
   // pixel
   'pixelate', 'dither', 'posterize', 'pixel-sort',
   // artistic
@@ -56,6 +56,26 @@ export const FX_TYPES = [
   // escape hatch
   'custom',
 ];
+
+// Human labels for each type (UI pickers, building-block node templates).
+export const FX_LABELS = {
+  'chromatic-aberration': 'Chromatic aberration',
+  'directional-blur': 'Directional blur',
+  'displacement': 'Displacement',
+  'slice': 'Slice',
+  'pixelate': 'Pixelate',
+  'dither': 'Dither',
+  'posterize': 'Posterize',
+  'pixel-sort': 'Pixel sort',
+  'ascii': 'ASCII',
+  'crt': 'CRT scanline',
+  'halftone': 'Halftone',
+  'ink': 'Ink',
+  'edge-detect': 'Edge detect',
+  'particle-grid': 'Particle grid',
+  'pattern': 'Pattern',
+  'custom': 'Custom shader',
+};
 
 // ---------------------------------------------------------------------------
 // Shared GLSL
@@ -107,7 +127,7 @@ const EFFECTS = {
 
   // ---- distortion --------------------------------------------------------
   'chromatic-aberration': {
-    uniforms: { uAmount: ['1f', p => num(p.amount, 0.01)], uAngle: ['1f', p => num(p.angle, 0.0)] },
+    uniforms: { uAmount: { k: '1f', from: 'amount', def: 0.01 }, uAngle: { k: '1f', from: 'angle', def: 0.0 } },
     decls: 'uniform float uAmount; uniform float uAngle;',
     body: `
 vec4 fxMain() {
@@ -122,7 +142,7 @@ vec4 fxMain() {
   },
 
   'directional-blur': {
-    uniforms: { uAngle: ['1f', p => num(p.angle, 0.0)], uLength: ['1f', p => num(p.length, 0.02)] },
+    uniforms: { uAngle: { k: '1f', from: 'angle', def: 0.0 }, uLength: { k: '1f', from: 'length', def: 0.02 } },
     decls: 'uniform float uAngle; uniform float uLength;',
     body: `
 vec4 fxMain() {
@@ -138,7 +158,7 @@ vec4 fxMain() {
   },
 
   'displacement': {
-    uniforms: { uScale: ['1f', p => num(p.scale, 0.03)] },
+    uniforms: { uScale: { k: '1f', from: 'scale', def: 0.03 } },
     decls: 'uniform float uScale;',
     body: `
 vec4 fxMain() {
@@ -149,9 +169,31 @@ vec4 fxMain() {
 }`,
   },
 
+  // Slice / glitch: cut the frame into N bands perpendicular to one axis and
+  // shove each band along that axis by a time-hashed amount.
+  'slice': {
+    uniforms: {
+      uSlices: { k: '1f', from: 'count', def: 16 },
+      uOffset: { k: '1f', from: 'offset', def: 0.1 },
+      uVertical: { k: '1f', from: 'vertical', def: 0, bool: true },
+    },
+    decls: 'uniform float uSlices; uniform float uOffset; uniform float uVertical;',
+    body: `
+vec4 fxMain() {
+  bool vert = uVertical > 0.5;
+  float n = max(uSlices, 1.0);
+  float band = vert ? vUv.x : vUv.y;
+  float idx = floor(band * n);
+  float rnd = fxHash(vec2(idx, floor(uTime * 2.0))) * 2.0 - 1.0;
+  float shift = rnd * uOffset;
+  vec2 uv = vert ? vec2(vUv.x, fract(vUv.y + shift)) : vec2(fract(vUv.x + shift), vUv.y);
+  return texture(uTex, uv);
+}`,
+  },
+
   // ---- pixel -------------------------------------------------------------
   'pixelate': {
-    uniforms: { uSize: ['1f', p => num(p.size, 8.0)] },
+    uniforms: { uSize: { k: '1f', from: 'size', def: 8.0 } },
     decls: 'uniform float uSize;',
     body: `
 vec4 fxMain() {
@@ -163,7 +205,7 @@ vec4 fxMain() {
   },
 
   'dither': {
-    uniforms: { uLevels: ['1f', p => num(p.levels, 4.0)] },
+    uniforms: { uLevels: { k: '1f', from: 'levels', def: 4.0 } },
     decls: 'uniform float uLevels;',
     body: `
 const float bayer[16] = float[16](
@@ -182,7 +224,7 @@ vec4 fxMain() {
   },
 
   'posterize': {
-    uniforms: { uLevels: ['1f', p => num(p.levels, 5.0)] },
+    uniforms: { uLevels: { k: '1f', from: 'levels', def: 5.0 } },
     decls: 'uniform float uLevels;',
     body: `
 vec4 fxMain() {
@@ -197,8 +239,8 @@ vec4 fxMain() {
   // sort axis so similar-luma runs streak. Cheap, single-pass, order-stable-ish.
   'pixel-sort': {
     uniforms: {
-      uThreshold: ['1f', p => num(p.threshold, 0.5)],
-      uVertical: ['1f', p => (p.vertical ? 1.0 : 0.0)],
+      uThreshold: { k: '1f', from: 'threshold', def: 0.5 },
+      uVertical: { k: '1f', from: 'vertical', def: 0, bool: true },
     },
     decls: 'uniform float uThreshold; uniform float uVertical;',
     body: `
@@ -229,7 +271,7 @@ vec4 fxMain() {
   // ASCII via luminance -> block ramp drawn procedurally per cell (no atlas
   // texture needed; the glyph density is approximated by sub-cell coverage).
   'ascii': {
-    uniforms: { uCell: ['1f', p => num(p.cell, 8.0)] },
+    uniforms: { uCell: { k: '1f', from: 'cell', def: 8.0 } },
     decls: 'uniform float uCell;',
     body: `
 // 5 ramp glyphs approximated by coverage thresholds drawn in a 4x4 sub-grid.
@@ -256,9 +298,9 @@ vec4 fxMain() {
 
   'crt': {
     uniforms: {
-      uScan: ['1f', p => num(p.scanline, 0.6)],
-      uCurv: ['1f', p => num(p.curvature, 0.15)],
-      uVig: ['1f', p => num(p.vignette, 0.4)],
+      uScan: { k: '1f', from: 'scanline', def: 0.6 },
+      uCurv: { k: '1f', from: 'curvature', def: 0.15 },
+      uVig: { k: '1f', from: 'vignette', def: 0.4 },
     },
     decls: 'uniform float uScan; uniform float uCurv; uniform float uVig;',
     body: `
@@ -283,7 +325,7 @@ vec4 fxMain() {
   },
 
   'halftone': {
-    uniforms: { uCell: ['1f', p => num(p.cell, 8.0)], uAngle: ['1f', p => num(p.angle, 0.4)] },
+    uniforms: { uCell: { k: '1f', from: 'cell', def: 8.0 }, uAngle: { k: '1f', from: 'angle', def: 0.4 } },
     decls: 'uniform float uCell; uniform float uAngle;',
     body: `
 vec4 fxMain() {
@@ -306,7 +348,7 @@ vec4 fxMain() {
   },
 
   'ink': {
-    uniforms: { uThreshold: ['1f', p => num(p.threshold, 0.25)], uLevels: ['1f', p => num(p.levels, 4.0)] },
+    uniforms: { uThreshold: { k: '1f', from: 'threshold', def: 0.25 }, uLevels: { k: '1f', from: 'levels', def: 4.0 } },
     decls: 'uniform float uThreshold; uniform float uLevels;',
     body: `
 float lumAt(vec2 uv) { return fxLuma(texture(uTex, uv).rgb); }
@@ -326,9 +368,9 @@ vec4 fxMain() {
   float edge = length(vec2(gx, gy));
   vec4 c = texture(uTex, vUv);
   float lv = max(uLevels, 2.0);
-  vec3 flat = floor(c.rgb * lv) / lv;        // flattened color
+  vec3 flatCol = floor(c.rgb * lv) / lv;     // flattened color ('flat' is reserved)
   float ink = step(uThreshold, edge);        // ink line mask
-  vec3 col = mix(flat, vec3(0.0), ink);
+  vec3 col = mix(flatCol, vec3(0.0), ink);
   return vec4(col, c.a);
 }`,
   },
@@ -357,7 +399,7 @@ vec4 fxMain() {
 
   // ---- generative --------------------------------------------------------
   'particle-grid': {
-    uniforms: { uCell: ['1f', p => num(p.cell, 12.0)], uDrift: ['1f', p => num(p.drift, 0.0)] },
+    uniforms: { uCell: { k: '1f', from: 'cell', def: 12.0 }, uDrift: { k: '1f', from: 'drift', def: 0.0 } },
     decls: 'uniform float uCell; uniform float uDrift;',
     body: `
 vec4 fxMain() {
@@ -379,7 +421,7 @@ vec4 fxMain() {
   },
 
   'pattern': {
-    uniforms: { uScale: ['1f', p => num(p.scale, 12.0)], uMix: ['1f', p => num(p.mix, 0.5)] },
+    uniforms: { uScale: { k: '1f', from: 'scale', def: 12.0 }, uMix: { k: '1f', from: 'mix', def: 0.5 } },
     decls: 'uniform float uScale; uniform float uMix;',
     body: `
 vec4 fxMain() {
@@ -400,6 +442,16 @@ function num(v, d) {
   return Number.isFinite(n) ? n : d;
 }
 
+// Resolve a declarative uniform descriptor against an effect's params.
+// Descriptor shape: { k:'1f'|'1i', from:'<paramName>', def:<number>, bool?:true }
+// This is the single contract both this chain and the mmcomposer GLFx use to
+// turn a spec's `params` into uniform values, so the param NAMES are canonical.
+export function fxUniformValue(u, params) {
+  params = params || {};
+  if (u.bool) return params[u.from] ? 1 : 0;
+  return num(params[u.from], u.def);
+}
+
 // Build the full fragment source for a built-in effect.
 function buildBuiltinFrag(def) {
   return (
@@ -408,15 +460,56 @@ function buildBuiltinFrag(def) {
   );
 }
 
-// Build the full fragment source for a custom effect. The user's glsl is the
-// body of `vec4 fxMain()`; it must `return vec4(...)`.
+// Legacy uniform/varying aliases so custom fragments authored against the older
+// mmcomposer convention (tex / uv / uRes / o / outColor) still compile against
+// this header (uTex / vUv / uResolution / fragColor).
+const LEGACY_FX_ALIASES = `#define tex uTex
+#define uv vUv
+#define uRes uResolution
+#define o fragColor
+#define outColor fragColor
+`;
+
+// Build the full fragment source for a custom effect. Accepts three authoring
+// shapes so one custom contract covers every entry point:
+//   (a) a fully self-authored shader (its own `#version`) — used verbatim;
+//   (b) a full `void main(){…}` using legacy names — wrapped with header+aliases;
+//   (c) a bare body that `return`s a vec4 — wrapped as `vec4 fxMain()`.
 function buildCustomFrag(glsl) {
+  const s = String(glsl || '');
+  if (/#version/.test(s)) return s;
+  if (/\bvoid\s+main\s*\(/.test(s)) {
+    return FRAG_HEADER + LEGACY_FX_ALIASES + GLSL_LIB + '\n' + s;
+  }
   return (
     FRAG_HEADER + GLSL_LIB +
-    `\nvec4 fxMain() {\n${glsl}\n}\n` +
+    `\nvec4 fxMain() {\n${s}\n}\n` +
     `\nvoid main() {\n  vec4 src = texture(uTex, vUv);\n  vec4 fx = fxMain();\n  fragColor = mix(src, fx, clamp(uIntensity, 0.0, 1.0));\n}\n`
   );
 }
+
+// ---------------------------------------------------------------------------
+// Serializable program specs — the single source of truth shared with other
+// runtimes (the mmcomposer editor GLFx + its baked standalone player). Each
+// entry is plain JSON (fragment source + declarative uniform list, no
+// functions), so it survives JSON.stringify into a baked, self-contained file.
+// ---------------------------------------------------------------------------
+export function fxProgramSpecs() {
+  const out = {};
+  for (const type of FX_TYPES) {
+    if (type === 'custom') continue;
+    const def = EFFECTS[type];
+    if (!def) continue;
+    out[type] = {
+      label: FX_LABELS[type] || type,
+      frag: buildBuiltinFrag(def),
+      uniforms: Object.keys(def.uniforms || {}).map((name) => ({ name, ...def.uniforms[name] })),
+    };
+  }
+  return out;
+}
+export function fxCustomFrag(glsl) { return buildCustomFrag(glsl); }
+export const FX_VERT = VERT;
 
 // ---------------------------------------------------------------------------
 // The chain
@@ -534,13 +627,12 @@ export function createFXChain() {
     gl.uniform1f(uloc(entry, 'uIntensity'), clamp01(intensity));
     const us = def.uniforms || {};
     for (const name in us) {
-      const [kind, get] = us[name];
+      const u = us[name];
       const loc = uloc(entry, name);
       if (loc == null) continue;
-      const val = get(params);
-      if (kind === '1f') gl.uniform1f(loc, val);
-      else if (kind === '1i') gl.uniform1i(loc, val | 0);
-      else if (kind === '2f') gl.uniform2f(loc, val[0], val[1]);
+      const val = fxUniformValue(u, params);
+      if (u.k === '1i') gl.uniform1i(loc, val | 0);
+      else gl.uniform1f(loc, val);
     }
   }
 
