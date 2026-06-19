@@ -118,17 +118,22 @@ button {
   /* Right column holds the icon nav rail (AgentRunsRail) below the toolbar; it
      is `auto`, so it collapses to 0 when the rail isn't rendered (embed mode).
      banner + toolbar span both columns. */
-  grid-template-columns: 1fr auto;
+  /* Middle `dock` track holds the tiling pane dock (RightDock). It is
+     var(--th-dock-w) and collapses to 0 when no windows are open, so the
+     1fr `view` canvas reclaims the space. Right `auto` track is the icon
+     rail. banner + toolbar span all three columns. */
+  grid-template-columns: 1fr var(--th-dock-w, 0px) auto;
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
-    "banner  banner"
-    "toolbar toolbar"
-    "view    rightrail";
+    "banner  banner banner"
+    "toolbar toolbar toolbar"
+    "view    dock   rightrail";
   height: 100vh;
 }
 .app > .ds-proposal-banner { grid-area: banner; }
 .app > .toolbar             { grid-area: toolbar; min-height: var(--toolbar-h); }
 .app > .th-right-rail       { grid-area: rightrail; }
+.app > .right-dock          { grid-area: dock; }
 /* Every view-root sits in the same `view` cell so we don't need to know
    which view is active to place it correctly. EditsPanel/ChatDrawer/
    HistoryPanel/agent-busy-banner are all position:absolute|fixed, so they
@@ -3717,6 +3722,184 @@ button {
   gap: 2px;
   min-height: 0;
 }
+
+/* ───────────────────────────────────────────────────────────────────────
+   Right tiling dock — Claude-Code-style window management. Lives in the
+   .app grid `dock` track (collapses to 0 when empty). Holds up to 4 tiles
+   arranged as quadrants by [data-count]; dividers resize the panes:
+     1 → full · 2 → two cols · 3 → left full + right split · 4 → 4 quadrants.
+   ─────────────────────────────────────────────────────────────────────── */
+.right-dock {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.06);
+  display: flex;
+  overflow: visible;
+}
+/* Left-edge drag handle — resize the whole dock (canvas shrinks as it grows). */
+.dock-resize-edge {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 8px;
+  transform: translateX(-4px);
+  cursor: col-resize;
+  z-index: 5;
+}
+.dock-resize-edge::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 0; bottom: 0;
+  width: 1px;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+.dock-resize-edge:hover::after,
+body[data-panel-resizing="true"] .dock-resize-edge::after {
+  background: var(--accent, oklch(72% 0.16 50));
+}
+
+.dock-grid {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--border);  /* shows through gaps as thin tile separators */
+  overflow: hidden;
+}
+.dock-grid[data-count="1"] { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.dock-grid[data-count="2"] { grid-template-columns: var(--dock-col-split, 50%) 1fr; grid-template-rows: 1fr; }
+.dock-grid[data-count="3"],
+.dock-grid[data-count="4"] {
+  grid-template-columns: var(--dock-col-split, 50%) 1fr;
+  grid-template-rows: var(--dock-row-split, 50%) 1fr;
+}
+
+.dock-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Close (×) for non-thread tiles — thread tiles use ChatDrawer's own header. */
+.dock-tile-close {
+  position: absolute;
+  top: 8px; right: 10px;
+  z-index: 3;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 15px; line-height: 1;
+  cursor: pointer;
+}
+.dock-tile-close:hover { background: var(--surface-2); color: var(--text); }
+
+/* Drag-to-swap grip (top-left of each tile when 2+ windows are open). */
+.dock-tile-grip {
+  position: absolute;
+  top: 8px; left: 10px;
+  z-index: 3;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.55;
+  transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+.dock-tile:hover .dock-tile-grip { opacity: 1; }
+.dock-tile-grip:hover { background: var(--surface-2); color: var(--text); }
+.dock-tile-grip svg { width: 14px; height: 14px; }
+body[data-panel-resizing="true"] .dock-tile-grip { cursor: grabbing; }
+
+/* Drag-swap feedback: dim the dragged tile, ring the drop target. */
+.dock-tile[data-dragging="true"] { opacity: 0.45; }
+.dock-tile[data-drop="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border: 2px solid var(--accent, oklch(72% 0.16 50));
+  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, transparent);
+}
+
+/* Reserve room in the embedded panel's header so the × (right, always present)
+   and the grip (left, only when 2+ tiles) never cover the title / refresh /
+   count chrome. Thread tiles use ChatDrawer's own header, padded only when a
+   grip is present (count ≥ 2). */
+.dock-tile .th-rail-panel-embedded .runs-panel-head { padding-right: 40px; }
+.dock-grid:not([data-count="1"]) .dock-tile .th-rail-panel-embedded .runs-panel-head { padding-left: 40px; }
+.dock-grid:not([data-count="1"]) .dock-tile[data-kind="thread"] .chat-header { padding-left: 38px; }
+
+/* Divider handles (absolute, above tiles). */
+.dock-divider {
+  position: absolute;
+  z-index: 4;
+}
+.dock-divider.is-col {
+  top: 0; bottom: 0;
+  width: 8px;
+  left: var(--dock-col-split, 50%);
+  transform: translateX(-4px);
+  cursor: col-resize;
+}
+.dock-divider.is-row {
+  left: 0; right: 0;
+  height: 8px;
+  top: var(--dock-row-split, 50%);
+  transform: translateY(-4px);
+  cursor: row-resize;
+}
+.dock-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+.dock-divider.is-col::after { width: 1px; }
+.dock-divider.is-row::after { height: 1px; }
+.dock-divider:hover::after,
+body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent, oklch(72% 0.16 50)); }
+
+/* Embedded rail panels (tasks / comments / git) rendered inside a dock tile
+   instead of the fixed left-of-rail overlay — neutralise the fixed chrome. */
+.th-rail-panel.th-rail-panel-embedded {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  z-index: auto;
+  box-shadow: none;
+  border-left: none;
+}
+/* ChatDrawer as a dock tile — fill the cell, drop the floating drawer chrome. */
+.chat-drawer.chat-drawer-tile {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  z-index: auto;
+  box-shadow: none;
+  border-left: none;
+}
+.chat-drawer-tile .chat-drawer-resize-handle { display: none; }
 
 /* Tasks & subagents panel (second rail entry). */
 .th-tasks-count {
@@ -23740,6 +23923,38 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font: 11px/1.4 var(--font-mono);
   color: var(--text-faint);
   padding: 4px 2px;
+}
+/* Linked-layers diagnostic — what the `in` port resolves to + whether
+   each wired source became a live group. */
+.workflow-vector-linked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workflow-vector-linked-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font: 10.5px/1.3 var(--font-mono);
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  color: var(--text-faint);
+}
+.workflow-vector-linked-row.is-ok { color: var(--text); }
+.workflow-vector-linked-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-vector-linked-status {
+  flex: none;
+  opacity: 0.8;
+}
+.workflow-vector-linked-row.is-ok .workflow-vector-linked-status {
+  color: var(--accent, #3b82f6);
+  opacity: 1;
 }
 
 /* Tool palette — 2-col grid of icon + label buttons. */

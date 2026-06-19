@@ -6983,6 +6983,17 @@ function saveSettings(patch) {
   return next;
 }
 
+/* Right tiling dock persistence — width (px), column/row split (%) and the
+   open-window set live under settings.dock. saveSettings does a shallow merge,
+   so saveDock reads-modifies-writes the whole sub-object. */
+function loadDock() {
+  const d = loadSettings().dock;
+  return (d && typeof d === "object") ? d : {};
+}
+function saveDock(patch) {
+  saveSettings({ dock: { ...loadDock(), ...patch } });
+}
+
 /* Chat composer send-key preference. false (default) = ⌘/Ctrl+Enter sends,
    plain Enter inserts a newline. true = plain Enter sends, ⌘/Ctrl/Shift+Enter
    inserts a newline. Lives in the main settings blob; the composer reads it
@@ -8900,7 +8911,126 @@ function formatRunAge(ts) {
    reads each run's transcript on open.
 
    Pass `hidden` (workflow fullscreen) to unmount the rail + its panel entirely. */
-function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden }) {
+
+/* dockSlot — map a window's index + the open-window count to its CSS-grid
+   placement, producing the quadrant progression the user asked for:
+     1 → full · 2 → two cols · 3 → left full + right top/bottom · 4 → 4 quadrants.
+   Pairs with the .dock-grid[data-count] track templates in styles.css. */
+function dockSlot(i, count) {
+  if (count <= 1) return { gridColumn: "1", gridRow: "1" };
+  if (count === 2) return [{ gridColumn: "1", gridRow: "1" }, { gridColumn: "2", gridRow: "1" }][i];
+  if (count === 3) return [{ gridColumn: "1", gridRow: "1 / 3" }, { gridColumn: "2", gridRow: "1" }, { gridColumn: "2", gridRow: "2" }][i];
+  return [{ gridColumn: "1", gridRow: "1" }, { gridColumn: "2", gridRow: "1" }, { gridColumn: "2", gridRow: "2" }, { gridColumn: "1", gridRow: "2" }][i];
+}
+
+/* RightDock — the tiling pane dock (max 4 windows). Lives in the .app grid
+   `dock` track. Thread windows are rendered by the caller via renderThread so
+   ChatDrawer's wiring stays in App; tasks/comments/git render their embedded
+   panels here. The left edge resizes the whole dock; the column/row dividers
+   resize the panes. Only polls /__runs while a tasks tile is open. */
+function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize }) {
+  const [runs, setRuns] = useState([]);
+  // Drag-to-swap state: dragId = the tile being dragged by its grip; overId =
+  // the tile currently under the pointer (the swap target). Tile rects are
+  // measured ONCE at drag start (no per-frame layout reads).
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+  const swapRectsRef = useRef([]);
+  const needRuns = windows.some(w => w.kind === "tasks");
+  useEffect(() => {
+    if (!needRuns) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch(apiUrl("/__runs"));
+        const j = r.ok ? await r.json() : { runs: [] };
+        const proj = activeProjectId();
+        const list = (j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj);
+        if (!cancelled) setRuns(list);
+      } catch { if (!cancelled) setRuns([]); }
+    };
+    load();
+    const t = setInterval(load, 4000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [needRuns]);
+
+  // Grip mousedown → begin a swap drag. Snapshot every tile's rect once, then
+  // hit-test the pointer against them on move; on drop, swap the two windows.
+  const startSwap = (id) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const grid = e.currentTarget.closest(".dock-grid");
+    if (!grid) return;
+    swapRectsRef.current = Array.from(grid.querySelectorAll(".dock-tile")).map(el => ({
+      id: el.getAttribute("data-win-id"),
+      r: el.getBoundingClientRect(),
+    }));
+    const hit = (x, y) => {
+      const m = swapRectsRef.current.find(t => x >= t.r.left && x <= t.r.right && y >= t.r.top && y <= t.r.bottom);
+      return m ? m.id : null;
+    };
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    setDragId(id);
+    const onMove = (ev) => setOverId(hit(ev.clientX, ev.clientY));
+    const onUp = (ev) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      const target = hit(ev.clientX, ev.clientY);
+      if (target && target !== id) onSwap && onSwap(id, target);
+      setDragId(null);
+      setOverId(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  if (!windows.length) return null;
+  const count = windows.length;
+
+  const tileBody = (w) => {
+    if (w.kind === "thread")   return renderThread(w);
+    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded runs=${runs} onOpenRun=${onOpenRun} />`;
+    if (w.kind === "comments") return html`<${CommentsPanel} embedded />`;
+    if (w.kind === "git")      return html`<${GitPanel} embedded onStartChatWithPrompt=${onStartChatWithPrompt} />`;
+    return null;
+  };
+
+  // The row divider only spans the right column at count 3 (the left tile spans
+  // both rows there); at count 4 it spans the full width.
+  const rowDividerStyle = count === 3 ? { left: "var(--dock-col-split, 50%)", right: "0" } : null;
+
+  return html`
+    <div className="right-dock">
+      <div className="dock-resize-edge" onMouseDown=${onResizeStart} title="Drag to resize the dock"/>
+      <div className="dock-grid" data-count=${count}>
+        ${windows.map((w, i) => {
+          const slot = dockSlot(i, count);
+          return html`
+            <div className="dock-tile" data-kind=${w.kind} data-win-id=${w.id} key=${w.id}
+              data-dragging=${dragId === w.id ? "true" : null}
+              data-drop=${dragId && overId === w.id && overId !== dragId ? "true" : null}
+              style=${{ gridColumn: slot.gridColumn, gridRow: slot.gridRow }}>
+              ${count >= 2 && html`
+                <button className="dock-tile-grip" title="Drag to swap position" aria-label="Drag to rearrange"
+                  onMouseDown=${startSwap(w.id)}><${Icon.Grip}/></button>
+              `}
+              ${w.kind !== "thread" && html`
+                <button className="dock-tile-close" title="Close panel" aria-label="Close panel"
+                  onClick=${() => onClose(w.id)}>×</button>
+              `}
+              ${tileBody(w)}
+            </div>
+          `;
+        })}
+        ${count >= 2 && html`<div className="dock-divider is-col" onMouseDown=${onColResize}/>`}
+        ${count >= 3 && html`<div className="dock-divider is-row" style=${rowDividerStyle} onMouseDown=${onRowResize}/>`}
+      </div>
+    </div>
+  `;
+}
+
+function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, openKinds, hidden }) {
   // Which panel is open ("runs" | "tasks" | null).
   const [active, setActive] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -8990,11 +9120,14 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
   useEffect(() => {
     const onOpen = (e) => {
       const which = e?.detail?.panel;
-      if (which === "runs" || which === "tasks" || which === "live" || which === "comments") setActive(which);
+      // Overlays (pickers) toggle the rail's own active panel; tiling kinds
+      // (tasks / comments / git) open a dock window via the App-level callback.
+      if (which === "runs" || which === "live") setActive(which);
+      else if (which === "tasks" || which === "comments" || which === "git") onOpenWindow && onOpenWindow(which);
     };
     window.addEventListener("th:open-rail-panel", onOpen);
     return () => window.removeEventListener("th:open-rail-panel", onOpen);
-  }, []);
+  }, [onOpenWindow]);
 
   // rAF-track the rail's top while the panel is open so it stays glued to the
   // rail through banner show/hide, resize, scroll. Cheap (no-op when closed).
@@ -9105,10 +9238,10 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
       <//>
       <${HoverTip}
         placement="left"
-        className=${"th-right-rail-btn" + (active === "tasks" ? " is-active" : "")}
+        className=${"th-right-rail-btn" + (openKinds?.includes("tasks") ? " is-active" : "")}
         ariaLabel="Open tasks & subagents"
         tip="Tasks & subagents — every dispatch + to-do across runs, finished included"
-        onClick=${() => setActive(a => a === "tasks" ? null : "tasks")}
+        onClick=${() => onOpenWindow && onOpenWindow("tasks")}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Bot}/>
@@ -9127,10 +9260,10 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
       <//>
       <${HoverTip}
         placement="left"
-        className=${"th-right-rail-btn" + (active === "comments" ? " is-active" : "")}
+        className=${"th-right-rail-btn" + (openKinds?.includes("comments") ? " is-active" : "")}
         ariaLabel="Open comments"
         tip="Comments — reviewer & live-guest feedback across the project (not AI build comments)"
-        onClick=${() => setActive(a => a === "comments" ? null : "comments")}
+        onClick=${() => onOpenWindow && onOpenWindow("comments")}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.User}/>
@@ -9138,10 +9271,10 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
       <//>
       <${HoverTip}
         placement="left"
-        className=${"th-right-rail-btn th-right-rail-btn-git" + (active === "git" ? " is-active" : "")}
+        className=${"th-right-rail-btn th-right-rail-btn-git" + (openKinds?.includes("git") ? " is-active" : "")}
         ariaLabel="Open git & GitHub"
         tip="Git — commit, push, pull & history for this project"
-        onClick=${() => setActive(a => a === "git" ? null : "git")}
+        onClick=${() => onOpenWindow && onOpenWindow("git")}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Branch}/>
@@ -9149,25 +9282,10 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, hidden
       <//>
     </nav>
     ${panel}
-    ${active === "tasks" && html`<${TasksSubagentsPanel}
-      runs=${runs}
-      railTop=${railTop}
-      panelRef=${panelRef}
-      onOpenRun=${(r) => { onOpenRun(r); setActive(null); }}
-    />`}
     ${active === "live" && html`<${LiveSharesPanel}
       railTop=${railTop}
       panelRef=${panelRef}
       onClose=${() => setActive(null)}
-    />`}
-    ${active === "comments" && html`<${CommentsPanel}
-      railTop=${railTop}
-      panelRef=${panelRef}
-    />`}
-    ${active === "git" && html`<${GitPanel}
-      railTop=${railTop}
-      panelRef=${panelRef}
-      onStartChatWithPrompt=${onStartChatWithPrompt}
     />`}
   <//>`;
 }
@@ -9263,7 +9381,7 @@ const TASKS_PANEL_RUN_CAP = 40;
    run's transcript (/__chat?runId=…) and lists every subagent dispatch + Task,
    grouped by run, newest first, FINISHED ones included. Runs with neither are
    omitted. Read-only over existing endpoints (no daemon change needed). */
-function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun }) {
+function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
   // Per-run extracted { subagents, tasks }, keyed by runId.
   const [byRun, setByRun] = useState({});
   const [loading, setLoading] = useState(true);
@@ -9330,11 +9448,11 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun }) {
   const totalAgents = capped.reduce((n, r) => n + ((byRun[r.runId]?.subagents.length) || 0), 0);
   const totalTasks  = capped.reduce((n, r) => n + ((byRun[r.runId]?.tasks.length) || 0), 0);
 
-  return createPortal(html`
+  const __node = html`
     <div
-      className="th-rail-panel"
-      ref=${panelRef}
-      style=${railTop != null ? { top: railTop + "px" } : null}>
+      className=${"th-rail-panel" + (embedded ? " th-rail-panel-embedded" : "")}
+      ref=${embedded ? undefined : panelRef}
+      style=${!embedded && railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
         <span>Tasks & subagents</span>
         <span className="th-tasks-count">${totalAgents} agent${totalAgents===1?'':'s'} · ${totalTasks} task${totalTasks===1?'':'s'}</span>
@@ -9391,7 +9509,8 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun }) {
         ${overflow > 0 && html`<div className="th-tasks-overflow">+ ${overflow} older run${overflow===1?'':'s'} not shown</div>`}
       </div>
     </div>
-  `, document.body);
+  `;
+  return embedded ? __node : createPortal(__node, document.body);
 }
 
 /* LiveSharesPanel — third right-rail panel, scoped to the ACTIVE project. Two
@@ -9684,7 +9803,7 @@ function formatIsoAge(iso) {
    existing POST ops. Available in both editor + workflow modes via the rail, so
    the editor finally has access to the people-comment stream. Read-only over
    existing endpoints — no daemon change needed. */
-function CommentsPanel({ railTop, panelRef }) {
+function CommentsPanel({ railTop, panelRef, embedded }) {
   const [comments, setComments] = useState(null);   // null = loading
   const [filter, setFilter] = useState("open");
   const [err, setErr] = useState(null);
@@ -9772,11 +9891,11 @@ function CommentsPanel({ railTop, panelRef }) {
 
   const authorName = (a) => (a && a.name) || "Someone";
 
-  return createPortal(html`
+  const __node = html`
     <div
-      className="th-rail-panel th-comments-panel"
-      ref=${panelRef}
-      style=${railTop != null ? { top: railTop + "px" } : null}>
+      className=${"th-rail-panel th-comments-panel" + (embedded ? " th-rail-panel-embedded" : "")}
+      ref=${embedded ? undefined : panelRef}
+      style=${!embedded && railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
         <span>Comments${openCount ? " · " + openCount : ""}</span>
         <button className="th-icon-btn" onClick=${reload} title="Refresh"><${Icon.Refresh}/></button>
@@ -9849,7 +9968,8 @@ function CommentsPanel({ railTop, panelRef }) {
         `)}
       </div>
     </div>
-  `, document.body);
+  `;
+  return embedded ? __node : createPortal(__node, document.body);
 }
 
 /* Render a unified-diff string with add/remove/hunk coloring. No deps — a thin
@@ -9902,7 +10022,7 @@ function DiffBody({ d }) {
    we never merge remote history on top of in-flight edits. Commits credit any
    active live-session guests as Co-authored-by via the share's id. Available in
    both editor + workflow modes through the shared rail. */
-function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
+function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const [st, setSt] = useState(null);        // /__git/status, null = loading
   const [gh, setGh] = useState(null);        // /__github/status {configured,signedIn,login,avatar}
   const [commits, setCommits] = useState(null);
@@ -10215,9 +10335,9 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
     return m ? m[1] : rem;
   };
 
-  return createPortal(html`
-    <div className="th-rail-panel th-git-panel" ref=${panelRef}
-      style=${railTop != null ? { top: railTop + "px" } : null}>
+  const __node = html`
+    <div className=${"th-rail-panel th-git-panel" + (embedded ? " th-rail-panel-embedded" : "")} ref=${embedded ? undefined : panelRef}
+      style=${!embedded && railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
         <span>Git${repo && st.branch ? " · " + st.branch : ""}</span>
         ${st && st.syncVersion != null && html`<span className="th-git-syncver" title="Woven sync-format version — push/pull is blocked between mismatched versions to prevent cross-machine corruption">sync v${st.syncVersion}</span>`}
@@ -10468,7 +10588,8 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
           </div>
         </div>`}
     </div>
-  `, document.body);
+  `;
+  return embedded ? __node : createPortal(__node, document.body);
 }
 
 /* SSE consumer — fetch + getReader pattern from open-design's
@@ -57743,6 +57864,59 @@ function _specWithBindings(spec, specNodeId, allNodes, allEdges) {
   return out;
 }
 
+// Editor-side LIVE preview of a wired value source (number-generator / timeline).
+// app.js does not import the iframe's `Sources` evaluator (ESM, runs in the host
+// tools); this is a small mirror of the timeline interp + number subs, just
+// enough to TICK the driven number on a target node's control so the user can
+// SEE the binding is live — the authoritative drive still happens in the host
+// runtime. Returns null when there's nothing to evaluate.
+function _bindingInterp(keys, t) {
+  const n = (v, d) => (Number.isFinite(+v) ? +v : d);
+  if (!keys || !keys.length) return 0;
+  const ks = keys.slice().sort((a, b) => (a.t || 0) - (b.t || 0));
+  if (t <= ks[0].t) return n(ks[0].value, 0);
+  const last = ks[ks.length - 1]; if (t >= last.t) return n(last.value, 0);
+  for (let i = 0; i < ks.length - 1; i++) {
+    const a = ks[i], b = ks[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const span = (b.t - a.t) || 1; let f = (t - a.t) / span; const ease = a.ease || b.ease;
+      if (ease === "in") f = f * f; else if (ease === "out") f = 1 - (1 - f) * (1 - f);
+      else if (ease === "inout") f = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
+      return n(a.value, 0) + (n(b.value, 0) - n(a.value, 0)) * f;
+    }
+  }
+  return n(last.value, 0);
+}
+function _evalBindingValue(binding, time, index) {
+  if (!binding) return null;
+  const n = (v, d) => (Number.isFinite(+v) ? +v : d);
+  const s = binding.spec || {};
+  if (binding.kind === "timeline") {
+    const tr = s._track; if (!tr || !tr.keys || !tr.keys.length) return 0;
+    const dur = Math.max(0.0001, n(s.duration, 4)); let tt = time || 0;
+    if (tr.perInstance) tt += (index || 0) * n(tr.stagger, 0);
+    if (s.loop !== false) { tt = tt % dur; if (tt < 0) tt += dur; } else tt = Math.max(0, Math.min(dur, tt));
+    return _bindingInterp(tr.keys, tt);
+  }
+  const p = s.params || {};
+  if (s.sub === "constant") return n(p.value, 0);
+  if (s.sub === "algorithmic") {
+    try { const fn = new Function("i", "t", "n", "u", "v", "cols", "rows", "return (" + String(p.expr || "0") + ");"); return n(fn(index || 0, time || 0, 1, 0, 0, 1, 1), 0); }
+    catch (_e) { return 0; }
+  }
+  if (s.sub === "random" || s.sub === "pixel-map") return n(p.min, 0);   // representative (no per-instance preview)
+  return 0;
+}
+// A binding whose value changes over wall-clock time → the target control needs
+// a rAF tick to animate. Static (constant / non-`t` algorithmic) bindings render
+// their value once with no clock.
+function _bindingIsDynamic(binding) {
+  if (!binding) return false;
+  const s = binding.spec || {};
+  if (binding.kind === "timeline") return !!(s._track && s._track.keys && s._track.keys.length);
+  return s.sub === "algorithmic" && /\bt\b/.test(String((s.params && s.params.expr) || ""));
+}
+
 function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
   const cfg = APP_NODE_TOOLS[node.kind];
   const w = node.w || 720;
@@ -58939,6 +59113,26 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     }
     return s;
   }, [allEdges, node.id]);
+  // Resolved value sources for each driven param (kind + source spec, with the
+  // timeline track attached) — used to show the LIVE driven number on the
+  // control so a wired Timeline visibly ticks. Reuses the same resolver the host
+  // payload is baked from, so the editor preview matches what the runtime drives.
+  const drivenBindings = useMemo(
+    () => _specParamBindings(node.id, allNodes, allEdges) || {},
+    [node.id, allNodes, allEdges]);
+  const hasDynamicDriven = useMemo(
+    () => Object.keys(drivenBindings).some(k => _bindingIsDynamic(drivenBindings[k])),
+    [drivenBindings]);
+  // Free-running wall clock (seconds); each binding applies its own duration/loop
+  // when evaluated. Runs only while a dynamic source is wired in.
+  const [drvT, setDrvT] = useState(0);
+  useEffect(() => {
+    if (!hasDynamicDriven) return;
+    let raf = 0, start = 0;
+    const step = (now) => { if (!start) start = now; setDrvT((now - start) / 1000); raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [hasDynamicDriven]);
 
   const renderControl = ([key, def]) => {
     const d = def && typeof def === "object" ? def : { type: "text", value: def };
@@ -58958,21 +59152,32 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     </label>`;
     if (type === "number" || type === "range") {
       const numeric = _specNumberValue(value, 0);
+      // While driven, the displayed value is the LIVE source sample (ticks each
+      // frame for a Timeline); the static `numeric` is only the fallback base.
+      const live = driven ? _evalBindingValue(drivenBindings[key], drvT, 0) : null;
+      const shown = (driven && live != null) ? live : numeric;
       const bounds = _specNumberBounds(numeric, d);
-      const sliderValue = Math.max(bounds.min, Math.min(bounds.max, numeric));
+      let bMin = bounds.min, bMax = bounds.max;
+      // A Timeline track carries its own authored [min,max] range — use it for the
+      // slider scale so the driven thumb sweeps the real range instead of pegging.
+      const tr = driven && drivenBindings[key] && drivenBindings[key].spec && drivenBindings[key].spec._track;
+      if (tr && Number.isFinite(+tr.min) && Number.isFinite(+tr.max) && (+tr.max - +tr.min) > 1e-6) { bMin = +tr.min; bMax = +tr.max; }
+      const sliderValue = Math.max(bMin, Math.min(bMax, shown));
       const step = d.step ?? 1;
       const unit = _specControlUnit(key, d);
+      const dispVal = driven ? (Math.round(shown * 1000) / 1000) : value;
       const setNumber = (raw) => {
         const n = Number(raw);
         updateControl(key, Number.isFinite(n) ? n : 0);
       };
-      return html`<label key=${key} className=${"workflow-spec-row" + (driven ? " is-driven" : "")} style=${{ display: "block", marginBottom: "10px", fontSize: "11px", opacity: driven ? 0.6 : 1 }}>
+      return html`<label key=${key} className=${"workflow-spec-row" + (driven ? " is-driven" : "")} style=${{ display: "block", marginBottom: "10px", fontSize: "11px", opacity: driven ? 0.85 : 1 }}>
         <span className="workflow-spec-label" style=${{ display: "block", color: driven ? "var(--accent, #79f)" : "var(--muted, #888)", marginBottom: "4px" }}>${label}</span>
-        <input type="range" min=${bounds.min} max=${bounds.max} step=${step} value=${sliderValue} disabled=${driven}
+        <input type="range" min=${bMin} max=${bMax} step=${step} value=${sliderValue} disabled=${driven}
           style=${{ width: "100%", margin: "0 0 5px" }}
           onInput=${(e) => setNumber(e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
         <div style=${{ display: "grid", gridTemplateColumns: unit ? "1fr auto" : "1fr", gap: "6px", alignItems: "center" }}>
-          <input className="workflow-spec-input" type="number" step=${step} value=${value} readOnly=${driven}
+          <input className="workflow-spec-input" type="number" step=${step} value=${dispVal} readOnly=${driven}
+            style=${driven ? { color: "var(--accent, #79f)", fontVariantNumeric: "tabular-nums" } : null}
             onInput=${(e) => setNumber(e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
           ${unit && html`<span style=${{ color: "var(--muted, #888)", fontSize: "10px", minWidth: "32px" }}>${unit}</span>`}
         </div>
@@ -67711,6 +67916,146 @@ function App() {
   const [chatRun, setChatRun] = useState(null);    // currently-mounted run (drawer open)
   const [lastRun,  setLastRun]  = useState(null);  // sticky reference so user can reopen after close
   const [runFinished, setRunFinished] = useState(false);  // ChatDrawer reports the agent's turn ended
+
+  // ── Right tiling dock (RightDock) ─────────────────────────────────────
+  // Up to 4 windows laid out as quadrants. Threads are multi-instance (keyed
+  // by runId); tasks/comments/git are singletons (the rail icon toggles them).
+  // chatRun stays the "focused thread" (drives runActive / locks); a sync
+  // effect mirrors every chat-open into a thread window so existing open paths
+  // (spawnFromComposer, openNewChat, reopen) all tile automatically.
+  const [dockWindows, setDockWindows]   = useState([]);
+  const [dockWidth, setDockWidth]       = useState(() => Number(loadDock().width) || 720);
+  const [dockColSplit, setDockColSplit] = useState(() => Number(loadDock().colSplit) || 50);
+  const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
+  const dockWidthRef = useRef(dockWidth); dockWidthRef.current = dockWidth;
+  const dockColRef   = useRef(dockColSplit); dockColRef.current = dockColSplit;
+  const dockRowRef   = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
+
+  // Serialise windows for persistence (threads keep only their runId).
+  const serializeDock = (ws) => ws.map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+
+  const openWindow = useCallback((desc) => {
+    setDockWindows(prev => {
+      let next;
+      if (desc.kind !== "thread") {
+        const idx = prev.findIndex(w => w.kind === desc.kind);
+        if (idx >= 0) next = prev.filter((_, i) => i !== idx);          // toggle off
+        else { const w = { id: "w_" + desc.kind, kind: desc.kind }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else {
+        const rid = desc.run?.runId;
+        const at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], run: desc.run }; }
+        else { const w = { id: "w_thread_" + rid, kind: "thread", run: desc.run }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      }
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+  }, []);
+
+  const closeWindow = useCallback((id, run) => {
+    setDockWindows(prev => {
+      const next = prev.filter(w => w.id !== id);
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+    if (run?.runId) setChatRun(cur => (cur?.runId === run.runId ? null : cur));
+  }, []);
+
+  // Swap two windows' positions in the order (drag-to-swap between quadrants).
+  const swapWindows = useCallback((idA, idB) => {
+    setDockWindows(prev => {
+      const a = prev.findIndex(w => w.id === idA);
+      const b = prev.findIndex(w => w.id === idB);
+      if (a < 0 || b < 0 || a === b) return prev;
+      const next = prev.slice();
+      [next[a], next[b]] = [next[b], next[a]];
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+  }, []);
+
+  // Rehydrate the open-window set on mount: singletons immediately, thread
+  // tiles after matching their runId against /__runs (dropping vanished runs).
+  // Runs once; openWindow dedups so the lastRunId restore can't double-add.
+  useEffect(() => {
+    const saved = loadDock().windows;
+    if (!Array.isArray(saved) || !saved.length) return;
+    saved.filter(w => w && w.kind && w.kind !== "thread").forEach(w => openWindow({ kind: w.kind }));
+    const ids = saved.filter(w => w && w.kind === "thread" && w.runId).map(w => w.runId);
+    if (!ids.length) return;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__runs"));
+        const j = r.ok ? await r.json() : { runs: [] };
+        const byId = new Map((j.runs || []).map(rn => [rn.runId, rn]));
+        ids.forEach(id => { const run = byId.get(id); if (run) openWindow({ kind: "thread", run }); });
+      } catch {}
+    })();
+  }, [openWindow]);
+
+  // Mirror the focused chat into a thread window so every open path tiles it.
+  useEffect(() => { if (chatRun) openWindow({ kind: "thread", run: chatRun }); }, [chatRun, openWindow]);
+
+  // Publish dock geometry as CSS custom properties for the .app grid + dock.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--th-dock-w", dockWindows.length ? dockWidth + "px" : "0px");
+    root.style.setProperty("--dock-col-split", dockColSplit + "%");
+    root.style.setProperty("--dock-row-split", dockRowSplit + "%");
+  }, [dockWindows.length, dockWidth, dockColSplit, dockRowSplit]);
+
+  const openKinds = dockWindows.filter(w => w.kind !== "thread").map(w => w.kind);
+
+  // Dock drag handlers — each measures its reference rect ONCE at mousedown
+  // (never per-frame — that thrashes layout) and writes the CSS var live;
+  // state + persistence commit on mouseup. data-panel-resizing latches iframes
+  // pointer-transparent so the drag never stalls over a frame.
+  const startDockResize = useCallback((e) => {
+    e.preventDefault();
+    try { window.dispatchEvent(new CustomEvent("th:set-canvas-selection", { detail: { ids: [] } })); } catch {}
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    const startX = e.clientX, startW = dockWidthRef.current;
+    const onMove = (ev) => {
+      const w = Math.max(360, Math.min(window.innerWidth * 0.7, startW + (startX - ev.clientX)));
+      document.documentElement.style.setProperty("--th-dock-w", w + "px");
+      dockWidthRef.current = w;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      setDockWidth(dockWidthRef.current);
+      saveDock({ width: dockWidthRef.current });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  const startDockSplit = useCallback((axis) => (e) => {
+    e.preventDefault();
+    const grid = e.currentTarget.closest(".dock-grid");
+    if (!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const horiz = axis === "col";
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    const onMove = (ev) => {
+      const pct = horiz
+        ? ((ev.clientX - rect.left) / rect.width) * 100
+        : ((ev.clientY - rect.top) / rect.height) * 100;
+      const clamped = Math.max(15, Math.min(85, pct));
+      document.documentElement.style.setProperty(horiz ? "--dock-col-split" : "--dock-row-split", clamped + "%");
+      (horiz ? dockColRef : dockRowRef).current = clamped;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      if (horiz) { setDockColSplit(dockColRef.current); saveDock({ colSplit: dockColRef.current }); }
+      else { setDockRowSplit(dockRowRef.current); saveDock({ rowSplit: dockRowRef.current }); }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
   // v3.4.37 — Editor-mode selection mirror, parallel to WorkflowCanvas's
   // selectionRef. CanvasView populates this ref with { frameId, frame,
   // sourceRoot, view } on every selection change; spawnFromComposer reads
@@ -68333,6 +68678,8 @@ function App() {
             setRunFinished(!!lastRun.done);
           }
         }}
+        onOpenWindow=${openWindow}
+        openKinds=${openKinds}
       />`}
       ${!embedMode && historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
       ${!embedMode && html`<${ScreenshotWorker}
@@ -68359,23 +68706,40 @@ function App() {
         onSubmit=${submit}
         onUpdateSource=${updateSource}
       />`}
-      ${!embedMode && html`<${ChatDrawer}
-        run=${chatRun}
-        onClose=${() => setChatRun(null)}
-        onStop=${() => { /* keep the drawer open so the user can read the final state */ }}
-        onRunComplete=${handleRunComplete}
-        onStatusChange=${({ status }) => {
-          // runFinished tracks the agent's *current turn* — when the user
-          // sends a follow-up the status flips back to streaming and Submit
-          // disables again. Process-level "done" is separate; we don't need
-          // to expose it to App for Phase 1.
-          setRunFinished(status === "done" || status === "error" || status === "fail");
+      ${!embedMode && html`<${RightDock}
+        windows=${dockWindows}
+        onClose=${closeWindow}
+        onSwap=${swapWindows}
+        onResizeStart=${startDockResize}
+        onColResize=${startDockSplit("col")}
+        onRowResize=${startDockSplit("row")}
+        onStartChatWithPrompt=${spawnFromComposer}
+        onOpenRun=${(run) => {
+          if (run) {
+            setChatRun(run);
+            setLastRun(run);
+            setRunFinished(!!run.done);
+            saveSettings({ lastRunId: run.runId });
+          }
         }}
-        permissionMode=${permissionMode}
-        onPermissionModeChange=${onPermissionModeChange}
-        onStartNewChat=${spawnFromComposer}
-        selectionCount=${editorSelectionCount}
-        variant="dock"
+        renderThread=${(w) => html`<${ChatDrawer}
+          key=${w.id}
+          run=${w.run}
+          variant="tile"
+          onClose=${() => closeWindow(w.id, w.run)}
+          onStop=${() => { /* tile close keeps the run going; nothing to stop here */ }}
+          onRunComplete=${handleRunComplete}
+          onStatusChange=${({ status }) => {
+            // Only the focused thread feeds runFinished (which drives the edit
+            // lock); a background tile finishing its turn must not unlock.
+            if (chatRun && w.run?.runId === chatRun.runId)
+              setRunFinished(status === "done" || status === "error" || status === "fail");
+          }}
+          permissionMode=${permissionMode}
+          onPermissionModeChange=${onPermissionModeChange}
+          onStartNewChat=${spawnFromComposer}
+          selectionCount=${editorSelectionCount}
+        />`}
       />`}
     </div>
   `;
