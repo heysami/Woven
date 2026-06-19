@@ -313,8 +313,11 @@ function buildWiredRuntimeLayers(){
     const stack = effK.map(e=>{
       const fx = wiredChildSpec(e);
       const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fx.type==='custom' || fx.type==='shader';
-      // Phase-1: scalar number bindings → effect intensity / params. (Evaluated
-      // at build time; vector/animated effect drive is a later phase.)
+      // Scalar number bindings → effect intensity / params. The STATIC value is
+      // baked here; TIME-VARYING sources (Timeline / algorithmic-with-`t`) are
+      // re-resolved every frame in render() via the `_fxSpec` kept below — the
+      // wired-layer build is cached by `_wiredVer`, so without that a wired
+      // Timeline on an effect param would freeze at this build-time clock value.
       let intensity = fx.intensity??1, params = fx.params||{};
       const b = fx._bindings;
       if(b){ params = Object.assign({}, params);
@@ -322,7 +325,7 @@ function buildWiredRuntimeLayers(){
           const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
           if(k==='intensity') intensity=val; else params[k]=val; }
       }
-      return {type:isCustom?'custom':fx.type, params, intensity, glsl:fx.glsl};
+      return {type:isCustom?'custom':fx.type, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
     });
     const L = fillLayer({
       id: wl.id || ('W'+wi),
@@ -1258,6 +1261,18 @@ const Engine = {
         const p=triggerBoundParams(ts);
         Object.assign(L.trigger, p);
         L.trigger.impacts=triggerResolvedImpacts(ts, p);
+      }
+    }
+    // 0b) re-resolve time-varying EFFECT param bindings (Number/Timeline) so a
+    //     wired source ANIMATES an effect param / intensity rather than freezing
+    //     at the build-time clock (the wired-layer stack is cached by _wiredVer).
+    //     Static bindings stay as baked in buildWiredRuntimeLayers.
+    for(const L of layers){ const st=L.effects&&L.effects.stack; if(!st) continue;
+      for(const e of st){ const fx=e._fxSpec; if(!fx||!Sources.isDynamic(fx)) continue;
+        for(const k in fx._bindings){ const src=fx._bindings[k]; if(!src||Sources.isVector(src)) continue;
+          const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+          if(k==='intensity') e.intensity=val; else (e.params||(e.params={}))[k]=val;
+        }
       }
     }
     // 1) evaluate triggers (per-layer), then fold in the global wired trigger
