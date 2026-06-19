@@ -135,7 +135,7 @@
 </style>
 </head>
 <body>
-  <div id="toolbar">
+  <div id="toolbar" data-float-panel="top">
     <div class="brand">Font Creator<small>Woven driven view</small></div>
     <label class="fld"><span>Family name</span><input id="familyName" type="text" value="My Font" style="width:160px"></label>
     <label class="fld"><span>Units / em</span><input id="unitsPerEm" type="number" value="1000" min="64" max="16384" step="1"></label>
@@ -1043,10 +1043,14 @@ function reportPanels(){
   // SAME width it had in normal layout (width:calc(var(--panel-*) - 8px)), so
   // offsetWidth is stable across the toggle and safe to read either way.
   // +8 builds in the breathing gap the shared CSS leaves as click-through.
+  const toolbar = document.getElementById("toolbar");
   const panelL = floating ? (gridPane    ? gridPane.offsetWidth    + 8 : 0) : 0;
   const panelR = floating ? (previewPane ? previewPane.offsetWidth + 8 : 0) : 0;
-  const panelT = 0;   // this tool has no floating top panel
-  const panelB = 0;   // …nor a bottom panel
+  // Float the global toolbar (brand + font metadata + status) on TOP, above the
+  // node title bar (+30) — else #coreCanvas covers it and only the red status
+  // tail peeks out clipped. +8 = breathing gap.
+  const panelT = floating ? (toolbar ? toolbar.offsetHeight + 8 + 30 : 0) : 0;
+  const panelB = 0;   // …no bottom panel
   if(floating){
     document.body.style.setProperty("--panel-l", panelL+"px");
     document.body.style.setProperty("--panel-r", panelR+"px");
