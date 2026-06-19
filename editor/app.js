@@ -58359,7 +58359,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const spec = node.spec || {};
-  const [view, setView] = useState(node.specView || "code");
+  const [view, setView] = useState(node.specView || "ui");   // building blocks open in UI, not Code
   const [selCell, setSelCell] = useState(null);   // Phase-2 override editor selection
   const generatedScript = useMemo(() => _specToScript(node.kind, spec), [node.kind, JSON.stringify(spec)]);
   const scriptSource = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : generatedScript);
@@ -58673,6 +58673,49 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   const templates = SPEC_SOURCE_TEMPLATES[node.kind] || [];
   const selectedTemplateId = node.templateId || "";
 
+  // ── Timeline: bespoke editor — no Code/UI tabs, no template machinery. Just a
+  // duration + loop control and the per-track keyframe panel. (The .js/.json
+  // sidecars still mirror underneath for agent edits; the UI never shows them.)
+  if (node.kind === "timeline") {
+    const dur = spec.duration ?? 4;
+    const setTimelineMeta = (patch) => {
+      const nextSpec = { ...spec, v: 1, kind: "timeline", duration: spec.duration ?? 4, loop: spec.loop !== false, ...patch };
+      commitSpec(nextSpec);
+    };
+    return html`
+      <div className="workflow-node workflow-node-spec workflow-node-spec-timeline"
+        data-selected=${selected ? "true" : "false"} onMouseDownCapture=${() => onSelect && onSelect()}
+        data-node-id=${node.id}
+        style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+        <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+          <span className="workflow-node-glyph">${cfg.glyph}</span>
+          <span className="workflow-node-label">Timeline</span>
+          <span className="workflow-node-bar-spacer"/>
+          <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+        </div>
+        <div className="workflow-spec-body" onMouseDown=${(e) => e.stopPropagation()} style=${{ padding: "8px 10px", overflow: "auto", height: "calc(100% - 30px)" }}>
+          <div style=${{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px", fontSize: "11px" }}>
+            <label style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style=${{ color: "var(--muted,#888)" }}>Duration</span>
+              <input className="workflow-spec-input" type="number" min="0.1" step="0.1" value=${dur} style=${{ width: "62px" }}
+                onInput=${(e) => setTimelineMeta({ duration: Math.max(0.1, Number(e.target.value) || 0.1) })} onMouseDown=${(e) => e.stopPropagation()}/>
+              <span style=${{ color: "var(--muted,#888)" }}>s</span>
+            </label>
+            <label style=${{ display: "flex", alignItems: "center", gap: "6px" }} onMouseDown=${(e) => e.stopPropagation()}>
+              <input type="checkbox" checked=${spec.loop !== false} onChange=${(e) => setTimelineMeta({ loop: e.target.checked })}/>
+              <span style=${{ color: "var(--muted,#888)" }}>Loop</span>
+            </label>
+          </div>
+          ${renderTimelinePanel()}
+        </div>
+        <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+          title="Wire this Timeline into one or more numeric param ports — each becomes a track."
+          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">timeline</span></div>
+        <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      </div>
+    `;
+  }
+
   const hasIn = node.kind === "layer";
   return html`
     <div className=${"workflow-node workflow-node-spec workflow-node-spec-" + node.kind}
@@ -58725,7 +58768,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       </div>
       ${hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
         title="Wire an asset (content) + optional Position / Trigger / Effect into this layer."
-        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}><div className="workflow-port-dot"/></div>`}
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">content</span></div>`}
       ${paramKeys.map((key, i) => {
         const total = Math.max(1, paramKeys.length);
         const topPx = 30 + (h - 30) * (i + 0.5) / total;
@@ -58735,16 +58778,16 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           data-port-node=${node.id} data-port-side=${"param:" + key}
           style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
           title=${(bound ? "Driven by a wired Number — param: " : "Bind a Number into param: ") + key}
-          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("param:" + key, e); }}><div className="workflow-port-dot"/></div>`;
+          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("param:" + key, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">${key}</span></div>`;
       })}
       ${node.kind === "number-generator" && (spec.sub === "pixel-map") && html`<div
         className="workflow-port-zone workflow-port-zone-in workflow-port-zone-pixmap" data-port-node=${node.id} data-port-side="pixmap"
         style=${{ top: "15px", bottom: "auto", height: "18px" }}
         title="Wire an image asset here — sampled by the pixel-map sub-type."
-        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("pixmap", e); }}><div className="workflow-port-dot"/></div>`}
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("pixmap", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">pixel map</span></div>`}
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
         title=${"Wire this " + cfg.label + " into a host editor."}
-        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/></div>
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${(cfg.label || "out").toLowerCase()}</span></div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
     </div>
   `;
