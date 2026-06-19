@@ -29,6 +29,22 @@ body.detached-panels {
   pointer-events: none;
   position: relative;
 }
+/* The page <html> also paints a chrome background in most tools — clear it too,
+   else the grown iframe shows a solid fill instead of being see-through. */
+html:has(body.detached-panels) { background: transparent !important; }
+
+/* Panels exist ONLY while the node is selected. When NOT selected (no
+   detached-panels class) hide every floating panel and let the central canvas
+   fill the node rect — so a deselected editor reads as just its canvas, the way
+   Figma/Spline-style editors hide their chrome until focused. */
+body:not(.detached-panels) [data-float-panel] { display: none !important; }
+body:not(.detached-panels) #coreCanvas {
+  position: absolute !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+}
 
 /* Central canvas stays live and pinned to the node's core rect (inset by the
    reported panel extents). Tools whose #coreCanvas is the flex child just get

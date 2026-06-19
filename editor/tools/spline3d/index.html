@@ -55,6 +55,22 @@
   .tool.active { background: var(--accent); color: var(--wv-text-on-accent, #fff); }
   .tool svg { width: 19px; height: 19px; }
   .sep { height: 1px; background: var(--line); margin: 3px 2px; }
+  /* Detached (node selected): the shared detached-panels.css floats the LEFT
+     panel full-height as a solid card. This is a COMPACT icon strip — keep it
+     vertically centred, content-sized, and TRANSPARENT so it floats cleanly
+     over the scene instead of a tall white slab. Higher specificity +
+     !important beats the shared [data-float-panel="left"] rule. */
+  body.detached-panels .toolbar {
+    top: 50% !important;
+    bottom: auto !important;
+    height: auto !important;
+    width: auto !important;
+    transform: translateY(-50%);
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
 
   .panel {
     position: fixed; right: 14px; top: 14px; bottom: 14px; width: 280px;

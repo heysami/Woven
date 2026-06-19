@@ -6711,6 +6711,21 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   z-index: 5;
   pointer-events: auto;
 }
+/* Panels appear ONLY while the editor node is selected — when not detached, hide
+   the side panels and collapse the body so the stage fills the node (canvas-only
+   at rest), matching the iframe tools' deselected behaviour. */
+.workflow-node-vector:not([data-detached="true"]) .workflow-vector-left,
+.workflow-node-vector:not([data-detached="true"]) .workflow-vector-right,
+.workflow-node-composer:not([data-detached="true"]) .workflow-composer-left,
+.workflow-node-composer:not([data-detached="true"]) .workflow-composer-right {
+  display: none !important;
+}
+.workflow-node-vector:not([data-detached="true"]) .workflow-vector-body {
+  grid-template-columns: 1fr !important;
+}
+.workflow-node-composer:not([data-detached="true"]) .workflow-composer-body {
+  grid-template-columns: 1fr !important;
+}
 /* Selected-state outline — subtle accent ring so the user can see which
    card is currently the "interactive" one. */
 .workflow-node[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) {
