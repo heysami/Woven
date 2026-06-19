@@ -1844,6 +1844,18 @@ if(EMBEDDED){
       requestAnimationFrame(()=>{ fitStage(); reportPanels(); });
     }
   });
+
+  // Detached mode: a click on the transparent iframe backdrop (outside the
+  // floating panels + core canvas) means "click outside the node" → ask the host
+  // to deselect/collapse this node. Capture phase so it runs before tool handlers.
+  window.addEventListener('mousedown', (e)=>{
+    if(!document.body.classList.contains('detached-panels')) return;
+    const t=e.target;
+    if(t && t.closest && (t.closest('#coreCanvas') || t.closest('[data-float-panel]'))) return;
+    // backdrop click → forward deselect (this tool posts inline with nodeId:NODE)
+    try{ parent.postMessage({type:'material:deselect', nodeId:NODE}, '*'); }catch(e){}
+  }, true);
+
   try{ parent.postMessage({type:'material:ready', nodeId:NODE}, '*'); }catch(e){}
   document.getElementById('modeStatus').innerHTML='driven · node <b>'+escapeHTML(NODE||'?')+'</b>';
 } else {

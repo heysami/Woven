@@ -1810,6 +1810,17 @@ if(EMBEDDED){
       requestAnimationFrame(()=>{ reportPanels(); reportLayerGeom(); });
     }
   });
+
+  // Detached mode: a click on the transparent iframe backdrop (outside the
+  // floating panels + core canvas) means "click outside the node" → ask the host
+  // to deselect/collapse this node. Capture phase so it runs before tool handlers.
+  window.addEventListener('mousedown', (e) => {
+    if (!document.body.classList.contains('detached-panels')) return;
+    const t = e.target;
+    if (t && t.closest && (t.closest('#coreCanvas') || t.closest('[data-float-panel]'))) return;
+    // backdrop click → forward deselect (this tool posts inline with nodeId:NODE)
+    if (EMBEDDED) { try{ parent.postMessage({ type:'image:deselect', nodeId:NODE }, '*'); }catch(e){} }
+  }, true);
 }
 
 // ── Floating-panel geometry reporting (detached-panels contract) ────────────

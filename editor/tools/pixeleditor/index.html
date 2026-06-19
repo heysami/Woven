@@ -1349,6 +1349,17 @@
     }
   });
 
+  // Detached mode: a click on the transparent iframe backdrop (outside the
+  // floating panels + core canvas) means "click outside the node" → ask the host
+  // to deselect/collapse this node. Capture phase so it runs before tool handlers.
+  window.addEventListener("mousedown", (e) => {
+    if (!document.body.classList.contains("detached-panels")) return;
+    const t = e.target;
+    if (t && t.closest && (t.closest("#coreCanvas") || t.closest("[data-float-panel]"))) return;
+    // backdrop click → forward deselect (this tool posts inline with nodeId:NODE_ID)
+    if (EMBEDDED) { parent.postMessage({ type:"pixel:deselect", nodeId:NODE_ID }, "*"); }
+  }, true);
+
   // ---------------- Floating panels (detached mode) ----------------
   // Report the left/right/top/bottom panel extents (incl. an 8px gap) both as
   // CSS vars on <body> (so detached-panels.css can lay the panels out) and back

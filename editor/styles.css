@@ -6705,6 +6705,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   z-index: 12;
   overflow: visible;
 }
+/* Detached: the grown iframe (z-index 1 inside the node) covers the node's own
+   title bar + resize corner. Lift those above it so the × close button, drag
+   handle, and resize grip stay clickable. The floating top panel clears the
+   title bar (+30 in panelT), so raising the bar never hides it. */
+.workflow-node[data-detached="true"] .workflow-node-bar {
+  position: relative;
+  z-index: 6;
+}
+.workflow-node[data-detached="true"] .workflow-node-resize-corner {
+  z-index: 6;
+}
 /* Detached: the in/out port dots (the green diamonds you grab to wire) move out
    to the floating panels' OUTER edges — matching the shifted wire endpoints
    (workflowPortPosition) and the ⊕ buttons — instead of sitting at the hidden

@@ -39105,6 +39105,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
+                onDeselect=${() => setSelectedNodeIds(new Set())}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
@@ -39156,6 +39157,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onBakeAutoCreateOutput=${(bakedPath) => spawnAppNodeOutput(setData, n, bakedPath)}
+                onDeselect=${() => setSelectedNodeIds(new Set())}
                 reportAppNodeLayout=${reportAppNodeLayout}
                 reportLayerGeom=${reportLayerGeom}
                 allNodes=${data.nodes || []}
@@ -54942,6 +54944,7 @@ function WorkflowVectorEditorNode({
           const parsed = _vecGetAnchorStruct(tgt);
           const [subIdxStr, anchorIdxStr] = selectedAnchor.split(":");
           deleteSelectedAnchor(tgt, parsed, +subIdxStr, +anchorIdxStr);
+          e.stopImmediatePropagation();   // else the workspace deletes the whole node
           e.preventDefault();
           return;
         }
@@ -54950,6 +54953,7 @@ function WorkflowVectorEditorNode({
         const nextShapes = shapes.filter(s => !selection.includes(s.id));
         const used = new Set(nextShapes.map(s => s.groupId).filter(Boolean));
         commitShapes(nextShapes, { selection: [], groups: groups.filter(g => used.has(g.id) || g.src) });
+        e.stopImmediatePropagation();   // capture-phase: stop the workspace node-delete handler
         e.preventDefault();
         return;
       }
@@ -57948,7 +57952,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
    up. Imports are node-owned (not serialized into the scene) and resolved via
    the shared io-contract resolver — no bespoke edge walk. */
 const SPLINE_TOOL_SRC = "/editor/tools/spline3d/index.html";
-function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, allNodes, allEdges }) {
+function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, allNodes, allEdges }) {
   const w = node.w || 720;
   const h = node.h || 540;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
@@ -58051,11 +58055,13 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
         const lay = { panelL: d.panelL || 0, panelR: d.panelR || 0, panelT: d.panelT || 0, panelB: d.panelB || 0 };
         setPanelExtents(lay);
         reportAppNodeLayout && reportAppNodeLayout(node.id, lay);
+      } else if (d.type === "spline:deselect") {
+        onDeselect && onDeselect();
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [node.id, postToIframe, persistScene, reportAppNodeLayout]);
+  }, [node.id, postToIframe, persistScene, reportAppNodeLayout, onDeselect]);
 
   // Notify the 3D tool of selection so it can float / hide its panels.
   const selectedRef = useRef(selected); selectedRef.current = selected;
@@ -58378,7 +58384,7 @@ function _bindingIsDynamic(binding) {
   return s.sub === "algorithmic" && /\bt\b/.test(String((s.params && s.params.expr) || ""));
 }
 
-function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, reportLayerGeom, allNodes, allEdges }) {
+function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, reportLayerGeom, allNodes, allEdges }) {
   const cfg = APP_NODE_TOOLS[node.kind];
   const w = node.w || 720;
   const h = node.h || 540;
@@ -58532,6 +58538,9 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
       } else if (d.type === cfg.prefix + ":layers-geometry") {
         // Tool reports per-layer-row geometry (iframe-local px) for layer ports.
         reportLayerGeom && reportLayerGeom(node.id, { panel: d.panel || null, rows: Array.isArray(d.rows) ? d.rows : [] });
+      } else if (d.type === cfg.prefix + ":deselect") {
+        // Click on the floating-iframe backdrop (outside panels/canvas) → collapse.
+        onDeselect && onDeselect();
       }
     };
     window.addEventListener("message", onMsg);
