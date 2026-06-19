@@ -59309,19 +59309,27 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     }, 900);
   }, [canonicalPath, bakedPathTarget, cfg.canonicalIsBaked, cfg.stateField, node.bakedPath, onChange, onBakeAutoCreateOutput]);
 
+  // Push the init payload. Fired on the tool's ready message AND on the iframe's
+  // load event — the tool HTML is often cached, so it can announce ready before
+  // our window listener attaches; we'd miss it and a tool's "no init → default"
+  // fallback would paint demo content. The tool installs its listener before it
+  // announces, so an onLoad push always lands.
+  const sendInit = useCallback(() => {
+    readyRef.current = true;
+    postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
+                   content: contentRef.current, imports: importsRef.current,
+                   effects: specsRef.current.effects, positions: specsRef.current.positions,
+                   triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
+    postToIframe({ type: cfg.prefix + ":select", selected: !!selectedRef.current });
+  }, [cfg.prefix, branch, postToIframe]);
+
   // iframe → node: ready (push init) + state edits (persist).
   useEffect(() => {
     const onMsg = (ev) => {
       const d = ev && ev.data;
       if (!d || d.nodeId !== node.id) return;
       if (d.type === cfg.prefix + ":ready") {
-        readyRef.current = true;
-        postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
-                       content: contentRef.current, imports: importsRef.current,
-                       effects: specsRef.current.effects, positions: specsRef.current.positions,
-                       triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
-        // Tell a freshly-ready tool whether it's already selected (floating panels).
-        postToIframe({ type: cfg.prefix + ":select", selected: !!selectedRef.current });
+        sendInit();
       } else if (d.type === cfg.prefix + ":state") {
         persistState(d.state, d.baked || null);
       } else if (d.type === cfg.prefix + ":panels") {
@@ -59339,7 +59347,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [node.id, cfg.prefix, branch, postToIframe, persistState, reportAppNodeLayout, reportLayerGeom]);
+  }, [node.id, cfg.prefix, sendInit, persistState, reportAppNodeLayout, reportLayerGeom]);
 
   // Notify the tool when selection changes so it can float / hide its panels.
   const selectedRef = useRef(selected); selectedRef.current = selected;
@@ -59422,6 +59430,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
         className="workflow-apptool-frame workflow-driven-frame"
         title=${cfg.label}
         style=${frameStyle}
+        onLoad=${() => sendInit()}
         onMouseDown=${(e) => e.stopPropagation()}
       />
       ${hasIn && html`<div
