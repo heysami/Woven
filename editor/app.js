@@ -7373,15 +7373,23 @@ function webProxyAltOrigin() {
 }
 
 // Human-readable label for the active project (the rename label from
-// /__projects), used in place of the generic "Workflow canvas" title. The one
-// fetch is shared via window.__TH_PROJECT_LABEL; until it lands we show the raw
-// project id so the title is never empty.
+// /__projects), used in place of the generic "Workflow canvas" title. Results
+// are memoised per-id in window.__TH_PROJECT_LABELS; until the fetch lands (or
+// when no override exists) we show the raw project id so the title is never
+// empty and never stale across project switches.
 function useActiveProjectLabel() {
   const pid = activeProjectId();
-  const [label, setLabel] = useState(() => (typeof window !== "undefined" && window.__TH_PROJECT_LABEL) || pid || "");
+  // Cache is keyed BY project id. The label for almost every project is just
+  // its id (the name the user typed === the dir === the slug); only projects
+  // with a hand-set workspace.json `label` override differ. So we default the
+  // title to the id (always correct, never stale) and only upgrade to a
+  // distinct override once /__projects confirms one for THIS exact id.
+  const cache = (typeof window !== "undefined" && (window.__TH_PROJECT_LABELS ||= {})) || {};
+  const [label, setLabel] = useState(() => cache[pid] || pid || "");
   useEffect(() => {
     if (!pid) return;
-    if (typeof window !== "undefined" && window.__TH_PROJECT_LABEL) { setLabel(window.__TH_PROJECT_LABEL); return; }
+    setLabel(cache[pid] || pid);
+    if (cache[pid]) return;
     let alive = true;
     fetch(apiUrl("/__projects"))
       .then(r => (r.ok ? r.json() : null))
@@ -7389,7 +7397,7 @@ function useActiveProjectLabel() {
         if (!alive || !d) return;
         const me = (d.projects || []).find(p => p.id === pid);
         const lbl = (me && (me.label || me.id)) || pid;
-        window.__TH_PROJECT_LABEL = lbl;
+        cache[pid] = lbl;
         setLabel(lbl);
       })
       .catch(() => {});
