@@ -9305,6 +9305,14 @@ function extractRunSubagents(events) {
       resultById.set(d.toolUseId, d);
     }
   }
+  const resultToText = (r) => {
+    if (!r) return "";
+    const c = r.content;
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) return c.map(p => typeof p === "string" ? p : (p?.text || "")).join("\n");
+    if (c == null) return "";
+    return JSON.stringify(c, null, 2);
+  };
   const out = [];
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
@@ -9316,6 +9324,8 @@ function extractRunSubagents(events) {
       id: d.id || `a-${out.length}`,
       type: inp.subagent_type || "subagent",
       label: inp.description || "Subagent task",
+      prompt: inp.prompt || "",
+      result: resultToText(result),
       done: !!result,
       error: !!(result && (result.isError || result.is_error)),
     });
@@ -9389,6 +9399,10 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
   const [loading, setLoading] = useState(true);
   // "all" | "subagents" | "tasks" — which kinds to show.
   const [filter, setFilter] = useState("all");
+  // Which subagent row is expanded to reveal its prompt + result, keyed
+  // `${runId}:${subagentId}`. Subagent chats aren't shown inline in the
+  // transcript anymore — this panel is where you open them.
+  const [openAgent, setOpenAgent] = useState(null);
 
   const capped = (runs || []).slice(0, TASKS_PANEL_RUN_CAP);
   const overflow = Math.max(0, (runs || []).length - capped.length);
@@ -9485,17 +9499,42 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
               <span className="th-tasks-group-title">${g.run.title || g.run.kind}</span>
               <span className="runs-row-age">${formatRunAge(g.run.startedAt)}</span>
             </button>
-            ${g.subagents.map(a => html`
-              <div className="th-tasks-row" key=${a.id} title=${a.label}>
-                <span className="runs-row-dot" data-status=${a.error ? "fail" : a.done ? "done" : "live"}/>
-                <${Icon.Bot}/>
-                <span className="th-tasks-row-main">
-                  <span className="th-tasks-row-type">${a.type}</span>
-                  <span className="th-tasks-row-label">${a.label}</span>
-                </span>
-                <span className="th-tasks-row-state">${a.error ? "failed" : a.done ? "done" : "running"}</span>
+            ${g.subagents.map(a => {
+              const akey = `${g.run.runId}:${a.id}`;
+              const open = openAgent === akey;
+              return html`
+              <div className="th-tasks-agent" key=${a.id}>
+                <button
+                  className=${"th-tasks-row th-tasks-row-btn" + (open ? " is-open" : "")}
+                  onClick=${() => setOpenAgent(p => p === akey ? null : akey)}
+                  title=${`Open this subagent's prompt + result\n${a.label}`}
+                  aria-expanded=${open}
+                >
+                  <span className="runs-row-dot" data-status=${a.error ? "fail" : a.done ? "done" : "live"}/>
+                  <${Icon.Bot}/>
+                  <span className="th-tasks-row-main">
+                    <span className="th-tasks-row-type">${a.type}</span>
+                    <span className="th-tasks-row-label">${a.label}</span>
+                  </span>
+                  <span className="th-tasks-row-state">${a.error ? "failed" : a.done ? "done" : "running"}</span>
+                </button>
+                ${open && html`
+                  <div className="th-tasks-agent-detail">
+                    ${a.prompt && html`
+                      <div className="th-tasks-agent-sec">
+                        <div className="th-tasks-agent-sec-h">Prompt</div>
+                        <pre className="th-tasks-agent-pre">${a.prompt}</pre>
+                      </div>`}
+                    ${a.result
+                      ? html`
+                        <div className="th-tasks-agent-sec">
+                          <div className="th-tasks-agent-sec-h">Result</div>
+                          <pre className="th-tasks-agent-pre" data-error=${a.error}>${a.result}</pre>
+                        </div>`
+                      : html`<div className="th-tasks-agent-empty">Still running — no result yet.</div>`}
+                  </div>`}
               </div>
-            `)}
+            `;})}
             ${g.tasks.map(t => html`
               <div className="th-tasks-row" key=${t.id} title=${t.subject}>
                 <span className="runs-row-dot" data-status=${taskDot(t.status)}/>
@@ -11369,8 +11408,16 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // itself stops streaming. AskUserQuestion stays visible regardless: it's
   // conversation (an interactive answer card), not activity.
   const displayBlocks = useMemo(() => {
-    if (viewMode === "always") return blocks;
-    const HIDEABLE = new Set(["tool", "agent_grid", "thinking"]);
+    // Subagent activity is NEVER rendered inline in the transcript (any view
+    // mode). It's surfaced live in the running-subagents strip above the
+    // composer while the turn streams, and after the fact in the Tasks &
+    // subagents panel (each row opens that subagent's prompt + result). So we
+    // drop agent_grid (the per-dispatch cards) AND task_progress (the rolling
+    // "<subagent> · <action>" chip) here. They stay in `blocks` so the live
+    // strip's activeAgents memo can still read them.
+    const SUBAGENT_KINDS = new Set(["agent_grid", "task_progress"]);
+    if (viewMode === "always") return blocks.filter(bl => !SUBAGENT_KINDS.has(bl.kind));
+    const HIDEABLE = new Set(["tool", "thinking"]);
     const DELIM = new Set(["status", "user_message", "tool_answer", "end", "error"]);
     const runDone = status === "done" || status === "fail" || processEnded;
     let lastDelim = -1;
@@ -11378,6 +11425,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     const out = [];
     for (let i = 0; i < blocks.length; i++) {
       const bl = blocks[i];
+      if (SUBAGENT_KINDS.has(bl.kind)) continue;
       const finished = runDone || i < lastDelim;
       const interactive = bl.kind === "tool" && bl.toolUse?.name === "AskUserQuestion";
       // Tool activity (Bash, Read, Edit, …) is hidden from the transcript
