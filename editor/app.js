@@ -30230,6 +30230,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           id: assetId, kind: "asset", assetKind: "html",
           x: tx, y: ty, w: nw, h: nh,
           path: relPath, spawnedBy: "web-pick",
+          htmlFit: "fill",
         }],
       }));
       flashPickOp("done", "Element copied \u2192 HTML snippet");
