@@ -12552,6 +12552,42 @@ a.ds-badge:hover, button.ds-badge:hover {
   0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger, #dc2626) 12%, transparent); }
   50%      { box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger, #dc2626) 22%, transparent); }
 }
+/* v3.x — degraded variant: an API key is set but no agent CLI is on PATH, so
+   simple prompts run while agentic workflows are off. Amber + no pulse — a
+   downgrade nudge, not a hard failure. */
+.model-status-indicator[data-variant="warn"] {
+  background: color-mix(in oklch, var(--warn, #d97706) 14%, var(--surface));
+  border-color: color-mix(in oklch, var(--warn, #d97706) 55%, transparent);
+  color: color-mix(in oklch, var(--warn, #d97706) 80%, var(--text));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--warn, #d97706) 12%, transparent);
+  animation: none;
+}
+.model-status-indicator[data-variant="warn"]:hover {
+  background: color-mix(in oklch, var(--warn, #d97706) 22%, var(--surface));
+  border-color: color-mix(in oklch, var(--warn, #d97706) 75%, transparent);
+}
+.model-status-indicator[data-variant="warn"] .model-status-dot {
+  background: var(--warn, #d97706);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warn, #d97706) 30%, transparent);
+  animation: none;
+}
+/* Step-1 onboarding warning + "required" tag for the CLI-mandatory flow. */
+.model-setup-cli-warning {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 2px 0 10px; padding: 8px 10px;
+  border-radius: 8px; font-size: 12px; line-height: 1.45;
+  background: color-mix(in oklch, var(--warn, #d97706) 12%, var(--surface));
+  border: 1px solid color-mix(in oklch, var(--warn, #d97706) 40%, transparent);
+  color: color-mix(in oklch, var(--warn, #d97706) 82%, var(--text));
+}
+.model-setup-cli-warning svg { flex: 0 0 16px; width: 16px; height: 16px; margin-top: 1px; }
+.model-setup-choice-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  border-radius: 999px; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
+  background: color-mix(in oklch, var(--hot, #e11d48) 18%, transparent);
+  color: color-mix(in oklch, var(--hot, #e11d48) 80%, var(--text));
+}
 
 
 /* Setup card that replaces the "No projects yet" empty state when the
