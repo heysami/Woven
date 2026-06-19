@@ -622,6 +622,9 @@ const Icon = {
   Scissors: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4.5" r="1.8"/><circle cx="4" cy="11.5" r="1.8"/><path d="M5.5 5.7L13 13M5.5 10.3L13 3"/></svg>`,
   External: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M7 3.5H4.5a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V9"/><path d="M9.5 2.5h4v4M13.5 2.5L8 8"/></svg>`,
   Plus:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 3v10M3 8h10"/></svg>`,
+  Minus:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8h10"/></svg>`,
+  // FitReset: frame with inward corner ticks — the "reset zoom / fit to view" mark.
+  FitReset: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 5V2.5h2.5M14 5V2.5h-2.5M2 11v2.5h2.5M14 11v2.5h-2.5"/><rect x="5.5" y="5.5" width="5" height="5" rx="0.6"/></svg>`,
   X:        () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 3l10 10M13 3L3 13"/></svg>`,
   Branch:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="3.5" r="1.5"/><circle cx="4" cy="12.5" r="1.5"/><circle cx="12" cy="6" r="1.5"/><path d="M4 5v6M4 9c0-2 1.5-3 4-3"/></svg>`,
   Fork:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="1.5"/><circle cx="12" cy="4" r="1.5"/><circle cx="8" cy="13" r="1.5"/><path d="M4 5.5v2c0 1.5 1.5 2.5 4 2.5s4-1 4-2.5v-2M8 10v1.5"/></svg>`,
@@ -710,6 +713,7 @@ const Icon = {
   // v3.5 — browser-style chevrons for prototype + html-asset iframe back /
   // forward nav. Single chevron at the canonical 1.5pt stroke, matching the
   // rest of this icon set so the bar reads as one family.
+  Home:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 7.5L8 3l5.5 4.5M4 6.7V13h8V6.7M6.5 13V9.5h3V13"/></svg>`,
   Back:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M10 4L6 8l4 4"/></svg>`,
   Forward:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4l4 4-4 4"/></svg>`,
   // v3.9 — device-preview presets for the prototype node bar. Same line family.
@@ -39005,7 +39009,7 @@ function liveLocationToSourcePath(loc) {
   return null;
 }
 
-function ProtoViewerFrame({ tab, src, isActive, registerNav }) {
+function ProtoViewerFrame({ tab, src, isActive, zoom = 1, deviceVp = null, registerNav }) {
   const iframeRef = useRef(null);
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
@@ -39186,13 +39190,60 @@ function ProtoViewerFrame({ tab, src, isActive, registerNav }) {
     catch { return null; }
   }, []);
 
+  // Refresh the CURRENT page in place (preserves the location the user clicked
+  // through to). Same-origin (daemon-served) so location.reload() is allowed;
+  // returns false if it couldn't, so the toolbar can fall back to a remount.
+  const reload = useCallback(() => {
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (!win) return false;
+      suppressNavTrackRef.current = true;
+      win.location.reload();
+      return true;
+    } catch { return false; }
+  }, []);
+
   // Push the active controls up so the shared toolbar can drive this tab.
   // No null-on-unmount cleanup here — that would race a reloading frame's
   // re-registration. The viewer prunes closed tabs in closeTab instead.
   useEffect(() => {
-    registerNav(tab.id, { goBack, goForward, canGoForward, getCurrentPath });
-  }, [tab.id, goBack, goForward, canGoForward, getCurrentPath, registerNav]);
+    registerNav(tab.id, { goBack, goForward, canGoForward, getCurrentPath, reload });
+  }, [tab.id, goBack, goForward, canGoForward, getCurrentPath, reload, registerNav]);
 
+  // Layout: two modes.
+  //  • Device preview (deviceVp set): the iframe is sized to the device's
+  //    NATURAL pixel viewport (so the prototype's responsive breakpoints fire),
+  //    centered in the stage and scaled by zoom around its center — a
+  //    letterboxed device frame.
+  //  • Desktop / fill (deviceVp null): scale the iframe with transform
+  //    (top-left origin) while inversely inflating width/height so the scaled
+  //    box still exactly fills the stage. At zoom 0.5 the iframe gets a
+  //    200%×200% logical viewport rendered at half size (more content, smaller);
+  //    at 2× a 50%×50% viewport rendered double — browser-style zoom, not a crop.
+  const z = (typeof zoom === "number" && zoom > 0) ? zoom : 1;
+  let zoomStyle;
+  if (deviceVp && deviceVp.w && deviceVp.h) {
+    zoomStyle = {
+      width: deviceVp.w + "px",
+      height: deviceVp.h + "px",
+      left: "50%",
+      top: "50%",
+      right: "auto",
+      bottom: "auto",
+      transform: "translate(-50%, -50%) scale(" + z + ")",
+      transformOrigin: "center center",
+      boxShadow: "0 0 0 1px var(--border), 0 8px 30px rgba(0,0,0,0.18)",
+    };
+  } else if (z !== 1) {
+    zoomStyle = {
+      width: (100 / z) + "%",
+      height: (100 / z) + "%",
+      transform: "scale(" + z + ")",
+      transformOrigin: "top left",
+    };
+  } else {
+    zoomStyle = null;
+  }
   return html`
     <iframe
       ref=${iframeRef}
@@ -39200,6 +39251,7 @@ function ProtoViewerFrame({ tab, src, isActive, registerNav }) {
       data-active=${isActive ? "true" : "false"}
       src=${src}
       title=${tab.label}
+      style=${zoomStyle}
     />
   `;
 }
@@ -39219,12 +39271,18 @@ function WorkflowProtoViewer({ active, onEditTab }) {
       if (j && Array.isArray(j.tabs)) {
         const tabs = j.tabs.filter(t => t && t.id && typeof t.path === "string");
         const activeId = tabs.some(t => t.id === j.activeId) ? j.activeId : (tabs[0] && tabs[0].id) || null;
-        return { tabs, activeId };
+        const zoom = (typeof j.zoom === "number" && j.zoom > 0) ? j.zoom : 1;
+        const device = typeof j.device === "string" ? j.device : "desktop";
+        const landscape = !!j.landscape;
+        return { tabs, activeId, zoom, device, landscape };
       }
     } catch {}
-    return { tabs: [], activeId: null };
+    return { tabs: [], activeId: null, zoom: 1, device: "desktop", landscape: false };
   });
   const { tabs, activeId } = state;
+  const zoom = (typeof state.zoom === "number" && state.zoom > 0) ? state.zoom : 1;
+  const device = state.device || "desktop";
+  const landscape = !!state.landscape;
   // Did the user already have a saved viewer session at mount? Captured
   // synchronously on first render, BEFORE the save-effect below writes
   // lsKey. A saved session — even one with zero tabs — means the user has
@@ -39247,6 +39305,80 @@ function WorkflowProtoViewer({ active, onEditTab }) {
   const bumpNonce = useCallback((id) => {
     setNonces(n => ({ ...n, [id]: (n[id] || 0) + 1 }));
   }, []);
+  // Zoom — a single scale applied to whichever tab is active (the iframe is
+  // scaled with transform + inverse sizing so it stays filling the stage; see
+  // ProtoViewerFrame). Stepped through a fixed ladder of nice stops, clamped
+  // to [0.25, 2]. Persists with the rest of `state` to localStorage.
+  const ZOOM_STOPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+  const setZoom = useCallback((z) => {
+    const clamped = Math.min(2, Math.max(0.25, z));
+    setState(s => (Math.abs((s.zoom || 1) - clamped) < 1e-4 ? s : { ...s, zoom: clamped }));
+  }, []);
+  const zoomBy = useCallback((dir) => {
+    setState(s => {
+      const cur = (typeof s.zoom === "number" && s.zoom > 0) ? s.zoom : 1;
+      if (dir > 0) {
+        const next = ZOOM_STOPS.find(v => v > cur + 1e-4);
+        return { ...s, zoom: next != null ? next : ZOOM_STOPS[ZOOM_STOPS.length - 1] };
+      }
+      const lower = [...ZOOM_STOPS].reverse().find(v => v < cur - 1e-4);
+      return { ...s, zoom: lower != null ? lower : ZOOM_STOPS[0] };
+    });
+  }, []);
+  const resetZoom = useCallback(() => setZoom(1), [setZoom]);
+  // Device preview — same presets as the prototype node (PROTO_DEVICE_PRESETS).
+  // Desktop fills the stage; tablet/mobile render the iframe at the device's
+  // NATURAL pixel viewport (so the prototype reflows through its real
+  // responsive breakpoints) centered + letterboxed, auto-fit-zoomed to the
+  // stage on selection. Clicking an already-active rotatable device flips
+  // landscape⇄portrait. State persists with the rest of `state`.
+  const stageRef = useRef(null);
+  const setDevice = useCallback((preset) => {
+    setState(s => {
+      const curDev = s.device || "desktop";
+      let nextDevice, nextLandscape;
+      if (preset.id === curDev && preset.rotatable) {
+        nextDevice = preset.id; nextLandscape = !s.landscape;
+      } else {
+        nextDevice = preset.id; nextLandscape = false;
+      }
+      let nextZoom = s.zoom || 1;
+      if (nextDevice === "desktop") {
+        nextZoom = 1;
+      } else {
+        const vw = nextLandscape && preset.rotatable ? preset.h : preset.w;
+        const vh = nextLandscape && preset.rotatable ? preset.w : preset.h;
+        const el = stageRef.current;
+        if (el) {
+          const r = el.getBoundingClientRect();
+          const pad = 32;
+          const fit = Math.min((r.width - pad) / vw, (r.height - pad) / vh, 1);
+          nextZoom = Math.min(2, Math.max(0.1, fit > 0 ? fit : 1));
+        }
+      }
+      return { ...s, device: nextDevice, landscape: nextLandscape, zoom: nextZoom };
+    });
+  }, []);
+  // The device's effective viewport (null = desktop / fill the stage).
+  const devicePreset = PROTO_DEVICE_PRESETS.find(d => d.id === device) || PROTO_DEVICE_PRESETS[0];
+  const deviceVp = (devicePreset.id === "desktop") ? null
+    : (landscape && devicePreset.rotatable
+        ? { w: devicePreset.h, h: devicePreset.w }
+        : { w: devicePreset.w, h: devicePreset.h });
+  // cmd/ctrl + wheel over the stage zooms (browser-native gesture). The wheel
+  // listener is attached non-passively so we can preventDefault the page zoom.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      zoomBy(e.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomBy]);
+
   // Per-tab Back / Forward controls, registered by each ProtoViewerFrame.
   // The shared tabstrip toolbar drives whichever tab is active.
   const [navControls, setNavControls] = useState({});
@@ -39404,6 +39536,70 @@ function WorkflowProtoViewer({ active, onEditTab }) {
         ><${Icon.Plus}/></button>
         <div className="workflow-proto-tabstrip-spacer"/>
         ${activeTab && html`
+          <div className="workflow-proto-device" role="group" aria-label="Device preview">
+            ${PROTO_DEVICE_PRESETS.map(d => {
+              const isActive = device === d.id;
+              const land = isActive && d.rotatable && landscape;
+              const tip = d.rotatable
+                ? (isActive
+                    ? "Preview as " + d.label + " — " + (landscape ? "landscape" : "portrait")
+                        + " (" + deviceVp.w + "×" + deviceVp.h + "). Click again to rotate."
+                    : "Preview as " + d.label + " (portrait, " + d.w + "×" + d.h + "). Click again to rotate.")
+                : "Preview as " + d.label + " — fill the stage.";
+              return html`
+                <button
+                  key=${d.id}
+                  type="button"
+                  className=${"workflow-proto-tool workflow-proto-device-btn"
+                    + (isActive ? " is-active" : "") + (land ? " is-landscape" : "")}
+                  title=${tip}
+                  aria-label=${"Preview as " + d.label + (land ? " (landscape)" : "")}
+                  aria-pressed=${isActive ? "true" : "false"}
+                  onClick=${() => setDevice(d)}
+                ><${d.Icon}/></button>
+              `;
+            })}
+          </div>
+          <div className="workflow-proto-zoom" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              className="workflow-proto-tool"
+              title="Zoom out (⌘/Ctrl + scroll)"
+              aria-label="Zoom out"
+              disabled=${zoom <= 0.25 + 1e-4}
+              onClick=${() => zoomBy(-1)}
+            ><${Icon.Minus}/></button>
+            <button
+              type="button"
+              className="workflow-proto-zoom-label"
+              title="Reset zoom to 100%"
+              aria-label=${"Zoom " + Math.round(zoom * 100) + " percent — click to reset"}
+              onClick=${resetZoom}
+            >${Math.round(zoom * 100)}%</button>
+            <button
+              type="button"
+              className="workflow-proto-tool"
+              title="Zoom in (⌘/Ctrl + scroll)"
+              aria-label="Zoom in"
+              disabled=${zoom >= 2 - 1e-4}
+              onClick=${() => zoomBy(1)}
+            ><${Icon.Plus}/></button>
+            <button
+              type="button"
+              className="workflow-proto-tool"
+              title="Reset zoom to 100%"
+              aria-label="Reset zoom to 100%"
+              disabled=${Math.abs(zoom - 1) < 1e-4}
+              onClick=${resetZoom}
+            ><${Icon.FitReset}/></button>
+          </div>
+          <button
+            type="button"
+            className="workflow-proto-tool"
+            title="Reset to prototype start — reload this tab's original entry page"
+            aria-label="Reset to prototype start"
+            onClick=${() => bumpNonce(activeTab.id)}
+          ><${Icon.Home}/></button>
           <button
             type="button"
             className="workflow-proto-tool"
@@ -39436,9 +39632,9 @@ function WorkflowProtoViewer({ active, onEditTab }) {
           <button
             type="button"
             className="workflow-proto-tool"
-            title="Reload this tab"
-            aria-label="Reload tab"
-            onClick=${() => bumpNonce(activeTab.id)}
+            title="Reload the current page (keeps where you navigated to)"
+            aria-label="Reload current page"
+            onClick=${() => { if (!(activeNav && activeNav.reload && activeNav.reload())) bumpNonce(activeTab.id); }}
           ><${Icon.Refresh}/></button>
           <button
             type="button"
@@ -39449,7 +39645,7 @@ function WorkflowProtoViewer({ active, onEditTab }) {
           ><${Icon.OpenExt}/></button>
         `}
       </div>
-      <div className="workflow-proto-stage">
+      <div className="workflow-proto-stage" ref=${stageRef}>
         ${tabs.length === 0 && html`
           <div className="workflow-proto-empty">
             <div>No tabs open.</div>
@@ -39462,6 +39658,8 @@ function WorkflowProtoViewer({ active, onEditTab }) {
             tab=${t}
             src=${srcFor(t)}
             isActive=${t.id === activeId}
+            zoom=${zoom}
+            deviceVp=${deviceVp}
             registerNav=${registerNav}
           />
         `)}
