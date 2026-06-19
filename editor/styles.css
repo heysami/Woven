@@ -24224,23 +24224,24 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 
 /* Tool palette — 2-col grid of icon + label buttons. */
+/* Icon-only tool buttons (label dropped; name is in the native title tooltip). */
 .workflow-vector-tools {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
 }
 .workflow-vector-tool {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 7px;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  padding: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--text);
-  font: 11px var(--font-mono);
+  font: 13px var(--font-mono);
   cursor: pointer;
-  text-align: left;
   min-width: 0;
 }
 .workflow-vector-tool:hover { border-color: var(--accent, #3b82f6); }
@@ -24268,9 +24269,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 /* Boolean op buttons + the convert-text-to-outline cta. */
 .workflow-vector-bool-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
 }
+.workflow-vector-bool { aspect-ratio: 1 / 1; font-size: 14px; }
 .workflow-vector-bool,
 .workflow-vector-outline-btn {
   padding: 6px 7px;

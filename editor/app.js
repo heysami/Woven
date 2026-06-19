@@ -55771,18 +55771,23 @@ function WorkflowVectorEditorNode({
                   title=${t.hint}
                   onMouseDown=${(e) => e.stopPropagation()}
                   onClick=${(e) => { e.stopPropagation(); setTool(t.id); setDraftShape(null); }}
-                ><span className="workflow-vector-tool-glyph">${t.glyph}</span><span className="workflow-vector-tool-label">${t.label}</span></button>
+                ><span className="workflow-vector-tool-glyph">${t.glyph}</span></button>
               `)}
             </div>
           </div>
+          ${selection.length >= 2 && html`
           <div className="workflow-vector-section">
             <div className="workflow-vector-section-head">Boolean ops</div>
             <div className="workflow-vector-bool-grid">
-              <button className="workflow-vector-bool" title="Union — combine selected shapes" onClick=${(e) => { e.stopPropagation(); runBooleanOp("union"); }}>∪ union</button>
-              <button className="workflow-vector-bool" title="Difference — subtract from base" onClick=${(e) => { e.stopPropagation(); runBooleanOp("difference"); }}>− subtract</button>
-              <button className="workflow-vector-bool" title="Intersection — overlap only"     onClick=${(e) => { e.stopPropagation(); runBooleanOp("intersection"); }}>∩ intersect</button>
-              <button className="workflow-vector-bool" title="XOR — non-overlapping parts"     onClick=${(e) => { e.stopPropagation(); runBooleanOp("xor"); }}>⊕ xor</button>
+              <button className="workflow-vector-bool" title="Union — combine selected shapes" onClick=${(e) => { e.stopPropagation(); runBooleanOp("union"); }}>∪</button>
+              <button className="workflow-vector-bool" title="Subtract — subtract from base" onClick=${(e) => { e.stopPropagation(); runBooleanOp("difference"); }}>−</button>
+              <button className="workflow-vector-bool" title="Intersect — overlap only" onClick=${(e) => { e.stopPropagation(); runBooleanOp("intersection"); }}>∩</button>
+              <button className="workflow-vector-bool" title="XOR — non-overlapping parts" onClick=${(e) => { e.stopPropagation(); runBooleanOp("xor"); }}>⊕</button>
             </div>
+          </div>
+          `}
+          ${(singleSel || opState.phase !== "idle") && html`
+          <div className="workflow-vector-section">
             ${singleSel && singleSel.type === "text" && html`
               <button className="workflow-vector-outline-btn"
                 title="Convert the selected text into editable SVG path outlines via opentype.js."
@@ -55818,6 +55823,7 @@ function WorkflowVectorEditorNode({
               <div className=${"workflow-vector-op-banner workflow-vector-op-" + opState.phase}>${opState.message}</div>
             `}
           </div>
+          `}
           <div className="workflow-vector-section">
             <div className="workflow-vector-section-head">Import</div>
             <button className="workflow-vector-outline-btn"
