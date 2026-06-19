@@ -294,6 +294,7 @@ In one line: **arrows describe how a task advances, not how the app is navigated
 - **All UI tokens** in `styles.css :root`. No inline hex/spacing.
 - **All mock data** in `window.DEMO` (`data.js`). No `fetch`, no API.
 - **Voice set by genre, applied at every leaf** — see `PROTOTYPE.md`.
+- **NEVER use native `alert` / `confirm` / `prompt` (or `window.*` forms) anywhere — editor or prototype.** After a few in a row Chrome shows a "Prevent this page from creating additional dialogs" checkbox; once ticked, every later `confirm` silently returns `false` and `prompt` returns `null`, breaking destructive-action guards and rename flows. In the editor (`editor/app.js`) use the Promise-based `uiAlert` / `uiConfirm` / `uiPrompt` helpers (rendered by `<DialogHost/>`; `await` them, so the handler must be `async`). In the pixel-editor tool use its local `pxConfirm` / `pxPrompt`. In any other surface, build a small inline Promise-modal — do not fall back to native.
 
 ## Asset versioning (v3.0)
 
