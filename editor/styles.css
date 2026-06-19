@@ -2543,6 +2543,9 @@ button {
 .landing-header .workflow-toolbar-gear svg { color: rgba(235, 240, 238, 0.82); }
 .landing-header .model-status-indicator { color: #fff; background: color-mix(in oklch, var(--hot) 60%, transparent); border-color: color-mix(in oklch, var(--hot) 70%, transparent); }
 .landing-header .model-status-indicator:hover { background: color-mix(in oklch, var(--hot) 75%, transparent); }
+/* v3.x — degraded "key but no CLI" pill stays amber even on the dark band. */
+.landing-header .model-status-indicator[data-variant="warn"] { color: #fff; background: color-mix(in oklch, var(--warn, #d97706) 62%, transparent); border-color: color-mix(in oklch, var(--warn, #d97706) 72%, transparent); }
+.landing-header .model-status-indicator[data-variant="warn"]:hover { background: color-mix(in oklch, var(--warn, #d97706) 78%, transparent); }
 
 /* Main area below the dark band — content sits over the light diamond field.
    Pull it up by one "tooth" (half-diamond, 24px) + a hair so the grid
@@ -6565,6 +6568,33 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section-tidy:hover {
   background: color-mix(in oklch, var(--accent, #2d7ff9) 14%, transparent);
   color: var(--accent, #2d7ff9);
+}
+/* v3.9 — Save-to-Local-library button: same chrome as tidy/close, holds an
+   inline SVG icon (Library, or a Check flash after a successful save). */
+.workflow-node-section-savelib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-faint);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+.workflow-node-section-savelib svg { width: 13px; height: 13px; }
+.workflow-node-section:hover .workflow-node-section-savelib { opacity: 1; }
+.workflow-node-section-savelib:hover {
+  background: color-mix(in oklch, var(--accent, #2d7ff9) 14%, transparent);
+  color: var(--accent, #2d7ff9);
+}
+.workflow-node-section-savelib.is-saved {
+  opacity: 1;
+  color: var(--success, #16A34A);
 }
 .workflow-node-section-resize {
   position: absolute;

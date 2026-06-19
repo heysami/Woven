@@ -8604,19 +8604,31 @@ function useMediaConfig() {
    for the happy path. */
 function ModelStatusIndicator({ onOpenSettings, compact }) {
   const { loaded, hasAnyKey, hasCli, configured } = useMediaConfig();
-  if (!loaded || configured) return null;
-  // Both missing: paint the loudest variant. (We don't ship a "key present
-  // but CLI missing" warning here — that's not an error, it's just a CLI
-  // chip update; the cli-indicator already handles it.)
-  const label = compact ? "No model" : "No model configured";
-  const tip   = "No provider API key saved AND no CLI (Claude Code or Codex) on PATH. The agent can't run until you set one up — click to open Settings.";
+  if (!loaded) return null;
+  // Happy path: a CLI is on PATH → agents work, no chrome noise.
+  if (configured && hasCli) return null;
+  // Two failure modes, loudest first:
+  //  • nothing configured → red "No model configured" (nothing can run).
+  //  • key but no CLI      → amber "Agents disabled" — simple prompt nodes run,
+  //    but agentic workflows need a `claude`/`codex` CLI on PATH (the agent
+  //    loop + file tools + context compaction live in the CLI harness, not in
+  //    a raw /v1/messages call). v3.x — onboarding makes the CLI mandatory, so
+  //    this is the always-on nudge for users who proceeded on a key alone.
+  const warn  = configured && !hasCli;
+  const label = warn
+    ? (compact ? "Agents off" : "Agents disabled — no CLI")
+    : (compact ? "No model" : "No model configured");
+  const tip = warn
+    ? "An API key is set, so simple prompt nodes work — but agentic workflows (node runs, chat, orchestrators) need a Claude Code or Codex CLI on PATH. Click to set one up."
+    : "No provider API key saved AND no CLI (Claude Code or Codex) on PATH. The agent can't run until you set one up — click to open Settings.";
   return html`<button
     type="button"
     className="model-status-indicator"
+    data-variant=${warn ? "warn" : "error"}
     data-tip-host="true"
     title=${tip}
     onClick=${onOpenSettings}
-    aria-label="No model configured — open Settings"
+    aria-label=${warn ? "Agentic features disabled — no CLI — open Settings" : "No model configured — open Settings"}
   >
     <span className="model-status-dot"/>
     <span className="model-status-label">${label}</span>
@@ -18275,9 +18287,19 @@ function OnboardingOrchestratorsSection({ mediaCfg }) {
    Step 1 collapses to a single button that opens a small install-
    instructions popup — no two-tile choice screen, no inline sub-picker. */
 function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAcknowledge }) {
-  const modelOk  = !!(mediaCfg && mediaCfg.configured);
+  // v3.x — The agent CLI is the REQUIRED backend. A pasted API key only powers
+  // "simple prompt" nodes (single-shot, no tools); agentic workflows — node
+  // runs, chat, orchestrators — need a `claude` or `codex` CLI on PATH, because
+  // the agent loop, file tools, and context compaction live in the CLI harness,
+  // not in a raw /v1/messages call. So Step 1's REQUIRED gate is the CLI.
+  const hasCli     = !!(mediaCfg && mediaCfg.hasCli);
+  const hasKeyOnly = !!(mediaCfg && mediaCfg.hasAnyKey && !hasCli);
+  const modelOk    = hasCli;                       // Step 1 satisfied = CLI present
   const skillsOk = !!(localSkills && localSkills.allRequiredInstalled);
-  const allOk    = modelOk && skillsOk;
+  const allOk    = modelOk && skillsOk;            // fully ready (agents enabled)
+  // A key-only user can still dismiss onboarding and use simple prompts — they
+  // just finish in a degraded state with the agent CLI still missing.
+  const canFinish  = (modelOk || hasKeyOnly) && skillsOk;
   // v3.5 — Five pips now: 1 Model · 2 Asset keys · 3 Orchestrators · 4 Local
   // skills · 5 Done. Orchestrators is an optional review step (toggle the
   // dispatch families on/off, see which are limited by the keys set in step 2).
@@ -18325,22 +18347,31 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
           <div className="model-setup-step1">
             <div className="model-setup-step1-status" data-ok=${modelOk}>
               <span className="model-setup-step1-dot"/>
-              <span className="model-setup-step1-label">${modelOk ? "Model connected" : "No model yet"}</span>
-              ${!modelOk && html`<span className="onboarding-tool-required-badge" title="An agent model is required before you can create a project">REQUIRED</span>`}
+              <span className="model-setup-step1-label">${
+                modelOk ? "Agent CLI connected"
+                : hasKeyOnly ? "API key only — agents disabled"
+                : "No model yet"}</span>
+              ${!modelOk && html`<span className="onboarding-tool-required-badge" title="A Claude Code or Codex CLI is required for agentic workflows">REQUIRED</span>`}
             </div>
+            ${hasKeyOnly && html`
+              <div className="model-setup-cli-warning">
+                <${Icon.Alert}/>
+                <span>An API key runs <strong>simple prompt</strong> nodes only. Agentic workflows — node runs, chat, orchestrators — need a CLI. Install one below to enable them.</span>
+              </div>
+            `}
             <div className="model-setup-choices model-setup-choices-compact">
               <button className="model-setup-choice" type="button" onClick=${() => setInstallOpen(true)}>
                 <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
                 <div className="model-setup-choice-body">
-                  <div className="model-setup-choice-title">Install a CLI</div>
-                  <div className="model-setup-choice-desc">Claude Code or Codex.</div>
+                  <div className="model-setup-choice-title">Install a CLI <span className="model-setup-choice-tag">required</span></div>
+                  <div className="model-setup-choice-desc">Claude Code or Codex — enables agents.</div>
                 </div>
               </button>
               <button className="model-setup-choice" type="button" onClick=${onOpenSettings}>
                 <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
                 <div className="model-setup-choice-body">
                   <div className="model-setup-choice-title">Paste an API key</div>
-                  <div className="model-setup-choice-desc">Anthropic or OpenAI.</div>
+                  <div className="model-setup-choice-desc">Simple prompts only — no agents.</div>
                 </div>
               </button>
             </div>
@@ -18358,10 +18389,14 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
         ${step === 4 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
         ${step === 5 && html`
           <div className="model-setup-allset" data-ok=${allOk}>
-            <div className="model-setup-allset-check">${allOk ? "✓" : "…"}</div>
-            <div className="model-setup-allset-title">${allOk ? "All set!" : "Almost there"}</div>
-            <div className="model-setup-allset-sub">${allOk
-              ? "Model connected and required local skills installed."
+            <div className="model-setup-allset-check">${allOk ? "✓" : canFinish ? "!" : "…"}</div>
+            <div className="model-setup-allset-title">${
+              allOk ? "All set!"
+              : canFinish ? "Ready for simple prompts"
+              : "Almost there"}</div>
+            <div className="model-setup-allset-sub">${
+              allOk ? "Agent CLI connected and required local skills installed."
+              : canFinish ? "You can create projects and run simple prompt nodes — but agentic workflows stay disabled until you install a Claude Code or Codex CLI."
               : "Finish the required steps to enable + New project."}</div>
           </div>
         `}
@@ -18385,10 +18420,10 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
           <button
             type="button"
             className="model-setup-wizard-nav is-primary"
-            disabled=${!allOk}
-            title=${allOk ? "Dismiss the setup card" : "Finish the required steps first"}
-            onClick=${() => allOk && onAcknowledge && onAcknowledge()}
-          >Got it</button>
+            disabled=${!canFinish}
+            title=${canFinish ? (allOk ? "Dismiss the setup card" : "Continue without agents (simple prompts only)") : "Finish the required steps first"}
+            onClick=${() => canFinish && onAcknowledge && onAcknowledge()}
+          >${allOk ? "Got it" : "Continue without agents"}</button>
         `}
       </div>
 
@@ -30581,6 +30616,49 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch (e) { uiAlert("Save failed: " + (e?.message || e)); return false; }
   }, [selectionRef, data]);
 
+  // v3.9 — One-click "save this whole section to Local library". Snapshots the
+  // section frame ITSELF plus every node geometrically inside it (+ the edges
+  // internal to that set), named after the section's title — no prompt. Dropping
+  // the saved group back re-creates the frame with its contents (containment is
+  // geometric, so the re-placed nodes land inside the re-placed frame). Re-saving
+  // a same-titled section overwrites its prior entry (slug derives from title).
+  const saveSectionToLibrary = useCallback(async (sectionId) => {
+    const nodes = data.nodes || [];
+    const section = nodes.find(n => n.id === sectionId && n.kind === "section");
+    if (!section) return false;
+    const contained = workflowSectionContainedNodes(section, nodes);
+    if (!contained.length) return false;   // button is hidden when empty; silent guard
+    const picked = [section, ...contained];
+    const pickedIdSet = new Set(picked.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to   || "").split(".", 1)[0];
+      return pickedIdSet.has(f) && pickedIdSet.has(t);
+    });
+    const minX = Math.min(...picked.map(n => (typeof n.x === "number" ? n.x : 0)));
+    const minY = Math.min(...picked.map(n => (typeof n.y === "number" ? n.y : 0)));
+    const title = (section.title || "Section").trim() || "Section";
+    const slug = (title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50))
+      || ("section-" + Date.now().toString(36));
+    const payload = {
+      slug, title,
+      nodes: picked.map(n => JSON.parse(JSON.stringify(n))),
+      edges: internalEdges.map(e => ({ from: e.from, to: e.to })),
+      originX: Number.isFinite(minX) ? minX : 0,
+      originY: Number.isFinite(minY) ? minY : 0,
+    };
+    try {
+      const r = await fetch(apiUrl("/__groups"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      window.dispatchEvent(new CustomEvent("th:library-refresh"));
+      return true;
+    } catch (e) { uiAlert("Save failed: " + (e?.message || e)); return false; }
+  }, [data]);
+
   // v3.4.32 — Duplicate selected nodes in-place (Cmd+D). Behaves like
   // copy-then-paste-at-+30/+30 but DOES NOT touch nodeClipboardRef, so
   // the user's previously-copied clipboard payload survives a duplicate
@@ -38380,6 +38458,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onRemove=${() => removeNode(n.id)}
                 onChange=${(patch) => updateNode(n.id, patch)}
                 onTidy=${() => tidySection(n.id)}
+                hasContents=${workflowSectionContainedNodes(n, data.nodes).length > 0}
+                onSaveToLibrary=${() => saveSectionToLibrary(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
@@ -62984,9 +63064,10 @@ function formatDirectionForPrompt(d) {
      - Sections do NOT participate in edges; they have no ports.
      - Lower z-index than nodes so dragging passes through to children
        except for the title bar handle area. */
-function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, onSaveToLibrary, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [saved, setSaved] = useState(false);
   const titleInputRef = useRef(null);
   const w = Math.max(280, node.w || 880);
   const h = Math.max(180, node.h || 560);
@@ -63074,6 +63155,17 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
               onMouseDown=${(e) => e.stopPropagation()}
             />`
           : html`<span className="workflow-node-section-title" title="Double-click to rename">${node.title || "Section"}</span>`}
+        ${hasContents ? html`<button
+          className=${"workflow-node-section-savelib" + (saved ? " is-saved" : "")}
+          title=${"Save this section to the Local library as a node group named \"" + (node.title || "Section") + "\". Everything inside (plus the frame) is stored; drag it back from Library → Local library to re-place a fresh copy."}
+          onClick=${async (e) => {
+            e.stopPropagation();
+            if (!onSaveToLibrary) return;
+            const okSave = await onSaveToLibrary();
+            if (okSave) { setSaved(true); setTimeout(() => setSaved(false), 1600); }
+          }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >${saved ? html`<${Icon.Check}/>` : html`<${Icon.Library}/>`}</button>` : null}
         <button
           className="workflow-node-section-tidy"
           title="Tidy — pack the contained nodes into a grid and resize this section to fit. Drag the section wider first for more columns."
