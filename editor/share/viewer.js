@@ -175,14 +175,24 @@
   }
 
   // ── One sidebar card ──────────────────────────────────────────────────
-  function CommentCard({ c, num, active, onFocus, onReply, onStatus, onDelete }) {
+  function CommentCard({ c, num, active, onFocus, onReply, onStatus, onDelete, onEdit }) {
     const [replyText, setReplyText] = useState("");
     const [busy, setBusy] = useState(false);
+    const [editing, setEditing] = useState(false);
+    const [editText, setEditText] = useState(c.text);
     const doReply = async () => {
       const t = replyText.trim();
       if (!t || busy) return;
       setBusy(true);
       try { await onReply(c, t); setReplyText(""); } finally { setBusy(false); }
+    };
+    const startEdit = () => { setEditText(c.text); setEditing(true); };
+    const cancelEdit = () => { setEditing(false); setEditText(c.text); };
+    const doEdit = async () => {
+      const t = editText.trim();
+      if (!t || busy) return;
+      setBusy(true);
+      try { await onEdit(c, t); setEditing(false); } finally { setBusy(false); }
     };
     const st = c.status || "open";
     return html`
@@ -196,10 +206,24 @@
           ${st === "done" && html`<span className="sv-status-chip done">done</span>`}
           ${st === "archived" && html`<span className="sv-status-chip archived">archived</span>`}
           ${c.processedAt && html`<span className="sv-status-chip processed" title="Sent to the build agent">processed</span>`}
-          <span className="sv-comment-time">${timeAgo(c.createdAt)}</span>
+          <span className="sv-comment-time">${timeAgo(c.createdAt)}${c.editedAt ? " · edited" : ""}</span>
         </div>
         <div className="sv-comment-page" title=${c.page}>${c.page}${c.anchor && c.anchor.selector ? " · " + c.anchor.selector : ""}</div>
-        <div className="sv-comment-text">${c.text}</div>
+        ${editing ? html`
+          <div className="sv-edit-row" onClick=${(e) => e.stopPropagation()}>
+            <textarea className="sv-reply-input" autoFocus
+              value=${editText}
+              onInput=${(e) => setEditText(e.target.value)}
+              onKeyDown=${(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) doEdit();
+                if (e.key === "Escape") cancelEdit();
+              }}></textarea>
+            <div className="sv-edit-actions">
+              <button className="sv-mini-btn" disabled=${busy} onClick=${cancelEdit}>Cancel</button>
+              <button className="sv-mini-btn" disabled=${busy || !editText.trim()} onClick=${doEdit}>Save</button>
+            </div>
+          </div>
+        ` : html`<div className="sv-comment-text">${c.text}</div>`}
         ${(c.replies || []).length > 0 && html`
           <div className="sv-replies">
             ${c.replies.map((r) => html`
@@ -221,6 +245,7 @@
           ${replyText.trim() && html`<button className="sv-mini-btn" disabled=${busy} onClick=${doReply}>Send</button>`}
         </div>
         <div className="sv-comment-actions" onClick=${(e) => e.stopPropagation()}>
+          ${!editing && html`<button className="sv-mini-btn" onClick=${startEdit}>Edit</button>`}
           ${st !== "done" && html`<button className="sv-mini-btn" onClick=${() => onStatus(c, "done")}>✓ Done</button>`}
           ${st === "done" && html`<button className="sv-mini-btn" onClick=${() => onStatus(c, "open")}>Reopen</button>`}
           ${st !== "archived" && html`<button className="sv-mini-btn" onClick=${() => onStatus(c, "archived")}>Archive</button>`}
@@ -322,9 +347,12 @@
             if (!el) continue;
             const r = el.getBoundingClientRect();
             if (r.width === 0 && r.height === 0) continue;
+            // Pin label is the thread's message count (comment + replies).
+            // A lone comment shows no number; a reply makes it 2, and so on.
+            const msgs = 1 + ((c.replies && c.replies.length) || 0);
             out.push({
               id: c.id,
-              num: numbered.numOf.get(c.id) || "•",
+              num: msgs > 1 ? msgs : "",
               x: r.left + r.width * ((c.pin && c.pin.x) ?? 0.5),
               y: r.top + r.height * ((c.pin && c.pin.y) ?? 0.5),
               done: (c.status || "open") === "done",
@@ -336,7 +364,7 @@
         setPins((prev) => {
           if (prev.length === out.length &&
               prev.every((p, i) => p.id === out[i].id && p.x === out[i].x && p.y === out[i].y
-                                   && p.done === out[i].done)) return prev;
+                                   && p.done === out[i].done && p.num === out[i].num)) return prev;
           return out;
         });
         raf = setTimeout(tick, 120);
@@ -497,6 +525,10 @@
       if (!requireIdentity("Add a name to reply.")) return;
       await mutate("comments/" + c.id + "/reply", { text, author: identity });
     };
+    const onEdit = async (c, text) => {
+      if (!requireIdentity("Add a name to edit a comment.")) return;
+      await mutate("comments/" + c.id + "/edit", { text, author: identity });
+    };
     const onStatus = (c, status) => mutate("comments/" + c.id + "/status", { status });
     const onDelete = (c) => {
       if (confirm("Delete this comment thread?")) mutate("comments/" + c.id + "/delete", {});
@@ -625,6 +657,7 @@
                     onReply=${onReply}
                     onStatus=${onStatus}
                     onDelete=${onDelete}
+                    onEdit=${onEdit}
                   />
                 `)}
               </div>

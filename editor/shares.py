@@ -538,6 +538,21 @@ def comment_reply(project_root, comment_id, *, text, author):
     return reply
 
 
+def comment_edit(project_root, comment_id, *, text):
+    text = _clip(text, 5000).strip()
+    if not text:
+        raise ValueError("comment text required")
+    with _COMMENTS_LOCK:
+        data = comments_load(project_root)
+        c = _find_comment(data, comment_id)
+        if c is None:
+            raise ValueError(f"unknown comment: {comment_id}")
+        c["text"] = text
+        c["editedAt"] = _now_iso()
+        _comments_save(project_root, data)
+    return c
+
+
 def comment_set_status(project_root, comment_id, status):
     if status not in COMMENT_STATUSES:
         raise ValueError(f"invalid status: {status!r}")
@@ -846,7 +861,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
                 )
                 _notify_comments_changed(rec.get("project"), rec.get("prototype"))
                 return self._send_json(200, {"ok": True, "comment": entry})
-            m = re.match(r"^/api/comments/([cr]-[a-f0-9]+)/(reply|status|delete)$", sub)
+            m = re.match(r"^/api/comments/([cr]-[a-f0-9]+)/(reply|status|delete|edit)$", sub)
             if m:
                 cid, op = m.group(1), m.group(2)
                 if op == "reply":
@@ -854,6 +869,11 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
                     reply = comment_reply(root, cid, text=body.get("text"), author=author)
                     _notify_comments_changed(rec.get("project"), rec.get("prototype"))
                     return self._send_json(200, {"ok": True, "reply": reply})
+                if op == "edit":
+                    self._require_author(rec, body)
+                    c = comment_edit(root, cid, text=body.get("text"))
+                    _notify_comments_changed(rec.get("project"), rec.get("prototype"))
+                    return self._send_json(200, {"ok": True, "comment": c})
                 if op == "status":
                     c = comment_set_status(root, cid, body.get("status"))
                     _notify_comments_changed(rec.get("project"), rec.get("prototype"))

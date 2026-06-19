@@ -213,6 +213,9 @@ button { font: inherit; cursor: pointer; }
 .sv-mini-btn.danger:hover { color: var(--sv-danger); border-color: #fecaca; }
 .sv-reply-row { display: flex; gap: 6px; margin-top: 6px; }
 .sv-reply-row .sv-reply-input { min-height: 30px; height: 30px; padding: 5px 8px; }
+.sv-edit-row { margin: 2px 0 2px; }
+.sv-edit-row .sv-reply-input { min-height: 52px; }
+.sv-edit-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
 
 /* ── Identity gate / modals ──────────────────────────────────────────── */
 .sv-modal-scrim {
