@@ -6,7 +6,7 @@
 <title>Default — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
-<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../all.css">
 <link rel="stylesheet" href="../shells/app-shell.css">
 </head>
 <body>
@@ -25,6 +25,123 @@
   <div class="main">
     <header class="topbar"><span class="title-paragraph">Dashboard</span></header>
     <div class="content">
+      <!-- ===== Overview / graphics band ====================================== -->
+      <div style="display:flex;gap:24px;align-items:stretch;margin-bottom:24px">
+        <!-- Flagship KPI: big value + delta + embedded sparkline -->
+        <div class="stat-hero" style="flex:1;min-width:0">
+          <p class="stat-hero__label">Components published — last 30 days</p>
+          <p class="stat-hero__value">12,847</p>
+          <span class="stat-hero__delta is-up">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            18.2% vs. prior period
+          </span>
+          <span class="stat-hero__spark">
+            <svg class="sparkline is-up" viewBox="0 0 80 24" preserveAspectRatio="none" role="img" aria-label="30-day publish trend">
+              <polyline class="line" points="0,21 8,18 16,19 24,13 32,15 40,10 48,12 56,6 64,9 72,4 80,2"/>
+              <circle class="dot" cx="80" cy="2" r="2"/>
+            </svg>
+          </span>
+        </div>
+
+        <!-- Bar chart: submissions by category -->
+        <div class="chart-card" style="flex:1;min-width:0">
+          <h3 class="chart-card__title">Submissions by category</h3>
+          <div class="chart-card__body">
+            <svg class="chart chart--bar" viewBox="0 0 200 120" role="img" aria-label="Submissions by category">
+              <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+              <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+              <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+              <rect class="bar"    x="14"  y="48" width="28" height="62" rx="3"/>
+              <rect class="bar--2" x="58"  y="24" width="28" height="86" rx="3" fill="var(--series-2)"/>
+              <rect class="bar--3" x="102" y="66" width="28" height="44" rx="3" fill="var(--series-3)"/>
+              <rect class="bar--4" x="146" y="14" width="28" height="96" rx="3" fill="var(--series-4)"/>
+              <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+            </svg>
+          </div>
+          <div class="chart-card__legend">
+            <ul class="legend">
+              <li class="legend__item"><span class="legend__swatch legend__swatch--1"></span>Icons</li>
+              <li class="legend__item"><span class="legend__swatch legend__swatch--2"></span>Layouts</li>
+              <li class="legend__item"><span class="legend__swatch legend__swatch--3"></span>Tokens</li>
+              <li class="legend__item"><span class="legend__swatch legend__swatch--4"></span>Patterns</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Area chart: weekly active reviewers -->
+        <div class="chart-card" style="flex:1;min-width:0">
+          <h3 class="chart-card__title">Active reviewers — weekly</h3>
+          <div class="chart-card__body">
+            <svg class="chart chart--area" viewBox="0 0 200 120" role="img" aria-label="Active reviewers per week">
+              <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+              <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+              <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+              <path class="fill"   d="M0,90 L40,66 L80,72 L120,38 L160,50 L200,24 L200,110 L0,110 Z" fill="var(--series-1)"/>
+              <path class="stroke" d="M0,90 L40,66 L80,72 L120,38 L160,50 L200,24" stroke="var(--series-1)"/>
+              <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+            </svg>
+          </div>
+          <div class="chart-card__legend">
+            <ul class="legend">
+              <li class="legend__item"><span class="legend__swatch legend__swatch--1"></span>Reviewers active per week</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Donut: review outcome split, with legend -->
+        <div class="chart-card" style="flex:0 0 220px;min-width:0">
+          <h3 class="chart-card__title">Review outcomes</h3>
+          <div class="chart-card__body" style="display:flex;justify-content:center">
+            <svg class="chart chart--donut" viewBox="0 0 120 120" role="img" aria-label="Review outcome breakdown">
+              <circle class="track" cx="60" cy="60" r="42"/>
+              <circle class="arc arc--1" cx="60" cy="60" r="42" stroke="var(--series-1)"
+                      stroke-dasharray="116 148" stroke-dashoffset="0"   transform="rotate(-90 60 60)"/>
+              <circle class="arc arc--2" cx="60" cy="60" r="42" stroke="var(--series-2)"
+                      stroke-dasharray="74 190"  stroke-dashoffset="-116" transform="rotate(-90 60 60)"/>
+              <circle class="arc arc--3" cx="60" cy="60" r="42" stroke="var(--series-3)"
+                      stroke-dasharray="74 190"  stroke-dashoffset="-190" transform="rotate(-90 60 60)"/>
+              <text class="center" x="60" y="60">72%</text>
+            </svg>
+          </div>
+          <div class="chart-card__legend">
+            <ul class="legend">
+              <li class="legend__item"><span class="legend__swatch legend__swatch--1"></span>Approved</li>
+              <li class="legend__item"><span class="legend__swatch legend__swatch--2"></span>In review</li>
+              <li class="legend__item"><span class="legend__swatch legend__swatch--3"></span>Rejected</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI strip: secondary metrics -->
+      <div class="kpi-strip" style="margin-bottom:24px">
+        <div class="kpi">
+          <span class="kpi__label">Pending approval</span>
+          <span class="kpi__value">42</span>
+          <span class="kpi__delta is-down">-6 vs. last week</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Avg. review time</span>
+          <span class="kpi__value">3.4h</span>
+          <span class="kpi__delta is-up">-22% faster</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Contributors</span>
+          <span class="kpi__value">318</span>
+          <span class="kpi__delta is-up">+14 this month</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Approval rate</span>
+          <span class="kpi__value">91.2%</span>
+          <span class="kpi__delta is-up">+1.8 pts</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Open portfolios</span>
+          <span class="kpi__value">7</span>
+          <span class="kpi__delta">unchanged</span>
+        </div>
+      </div>
+
       <div style="display:flex;gap:24px;align-items:flex-start">
         <nav class="subnav">
           <a class="subnav__item is-active">Category 1 <span class="subnav__count">12</span></a>

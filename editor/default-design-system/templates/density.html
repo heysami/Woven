@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default — Markets Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../all.css">
+<link rel="stylesheet" href="../shells/app-shell.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <img class="sidebar__wave" src="../assets/sidebar-grid.svg" alt="" aria-hidden="true">
+    <div class="sidebar__logo"><img class="app-logo" src="../assets/logo.svg" alt="Default" style="height:40px"><span class="sep"></span><span class="title">Default</span></div>
+    <div class="sidebar__section">Terminal</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link is-active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 5-7 4 5"/><path d="M3 21h18"/></svg><span class="nav-label">Markets</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><span class="nav-label">Positions</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18V8M10 18V4M16 18v-7M22 18H2"/></svg><span class="nav-label">Watchlists</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="4"/></svg><span class="nav-label">Alerts</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="nav-label">Blotter</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span class="nav-label">Research</span></a>
+    </nav>
+    <div class="sidebar__user"><a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="nav-label">Marcus Vale</span></a></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <nav class="breadcrumbs"><a href="#">Markets</a><span class="sep">/</span><span class="current">Global Equities</span></nav>
+      <span class="status status--success status--sm status--icon-text" style="margin-left:auto"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg> Live</span>
+      <span class="tnum" style="color:var(--fg-subtle);font-size:var(--text-xs)">20 Jun 2026 · 15:42:08 EDT</span>
+    </header>
+
+    <div class="content" style="padding:0;max-width:none">
+
+      <!-- KPI strip -->
+      <div class="kpi-strip">
+        <div class="kpi"><span class="kpi__label">S&amp;P 500</span><span class="kpi__value">5,447.82</span><span class="kpi__delta is-up">+38.41 &nbsp;+0.71%</span></div>
+        <div class="kpi"><span class="kpi__label">Nasdaq</span><span class="kpi__value">17,721.59</span><span class="kpi__delta is-up">+162.07 &nbsp;+0.92%</span></div>
+        <div class="kpi"><span class="kpi__label">Dow Jones</span><span class="kpi__value">38,834.86</span><span class="kpi__delta is-down">−92.51 &nbsp;−0.24%</span></div>
+        <div class="kpi"><span class="kpi__label">10Y Yield</span><span class="kpi__value">4.281%</span><span class="kpi__delta is-down">−0.034</span></div>
+        <div class="kpi"><span class="kpi__label">VIX</span><span class="kpi__value">12.87</span><span class="kpi__delta is-down">−0.42 &nbsp;−3.16%</span></div>
+        <div class="kpi"><span class="kpi__label">Crude WTI</span><span class="kpi__value">$80.42</span><span class="kpi__delta is-up">+0.58 &nbsp;+0.73%</span></div>
+      </div>
+
+      <!-- dense toolbar -->
+      <div class="toolbar--dense">
+        <span class="input-icon" style="width:240px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input class="input" placeholder="Search symbol…"></span>
+        <div class="segmented">
+          <button class="is-active">Equities</button>
+          <button>FX</button>
+          <button>Crypto</button>
+          <button>Futures</button>
+        </div>
+        <button class="dg-chip">Sector <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="dg-chip">Exchange <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <span class="tag tag--sm tag--secondary tag--light">Movers ▾</span>
+        <span class="toolbar__spacer"></span>
+        <button class="dg-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg> Intraday <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="btn btn--outline btn--s">Export</button>
+      </div>
+
+      <div style="padding:var(--space-base) var(--space-m)">
+
+      <!-- primary dense table -->
+      <div class="table-scroll">
+      <table class="table table--flat table--dense">
+        <thead><tr>
+          <th>Symbol</th>
+          <th>Name</th>
+          <th class="cell--num is-sortable is-desc">Last <span class="sort"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5-4 5 4M7 15l5 4 5-4"/></svg></span></th>
+          <th class="cell--num">Chg</th>
+          <th class="cell--num">Chg %</th>
+          <th class="cell--num">Bid</th>
+          <th class="cell--num">Ask</th>
+          <th class="cell--num">Volume</th>
+          <th class="cell--num">Mkt Cap</th>
+          <th>1D Trend</th>
+          <th>Status</th>
+        </tr></thead>
+        <tbody>
+          <tr class="row--selected">
+            <td><strong>NVDA</strong></td><td>NVIDIA Corp</td>
+            <td class="cell--num">131.88</td><td class="cell--delta is-up">+4.62</td><td class="cell--delta is-up">+3.63%</td>
+            <td class="cell--num">131.86</td><td class="cell--num">131.90</td><td class="cell--num">412.7M</td><td class="cell--num">3.24T</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,18 9,16 18,17 27,11 36,12 45,7 54,9 63,4 72,2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>AAPL</strong></td><td>Apple Inc</td>
+            <td class="cell--num">214.29</td><td class="cell--delta is-up">+1.04</td><td class="cell--delta is-up">+0.49%</td>
+            <td class="cell--num">214.27</td><td class="cell--num">214.31</td><td class="cell--num">58.1M</td><td class="cell--num">3.29T</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,14 9,15 18,12 27,13 36,10 45,11 54,8 63,9 72,6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>MSFT</strong></td><td>Microsoft Corp</td>
+            <td class="cell--num">442.57</td><td class="cell--delta is-up">+2.81</td><td class="cell--delta is-up">+0.64%</td>
+            <td class="cell--num">442.54</td><td class="cell--num">442.60</td><td class="cell--num">19.4M</td><td class="cell--num">3.29T</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,16 9,14 18,15 27,11 36,12 45,9 54,10 63,7 72,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>AMZN</strong></td><td>Amazon.com Inc</td>
+            <td class="cell--num">186.10</td><td class="cell--delta is-down">−1.32</td><td class="cell--delta is-down">−0.70%</td>
+            <td class="cell--num">186.08</td><td class="cell--num">186.13</td><td class="cell--num">31.7M</td><td class="cell--num">1.94T</td>
+            <td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,6 9,8 18,7 27,11 36,10 45,13 54,12 63,16 72,17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>GOOGL</strong></td><td>Alphabet Inc A</td>
+            <td class="cell--num">178.35</td><td class="cell--delta is-up">+0.92</td><td class="cell--delta is-up">+0.52%</td>
+            <td class="cell--num">178.33</td><td class="cell--num">178.38</td><td class="cell--num">22.9M</td><td class="cell--num">2.20T</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,15 9,13 18,14 27,12 36,11 45,12 54,9 63,10 72,7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr class="row--selected">
+            <td><strong>META</strong></td><td>Meta Platforms</td>
+            <td class="cell--num">503.76</td><td class="cell--delta is-up">+6.18</td><td class="cell--delta is-up">+1.24%</td>
+            <td class="cell--num">503.71</td><td class="cell--num">503.80</td><td class="cell--num">14.3M</td><td class="cell--num">1.28T</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,18 9,15 18,16 27,12 36,10 45,8 54,9 63,5 72,3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>TSLA</strong></td><td>Tesla Inc</td>
+            <td class="cell--num">183.01</td><td class="cell--delta is-down">−5.74</td><td class="cell--delta is-down">−3.04%</td>
+            <td class="cell--num">182.98</td><td class="cell--num">183.04</td><td class="cell--num">96.2M</td><td class="cell--num">584.2B</td>
+            <td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,4 9,6 18,5 27,9 36,11 45,10 54,14 63,16 72,19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--attention badge--light">Volatile</span></td>
+          </tr>
+          <tr>
+            <td><strong>JPM</strong></td><td>JPMorgan Chase</td>
+            <td class="cell--num">201.44</td><td class="cell--delta is-up">+0.37</td><td class="cell--delta is-up">+0.18%</td>
+            <td class="cell--num">201.42</td><td class="cell--num">201.47</td><td class="cell--num">8.7M</td><td class="cell--num">578.9B</td>
+            <td><span class="spark"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,12 9,11 18,13 27,11 36,12 45,10 54,11 63,10 72,11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>V</strong></td><td>Visa Inc A</td>
+            <td class="cell--num">274.88</td><td class="cell--delta is-up">+1.61</td><td class="cell--delta is-up">+0.59%</td>
+            <td class="cell--num">274.85</td><td class="cell--num">274.91</td><td class="cell--num">5.4M</td><td class="cell--num">561.0B</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,15 9,14 18,12 27,13 36,10 45,9 54,10 63,8 72,7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>XOM</strong></td><td>Exxon Mobil Corp</td>
+            <td class="cell--num">114.27</td><td class="cell--delta is-up">+1.08</td><td class="cell--delta is-up">+0.95%</td>
+            <td class="cell--num">114.25</td><td class="cell--num">114.29</td><td class="cell--num">12.1M</td><td class="cell--num">503.7B</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,16 9,15 18,16 27,12 36,13 45,10 54,11 63,9 72,8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>WMT</strong></td><td>Walmart Inc</td>
+            <td class="cell--num">67.19</td><td class="cell--delta is-down">−0.21</td><td class="cell--delta is-down">−0.31%</td>
+            <td class="cell--num">67.18</td><td class="cell--num">67.21</td><td class="cell--num">15.8M</td><td class="cell--num">540.3B</td>
+            <td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,9 9,10 18,9 27,11 36,12 45,11 54,13 63,12 72,14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>AMD</strong></td><td>Advanced Micro</td>
+            <td class="cell--num">159.04</td><td class="cell--delta is-up">+3.27</td><td class="cell--delta is-up">+2.10%</td>
+            <td class="cell--num">159.01</td><td class="cell--num">159.07</td><td class="cell--num">48.9M</td><td class="cell--num">256.8B</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,17 9,16 18,14 27,13 36,11 45,9 54,10 63,6 72,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>BAC</strong></td><td>Bank of America</td>
+            <td class="cell--num">39.82</td><td class="cell--delta is-up">+0.14</td><td class="cell--delta is-up">+0.35%</td>
+            <td class="cell--num">39.81</td><td class="cell--num">39.83</td><td class="cell--num">33.5M</td><td class="cell--num">309.4B</td>
+            <td><span class="spark"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,11 9,12 18,11 27,10 36,12 45,11 54,10 63,11 72,10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>INTC</strong></td><td>Intel Corp</td>
+            <td class="cell--num">30.41</td><td class="cell--delta is-down">−0.88</td><td class="cell--delta is-down">−2.81%</td>
+            <td class="cell--num">30.40</td><td class="cell--num">30.42</td><td class="cell--num">41.2M</td><td class="cell--num">129.6B</td>
+            <td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,5 9,7 18,6 27,10 36,9 45,12 54,14 63,15 72,18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--attention badge--light">Volatile</span></td>
+          </tr>
+          <tr>
+            <td><strong>NFLX</strong></td><td>Netflix Inc</td>
+            <td class="cell--num">678.55</td><td class="cell--delta is-up">+8.04</td><td class="cell--delta is-up">+1.20%</td>
+            <td class="cell--num">678.49</td><td class="cell--num">678.61</td><td class="cell--num">3.2M</td><td class="cell--num">291.7B</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,18 9,17 18,15 27,14 36,11 45,12 54,8 63,7 72,4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>BA</strong></td><td>Boeing Co</td>
+            <td class="cell--num">181.92</td><td class="cell--delta is-down">−2.47</td><td class="cell--delta is-down">−1.34%</td>
+            <td class="cell--num">181.89</td><td class="cell--num">181.95</td><td class="cell--num">7.9M</td><td class="cell--num">111.4B</td>
+            <td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,6 9,5 18,8 27,9 36,11 45,10 54,13 63,15 72,16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--negative badge--light">Halted</span></td>
+          </tr>
+          <tr>
+            <td><strong>PFE</strong></td><td>Pfizer Inc</td>
+            <td class="cell--num">28.06</td><td class="cell--delta is-up">+0.09</td><td class="cell--delta is-up">+0.32%</td>
+            <td class="cell--num">28.05</td><td class="cell--num">28.07</td><td class="cell--num">28.7M</td><td class="cell--num">158.9B</td>
+            <td><span class="spark"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,12 9,11 18,12 27,11 36,10 45,11 54,10 63,11 72,9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+          <tr>
+            <td><strong>COIN</strong></td><td>Coinbase Global</td>
+            <td class="cell--num">241.18</td><td class="cell--delta is-up">+11.43</td><td class="cell--delta is-up">+4.97%</td>
+            <td class="cell--num">241.10</td><td class="cell--num">241.26</td><td class="cell--num">11.0M</td><td class="cell--num">59.8B</td>
+            <td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,19 9,17 18,18 27,13 36,11 45,9 54,7 63,4 72,2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--attention badge--light">Volatile</span></td>
+          </tr>
+          <tr>
+            <td><strong>DIS</strong></td><td>Walt Disney Co</td>
+            <td class="cell--num">99.84</td><td class="cell--delta is-down">−0.61</td><td class="cell--delta is-down">−0.61%</td>
+            <td class="cell--num">99.83</td><td class="cell--num">99.86</td><td class="cell--num">9.3M</td><td class="cell--num">181.2B</td>
+            <td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,9 9,10 18,9 27,11 36,10 45,12 54,11 63,13 72,14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>
+            <td><span class="badge badge--positive badge--light">Active</span></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="row" style="justify-content:space-between;margin-top:var(--space-s)">
+        <span class="pagination__info tnum">1 to 19 of 4,213 instruments</span>
+        <div class="pagination">
+          <button class="pagination__item pagination__item--icon" disabled>‹</button>
+          <button class="pagination__item is-active">1</button>
+          <button class="pagination__item">2</button>
+          <button class="pagination__item">3</button>
+          <button class="pagination__item pagination__item--more">…</button>
+          <button class="pagination__item">222</button>
+          <button class="pagination__item pagination__item--icon">›</button>
+        </div>
+      </div>
+
+      <!-- secondary chart/metric panel row -->
+      <div style="margin-top:var(--space-l);display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-base);align-items:start">
+
+        <div class="chart-card">
+          <h3 class="chart-card__title">Sector flow — net $ (5d)</h3>
+          <div class="chart-card__body">
+            <svg class="chart chart--bar" viewBox="0 0 200 120" role="img" aria-label="Sector net flow bar chart">
+              <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+              <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+              <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+              <rect class="bar"    x="12"  y="40" width="22" height="70" rx="2"/>
+              <rect class="bar--2" x="44"  y="22" width="22" height="88" rx="2" fill="var(--series-2)"/>
+              <rect class="bar--3" x="76"  y="58" width="22" height="52" rx="2" fill="var(--series-3)"/>
+              <rect class="bar--4" x="108" y="34" width="22" height="76" rx="2" fill="var(--series-4)"/>
+              <rect class="bar--5" x="140" y="70" width="22" height="40" rx="2" fill="var(--series-5)"/>
+              <rect class="bar"    x="172" y="48" width="22" height="62" rx="2"/>
+              <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+            </svg>
+          </div>
+          <ul class="legend">
+            <li class="legend__item"><span class="legend__swatch legend__swatch--1"></span>Tech</li>
+            <li class="legend__item"><span class="legend__swatch legend__swatch--2"></span>Energy</li>
+            <li class="legend__item"><span class="legend__swatch legend__swatch--3"></span>Health</li>
+            <li class="legend__item"><span class="legend__swatch legend__swatch--4"></span>Fin</li>
+          </ul>
+        </div>
+
+        <div class="chart-card">
+          <h3 class="chart-card__title">Index intraday — SPX vs NDX</h3>
+          <div class="chart-card__body">
+            <svg class="chart chart--line" viewBox="0 0 200 120" role="img" aria-label="Index intraday line chart">
+              <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+              <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+              <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+              <polyline class="series"    points="0,88 33,76 66,80 99,52 132,58 165,34 200,28" stroke="var(--series-1)"/>
+              <polyline class="series--2" points="0,100 33,92 66,86 99,84 132,66 165,60 200,48" stroke="var(--series-2)"/>
+              <circle class="dot" cx="200" cy="28" r="3"/>
+              <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+            </svg>
+          </div>
+          <ul class="legend">
+            <li class="legend__item"><span class="legend__swatch legend__swatch--1"></span>S&amp;P 500</li>
+            <li class="legend__item"><span class="legend__swatch legend__swatch--2"></span>Nasdaq</li>
+          </ul>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:var(--space-base)">
+          <div class="metric-tile">
+            <p class="metric-tile__label">Adv / Decl</p>
+            <p class="metric-tile__value">1.84</p>
+            <span class="metric-tile__trend is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>312 adv · 169 decl</span>
+          </div>
+          <div class="metric-tile">
+            <p class="metric-tile__label">Total volume</p>
+            <p class="metric-tile__value">9.41B</p>
+            <span class="metric-tile__trend is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+12.4% vs 30d avg</span>
+          </div>
+          <div class="metric-tile">
+            <p class="metric-tile__label">Net flow</p>
+            <p class="metric-tile__value">+$2.7B</p>
+            <span class="metric-tile__trend is-down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>−$0.4B since 14:00</span>
+          </div>
+        </div>
+
+      </div>
+
+      </div><!-- /padded -->
+    </div>
+  </div>
+</div>
+</body>
+</html>

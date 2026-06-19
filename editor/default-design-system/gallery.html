@@ -6,8 +6,9 @@
 <title>Template Design System — Gallery</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="all.css">
 <link rel="stylesheet" href="shells/app-shell.css">
+<link rel="stylesheet" href="shells/mobile-shell.css">
 <style>
   body{margin:0;}
   .shell{display:grid;grid-template-columns:var(--sidebar-w) 1fr;}
@@ -114,6 +115,22 @@
 </style>
 </head>
 <body>
+<div class="style-switcher" style="position:fixed;top:14px;right:18px;z-index:1000;display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-pill);box-shadow:var(--shadow-m)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--fg-muted)"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="13" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="13" r="2.5"/><path d="M12 22a10 10 0 010-20 8 8 0 018 8c0 3-2 4-4 4h-2a2 2 0 00-1.5 3.3A2 2 0 0112 22z"/></svg>
+  <label for="styleSelect" class="text-xs text-subtle" style="font-weight:500">Style</label>
+  <select id="styleSelect" class="select" style="height:30px;min-width:148px">
+    <option value="">Default</option>
+    <option value="dark">Dark</option>
+    <option value="minimal">Minimal</option>
+    <option value="pastel">Pastel</option>
+    <option value="glassmorphism">Glassmorphism</option>
+    <option value="claymorphism">Claymorphism</option>
+    <option value="neumorphism">Neumorphism</option>
+    <option value="techminimalism">Tech-minimalism</option>
+    <option value="neobrutalism">Neobrutalism</option>
+    <option value="grainism">Grainism</option>
+  </select>
+</div>
 <div class="shell">
 <aside class="sidebar">
   <img class="sidebar__wave" src="assets/sidebar-grid.svg" alt="" aria-hidden="true">
@@ -164,6 +181,19 @@
     <div class="sidebar__section">Templates</div>
     <a class="nav-link" href="#c-shell"><span class="nav-label">App shell</span></a>
     <a class="nav-link" href="#c-pages"><span class="nav-label">Page samples</span></a>
+    <div class="sidebar__section">Data-dense</div>
+    <a class="nav-link" href="#c-dense-table"><span class="nav-label">Flat / dense table</span></a>
+    <a class="nav-link" href="#c-kpi-strip"><span class="nav-label">KPI strip</span></a>
+    <a class="nav-link" href="#c-dense-toolbar"><span class="nav-label">Dense toolbar</span></a>
+    <div class="sidebar__section">Document / boxless</div>
+    <a class="nav-link" href="#c-doc"><span class="nav-label">Boxless editor</span></a>
+    <div class="sidebar__section">Charts &amp; graphics</div>
+    <a class="nav-link" href="#c-stat-hero"><span class="nav-label">Stat hero</span></a>
+    <a class="nav-link" href="#c-charts"><span class="nav-label">Charts</span></a>
+    <a class="nav-link" href="#c-metric-tile"><span class="nav-label">Metric tiles</span></a>
+    <a class="nav-link" href="#c-legend"><span class="nav-label">Legend</span></a>
+    <div class="sidebar__section">Mobile shell</div>
+    <a class="nav-link" href="#c-mobile"><span class="nav-label">Phone preview</span></a>
   </nav>
 </aside>
 <main class="main" id="top">
@@ -649,6 +679,172 @@
   <div class="vgroup"><h5>Pages</h5><div class="page-grid" id="pageGrid"></div></div>
 </section>
 
+<!-- ===================== DATA-DENSE ===================== -->
+<div class="layer__head"><h2>Data-dense</h2></div>
+<p class="layer__intro">Flat hairline tables, tabular numerals, compact toolbars — the Linear / Bloomberg register. <code>components/data-dense.css</code></p>
+
+<section class="comp" id="c-dense-table"><div class="comp__bar"><h3>Flat / dense table</h3><code>.table--flat .table--dense</code><p>Strips card chrome to 1px hairline rows. Right-aligned <code>.cell--num .tnum</code> figures, coloured <code>.cell--delta</code>, and an inline <code>.spark</code> cell.</p></div>
+  <div class="vgroup"><h5>Numeric grid</h5>
+    <table class="table table--flat table--dense" style="max-width:560px">
+      <thead><tr><th>Ticker</th><th class="cell--num">Last</th><th class="cell--num">Chg</th><th class="cell--num">Chg %</th><th>Trend</th></tr></thead>
+      <tbody>
+        <tr><td>ACME</td><td class="cell--num tnum">142.08</td><td class="cell--delta is-up">+2.14</td><td class="cell--delta is-up">+1.53%</td><td><span class="spark is-up"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,16 9,14 18,17 27,9 36,11 45,6 54,8 63,3 72,5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td></tr>
+        <tr class="row--selected"><td>NOVA</td><td class="cell--num tnum">88.40</td><td class="cell--delta is-down">−1.07</td><td class="cell--delta is-down">−1.20%</td><td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,5 9,7 18,4 27,10 36,9 45,14 54,12 63,18 72,16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td></tr>
+        <tr class="row--active"><td>ORBIT</td><td class="cell--num tnum">31.96</td><td class="cell--delta is-up">+0.42</td><td class="cell--delta is-up">+1.33%</td><td><span class="spark"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,12 9,10 18,13 27,11 36,9 45,12 54,8 63,11 72,7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td></tr>
+        <tr><td>HALO</td><td class="cell--num tnum">7.215</td><td class="cell--delta is-down">−0.034</td><td class="cell--delta is-down">−0.47%</td><td><span class="spark is-down"><svg viewBox="0 0 72 22" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,7 9,9 18,8 27,12 36,11 45,15 54,13 63,16 72,18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="comp" id="c-kpi-strip"><div class="comp__bar"><h3>KPI strip</h3><code>.kpi-strip .kpi</code><p>Horizontal flat row of compact KPIs split by hairline dividers. Deltas tint with <code>.is-up</code> / <code>.is-down</code>.</p></div>
+  <div class="vgroup"><h5>Strip</h5>
+    <div class="kpi-strip" style="max-width:640px">
+      <div class="kpi"><span class="kpi__label">Revenue</span><span class="kpi__value">$4.82M</span><span class="kpi__delta is-up">+12.4%</span></div>
+      <div class="kpi"><span class="kpi__label">Active users</span><span class="kpi__value">38,204</span><span class="kpi__delta is-up">+3.1%</span></div>
+      <div class="kpi"><span class="kpi__label">Churn</span><span class="kpi__value">1.92%</span><span class="kpi__delta is-down">−0.4%</span></div>
+      <div class="kpi"><span class="kpi__label">Avg. latency</span><span class="kpi__value">142ms</span><span class="kpi__delta">±0</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="comp" id="c-dense-toolbar"><div class="comp__bar"><h3>Dense toolbar</h3><code>.toolbar--dense</code><p>Compact 36px flat filter / action bar. Stock controls shrink to the dense rhythm; <code>.toolbar__spacer</code> pushes trailing actions right.</p></div>
+  <div class="vgroup"><h5>Toolbar</h5>
+    <div class="scroll-x"><div class="toolbar--dense" style="min-width:560px">
+      <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input class="input" placeholder="Filter"></span>
+      <select class="select"><option>All markets</option></select>
+      <div class="segmented"><button class="is-active">Day</button><button>Week</button><button>Month</button></div>
+      <span class="toolbar__spacer"></span>
+      <button class="btn btn--outline">Export</button>
+      <button class="btn btn--primary">New view</button>
+    </div></div>
+  </div>
+</section>
+
+<!-- ===================== DOCUMENT / BOXLESS ===================== -->
+<div class="layer__head"><h2>Document / boxless</h2></div>
+<p class="layer__intro">The Notion / Docs editing register — no boxes, click the text to edit. <code>components/doc.css</code></p>
+
+<section class="comp" id="c-doc"><div class="comp__bar"><h3>Boxless editor</h3><code>.doc .doc-block .field--bare .input--bare</code><p>Editable <code>.doc__title</code> + a <code>.doc-block</code> paragraph, a couple of bare-field rows, and the <code>.slash-hint</code> command affordance.</p></div>
+  <div class="vgroup"><h5>Document excerpt</h5>
+    <div class="frame" style="max-width:640px;padding:8px 12px">
+      <article class="doc" style="padding:20px 8px">
+        <h1 class="doc__title" contenteditable>Quarterly review</h1>
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <p>Revenue grew across every region this quarter, with the strongest lift in EMEA. Click any line to edit it inline.</p>
+        </div>
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <p class="doc-placeholder" contenteditable data-placeholder="Type '/' for commands"><span class="slash-hint">Type '/' for commands</span></p>
+        </div>
+        <label class="field field--bare"><span class="field__label">Owner</span><input class="input input--bare" value="Avery Lin"></label>
+        <label class="field field--bare"><span class="field__label">Notes</span><input class="input input--bare" placeholder="Untitled"></label>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CHARTS & GRAPHICS ===================== -->
+<div class="layer__head"><h2>Charts &amp; graphics</h2></div>
+<p class="layer__intro">Static, theme-able dashboard parts drawn with inline SVG — bars, lines, donut, stat hero, metric tiles, legend. <code>components/charts.css</code></p>
+
+<section class="comp" id="c-stat-hero"><div class="comp__bar"><h3>Stat hero</h3><code>.stat-hero</code><p>Flagship KPI card — big tabular value + delta pill + label + mini spark.</p></div>
+  <div class="vgroup"><h5>Card</h5>
+    <div class="stat-hero" style="max-width:300px">
+      <p class="stat-hero__label">Total revenue</p>
+      <p class="stat-hero__value">$4.82M</p>
+      <span class="stat-hero__delta is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+12.4%</span>
+      <span class="stat-hero__spark"><svg viewBox="0 0 200 64" preserveAspectRatio="none" fill="none" aria-hidden="true"><polyline points="0,52 33,46 66,50 100,30 133,36 166,16 200,8" stroke="var(--series-1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    </div>
+  </div>
+</section>
+
+<section class="comp" id="c-charts"><div class="comp__bar"><h3>Charts</h3><code>.chart-card .chart--*</code><p>Titled wrappers around inline-SVG charts — bar, line, donut — built from the copy-paste snippets. Series colours track <code>--series-*</code> so a style swap re-skins them.</p></div>
+  <div class="vgroup"><h5>Bar · line · donut</h5><div class="vcells vcells--wide">
+    <div class="chart-card"><h4 class="chart-card__title">Revenue by quarter</h4><div class="chart-card__body">
+      <svg class="chart chart--bar" viewBox="0 0 200 120" role="img" aria-label="Bar chart">
+        <line class="grid" x1="0" y1="30" x2="200" y2="30"/><line class="grid" x1="0" y1="60" x2="200" y2="60"/><line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+        <rect class="bar" x="14" y="48" width="28" height="62" rx="3"/>
+        <rect class="bar--2" x="58" y="24" width="28" height="86" rx="3" fill="var(--series-2)"/>
+        <rect class="bar--3" x="102" y="66" width="28" height="44" rx="3" fill="var(--series-3)"/>
+        <rect class="bar--4" x="146" y="14" width="28" height="96" rx="3" fill="var(--series-4)"/>
+        <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+      </svg>
+    </div></div>
+    <div class="chart-card"><h4 class="chart-card__title">Sessions</h4><div class="chart-card__body">
+      <svg class="chart chart--line" viewBox="0 0 200 120" role="img" aria-label="Line chart">
+        <line class="grid" x1="0" y1="30" x2="200" y2="30"/><line class="grid" x1="0" y1="60" x2="200" y2="60"/><line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+        <polyline class="series" points="0,92 40,70 80,78 120,40 160,52 200,20" stroke="var(--series-1)"/>
+        <polyline class="series--2" points="0,104 40,96 80,84 120,88 160,64 200,72" stroke="var(--series-2)"/>
+        <circle class="dot" cx="200" cy="20" r="3.5"/>
+        <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+      </svg>
+    </div></div>
+    <div class="chart-card"><h4 class="chart-card__title">Share</h4><div class="chart-card__body">
+      <svg class="chart chart--donut" viewBox="0 0 120 120" role="img" aria-label="Donut chart">
+        <circle class="track" cx="60" cy="60" r="42"/>
+        <circle class="arc arc--1" cx="60" cy="60" r="42" stroke="var(--series-1)" stroke-dasharray="116 148" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+        <circle class="arc arc--2" cx="60" cy="60" r="42" stroke="var(--series-2)" stroke-dasharray="74 190" stroke-dashoffset="-116" transform="rotate(-90 60 60)"/>
+        <circle class="arc arc--3" cx="60" cy="60" r="42" stroke="var(--series-3)" stroke-dasharray="74 190" stroke-dashoffset="-190" transform="rotate(-90 60 60)"/>
+        <text class="center" x="60" y="60">72%</text>
+      </svg>
+    </div></div>
+  </div></div>
+</section>
+
+<section class="comp" id="c-metric-tile"><div class="comp__bar"><h3>Metric tiles</h3><code>.metric-tile</code><p>Compact KPI tiles for dashboard grids — value + label + trend.</p></div>
+  <div class="vgroup"><h5>Tiles</h5><div class="vcells vcells--wide">
+    <div class="metric-tile"><p class="metric-tile__label">MRR</p><p class="metric-tile__value">$412K</p><span class="metric-tile__trend is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+8.2%</span></div>
+    <div class="metric-tile"><p class="metric-tile__label">Signups</p><p class="metric-tile__value">1,284</p><span class="metric-tile__trend is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+4.0%</span></div>
+    <div class="metric-tile"><p class="metric-tile__label">Refunds</p><p class="metric-tile__value">37</p><span class="metric-tile__trend is-down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>−1.5%</span></div>
+  </div></div>
+</section>
+
+<section class="comp" id="c-legend"><div class="comp__bar"><h3>Legend</h3><code>.legend .legend__item</code><p>Series swatch + label; swatches track <code>--series-*</code> so they document the chart they sit beside.</p></div>
+  <div class="vgroup"><h5>Series legend</h5>
+    <ul class="legend">
+      <li class="legend__item"><span class="legend__swatch legend__swatch--1"></span>Revenue</li>
+      <li class="legend__item"><span class="legend__swatch legend__swatch--2"></span>Profit</li>
+      <li class="legend__item"><span class="legend__swatch legend__swatch--3"></span>Cost</li>
+      <li class="legend__item"><span class="legend__swatch legend__swatch--4"></span>Forecast</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===================== MOBILE SHELL ===================== -->
+<div class="layer__head"><h2>Mobile shell</h2></div>
+<p class="layer__intro">Phone frame for mobile screen samples — status bar, app bar, large-touch list, bottom tab bar. <code>shells/mobile-shell.css</code></p>
+
+<section class="comp" id="c-mobile"><div class="comp__bar"><h3>Phone preview</h3><code>.phone .appbar .list-mobile .phone__tabbar</code><p>Status row + <code>.appbar</code> + a short <code>.list-mobile</code> + a 4-item <code>.phone__tabbar</code>. Scaled down to fit the gallery column.</p></div>
+  <div class="vgroup"><h5>Phone</h5>
+    <div style="height:540px;overflow:hidden"><div style="transform:scale(.62);transform-origin:top left;width:390px">
+      <div class="phone" style="margin:0">
+        <div class="phone__status"><span class="status__time">9:41</span><span class="status__glyphs">
+          <svg viewBox="0 0 24 14" fill="currentColor" aria-hidden="true"><rect x="0" y="8" width="3" height="5" rx="1"/><rect x="5" y="5" width="3" height="8" rx="1"/><rect x="10" y="2" width="3" height="11" rx="1"/><rect x="15" y="0" width="3" height="13" rx="1" opacity=".4"/></svg>
+          <svg viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1" y="2" width="20" height="10" rx="2.5"/><rect x="3" y="4" width="14" height="6" rx="1" fill="currentColor" stroke="none"/><path d="M23 5v4" stroke-linecap="round"/></svg>
+        </span></div>
+        <div class="phone__screen">
+          <div class="appbar"><span class="appbar__title">Activity</span><button class="appbar__icon-btn appbar__action"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></div>
+          <div class="list-mobile">
+            <a class="list-mobile__row"><span class="avatar">AL</span><span class="list-mobile__body"><span class="list-mobile__title">Avery Lin</span><span class="list-mobile__sub">Approved your request</span></span><span class="list-mobile__chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></a>
+            <a class="list-mobile__row"><span class="avatar" style="background:var(--secondary-200);color:var(--secondary-800)">BK</span><span class="list-mobile__body"><span class="list-mobile__title">Brook Kerr</span><span class="list-mobile__sub">Left a comment</span></span><span class="list-mobile__chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></a>
+            <a class="list-mobile__row"><span class="avatar" style="background:var(--tertiary-200);color:var(--tertiary-700)">CM</span><span class="list-mobile__body"><span class="list-mobile__title">Cam Moreau</span><span class="list-mobile__sub">Shared a portfolio</span></span><span class="list-mobile__chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></a>
+          </div>
+        </div>
+        <div class="phone__tabbar"><div class="tabbar">
+          <a class="tabbar__item is-active"><span class="tabbar__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg></span><span class="tabbar__label">Home</span></a>
+          <a class="tabbar__item"><span class="tabbar__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span><span class="tabbar__label">Search</span></a>
+          <a class="tabbar__item"><span class="tabbar__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg></span><span class="tabbar__label">Alerts</span></a>
+          <a class="tabbar__item"><span class="tabbar__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span><span class="tabbar__label">Profile</span></a>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
 </main>
 </div>
 <script>
@@ -766,6 +962,23 @@
         '<div class="page-card__thumb"><iframe src="templates/'+p[0]+'.html'+q+'" tabindex="-1" title="'+p[1]+'"></iframe></div>'+
         '<div class="page-card__meta"><b>'+p[1]+'</b><span>'+p[2]+'</span></div></a>';
     }).join('');
+  })();
+  // style switcher — set document.documentElement.dataset.theme from the dropdown
+  (function(){
+    var sel=document.getElementById('styleSelect');
+    if(!sel) return;
+    var KEY='ds-gallery-style';
+    function apply(v){
+      if(v) document.documentElement.dataset.theme=v;
+      else delete document.documentElement.dataset.theme;
+    }
+    var saved;
+    try{ saved=localStorage.getItem(KEY); }catch(e){}
+    if(saved!=null){ sel.value=saved; apply(saved); }
+    sel.addEventListener('change',function(){
+      apply(sel.value);
+      try{ localStorage.setItem(KEY,sel.value); }catch(e){}
+    });
   })();
 </script>
 </body>

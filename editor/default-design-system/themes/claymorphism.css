@@ -1,0 +1,386 @@
+/* ==========================================================================
+   Claymorphism theme — apply via <html data-theme="claymorphism">.
+   A STYLE OVERLAY on top of the Template Design System (styles.css must load
+   first). Soft-UI "foam" / puffy 3D clay: chunky rounded everything, matte
+   pastel surfaces, and the signature dual-light clay shadow (outer drop +
+   inner highlight). Buttons puff and DEPRESS on :active; inputs are inset
+   wells. Raw hex/rgba is allowed here (this is a look, not a token ramp), and
+   every override is scoped to the [data-theme="claymorphism"] attribute so it
+   never leaks into the base or dark themes.
+
+   Refs: design-library/style-claymorphism.md (the three-shadow clay recipe,
+   warm-pastel wash, graded radii, "one clay layer per screen") +
+   design-library/material-soft-ui-foam.md (committed top-left light, raised↔
+   pressed deform, container-bg == page-bg).
+   ========================================================================== */
+
+:root[data-theme="claymorphism"]{
+  /* ---- radii: remap LARGE — sharp corners break the soft-plastic read ---- */
+  --radius-xs:8px; --radius-s:10px; --radius-base:18px; --radius-m:20px;
+  --radius-l:24px; --radius-xl:28px; --radius-2xl:36px; --radius-pill:100px;
+
+  /* ---- warm off-white / soft pastel surfaces ----
+     The page + container backgrounds share one warm cream so the clay shadow
+     has light to push against (foam rule: bg-of-container == bg-of-page). */
+  --surface:#F4EFE9;            /* warm cream — primary card/clay surface     */
+  --surface-default:#EDE6DD;    /* slightly deeper wash — canvas / wells      */
+  --surface-medium:#E5DCD1;     /* recessed                                   */
+  --surface-strong:#DCD1C3;     /* most recessed                              */
+  --surface-inverse:#3A352F;
+
+  /* ---- text: warm greys, never pure black ---- */
+  --fg-default:#4A433B; --fg-muted:#7A7066; --fg-subtle:#A89D8F;
+  --fg-on-surface:#FFFFFF;
+
+  /* ---- lines: the inner highlight does the edge work, so borders nearly
+     vanish on clay; hairlines on flat chrome rows stay soft + warm ---- */
+  --border-default:#E3DACE; --border-subtle:#EBE3D9;
+  --interactive-hover:#E8E0D5; --interactive-active:#DDD2C4;
+
+  /* ---- soft pastel neutrals (used as tinted backgrounds) ---- */
+  --neutral-50:#F4EFE9; --neutral-70:#EDE6DD; --neutral-80:#E5DCD1;
+  --neutral-100:#DCD1C3; --neutral-150:#D2C6B6; --neutral-200:#C8BBA9;
+
+  /* ---- brand roles: one full-saturation pastel-leaning accent for the CTA;
+     keep the supporting roles soft so only the CTA pops ---- */
+  --primary-surface:#7B6CEC;        /* soft lavender-purple CTA               */
+  --primary-surface-muted:#E2DEFB;
+  --primary-surface-subtle:#EFEDFD;
+  --primary-fg:#5B4BD6; --primary-fg-emphasis:#5B4BD6; --primary-border:#C9C2F6;
+  --primary-hover:#897BF0; --primary-active:#6A5AE0;
+  --on-primary:#FFFFFF;
+  --primary-grad-from:#897BF0; --primary-grad-to:#6A5AE0;
+
+  --secondary-surface:#F0996B;      /* warm peach                             */
+  --tertiary-surface:#7FB7A6;       /* soft mint-slate                        */
+  --chip-primary-fg:#5B4BD6; --chip-secondary-fg:#B65A2E; --chip-tertiary-fg:#3E6E5F;
+
+  /* ---- the clay shadow helpers ----
+     CLAY = outer drop (tinted, not pure black) + outer top-left highlight +
+     inner highlight + inner bottom-right shadow. The single committed light
+     comes from the top-left and never deviates.
+     CLAY-INSET = the pressed / well variant (inset only). ---- */
+  --clay-shadow:
+    8px 8px 20px rgba(120,108,180,.16),
+    -6px -6px 16px rgba(255,255,255,.85),
+    inset 3px 3px 6px rgba(255,255,255,.60),
+    inset -5px -5px 10px rgba(120,100,70,.10);
+  --clay-shadow-sm:
+    5px 5px 12px rgba(120,108,180,.14),
+    -4px -4px 10px rgba(255,255,255,.85),
+    inset 2px 2px 4px rgba(255,255,255,.55),
+    inset -3px -3px 6px rgba(120,100,70,.09);
+  --clay-inset:
+    inset 5px 5px 10px rgba(120,100,70,.14),
+    inset -5px -5px 10px rgba(255,255,255,.80);
+  /* pressed button: shallow inset, sits "into" the dough */
+  --clay-press:
+    inset 4px 4px 9px rgba(40,30,70,.28),
+    inset -3px -3px 7px rgba(255,255,255,.22);
+
+  /* ---- re-skin the system shadows so anything still on a --shadow-* token
+     reads as soft foam rather than a hard drop ---- */
+  --shadow-xs:0 2px 6px rgba(120,108,180,.10);
+  --shadow-s:0 3px 10px rgba(120,108,180,.12);
+  --shadow-base:var(--clay-shadow-sm);
+  --shadow-m:0 6px 16px rgba(120,108,180,.14);
+  --shadow-l:0 10px 24px rgba(120,108,180,.16);
+  --shadow-xl:var(--clay-shadow);
+  --shadow-hard:8px 8px 20px rgba(60,48,90,.22);
+
+  /* ---- charts: soft pastel-ish series ---- */
+  --series-1:#7B6CEC;  /* lavender   */
+  --series-2:#7FB7A6;  /* mint       */
+  --series-3:#F0B96B;  /* butter     */
+  --series-4:#6FB6D6;  /* sky        */
+  --series-5:#F0996B;  /* peach      */
+  --chart-grid:#E3DACE;
+  --chart-axis:#A89D8F;
+
+  /* slightly softer global easing — gentle squash, no hard snap */
+  --ease:.25s cubic-bezier(.34,1.56,.64,1);
+}
+
+/* ==========================================================================
+   Page substrate — the warm wash the clay pushes against.
+   ========================================================================== */
+[data-theme="claymorphism"] body{background:var(--surface-default);}
+
+/* ==========================================================================
+   Cards — the canonical clay surface. Borders off (inner highlight does the
+   edge); puffed with the full clay recipe.
+   ========================================================================== */
+[data-theme="claymorphism"] .card,
+[data-theme="claymorphism"] .card--plain{
+  background:var(--surface);
+  border:0;
+  border-radius:var(--radius-xl);
+  box-shadow:var(--clay-shadow);
+}
+[data-theme="claymorphism"] .section-card{
+  background:var(--surface);
+  border:0;
+  border-radius:var(--radius-xl);
+  box-shadow:var(--clay-shadow);
+  padding:var(--space-m);
+}
+
+/* ==========================================================================
+   Stat hero / chart card / KPI — flagship dashboard clay tiles.
+   ========================================================================== */
+[data-theme="claymorphism"] .stat-hero,
+[data-theme="claymorphism"] .chart-card{
+  background:var(--surface);
+  border:0;
+  border-radius:var(--radius-xl);
+  box-shadow:var(--clay-shadow);
+}
+[data-theme="claymorphism"] .kpi-strip{
+  background:var(--surface);
+  border:0;
+  border-radius:var(--radius-xl);
+  box-shadow:var(--clay-shadow);
+  overflow:hidden;
+}
+/* KPIs sit inside the strip — drop the hard divider, let the foam read as one
+   puffed bar with soft inset gutters between cells */
+[data-theme="claymorphism"] .kpi{
+  border-left:0;
+  background:transparent;
+}
+[data-theme="claymorphism"] .kpi + .kpi{
+  box-shadow:inset 1px 0 0 rgba(255,255,255,.7), inset 2px 0 0 rgba(120,100,70,.05);
+}
+
+/* ==========================================================================
+   Buttons — puffy clay. Primary is a raised lozenge; it DEPRESSES on press
+   (translate down-right + swap to inset). Outline/light are softer foam pills.
+   ========================================================================== */
+[data-theme="claymorphism"] .btn{
+  border-radius:var(--radius-pill);
+  border:0;
+  transition:transform var(--ease), box-shadow var(--ease), background var(--ease);
+}
+[data-theme="claymorphism"] .btn--primary{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  box-shadow:
+    6px 6px 14px rgba(91,75,214,.30),
+    -4px -4px 10px rgba(255,255,255,.55),
+    inset 2px 2px 5px rgba(255,255,255,.45),
+    inset -4px -4px 8px rgba(40,30,90,.22);
+}
+[data-theme="claymorphism"] .btn--primary:hover{
+  background:var(--primary-hover);
+  transform:translateY(-1px);
+}
+[data-theme="claymorphism"] .btn--primary:active,
+[data-theme="claymorphism"] .btn.is-pressed.btn--primary{
+  background:var(--primary-active);
+  transform:translate(2px,2px);
+  box-shadow:var(--clay-press);
+}
+[data-theme="claymorphism"] .btn--outline{
+  background:var(--surface);
+  border:0;
+  color:var(--primary-fg);
+  box-shadow:var(--clay-shadow-sm);
+}
+[data-theme="claymorphism"] .btn--outline:hover,
+[data-theme="claymorphism"] .btn.is-hover.btn--outline{
+  background:var(--surface);
+  transform:translateY(-1px);
+}
+[data-theme="claymorphism"] .btn--outline:active,
+[data-theme="claymorphism"] .btn.is-pressed.btn--outline{
+  transform:translate(2px,2px);
+  box-shadow:var(--clay-inset);
+}
+[data-theme="claymorphism"] .btn--light{
+  background:var(--primary-surface-subtle);
+  color:var(--primary-fg);
+  box-shadow:var(--clay-shadow-sm);
+}
+[data-theme="claymorphism"] .btn--light:hover,
+[data-theme="claymorphism"] .btn.is-hover.btn--light{
+  background:var(--primary-surface-muted);
+  transform:translateY(-1px);
+}
+[data-theme="claymorphism"] .btn--light:active,
+[data-theme="claymorphism"] .btn.is-pressed.btn--light{
+  transform:translate(2px,2px);
+  box-shadow:var(--clay-inset);
+}
+
+/* ==========================================================================
+   Inputs — soft inset wells. Generous padding, friendly radius, no hard
+   border; the inset shadow IS the affordance. Focus deepens the well + a
+   soft accent ring.
+   ========================================================================== */
+[data-theme="claymorphism"] .input,
+[data-theme="claymorphism"] .select,
+[data-theme="claymorphism"] .textarea{
+  background:var(--surface-default);
+  border:0;
+  border-radius:var(--radius-l);
+  box-shadow:var(--clay-inset);
+  color:var(--fg-default);
+}
+[data-theme="claymorphism"] .input,
+[data-theme="claymorphism"] .select{
+  height:46px;
+  padding:8px var(--space-base);
+}
+[data-theme="claymorphism"] .textarea{padding:var(--space-s) var(--space-base);}
+[data-theme="claymorphism"] .input:hover,
+[data-theme="claymorphism"] .select:hover,
+[data-theme="claymorphism"] .textarea:hover{box-shadow:var(--clay-inset);}
+[data-theme="claymorphism"] .input:focus,
+[data-theme="claymorphism"] .select:focus,
+[data-theme="claymorphism"] .textarea:focus,
+[data-theme="claymorphism"] .input.is-focus,
+[data-theme="claymorphism"] .select.is-focus,
+[data-theme="claymorphism"] .textarea.is-focus{
+  outline:none;
+  box-shadow:var(--clay-inset), 0 0 0 3px rgba(123,108,236,.30);
+}
+[data-theme="claymorphism"] .input.is-error,
+[data-theme="claymorphism"] .select.is-error,
+[data-theme="claymorphism"] .textarea.is-error{
+  box-shadow:var(--clay-inset), 0 0 0 3px rgba(218,41,28,.28);
+}
+[data-theme="claymorphism"] .input:disabled,
+[data-theme="claymorphism"] .select:disabled,
+[data-theme="claymorphism"] .textarea:disabled{
+  background:var(--surface-strong);
+  box-shadow:var(--clay-inset);
+  color:var(--fg-subtle);
+}
+[data-theme="claymorphism"] .input--pill{height:50px;border-radius:var(--radius-pill);}
+/* bare input (inline doc field) — flatten the well, keep it light */
+[data-theme="claymorphism"] .input--bare{
+  background:transparent;
+  box-shadow:none;
+  border-radius:var(--radius-base);
+}
+[data-theme="claymorphism"] .input--bare:focus,
+[data-theme="claymorphism"] .input--bare.is-focus{
+  box-shadow:0 0 0 3px rgba(123,108,236,.25);
+}
+
+/* ==========================================================================
+   Badges & tags — small puffy pastel pills (pills stay round, get soft lift,
+   never the full clay recipe — that's reserved for the one clay layer).
+   ========================================================================== */
+[data-theme="claymorphism"] .badge,
+[data-theme="claymorphism"] .tag{
+  border:0;
+  border-radius:var(--radius-pill);
+  box-shadow:
+    2px 2px 5px rgba(120,108,180,.16),
+    -2px -2px 5px rgba(255,255,255,.75);
+}
+[data-theme="claymorphism"] .badge--light,
+[data-theme="claymorphism"] .tag--light{
+  background:var(--primary-surface-muted);
+  color:var(--primary-fg);
+}
+[data-theme="claymorphism"] .tag--outline,
+[data-theme="claymorphism"] .badge--outline{
+  background:var(--surface);
+  border:0;
+  color:var(--primary-fg);
+}
+
+/* ==========================================================================
+   Table — flat chrome surrounds the clay; the table itself reads as a soft
+   puffed panel with hairline warm dividers (no clay-on-every-row).
+   ========================================================================== */
+[data-theme="claymorphism"] .table{
+  background:var(--surface);
+  border:0;
+  border-radius:var(--radius-l);
+  box-shadow:var(--clay-shadow-sm);
+  overflow:hidden;
+}
+[data-theme="claymorphism"] .table th{
+  background:var(--surface-default);
+  color:var(--fg-muted);
+  border:0;
+}
+[data-theme="claymorphism"] .table td{
+  background:transparent;
+  border-top:1px solid var(--border-subtle);
+}
+[data-theme="claymorphism"] .table tbody tr:hover td{background:var(--primary-surface-subtle);}
+[data-theme="claymorphism"] .table tr.is-selected td{background:var(--primary-surface-muted);}
+
+/* ==========================================================================
+   Modal — the big clay surface. Chunky radius, full puffed recipe, no border.
+   ========================================================================== */
+[data-theme="claymorphism"] .modal{
+  background:var(--surface);
+  border:0;
+  border-radius:var(--radius-2xl);
+  box-shadow:
+    16px 16px 40px rgba(70,58,110,.22),
+    -10px -10px 28px rgba(255,255,255,.70),
+    inset 3px 3px 8px rgba(255,255,255,.55),
+    inset -6px -6px 12px rgba(120,100,70,.08);
+}
+[data-theme="claymorphism"] .modal__close{border-radius:var(--radius-pill);}
+[data-theme="claymorphism"] .modal__close:hover{
+  background:var(--surface-default);
+  box-shadow:var(--clay-inset);
+}
+[data-theme="claymorphism"] .modal-row{border-bottom:1px solid var(--border-subtle);}
+
+/* ==========================================================================
+   App shell — sidebar stays a tinted clay rail (keeps the brand gradient but
+   rounds + lifts it); topbar is flat warm chrome (one clay layer rule).
+   ========================================================================== */
+[data-theme="claymorphism"] .main{background:var(--surface-default);}
+[data-theme="claymorphism"] .sidebar{
+  margin:var(--space-xs);
+  height:calc(100vh - 2 * var(--space-xs));
+  border-radius:var(--radius-2xl);
+  box-shadow:
+    10px 10px 26px rgba(91,75,214,.26),
+    inset 3px 3px 8px rgba(255,255,255,.22),
+    inset -6px -6px 12px rgba(40,30,90,.20);
+  overflow:hidden;
+}
+[data-theme="claymorphism"] .nav-link{border-radius:var(--radius-m);}
+[data-theme="claymorphism"] .nav-link.is-active{
+  background:rgba(255,255,255,.18);
+  border-radius:var(--radius-m);
+  box-shadow:
+    inset 2px 2px 5px rgba(255,255,255,.25),
+    inset -3px -3px 6px rgba(40,30,90,.18);
+}
+[data-theme="claymorphism"] .topbar{
+  background:var(--surface-default);
+  border-bottom:1px solid var(--border-subtle);
+}
+
+/* ==========================================================================
+   Mobile shell — the phone is a single big clay slab; the active tab item
+   reads as a small pressed-in chiclet.
+   ========================================================================== */
+[data-theme="claymorphism"] .phone{
+  background:var(--surface);
+  border-radius:var(--radius-2xl);
+  box-shadow:
+    18px 18px 44px rgba(70,58,110,.20),
+    -12px -12px 32px rgba(255,255,255,.75),
+    inset 3px 3px 8px rgba(255,255,255,.55),
+    inset -6px -6px 12px rgba(120,100,70,.08);
+}
+[data-theme="claymorphism"] .phone__status,
+[data-theme="claymorphism"] .phone__screen{background:var(--surface);}
+[data-theme="claymorphism"] .tabbar__item.is-active{
+  color:var(--primary-fg);
+  border-radius:var(--radius-l);
+  background:var(--primary-surface-subtle);
+  box-shadow:var(--clay-inset);
+}

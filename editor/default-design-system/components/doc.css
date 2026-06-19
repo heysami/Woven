@@ -1,0 +1,202 @@
+/* ==========================================================================
+   Document inputs — "boxless" editing register (Notion / Google Docs / Word).
+   An ALTERNATIVE input style layered on the existing .input / .field / .textarea.
+   The form has NO boxes: you click the text to edit it. Plain text until you
+   interact; a subtle affordance appears on hover, a low-key underline on focus.
+
+   Reuses the base components in styles.css — load styles.css FIRST, then this.
+   Tokens only (no raw colour/spacing/radii) so all 8 themes re-skin for free.
+
+   USAGE — boxless field (label floats as muted text above a bare control):
+     <label class="field field--bare">
+       <span class="field__label">Project name</span>
+       <input class="input input--bare" placeholder="Untitled project">
+     </label>
+     <label class="field field--bare">
+       <span class="field__label">Notes</span>
+       <textarea class="textarea textarea--bare" placeholder="Write…"></textarea>
+     </label>
+
+   USAGE — document canvas (centred editable column):
+     <article class="doc">
+       <h1 class="doc__title" contenteditable></h1>            <!-- empty → "Untitled" -->
+       <div class="doc-block">
+         <span class="doc-block__handle" aria-hidden="true"></span>
+         <span class="doc-block__add" aria-hidden="true"></span>
+         <h2 class="doc-h2" contenteditable>Section heading</h2>
+       </div>
+       <div class="doc-block">
+         <span class="doc-block__handle" aria-hidden="true"></span>
+         <span class="doc-block__add" aria-hidden="true"></span>
+         <p class="doc-placeholder" contenteditable data-placeholder="Type '/' for commands">
+           Body text…
+           <span class="slash-hint">Type '/' for commands</span>
+         </p>
+       </div>
+       <aside class="doc-rail">…comments / outline…</aside>
+     </article>
+
+   USAGE — inline formatting toolbar (reuses .btn--icon):
+     <div class="doc-toolbar">
+       <button class="btn btn--text btn--icon">…bold svg…</button>
+       <button class="btn btn--text btn--icon">…italic svg…</button>
+       <button class="btn btn--text btn--icon">…link svg…</button>
+     </div>
+   ========================================================================== */
+
+/* ---- Boxless input -------------------------------------------------------
+   Reads as plain text. Border + background drop away; on hover a faint tinted
+   pad hints "this is editable"; on focus the box outline is gone, replaced by
+   a single low-key underline. */
+.input--bare,
+.textarea--bare{
+  background:transparent;border:0;border-radius:var(--radius-s);
+  padding:var(--space-2xs) var(--space-3xs);
+  /* keep the focus underline from shifting layout: reserve 1px below */
+  box-shadow:inset 0 -1px 0 0 transparent;
+  caret-color:var(--primary-fg-emphasis);
+  transition:background var(--ease),box-shadow var(--ease);
+}
+.input--bare{height:auto;min-height:32px;}
+.textarea--bare{min-height:auto;resize:none;}
+.input--bare:hover,
+.textarea--bare:hover{background:var(--surface-default);border-color:transparent;}
+/* focus: no box — a single low-key underline instead */
+.input--bare:focus,
+.input--bare.is-focus,
+.textarea--bare:focus,
+.textarea--bare.is-focus{
+  outline:none;background:transparent;
+  box-shadow:inset 0 -1px 0 0 var(--primary-border);
+}
+.input--bare:disabled,
+.textarea--bare:disabled{background:transparent;color:var(--fg-subtle);cursor:not-allowed;}
+.input--bare.is-error,
+.textarea--bare.is-error{box-shadow:inset 0 -1px 0 0 var(--error-600);}
+
+/* ---- Boxless field -------------------------------------------------------
+   Tighter vertical rhythm than .field; label sits as muted, floating text. */
+.field--bare{gap:var(--space-3xs);}
+.field--bare .field__label{
+  font-size:var(--text-xs);font-weight:var(--w-regular);color:var(--fg-subtle);
+  letter-spacing:.01em;
+}
+/* nudge the bare control to baseline-align with the muted label */
+.field--bare > .input--bare,
+.field--bare > .textarea--bare{margin-left:calc(var(--space-3xs) * -1);}
+
+/* ---- Document canvas -----------------------------------------------------
+   Centred reading column with generous line-height + comfortable padding. */
+.doc{
+  position:relative;
+  max-width:720px;margin-inline:auto;
+  padding:var(--space-2xl) var(--space-l);
+  font:var(--w-regular) var(--text-base)/var(--lh-relaxed) var(--font);
+  color:var(--fg-default);
+}
+
+/* Editable title — large, boxless, with an empty-state placeholder. */
+.doc__title{
+  margin:0 0 var(--space-base);padding:var(--space-2xs) 0;
+  font-size:var(--text-h2);font-weight:var(--w-semibold);line-height:var(--lh-tight);
+  color:var(--fg-default);
+  caret-color:var(--primary-fg-emphasis);outline:none;
+}
+.doc__title:empty::before{
+  content:'Untitled';color:var(--fg-subtle);pointer-events:none;
+}
+
+/* Inline-editable boxless headings. */
+.doc-h1,.doc-h2,.doc-h3{
+  margin:0;padding:var(--space-2xs) 0;
+  font-weight:var(--w-semibold);line-height:var(--lh-tight);color:var(--fg-default);
+  caret-color:var(--primary-fg-emphasis);outline:none;
+}
+.doc-h1{font-size:var(--text-h3);}
+.doc-h2{font-size:var(--text-h4);}
+.doc-h3{font-size:var(--text-h5);}
+.doc-h1:empty::before,
+.doc-h2:empty::before,
+.doc-h3:empty::before{content:'Heading';color:var(--fg-subtle);pointer-events:none;}
+
+/* ---- Content block -------------------------------------------------------
+   Paragraph / heading / list wrapper with comfortable spacing. On hover it
+   reveals two left-margin affordances: a drag grip + an add (+) button. */
+.doc-block{
+  position:relative;
+  padding:var(--space-3xs) 0;
+  margin-left:var(--space-l);  /* room for the gutter affordances */
+}
+.doc-block > .doc-h1,
+.doc-block > .doc-h2,
+.doc-block > .doc-h3,
+.doc-block > p{margin:0;}
+
+/* Gutter affordances — hidden until the block is hovered/focused. */
+.doc-block__handle,
+.doc-block__add{
+  position:absolute;top:50%;transform:translateY(-50%);
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:24px;border-radius:var(--radius-s);
+  color:var(--fg-subtle);cursor:grab;
+  opacity:0;transition:opacity var(--ease),background var(--ease),color var(--ease);
+}
+.doc-block__add{left:calc(var(--space-l) * -1);cursor:pointer;}
+.doc-block__handle{left:calc(var(--space-base) * -1);}
+.doc-block:hover .doc-block__handle,
+.doc-block:hover .doc-block__add,
+.doc-block:focus-within .doc-block__handle,
+.doc-block:focus-within .doc-block__add{opacity:1;}
+.doc-block__handle:hover,
+.doc-block__add:hover{background:var(--surface-default);color:var(--fg-muted);}
+
+/* ⠿ grip — drawn with a dotted radial-gradient, NO emoji / icon font. */
+.doc-block__handle::before{
+  content:'';width:8px;height:14px;
+  background-image:radial-gradient(currentColor 38%,transparent 42%);
+  background-size:4px 4px;background-position:0 0;
+  opacity:.85;
+}
+/* + add — drawn with two CSS bars, NO emoji / icon font. */
+.doc-block__add::before,
+.doc-block__add::after{content:'';position:absolute;background:currentColor;border-radius:1px;}
+.doc-block__add::before{width:11px;height:1.5px;}
+.doc-block__add::after{width:1.5px;height:11px;}
+
+/* ---- Placeholders & slash hint ------------------------------------------ */
+/* Muted placeholder text utility. Empty contenteditable blocks can surface
+   their own placeholder via the data-placeholder attribute. */
+.doc-placeholder{color:var(--fg-subtle);}
+.doc-placeholder:empty::before{
+  content:attr(data-placeholder);color:var(--fg-subtle);pointer-events:none;
+}
+
+/* "Type '/' for commands" affordance — shown only on an empty, focused block. */
+.slash-hint{
+  display:none;
+  color:var(--fg-subtle);font-size:var(--text-s);user-select:none;pointer-events:none;
+}
+.doc-block:focus-within .doc-placeholder:empty .slash-hint,
+.doc-placeholder:focus:empty .slash-hint{display:inline;}
+
+/* ---- Comments / outline rail --------------------------------------------
+   Optional narrow right-hand rail with a hairline left border + muted text. */
+.doc-rail{
+  position:absolute;top:var(--space-2xl);right:0;
+  width:200px;padding-left:var(--space-base);
+  border-left:1px solid var(--border-default);
+  font-size:var(--text-s);line-height:var(--lh-relaxed);color:var(--fg-muted);
+}
+
+/* ---- Inline formatting toolbar ------------------------------------------
+   Minimal floating bar; buttons reuse the .btn--icon / .btn--text style.
+   Low-key surface — only appears on selection in practice. */
+.doc-toolbar{
+  display:inline-flex;align-items:center;gap:var(--space-3xs);
+  padding:var(--space-3xs);
+  background:var(--surface);border:1px solid var(--border-default);
+  border-radius:var(--radius-base);box-shadow:var(--shadow-s);
+}
+.doc-toolbar .btn--icon{width:28px;height:28px;color:var(--fg-muted);}
+.doc-toolbar .btn--icon:hover{background:var(--surface-default);color:var(--fg-default);}
+.doc-toolbar .separator-v{margin:0 var(--space-3xs);}

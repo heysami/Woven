@@ -1,0 +1,181 @@
+/* ==========================================================================
+   Glassmorphism — STYLE OVERLAY for the Template Design System.
+   Activate with <html data-theme="glassmorphism">.
+
+   iOS "Liquid Glass" + dispersion-prism accent. Every rule is scoped with the
+   [data-theme="glassmorphism"] attribute so it layers cleanly over styles.css
+   (load this file AFTER styles.css + components/*.css). Raw hex/rgba is
+   intentional here — glass surfaces are computed from light, not painted from
+   the brand ramp.
+
+   IMPORTANT — backdrop-filter needs something to refract: it only reads if
+   there is a NON-OPAQUE (translucent) background on the element AND a busy,
+   colourful layer BEHIND it. That's why <body> below gets a soft gradient-mesh
+   — on a flat white page glass collapses to "fogged plastic". The surfaces use
+   rgba() fills (never a solid colour) so the blurred page shows through.
+   ========================================================================== */
+
+:root[data-theme="glassmorphism"]{
+  /* ---- Glass helper tokens (used by every surface below) ---- */
+  --glass-bg:rgba(255,255,255,.16);        /* translucent pane fill        */
+  --glass-bg-strong:rgba(255,255,255,.24); /* denser pane (modals/sidebar) */
+  --glass-bg-faint:rgba(255,255,255,.10);  /* inputs / faint chips         */
+  --glass-border:rgba(255,255,255,.45);    /* the lens edge hairline       */
+  --glass-border-soft:rgba(255,255,255,.30);
+  --glass-blur:blur(18px) saturate(140%);  /* the refraction recipe        */
+  --glass-blur-strong:blur(24px) saturate(150%);
+  --glass-specular:inset 0 1px 0 rgba(255,255,255,.65), inset 0 -1px 0 rgba(255,255,255,.10);
+  --glass-shadow:0 8px 32px -8px rgba(31,38,135,.28), 0 2px 8px -4px rgba(31,38,135,.18);
+  /* dispersion-prism spectral edge — conic rainbow, edges only, never fill */
+  --prism-edge:conic-gradient(from 210deg,
+    #ff5e5e, #ffd75e, #6eff8a, #5ec8ff, #b95eff, #ff5e5e);
+
+  /* ---- Semantic remap — keep text legible over light glass ---- */
+  --surface:rgba(255,255,255,.16); --surface-default:rgba(255,255,255,.10);
+  --surface-medium:rgba(255,255,255,.20); --surface-strong:rgba(255,255,255,.28);
+  --surface-inverse:#1A2238;
+  /* legible darks on light glass */
+  --fg-default:#16203A; --fg-muted:#3C4763; --fg-subtle:#5B6B8C; --fg-on-surface:#16203A;
+  --border-default:rgba(255,255,255,.45); --border-subtle:rgba(255,255,255,.30);
+  --interactive-hover:rgba(255,255,255,.28); --interactive-active:rgba(255,255,255,.36);
+
+  /* primary roles tuned for contrast against the bright glass canvas */
+  --primary-surface:#0A84FF; --primary-fg:#0742AC; --primary-fg-emphasis:#06348A;
+  --primary-border:rgba(10,132,255,.55); --primary-hover:#3A73E6; --primary-active:#0642AC;
+  --primary-surface-subtle:rgba(10,132,255,.12); --primary-surface-muted:rgba(10,132,255,.22);
+
+  /* ---- Soften radii up (glass = generous concentric corners) ---- */
+  --radius-l:20px; --radius-xl:28px; --radius-2xl:36px;
+
+  /* contact-only shadows (no 2021-era blur clouds) */
+  --shadow-base:var(--glass-shadow); --shadow-m:var(--glass-shadow);
+  --shadow-l:0 12px 40px -10px rgba(31,38,135,.30);
+
+  /* charts: brighter, slightly translucent series so they sit on glass */
+  --series-1:#0A84FF; --series-2:#30D158; --series-3:#FF9F0A;
+  --series-4:#5EC8FF; --series-5:#FF375F;
+  --chart-grid:rgba(22,32,58,.14); --chart-axis:rgba(22,32,58,.45);
+}
+
+/* --------------------------------------------------------------------------
+   Page substrate — a soft colourful gradient-mesh so the blur has something
+   to refract. Without this, every glass surface reads as flat frosted plastic.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] body{
+  color:#16203A;
+  background-color:#E8EEFF;
+  background-image:
+    radial-gradient(60% 55% at 12% 18%, rgba(120,160,255,.55), transparent 60%),
+    radial-gradient(50% 50% at 88% 12%, rgba(255,140,200,.45), transparent 62%),
+    radial-gradient(55% 60% at 78% 82%, rgba(120,235,200,.45), transparent 60%),
+    radial-gradient(50% 55% at 22% 88%, rgba(190,150,255,.48), transparent 62%),
+    radial-gradient(40% 40% at 50% 50%, rgba(255,225,150,.30), transparent 70%);
+  background-attachment:fixed;
+}
+
+/* --------------------------------------------------------------------------
+   Translucent surface set — the core of the look.
+   Each gets: rgba fill + backdrop blur (+ -webkit- prefix) + lens hairline +
+   specular inset + soft contact shadow.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] .card,
+[data-theme="glassmorphism"] .section-card,
+[data-theme="glassmorphism"] .topbar,
+[data-theme="glassmorphism"] .stat-hero,
+[data-theme="glassmorphism"] .chart-card,
+[data-theme="glassmorphism"] .phone__tabbar{
+  background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border);
+  box-shadow:var(--glass-shadow), var(--glass-specular);
+}
+
+/* denser glass for chrome rails + overlays (more opacity = more readable) */
+[data-theme="glassmorphism"] .sidebar,
+[data-theme="glassmorphism"] .modal,
+[data-theme="glassmorphism"] .slideout{
+  background:var(--glass-bg-strong);
+  -webkit-backdrop-filter:var(--glass-blur-strong);
+  backdrop-filter:var(--glass-blur-strong);
+  border:1px solid var(--glass-border);
+  box-shadow:var(--shadow-l), var(--glass-specular);
+}
+
+/* --------------------------------------------------------------------------
+   Inputs — faint translucent fields with a light hairline.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] .input,
+[data-theme="glassmorphism"] .select,
+[data-theme="glassmorphism"] .textarea{
+  background:var(--glass-bg-faint);
+  -webkit-backdrop-filter:blur(10px) saturate(130%);
+  backdrop-filter:blur(10px) saturate(130%);
+  border:1px solid var(--glass-border-soft);
+  color:#16203A;
+}
+[data-theme="glassmorphism"] .input::placeholder,
+[data-theme="glassmorphism"] .textarea::placeholder{color:rgba(22,32,58,.50);}
+[data-theme="glassmorphism"] .input:hover,
+[data-theme="glassmorphism"] .select:hover,
+[data-theme="glassmorphism"] .textarea:hover{border-color:rgba(255,255,255,.60);}
+[data-theme="glassmorphism"] .input:focus,
+[data-theme="glassmorphism"] .select:focus,
+[data-theme="glassmorphism"] .textarea:focus{
+  border-color:rgba(10,132,255,.70);
+  box-shadow:0 0 0 3px rgba(10,132,255,.20);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons.
+   .btn--primary carries the DISPERSION-PRISM accent — a subtle conic rainbow
+   border-image fringe at the edges (never a rainbow fill, never on body text).
+   This is the single hero element wearing the prism edge.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] .btn--primary{
+  position:relative;
+  background:linear-gradient(135deg, rgba(10,132,255,.92), rgba(94,92,230,.92));
+  color:#fff;
+  border:2px solid transparent;
+  border-image:var(--prism-edge) 1;
+  box-shadow:0 6px 20px -6px rgba(10,90,200,.55), var(--glass-specular);
+  -webkit-backdrop-filter:blur(6px) saturate(160%);
+  backdrop-filter:blur(6px) saturate(160%);
+}
+[data-theme="glassmorphism"] .btn--primary:hover{
+  background:linear-gradient(135deg, rgba(58,115,230,.95), rgba(120,110,240,.95));
+}
+
+[data-theme="glassmorphism"] .btn--outline{
+  background:var(--glass-bg-faint);
+  -webkit-backdrop-filter:blur(10px) saturate(130%);
+  backdrop-filter:blur(10px) saturate(130%);
+  border:1px solid var(--glass-border);
+  color:#0742AC;
+}
+[data-theme="glassmorphism"] .btn--outline:hover{background:rgba(255,255,255,.26);}
+
+/* --------------------------------------------------------------------------
+   Badges + tags — frosted pills.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] .badge,
+[data-theme="glassmorphism"] .tag{
+  background:rgba(255,255,255,.22);
+  -webkit-backdrop-filter:blur(8px) saturate(140%);
+  backdrop-filter:blur(8px) saturate(140%);
+  border:1px solid var(--glass-border-soft);
+  color:#16203A;
+  box-shadow:var(--glass-specular);
+}
+
+/* --------------------------------------------------------------------------
+   KPI cells (data-dense strip) — softer translucent dividers.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] .kpi{border-left-color:rgba(255,255,255,.35);}
+
+/* --------------------------------------------------------------------------
+   Chart legend swatches — a light glass rim so they read on translucent cards.
+   -------------------------------------------------------------------------- */
+[data-theme="glassmorphism"] .legend__swatch{
+  box-shadow:0 0 0 1px rgba(255,255,255,.55), 0 1px 2px rgba(31,38,135,.25);
+}

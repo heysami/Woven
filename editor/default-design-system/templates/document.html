@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default — Document</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<!-- Bundle: styles.css + all component partials + style overlays, in cascade order. -->
+<link rel="stylesheet" href="../all.css">
+<link rel="stylesheet" href="../shells/app-shell.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============================ SIDEBAR — pages list ============================ -->
+  <aside class="sidebar">
+    <img class="sidebar__wave" src="../assets/sidebar-grid.svg" alt="" aria-hidden="true">
+    <div class="sidebar__logo">
+      <img class="app-logo" src="../assets/logo.svg" alt="Default" style="height:40px">
+      <span class="sep" style="width:1px;height:24px;background:var(--tint-30)"></span>
+      <span class="title" style="font-weight:600;font-size:var(--text-h5);color:#fff">Default</span>
+    </div>
+
+    <div class="sidebar__section">Acme Product · Workspace</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span class="nav-label">Search</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l2-2 7-7 7 7 2 2"/><path d="M5 10v10h14V10"/></svg><span class="nav-label">Home</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16"/><path d="M9 4v16"/></svg><span class="nav-label">All pages</span></a>
+    </nav>
+
+    <div class="sidebar__section">Private</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link is-active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg><span class="nav-label">Spec — Boxless editor</span></a>
+      <a class="nav-link nav-link--sub" href="#"><span class="nav-label">Goals &amp; non-goals</span></a>
+      <a class="nav-link nav-link--sub" href="#"><span class="nav-label">Open questions</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg><span class="nav-label">Weekly sync — notes</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg><span class="nav-label">Q3 roadmap</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg><span class="nav-label">Onboarding research</span></a>
+    </nav>
+
+    <div class="sidebar__section">Shared</div>
+    <nav class="sidebar__nav">
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5"/><circle cx="17" cy="10" r="2.6"/><path d="M13 20c0-2.6 1.8-4.3 4-4.3s4 1.7 4 4.3"/></svg><span class="nav-label">Team handbook</span></a>
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span class="nav-label">Release log</span></a>
+    </nav>
+
+    <div class="sidebar__user">
+      <a class="nav-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="nav-label">Elena Marsh</span></a>
+    </div>
+  </aside>
+
+  <!-- ============================ MAIN — document canvas ============================ -->
+  <div class="main">
+    <header class="topbar">
+      <nav class="breadcrumbs">
+        <a href="#">Private</a><span class="sep">/</span><span class="current">Spec — Boxless editor</span>
+      </nav>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+        <span class="text-s text-subtle">Edited 12 min ago</span>
+        <button class="btn btn--text btn--s">Share</button>
+        <button class="btn btn--icon btn--outline-mono"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+      </div>
+    </header>
+
+    <div class="content">
+      <article class="doc">
+
+        <!-- ---- Inline formatting toolbar (floats on selection in a real editor) ---- -->
+        <div class="doc-toolbar" style="margin-bottom:var(--space-l)">
+          <button class="btn btn--text btn--icon" title="Bold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 5h6a3.5 3.5 0 010 7H7z"/><path d="M7 12h7a3.5 3.5 0 010 7H7z"/></svg></button>
+          <button class="btn btn--text btn--icon" title="Italic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 5h-7M14 19H7M15 5l-5 14"/></svg></button>
+          <button class="btn btn--text btn--icon" title="Underline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v7a5 5 0 0010 0V4"/><path d="M5 20h14"/></svg></button>
+          <span class="separator-v"></span>
+          <button class="btn btn--text btn--icon" title="Bulleted list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="7" r="1.3"/><circle cx="5" cy="12" r="1.3"/><circle cx="5" cy="17" r="1.3"/><path d="M10 7h10M10 12h10M10 17h10"/></svg></button>
+          <button class="btn btn--text btn--icon" title="Quote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7H4v5h3l-1.5 4M16 7h-3v5h3l-1.5 4"/></svg></button>
+          <button class="btn btn--text btn--icon" title="Link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/></svg></button>
+          <span class="separator-v"></span>
+          <button class="btn btn--text btn--icon" title="Comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 01-11.5 7.2L3 21l1.8-6.5A8 8 0 1121 12z"/></svg></button>
+        </div>
+
+        <!-- ---- Editable document title ---- -->
+        <h1 class="doc__title" contenteditable>Boxless editor — Product spec</h1>
+
+        <!-- Lead paragraph -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <p contenteditable>This document describes the <strong>boxless editing</strong> surface: a writing canvas where forms have no visible chrome. You click the text to edit it. Nothing reads as an input until you hover or focus it &mdash; the page looks like a finished document, not a form.</p>
+        </div>
+
+        <!-- Section heading -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <h2 class="doc-h2" contenteditable>Summary</h2>
+        </div>
+
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <p contenteditable>We are replacing the bordered field grid on the project-brief screen with a document register. Every value &mdash; owner, status, due date &mdash; is plain text inline, editable on click. The affordance is the hover tint and the focus underline, not a box.</p>
+        </div>
+
+        <!-- Callout / quote -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <blockquote class="lifecycle__callout" contenteditable style="margin:0">
+            <strong>Principle.</strong> The form should disappear. If a teammate can read the page top-to-bottom and understand the project without noticing a single control, the chrome did its job by getting out of the way.
+          </blockquote>
+        </div>
+
+        <!-- Bulleted list -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <h2 class="doc-h2" contenteditable>Goals</h2>
+        </div>
+
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <ul style="margin:0;padding-left:var(--space-base)" contenteditable>
+            <li>Reads as a document at rest &mdash; no borders, no fills, no labels-in-boxes.</li>
+            <li>Hover reveals the editable region with a faint tinted pad.</li>
+            <li>Focus shows a single low-key underline; the box outline never returns.</li>
+            <li>Slash menu for inserting blocks; drag handle for re-ordering.</li>
+          </ul>
+        </div>
+
+        <!-- =================== Form without boxes =================== -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <h2 class="doc-h2" contenteditable>Project properties</h2>
+        </div>
+
+        <div class="doc-block">
+          <p class="text-s text-subtle" style="margin:0 0 var(--space-2xs)">These are real fields &mdash; click any value to edit. The whole row is the affordance.</p>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2xs) var(--space-l)">
+            <label class="field field--bare">
+              <span class="field__label">Owner</span>
+              <input class="input input--bare" value="Elena Marsh" placeholder="Unassigned">
+            </label>
+            <label class="field field--bare">
+              <span class="field__label">Status</span>
+              <input class="input input--bare" value="In review" placeholder="Not started">
+            </label>
+            <label class="field field--bare">
+              <span class="field__label">Due date</span>
+              <input class="input input--bare" value="June 30, 2026" placeholder="No date">
+            </label>
+            <label class="field field--bare">
+              <span class="field__label">Priority</span>
+              <input class="input input--bare" value="High" placeholder="None">
+            </label>
+            <label class="field field--bare" style="grid-column:1/-1">
+              <span class="field__label">Description</span>
+              <textarea class="textarea textarea--bare" rows="2" placeholder="Add a short description…">A boxless brief surface for product specs and meeting notes — chromeless until you reach for it.</textarea>
+            </label>
+          </div>
+        </div>
+
+        <!-- Empty block with slash hint + visible gutter affordances -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <p class="doc-placeholder" contenteditable data-placeholder="Type '/' for commands"><span class="slash-hint">Type '/' for commands</span></p>
+        </div>
+
+        <!-- Next steps -->
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <h2 class="doc-h2" contenteditable>Next steps</h2>
+        </div>
+
+        <div class="doc-block">
+          <span class="doc-block__handle" aria-hidden="true"></span>
+          <span class="doc-block__add" aria-hidden="true"></span>
+          <p contenteditable>Marcus to prototype the slash menu by Thursday. Elena to spec the hover/focus tokens against all eight themes. Review at next week&rsquo;s sync &mdash; see the open thread in the margin.</p>
+        </div>
+
+        <!-- ---- Right rail — outline + comment threads ---- -->
+        <aside class="doc-rail">
+          <div class="text-xs text-subtle" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--space-2xs)">On this page</div>
+          <nav style="display:flex;flex-direction:column;gap:var(--space-3xs);margin-bottom:var(--space-l)">
+            <a class="link" href="#">Summary</a>
+            <a class="link" href="#">Goals</a>
+            <a class="link" href="#">Project properties</a>
+            <a class="link" href="#">Next steps</a>
+          </nav>
+
+          <div class="text-xs text-subtle" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--space-2xs)">Comments</div>
+          <div style="display:flex;flex-direction:column;gap:var(--space-base)">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:14px;height:14px"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+                <strong style="color:var(--fg-default)">Marcus</strong>
+              </div>
+              <p style="margin:0">Should the underline animate in, or just appear on focus? Leaning toward instant.</p>
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:14px;height:14px"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+                <strong style="color:var(--fg-default)">Elena</strong>
+              </div>
+              <p style="margin:0">Instant. Resolved on the due-date row &mdash; we&rsquo;ll keep plain text, no calendar box.</p>
+            </div>
+          </div>
+        </aside>
+
+      </article>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile Phone Shell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="mobile-shell.css">
+</head>
+<body>
+
+<div class="phone">
+
+  <!-- status bar -->
+  <div class="phone__status">
+    <span class="status__time">9:41</span>
+    <span class="status__glyphs">
+      <!-- signal -->
+      <svg viewBox="0 0 20 14" fill="currentColor" aria-hidden="true"><rect x="0" y="9" width="3" height="5" rx="1"/><rect x="5" y="6" width="3" height="8" rx="1"/><rect x="10" y="3" width="3" height="11" rx="1"/><rect x="15" y="0" width="3" height="14" rx="1"/></svg>
+      <!-- wifi -->
+      <svg viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M1 4.5C3.2 2.5 6 1.5 9 1.5s5.8 1 8 3"/><path d="M3.5 7.5C5.1 6.1 7 5.4 9 5.4s3.9.7 5.5 2.1"/><path d="M6 10.5c.9-.8 1.9-1.2 3-1.2s2.1.4 3 1.2"/><circle cx="9" cy="13" r="1" fill="currentColor" stroke="none"/></svg>
+      <!-- battery -->
+      <svg viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1" y="1" width="21" height="12" rx="3"/><rect x="3" y="3" width="14" height="8" rx="1.5" fill="currentColor" stroke="none"/><path d="M24 5v4" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+  </div>
+
+  <!-- scrollable screen -->
+  <div class="phone__screen">
+
+    <!-- top app bar -->
+    <header class="appbar">
+      <button class="appbar__icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <span class="appbar__title">Home</span>
+      <span class="appbar__action">
+        <button class="appbar__icon-btn" aria-label="More">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        </button>
+      </span>
+    </header>
+
+    <!-- placeholder content -->
+    <div style="padding:var(--space-base)">
+      <div class="segmented segmented--mobile" style="margin-bottom:var(--space-base)">
+        <button class="is-active">For you</button>
+        <button>Following</button>
+        <button>Recent</button>
+      </div>
+
+      <div class="card" style="margin-bottom:var(--space-base)">
+        <div class="card__body">
+          <div class="title-paragraph" style="margin-bottom:var(--space-2xs)">Welcome back</div>
+          <p class="text-s" style="color:var(--fg-muted);margin:0">
+            Drop your mobile screen sample content here — this area scrolls inside the phone frame.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- large-touch list -->
+    <div class="list-mobile">
+      <a class="list-mobile__row" href="#">
+        <span class="avatar">AM</span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Ada Morgan</span>
+          <span class="list-mobile__sub">Product designer</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+      <a class="list-mobile__row" href="#">
+        <span class="avatar">JR</span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Jules Rivera</span>
+          <span class="list-mobile__sub">Engineering lead</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+      <a class="list-mobile__row" href="#">
+        <span class="avatar">SK</span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Sami Khan</span>
+          <span class="list-mobile__sub">Researcher</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+    </div>
+
+  </div>
+
+  <!-- bottom tab bar -->
+  <nav class="phone__tabbar">
+    <div class="tabbar">
+      <a class="tabbar__item is-active" href="#">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+        </span>
+        <span class="tabbar__label">Home</span>
+      </a>
+      <a class="tabbar__item" href="#">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </span>
+        <span class="tabbar__label">Search</span>
+      </a>
+      <a class="tabbar__item" href="#">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+        </span>
+        <span class="tabbar__label">Alerts</span>
+      </a>
+      <a class="tabbar__item" href="#">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        </span>
+        <span class="tabbar__label">Profile</span>
+      </a>
+    </div>
+  </nav>
+
+</div>
+
+</body>
+</html>

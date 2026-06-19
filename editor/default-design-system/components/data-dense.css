@@ -1,0 +1,187 @@
+/* ==========================================================================
+   Component partial — Data-dense / flat (Linear · Bloomberg · Vercel · finance)
+   Ultra-high-density, flat hairline tables, tabular numerals, no card chrome.
+   The density IS the point. Theme-agnostic: every colour/space/radius/type
+   value references a token from styles.css `:root`, so the 8 themes re-skin
+   these automatically. Link AFTER styles.css.
+   ========================================================================== */
+
+/* No new tokens are introduced — the existing :root vocabulary covers
+   everything this partial needs (--text-s/-xs/-h4, --space-2xs/-xs/-s,
+   --border-subtle, --surface/-default, --primary-surface-subtle,
+   --success-600, --error-600, --fg-subtle). */
+
+/* ---- Flat table -----------------------------------------------------------
+   Modifier on the existing .table. Strips the card wrapper chrome (radius,
+   shadow, fill), drops zebra striping, leaves only 1px hairline row
+   separators. Compact 32px rows, small type, tighter cells, sticky flat
+   header. */
+.table--flat{
+  border-radius:0;
+  box-shadow:none;
+  overflow:visible;
+  background:transparent;
+  font-size:var(--text-s);
+}
+.table--flat th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  height:32px;
+  padding:var(--space-2xs) var(--space-xs);
+  background:var(--surface-default);
+  color:var(--fg-subtle);
+  font-weight:var(--w-medium);
+  border-top:0;
+  border-bottom:1px solid var(--border-subtle);   /* hairline header rule */
+  white-space:nowrap;
+}
+.table--flat td{
+  height:32px;
+  padding:var(--space-2xs) var(--space-xs);
+  background:transparent;
+  border-top:0;
+  border-bottom:1px solid var(--border-subtle);   /* row separators only */
+  vertical-align:middle;
+}
+/* flat = no zebra, no card hover wash — quiet hairline rows */
+.table--flat tbody tr:hover td{background:var(--surface-default);}
+
+/* ---- Denser table — even tighter rows + smaller type ---- */
+.table--dense{font-size:var(--text-xs);}
+.table--dense th,
+.table--dense td{
+  height:28px;
+  padding:var(--space-3xs) var(--space-xs);
+}
+
+/* ---- Numeric cells + tabular figures -------------------------------------
+   .cell--num    right-aligned tabular numerals for tables.
+   .tnum         standalone utility — lock tabular numerals anywhere. */
+.cell--num{
+  font-variant-numeric:tabular-nums;
+  text-align:right;
+}
+.tnum{font-variant-numeric:tabular-nums;}
+
+/* ---- Delta figures (+/- change) ------------------------------------------
+   .cell--delta is numeric by default; .is-up / .is-down colour it. */
+.cell--delta{
+  font-variant-numeric:tabular-nums;
+  text-align:right;
+  font-weight:var(--w-medium);
+}
+.cell--delta.is-up{color:var(--success-600);}
+.cell--delta.is-down{color:var(--error-600);}
+
+/* ---- KPI strip -----------------------------------------------------------
+   Horizontal flex row of compact KPIs separated by hairline vertical
+   dividers. Flat — no card, no shadow. */
+.kpi-strip{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:stretch;
+  gap:0;
+  border-top:1px solid var(--border-subtle);
+  border-bottom:1px solid var(--border-subtle);
+}
+.kpi{
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-3xs);
+  padding:var(--space-xs) var(--space-base);
+  min-width:0;                                  /* let labels truncate */
+  border-left:1px solid var(--border-subtle);   /* hairline divider */
+}
+.kpi:first-child{border-left:0;}
+.kpi__label{
+  font-size:var(--text-xs);
+  font-weight:var(--w-medium);
+  color:var(--fg-subtle);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  line-height:var(--lh-tight);
+  white-space:nowrap;
+}
+.kpi__value{
+  font-size:var(--text-h4);
+  font-weight:var(--w-semibold);
+  line-height:var(--lh-tight);
+  font-variant-numeric:tabular-nums;
+  color:var(--fg-default);
+}
+.kpi__delta{
+  font-size:var(--text-xs);
+  font-weight:var(--w-medium);
+  font-variant-numeric:tabular-nums;
+  color:var(--fg-subtle);
+}
+.kpi__delta.is-up{color:var(--success-600);}
+.kpi__delta.is-down{color:var(--error-600);}
+
+/* ---- Sparkline -----------------------------------------------------------
+   Inline container (~72×22px) holding an inline <svg>. The SVG inherits the
+   line colour via currentColor — set `color` on .spark (or a .is-up/.is-down
+   modifier) to tint it.
+
+   Sample markup an author can copy verbatim:
+
+     <span class="spark">
+       <svg viewBox="0 0 72 22" preserveAspectRatio="none"
+            fill="none" aria-hidden="true">
+         <polyline points="0,16 9,14 18,17 27,9 36,11 45,6 54,8 63,3 72,5"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linecap="round" stroke-linejoin="round"/>
+       </svg>
+     </span>
+*/
+.spark{
+  display:inline-block;
+  width:72px;
+  height:22px;
+  vertical-align:middle;
+  color:var(--fg-muted);          /* default line colour */
+  line-height:0;
+}
+.spark svg{
+  display:block;
+  width:100%;
+  height:100%;
+}
+.spark.is-up{color:var(--success-600);}
+.spark.is-down{color:var(--error-600);}
+
+/* ---- Dense toolbar -------------------------------------------------------
+   Compact flat filter/action bar (~36px). Holds small inputs, segmented
+   controls and buttons. Hairline bottom border, no fill/shadow. */
+.toolbar--dense{
+  display:flex;
+  align-items:center;
+  gap:var(--space-xs);
+  min-height:36px;
+  padding:var(--space-2xs) var(--space-xs);
+  background:transparent;
+  border-bottom:1px solid var(--border-subtle);
+  font-size:var(--text-s);
+}
+.toolbar--dense > *{flex:0 0 auto;}
+.toolbar--dense .toolbar__spacer{flex:1 1 auto;min-width:0;}
+/* shrink stock controls to the dense rhythm */
+.toolbar--dense .input,
+.toolbar--dense .select{height:28px;font-size:var(--text-s);}
+.toolbar--dense .btn{height:28px;}
+.toolbar--dense .segmented button{height:24px;}
+
+/* ---- Flat row selection / active states ----------------------------------
+   Quiet flat highlight using the brand soft surface — no shadow, hairline
+   only. Works on .table--flat rows and on generic flex/list rows. */
+.row--selected,
+.table--flat tbody tr.row--selected td{background:var(--primary-surface-subtle);}
+.row--active,
+.table--flat tbody tr.row--active td{
+  background:var(--primary-surface-subtle);
+  box-shadow:inset 2px 0 0 0 var(--primary-surface);   /* flat active rail */
+}
+/* keep the selection wash on hover (don't let the row hover override it) */
+.table--flat tbody tr.row--selected:hover td,
+.table--flat tbody tr.row--active:hover td{background:var(--primary-surface-subtle);}

@@ -10,14 +10,27 @@
   },
   "files": {
     "styles": "styles.css",
+    "bundle": "all.css",
     "gallery": "gallery.html",
     "designMd": "DESIGN.md"
   },
+  "styles": [
+    { "id": "default", "label": "Default", "attr": "", "desc": "The base light style — restrained institutional product UI." },
+    { "id": "dark", "label": "Dark", "attr": "data-theme=\"dark\"", "desc": "Dark scheme — remapped surfaces/text/brand roles." },
+    { "id": "minimal", "label": "Minimal", "attr": "data-theme=\"minimal\"", "file": "themes/minimal.css", "desc": "Light/white nav, primary-only palette, flat hairline elevation." },
+    { "id": "pastel", "label": "Pastel", "attr": "data-theme=\"pastel\"", "file": "themes/pastel.css", "desc": "Soft pastel palette, pastel nav, no bold fills, no gradients." },
+    { "id": "glassmorphism", "label": "Glassmorphism", "attr": "data-theme=\"glassmorphism\"", "file": "themes/glassmorphism.css", "desc": "iOS liquid-glass: translucent backdrop-blur surfaces + dispersion-prism edge accent." },
+    { "id": "claymorphism", "label": "Claymorphism", "attr": "data-theme=\"claymorphism\"", "file": "themes/claymorphism.css", "desc": "Soft-UI foam: chunky radii, puffy dual drop+inset clay shadows." },
+    { "id": "neumorphism", "label": "Neumorphism", "attr": "data-theme=\"neumorphism\"", "file": "themes/neumorphism.css", "desc": "Soft UI: single base colour, extruded dual shadow raised/pressed, monochrome." },
+    { "id": "techminimalism", "label": "Tech-minimalism", "attr": "data-theme=\"techminimalism\"", "file": "themes/techminimalism.css", "desc": "Frutiger-DORFic / Teenage Engineering: concrete grey, single safety-orange, mono micro-labels, hairlines." },
+    { "id": "neobrutalism", "label": "Neobrutalism", "attr": "data-theme=\"neobrutalism\"", "file": "themes/neobrutalism.css", "desc": "Monochrome editorial: cream paper, ink borders, zero radius, zero-blur offset shadow." },
+    { "id": "grainism", "label": "Grainism", "attr": "data-theme=\"grainism\"", "file": "themes/grainism.css", "desc": "Pastel base + subtle SVG grain / optional halftone overlay." }
+  ],
   "assets": [
     "assets/sidebar-grid.svg",
     "assets/logo.svg"
   ],
-  "componentCount": 47,
+  "componentCount": 61,
   "components": [
     {
       "name": "Button",
@@ -525,6 +538,104 @@
         "side-menu"
       ],
       "classHint": "app"
+    },
+    {
+      "name": "Flat / dense table",
+      "layer": "organism",
+      "variants": ["flat", "dense", "num-cell", "delta", "selected-row", "active-row"],
+      "classHint": "table--flat",
+      "source": "components/data-dense.css"
+    },
+    {
+      "name": "KPI strip",
+      "layer": "organism",
+      "variants": ["default", "delta-up", "delta-down"],
+      "classHint": "kpi-strip",
+      "source": "components/data-dense.css"
+    },
+    {
+      "name": "Sparkline",
+      "layer": "atom",
+      "variants": ["up", "down"],
+      "classHint": "spark",
+      "source": "components/data-dense.css"
+    },
+    {
+      "name": "Dense toolbar",
+      "layer": "molecule",
+      "variants": ["default"],
+      "classHint": "toolbar--dense",
+      "source": "components/data-dense.css"
+    },
+    {
+      "name": "Boxless input",
+      "layer": "atom",
+      "variants": ["bare", "field-bare", "textarea-bare"],
+      "classHint": "input--bare",
+      "source": "components/doc.css"
+    },
+    {
+      "name": "Document block",
+      "layer": "organism",
+      "variants": ["block", "handle", "add", "title", "headings", "placeholder", "slash-hint"],
+      "classHint": "doc-block",
+      "source": "components/doc.css"
+    },
+    {
+      "name": "Document canvas",
+      "layer": "template",
+      "variants": ["doc", "doc-rail", "doc-toolbar"],
+      "classHint": "doc",
+      "source": "components/doc.css"
+    },
+    {
+      "name": "Chart",
+      "layer": "organism",
+      "variants": ["bar", "line", "area", "donut"],
+      "classHint": "chart",
+      "source": "components/charts.css"
+    },
+    {
+      "name": "Stat hero card",
+      "layer": "organism",
+      "variants": ["default", "delta-up", "delta-down"],
+      "classHint": "stat-hero",
+      "source": "components/charts.css"
+    },
+    {
+      "name": "Metric tile",
+      "layer": "molecule",
+      "variants": ["default", "trend-up", "trend-down"],
+      "classHint": "metric-tile",
+      "source": "components/charts.css"
+    },
+    {
+      "name": "Chart legend",
+      "layer": "atom",
+      "variants": ["default"],
+      "classHint": "legend",
+      "source": "components/charts.css"
+    },
+    {
+      "name": "Mobile tab bar",
+      "layer": "molecule",
+      "variants": ["default", "active-item"],
+      "classHint": "tabbar",
+      "source": "shells/mobile-shell.css"
+    },
+    {
+      "name": "Mobile app bar",
+      "layer": "molecule",
+      "variants": ["title", "back", "action"],
+      "classHint": "appbar",
+      "source": "shells/mobile-shell.css"
+    },
+    {
+      "name": "Mobile list",
+      "layer": "organism",
+      "variants": ["row", "avatar", "chevron", "large-touch"],
+      "classHint": "list-mobile",
+      "source": "shells/mobile-shell.css"
     }
   ],
   "shells": [
@@ -533,6 +644,12 @@
       "label": "Side-menu app shell (.app › .sidebar + .main)",
       "css": "shells/app-shell.css",
       "html": "shells/app-shell.html"
+    },
+    {
+      "id": "mobile-shell",
+      "label": "Mobile phone shell (.phone › status + screen + tabbar)",
+      "css": "shells/mobile-shell.css",
+      "html": "shells/mobile-shell.html"
     }
   ],
   "templates": [
@@ -591,6 +708,48 @@
       "desc": "Interactive shop · product grid → cart slideout → checkout → payment → confirmation",
       "file": "templates/ecommerce.html",
       "usesShell": false
+    },
+    {
+      "id": "density",
+      "label": "Ultra-dense · Markets",
+      "desc": "App shell · Linear/Bloomberg register — KPI strip + flat dense tables + sparklines + mini charts",
+      "file": "templates/density.html",
+      "usesShell": true
+    },
+    {
+      "id": "document",
+      "label": "Document · Boxless editor",
+      "desc": "App shell · Notion/Docs register — click-to-edit boxless title/blocks/fields + comments rail",
+      "file": "templates/document.html",
+      "usesShell": true
+    },
+    {
+      "id": "tables",
+      "label": "Table samples",
+      "desc": "App shell · five table variations — standard, flat-dense, selectable+bulk, rich-cell datagrid, grouped",
+      "file": "templates/tables.html",
+      "usesShell": true
+    },
+    {
+      "id": "mobile-home",
+      "label": "Mobile · Home",
+      "desc": "Mobile phone shell · home/feed — hero stat card + quick actions + activity list + tab bar",
+      "file": "templates/mobile-home.html",
+      "usesShell": "mobile-shell"
+    },
+    {
+      "id": "mobile-profile",
+      "label": "Mobile · Profile",
+      "desc": "Mobile phone shell · profile header + stats + settings list + switch + sign-out",
+      "file": "templates/mobile-profile.html",
+      "usesShell": "mobile-shell"
+    },
+    {
+      "id": "mobile-list",
+      "label": "Mobile · List",
+      "desc": "Mobile phone shell · searchable grouped list rows with avatars + trailing meta + tab bar",
+      "file": "templates/mobile-list.html",
+      "usesShell": "mobile-shell"
     }
   ]
 }

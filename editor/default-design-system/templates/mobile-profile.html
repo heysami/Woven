@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aster — Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="../all.css">
+<link rel="stylesheet" href="../shells/mobile-shell.css">
+<style>
+  body{margin:0;min-height:100vh;background:var(--surface-strong);
+    display:flex;align-items:center;justify-content:center;font-family:var(--font);}
+  .prof-head{display:flex;flex-direction:column;align-items:center;gap:var(--space-xs);
+    padding:var(--space-l) var(--space-base) var(--space-base);text-align:center;}
+  .prof-head .avatar{width:88px;height:88px;font-size:30px;border-width:3px;}
+  .prof-head__name{font-size:var(--text-h4);font-weight:var(--w-semibold);
+    color:var(--fg-default);margin:0;}
+  .prof-head__handle{font-size:var(--text-s);color:var(--fg-muted);margin:0;}
+  .prof-stats{display:flex;align-items:stretch;justify-content:center;
+    gap:0;margin-top:var(--space-xs);}
+  .prof-stat{display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:0 var(--space-base);}
+  .prof-stat + .prof-stat{border-left:1px solid var(--border-default);}
+  .prof-stat__num{font-size:var(--text-h5);font-weight:var(--w-semibold);
+    color:var(--fg-default);}
+  .prof-stat__label{font-size:var(--text-xs);color:var(--fg-subtle);
+    text-transform:uppercase;letter-spacing:.04em;}
+  .prof-pad{padding:var(--space-base) var(--space-base) var(--space-2xs);}
+  .prof-section{padding:var(--space-base) var(--space-base) var(--space-2xs);
+    font-size:var(--text-s);font-weight:var(--w-semibold);
+    text-transform:uppercase;letter-spacing:.05em;color:var(--fg-subtle);}
+  .prof-row-icon{display:inline-flex;align-items:center;justify-content:center;
+    width:34px;height:34px;border-radius:var(--radius-m);
+    background:var(--surface-default);color:var(--fg-muted);flex:none;}
+  .prof-row-icon svg{width:19px;height:19px;}
+</style>
+</head>
+<body>
+
+<div class="phone">
+
+  <!-- status bar -->
+  <div class="phone__status">
+    <span class="status__time">9:41</span>
+    <span class="status__glyphs">
+      <svg viewBox="0 0 20 14" fill="currentColor" aria-hidden="true"><rect x="0" y="9" width="3" height="5" rx="1"/><rect x="5" y="6" width="3" height="8" rx="1"/><rect x="10" y="3" width="3" height="11" rx="1"/><rect x="15" y="0" width="3" height="14" rx="1"/></svg>
+      <svg viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M1 4.5C3.2 2.5 6 1.5 9 1.5s5.8 1 8 3"/><path d="M3.5 7.5C5.1 6.1 7 5.4 9 5.4s3.9.7 5.5 2.1"/><path d="M6 10.5c.9-.8 1.9-1.2 3-1.2s2.1.4 3 1.2"/><circle cx="9" cy="13" r="1" fill="currentColor" stroke="none"/></svg>
+      <svg viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1" y="1" width="21" height="12" rx="3"/><rect x="3" y="3" width="14" height="8" rx="1.5" fill="currentColor" stroke="none"/><path d="M24 5v4" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+  </div>
+
+  <!-- scrollable screen -->
+  <div class="phone__screen">
+
+    <!-- top app bar -->
+    <header class="appbar">
+      <button class="appbar__icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <span class="appbar__title appbar__title--center">Profile</span>
+      <span class="appbar__action">
+        <button class="appbar__icon-btn" aria-label="Edit profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>
+        </button>
+      </span>
+    </header>
+
+    <!-- profile header -->
+    <div class="prof-head">
+      <span class="avatar avatar--lg">AM</span>
+      <h1 class="prof-head__name">Ada Morgan</h1>
+      <p class="prof-head__handle">@adamorgan · Aster Pro</p>
+      <div class="prof-stats">
+        <div class="prof-stat">
+          <span class="prof-stat__num tnum">128</span>
+          <span class="prof-stat__label">Payments</span>
+        </div>
+        <div class="prof-stat">
+          <span class="prof-stat__num tnum">42</span>
+          <span class="prof-stat__label">Contacts</span>
+        </div>
+        <div class="prof-stat">
+          <span class="prof-stat__num tnum">3</span>
+          <span class="prof-stat__label">Cards</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- segmented tabs -->
+    <div class="prof-pad">
+      <div class="segmented segmented--mobile">
+        <button class="is-active">Settings</button>
+        <button>Security</button>
+        <button>Limits</button>
+      </div>
+    </div>
+
+    <!-- preferences -->
+    <div class="prof-section">Preferences</div>
+    <div class="list-mobile">
+      <a class="list-mobile__row" href="#">
+        <span class="prof-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+        </span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Notifications</span>
+          <span class="list-mobile__sub">Push, email, alerts</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+      <div class="list-mobile__row">
+        <span class="prof-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 00-6 6c0 4 6 11 6 11s6-7 6-11a6 6 0 00-6-6Z"/><circle cx="12" cy="9" r="2"/></svg>
+        </span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Face ID</span>
+          <span class="list-mobile__sub">Unlock with biometrics</span>
+        </span>
+        <span class="switch is-readonly" role="group" aria-label="Face ID">
+          <button type="button">Off</button>
+          <button type="button" class="is-active">On</button>
+        </span>
+      </div>
+      <a class="list-mobile__row" href="#">
+        <span class="prof-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1A1.6 1.6 0 005 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-1.1-2.7H1a2 2 0 110-4h.1A1.6 1.6 0 002.6 5l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V1a2 2 0 014 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H23a2 2 0 010 4h-.1a1.6 1.6 0 00-1.5 1Z"/></svg>
+        </span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Appearance</span>
+          <span class="list-mobile__sub">Theme &amp; display</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+    </div>
+
+    <!-- account -->
+    <div class="prof-section">Account</div>
+    <div class="list-mobile">
+      <a class="list-mobile__row" href="#">
+        <span class="prof-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>
+        </span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Payment methods</span>
+          <span class="list-mobile__sub">3 cards linked</span>
+        </span>
+        <span class="badge badge--sm badge--light">3</span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+      <a class="list-mobile__row" href="#">
+        <span class="prof-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4Z"/></svg>
+        </span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Privacy &amp; security</span>
+          <span class="list-mobile__sub">Password, 2FA, devices</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+      <a class="list-mobile__row" href="#">
+        <span class="prof-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 17v-5"/><path d="M12 8h.01"/></svg>
+        </span>
+        <span class="list-mobile__body">
+          <span class="list-mobile__title">Help &amp; support</span>
+          <span class="list-mobile__sub">FAQ, contact us</span>
+        </span>
+        <span class="list-mobile__chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+      </a>
+    </div>
+
+    <!-- sign out -->
+    <div style="padding:var(--space-l) var(--space-base) var(--space-base)">
+      <button class="btn btn--outline" style="width:100%">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        Sign out
+      </button>
+      <p class="text-xs text-subtle" style="text-align:center;margin:var(--space-s) 0 0">Aster v3.2.1</p>
+    </div>
+
+  </div>
+
+  <!-- bottom tab bar -->
+  <nav class="phone__tabbar">
+    <div class="tabbar">
+      <a class="tabbar__item" href="mobile-home.html">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+        </span>
+        <span class="tabbar__label">Home</span>
+      </a>
+      <a class="tabbar__item" href="mobile-list.html">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
+        </span>
+        <span class="tabbar__label">Activity</span>
+      </a>
+      <a class="tabbar__item" href="#">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>
+        </span>
+        <span class="tabbar__label">Cards</span>
+      </a>
+      <a class="tabbar__item is-active" href="mobile-profile.html">
+        <span class="tabbar__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        </span>
+        <span class="tabbar__label">Profile</span>
+      </a>
+    </div>
+  </nav>
+
+</div>
+
+</body>
+</html>

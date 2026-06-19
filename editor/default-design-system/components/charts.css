@@ -1,0 +1,194 @@
+/* ==========================================================================
+   Charts + hero graphics — STATIC, theme-able dashboard partials.
+   Hand-authored to match the Template Design System house style:
+   BEM-ish class names, single source of truth, tokens only (NO raw hex/rgb).
+   These are MOCK charts — shapes are drawn with inline SVG (<rect>/<path>/
+   <polyline>/<circle>) + CSS, no JS and no runtime deps. They re-skin per
+   theme because every series fill/stroke pulls from a --series-* token.
+
+   Requires styles.css (the :root token vocabulary) to be loaded first.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Series colour vocabulary — light defaults. Themes override these in their
+   own :root{} to re-skin every chart on the page at once. Page authors point
+   inline-SVG fills/strokes at these (fill="var(--series-1)" etc.), never at a
+   raw ramp token, so a theme swap reflows the whole dashboard's palette.
+   -------------------------------------------------------------------------- */
+:root {
+  --series-1:var(--primary-surface);   /* lead / primary series   */
+  --series-2:var(--success-600);       /* positive / secondary    */
+  --series-3:var(--attention-500);     /* warning / tertiary       */
+  --series-4:var(--info-600);          /* info / quaternary        */
+  --series-5:var(--secondary-500);     /* accent / quinary         */
+  --chart-grid:var(--border-subtle);   /* gridlines / axis ticks   */
+  --chart-axis:var(--fg-subtle);       /* axis lines + axis labels */
+}
+
+/* ==========================================================================
+   Hero stat card — flagship KPI: big value + delta + label + mini chart.
+   ========================================================================== */
+.stat-hero{display:flex;flex-direction:column;gap:var(--space-s);
+  background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-l);
+  box-shadow:var(--shadow-base);padding:var(--space-l);}
+.stat-hero__label{font-size:var(--text-s);font-weight:var(--w-medium);color:var(--fg-muted);
+  letter-spacing:.01em;margin:0;}
+.stat-hero__value{font-size:var(--text-display);font-weight:var(--w-semibold);line-height:var(--lh-tight);
+  color:var(--fg-default);font-variant-numeric:tabular-nums;margin:0;}
+.stat-hero__delta{display:inline-flex;align-items:center;gap:var(--space-2xs);align-self:flex-start;
+  font-size:var(--text-s);font-weight:var(--w-semibold);font-variant-numeric:tabular-nums;
+  padding:var(--space-3xs) var(--space-xs);border-radius:var(--radius-pill);color:var(--fg-muted);
+  background:var(--surface-default);}
+.stat-hero__delta.is-up{color:var(--success-700);background:var(--success-50);}
+.stat-hero__delta.is-down{color:var(--error-700);background:var(--error-50);}
+.stat-hero__delta svg{width:14px;height:14px;}   /* optional ▲/▼ glyph, inherits currentColor */
+.stat-hero__spark{display:block;width:100%;height:64px;margin-top:var(--space-2xs);}
+.stat-hero__spark svg{display:block;width:100%;height:100%;overflow:visible;}
+
+/* ==========================================================================
+   Chart card — titled wrapper around any inline-SVG chart, + optional legend.
+   ========================================================================== */
+.chart-card{display:flex;flex-direction:column;gap:var(--space-base);
+  background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-m);
+  box-shadow:var(--shadow-s);padding:var(--space-m);}
+.chart-card__title{font-size:var(--text-h5);font-weight:var(--w-semibold);color:var(--fg-default);margin:0;}
+.chart-card__body{display:block;width:100%;min-height:0;}
+.chart-card__legend{display:flex;flex-wrap:wrap;gap:var(--space-s) var(--space-base);
+  margin-top:var(--space-2xs);}
+
+/* ==========================================================================
+   Chart base — inline-SVG charts. The SVG carries the class; <rect>/<path>/
+   <polyline>/<circle> inside it reference --series-* + --chart-grid/--axis.
+   Axis + grid lines are styled here; series colours are set per-element so a
+   single chart can carry several series.
+   ========================================================================== */
+.chart{display:block;width:100%;height:auto;overflow:visible;
+  font-family:var(--font);font-size:var(--text-xs);color:var(--chart-axis);}
+.chart .axis,.chart .axis-line{stroke:var(--chart-axis);stroke-width:1;fill:none;}
+.chart .grid,.chart .grid-line{stroke:var(--chart-grid);stroke-width:1;fill:none;
+  shape-rendering:crispEdges;}
+.chart .tick{fill:var(--chart-axis);font-size:var(--text-xs);}
+
+/* ---- Bar ---------------------------------------------------------------- */
+.chart--bar .bar{fill:var(--series-1);}
+.chart--bar .bar:hover{opacity:.85;}
+.chart--bar .bar--2{fill:var(--series-2);} .chart--bar .bar--3{fill:var(--series-3);}
+.chart--bar .bar--4{fill:var(--series-4);} .chart--bar .bar--5{fill:var(--series-5);}
+/* COPY-PASTE — a small 4-bar column chart with a baseline axis:
+<svg class="chart chart--bar" viewBox="0 0 200 120" role="img" aria-label="Bar chart">
+  <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+  <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+  <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+  <rect class="bar"    x="14"  y="48" width="28" height="62" rx="3"/>
+  <rect class="bar--2" x="58"  y="24" width="28" height="86" rx="3" fill="var(--series-2)"/>
+  <rect class="bar--3" x="102" y="66" width="28" height="44" rx="3" fill="var(--series-3)"/>
+  <rect class="bar--4" x="146" y="14" width="28" height="96" rx="3" fill="var(--series-4)"/>
+  <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+</svg>
+*/
+
+/* ---- Line --------------------------------------------------------------- */
+.chart--line .series,.chart--line .line{fill:none;stroke:var(--series-1);stroke-width:2;
+  stroke-linejoin:round;stroke-linecap:round;}
+.chart--line .series--2{stroke:var(--series-2);} .chart--line .series--3{stroke:var(--series-3);}
+.chart--line .series--4{stroke:var(--series-4);} .chart--line .series--5{stroke:var(--series-5);}
+.chart--line .dot{fill:var(--surface);stroke:var(--series-1);stroke-width:2;}
+/* COPY-PASTE — a two-series line chart over a faint grid:
+<svg class="chart chart--line" viewBox="0 0 200 120" role="img" aria-label="Line chart">
+  <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+  <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+  <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+  <polyline class="series"    points="0,92 40,70 80,78 120,40 160,52 200,20" stroke="var(--series-1)"/>
+  <polyline class="series--2" points="0,104 40,96 80,84 120,88 160,64 200,72" stroke="var(--series-2)"/>
+  <circle class="dot" cx="200" cy="20" r="3.5"/>
+  <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+</svg>
+*/
+
+/* ---- Area --------------------------------------------------------------- */
+.chart--area .fill,.chart--area .area{fill:var(--series-1);fill-opacity:.18;stroke:none;}
+.chart--area .fill--2{fill:var(--series-2);} .chart--area .fill--3{fill:var(--series-3);}
+.chart--area .stroke,.chart--area .line{fill:none;stroke:var(--series-1);stroke-width:2;
+  stroke-linejoin:round;stroke-linecap:round;}
+.chart--area .stroke--2{stroke:var(--series-2);} .chart--area .stroke--3{stroke:var(--series-3);}
+/* COPY-PASTE — an area chart (filled path closed to the baseline + a top stroke):
+<svg class="chart chart--area" viewBox="0 0 200 120" role="img" aria-label="Area chart">
+  <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
+  <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
+  <line class="grid" x1="0" y1="90" x2="200" y2="90"/>
+  <path class="fill"   d="M0,90 L40,66 L80,72 L120,38 L160,50 L200,24 L200,110 L0,110 Z" fill="var(--series-1)"/>
+  <path class="stroke" d="M0,90 L40,66 L80,72 L120,38 L160,50 L200,24" stroke="var(--series-1)"/>
+  <line class="axis" x1="0" y1="110" x2="200" y2="110"/>
+</svg>
+*/
+
+/* ---- Donut -------------------------------------------------------------- */
+.chart--donut{max-width:160px;}
+.chart--donut .arc{fill:none;stroke-width:18;stroke-linecap:butt;}
+.chart--donut .arc--1{stroke:var(--series-1);} .chart--donut .arc--2{stroke:var(--series-2);}
+.chart--donut .arc--3{stroke:var(--series-3);} .chart--donut .arc--4{stroke:var(--series-4);}
+.chart--donut .track{fill:none;stroke:var(--chart-grid);stroke-width:18;}
+.chart--donut .center{fill:var(--fg-default);font-size:var(--text-h5);font-weight:var(--w-semibold);
+  font-variant-numeric:tabular-nums;text-anchor:middle;dominant-baseline:central;}
+/* COPY-PASTE — a donut built from stroked arcs (r=42, C≈264; dasharray = "slice gap"):
+<svg class="chart chart--donut" viewBox="0 0 120 120" role="img" aria-label="Donut chart">
+  <circle class="track" cx="60" cy="60" r="42"/>
+  <circle class="arc arc--1" cx="60" cy="60" r="42" stroke="var(--series-1)"
+          stroke-dasharray="116 148" stroke-dashoffset="0"   transform="rotate(-90 60 60)"/>
+  <circle class="arc arc--2" cx="60" cy="60" r="42" stroke="var(--series-2)"
+          stroke-dasharray="74 190"  stroke-dashoffset="-116" transform="rotate(-90 60 60)"/>
+  <circle class="arc arc--3" cx="60" cy="60" r="42" stroke="var(--series-3)"
+          stroke-dasharray="74 190"  stroke-dashoffset="-190" transform="rotate(-90 60 60)"/>
+  <text class="center" x="60" y="60">72%</text>
+</svg>
+*/
+
+/* ==========================================================================
+   Sparkline — tiny inline trend line, no axis. Sits in text or a tile.
+   ========================================================================== */
+.sparkline{display:inline-block;width:80px;height:24px;vertical-align:middle;overflow:visible;}
+.sparkline .line{fill:none;stroke:var(--series-1);stroke-width:1.5;
+  stroke-linejoin:round;stroke-linecap:round;}
+.sparkline .fill{fill:var(--series-1);fill-opacity:.14;stroke:none;}
+.sparkline .dot{fill:var(--series-1);}
+.sparkline.is-up .line,.sparkline.is-up .dot{stroke:var(--success-600);fill:var(--success-600);}
+.sparkline.is-down .line,.sparkline.is-down .dot{stroke:var(--error-500);fill:var(--error-500);}
+/* COPY-PASTE — a sparkline trend with an end dot:
+<svg class="sparkline is-up" viewBox="0 0 80 24" preserveAspectRatio="none" role="img" aria-label="Trend">
+  <polyline class="line" points="0,20 16,14 32,16 48,8 64,11 80,3"/>
+  <circle class="dot" cx="80" cy="3" r="2"/>
+</svg>
+*/
+
+/* ==========================================================================
+   Legend — series swatch + label. Swatch background is a series var (set
+   inline per item) so it tracks the chart it documents.
+   ========================================================================== */
+.legend{display:flex;flex-wrap:wrap;gap:var(--space-s) var(--space-base);margin:0;padding:0;list-style:none;}
+.legend__item{display:inline-flex;align-items:center;gap:var(--space-2xs);
+  font-size:var(--text-s);color:var(--fg-muted);}
+.legend__swatch{width:12px;height:12px;border-radius:var(--radius-xs);flex:none;
+  background:var(--series-1);}
+/* per-series swatch tints — or set background inline: style="background:var(--series-3)" */
+.legend__swatch--1{background:var(--series-1);} .legend__swatch--2{background:var(--series-2);}
+.legend__swatch--3{background:var(--series-3);} .legend__swatch--4{background:var(--series-4);}
+.legend__swatch--5{background:var(--series-5);}
+
+/* ==========================================================================
+   Metric tile / bignum — compact KPI for dashboard grids: value + label +
+   trend. Smaller, flatter sibling of .stat-hero.
+   ========================================================================== */
+.metric-tile{display:flex;flex-direction:column;gap:var(--space-3xs);
+  background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-base);
+  padding:var(--space-base);}
+.metric-tile__label,.bignum__label{font-size:var(--text-xs);font-weight:var(--w-medium);
+  color:var(--fg-subtle);text-transform:uppercase;letter-spacing:.04em;margin:0;}
+.metric-tile__value,.bignum{font-size:var(--text-h3);font-weight:var(--w-semibold);
+  line-height:var(--lh-tight);color:var(--fg-default);font-variant-numeric:tabular-nums;margin:0;}
+.metric-tile__trend{display:inline-flex;align-items:center;gap:var(--space-3xs);
+  font-size:var(--text-xs);font-weight:var(--w-semibold);font-variant-numeric:tabular-nums;
+  color:var(--fg-muted);}
+.metric-tile__trend.is-up{color:var(--success-700);}
+.metric-tile__trend.is-down{color:var(--error-700);}
+.metric-tile__trend svg{width:12px;height:12px;}
+/* .bignum is also usable standalone as a large tabular-nums figure inside any tile. */

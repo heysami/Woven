@@ -1,0 +1,37 @@
+/* ==========================================================================
+   all.css — aggregator. Loads the base token vocabulary + every component
+   partial + every style overlay in one link, so a page only needs
+   <link rel="stylesheet" href="../all.css">.
+
+   ORDER IS THE CONTRACT (cascade follows @import order, as if concatenated):
+     1. styles.css      — :root token vocabulary + the 47 base components.
+     2. components/*     — new component partials. Must come AFTER base so
+                           modifiers (e.g. .input--bare) win equal-specificity
+                           ties against the base rule (.input).
+     3. themes/*         — style overlays. Must come LAST so the attribute-
+                           scoped overrides ([data-theme="x"] .card) win over
+                           both base and new components.
+
+   A style is activated by setting the attribute on the root element:
+     <html data-theme="pastel">   (default = no attribute = the light style)
+   Available: dark, minimal, pastel, glassmorphism, claymorphism,
+              neumorphism, techminimalism, neobrutalism, grainism.
+   ========================================================================== */
+
+/* 1. base */
+@import url("styles.css");
+
+/* 2. components */
+@import url("components/data-dense.css");
+@import url("components/doc.css");
+@import url("components/charts.css");
+
+/* 3. style overlays */
+@import url("themes/minimal.css");
+@import url("themes/pastel.css");
+@import url("themes/glassmorphism.css");
+@import url("themes/claymorphism.css");
+@import url("themes/neumorphism.css");
+@import url("themes/techminimalism.css");
+@import url("themes/neobrutalism.css");
+@import url("themes/grainism.css");

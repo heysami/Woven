@@ -1,0 +1,354 @@
+/* ==========================================================================
+   Neumorphism / Soft UI — STYLE OVERLAY for the Template Design System.
+   Activate via <html data-theme="neumorphism">. Load AFTER styles.css (and any
+   component/shell CSS), so these scoped overrides win on specificity + order.
+
+   THE LOOK (canonical Soft UI, per design-library/material-soft-ui-foam.md):
+   - ONE shared base colour. The page background AND every component background
+     are the SAME mid-tone (#E0E5EC). Components have NO independent fill —
+     depth comes ONLY from shadow. A control that is the same colour as its page
+     but appears extruded/recessed is the entire illusion.
+   - Light source is FIXED top-left, never per-component. RAISED elements carry a
+     light highlight top-left (#FFFFFF) + a dark shadow bottom-right (#A3B1C6).
+     PRESSED / inset elements carry the same pair, inset.
+   - Never pure #000/#FFF as the only shadow (kills one side of the light).
+   - Radius >= 16px (soft-plastic read). Borders mostly removed — depth is shadow.
+   - Text + icons are NOT extruded — only containers. Low contrast, monochrome,
+     a single soft-blue accent kept subtle for active/links.
+
+   EXACT DUAL-SHADOW RECIPE (the two load-bearing tokens):
+     --neu-raise : 9px 9px 18px #A3B1C6, -9px -9px 18px #FFFFFF;
+     --neu-inset : inset 6px 6px 12px #A3B1C6, inset -6px -6px 12px #FFFFFF;
+   ========================================================================== */
+
+:root[data-theme="neumorphism"]{
+  /* ---- the ONE shared base colour ----
+     Page and components share this exact value. Everything that used to be a
+     distinct surface/neutral fill is remapped onto the base so nothing reads as
+     a separate sheet of paper — only the shadow tells you what's raised/sunk. */
+  --neu-base:#E0E5EC;          /* shared page + component tone */
+  --neu-dark:#A3B1C6;          /* bottom-right cast shadow (cool grey-blue) */
+  --neu-light:#FFFFFF;         /* top-left highlight                        */
+  --neu-accent:#6D8BC4;        /* subtle soft-blue accent (links / active)  */
+  --neu-accent-strong:#4E6FB0; /* pressed/active accent                     */
+  --neu-text:#4B5566;          /* low-contrast ink, never pure black        */
+  --neu-text-muted:#7E8AA0;
+  --neu-text-subtle:#9AA4B8;
+
+  /* ---- the dual extruded shadows (light fixed top-left) ---- */
+  --neu-raise: 9px 9px 18px var(--neu-dark), -9px -9px 18px var(--neu-light);
+  --neu-raise-sm: 5px 5px 11px var(--neu-dark), -5px -5px 11px var(--neu-light);
+  --neu-raise-lg: 14px 14px 28px var(--neu-dark), -14px -14px 28px var(--neu-light);
+  --neu-inset: inset 6px 6px 12px var(--neu-dark), inset -6px -6px 12px var(--neu-light);
+  --neu-inset-sm: inset 4px 4px 8px var(--neu-dark), inset -4px -4px 8px var(--neu-light);
+
+  /* ---- remap semantic surfaces onto the ONE base ---- */
+  --surface:var(--neu-base); --surface-default:var(--neu-base);
+  --surface-medium:var(--neu-base); --surface-strong:var(--neu-base);
+  --surface-inverse:#2C3340;
+
+  /* light-end neutrals used as soft fills collapse to the base too */
+  --neutral-50:var(--neu-base); --neutral-70:var(--neu-base); --neutral-80:var(--neu-base);
+  --neutral-100:var(--neu-base); --neutral-150:#D6DCE5; --neutral-200:#CBD2DD;
+
+  /* ---- text / ink — low contrast, never pure black ---- */
+  --fg-default:var(--neu-text); --fg-muted:var(--neu-text-muted); --fg-subtle:var(--neu-text-subtle);
+  --fg-on-surface:var(--neu-text);
+
+  /* ---- borders dissolved — depth is shadow, not lines ---- */
+  --border-default:transparent; --border-subtle:transparent;
+  --interactive-hover:var(--neu-base); --interactive-active:var(--neu-base);
+
+  /* ---- primary role kept SUBTLE (soft blue) for active/links ---- */
+  --primary-surface:var(--neu-accent); --primary-surface-muted:var(--neu-base);
+  --primary-surface-subtle:var(--neu-base);
+  --primary-fg:var(--neu-accent-strong); --primary-fg-emphasis:var(--neu-accent-strong);
+  --primary-border:transparent;
+  --primary-hover:var(--neu-accent); --primary-active:var(--neu-accent-strong);
+  --on-primary:#FFFFFF;
+
+  /* sidebar gradient flattens to the base (no brand rail in soft UI) */
+  --primary-grad-from:var(--neu-base); --primary-grad-to:var(--neu-base);
+
+  /* ---- radii bumped — soft plastic never reads below ~16px ---- */
+  --radius-xs:10px; --radius-s:12px; --radius-base:16px; --radius-m:18px;
+  --radius-l:22px; --radius-xl:28px; --radius-2xl:34px;
+
+  /* ---- the design system's flat drop-shadows become the soft dual cast ---- */
+  --shadow-xs:var(--neu-raise-sm); --shadow-s:var(--neu-raise-sm);
+  --shadow-base:var(--neu-raise); --shadow-m:var(--neu-raise);
+  --shadow-l:var(--neu-raise-lg); --shadow-xl:var(--neu-raise-lg);
+  --shadow-hard:var(--neu-raise);
+
+  /* ---- charts: monochrome-with-one-accent, drawn on the base ---- */
+  --series-1:var(--neu-accent-strong); --series-2:var(--neu-accent);
+  --series-3:#8C9BB5; --series-4:#B0BAC9; --series-5:#5B6B86;
+  --chart-grid:#CBD2DD; --chart-axis:var(--neu-text-subtle);
+}
+
+/* ==========================================================================
+   Page substrate — body shares the component base colour exactly.
+   ========================================================================== */
+[data-theme="neumorphism"] body{
+  background:var(--neu-base);
+  color:var(--neu-text);
+}
+[data-theme="neumorphism"] .app,
+[data-theme="neumorphism"] .main,
+[data-theme="neumorphism"] .content{
+  background:var(--neu-base);
+}
+
+/* ==========================================================================
+   RAISED containers — cards extrude from the same-colour page.
+   ========================================================================== */
+[data-theme="neumorphism"] .card,
+[data-theme="neumorphism"] .card--plain,
+[data-theme="neumorphism"] .card--filled,
+[data-theme="neumorphism"] .section-card,
+[data-theme="neumorphism"] .chart-card,
+[data-theme="neumorphism"] .stat-hero{
+  background:var(--neu-base);
+  border:0;
+  border-radius:var(--radius-xl);
+  box-shadow:var(--neu-raise);
+  color:var(--neu-text);
+}
+/* filled card keeps ink, not white-on-brand (no brand fill in soft UI) */
+[data-theme="neumorphism"] .card--filled{color:var(--neu-text);}
+[data-theme="neumorphism"] .stat-hero__value,
+[data-theme="neumorphism"] .stat-hero__label{color:var(--neu-text);}
+
+/* the section-card's accent circle becomes a soft RECESSED well */
+[data-theme="neumorphism"] .section-card__icon{
+  background:var(--neu-base);
+  box-shadow:var(--neu-inset-sm);
+  color:var(--neu-accent-strong);
+}
+
+/* ==========================================================================
+   INSET wells — inputs, selects, textareas are pressed-in.
+   ========================================================================== */
+[data-theme="neumorphism"] .input,
+[data-theme="neumorphism"] .select,
+[data-theme="neumorphism"] .textarea,
+[data-theme="neumorphism"] .input--bare{
+  background:var(--neu-base);
+  border:0;
+  border-radius:var(--radius-base);
+  box-shadow:var(--neu-inset);
+  color:var(--neu-text);
+}
+[data-theme="neumorphism"] .input::placeholder,
+[data-theme="neumorphism"] .textarea::placeholder{color:var(--neu-text-subtle);}
+[data-theme="neumorphism"] .input:hover,
+[data-theme="neumorphism"] .select:hover,
+[data-theme="neumorphism"] .textarea:hover,
+[data-theme="neumorphism"] .input--bare:hover{box-shadow:var(--neu-inset);}
+/* focus deepens the well + a faint accent glow (no hard ring) */
+[data-theme="neumorphism"] .input:focus,
+[data-theme="neumorphism"] .select:focus,
+[data-theme="neumorphism"] .textarea:focus,
+[data-theme="neumorphism"] .input--bare:focus,
+[data-theme="neumorphism"] .input--bare.is-focus{
+  outline:none;border:0;
+  box-shadow:var(--neu-inset), 0 0 0 2px rgba(109,139,196,.28);
+}
+[data-theme="neumorphism"] .input:disabled,
+[data-theme="neumorphism"] .select:disabled,
+[data-theme="neumorphism"] .textarea:disabled{
+  background:var(--neu-base);box-shadow:var(--neu-inset-sm);color:var(--neu-text-subtle);opacity:.7;
+}
+
+/* ==========================================================================
+   Buttons — RAISE at rest, PRESS-IN (inset) on :active.
+   ========================================================================== */
+[data-theme="neumorphism"] .btn{
+  background:var(--neu-base);
+  border:0;
+  border-radius:var(--radius-base);
+  box-shadow:var(--neu-raise-sm);
+  color:var(--neu-text);
+  transition:box-shadow 180ms ease-out, color 180ms ease-out;
+}
+[data-theme="neumorphism"] .btn:hover{box-shadow:var(--neu-raise);}
+[data-theme="neumorphism"] .btn:active,
+[data-theme="neumorphism"] .btn.is-pressed{box-shadow:var(--neu-inset-sm);}
+
+/* primary: same extrusion, soft-blue ink (accent stays subtle, not a fill) */
+[data-theme="neumorphism"] .btn--primary{
+  background:var(--neu-base);color:var(--neu-accent-strong);font-weight:var(--w-semibold);
+  box-shadow:var(--neu-raise-sm);
+}
+[data-theme="neumorphism"] .btn--primary:hover,
+[data-theme="neumorphism"] .btn.is-hover.btn--primary{box-shadow:var(--neu-raise);color:var(--neu-accent-strong);}
+[data-theme="neumorphism"] .btn--primary:active,
+[data-theme="neumorphism"] .btn.is-pressed.btn--primary{box-shadow:var(--neu-inset-sm);}
+
+/* outline: no border — same raised pill, accent ink */
+[data-theme="neumorphism"] .btn--outline{
+  background:var(--neu-base);border:0;color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
+}
+[data-theme="neumorphism"] .btn--outline:hover,
+[data-theme="neumorphism"] .btn.is-hover.btn--outline{background:var(--neu-base);box-shadow:var(--neu-raise);}
+[data-theme="neumorphism"] .btn--outline:active,
+[data-theme="neumorphism"] .btn.is-pressed.btn--outline{box-shadow:var(--neu-inset-sm);}
+
+[data-theme="neumorphism"] .btn:disabled,
+[data-theme="neumorphism"] .btn.is-disabled,
+[data-theme="neumorphism"] .btn--outline:disabled{
+  background:var(--neu-base);box-shadow:var(--neu-inset-sm);color:var(--neu-text-subtle);
+}
+
+/* ==========================================================================
+   Badges + tags — small raised pills, monochrome (no brand fill).
+   ========================================================================== */
+[data-theme="neumorphism"] .badge,
+[data-theme="neumorphism"] .tag{
+  background:var(--neu-base);
+  border:0;
+  border-radius:var(--radius-pill);
+  box-shadow:var(--neu-raise-sm);
+  color:var(--neu-text-muted);
+}
+[data-theme="neumorphism"] .badge--light,
+[data-theme="neumorphism"] .tag--light,
+[data-theme="neumorphism"] .badge--outline,
+[data-theme="neumorphism"] .tag--outline{
+  background:var(--neu-base);border:0;color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
+}
+
+/* ==========================================================================
+   Modal — a raised soft slab; head/foot dividers dissolve.
+   ========================================================================== */
+[data-theme="neumorphism"] .modal{
+  background:var(--neu-base);
+  border:0;
+  border-radius:var(--radius-2xl);
+  box-shadow:var(--neu-raise-lg);
+  color:var(--neu-text);
+}
+[data-theme="neumorphism"] .modal__head,
+[data-theme="neumorphism"] .modal-row{border-bottom-color:transparent;}
+[data-theme="neumorphism"] .modal__foot--form{background:var(--neu-base);}
+[data-theme="neumorphism"] .modal__title{color:var(--neu-text);}
+[data-theme="neumorphism"] .modal__sub{color:var(--neu-text-muted);}
+[data-theme="neumorphism"] .modal__close{background:var(--neu-base);box-shadow:var(--neu-raise-sm);}
+[data-theme="neumorphism"] .modal__close:hover{box-shadow:var(--neu-inset-sm);}
+
+/* ==========================================================================
+   KPI strip — recessed cells separated by shadow, not borders.
+   ========================================================================== */
+[data-theme="neumorphism"] .kpi-strip{
+  background:var(--neu-base);border:0;border-radius:var(--radius-xl);box-shadow:var(--neu-raise);
+  overflow:hidden;
+}
+[data-theme="neumorphism"] .kpi{border-left:0;}
+[data-theme="neumorphism"] .kpi__label{color:var(--neu-text-muted);}
+[data-theme="neumorphism"] .kpi__value{color:var(--neu-text);}
+
+/* ==========================================================================
+   Sidebar + topbar — flat onto the base, soft inset rail / raised bar.
+   ========================================================================== */
+[data-theme="neumorphism"] .sidebar{
+  background:var(--neu-base);
+  color:var(--neu-text);
+  box-shadow:var(--neu-inset-sm);
+}
+[data-theme="neumorphism"] .sidebar__wave{display:none;}
+[data-theme="neumorphism"] .sidebar__logo .title{color:var(--neu-text);}
+[data-theme="neumorphism"] .sidebar__logo .sep{background:var(--neu-dark);}
+[data-theme="neumorphism"] .sidebar__section{color:var(--neu-text-subtle);}
+[data-theme="neumorphism"] .sidebar__user{border-top:0;}
+[data-theme="neumorphism"] .nav-link{
+  color:var(--neu-text-muted);border:0;border-radius:var(--radius-base);
+  backdrop-filter:none;box-shadow:none;
+}
+[data-theme="neumorphism"] .nav-link:hover{
+  background:var(--neu-base);backdrop-filter:none;box-shadow:var(--neu-raise-sm);color:var(--neu-text);
+}
+/* active nav item is a PRESSED well — the canonical soft-UI selected state */
+[data-theme="neumorphism"] .nav-link.is-active{
+  background:var(--neu-base);color:var(--neu-accent-strong);
+  backdrop-filter:none;box-shadow:var(--neu-inset-sm);
+}
+
+[data-theme="neumorphism"] .topbar{
+  background:var(--neu-base);border-bottom:0;box-shadow:var(--neu-raise-sm);
+}
+
+/* ==========================================================================
+   Tables — flat on the base, hover is a faint recess (no zebra borders).
+   ========================================================================== */
+[data-theme="neumorphism"] .table--flat,
+[data-theme="neumorphism"] .table--dense{
+  background:var(--neu-base);border-radius:var(--radius-l);box-shadow:var(--neu-raise);overflow:hidden;
+}
+[data-theme="neumorphism"] .table--flat th,
+[data-theme="neumorphism"] .table--flat td,
+[data-theme="neumorphism"] .table--dense th,
+[data-theme="neumorphism"] .table--dense td{
+  border-color:transparent;color:var(--neu-text);
+}
+[data-theme="neumorphism"] .table--flat th{color:var(--neu-text-muted);}
+[data-theme="neumorphism"] .table--flat tbody tr:hover td{background:rgba(163,177,198,.16);}
+[data-theme="neumorphism"] .table--flat tbody tr.row--selected td,
+[data-theme="neumorphism"] .table--flat tbody tr.row--active td{background:rgba(109,139,196,.14);}
+
+/* ==========================================================================
+   Switch (segmented) — a recessed track with a raised active thumb.
+   ========================================================================== */
+[data-theme="neumorphism"] .switch{
+  background:var(--neu-base);border:0;border-radius:var(--radius-pill);
+  box-shadow:var(--neu-inset-sm);overflow:visible;padding:4px;
+}
+[data-theme="neumorphism"] .switch button{
+  background:transparent;color:var(--neu-text-muted);border-radius:var(--radius-pill);
+  transition:box-shadow 180ms ease-out,color 180ms ease-out;
+}
+[data-theme="neumorphism"] .switch button.is-active{
+  background:var(--neu-base);color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
+}
+
+/* ==========================================================================
+   Checkbox — soft inset well; checked = raised soft chip with accent tick.
+   ========================================================================== */
+[data-theme="neumorphism"] .checkbox,
+[data-theme="neumorphism"] .radio{
+  background:var(--neu-base);border:0;box-shadow:var(--neu-inset-sm);border-radius:var(--radius-s);
+}
+[data-theme="neumorphism"] .radio,
+[data-theme="neumorphism"] .checkbox--circle{border-radius:50%;}
+[data-theme="neumorphism"] .checkbox:hover:not(:disabled),
+[data-theme="neumorphism"] .radio:hover:not(:disabled){border:0;box-shadow:var(--neu-inset-sm);}
+[data-theme="neumorphism"] .checkbox:checked{
+  background:var(--neu-base) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%234E6FB0' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") center/14px no-repeat;
+  border:0;box-shadow:var(--neu-raise-sm);
+}
+[data-theme="neumorphism"] .checkbox:disabled,
+[data-theme="neumorphism"] .radio:disabled{box-shadow:var(--neu-inset-sm);opacity:.6;}
+
+/* ==========================================================================
+   Phone shell — the frame is one big extruded slab; tabbar pressed active.
+   ========================================================================== */
+[data-theme="neumorphism"] .phone{
+  background:var(--neu-base);border:0;border-radius:var(--radius-2xl);
+  box-shadow:var(--neu-raise-lg);color:var(--neu-text);
+}
+[data-theme="neumorphism"] .phone__status,
+[data-theme="neumorphism"] .phone__screen,
+[data-theme="neumorphism"] .appbar,
+[data-theme="neumorphism"] .list-mobile,
+[data-theme="neumorphism"] .phone__tabbar{
+  background:var(--neu-base);
+}
+[data-theme="neumorphism"] .appbar,
+[data-theme="neumorphism"] .phone__tabbar{border-color:transparent;}
+[data-theme="neumorphism"] .list-mobile__row + .list-mobile__row{border-top-color:transparent;}
+[data-theme="neumorphism"] .list-mobile__row:hover{background:rgba(163,177,198,.16);}
+[data-theme="neumorphism"] .tabbar__item{color:var(--neu-text-subtle);}
+[data-theme="neumorphism"] .tabbar__item.is-active{color:var(--neu-accent-strong);}
+/* active tab pill becomes a soft RAISED chip (was a flat brand-tint pill) */
+[data-theme="neumorphism"] .tabbar__item.is-active .tabbar__icon{
+  background:var(--neu-base);color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
+}

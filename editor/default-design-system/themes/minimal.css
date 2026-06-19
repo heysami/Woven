@@ -1,0 +1,210 @@
+/* themes/minimal.css — apply via <html data-theme="minimal">
+   ==========================================================================
+   A light-only STYLE OVERLAY for the Woven template design system.
+
+   Pitch: maximal restraint. One chromatic accent (the primary), everything
+   else neutralised to greys. The brand gradient is gone — nav surfaces are
+   light with a hairline border. Elevation is replaced by hairline borders
+   and near-flat shadows. Modest radii, generous whitespace.
+
+   PATTERN (mirrors :root[data-theme="dark"] in styles.css): remap the
+   semantic tokens on :root[data-theme="minimal"] so component CSS inherits
+   the new look for free, then scope the few signature component overrides
+   with the [data-theme="minimal"] attribute so the default theme is
+   untouched. Raw hex is allowed here — themes are where colours live.
+   ========================================================================== */
+
+:root[data-theme="minimal"]{
+  /* ---- single accent hue: a restrained, slightly desaturated blue ----
+     Re-anchor the primary ramp so primary roles, --series-1, focus rings and
+     the (now flattened) gradient all shift together. */
+  --primary-50:#F2F5FB; --primary-100:#E3EAF6; --primary-200:#C7D5ED; --primary-300:#9DB6DF;
+  --primary-400:#6E92CE; --primary-500:#3B68B5; --primary-600:#315699; --primary-700:#28467C;
+  --primary-800:#21385F; --primary-900:#192945; --primary-950:#0E1726;
+
+  /* ---- surfaces: light greys / white, hairline-separated ---- */
+  --surface:#FFFFFF; --surface-default:#FAFAFA; --surface-medium:#F4F4F5; --surface-strong:#ECECEE;
+  --surface-inverse:#1B1C1E;
+  /* ---- text: dark on light, calm contrast ---- */
+  --fg-default:#1F2023; --fg-muted:#5C5F66; --fg-subtle:#8A8D94; --fg-on-surface:#FFFFFF;
+  /* ---- lines: a true hairline as the primary separator everywhere ---- */
+  --border-default:#E6E6E8; --border-subtle:#EFEFF1;
+  --interactive-hover:#F4F4F5; --interactive-active:#ECECEE;
+
+  /* ---- primary roles — the one accent ---- */
+  --primary-surface:#3B68B5; --primary-surface-muted:#E3EAF6; --primary-surface-subtle:#F2F5FB;
+  --primary-fg:#315699; --primary-fg-emphasis:#3B68B5; --primary-border:#C7D5ED;
+  --primary-hover:#315699; --primary-active:#28467C;
+
+  /* ---- on-colours + NEUTRALISED secondary/tertiary ----
+     Drain the chroma out of the secondary (was brand red) and tertiary (cool
+     slate) roles so the primary is the only colour on the page. Both collapse
+     onto the neutral ramp; their chips/badges/tags read as quiet greys. */
+  --on-primary:#FFFFFF; --on-secondary:#1F2023; --on-tertiary:#1F2023;
+  --secondary-surface:#ECECEE; --tertiary-surface:#F4F4F5;
+  --chip-primary-fg:#315699; --chip-secondary-fg:#5C5F66; --chip-tertiary-fg:#5C5F66;
+
+  /* ---- gradient off: flat primary at both anchors ---- */
+  --primary-grad-from:#3B68B5; --primary-grad-to:#3B68B5;
+
+  /* ---- chart series: primary + greys, one accent only ---- */
+  --series-1:var(--primary-surface);   /* the accent          */
+  --series-2:#8A8D94;                  /* grey                */
+  --series-3:#B6B8BD;                  /* lighter grey        */
+  --series-4:#6E92CE;                  /* tint of the accent  */
+  --series-5:#D4D5D8;                  /* lightest grey       */
+  --chart-grid:#EFEFF1; --chart-axis:#8A8D94;
+
+  /* ---- elevation off: replace shadows with near-nothing ---- */
+  --shadow-xs:0 1px 2px rgba(0,0,0,.04); --shadow-s:0 1px 2px rgba(0,0,0,.04);
+  --shadow-base:0 1px 2px rgba(0,0,0,.05); --shadow-m:0 1px 2px rgba(0,0,0,.05);
+  --shadow-l:0 2px 4px rgba(0,0,0,.05); --shadow-xl:0 4px 8px rgba(0,0,0,.06);
+  --shadow-hard:0 2px 6px rgba(0,0,0,.12);
+
+  /* ---- modest radii ---- */
+  --radius-base:6px; --radius-m:8px; --radius-l:10px; --radius-xl:14px; --radius-2xl:18px;
+}
+
+/* ==========================================================================
+   Scoped component overrides — every rule attribute-scoped so the default
+   theme is untouched.
+   ========================================================================== */
+
+/* ---- Navigation: light rail + light topbar, NOT the brand gradient ---- */
+[data-theme="minimal"] .sidebar{
+  background:var(--surface);
+  border-right:1px solid var(--border-default);
+  color:var(--fg-muted);
+}
+[data-theme="minimal"] .sidebar__wave{display:none;}            /* drop the brand grid texture */
+[data-theme="minimal"] .sidebar__logo .title{color:var(--fg-default);}
+[data-theme="minimal"] .sidebar__logo .sep{background:var(--border-default);}
+[data-theme="minimal"] .sidebar__section{color:var(--fg-subtle);}
+[data-theme="minimal"] .sidebar__user{border-top:1px solid var(--border-subtle);}
+
+[data-theme="minimal"] .topbar{
+  background:var(--surface);
+  border-bottom:1px solid var(--border-default);
+}
+
+/* ---- Nav links: dark text, subtle grey hover, thin primary underline active ---- */
+[data-theme="minimal"] .nav-link{
+  color:var(--fg-muted);
+  border-radius:var(--radius-base);
+}
+[data-theme="minimal"] .nav-link:hover{
+  background:var(--surface-medium);
+  backdrop-filter:none;
+  box-shadow:none;
+  color:var(--fg-default);
+}
+[data-theme="minimal"] .nav-link.is-active{
+  color:var(--primary-fg-emphasis);
+  background:transparent;
+  box-shadow:inset 2px 0 0 var(--primary-surface);   /* thin primary edge, not a fill */
+  backdrop-filter:none;
+  border-radius:var(--radius-s);
+}
+[data-theme="minimal"] .nav-link .icon{color:currentColor;}
+
+/* ---- Cards: flat, hairline-bordered, no elevation ---- */
+[data-theme="minimal"] .card{
+  background:var(--surface);
+  border:1px solid var(--border-default);
+}
+[data-theme="minimal"] .card--plain{box-shadow:none;}
+[data-theme="minimal"] .card--filled{
+  background:var(--surface-default);
+  color:var(--fg-default);
+  border:1px solid var(--border-default);
+}
+[data-theme="minimal"] .section-card{box-shadow:none;}
+
+/* ---- Tables: hairline rows, no shadow, quiet hover ---- */
+[data-theme="minimal"] .table th,
+[data-theme="minimal"] .table--flat th{
+  background:var(--surface);
+  border-bottom:1px solid var(--border-default);
+  color:var(--fg-subtle);
+}
+[data-theme="minimal"] .table td{border-top:1px solid var(--border-subtle);}
+[data-theme="minimal"] .table tbody tr:hover td,
+[data-theme="minimal"] .table--flat tbody tr:hover td{background:var(--surface-default);}
+[data-theme="minimal"] .table--flat{border-color:var(--border-subtle);}
+
+/* ---- Inputs: hairline border, flat, primary focus ---- */
+[data-theme="minimal"] .input,
+[data-theme="minimal"] .select,
+[data-theme="minimal"] .textarea{
+  background:var(--surface);
+  border:1px solid var(--border-default);
+  box-shadow:none;
+}
+[data-theme="minimal"] .input:focus,
+[data-theme="minimal"] .select:focus,
+[data-theme="minimal"] .textarea:focus,
+[data-theme="minimal"] .input.is-focus{
+  border-color:var(--primary-surface);
+  box-shadow:0 0 0 3px var(--primary-surface-subtle);
+}
+[data-theme="minimal"] .input--bare{background:transparent;border-color:transparent;box-shadow:none;}
+
+/* ---- Buttons: flat primary, hairline outline ---- */
+[data-theme="minimal"] .btn--primary{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  box-shadow:none;
+}
+[data-theme="minimal"] .btn--primary:hover,
+[data-theme="minimal"] .btn.is-hover.btn--primary{background:var(--primary-hover);}
+[data-theme="minimal"] .btn--outline{
+  background:var(--surface);
+  border-color:var(--border-default);
+  color:var(--fg-default);
+  box-shadow:none;
+}
+[data-theme="minimal"] .btn--outline:hover,
+[data-theme="minimal"] .btn.is-hover.btn--outline{
+  background:var(--surface-default);
+  border-color:var(--primary-border);
+}
+
+/* ---- Badges + tags: neutral greys, primary is the lone accent ---- */
+[data-theme="minimal"] .badge,
+[data-theme="minimal"] .tag{box-shadow:none;}
+[data-theme="minimal"] .badge--secondary,
+[data-theme="minimal"] .badge--tertiary,
+[data-theme="minimal"] .tag--secondary,
+[data-theme="minimal"] .tag--tertiary{
+  background:var(--surface-strong);
+  color:var(--fg-muted);
+  border-color:transparent;
+}
+[data-theme="minimal"] .badge--light,
+[data-theme="minimal"] .tag--light{background:var(--primary-surface-subtle);color:var(--primary-fg);}
+[data-theme="minimal"] .badge--mono,
+[data-theme="minimal"] .tag--mono{background:var(--surface-inverse);color:var(--surface);}
+
+/* ---- Modal: hairline frame, almost-flat ---- */
+[data-theme="minimal"] .modal{
+  background:var(--surface);
+  border:1px solid var(--border-default);
+  box-shadow:var(--shadow-l);
+}
+[data-theme="minimal"] .modal-row{border-bottom:1px solid var(--border-subtle);}
+
+/* ---- KPI strip: hairline dividers (already token-driven; reinforce flatness) ---- */
+[data-theme="minimal"] .kpi-strip{
+  border-top:1px solid var(--border-subtle);
+  border-bottom:1px solid var(--border-subtle);
+}
+[data-theme="minimal"] .kpi{border-left:1px solid var(--border-subtle);}
+
+/* ---- Hero stat + chart cards: flat, hairline-bordered ---- */
+[data-theme="minimal"] .stat-hero,
+[data-theme="minimal"] .chart-card{
+  background:var(--surface);
+  border:1px solid var(--border-default);
+  box-shadow:none;
+}
+[data-theme="minimal"] .stat-hero{border-radius:var(--radius-l);}
