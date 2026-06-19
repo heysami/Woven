@@ -76,7 +76,9 @@
   canvas.layerstack{position:absolute;inset:0;width:100%;height:100%;display:block}
   #stageHost{position:relative;background:#000}
   .pill{font-family:var(--mono);font-size:10px;color:var(--ink2)}
-  .badge{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10px;color:var(--acc);background:#0008;padding:3px 7px;border-radius:5px;z-index:6;pointer-events:none}
+  /* Status overlay = a light Woven pill (like other tools' "120 fps" chip), so
+     it stays legible over ANY preview content — the canvas isn't always dark. */
+  .badge{position:absolute;top:8px;left:8px;font-family:var(--wv-font-mono);font-size:10px;color:var(--wv-text-muted);background:var(--wv-surface);border:1px solid var(--wv-border);box-shadow:var(--wv-shadow-sm);padding:3px 7px;border-radius:5px;z-index:6;pointer-events:none}
   .perm{position:absolute;bottom:8px;left:8px;display:flex;gap:6px;z-index:7}
   .small{font-size:10px;color:var(--ink2)}
   .impacts{margin-top:6px;display:flex;flex-direction:column;gap:6px}
@@ -87,16 +89,17 @@
   .toolbar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:7}
   .hint{font-size:10px;color:var(--ink2);margin:2px 0 0}
   hr{border:0;border-top:1px solid var(--line);margin:10px 0}
-  .errbar{position:absolute;bottom:8px;right:8px;max-width:50%;font-family:var(--mono);font-size:10px;color:var(--warn);background:#0009;padding:4px 8px;border-radius:5px;z-index:8;white-space:pre-wrap}
+  .errbar{position:absolute;bottom:8px;right:8px;max-width:50%;font-family:var(--wv-font-mono);font-size:10px;color:var(--wv-danger);background:var(--wv-surface);border:1px solid var(--wv-danger);box-shadow:var(--wv-shadow-sm);padding:4px 8px;border-radius:5px;z-index:8;white-space:pre-wrap}
   svg.ic{width:14px;height:14px;display:block}
   /* Icon+label alignment for toolbar/perm buttons (inline SVG, no emoji). */
   .toolbar button,.perm button{display:inline-flex;align-items:center;gap:5px}
   .toolbar button .ico{display:inline-flex}
-  /* Toolbar/perm overlay the dark preview → keep a dark, legible chip. */
-  .toolbar button{background:#0009;border-color:#fff3;color:#fff;backdrop-filter:blur(4px)}
-  .toolbar button:hover{border-color:var(--acc)}
-  .perm button.chip.off{background:#0009;border-color:#fff3;color:#fff;backdrop-filter:blur(4px)}
-  .perm button.chip.on{background:var(--wv-accent);border-color:var(--wv-accent);color:#fff}
+  /* Toolbar/perm overlay the preview → light Woven pills (legible over any
+     content), shadow for separation; the active perm chip goes accent-green. */
+  .toolbar button{background:var(--wv-surface);border-color:var(--wv-border);color:var(--wv-text);box-shadow:var(--wv-shadow-sm)}
+  .toolbar button:hover{border-color:var(--wv-accent)}
+  .perm button.chip.off{background:var(--wv-surface);border-color:var(--wv-border);color:var(--wv-text);box-shadow:var(--wv-shadow-sm)}
+  .perm button.chip.on{background:var(--wv-accent);border-color:var(--wv-accent);color:var(--wv-text-on-accent)}
 </style>
 </head>
 <body>
