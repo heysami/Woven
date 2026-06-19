@@ -4,13 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>MATERIAL LAB</title>
+<!-- Woven shared design system + floating-panels-on-select behaviour (additive) -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
   :root{
-    --bg:#0a0b0d; --bg2:#101216; --panel:#14171c; --panel2:#1a1e25;
-    --line:#262b34; --line2:#333a45; --txt:#e7ebf2; --dim:#8a93a3; --dim2:#5b6472;
-    --acc:#6ea8ff; --acc2:#9b7bff; --good:#4fd6a4; --warn:#ffb454; --bad:#ff6b6b;
-    --r:9px; --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,sans-serif;
+    /* ── Woven DS remap ──────────────────────────────────────────────────────
+       The tool's local vars now resolve to the canonical Woven tokens (from
+       _shared/woven-theme.css): warm paper-white chrome, hairline borders, the
+       single green accent, Space Grotesk / Space Mono type. Where a value drives
+       DARK CONTENT (the WebGL stage / GLSL code editor) it keeps a dark literal
+       rather than a chrome token — that's content, not chrome. */
+    --bg:var(--wv-bg); --bg2:var(--wv-surface-2); --panel:var(--wv-surface); --panel2:var(--wv-surface-2);
+    --line:var(--wv-border); --line2:var(--wv-border-strong); --txt:var(--wv-text); --dim:var(--wv-text-muted); --dim2:var(--wv-text-faint);
+    --acc:var(--wv-accent); --acc2:var(--wv-accent-strong); --good:var(--wv-success); --warn:var(--wv-warning); --bad:var(--wv-danger);
+    --acc-soft:var(--wv-accent-soft);
+    /* dark surfaces reserved for the WebGL viewport content */
+    --viewport:var(--wv-viewport); --viewport2:var(--wv-viewport-2);
+    --r:var(--wv-radius); --mono:var(--wv-font-mono);
+    --sans:var(--wv-font-sans);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
@@ -20,18 +32,18 @@
   ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:2px solid var(--panel)}
   ::-webkit-scrollbar-track{background:transparent}
 
-  /* top bar */
+  /* top bar — light Woven chrome */
   #top{height:46px;flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:0 14px;
-       background:linear-gradient(180deg,#15181e,#0e1115);border-bottom:1px solid var(--line);z-index:30}
+       background:var(--wv-surface);border-bottom:1px solid var(--line);z-index:30}
   .brand{font-weight:700;letter-spacing:.14em;font-size:12.5px;display:flex;align-items:center;gap:9px}
   .brand .dot{width:11px;height:11px;border-radius:50%;
     background:conic-gradient(from 0deg,#6ea8ff,#9b7bff,#4fd6a4,#ffb454,#6ea8ff);
-    box-shadow:0 0 12px #6ea8ff88,inset 0 0 4px #fff8}
+    box-shadow:0 0 8px #6ea8ff66}
   .brand small{color:var(--dim);font-weight:500;letter-spacing:.05em}
   #top .spacer{flex:1}
-  .tbtn{height:30px;padding:0 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel2);
+  .tbtn{height:30px;padding:0 12px;border-radius:var(--wv-radius);border:1px solid var(--line);background:var(--panel2);
         color:var(--txt);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.12s}
-  .tbtn:hover{border-color:var(--acc);background:#1f2530}
+  .tbtn:hover{border-color:var(--wv-border-strong);background:var(--wv-surface-3)}
   .tbtn svg{width:14px;height:14px}
   .status{font-size:11px;color:var(--dim);font-family:var(--mono)}
   .status b{color:var(--good)}
@@ -39,6 +51,10 @@
 
   /* main layout */
   #main{flex:1;min-height:0;display:flex}
+  /* #coreCanvas wraps the centre stage so the detached-panels mode can float the
+     side panels and pin the core rect. In the DEFAULT (in-frame) layout it simply
+     inherits #center's old flex role — grow to fill, allow its child to shrink. */
+  #coreCanvas{flex:1;min-width:0;display:flex;flex-direction:column}
 
   /* left: scene panel */
   #left{width:222px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);
@@ -53,30 +69,33 @@
   .field:last-child{margin-bottom:0}
   .field label{display:block;font-size:10.5px;color:var(--dim);margin-bottom:4px;letter-spacing:.02em;display:flex;justify-content:space-between}
   .field label .v{color:var(--txt);font-family:var(--mono);font-size:10px}
-  input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:3px;background:#2a3038;outline:none;cursor:pointer}
+  input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:3px;background:var(--wv-surface-3);outline:none;cursor:pointer}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;
-    background:var(--acc);box-shadow:0 0 0 3px #6ea8ff22,0 1px 3px #0009;cursor:grab}
-  input[type=text],input[type=number],select{width:100%;height:30px;border-radius:7px;border:1px solid var(--line2);
-    background:var(--bg2);color:var(--txt);font-size:12px;padding:0 9px}
-  input[type=color]{width:100%;height:30px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);padding:2px;cursor:pointer}
+    background:var(--acc);box-shadow:0 0 0 3px var(--acc-soft),0 1px 2px rgba(0,0,0,.18);cursor:grab}
+  input[type=text],input[type=number],select{width:100%;height:30px;border-radius:var(--wv-radius);border:1px solid var(--line);
+    background:var(--wv-surface);color:var(--txt);font-size:12px;padding:0 9px}
+  input[type=text]:focus,input[type=number]:focus,select:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-soft)}
+  input[type=color]{width:100%;height:30px;border-radius:var(--wv-radius);border:1px solid var(--line);background:var(--wv-surface);padding:2px;cursor:pointer}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chip{padding:5px 9px;border-radius:14px;border:1px solid var(--line2);background:var(--bg2);font-size:11px;cursor:pointer;transition:.12s;color:var(--dim);user-select:none}
-  .chip:hover{border-color:var(--acc);color:var(--txt)}
-  .chip.on{background:linear-gradient(180deg,#2b3550,#1d2438);border-color:#3c5680;color:#fff}
+  .chip{padding:5px 9px;border-radius:14px;border:1px solid var(--line);background:var(--wv-surface);font-size:11px;cursor:pointer;transition:.12s;color:var(--dim);user-select:none}
+  .chip:hover{border-color:var(--wv-border-strong);color:var(--txt)}
+  .chip.on{background:var(--acc-soft);border-color:var(--acc);color:var(--wv-accent-text)}
   .mtchip{display:flex;align-items:center;gap:6px;padding:6px 9px}
   .mtchip .glsw{width:15px;height:15px;border-radius:5px;border:1px solid #ffffff33;flex:0 0 auto}
   .toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);cursor:pointer;margin-bottom:4px}
-  .toggle input{width:34px;height:19px;-webkit-appearance:none;background:#2a3038;border-radius:11px;position:relative;cursor:pointer;outline:none;transition:.15s;flex:0 0 auto}
+  .toggle input{width:34px;height:19px;-webkit-appearance:none;background:var(--wv-surface-3);border-radius:11px;position:relative;cursor:pointer;outline:none;transition:.15s;flex:0 0 auto}
   .toggle input:checked{background:var(--acc)}
   .toggle input::after{content:'';position:absolute;width:15px;height:15px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}
   .toggle input:checked::after{left:17px}
   .hint{font-size:10px;color:var(--dim2);line-height:1.5;margin-top:6px}
   .palrow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
   .palrow input[type=color]{flex:1}
-  .palrow button{height:30px;width:30px;border-radius:7px;border:1px solid #5a2b2b;background:#2a1717;color:#ff9090;cursor:pointer;font-size:14px;flex:0 0 auto}
-  .addpal{width:100%;height:28px;border-radius:7px;border:1px dashed var(--line2);background:transparent;color:var(--dim);font-size:11px;cursor:pointer;transition:.12s}
-  .addpal:hover{border-color:var(--acc);color:var(--txt)}
+  .palrow button{height:30px;width:30px;border-radius:var(--wv-radius);border:1px solid var(--line);background:var(--wv-danger-soft);color:var(--wv-danger);cursor:pointer;font-size:14px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center}
+  .palrow button:hover{border-color:var(--wv-danger)}
+  .palrow button svg{width:14px;height:14px}
+  .addpal{width:100%;height:28px;border-radius:var(--wv-radius);border:1px dashed var(--line2);background:transparent;color:var(--dim);font-size:11px;cursor:pointer;transition:.12s}
+  .addpal:hover{border-color:var(--acc);color:var(--wv-accent-text)}
 
   /* GLSL editor */
   #shaderGrp textarea{width:100%;height:300px;resize:vertical;border-radius:8px;border:1px solid var(--line2);
@@ -85,7 +104,8 @@
   #shaderGrp textarea:focus{border-color:var(--acc)}
   .sbtns{display:flex;gap:8px;margin-top:8px}
   .sbtns .tbtn{flex:1;justify-content:center}
-  .sbtns .tbtn.primary{background:linear-gradient(180deg,#2b3550,#1d2438);border-color:#3c5680;color:#fff}
+  .sbtns .tbtn.primary{background:var(--acc);border-color:var(--acc);color:var(--wv-text-on-accent)}
+  .sbtns .tbtn.primary:hover{background:var(--wv-accent-strong);border-color:var(--wv-accent-strong)}
   #shaderErr{margin-top:8px;font-family:var(--mono);font-size:10px;line-height:1.5;color:#ffb4b4;
     background:#241414;border:1px solid #5a2b2b;border-radius:7px;padding:8px 10px;white-space:pre-wrap;display:none;max-height:140px;overflow:auto}
   #shaderErr.show{display:block}
@@ -157,8 +177,8 @@
   .galrow{ display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start }
   .galcol{ display:flex;flex-direction:column;gap:14px;flex:1;min-width:240px }
 
-  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);background:#1c2230;
-    border:1px solid var(--line2);padding:9px 16px;border-radius:9px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:60;box-shadow:0 10px 30px #0008}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--wv-surface);color:var(--txt);
+    border:1px solid var(--line);padding:9px 16px;border-radius:var(--wv-radius);font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:60;box-shadow:var(--wv-shadow-lg)}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -174,8 +194,8 @@
   </div>
 
   <div id="main">
-    <!-- LEFT: SCENE -->
-    <div id="left">
+    <!-- LEFT: SCENE  (floats when the node is selected) -->
+    <div id="left" data-float-panel="left">
       <div class="grp">
         <h3>Scene</h3>
         <div class="field">
@@ -215,7 +235,11 @@
       </div>
     </div>
 
-    <!-- CENTER: fixed DS component set, glass rendered by WebGL -->
+    <!-- CENTER: fixed DS component set, glass rendered by WebGL.
+         #coreCanvas wraps #center so detached-panels.css can absolutely
+         reposition the core rect on select WITHOUT touching #center's own
+         id-based JS/CSS refs. The dark WebGL stage stays inside, unchanged. -->
+    <div id="coreCanvas">
     <div id="center">
       <div id="stage">
         <div id="backdrop"></div>
@@ -283,9 +307,10 @@
       </div>
       <div id="zoominfo"></div>
     </div>
+    </div><!-- /#coreCanvas -->
 
-    <!-- RIGHT: MATERIAL -->
-    <div id="right">
+    <!-- RIGHT: MATERIAL  (floats when the node is selected) -->
+    <div id="right" data-float-panel="right">
       <div id="inspector"></div>
     </div>
   </div>
@@ -1611,7 +1636,10 @@ function buildPalette(){
     const row=document.createElement('div'); row.className='palrow';
     const ci=document.createElement('input'); ci.type='color'; ci.value=col.slice(0,7);
     ci.oninput=()=>{ STATE.palette[i]=ci.value; renderAll(); emit(); };
-    const del=document.createElement('button'); del.textContent='×'; del.title='Remove';
+    const del=document.createElement('button');
+    /* inline SVG close icon (currentColor) — no emoji/glyph UI icons */
+    del.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    del.title='Remove';
     del.onclick=()=>{ if(STATE.palette.length<=1) return; STATE.palette.splice(i,1); renderAll(); buildPalette(); emit(); };
     row.appendChild(ci); row.appendChild(del); palList.appendChild(row);
   });
@@ -1763,6 +1791,28 @@ function ensureRuntime(){
   }
 }
 
+/* ====================================================================== */
+/*  FLOATING PANELS ON SELECT                                              */
+/*  When the host posts material:select{selected}, toggle body.detached-   */
+/*  panels (styled by _shared/detached-panels.css) and report this tool's  */
+/*  panel extents so the host can size/position the iframe so #coreCanvas   */
+/*  lands exactly on the node's core rect.                                  */
+/* ====================================================================== */
+function reportPanels(){
+  const L=document.getElementById('left');
+  const R=document.getElementById('right');
+  // panel extent = panel width + 8px breathing gap (top/bottom have no panels)
+  const panelL=(L?L.offsetWidth:0)+8;
+  const panelR=(R?R.offsetWidth:0)+8;
+  const panelT=0, panelB=0;
+  const bs=document.body.style;
+  bs.setProperty('--panel-l', panelL+'px');
+  bs.setProperty('--panel-r', panelR+'px');
+  bs.setProperty('--panel-t', panelT+'px');
+  bs.setProperty('--panel-b', panelB+'px');
+  try{ parent.postMessage({type:'material:panels', nodeId:NODE, panelL, panelR, panelT, panelB}, '*'); }catch(e){}
+}
+
 if(EMBEDDED){
   window.addEventListener('message', ev=>{
     const d=ev.data; if(!d||typeof d!=='object') return;
@@ -1776,6 +1826,13 @@ if(EMBEDDED){
     } else if(d.type==='material:content'){
       CONTENT=d.content||[]; _layerImagesToContent(d);
       renderAll(); syncScene();
+    } else if(d.type==='material:select'){
+      // float the side panels (or restore the in-frame layout) then report extents
+      document.body.classList.toggle('detached-panels', !!d.selected);
+      // After the class toggle reflows the layout, re-fit the renderers to the new
+      // #stage size (it follows #coreCanvas, which detached-panels.css pins to the
+      // node core rect) — on select AND deselect — then report panel extents.
+      requestAnimationFrame(()=>{ fitStage(); reportPanels(); });
     }
   });
   try{ parent.postMessage({type:'material:ready', nodeId:NODE}, '*'); }catch(e){}
@@ -1794,9 +1851,23 @@ document.getElementById('btnBake').onclick=()=>{
   toast('Exported standalone HTML');
 };
 
-window.addEventListener('resize', ()=>{ cacheStageRect(); if(RT) RT.resize(); if(FX) FX.resize(); });
+// Re-fit the WebGL canvases to #stage (the central card, whose width follows
+// #coreCanvas — the viewport detached-panels.css pins to the node core rect) and
+// re-cache the pointer→light rect. The canvases are inset:0 of #stage, so #stage
+// stays the correct sizing target even in detached mode (where it grows with
+// #coreCanvas). RT/FX .resize() already read stage.clientWidth/Height.
+function fitStage(){ if(RT) RT.resize(); if(FX) FX.resize(); cacheStageRect(); }
+window.addEventListener('resize', fitStage);
 document.getElementById('center').addEventListener('scroll', cacheStageRect, {passive:true});
-new ResizeObserver(()=>{ if(RT) RT.resize(); if(FX) FX.resize(); cacheStageRect(); }).observe(stage);
+// Event-driven re-fit on node-resize / float-reflow. Observe #stage (the canvas
+// host) and #coreCanvas (the pinned viewport it tracks). Guarded against
+// double-construction; never a per-frame polling loop.
+{
+  const coreEl = document.getElementById('coreCanvas');
+  const _ro = new ResizeObserver(fitStage);
+  _ro.observe(stage);
+  if (coreEl && coreEl !== stage) _ro.observe(coreEl);
+}
 
 function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>toastEl.classList.remove('show'),1800); }
 

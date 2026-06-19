@@ -4,23 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixel Editor</title>
+<!-- Woven shared design system + floating-panels (detached) mode -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
+  /* Remap the tool's local dark vars onto the canonical Woven tokens so the
+     chrome (top bar, tool strip, side panel, buttons, inputs) reads as the
+     light Woven DS — hairline borders, green accent. The #stage canvas keeps
+     its own dark checkerboard *content* background below. */
   :root {
-    --bg: #0e1014;
-    --panel: #171a21;
-    --panel-2: #1e222b;
-    --line: #2a2f3a;
-    --line-2: #363c49;
-    --txt: #d7dce5;
-    --txt-dim: #8b93a3;
-    --txt-faint: #5b6373;
-    --accent: #5db1ff;
-    --accent-dim: #2a4a6b;
-    --danger: #ff6b6b;
-    --ok: #6bd49a;
-    --radius: 6px;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --bg: var(--wv-bg);
+    --panel: var(--wv-surface);
+    --panel-2: var(--wv-surface-2);
+    --line: var(--wv-border);
+    --line-2: var(--wv-border-strong);
+    --txt: var(--wv-text);
+    --txt-dim: var(--wv-text-muted);
+    --txt-faint: var(--wv-text-faint);
+    --accent: var(--wv-accent);
+    --accent-dim: var(--wv-accent-soft);   /* "on" states → soft green wash */
+    --danger: var(--wv-danger);
+    --ok: var(--wv-success);
+    --radius: var(--wv-radius);
+    --mono: var(--wv-font-mono);
+    --sans: var(--wv-font-sans);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -40,7 +47,8 @@
   }
   .brand { font-weight: 600; letter-spacing: .3px; margin-right: 6px; display: flex; align-items: center; gap: 6px; }
   .brand .dot { width: 10px; height: 10px; border-radius: 2px;
-    background: linear-gradient(135deg, #5db1ff, #b95dff); box-shadow: 0 0 8px #5db1ff66; }
+    /* Woven green accent mark (was a blue/purple gradient) */
+    background: var(--wv-accent); }
   .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
   .spacer { flex: 1; }
 
@@ -49,7 +57,8 @@
   .seg button { border: 0; background: transparent; color: var(--txt-dim);
     padding: 5px 11px; cursor: pointer; font-size: 12px; font-family: var(--sans); }
   .seg button:hover { color: var(--txt); }
-  .seg button.on { background: var(--accent-dim); color: #fff; }
+  /* "on" → soft green wash with accent text/border (light Woven chrome) */
+  .seg button.on { background: var(--accent-dim); color: var(--wv-accent-text); }
 
   .field { display: inline-flex; align-items: center; gap: 5px; color: var(--txt-dim); font-size: 12px; }
   .field input[type=number] {
@@ -63,8 +72,9 @@
     padding: 5px 10px; border-radius: var(--radius); cursor: pointer; font-size: 12px;
     font-family: var(--sans); display: inline-flex; align-items: center; gap: 5px;
   }
-  button.btn:hover, label.btn:hover { border-color: var(--line-2); background: #242a35; }
-  button.btn.primary { background: var(--accent-dim); border-color: #3a6da0; color: #fff; }
+  button.btn:hover, label.btn:hover { border-color: var(--line-2); background: var(--wv-surface-3); }
+  button.btn.primary { background: var(--wv-accent); border-color: var(--wv-accent); color: var(--wv-text-on-accent); }
+  button.btn.primary:hover { background: var(--wv-accent-strong); border-color: var(--wv-accent-strong); }
   button.btn.danger:hover { border-color: var(--danger); color: var(--danger); }
 
   /* ===== Main ===== */
@@ -82,11 +92,15 @@
     display: flex; align-items: center; justify-content: center;
   }
   .tool:hover { background: var(--panel-2); color: var(--txt); }
-  .tool.on { background: var(--accent-dim); color: #fff; border-color: #3a6da0; }
+  .tool.on { background: var(--accent-dim); color: var(--wv-accent-text); border-color: var(--wv-accent); }
   .tool svg { width: 18px; height: 18px; }
   .tool-sep { width: 28px; height: 1px; background: var(--line); margin: 3px 0; }
 
-  /* Canvas area */
+  /* Canvas area — #coreCanvas is the flex child; .stage fills it. In default
+     (non-selected) layout this is transparent and behaves exactly like the old
+     flex:1 .stage. In detached mode, detached-panels.css absolutely positions
+     #coreCanvas onto the node's core rect. */
+  #coreCanvas { flex: 1; position: relative; min-width: 0; display: flex; }
   .stage {
     flex: 1; position: relative; min-width: 0; overflow: hidden;
     background:
@@ -225,7 +239,9 @@
   </div>
 
   <div class="main">
-    <div class="tools" id="tools">
+    <!-- data-float-panel tags let the panels float OUTSIDE the canvas when the
+         node is selected (body.detached-panels). Default layout is unaffected. -->
+    <div class="tools" id="tools" data-float-panel="left">
       <button class="tool on" data-tool="pencil" title="Pencil (B)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
       </button>
@@ -253,17 +269,22 @@
       </button>
     </div>
 
-    <div class="stage" id="stage">
-      <canvas id="canvas"></canvas>
-      <div class="zoomctl">
-        <button class="btn" data-zoom="out">−</button>
-        <button class="btn" data-zoom="fit">Fit</button>
-        <button class="btn" data-zoom="in">+</button>
+    <!-- #coreCanvas is the central viewport wrapper detached-panels.css pins to
+         the node's core rect when selected. #stage fills it, so all existing
+         #stage JS refs (clientWidth/Height etc.) keep working unchanged. -->
+    <div id="coreCanvas">
+      <div class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+        <div class="zoomctl">
+          <button class="btn" data-zoom="out">−</button>
+          <button class="btn" data-zoom="fit">Fit</button>
+          <button class="btn" data-zoom="in">+</button>
+        </div>
+        <div class="stage-hud" id="hud">32 × 32 · 100%</div>
       </div>
-      <div class="stage-hud" id="hud">32 × 32 · 100%</div>
     </div>
 
-    <div class="side">
+    <div class="side" data-float-panel="right">
       <section id="imgSection" style="display:none">
         <h3>From Image <span class="act" id="imgResync" style="display:none">Re-sync</span></h3>
         <div class="code-wrap">
@@ -1312,8 +1333,33 @@
     } else if(data.type==="pixel:content"){
       setContent(data.content);            // wired assets changed
       setWiredSpecs(data, true);           // effects/positions may ride along; re-render if changed
+    } else if(data.type==="pixel:select"){
+      // Node (de)selected on the canvas → toggle floating-panels mode, then
+      // report our panel extents so the host can size the iframe around the
+      // core rect. rAF so widths are read AFTER the class flips layout.
+      document.body.classList.toggle("detached-panels", !!data.selected);
+      requestAnimationFrame(()=>{ reportPanels(); requestAnimationFrame(fit); });
     }
   });
+
+  // ---------------- Floating panels (detached mode) ----------------
+  // Report the left/right/top/bottom panel extents (incl. an 8px gap) both as
+  // CSS vars on <body> (so detached-panels.css can lay the panels out) and back
+  // to the host (so it sizes the iframe to leave the core rect on the node).
+  function reportPanels(){
+    const tools = $("#tools"), side = $(".side");
+    const panelL = (tools ? tools.offsetWidth : 0) + 8;
+    const panelR = (side ? side.offsetWidth : 0) + 8;
+    const panelT = 0;   // top bar stays in normal flow (full-width, not floated)
+    const panelB = 0;
+    document.body.style.setProperty("--panel-l", panelL + "px");
+    document.body.style.setProperty("--panel-r", panelR + "px");
+    document.body.style.setProperty("--panel-t", panelT + "px");
+    document.body.style.setProperty("--panel-b", panelB + "px");
+    if(EMBEDDED){
+      parent.postMessage({ type:"pixel:panels", nodeId:NODE_ID, panelL, panelR, panelT, panelB }, "*");
+    }
+  }
 
   // ---------------- Keyboard shortcuts ----------------
   window.addEventListener("keydown", e=>{

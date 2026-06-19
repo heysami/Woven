@@ -4,12 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Interactive Multimedia Composer</title>
+<!-- Woven shared design system + floating-panels-on-select chrome (additive). -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
   :root{
-    --bg:#0b0c10; --panel:#14161d; --panel2:#1b1e27; --line:#2a2e3a;
-    --ink:#e7e9ef; --ink2:#9aa0b0; --acc:#6ee7ff; --acc2:#b388ff; --warn:#ff7a7a;
-    --good:#7CFFB2; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    /* Local tool vars remapped onto Woven tokens (woven-theme.css). The CHROME
+       (layer list / inspector / toolbar / buttons / inputs) now reads as light
+       Woven — warm paper surfaces, hairline borders, single green accent. The
+       preview #stageHost canvases keep their own dark content background. */
+    --bg:var(--wv-surface-2);            /* input fields / inset wells */
+    --panel:var(--wv-surface);           /* panel backgrounds */
+    --panel2:var(--wv-surface-2);        /* layer rows / button faces */
+    --line:var(--wv-border);             /* hairline borders */
+    --ink:var(--wv-text);                /* primary text */
+    --ink2:var(--wv-text-muted);         /* muted/secondary text */
+    --acc:var(--wv-accent);              /* green signature accent */
+    --acc2:var(--wv-accent-strong);      /* secondary accent (impacts/wired) */
+    --warn:var(--wv-danger);             /* error text */
+    --good:var(--wv-success);            /* on/active chip */
+    --mono:var(--wv-font-mono);
+    --sans:var(--wv-font-sans);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;overflow:hidden}
@@ -23,10 +38,10 @@
   .hd .sp{flex:1}
   button{font-family:inherit;font-size:12px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;cursor:pointer}
   button:hover{border-color:var(--acc)}
-  button.acc{background:linear-gradient(180deg,#234,#122);border-color:#356}
+  button.acc{background:var(--wv-accent-soft);border-color:var(--acc);color:var(--wv-accent-text)}
   button.sm{padding:3px 6px;font-size:11px}
   button.chip{border-radius:20px}
-  button.chip.on{background:#143; border-color:var(--good); color:var(--good)}
+  button.chip.on{background:var(--wv-accent-soft); border-color:var(--acc); color:var(--wv-accent-text)}
   button.chip.off{opacity:.8}
   .row{display:flex;gap:6px;align-items:center}
   .layers{padding:8px;display:flex;flex-direction:column;gap:6px}
@@ -35,7 +50,7 @@
   .layer .top{display:flex;align-items:center;gap:6px}
   .layer .nm{flex:1;font-weight:600;font-size:12px;background:transparent;border:0;color:var(--ink);outline:none;min-width:0}
   .layer .meta{margin-top:3px;color:var(--ink2);font-size:10px;display:flex;gap:6px;flex-wrap:wrap}
-  .tag{background:#222634;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:9px}
+  .tag{background:var(--wv-surface-3);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:9px}
   .iconbtn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0}
   .acc-sec{border-bottom:1px solid var(--line)}
   .acc-h{padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
@@ -59,8 +74,8 @@
   .perm{position:absolute;bottom:8px;left:8px;display:flex;gap:6px;z-index:7}
   .small{font-size:10px;color:var(--ink2)}
   .impacts{margin-top:6px;display:flex;flex-direction:column;gap:6px}
-  .impact{border:1px dashed var(--line);border-radius:6px;padding:6px;background:#0e1016}
-  .effitem{border:1px solid var(--line);border-radius:6px;padding:6px;margin:6px 0;background:#0e1016}
+  .impact{border:1px dashed var(--line);border-radius:6px;padding:6px;background:var(--wv-surface-2)}
+  .effitem{border:1px solid var(--line);border-radius:6px;padding:6px;margin:6px 0;background:var(--wv-surface-2)}
   .effitem .eh{display:flex;align-items:center;gap:6px}
   .effitem .eh select{flex:1}
   .toolbar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:7}
@@ -68,6 +83,14 @@
   hr{border:0;border-top:1px solid var(--line);margin:10px 0}
   .errbar{position:absolute;bottom:8px;right:8px;max-width:50%;font-family:var(--mono);font-size:10px;color:var(--warn);background:#0009;padding:4px 8px;border-radius:5px;z-index:8;white-space:pre-wrap}
   svg.ic{width:14px;height:14px;display:block}
+  /* Icon+label alignment for toolbar/perm buttons (inline SVG, no emoji). */
+  .toolbar button,.perm button{display:inline-flex;align-items:center;gap:5px}
+  .toolbar button .ico{display:inline-flex}
+  /* Toolbar/perm overlay the dark preview → keep a dark, legible chip. */
+  .toolbar button{background:#0009;border-color:#fff3;color:#fff;backdrop-filter:blur(4px)}
+  .toolbar button:hover{border-color:var(--acc)}
+  .perm button.chip.off{background:#0009;border-color:#fff3;color:#fff;backdrop-filter:blur(4px)}
+  .perm button.chip.on{background:var(--wv-accent);border-color:var(--wv-accent);color:#fff}
 </style>
 </head>
 <body>
@@ -78,7 +101,8 @@
       <h1>Composer</h1><div class="sp"></div>
       <button class="sm" id="addLayer" title="Add layer">+ Layer</button>
     </div>
-    <div class="layers" id="layerList"></div>
+    <!-- data-float-panel: floats OUTSIDE the core canvas when the node is selected. -->
+    <div class="layers" id="layerList" data-float-panel="left"></div>
     <div style="padding:8px 12px;border-top:1px solid var(--line)">
       <div class="fld"><label>Canvas <span class="v" id="dimLbl"></span></label>
         <div class="grid2">
@@ -91,7 +115,9 @@
   </div>
 
   <!-- ───────── CENTER: live preview ───────── -->
-  <div class="col center">
+  <!-- id="coreCanvas": the central viewport detached-panels.css pins to the node
+       core rect when selected; #stageHost & its JS refs are untouched. -->
+  <div class="col center" id="coreCanvas">
     <div class="stagewrap">
       <div id="stageHost">
         <canvas class="layerstack" id="c2d"></canvas>
@@ -99,19 +125,21 @@
         <div class="badge" id="badge">idle</div>
       </div>
     </div>
+    <!-- Toolbar / permission buttons: inline SVG icons (currentColor), no emoji. -->
     <div class="toolbar">
-      <button class="sm" id="playBtn">⏸ Pause</button>
-      <button class="sm" id="resetClock">⟲ Clock</button>
+      <button class="sm" id="playBtn"><span class="ico"></span><span class="lbl">Pause</span></button>
+      <button class="sm" id="resetClock"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg><span class="lbl">Clock</span></button>
     </div>
     <div class="perm">
-      <button class="chip off" id="permCam">◉ Camera</button>
-      <button class="chip off" id="permMic">◉ Mic</button>
+      <button class="chip off" id="permCam"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg><span class="lbl">Camera</span></button>
+      <button class="chip off" id="permMic"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4"/></svg><span class="lbl">Mic</span></button>
     </div>
     <div class="errbar" id="errbar" style="display:none"></div>
   </div>
 
   <!-- ───────── RIGHT: inspector ───────── -->
-  <div class="col right" id="inspector">
+  <!-- data-float-panel: floats OUTSIDE the core canvas when the node is selected. -->
+  <div class="col right" id="inspector" data-float-panel="right">
     <div class="hd"><h1 id="inspTitle">Layer</h1><div class="sp"></div>
       <span class="pill" id="fpsLbl"></span></div>
     <div id="inspBody"></div>
@@ -1390,9 +1418,17 @@ const Engine = {
   }
 };
 
-/* play/pause/clock */
+/* play/pause/clock — inline SVG icons (currentColor), no emoji. */
+const ICO_PAUSE='<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+const ICO_PLAY='<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>';
+function setPlayBtn(playing){
+  const b=document.getElementById('playBtn');
+  b.querySelector('.ico').innerHTML=playing?ICO_PAUSE:ICO_PLAY;
+  b.querySelector('.lbl').textContent=playing?'Pause':'Play';
+}
+setPlayBtn(Engine.playing!==false);
 document.getElementById('playBtn').onclick=function(){
-  Engine.playing=!Engine.playing; this.textContent=Engine.playing?'⏸ Pause':'▶ Play';
+  Engine.playing=!Engine.playing; setPlayBtn(Engine.playing);
 };
 document.getElementById('resetClock').onclick=()=>Input.resetClock();
 
@@ -1434,6 +1470,9 @@ function renderLayerList(){
   const root=document.getElementById('layerList'); root.innerHTML='';
   [...STATE.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
     const el=document.createElement('div'); el.className='layer'+(L.id===selId?' sel':'');
+    // Connector hit-target: the host peeks into this same-origin doc during an
+    // edge drag and anchors a `layerin:<layerId>` port to this row's geometry.
+    el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
     el.innerHTML=`<div class="top">
         <button class="iconbtn sm" data-act="vis" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</button>
         <input class="nm" value="${esc(L.name)}">
@@ -1463,6 +1502,8 @@ function renderLayerList(){
   if(wired.length){
     [...wired].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
       const el=document.createElement('div'); el.className='layer'+(L.id===selId?' sel':'');
+      // Wired rows are also valid connector targets (same layerin port contract).
+      el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
       el.style.borderStyle='dashed'; el.style.opacity='.92';
       el.innerHTML=`<div class="top">
           <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
@@ -1480,6 +1521,9 @@ function renderLayerList(){
       root.appendChild(el);
     });
   }
+  // Layer rows changed → re-report geometry so layer ports track them (detached
+  // only; the function no-ops otherwise). Defer one frame so layout has settled.
+  if(_detached) requestAnimationFrame(reportLayerGeom);
 }
 function moveZ(L,dir){ L.z=(L.z||0)+dir; emit(); renderAll(); }
 function delLayer(L){ STATE.layers=STATE.layers.filter(x=>x.id!==L.id);
@@ -1839,6 +1883,55 @@ function emit(){
 }
 
 /* ===========================================================================
+   FLOATING PANELS ON SELECT  (Woven detached-panels contract)
+   When the node is SELECTED the host grows the iframe beyond the node frame and
+   posts `mm:select {selected:true}`. We then float the left/right panels OUTSIDE
+   the central #coreCanvas (detached-panels.css), report our panel extents so the
+   host can break out the iframe, and report each layer-row's geometry so wired
+   `layerin:<layerId>` ports anchor to the right row. All additive: no effect
+   unless body.detached-panels is set.
+   ===========================================================================*/
+let _detached=false;
+/* Report the floating-panel extents (CSS px, INCLUDING an 8px gap). The host
+   positions the iframe so #coreCanvas lands exactly on the node's core rect. */
+function reportPanels(){
+  if(!EMBEDDED) return;
+  const L=document.getElementById('layerList');
+  const R=document.getElementById('inspector');
+  const panelL=(L?L.getBoundingClientRect().width:0)+8;
+  const panelR=(R?R.getBoundingClientRect().width:0)+8;
+  const panelT=0, panelB=0;
+  // Drive our own detached CSS, then hand the same four numbers to the host.
+  const b=document.body.style;
+  b.setProperty('--panel-l',panelL+'px'); b.setProperty('--panel-r',panelR+'px');
+  b.setProperty('--panel-t',panelT+'px'); b.setProperty('--panel-b',panelB+'px');
+  try{ parent.postMessage({type:'mm:panels',nodeId:NODE,panelL,panelR,panelT,panelB},'*'); }catch(e){}
+}
+/* Report per-layer-row geometry in IFRAME-LOCAL px (getBoundingClientRect() is
+   already iframe-relative). Only meaningful when detached — the host uses it to
+   anchor layer ports; deselected, the ports retract to the node's main edge. */
+function reportLayerGeom(){
+  if(!EMBEDDED || !_detached) return;
+  const panelEl=document.getElementById('layerList');   // the floating LEFT panel
+  if(!panelEl) return;
+  const pr=panelEl.getBoundingClientRect();
+  const panel={side:'left', left:pr.left, right:pr.right, top:pr.top, bottom:pr.bottom};
+  const rows=[];
+  panelEl.querySelectorAll('.layer[data-port-layer]').forEach(el=>{
+    const r=el.getBoundingClientRect();
+    rows.push({layerId:el.dataset.portLayer, side:'left', top:r.top, height:r.height, visible:true});
+  });
+  try{ parent.postMessage({type:'mm:layers-geometry',nodeId:NODE,panel,rows},'*'); }catch(e){}
+}
+/* Recompute geometry when the panel scrolls (rows move) — passive, NOT rAF. */
+(function wireLayerScroll(){
+  const sc=document.getElementById('layerList');   // .layers is its own scroll container
+  if(sc) sc.addEventListener('scroll',()=>{ if(_detached) reportLayerGeom(); },{passive:true});
+  // Also recompute on viewport resize (panel width / row layout can change).
+  window.addEventListener('resize',()=>{ if(_detached){ reportPanels(); reportLayerGeom(); } });
+})();
+
+/* ===========================================================================
    INBOUND MESSAGES
    ===========================================================================*/
 if(EMBEDDED){
@@ -1860,6 +1953,12 @@ if(EMBEDDED){
       Assets.reset();
       if(WIRED.effects.length) ensureFXChain();
       renderAll();                         // no mm:state echo (external inputs changed)
+    } else if(d.type==='mm:select'){
+      // Selected on the canvas → float panels OUTSIDE the core viewport, then
+      // report panel extents + layer-row geometry (after layout settles).
+      _detached=!!d.selected;
+      document.body.classList.toggle('detached-panels', _detached);
+      requestAnimationFrame(()=>{ reportPanels(); reportLayerGeom(); });
     }
   });
 }

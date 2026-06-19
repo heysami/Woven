@@ -3,7 +3,7 @@
 // Decoration forbidden. Motion only on data change or hover (0.12s).
 // No JSX, no Babel — htm tagged templates bound to React.createElement.
 
-const { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback, useReducer } = React;
 const { createRoot, createPortal } = ReactDOM;
 const h = React.createElement;
 const html = htm.bind(h);
@@ -23152,9 +23152,37 @@ const WORKFLOW_AGENT_PORT_FRAC = {
 const WORKFLOW_AGENT_LEFT_SIDES  = new Set(["input", "prompt-in", "system-in", "folder-read", "reference-folder"]);
 const WORKFLOW_AGENT_RIGHT_SIDES = new Set(["folder-write", "output", "output-1", "output-2", "output-3", "file-out"]);
 
-function workflowPortPosition(node, side) {
+// `ctx` (optional) carries the runtime maps needed to resolve LAYER ports
+// (`layerin:<id>` / `layerout:<id>`) that anchor to a specific layer row inside
+// a selected app-node's floating panel:
+//   ctx.selectedIds  Set<nodeId>            — only selected nodes float panels
+//   ctx.layerGeom    { [nodeId]: {panel,rows} }  — tool-reported, iframe-local px
+//   ctx.appLayout    { [nodeId]: {panelL,panelR,panelT,panelB} } — float extents
+// Absent ctx (or deselected / no geometry) → the layer port retracts to the
+// node's main in/out edge, so existing callers need no change.
+function workflowPortPosition(node, side, ctx) {
   const w = node.w || 220;
   const h = node.h || 150;
+  // Layer-anchored ports — resolved before everything else when geometry exists.
+  const lp = workflowParseLayerPort(side);
+  if (lp) {
+    const sel  = !!(ctx && ctx.selectedIds && ctx.selectedIds.has && ctx.selectedIds.has(node.id));
+    const geom = ctx && ctx.layerGeom && ctx.layerGeom[node.id];
+    const lay  = (ctx && ctx.appLayout && ctx.appLayout[node.id]) || null;
+    const row  = sel && geom && geom.rows ? geom.rows.find(r => r.layerId === lp.layerId) : null;
+    const panel = geom && geom.panel;
+    if (sel && row && panel && lay) {
+      // iframe content origin in node-local coords when detached: (-panelL, 30 - panelT)
+      const originX = node.x - (lay.panelL || 0);
+      const originY = node.y + 30 - (lay.panelT || 0);
+      const rowMid  = (row.top || 0) + (row.height || 0) / 2;
+      const yLocal  = Math.max(panel.top || 0, Math.min(panel.bottom != null ? panel.bottom : rowMid, rowMid));
+      const xLocal  = panel.side === "right" ? (panel.right || 0) : (panel.left || 0);
+      return { x: originX + xLocal, y: originY + yLocal };
+    }
+    // Fallback: deselected / panels hidden / row gone → main in/out edge.
+    return workflowPortPosition(node, lp.side === "in" ? "in" : "out");
+  }
   if (node.kind === "prototype") {
     const isLeft  = WORKFLOW_PROTO_LEFT_SIDES.has(side);
     const isRight = WORKFLOW_PROTO_RIGHT_SIDES.has(side);
@@ -23236,6 +23264,16 @@ function workflowParseEdgeRef(ref) {
   return { node: ref.slice(0, i), port: ref.slice(i + 1) };
 }
 
+// Layer-anchored ports encode a target layer row in the port segment:
+//   "layerin:<layerId>"   wire targets a layer row, input side (left)
+//   "layerout:<layerId>"  (reserved) layer row acts as a source, right side
+// Layer ids are dotless tokens, so the lastIndexOf(".") parse above is safe.
+function workflowParseLayerPort(port) {
+  if (typeof port !== "string") return null;
+  const m = /^layer(in|out):(.+)$/.exec(port);
+  return m ? { side: m[1] === "in" ? "in" : "out", layerId: m[2] } : null;
+}
+
 // Cubic-bezier path string. fromDir / toDir are -1, 0, or +1 and tell each
 // control point which way to extend horizontally from its endpoint:
 //   +1  → rightward (out of a right-side "out" port, or off a right edge)
@@ -23260,6 +23298,9 @@ function workflowPortDir(side) {
   // Iterator dynamic ports: output-N curves rightward, input-N curves leftward.
   if (/^output-\d+$/.test(side)) return 1;
   if (/^input-\d+$/.test(side))  return -1;
+  // Layer-anchored ports: input layer rows curve leftward, source rows rightward.
+  if (/^layerout:/.test(side)) return 1;
+  if (/^layerin:/.test(side))  return -1;
   return -1;
 }
 
@@ -23269,6 +23310,7 @@ function workflowPortDir(side) {
 // regardless of which port the user grabbed first.
 function workflowIsSourcePort(side) {
   return side === "out"
+    || (typeof side === "string" && /^layerout:/.test(side))
     || WORKFLOW_PROTO_RIGHT_SIDES.has(side)
     || WORKFLOW_AGENT_RIGHT_SIDES.has(side);
 }
@@ -23280,6 +23322,8 @@ function workflowIsSourcePort(side) {
 // flavors match OR either side is null.
 function workflowPortFlavor(node, side) {
   if (!node || !side) return null;
+  // Layer-anchored ports accept/emit file-backed content (image/svg layers).
+  if (typeof side === "string" && /^layer(in|out):/.test(side)) return "asset";
   const kind = node.kind;
   if (kind === "prompt") return "text";   // prompt/text node only emits text
   if (kind === "asset")  return "asset";  // asset cards emit/accept image-like content
@@ -36124,13 +36168,34 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setSelectedEdge(null);
     const fromNode = (data.nodes || []).find(n => n.id === fromNodeId);
     if (!fromNode) return;
-    const p = workflowPortPosition(fromNode, fromPort);
+    const portCtx = { selectedIds: selectedNodeIdsRef.current, layerGeom: layerGeomRef.current, appLayout: appNodeLayoutRef.current };
+    const p = workflowPortPosition(fromNode, fromPort, portCtx);
     setPendingEdge({ fromNodeId, fromPort, fromX: p.x, fromY: p.y, toX: p.x, toY: p.y, snapped: false });
 
     const fromIsSource = workflowIsSourcePort(fromPort);
+    // Gather drop-zone candidates at a point: the top document's hits PLUS any
+    // layer-row hit-targets inside same-origin tool iframes under the cursor
+    // (cross-document elementsFromPoint can't see into the iframe, so peek its
+    // contentDocument directly — only while a drag is active, event-driven).
+    const collectPortEls = (clientX, clientY) => {
+      const out = (typeof document !== "undefined" && document.elementsFromPoint)
+        ? document.elementsFromPoint(clientX, clientY).slice() : [];
+      try {
+        const frames = document.querySelectorAll("iframe.workflow-driven-frame");
+        for (const f of frames) {
+          const r = f.getBoundingClientRect();
+          if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) continue;
+          const doc = f.contentDocument;
+          if (!doc || !doc.elementsFromPoint) continue;
+          for (const el of doc.elementsFromPoint(clientX - r.left, clientY - r.top)) {
+            if (el && el.dataset && el.dataset.portLayer && el.dataset.portSide) out.push(el);
+          }
+        }
+      } catch (_e) {}
+      return out;
+    };
     const findCompatiblePort = (clientX, clientY) => {
-      const els = (typeof document !== "undefined" && document.elementsFromPoint)
-        ? document.elementsFromPoint(clientX, clientY) : [];
+      const els = collectPortEls(clientX, clientY);
       for (const el of els) {
         const ds = el.dataset || {};
         if (!ds.portNode || !ds.portSide) continue;
@@ -36156,7 +36221,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (hit) {
         const targetNode = (data.nodes || []).find(n => n.id === hit.node);
         if (targetNode) {
-          const tp = workflowPortPosition(targetNode, hit.port);
+          const tp = workflowPortPosition(targetNode, hit.port, portCtx);
           setPendingEdge(pe => pe ? { ...pe, toX: tp.x, toY: tp.y, snapped: true, snapTarget: hit } : null);
           return;
         }
@@ -36191,6 +36256,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const [iframeStates, setIframeStates] = useState({});
   const reportIframeState = useCallback((protoId, state) => {
     setIframeStates(s => (s[protoId] && s[protoId].pathname === state.pathname && s[protoId].hash === state.hash) ? s : { ...s, [protoId]: state });
+  }, []);
+
+  // App-node floating-panel extents (CSS px) reported by each tool on select.
+  // Drives the iframe break-out geometry + the layer-port coordinate origin.
+  const [appNodeLayout, setAppNodeLayout] = useState({});
+  const appNodeLayoutRef = useRef({}); appNodeLayoutRef.current = appNodeLayout;
+  const reportAppNodeLayout = useCallback((id, lay) => {
+    setAppNodeLayout(s => {
+      const p = s[id];
+      if (p && p.panelL === lay.panelL && p.panelR === lay.panelR && p.panelT === lay.panelT && p.panelB === lay.panelB) return s;
+      return { ...s, [id]: { panelL: lay.panelL || 0, panelR: lay.panelR || 0, panelT: lay.panelT || 0, panelB: lay.panelB || 0 } };
+    });
+  }, []);
+  // Per-layer-row geometry (iframe-local px) reported by tools with layers.
+  // A ref (not state) + a cheap bump: geometry only moves the edge SVG, and is
+  // pushed on discrete events (layer change / scroll / resize), never per frame.
+  const layerGeomRef = useRef({});
+  const [, bumpLayerGeom] = useReducer(x => (x + 1) | 0, 0);
+  const reportLayerGeom = useCallback((id, payload) => {
+    if (!id) return;
+    if (payload == null) { if (layerGeomRef.current[id]) { delete layerGeomRef.current[id]; bumpLayerGeom(); } return; }
+    layerGeomRef.current[id] = payload;
+    bumpLayerGeom();
   }, []);
 
   // Compute orphan map: protoId → true when its iframe is currently on a
@@ -38138,6 +38226,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               selectedEdge=${selectedEdge}
               onSelectEdge=${setSelectedEdge}
               selectedNodeId=${selectedNodeId}
+              selectedNodeIds=${selectedNodeIds}
+              appNodeLayout=${appNodeLayout}
+              layerGeom=${layerGeomRef.current}
             />
             ${(data.nodes || []).filter(n => n.kind === "prototype").map(n => html`
               <${WorkflowPrototypeNode}
@@ -38978,6 +39069,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     };
                   });
                 }}
+                reportLayerGeom=${reportLayerGeom}
+                reportAppNodeLayout=${reportAppNodeLayout}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -39020,6 +39113,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     };
                   });
                 }}
+                reportAppNodeLayout=${reportAppNodeLayout}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -39039,6 +39133,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onBakeAutoCreateOutput=${(bakedPath) => spawnAppNodeOutput(setData, n, bakedPath)}
+                reportAppNodeLayout=${reportAppNodeLayout}
+                reportLayerGeom=${reportLayerGeom}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -53517,13 +53613,19 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     }
   }, [node.id, node.maxWidth, node.maxHeight, node.background, canvasW, canvasH, layers, wiredAssetIds, allNodes, allEdges, onChange, onBakeAutoCreateOutput, bakeBranch, composerSidecarPath, _gridGeomFor]);
 
+  // Native floating-panel mode: when selected, the side panels break OUT of
+  // the node rect (DOM, same document) and the stage fills the node. Purely
+  // selection-driven — a deselected composer looks exactly as before.
+  const detached = !!selected;
+
   return html`
     <div
       className="workflow-node workflow-node-composer"
       data-selected=${selected ? "true" : "false"}
+      data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">▣</span>
@@ -53565,7 +53667,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
       <div className="workflow-composer-body">
-        <div className="workflow-composer-left">
+        <div className=${"workflow-composer-left" + (detached ? " workflow-node-float-panel" : "")}>
           <div className="workflow-composer-section">
             <div className="workflow-composer-section-head">Layers <span className="workflow-composer-count">${layers.length}</span></div>
             <div className="workflow-composer-layers">
@@ -53691,7 +53793,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           })}
         </div>
         </div>
-        <div className="workflow-composer-right">
+        <div className=${"workflow-composer-right" + (detached ? " workflow-node-float-panel" : "")}>
         ${activeLayerIdx != null && layers[activeLayerIdx] && html`
           <div className="workflow-composer-section workflow-composer-layer-edit-panel">
             <div className="workflow-composer-section-head">Selected layer</div>
@@ -54346,11 +54448,20 @@ function WorkflowVectorEditorNode({
   node, zoom, selected, onSelect, onMove, onResize, onRemove,
   onChange, onDragStart, onDragEnd, onStartEdge,
   allNodes, allEdges, onBakeAutoCreateOutput,
+  reportLayerGeom, reportAppNodeLayout,
 }) {
   const w = node.w || 720;
   const h = node.h || 520;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+
+  // Native floating-panel mode: when selected, the tools/layers (left) +
+  // properties (right) panels break OUT of the node rect (DOM, same
+  // document) and the stage fills the node. Selection-driven only — a
+  // deselected vector node looks exactly as before.
+  const detached = !!selected;
+  const rootRef = useRef(null);
+  const layersScrollRef = useRef(null);
 
   const svgRef = useRef(null);
   const canvasW = node.canvasW || 1200;
@@ -55228,6 +55339,9 @@ function WorkflowVectorEditorNode({
     return html`
       <div key=${"l-" + s.id}
         className=${"workflow-vector-layer-row" + (isSel ? " is-active" : "") + (member ? " is-grouped" : "")}
+        data-port-node=${node.id}
+        data-port-layer=${s.id}
+        data-port-side=${"layerin:" + s.id}
         onClick=${(e) => { e.stopPropagation(); setSelection(e.shiftKey && isSel ? selection.filter(x => x !== s.id) : (e.shiftKey ? [...selection, s.id] : [s.id])); }}
       >
         <button className="workflow-vector-layer-vis"
@@ -55448,6 +55562,71 @@ function WorkflowVectorEditorNode({
     setSelectedAnchor(subIdx + ":" + (segIdx + 1));
   };
 
+  // ── Layer-anchored connector geometry ──────────────────────────────────
+  // Report each layer-row's node-local rect so workflowPortPosition can land
+  // an edge anchor on the actual on-screen row. With appLayout
+  // {panelL:0,panelR:0,panelT:30,panelB:0} the resolver's origin is
+  // (node.x, node.y); so geometry must be node-local FROM THE NODE TOP, i.e.
+  //   row.top = rowRect.top - rootRect.top   (bar's +30 is cancelled by panelT)
+  // Recomputed ONLY on shape/selection change, panel scroll, and node resize
+  // — NEVER per-frame (hard project rule against rAF layout reads).
+  useEffect(() => {
+    if (!reportAppNodeLayout) return;
+    if (detached) reportAppNodeLayout(node.id, { panelL: 0, panelR: 0, panelT: 30, panelB: 0 });
+  }, [detached, node.id, reportAppNodeLayout]);
+
+  const measureLayerGeom = useCallback(() => {
+    if (!reportLayerGeom) return;
+    const root = rootRef.current;
+    if (!root || !detached) { reportLayerGeom(node.id, null); return; }
+    const rootRect = root.getBoundingClientRect();
+    const rows = [];
+    let panelL = 0, panelR = 0, panelT = 0, panelB = 0, havePanel = false;
+    const panelEl = root.querySelector(".workflow-vector-left");
+    if (panelEl) {
+      const pr = panelEl.getBoundingClientRect();
+      panelL = pr.left - rootRect.left;
+      panelR = pr.right - rootRect.left;
+      panelT = pr.top - rootRect.top;
+      panelB = pr.bottom - rootRect.top;
+      havePanel = true;
+    }
+    for (const el of root.querySelectorAll(".workflow-vector-layer-row[data-port-layer]")) {
+      const layerId = el.getAttribute("data-port-layer");
+      if (!layerId) continue;
+      const r = el.getBoundingClientRect();
+      rows.push({ layerId, side: "left", top: r.top - rootRect.top, height: r.height, visible: true });
+    }
+    // Panel floats to the LEFT of the node, so the wire should land on the
+    // panel's RIGHT edge (the side facing the node). workflowPortPosition uses
+    // xLocal = panel.left for a "left" panel, so feed the right-edge x there.
+    reportLayerGeom(node.id, {
+      panel: havePanel ? { side: "left", left: panelR, right: panelR, top: panelT, bottom: panelB } : null,
+      rows,
+    });
+  }, [detached, node.id, reportLayerGeom]);
+
+  // Recompute on shapes/groups/selection change + on detach toggle.
+  useEffect(() => { measureLayerGeom(); }, [measureLayerGeom, shapes, groups, selection]);
+  // Recompute on layers-panel scroll (passive) — rows move under the viewport.
+  useEffect(() => {
+    const el = layersScrollRef.current;
+    if (!el || !detached) return undefined;
+    const onScroll = () => measureLayerGeom();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [detached, measureLayerGeom]);
+  // Recompute on node resize (ResizeObserver on the root — not a rAF loop).
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !detached || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => measureLayerGeom());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [detached, measureLayerGeom]);
+  // Clear reported geometry on unmount so a removed node leaves no stale anchors.
+  useEffect(() => () => { reportLayerGeom && reportLayerGeom(node.id, null); }, [node.id, reportLayerGeom]);
+
   // Delete the currently selected anchor (panel button + Backspace/Delete).
   // Drops the subpath if it falls below 2 anchors; drops the shape if no
   // subpaths remain.
@@ -55465,11 +55644,13 @@ function WorkflowVectorEditorNode({
 
   return html`
     <div
+      ref=${rootRef}
       className="workflow-node workflow-node-vector"
       data-selected=${selected ? "true" : "false"}
+      data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">✎</span>
@@ -55506,7 +55687,7 @@ function WorkflowVectorEditorNode({
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
       <div className="workflow-vector-body">
-        <div className="workflow-vector-left">
+        <div className=${"workflow-vector-left" + (detached ? " workflow-node-float-panel" : "")}>
           <div className="workflow-vector-section">
             <div className="workflow-vector-section-head">Tools</div>
             <div className="workflow-vector-tools">
@@ -55639,7 +55820,7 @@ function WorkflowVectorEditorNode({
                   title="Ungroup the selected group(s)" onClick=${(e) => { e.stopPropagation(); ungroupSelected(); }}>⊟ Ungroup</button>
               </span>
             </div>
-            <div className="workflow-vector-layers">
+            <div className="workflow-vector-layers" ref=${layersScrollRef}>
               ${shapes.length === 0 && html`<div className="workflow-vector-hint">No shapes yet. Pick a tool and draw on the stage.</div>`}
               ${_vecSegments(shapes).slice().reverse().map((seg) => {
                 if (seg.kind === "shape") {
@@ -55764,7 +55945,7 @@ function WorkflowVectorEditorNode({
             </svg>
           </div>
         </div>
-        <div className="workflow-vector-right">
+        <div className=${"workflow-vector-right" + (detached ? " workflow-node-float-panel" : "")}>
           ${(() => {
             // Node-edit mode: surface the per-anchor panel above the
             // shape's regular properties (which still apply to the
@@ -57744,12 +57925,13 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
    up. Imports are node-owned (not serialized into the scene) and resolved via
    the shared io-contract resolver — no bespoke edge walk. */
 const SPLINE_TOOL_SRC = "/editor/tools/spline3d/index.html";
-function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
+function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, allNodes, allEdges }) {
   const w = node.w || 720;
   const h = node.h || 540;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const iframeRef = useRef(null);
+  const [panelExtents, setPanelExtents] = useState(null);
 
   const branch = useMemo(() => {
     for (const e of (allEdges || [])) {
@@ -57839,13 +58021,24 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
         readyRef.current = true;
         postToIframe({ type: "spline:init", scene: sceneRef.current || null, imports: importsRef.current,
                        effects: splineSpecsRef.current.effects, positions: splineSpecsRef.current.positions });
+        postToIframe({ type: "spline:select", selected: !!selectedRef.current });
       } else if (d.type === "spline:scene") {
         persistScene(d.scene);
+      } else if (d.type === "spline:panels") {
+        const lay = { panelL: d.panelL || 0, panelR: d.panelR || 0, panelT: d.panelT || 0, panelB: d.panelB || 0 };
+        setPanelExtents(lay);
+        reportAppNodeLayout && reportAppNodeLayout(node.id, lay);
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [node.id, postToIframe, persistScene]);
+  }, [node.id, postToIframe, persistScene, reportAppNodeLayout]);
+
+  // Notify the 3D tool of selection so it can float / hide its panels.
+  const selectedRef = useRef(selected); selectedRef.current = selected;
+  useEffect(() => {
+    if (readyRef.current) postToIframe({ type: "spline:select", selected: !!selected });
+  }, [selected, postToIframe]);
 
   // Reactive imports: push the current wired-model list whenever it changes.
   useEffect(() => {
@@ -57895,13 +58088,21 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
     if (readyRef.current && node.scene) postToIframe({ type: "spline:set-scene", scene: node.scene });
   }, [node.scene, postToIframe]);
 
+  const detached = !!(selected && panelExtents && (panelExtents.panelL || panelExtents.panelR || panelExtents.panelT || panelExtents.panelB));
+  const lay = panelExtents || { panelL: 0, panelR: 0, panelT: 0, panelB: 0 };
+  const frameStyle = detached
+    ? { position: "absolute", left: (-lay.panelL) + "px", top: (30 - lay.panelT) + "px",
+        width: (w + lay.panelL + lay.panelR) + "px", height: (h - 30 + lay.panelT + lay.panelB) + "px",
+        border: 0, display: "block", background: "transparent", pointerEvents: "auto", zIndex: 1 }
+    : { width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" };
   return html`
     <div
       className="workflow-node workflow-node-spline3d"
       data-selected=${selected ? "true" : "false"}
+      data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">⬢</span>
@@ -57916,7 +58117,7 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
         src=${iframeSrc}
         className="workflow-spline3d-frame workflow-driven-frame"
         title="3D editor"
-        style=${{ width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" }}
+        style=${frameStyle}
         onMouseDown=${(e) => e.stopPropagation()}
       />
       <div
@@ -58154,13 +58355,16 @@ function _bindingIsDynamic(binding) {
   return s.sub === "algorithmic" && /\bt\b/.test(String((s.params && s.params.expr) || ""));
 }
 
-function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
+function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, reportLayerGeom, allNodes, allEdges }) {
   const cfg = APP_NODE_TOOLS[node.kind];
   const w = node.w || 720;
   const h = node.h || 540;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const iframeRef = useRef(null);
+  // Tool-reported floating-panel extents (kept locally so this node can size its
+  // own iframe break-out; also reported up to the surface for layer-port coords).
+  const [panelExtents, setPanelExtents] = useState(null);
 
   const branch = useMemo(() => {
     for (const e of (allEdges || [])) {
@@ -58293,13 +58497,32 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
                        content: contentRef.current, imports: importsRef.current,
                        effects: specsRef.current.effects, positions: specsRef.current.positions,
                        triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
+        // Tell a freshly-ready tool whether it's already selected (floating panels).
+        postToIframe({ type: cfg.prefix + ":select", selected: !!selectedRef.current });
       } else if (d.type === cfg.prefix + ":state") {
         persistState(d.state, d.baked || null);
+      } else if (d.type === cfg.prefix + ":panels") {
+        // Tool reports its floating-panel extents (CSS px). Drives iframe break-out.
+        const lay = { panelL: d.panelL || 0, panelR: d.panelR || 0, panelT: d.panelT || 0, panelB: d.panelB || 0 };
+        setPanelExtents(lay);
+        reportAppNodeLayout && reportAppNodeLayout(node.id, lay);
+      } else if (d.type === cfg.prefix + ":layers-geometry") {
+        // Tool reports per-layer-row geometry (iframe-local px) for layer ports.
+        reportLayerGeom && reportLayerGeom(node.id, { panel: d.panel || null, rows: Array.isArray(d.rows) ? d.rows : [] });
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [node.id, cfg.prefix, branch, postToIframe, persistState]);
+  }, [node.id, cfg.prefix, branch, postToIframe, persistState, reportAppNodeLayout, reportLayerGeom]);
+
+  // Notify the tool when selection changes so it can float / hide its panels.
+  const selectedRef = useRef(selected); selectedRef.current = selected;
+  useEffect(() => {
+    if (readyRef.current) postToIframe({ type: cfg.prefix + ":select", selected: !!selected });
+  }, [selected, cfg.prefix, postToIframe]);
+
+  // Clear reported geometry on unmount so a removed node leaves no stale anchors.
+  useEffect(() => () => { reportLayerGeom && reportLayerGeom(node.id, null); }, [node.id, reportLayerGeom]);
 
   // Reactive content/imports/specs push.
   useEffect(() => {
@@ -58339,13 +58562,25 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
   }, [node[cfg.stateField], cfg.prefix, cfg.stateField, postToIframe]);
 
   const hasIn = !!(WORKFLOW_CONNECT_DEFS[node.kind] && WORKFLOW_CONNECT_DEFS[node.kind].accepts && WORKFLOW_CONNECT_DEFS[node.kind].accepts.in);
+  // Floating-panel break-out: when selected and the tool has reported nonzero
+  // panel extents, grow the iframe beyond the node's core rect onto a transparent
+  // backdrop. The core canvas (inset by the same extents inside the tool) lands
+  // back on the node rect; node chrome + in/out ports stay put.
+  const detached = !!(selected && panelExtents && (panelExtents.panelL || panelExtents.panelR || panelExtents.panelT || panelExtents.panelB));
+  const lay = panelExtents || { panelL: 0, panelR: 0, panelT: 0, panelB: 0 };
+  const frameStyle = detached
+    ? { position: "absolute", left: (-lay.panelL) + "px", top: (30 - lay.panelT) + "px",
+        width: (w + lay.panelL + lay.panelR) + "px", height: (h - 30 + lay.panelT + lay.panelB) + "px",
+        border: 0, display: "block", background: "transparent", pointerEvents: "auto", zIndex: 1 }
+    : { width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" };
   return html`
     <div
       className=${"workflow-node workflow-node-apptool workflow-node-apptool-" + node.kind}
       data-selected=${selected ? "true" : "false"}
+      data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">${cfg.glyph}</span>
@@ -58360,7 +58595,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
         src=${iframeSrc}
         className="workflow-apptool-frame workflow-driven-frame"
         title=${cfg.label}
-        style=${{ width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" }}
+        style=${frameStyle}
         onMouseDown=${(e) => e.stopPropagation()}
       />
       ${hasIn && html`<div
@@ -63783,12 +64018,15 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, tetherHost, chatBu
      3. Pending edge   — dashed, follows cursor during a port drag.
    Stroke uses vector-effect non-scaling-stroke so widths stay constant
    across zoom. */
-function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge, onSelectEdge, selectedNodeId }) {
+function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge, onSelectEdge, selectedNodeId, selectedNodeIds, appNodeLayout, layerGeom }) {
   const nodeById = useMemo(() => {
     const m = {};
     for (const n of nodes) m[n.id] = n;
     return m;
   }, [nodes]);
+  // Context for layer-anchored ports — read live each render (parent re-renders
+  // this layer on the layerGeom bump, so the mutated ref contents are fresh).
+  const portCtx = { selectedIds: selectedNodeIds || new Set(), layerGeom: layerGeom || {}, appLayout: appNodeLayout || {} };
 
   // Inferred binding lines for every asset → its bound prototype.
   // Start: whichever asset port (in/out) is closer to the prototype's
@@ -63849,8 +64087,8 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
         const fn = nodeById[fromRef.node];
         const tn = nodeById[toRef.node];
         if (!fn || !tn) return null;
-        const a = workflowPortPosition(fn, fromRef.port);
-        const b = workflowPortPosition(tn, toRef.port);
+        const a = workflowPortPosition(fn, fromRef.port, portCtx);
+        const b = workflowPortPosition(tn, toRef.port, portCtx);
         const isSelected = selectedEdge === i;
         // v2.4b — edge is "active" when its source OR target is the selected
         // node. CSS animates stroke-dashoffset on the active edges so the

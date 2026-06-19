@@ -1,0 +1,96 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   Woven "floating panels" mode for app-node tool iframes.
+
+   When a tool's node is SELECTED on the workflow canvas, the React host grows
+   the tool's iframe BEYOND the node frame (transparent backdrop) and posts
+   `<prefix>:select {selected:true}`. The tool then adds `class="detached-panels"`
+   to <body>, and its side/top/bottom panels float OUTSIDE the central canvas
+   while the empty backdrop stays click-through to the canvas underneath.
+
+   CONTRACT each tool must satisfy (additive — no effect unless body.detached-panels):
+     1. Wrap the central viewport/canvas in an element with id="coreCanvas".
+     2. Tag each surrounding panel with data-float-panel="left|right|top|bottom".
+     3. On `<prefix>:select`, set the panel extents (its own panel sizes, in CSS
+        px, INCLUDING an 8px gap) as CSS vars on <body>:
+           --panel-l / --panel-r / --panel-t / --panel-b
+        and post the SAME four numbers back to the host as
+           { type:"<prefix>:panels", nodeId, panelL, panelR, panelT, panelB }.
+        The host positions the iframe at node-local (-panelL, 30-panelT) sized
+        (w+panelL+panelR) x (h-30+panelT+panelB); the inset below then lands
+        #coreCanvas exactly on the node's core rect.
+
+   When deselected the tool removes the class; the default in-frame layout (the
+   tool's own CSS) is untouched.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+body.detached-panels {
+  /* transparent so the backdrop reveals the canvas; click-through where empty */
+  background: transparent !important;
+  pointer-events: none;
+  position: relative;
+}
+
+/* Central canvas stays live and pinned to the node's core rect (inset by the
+   reported panel extents). Tools whose #coreCanvas is the flex child just get
+   absolutely repositioned here in detached mode. */
+body.detached-panels #coreCanvas {
+  position: absolute !important;
+  left:   var(--panel-l, 0px);
+  top:    var(--panel-t, 0px);
+  right:  var(--panel-r, 0px);
+  bottom: var(--panel-b, 0px);
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  /* Clip so a renderer still sized to the (now larger) iframe never spills past
+     the core rect onto the floating panels. Tools that re-fit their renderer to
+     #coreCanvas on select fill it exactly; this is the safety net for the rest. */
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+/* Floating panels — positioned around the core rect, with an 8px breathing gap
+   built into the extent vars (so a panel of declared width W occupies W-8 and
+   leaves the gap as transparent click-through). */
+/* NB: tools position these panels with ID selectors (#left/#rightcol/…), which
+   out-specify a bare attribute selector — so the layout-critical properties here
+   use !important to guarantee the detached override wins regardless of the tool's
+   own rules. Cosmetic props (shadow/radius) stay overridable. */
+body.detached-panels [data-float-panel] {
+  position: absolute !important;
+  pointer-events: auto;
+  z-index: 5;
+  overflow: auto;
+  box-shadow: var(--wv-shadow-lg, 0 12px 32px rgba(0,0,0,0.18));
+  border-radius: var(--wv-radius, 6px);
+}
+body.detached-panels [data-float-panel="left"] {
+  left: 0 !important; right: auto !important;
+  top: var(--panel-t, 0px) !important; bottom: var(--panel-b, 0px) !important;
+  width: calc(var(--panel-l, 0px) - 8px) !important; height: auto !important;
+}
+body.detached-panels [data-float-panel="right"] {
+  right: 0 !important; left: auto !important;
+  top: var(--panel-t, 0px) !important; bottom: var(--panel-b, 0px) !important;
+  width: calc(var(--panel-r, 0px) - 8px) !important; height: auto !important;
+}
+body.detached-panels [data-float-panel="top"] {
+  top: 0 !important; bottom: auto !important;
+  left: var(--panel-l, 0px) !important; right: var(--panel-r, 0px) !important;
+  height: calc(var(--panel-t, 0px) - 8px) !important; width: auto !important;
+}
+body.detached-panels [data-float-panel="bottom"] {
+  bottom: 0 !important; top: auto !important;
+  left: var(--panel-l, 0px) !important; right: var(--panel-r, 0px) !important;
+  height: calc(var(--panel-b, 0px) - 8px) !important; width: auto !important;
+}
+
+/* Layer rows expose connector hit-targets to the host (which peeks into the
+   same-origin contentDocument during an edge drag). Give a wired/hovered row a
+   subtle accent edge so the drop is discoverable. */
+body.detached-panels [data-port-layer].is-drop-target,
+[data-port-layer].is-drop-target {
+  outline: 2px solid var(--wv-accent, #2e9e6b);
+  outline-offset: -2px;
+}

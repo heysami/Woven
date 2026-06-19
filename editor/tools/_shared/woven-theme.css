@@ -1,0 +1,165 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   Woven shared design system for app-node tool iframes.
+
+   All editor tools (font / image / pixel / voxel / splat / material / mm-composer
+   / spline / synth / music) are served same-origin under /editor/tools/, so each
+   can <link> this file to inherit the canonical Woven tokens instead of shipping
+   its own ad-hoc palette. The token values are copied verbatim from
+   editor/styles.css :root so the tools read as ONE design system with the editor
+   chrome — warm paper-white surfaces, hairline borders, a single vivid green
+   accent, Space Grotesk / Space Mono type.
+
+   Usage in a tool:
+     <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+   then map the tool's local vars onto these, e.g.
+     :root { --bg: var(--wv-bg); --panel: var(--wv-surface); --accent: var(--wv-accent); ... }
+   and/or use the .wv-* component classes below directly.
+
+   NB: tools render a LIGHT chrome to match the editor. A 3D / pixel / canvas
+   viewport may keep a dark *content* background — that's content, not chrome.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
+
+:root {
+  /* Surfaces — warm paper-white, faintly neutral (TE light hardware) */
+  --wv-bg:          oklch(98.6% 0.003 70);
+  --wv-surface:     oklch(100% 0 0);
+  --wv-surface-2:   oklch(97% 0.004 70);
+  --wv-surface-3:   oklch(94% 0.005 70);
+  --wv-border:      oklch(90% 0.005 70);
+  --wv-border-strong: oklch(83% 0.006 70);
+
+  /* Dark viewport surfaces — for canvas/3D content areas that stay dark */
+  --wv-viewport:    oklch(22% 0.006 70);
+  --wv-viewport-2:  oklch(27% 0.006 70);
+
+  /* Text — near-black ink, faintly warm */
+  --wv-text:        oklch(22% 0.008 60);
+  --wv-text-muted:  oklch(47% 0.008 60);
+  --wv-text-faint:  oklch(64% 0.007 60);
+  --wv-text-on-accent: oklch(100% 0 0);
+
+  /* Accent — GREEN is the signature/primary accent (pervasive chrome). */
+  --wv-accent:        oklch(56% 0.14 159);
+  --wv-accent-soft:   oklch(95% 0.038 162);
+  --wv-accent-text:   oklch(45% 0.125 162);
+  --wv-accent-strong: oklch(48% 0.145 160);
+  /* Hot — vivid TE orange. Reserved for the primary Run / record action only. */
+  --wv-hot:           oklch(64% 0.205 42);
+  --wv-hot-soft:      oklch(95% 0.045 52);
+  --wv-hot-text:      oklch(52% 0.195 40);
+  --wv-hot-strong:    oklch(58% 0.215 38);
+  /* Semantic */
+  --wv-success:       oklch(63% 0.16 150);
+  --wv-success-soft:  oklch(95% 0.04 150);
+  --wv-warning:       oklch(76% 0.13 85);
+  --wv-warning-soft:  oklch(96% 0.05 85);
+  --wv-danger:        oklch(57% 0.20 22);
+  --wv-danger-soft:   oklch(95% 0.04 22);
+
+  /* Type */
+  --wv-font-sans:    "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+  --wv-font-mono:    "Space Mono", "JetBrains Mono", ui-monospace, monospace;
+  --wv-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+
+  /* Radii */
+  --wv-radius-sm: 4px;
+  --wv-radius:    6px;
+  --wv-radius-lg: 10px;
+
+  /* Shadows */
+  --wv-shadow-sm: 0 1px 0 oklch(0% 0 0 / 0.04), 0 0 0 0.5px oklch(0% 0 0 / 0.04);
+  --wv-shadow-md: 0 4px 12px oklch(0% 0 0 / 0.06), 0 1px 0 oklch(0% 0 0 / 0.04);
+  --wv-shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.08), 0 2px 0 oklch(0% 0 0 / 0.04);
+
+  /* Spacing */
+  --wv-pad:    14px;
+  --wv-pad-sm: 10px;
+  --wv-pad-xs: 6px;
+  --wv-gap:    8px;
+}
+
+/* ── Base component layer (opt-in via .wv-* classes) ───────────────────────── */
+
+.wv-panel {
+  background: var(--wv-surface);
+  border: 1px solid var(--wv-border);
+  border-radius: var(--wv-radius);
+  color: var(--wv-text);
+  font-family: var(--wv-font-sans);
+}
+
+.wv-panel-header {
+  display: flex; align-items: center; gap: var(--wv-gap);
+  padding: var(--wv-pad-xs) var(--wv-pad-sm);
+  border-bottom: 1px solid var(--wv-border);
+  font-family: var(--wv-font-mono);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--wv-text-muted);
+}
+
+.wv-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 28px; padding: 0 10px;
+  background: var(--wv-surface-2);
+  border: 1px solid var(--wv-border);
+  border-radius: var(--wv-radius);
+  color: var(--wv-text);
+  font-family: var(--wv-font-sans);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: background 90ms ease, border-color 90ms ease, color 90ms ease;
+}
+.wv-btn:hover { border-color: var(--wv-border-strong); }
+.wv-btn[aria-pressed="true"], .wv-btn.is-active {
+  background: var(--wv-accent-soft);
+  border-color: var(--wv-accent);
+  color: var(--wv-accent-text);
+}
+.wv-btn-primary {
+  background: var(--wv-accent); border-color: var(--wv-accent);
+  color: var(--wv-text-on-accent);
+}
+.wv-btn-primary:hover { background: var(--wv-accent-strong); border-color: var(--wv-accent-strong); }
+.wv-btn-hot {
+  background: var(--wv-hot); border-color: var(--wv-hot);
+  color: var(--wv-text-on-accent);
+}
+.wv-btn-icon { width: 28px; padding: 0; }
+.wv-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+
+.wv-input, .wv-select {
+  height: 28px; padding: 0 8px;
+  background: var(--wv-surface);
+  border: 1px solid var(--wv-border);
+  border-radius: var(--wv-radius);
+  color: var(--wv-text);
+  font-family: var(--wv-font-sans); font-size: 12px;
+}
+.wv-input:focus, .wv-select:focus {
+  outline: none; border-color: var(--wv-accent);
+  box-shadow: 0 0 0 2px var(--wv-accent-soft);
+}
+
+.wv-row {
+  display: flex; align-items: center; gap: var(--wv-gap);
+  padding: var(--wv-pad-xs) var(--wv-pad-sm);
+  border-radius: var(--wv-radius);
+  color: var(--wv-text); font-size: 12px;
+  cursor: pointer;
+}
+.wv-row:hover { background: var(--wv-surface-2); }
+.wv-row.is-active { background: var(--wv-accent-soft); color: var(--wv-accent-text); }
+
+.wv-label {
+  font-family: var(--wv-font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--wv-text-faint);
+}
+
+/* Hairline scrollbars in the Woven register */
+.wv-scroll { scrollbar-width: thin; scrollbar-color: var(--wv-border-strong) transparent; }
+.wv-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.wv-scroll::-webkit-scrollbar-thumb { background: var(--wv-border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+.wv-scroll::-webkit-scrollbar-track { background: transparent; }

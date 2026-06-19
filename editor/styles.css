@@ -6693,6 +6693,24 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-marquee="true"] .workflow-driven-frame {
   pointer-events: none !important;
 }
+/* Floating-panel break-out — a selected app-node grows its iframe beyond the
+   node frame onto a transparent click-through backdrop (panels float outside).
+   Lift it above neighbouring nodes so the panels overlap rather than clip, and
+   let the iframe overflow escape the node box. */
+.workflow-node[data-selected="true"].workflow-node-apptool,
+.workflow-node[data-selected="true"].workflow-node-spline3d {
+  z-index: 11;
+}
+.workflow-node[data-detached="true"] {
+  z-index: 12;
+  overflow: visible;
+}
+/* Native floating-panel editors (vector / composer) use the same convention. */
+.workflow-node[data-detached="true"] .workflow-node-float-panel {
+  position: absolute;
+  z-index: 5;
+  pointer-events: auto;
+}
 /* Selected-state outline — subtle accent ring so the user can see which
    card is currently the "interactive" one. */
 .workflow-node[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) {
@@ -23370,6 +23388,36 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-composer-canvas-controls {
   flex: 0 0 auto;
 }
+/* Native floating panels on select — the side panels break OUT of the node
+   rect and the stage fills the node. Default (non-detached) layout above is
+   untouched; only [data-detached="true"] rules below change anything. */
+.workflow-node-composer[data-detached="true"] .workflow-composer-body {
+  grid-template-columns: 1fr;   /* stage fills the node; sides float out */
+}
+.workflow-node-composer[data-detached="true"] .workflow-composer-left {
+  right: 100%;
+  margin-right: 8px;
+  top: 30px;
+  bottom: 0;
+  width: 220px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.workflow-node-composer[data-detached="true"] .workflow-composer-right {
+  left: 100%;
+  margin-left: 8px;
+  top: 30px;
+  bottom: 0;
+  width: 260px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
 /* v3.4.41 — Stacked-label compact field, used by Position (x/y/w/h) and
    Canvas (W/H/maxW/maxH/bg) so the inputs share a clean 4-column grid
    without label-side-overflow. Label tucks above the input. */
@@ -24035,6 +24083,37 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+/* Native floating panels on select — the tools/layers (left) + properties
+   (right) panels break OUT of the node rect; the stage fills the node and
+   layer rows act as connector anchors. Default layout above is untouched;
+   only [data-detached="true"] rules below change anything. */
+.workflow-node-vector[data-detached="true"] .workflow-vector-body {
+  grid-template-columns: 1fr;   /* stage fills the node; sides float out */
+}
+.workflow-node-vector[data-detached="true"] .workflow-vector-left {
+  right: 100%;
+  margin-right: 8px;
+  top: 30px;
+  bottom: 0;
+  width: 200px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.workflow-node-vector[data-detached="true"] .workflow-vector-right {
+  left: 100%;
+  margin-left: 8px;
+  top: 30px;
+  bottom: 0;
+  width: 260px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 }
 .workflow-vector-section {
   background: var(--surface-2, rgba(0, 0, 0, 0.02));

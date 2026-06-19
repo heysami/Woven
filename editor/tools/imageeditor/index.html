@@ -4,13 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Woven · Image Editor</title>
+<!-- Woven design system: shared light theme + detached floating-panel chrome. -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
+  /* ── Woven DS remap ──────────────────────────────────────────────────────
+     The tool's local palette vars are now thin aliases of the shared Woven
+     tokens (loaded via woven-theme.css). The CHROME (toolbar / panels / buttons
+     / inputs / layer rows) becomes light Woven; only the #stage checkerboard
+     (--chk1/--chk2) stays neutral, because that is image CONTENT, not chrome. */
   :root{
-    --bg:#16181d; --bg2:#1c1f26; --panel:#21252e; --panel2:#272c37;
-    --line:#333a47; --line2:#3d4555; --ink:#e8ecf3; --ink2:#9aa4b6;
-    --ink3:#6b7484; --accent:#5b8cff; --accent2:#7aa2ff; --danger:#ff6b6b;
-    --good:#4fd190; --chk1:#2a2e36; --chk2:#23262d; --radius:7px;
+    --bg:var(--wv-bg);                 /* app background          */
+    --bg2:var(--wv-surface);           /* rail / right-col panels */
+    --panel:var(--wv-surface);         /* buttons, inputs         */
+    --panel2:var(--wv-surface-2);      /* hover / pressed surface */
+    --line:var(--wv-border);           /* hairline dividers       */
+    --line2:var(--wv-border);          /* control borders         */
+    --ink:var(--wv-text);              /* primary text            */
+    --ink2:var(--wv-text-muted);       /* secondary text          */
+    --ink3:var(--wv-text-faint, var(--wv-text-muted)); /* tertiary text */
+    --accent:var(--wv-accent);         /* green accent active     */
+    --accent2:var(--wv-accent-strong, var(--wv-accent)); /* accent hover */
+    --danger:var(--wv-danger, #d23b3b);
+    --good:var(--wv-success, #2faf6a);
+    /* Image content backgrounds — neutral viewport tokens, NOT chrome tokens. */
+    --chk1:var(--wv-viewport-2, #dcdfe4); --chk2:var(--wv-viewport, #eef0f3);
+    --radius:7px;
   }
+  /* Default to the Woven sans/mono stacks for tool chrome. */
+  body{ font-family:var(--wv-font-sans, -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif); }
+  input,select,button,textarea{ font-family:inherit; }
+  code,kbd,.mono{ font-family:var(--wv-font-mono, ui-monospace,monospace); }
   *{box-sizing:border-box; -webkit-user-select:none; user-select:none;}
   html,body{margin:0; height:100%; overflow:hidden;}
   body{
@@ -35,7 +59,7 @@
   }
   button.btn:hover{background:var(--panel2); border-color:var(--accent);}
   button.btn:active{transform:translateY(1px);}
-  button.btn.primary{background:var(--accent); border-color:var(--accent); color:#0a0e18; font-weight:600;}
+  button.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--wv-text-on-accent, #fff); font-weight:600;}
   button.btn.primary:hover{background:var(--accent2);}
   /* ── layout ── */
   #main{flex:1; display:flex; min-height:0;}
@@ -49,7 +73,7 @@
     cursor:pointer; color:var(--ink2); border:1px solid transparent; position:relative;
   }
   .tool:hover{background:var(--panel); color:var(--ink);}
-  .tool.active{background:var(--accent); color:#0a0e18; border-color:var(--accent);}
+  .tool.active{background:var(--accent); color:var(--wv-text-on-accent, #fff); border-color:var(--accent);}
   .tool svg{width:19px; height:19px; display:block;}
   .tool .tip{
     position:absolute; left:46px; top:50%; transform:translateY(-50%);
@@ -58,11 +82,15 @@
   }
   .tool:hover .tip{opacity:.92;}
   /* canvas stage */
+  /* #coreCanvas wraps #stage; it takes the central flex space so #stage can
+     keep filling it (it used to be a direct flex child of #main). */
+  #coreCanvas{flex:1; display:flex; min-width:0; min-height:0; position:relative;}
+  /* #stage is the image VIEWPORT — neutral content backdrop (not chrome). */
   #stage{
     flex:1; position:relative; overflow:hidden; min-width:0;
     background:
-      linear-gradient(45deg,#101216 25%,transparent 25%,transparent 75%,#101216 75%),
-      linear-gradient(45deg,#101216 25%,#14161b 25%,#14161b 75%,#101216 75%);
+      linear-gradient(45deg,#c4c8cf 25%,transparent 25%,transparent 75%,#c4c8cf 75%),
+      linear-gradient(45deg,#c4c8cf 25%,#d6dadf 25%,#d6dadf 75%,#c4c8cf 75%);
     background-size:22px 22px; background-position:0 0,11px 11px;
     display:flex; align-items:center; justify-content:center;
   }
@@ -229,8 +257,13 @@
 </div>
 
 <div id="main">
-  <div id="toolrail" class="scroll-thin"></div>
+  <!-- data-float-panel marks panels the detached-panels.css float-on-select layout
+       lifts out when body.detached-panels is set (see image:select handler). -->
+  <div id="toolrail" class="scroll-thin" data-float-panel="left"></div>
 
+  <!-- #coreCanvas wraps the image viewport so the detached layout has a stable
+       central element to anchor against; #stage keeps all its existing JS refs. -->
+  <div id="coreCanvas">
   <div id="stage">
     <div id="canvasWrap">
       <canvas id="viewCanvas"></canvas>
@@ -251,8 +284,9 @@
     <div id="standalone" style="display:none">standalone preview</div>
     <div id="toast"></div>
   </div>
+  </div><!-- /#coreCanvas -->
 
-  <div id="rightcol">
+  <div id="rightcol" data-float-panel="right">
     <div class="pane">
       <div class="pane-h"><span id="optTitle">Brush</span></div>
       <div id="opts" class="scroll-thin"></div>
@@ -1763,8 +1797,52 @@ if(EMBEDDED){
         .then(()=> reconcileWiredLayers(WIRED.layers))
         .then(()=> ensureFXThenRender())
         .finally(()=>{ setTimeout(()=>{suppressEmit=false;},0); });
+    } else if(d.type==='image:select'){
+      // Host selected/deselected this node. Toggle the floating-panel layout,
+      // then report panel extents + layer geometry once layout has settled.
+      document.body.classList.toggle('detached-panels', !!d.selected);
+      requestAnimationFrame(()=>{ reportPanels(); reportLayerGeom(); });
     }
   });
+}
+
+// ── Floating-panel geometry reporting (detached-panels contract) ────────────
+// reportPanels: measure each side panel's own size (+8px gap), publish as body
+//   CSS vars --panel-l/-r/-t/-b, and echo the four numbers to the host so it can
+//   size + inset the iframe so #coreCanvas lands on the node's core rect.
+function reportPanels(){
+  const rail=document.getElementById('toolrail');
+  const rcol=document.getElementById('rightcol');
+  const panelL=(rail?rail.offsetWidth:0)+8;
+  const panelR=(rcol?rcol.offsetWidth:0)+8;
+  const panelT=0, panelB=0;   // this tool has no floating top/bottom panels
+  const b=document.body.style;
+  b.setProperty('--panel-l',panelL+'px');
+  b.setProperty('--panel-r',panelR+'px');
+  b.setProperty('--panel-t',panelT+'px');
+  b.setProperty('--panel-b',panelB+'px');
+  if(EMBEDDED){ try{ parent.postMessage({ type:'image:panels', nodeId:NODE, panelL, panelR, panelT, panelB }, '*'); }catch(e){} }
+}
+
+// reportLayerGeom: report the floating right panel rect + each layer row's rect
+//   to the host (iframe-local px — getBoundingClientRect is already iframe-local,
+//   which is exactly what the host's edge-drop hit-testing wants). Only meaningful
+//   when detached; the host ignores it otherwise. EVENT-DRIVEN ONLY — never call
+//   this in a rAF/per-frame loop (layout thrash is a hard project rule).
+function reportLayerGeom(){
+  if(!EMBEDDED) return;
+  if(!document.body.classList.contains('detached-panels')) return;
+  const rcol=document.getElementById('rightcol');
+  if(!rcol) return;
+  const pr=rcol.getBoundingClientRect();
+  const panel={ side:'right', left:pr.left, right:pr.right, top:pr.top, bottom:pr.bottom };
+  const rows=[];
+  const rowEls=document.querySelectorAll('#layersWrap .layer');
+  for(const el of rowEls){
+    const r=el.getBoundingClientRect();
+    rows.push({ layerId: el.getAttribute('data-port-layer'), side:'right', top:r.top, height:r.height, visible:true });
+  }
+  try{ parent.postMessage({ type:'image:layers-geometry', nodeId:NODE, panel, rows }, '*'); }catch(e){}
 }
 
 // ============================================================================
@@ -1855,6 +1933,12 @@ function buildLayers(){
     const l=DOC.layers[i];
     const el=document.createElement('div');
     el.className='layer'+(l.id===activeId?' sel':'')+(l.visible===false?' hidden':'');
+    // Connector hit-target attrs: the Woven host peeks into this same-origin
+    // iframe's contentDocument during an edge drag and reads these to bind an
+    // edge to this specific layer ("layerin:<layerId>" input port).
+    el.setAttribute('data-port-node', NODE);
+    el.setAttribute('data-port-layer', l.id);
+    el.setAttribute('data-port-side', 'layerin:'+l.id);
     el.onclick=(e)=>{ if(e.target.closest('.vis')||e.target.closest('.reorder')) return; activeId=l.id; buildLayers(); buildGradEditor(); };
 
     // visibility
@@ -1906,6 +1990,9 @@ function buildLayers(){
     box.appendChild(el);
   }
   buildLayerProps();
+  // Layers list changed → re-measure connector-target geometry (no-op unless
+  // detached). Event-driven, NOT per-frame.
+  reportLayerGeom();
 }
 function refreshThumb(id){ /* cheap: rebuild list thumbs */ buildLayers(); }
 
@@ -2328,7 +2415,20 @@ stage.addEventListener('wheel',(e)=>{
   }
 },{passive:false});
 
-window.addEventListener('resize',()=>{ /* keep zoom; just refresh ring math */ });
+window.addEventListener('resize',()=>{
+  /* keep zoom; just refresh ring math */
+  // Iframe/window resized → panel sizes & row positions may shift. Event-driven.
+  if(document.body.classList.contains('detached-panels')){ reportPanels(); reportLayerGeom(); }
+});
+
+// Panel SCROLL → row top positions change. Passive, event-driven (NOT per-frame).
+(function wireGeomScroll(){
+  const lw=document.getElementById('layersWrap');
+  const rc=document.getElementById('rightcol');
+  const onScroll=()=>{ if(document.body.classList.contains('detached-panels')) reportLayerGeom(); };
+  if(lw) lw.addEventListener('scroll', onScroll, {passive:true});
+  if(rc) rc.addEventListener('scroll', onScroll, {passive:true});
+})();
 
 // toast
 let toastT=0;

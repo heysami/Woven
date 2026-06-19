@@ -4,23 +4,40 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Voxel 3D Editor</title>
+<!-- Woven shared design system (light chrome tokens) + floating-panels-on-select.
+     Loaded before the local <style> so the tool's :root remap below can read the
+     --wv-* tokens. The WebGL stage keeps a dark *content* background (3D content). -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
   :root {
-    --bg: #0e0f13; --panel: #16181f; --panel-2: #1d2029; --line: #2a2e3a;
-    --text: #e7e9ef; --muted: #9aa0b0; --accent: #6c7bff; --accent-2: #38e0c8;
-    --shadow: 0 8px 30px rgba(0,0,0,.45);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+    /* Woven DS remap — local vars now point at the shared --wv-* tokens so the
+       chrome (toolbar, inspector, palette rows, inputs) reads as light Woven with
+       hairline borders + the green accent. --bg is the page chrome bg; the WebGL
+       viewport (#coreCanvas) keeps its OWN dark content background, set below. */
+    --bg: var(--wv-bg);
+    --panel: var(--wv-surface);
+    --panel-2: var(--wv-surface-2);
+    --line: var(--wv-border);
+    --text: var(--wv-text);
+    --muted: var(--wv-text-muted);
+    --accent: var(--wv-accent);
+    --accent-2: var(--wv-accent-strong);   /* was a teal; now the deeper green */
+    --shadow: var(--wv-shadow-lg);
+    font-family: var(--wv-font-sans);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
-  #stage { position: fixed; inset: 0; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; font-family: var(--wv-font-sans); }
+  /* The 3D viewport stays dark — it's content, not chrome. (id is #coreCanvas so
+     the shared detached-panels.css can pin it to the node core rect on select.) */
+  #coreCanvas { position: fixed; inset: 0; background: var(--wv-viewport); }
   canvas { display: block; outline: none; }
 
   .toolbar {
     position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
     display: flex; flex-direction: column; gap: 5px;
     background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; padding: 7px; box-shadow: var(--shadow); z-index: 10;
+    border-radius: var(--wv-radius-lg); padding: 7px; box-shadow: var(--shadow); z-index: 10;
   }
   .tool {
     width: 38px; height: 38px; border-radius: 9px; border: 1px solid transparent;
@@ -28,13 +45,13 @@
     display: grid; place-items: center; transition: .15s;
   }
   .tool:hover { background: var(--panel-2); color: var(--text); }
-  .tool.active { background: var(--accent); color: #fff; }
+  .tool.active { background: var(--accent); color: var(--wv-text-on-accent); }
   .tool svg { width: 19px; height: 19px; }
   .sep { height: 1px; background: var(--line); margin: 3px 2px; }
 
   .panel {
     position: fixed; right: 14px; top: 14px; bottom: 14px; width: 280px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--wv-radius-lg);
     box-shadow: var(--shadow); z-index: 10; display: flex; flex-direction: column; overflow: hidden;
   }
   .panel header {
@@ -57,11 +74,11 @@
     border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
     cursor: pointer; transition: .15s; white-space: nowrap;
   }
-  .btn:hover { border-color: var(--accent); color: #fff; }
-  .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn:hover { border-color: var(--accent); color: var(--accent-2); }
+  .btn.on { background: var(--accent); color: var(--wv-text-on-accent); border-color: var(--accent); }
   .btn.full { flex-basis: 100%; }
   .btn.ghost { background: transparent; }
-  .btn.warn:hover { border-color: #ff5d6c; color: #ff8a93; }
+  .btn.warn:hover { border-color: var(--wv-danger); color: var(--wv-danger); }
 
   .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 9px 0; }
   .field label { font-size: 11.5px; color: var(--muted); }
@@ -76,13 +93,13 @@
   .pal-row { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; transition: .12s; }
   .pal-row.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .pal-row:hover { border-color: var(--accent); }
-  .pal-chip { width: 22px; height: 22px; border-radius: 6px; border: 1px solid #ffffff20; flex: 0 0 auto; }
+  .pal-chip { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--wv-border-strong); flex: 0 0 auto; }
   .pal-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pal-meta b { color: var(--text); font-weight: 600; }
   .pal-idx { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-  .swatch { aspect-ratio: 1; border-radius: 7px; border: 1px solid #ffffff14; cursor: pointer; transition: transform .12s; }
+  .swatch { aspect-ratio: 1; border-radius: 7px; border: 1px solid var(--wv-border-strong); cursor: pointer; transition: transform .12s; }
   .swatch:hover { transform: scale(1.12); }
   .palette-name { font-size: 10.5px; color: var(--muted); margin: 10px 0 6px; display: flex; align-items: center; gap: 6px; }
   .palette-name::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -90,12 +107,13 @@
   .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; line-height: 1.6; }
   .hint {
     position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-    background: #00000088; backdrop-filter: blur(8px); border: 1px solid var(--line);
+    background: var(--panel); backdrop-filter: blur(8px); border: 1px solid var(--line);
     color: var(--muted); font-size: 11px; padding: 7px 14px; border-radius: 999px; z-index: 9; display: flex; gap: 13px;
+    box-shadow: var(--wv-shadow-md);
   }
   .hint b { color: var(--text); font-weight: 600; }
-  .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; }
-  .badge b { color: var(--accent-2); }
+  .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: var(--wv-radius); box-shadow: var(--wv-shadow-sm); }
+  .badge b { color: var(--accent-2); font-family: var(--wv-font-mono); }
   #flash { transition: opacity .3s; }
   /* Wired-effect post-process overlay: a 2D canvas stacked above the WebGL
      canvas. Only shown when a non-passthrough effects chain is active. */
@@ -103,10 +121,17 @@
 </style>
 </head>
 <body>
-<div id="stage"></div>
+<!-- #coreCanvas is the central WebGL viewport. The shared detached-panels.css
+     pins THIS id to the node's core rect when body has class "detached-panels".
+     (Renamed from #stage → #coreCanvas; the single JS ref + CSS rule below were
+     updated to match.) -->
+<div id="coreCanvas"></div>
 <canvas id="fx-overlay"></canvas>
 
-<div class="toolbar" id="toolbar">
+<!-- Left FLOATING vertical toolbar — tagged as the left float panel. It's already
+     position:absolute over the stage; in detached mode the shared CSS repositions
+     it OUTSIDE the core rect (that's the intent). -->
+<div class="toolbar" id="toolbar" data-float-panel="left">
   <button class="tool active" data-tool="add" title="Add voxel (A)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M12 6v5M9.5 8.5h5" stroke-width="1.2"/></svg></button>
   <button class="tool" data-tool="remove" title="Remove voxel (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M9.5 8.5l5 0" stroke-width="1.4"/></svg></button>
   <button class="tool" data-tool="paint" title="Paint voxel (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l8-8 5 5-8 8z"/><path d="M5 11l-1 6 6-1"/><path d="M3 21h7"/></svg></button>
@@ -115,7 +140,9 @@
   <button class="tool" data-tool="orbit" title="Orbit only (no edit) (O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3.2"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(28 12 12)"/></svg></button>
 </div>
 
-<div class="panel">
+<!-- Right inspector — tagged as the right float panel (floats outside the core
+     rect in detached mode). -->
+<div class="panel" data-float-panel="right">
   <header><span class="dot"></span><h1>Voxel Inspector</h1><small id="save-state" style="margin-left:auto;color:var(--accent-2);opacity:.35;transition:opacity .3s">autosave on</small><small id="count" style="margin-left:8px">0 voxels</small></header>
   <div class="scroll" id="scroll">
 
@@ -224,10 +251,19 @@ import { Sources } from '../_shared/sources.js';
 const $ = s => document.querySelector(s);
 
 // ── Renderer / scene / cameras (reused from spline3d) ──────────────────────
-const stage = $('#stage');
+const stage = $('#coreCanvas');   // central WebGL viewport (id used by detached-panels.css)
+// In detached-panels mode the iframe is GROWN beyond the node and #coreCanvas is
+// pinned (by detached-panels.css) to the node's core rect — so the renderer must
+// size to #coreCanvas, NOT to the window. coreSize() returns the core viewport
+// dimensions, falling back to the window when #coreCanvas is missing/zero (the
+// default non-detached layout, where #coreCanvas fills the iframe → ≈ window).
+function coreSize() {
+  const w = stage && stage.clientWidth, h = stage && stage.clientHeight;
+  return (w > 0 && h > 0) ? { w, h } : { w: innerWidth, h: innerHeight };
+}
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
+{ const s = coreSize(); renderer.setSize(s.w, s.h); }
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -250,7 +286,7 @@ let bgHex = '#e7e4fb';
 const bgColor = new THREE.Color('#d9d4f5');
 scene.background = makeGradientBg(bgHex);
 
-let camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 500);
+let camera = new THREE.PerspectiveCamera(45, coreSize().w / coreSize().h, 0.1, 500);
 camera.position.set(28, 24, 34);
 const orthoCam = new THREE.OrthographicCamera(-24, 24, 16, -16, 0.1, 500);
 orthoCam.position.copy(camera.position);
@@ -534,7 +570,10 @@ let boxAnchor = null;   // first corner for box fill
 // hovered filled voxel and `place` is the adjacent empty cell (face-based), OR a
 // ground-plane hit mapped to a grid cell at y=0.
 function pick(e) {
-  ptr.x = (e.clientX / innerWidth) * 2 - 1; ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+  // NDC relative to the GL canvas rect (== #coreCanvas in detached mode), not the
+  // window — otherwise raycasts are offset/scaled when the iframe is grown.
+  const cr = renderer.domElement.getBoundingClientRect();
+  ptr.x = ((e.clientX - cr.left) / cr.width) * 2 - 1; ptr.y = -((e.clientY - cr.top) / cr.height) * 2 + 1;
   ray.setFromCamera(ptr, camera);
   const meshList = Array.from(meshes.values());
   const hit = ray.intersectObjects(meshList, false)[0];
@@ -762,7 +801,7 @@ $('#cam-mode').addEventListener('change', e => switchCamera(e.target.value));
 function switchCamera(mode) {
   const old = camera;
   if (mode === 'ortho') { orthoCam.position.copy(old.position); camera = orthoCam; }
-  else { const pc = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 500); pc.position.copy(old.position); camera = pc; }
+  else { const s = coreSize(); const pc = new THREE.PerspectiveCamera(45, s.w / s.h, 0.1, 500); pc.position.copy(old.position); camera = pc; }
   orbit.object = camera;
 }
 
@@ -1076,6 +1115,38 @@ let lastEmitted = '', emitTimer = null, gotInit = false;
 function post(type, extra) {
   try { parent.postMessage(Object.assign({ type, nodeId }, extra || {}), '*'); } catch (e) {}
 }
+
+// ── Floating panels on select (shared detached-panels.css contract) ───────────
+// When the host SELECTS this node it posts {type:'voxel:select', selected}. We
+// toggle body.detached-panels (the shared CSS floats the left toolbar + right
+// inspector OUT of the central #coreCanvas only while that class is present),
+// then report the panel extents so the host can grow the iframe to land
+// #coreCanvas exactly on the node's core rect. Additive — no effect when not
+// selected (the default in-frame layout is fully restored).
+function reportPanels() {
+  const floating = document.body.classList.contains('detached-panels');
+  const toolbarEl = document.getElementById('toolbar');     // data-float-panel="left"
+  const panelEl = document.querySelector('.panel');         // data-float-panel="right"
+  // Width + 8px breathing gap the shared CSS leaves as click-through. offsetWidth
+  // is stable across the toggle (the floated panel keeps its natural width).
+  const panelL = floating ? (toolbarEl ? toolbarEl.offsetWidth + 8 : 0) : 0;
+  const panelR = floating ? (panelEl ? panelEl.offsetWidth + 8 : 0) : 0;
+  const panelT = 0;   // no floating top panel
+  const panelB = 0;   // no floating bottom panel
+  if (floating) {
+    document.body.style.setProperty('--panel-l', panelL + 'px');
+    document.body.style.setProperty('--panel-r', panelR + 'px');
+    document.body.style.setProperty('--panel-t', panelT + 'px');
+    document.body.style.setProperty('--panel-b', panelB + 'px');
+  } else {
+    // clear so the default in-frame layout is fully restored
+    document.body.style.removeProperty('--panel-l');
+    document.body.style.removeProperty('--panel-r');
+    document.body.style.removeProperty('--panel-t');
+    document.body.style.removeProperty('--panel-b');
+  }
+  post('voxel:panels', { panelL, panelR, panelT, panelB });
+}
 // Export the live voxel meshes to a binary glTF (.glb) data URL. This is the
 // node's downstream DELIVERABLE — a real 3D object usable by model-viewer /
 // the 3D editor's import / a prototype — while the JSON sidecar stays the
@@ -1119,7 +1190,13 @@ if (EMBEDDED) {
   window.addEventListener('message', ev => {
     const d = ev && ev.data;
     if (!d || typeof d !== 'object' || (d.nodeId && d.nodeId !== nodeId)) return;
-    if (d.type === 'voxel:init') {
+    if (d.type === 'voxel:select') {
+      // Float the toolbar + inspector out of the core canvas while selected.
+      document.body.classList.toggle('detached-panels', !!d.selected);
+      // After the class toggle reflows the layout, re-fit the renderer to the new
+      // #coreCanvas size (on select AND deselect) and report panel extents.
+      requestAnimationFrame(() => { reportPanels(); fitToCore(); });
+    } else if (d.type === 'voxel:init') {
       gotInit = true;
       imports = Array.isArray(d.imports) ? d.imports : [];
       if (d.state) loadState(d.state);
@@ -1149,12 +1226,23 @@ $('#export-json').addEventListener('click', () => {
 });
 
 // ── Resize + loop (reused) ───────────────────────────────────────────────────
-addEventListener('resize', () => {
-  const a = innerWidth / innerHeight;
+// Fit the renderer + camera to #coreCanvas (the central viewport), NOT the window.
+// In the default non-detached layout #coreCanvas fills the iframe so this matches
+// the old window-sized behaviour; in detached mode it fits the pinned core rect.
+function fitToCore() {
+  const { w, h } = coreSize();
+  const a = w / h;
   if (camera.isPerspectiveCamera) { camera.aspect = a; camera.updateProjectionMatrix(); }
-  else { const h = 24; orthoCam.left = -h * a; orthoCam.right = h * a; orthoCam.top = h; orthoCam.bottom = -h; orthoCam.updateProjectionMatrix(); }
-  renderer.setSize(innerWidth, innerHeight);
-});
+  else { const oh = 24; orthoCam.left = -oh * a; orthoCam.right = oh * a; orthoCam.top = oh; orthoCam.bottom = -oh; orthoCam.updateProjectionMatrix(); }
+  renderer.setSize(w, h);
+}
+addEventListener('resize', fitToCore);
+// Re-fit whenever #coreCanvas changes size (node resize while detached, or the
+// float/unfloat reflow) — event-driven, never per-frame polling.
+if (stage && 'ResizeObserver' in window) {
+  const _coreRO = new ResizeObserver(() => fitToCore());
+  _coreRO.observe(stage);
+}
 
 let last = performance.now(), frames = 0, fpsT = 0;
 function tick(now) {

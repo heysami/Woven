@@ -5,38 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Font Creator</title>
 <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<!-- Woven shared design system (light chrome tokens) + floating-panels-on-select. -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
   :root{
-    --bg:#0e0f12; --panel:#16181d; --panel2:#1c1f26; --line:#2a2e37;
-    --ink:#e8eaf0; --ink2:#9aa1ad; --ink3:#6b7280; --accent:#6c8cff;
-    --accent2:#3a4a7a; --good:#3ecf8e; --warn:#e0a14a; --bad:#e05a5a;
+    /* Map the tool's local vars onto the canonical Woven tokens so the CHROME
+       (toolbar, panels, buttons, inputs, text) reads as the light Woven design
+       system. The central glyph-editing canvas keeps a neutral dark CONTENT
+       background (see --canvas-bg) for outline contrast — content, not chrome. */
+    --bg:var(--wv-bg); --panel:var(--wv-surface); --panel2:var(--wv-surface-2);
+    --line:var(--wv-border);
+    --ink:var(--wv-text); --ink2:var(--wv-text-muted); --ink3:var(--wv-text-faint);
+    --accent:var(--wv-accent); --accent2:var(--wv-accent-soft);
+    --good:var(--wv-success); --warn:var(--wv-warning); --bad:var(--wv-danger);
+    /* Guides on the dark editing canvas read against --canvas-bg. */
     --guide:#3a3f4b; --guide-key:#5a6275;
+    /* Dark content surfaces (glyph editor canvas, preview canvas). */
+    --canvas-bg:var(--wv-viewport);
+    /* Glyph cells use a LIGHT chrome surface, so their fill stays dark --ink. */
+    --cell-bg:var(--wv-surface-2);
+    /* Content ink for drawing ON the dark editing canvas (must read light). */
+    --canvas-ink:#e8eaf0; --canvas-ink-faint:#9aa1ad;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   body{
     background:var(--bg); color:var(--ink);
-    font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font:13px/1.45 var(--wv-font-sans);
     display:flex; flex-direction:column; overflow:hidden;
   }
   button{
     font:inherit; color:var(--ink); background:var(--panel2);
-    border:1px solid var(--line); border-radius:6px; padding:5px 10px;
-    cursor:pointer; transition:background .12s,border-color .12s;
+    border:1px solid var(--line); border-radius:var(--wv-radius); padding:5px 10px;
+    cursor:pointer; transition:background .12s,border-color .12s,color .12s;
   }
-  button:hover{background:#242832; border-color:#3a4150}
+  button:hover{background:var(--wv-surface-3); border-color:var(--wv-border-strong)}
   button:active{transform:translateY(1px)}
-  button.primary{background:var(--accent2); border-color:#4a5a9a; color:#eaf0ff}
-  button.primary:hover{background:#465a9a}
+  button.primary{background:var(--accent); border-color:var(--accent); color:var(--wv-text-on-accent)}
+  button.primary:hover{background:var(--wv-accent-strong); border-color:var(--wv-accent-strong)}
   button.tiny{padding:3px 7px; font-size:11px}
   input,select{
-    font:inherit; color:var(--ink); background:#0c0d10;
-    border:1px solid var(--line); border-radius:6px; padding:5px 8px; outline:none;
+    font:inherit; color:var(--ink); background:var(--wv-surface);
+    border:1px solid var(--line); border-radius:var(--wv-radius); padding:5px 8px; outline:none;
   }
-  input:focus,select:focus{border-color:var(--accent)}
+  input:focus,select:focus{border-color:var(--accent); box-shadow:0 0 0 2px var(--wv-accent-soft)}
   input[type=number]{width:78px}
   label.fld{display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--ink2)}
-  label.fld span{padding-left:2px; letter-spacing:.02em; text-transform:uppercase; font-size:10px}
+  label.fld span{padding-left:2px; letter-spacing:.06em; text-transform:uppercase; font-size:10px; font-family:var(--wv-font-mono); color:var(--wv-text-faint)}
 
   /* ---- toolbar ---- */
   #toolbar{
@@ -44,6 +60,7 @@
     padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line);
   }
   #toolbar .brand{font-weight:700; letter-spacing:.04em; color:var(--ink); align-self:center; margin-right:4px}
+  #toolbar .brand{font-family:var(--wv-font-mono)}
   #toolbar .brand small{display:block; font-weight:400; font-size:10px; color:var(--ink3); letter-spacing:.06em}
   #toolbar .spacer{flex:1}
   #status{font-size:11px; color:var(--ink3); align-self:center; white-space:nowrap}
@@ -62,11 +79,11 @@
     display:grid; grid-template-columns:repeat(6,1fr); gap:6px; align-content:start;
   }
   .cell{
-    position:relative; aspect-ratio:1; border:1px solid var(--line); border-radius:6px;
-    background:#0c0d10; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    position:relative; aspect-ratio:1; border:1px solid var(--line); border-radius:var(--wv-radius);
+    background:var(--cell-bg); cursor:pointer; display:flex; align-items:center; justify-content:center;
     overflow:hidden; transition:border-color .1s,background .1s;
   }
-  .cell:hover{border-color:#3a4150}
+  .cell:hover{border-color:var(--wv-border-strong)}
   .cell.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset}
   .cell svg{width:100%; height:100%; display:block}
   .cell .ch{position:absolute; bottom:2px; left:4px; font-size:9px; color:var(--ink3)}
@@ -74,14 +91,16 @@
   .src.base{background:var(--ink3)} .src.font{background:var(--accent)} .src.custom{background:var(--good)}
   .cell.empty .glyphfill{opacity:.25}
 
-  #edit-pane{flex:1; display:flex; flex-direction:column; min-height:0; background:var(--bg)}
+  #coreCanvas{flex:1; display:flex; flex-direction:column; min-height:0; background:var(--panel)}
   #edit-head{
     padding:8px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center;
     gap:14px; flex-wrap:wrap; background:var(--panel);
   }
   #edit-head .glyph-title{font-size:18px; font-weight:700}
   #edit-head .glyph-title small{font-size:11px; color:var(--ink3); font-weight:400; margin-left:6px}
-  #canvas-wrap{flex:1; position:relative; overflow:hidden; min-height:0}
+  /* Central glyph-editing canvas keeps a neutral DARK content background for
+     outline contrast — this is content, not chrome (per Woven theme guidance). */
+  #canvas-wrap{flex:1; position:relative; overflow:hidden; min-height:0; background:var(--canvas-bg)}
   #canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none}
   #edit-foot{
     padding:8px 14px; border-top:1px solid var(--line); background:var(--panel);
@@ -97,7 +116,7 @@
   #preview-pane .ph{padding:8px 12px; border-bottom:1px solid var(--line); font-size:11px;
     text-transform:uppercase; letter-spacing:.05em; color:var(--ink2)}
   #preview-body{padding:12px; overflow:auto; flex:1}
-  #preview-canvas{width:100%; background:#0c0d10; border:1px solid var(--line); border-radius:6px; display:block}
+  #preview-canvas{width:100%; background:var(--cell-bg); border:1px solid var(--line); border-radius:var(--wv-radius); display:block}
   #preview-text{width:100%; margin-top:8px}
   .hint{font-size:11px; color:var(--ink3); margin-top:8px; line-height:1.5}
   .pill{display:inline-block; padding:1px 7px; border-radius:99px; font-size:10px; border:1px solid var(--line); color:var(--ink2)}
@@ -134,7 +153,7 @@
   </div>
 
   <div id="main">
-    <div id="grid-pane">
+    <div id="grid-pane" data-float-panel="left">
       <div id="grid-head">
         <div class="t">Glyphs</div>
         <div class="spacer" style="flex:1"></div>
@@ -143,7 +162,9 @@
       <div id="grid"></div>
     </div>
 
-    <div id="edit-pane">
+    <!-- #coreCanvas is the central editing region the shared detached-panels.css
+         pins to the node's core rect when body has class "detached-panels". -->
+    <div id="coreCanvas">
       <div id="edit-head">
         <div class="glyph-title" id="glyphTitle">—<small id="glyphCode"></small></div>
         <label class="fld"><span>Advance width</span><input id="advanceWidth" type="number" value="600"></label>
@@ -171,7 +192,7 @@
       </div>
     </div>
 
-    <div id="preview-pane">
+    <div id="preview-pane" data-float-panel="right">
       <div class="ph">Preview</div>
       <div id="preview-body">
         <canvas id="preview-canvas" width="216" height="120"></canvas>
@@ -660,7 +681,7 @@ function drawCanvas(){
     const y=u2sy(g.y);
     ctx.strokeStyle=getCSS(g.c);
     ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-    ctx.fillStyle=getCSS("--ink3");
+    ctx.fillStyle=getCSS("--canvas-ink-faint");   // light label on dark content canvas
     ctx.fillText(g.label+" ("+g.y+")", 6, y-3);
   }
   // advance-width verticals
@@ -675,7 +696,7 @@ function drawCanvas(){
   // glyph fill
   if(editState.data){
     const p = new Path2D(dataToScreenPath(editState.data, view.scale, view.scale, view.ox, view.oy));
-    ctx.fillStyle = editState.nodeEdit ? "rgba(108,140,255,.22)" : getCSS("--ink");
+    ctx.fillStyle = editState.nodeEdit ? "rgba(108,140,255,.22)" : getCSS("--canvas-ink");
     ctx.fill(p, "nonzero");
     if(editState.nodeEdit){
       ctx.strokeStyle=getCSS("--accent"); ctx.lineWidth=1; ctx.stroke(p);
@@ -1001,6 +1022,44 @@ function normalizeDoc(s){
 }
 
 /* =========================================================================
+ * Floating panels on select (shared detached-panels.css contract)
+ *
+ * When the host selects this node it posts {type:"font:select", selected}.
+ * We toggle body.detached-panels (the shared CSS floats the side panels OUT of
+ * the central #coreCanvas only while that class is present), then report the
+ * panel extents so the host can grow the iframe to land #coreCanvas exactly on
+ * the node's core rect.
+ * =======================================================================*/
+function reportPanels(){
+  const floating = document.body.classList.contains("detached-panels");
+  const gridPane = document.getElementById("grid-pane");
+  const previewPane = document.getElementById("preview-pane");
+  // Measure natural panel widths. The shared CSS keeps each floated panel the
+  // SAME width it had in normal layout (width:calc(var(--panel-*) - 8px)), so
+  // offsetWidth is stable across the toggle and safe to read either way.
+  // +8 builds in the breathing gap the shared CSS leaves as click-through.
+  const panelL = floating ? (gridPane    ? gridPane.offsetWidth    + 8 : 0) : 0;
+  const panelR = floating ? (previewPane ? previewPane.offsetWidth + 8 : 0) : 0;
+  const panelT = 0;   // this tool has no floating top panel
+  const panelB = 0;   // …nor a bottom panel
+  if(floating){
+    document.body.style.setProperty("--panel-l", panelL+"px");
+    document.body.style.setProperty("--panel-r", panelR+"px");
+    document.body.style.setProperty("--panel-t", panelT+"px");
+    document.body.style.setProperty("--panel-b", panelB+"px");
+  } else {
+    // clear so the default in-frame layout is fully restored
+    document.body.style.removeProperty("--panel-l");
+    document.body.style.removeProperty("--panel-r");
+    document.body.style.removeProperty("--panel-t");
+    document.body.style.removeProperty("--panel-b");
+  }
+  post({ type:"font:panels", panelL, panelR, panelT, panelB });
+  // canvas size changed when panels float in/out → redraw
+  try{ drawCanvas(); }catch(e){}
+}
+
+/* =========================================================================
  * Message handling
  * =======================================================================*/
 window.addEventListener("message", async (ev)=>{
@@ -1008,6 +1067,11 @@ window.addEventListener("message", async (ev)=>{
   if(!data || typeof data!=="object") return;
   if(data.nodeId !== nodeId) return;   // ignore foreign nodes
   switch(data.type){
+    case "font:select":
+      // float the side panels out of the core canvas while selected
+      document.body.classList.toggle("detached-panels", !!data.selected);
+      requestAnimationFrame(reportPanels);
+      break;
     case "font:init":
       wiredFontUrl = _pickWiredFontUrl(data);   // a wired font asset → base font
       await initFromState(data.state||null);
