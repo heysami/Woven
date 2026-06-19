@@ -51646,10 +51646,14 @@ function dragHandler(zoom, onMove, onDragStart, onDragEnd) {
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setCanvasDraggingSync(true);
-    installDragShield("grabbing");
     onDragStart && onDragStart();
     const onMv = (ev) => {
       if (isReleasedDuringMove(ev)) { onUp(); return; }
+      // Raise the shield on the FIRST actual move, not on mousedown — a plain
+      // click (e.g. the × close button, which lives in this same drag bar) must
+      // not get an overlay slapped over it before mouseup, or the click never
+      // lands on the button. Idempotent, so calling it every move is fine.
+      installDragShield("grabbing");
       const dx = (ev.clientX - lastX) / zoom;
       const dy = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
@@ -51677,10 +51681,12 @@ function resizeHandler(zoom, onResize, onDragStart, onDragEnd) {
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
     setCanvasDraggingSync(true);
-    installDragShield("nwse-resize");
     onDragStart && onDragStart();
     const onMv = (ev) => {
       if (isReleasedDuringMove(ev)) { onUp(); return; }
+      // Raise the shield on the FIRST actual move, not on mousedown (see
+      // dragHandler) — a plain click must reach the element underneath.
+      installDragShield("nwse-resize");
       const dw = (ev.clientX - lastX) / zoom;
       const dh = (ev.clientY - lastY) / zoom;
       lastX = ev.clientX; lastY = ev.clientY;
