@@ -178,8 +178,10 @@
   .code-wrap { display: flex; flex-direction: column; gap: 8px; }
   textarea#code {
     width: 100%; min-height: 120px; resize: vertical;
-    background: #0b0d11; border: 1px solid var(--line); color: #cfe3ff;
-    border-radius: var(--radius); padding: 9px; font-family: var(--mono);
+    /* Lightened to the Woven light DS (was dark #0b0d11 / #cfe3ff): subtle inset
+       surface, hairline border, normal text, mono font kept. */
+    background: var(--wv-surface-2); border: 1px solid var(--wv-border); color: var(--wv-text);
+    border-radius: var(--radius); padding: 9px; font-family: var(--wv-font-mono);
     font-size: 12px; line-height: 1.5; tab-size: 2;
   }
   textarea#code:focus { outline: none; border-color: var(--accent); }
@@ -196,11 +198,13 @@
   /* JSON / export */
   textarea#json {
     width: 100%; min-height: 90px; resize: vertical;
-    background: #0b0d11; border: 1px solid var(--line); color: var(--txt-dim);
-    border-radius: var(--radius); padding: 8px; font-family: var(--mono);
+    /* Lightened to the Woven light DS (was dark #0b0d11): subtle inset surface,
+       hairline border, muted-but-readable text, mono font kept. */
+    background: var(--wv-surface-2); border: 1px solid var(--wv-border); color: var(--wv-text-muted);
+    border-radius: var(--radius); padding: 8px; font-family: var(--wv-font-mono);
     font-size: 10.5px; line-height: 1.45;
   }
-  textarea#json:focus { outline: none; border-color: var(--accent); color: var(--txt); }
+  textarea#json:focus { outline: none; border-color: var(--accent); color: var(--wv-text); }
 
   .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--txt-dim); }
   .check input { accent-color: var(--accent); }
@@ -221,7 +225,10 @@
 </head>
 <body>
 <div id="app">
-  <div class="topbar">
+  <!-- data-float-panel="top" lets the shared detached-panels.css float this full-
+       width bar across the top (it keeps its own height) when the node is selected,
+       and hide it when deselected. reportPanels() measures its height into --panel-t. -->
+  <div class="topbar" data-float-panel="top">
     <div class="brand"><span class="dot"></span>Pixel Editor</div>
     <div class="sep"></div>
     <div class="seg" id="modeSeg">
@@ -1350,7 +1357,9 @@
     const tools = $("#tools"), side = $(".side");
     const panelL = (tools ? tools.offsetWidth : 0) + 8;
     const panelR = (side ? side.offsetWidth : 0) + 8;
-    const panelT = 0;   // top bar stays in normal flow (full-width, not floated)
+    // The top bar now floats (data-float-panel="top"); measure its height (+8px gap)
+    // so the host leaves room above the core rect and the bar isn't covered by the canvas.
+    const tb = document.querySelector('.topbar'); const panelT = tb ? tb.offsetHeight + 8 : 0;
     const panelB = 0;
     document.body.style.setProperty("--panel-l", panelL + "px");
     document.body.style.setProperty("--panel-r", panelR + "px");

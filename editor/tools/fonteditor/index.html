@@ -12,21 +12,24 @@
   :root{
     /* Map the tool's local vars onto the canonical Woven tokens so the CHROME
        (toolbar, panels, buttons, inputs, text) reads as the light Woven design
-       system. The central glyph-editing canvas keeps a neutral dark CONTENT
-       background (see --canvas-bg) for outline contrast — content, not chrome. */
+       system. The central glyph-editing canvas is now ALSO light Woven so the
+       whole tool matches the design system (see --canvas-bg below). */
     --bg:var(--wv-bg); --panel:var(--wv-surface); --panel2:var(--wv-surface-2);
     --line:var(--wv-border);
     --ink:var(--wv-text); --ink2:var(--wv-text-muted); --ink3:var(--wv-text-faint);
     --accent:var(--wv-accent); --accent2:var(--wv-accent-soft);
     --good:var(--wv-success); --warn:var(--wv-warning); --bad:var(--wv-danger);
-    /* Guides on the dark editing canvas read against --canvas-bg. */
-    --guide:#3a3f4b; --guide-key:#5a6275;
-    /* Dark content surfaces (glyph editor canvas, preview canvas). */
-    --canvas-bg:var(--wv-viewport);
+    /* Metric guide lines on the LIGHT editing canvas: hairline Woven borders.
+       --guide-key marks the key metrics (baseline / cap / x-height), --guide the
+       secondary ones (ascender / descender). Both read dark-ish on light. */
+    --guide:var(--wv-border); --guide-key:var(--wv-border-strong);
+    /* LIGHT content surface for the glyph editor canvas (matches Woven). */
+    --canvas-bg:var(--wv-surface);
     /* Glyph cells use a LIGHT chrome surface, so their fill stays dark --ink. */
     --cell-bg:var(--wv-surface-2);
-    /* Content ink for drawing ON the dark editing canvas (must read light). */
-    --canvas-ink:#e8eaf0; --canvas-ink-faint:#9aa1ad;
+    /* Content ink for drawing ON the light editing canvas (must read DARK):
+       the glyph fill uses --canvas-ink, metric labels use --canvas-ink-faint. */
+    --canvas-ink:var(--wv-text); --canvas-ink-faint:var(--wv-text-faint);
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
@@ -98,8 +101,8 @@
   }
   #edit-head .glyph-title{font-size:18px; font-weight:700}
   #edit-head .glyph-title small{font-size:11px; color:var(--ink3); font-weight:400; margin-left:6px}
-  /* Central glyph-editing canvas keeps a neutral DARK content background for
-     outline contrast — this is content, not chrome (per Woven theme guidance). */
+  /* Central glyph-editing canvas now uses a LIGHT Woven surface so it matches
+     the design system; the glyph + metrics render in dark --canvas-ink. */
   #canvas-wrap{flex:1; position:relative; overflow:hidden; min-height:0; background:var(--canvas-bg)}
   #canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none}
   #edit-foot{
@@ -681,7 +684,7 @@ function drawCanvas(){
     const y=u2sy(g.y);
     ctx.strokeStyle=getCSS(g.c);
     ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-    ctx.fillStyle=getCSS("--canvas-ink-faint");   // light label on dark content canvas
+    ctx.fillStyle=getCSS("--canvas-ink-faint");   // dark metric label on light content canvas
     ctx.fillText(g.label+" ("+g.y+")", 6, y-3);
   }
   // advance-width verticals
@@ -708,7 +711,9 @@ function drawCanvas(){
     for(const n of editState.nodes){
       const sx=u2sx(n.x), sy=u2sy(n.y);
       ctx.fillStyle = (n===dragNode)?getCSS("--good"):getCSS("--accent");
-      ctx.strokeStyle="#0c0d10"; ctx.lineWidth=1.5;
+      // Ring the handle with the light canvas surface so the colored dot pops
+      // (was a hardcoded near-black ring tuned for the old dark canvas).
+      ctx.strokeStyle=getCSS("--canvas-bg"); ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.arc(sx,sy,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
     }
   }

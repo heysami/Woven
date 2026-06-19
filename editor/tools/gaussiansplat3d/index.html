@@ -124,7 +124,10 @@
 </head>
 <body>
 <div id="app">
-  <div id="top">
+  <!-- data-float-panel="top" lets the shared detached-panels.css float this
+       full-width header across the top while the node is selected, so the
+       WebGL canvas no longer covers it. -->
+  <div id="top" data-float-panel="top">
     <span class="brand"><span class="mk" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19"/></svg></span> SPLAT LAB</span>
     <span class="status" id="status"><b>booting…</b></span>
     <span class="spacer"></span>
@@ -674,10 +677,13 @@ function reportPanels(){
   const floating = document.body.classList.contains('detached-panels');
   const leftEl  = $('#left');
   const rightEl = $('#right');
+  const topEl   = $('#top');
   const panelL = floating ? (leftEl  ? leftEl.offsetWidth  + 8 : 0) : 0;
   const panelR = floating ? (rightEl ? rightEl.offsetWidth + 8 : 0) : 0;
-  const panelT = 0;   // no floating top panel
-  const panelB = 0;   // …nor a bottom panel
+  // The full-width header (#top) now floats too — reserve its height + 8px gap
+  // so #coreCanvas drops below it and the bar isn't covered by the canvas.
+  const panelT = floating ? (topEl ? topEl.offsetHeight + 8 : 0) : 0;
+  const panelB = 0;   // …no bottom panel
   if (floating){
     document.body.style.setProperty('--panel-l', panelL+'px');
     document.body.style.setProperty('--panel-r', panelR+'px');

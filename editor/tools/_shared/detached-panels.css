@@ -66,13 +66,12 @@ body.detached-panels #coreCanvas {
   z-index: 2;
 }
 
-/* Floating panels — positioned around the core rect, with an 8px breathing gap
-   built into the extent vars (so a panel of declared width W occupies W-8 and
-   leaves the gap as transparent click-through). */
-/* NB: tools position these panels with ID selectors (#left/#rightcol/…), which
-   out-specify a bare attribute selector — so the layout-critical properties here
-   use !important to guarantee the detached override wins regardless of the tool's
-   own rules. Cosmetic props (shadow/radius) stay overridable. */
+/* Floating panels — pinned just outside the core rect. CRITICAL: the panel keeps
+   its OWN width/height (from the tool's CSS); we only control position + the outer
+   inset. (Forcing width here created a circular dependency — the panel measured 0
+   before reportPanels could read it, so panels vanished. The host grows the iframe
+   by panelW+8, leaving the panel's own width + an 8px gap to the node edge.)
+   NB: !important on the positioning props beats tools' ID selectors (#left/…). */
 body.detached-panels [data-float-panel] {
   position: absolute !important;
   pointer-events: auto;
@@ -84,22 +83,18 @@ body.detached-panels [data-float-panel] {
 body.detached-panels [data-float-panel="left"] {
   left: 0 !important; right: auto !important;
   top: var(--panel-t, 0px) !important; bottom: var(--panel-b, 0px) !important;
-  width: calc(var(--panel-l, 0px) - 8px) !important; height: auto !important;
 }
 body.detached-panels [data-float-panel="right"] {
   right: 0 !important; left: auto !important;
   top: var(--panel-t, 0px) !important; bottom: var(--panel-b, 0px) !important;
-  width: calc(var(--panel-r, 0px) - 8px) !important; height: auto !important;
 }
 body.detached-panels [data-float-panel="top"] {
   top: 0 !important; bottom: auto !important;
   left: var(--panel-l, 0px) !important; right: var(--panel-r, 0px) !important;
-  height: calc(var(--panel-t, 0px) - 8px) !important; width: auto !important;
 }
 body.detached-panels [data-float-panel="bottom"] {
   bottom: 0 !important; top: auto !important;
   left: var(--panel-l, 0px) !important; right: var(--panel-r, 0px) !important;
-  height: calc(var(--panel-b, 0px) - 8px) !important; width: auto !important;
 }
 
 /* Layer rows expose connector hit-targets to the host (which peeks into the

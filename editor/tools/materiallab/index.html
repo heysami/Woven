@@ -98,10 +98,13 @@
   .addpal:hover{border-color:var(--acc);color:var(--wv-accent-text)}
 
   /* GLSL editor */
-  #shaderGrp textarea{width:100%;height:300px;resize:vertical;border-radius:8px;border:1px solid var(--line2);
-    background:#0c0e12;color:#cfe3ff;font-family:var(--mono);font-size:11px;line-height:1.45;padding:9px 10px;
+  /* GLSL code editor — LIGHT Woven chrome (it's an editable control, not the
+     dark WebGL viewport content). Reads with the canonical surface/border/text
+     tokens + the mono face, matching the rest of the light DS. */
+  #shaderGrp textarea{width:100%;height:300px;resize:vertical;border-radius:8px;border:1px solid var(--wv-border);
+    background:var(--wv-surface);color:var(--wv-text);font-family:var(--wv-font-mono);font-size:11px;line-height:1.45;padding:9px 10px;
     white-space:pre;overflow:auto;tab-size:2;outline:none}
-  #shaderGrp textarea:focus{border-color:var(--acc)}
+  #shaderGrp textarea:focus{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-soft)}
   .sbtns{display:flex;gap:8px;margin-top:8px}
   .sbtns .tbtn{flex:1;justify-content:center}
   .sbtns .tbtn.primary{background:var(--acc);border-color:var(--acc);color:var(--wv-text-on-accent)}
@@ -183,7 +186,10 @@
 </style>
 </head>
 <body>
-  <div id="top">
+  <!-- data-float-panel="top": detached-panels.css floats this full-width header
+       across the top of the node when selected (and hides it when deselected),
+       so it no longer overlaps / gets covered by the node title bar. -->
+  <div id="top" data-float-panel="top">
     <div class="brand"><span class="dot"></span>MATERIAL&nbsp;LAB<small>shader&nbsp;material&nbsp;editor</small></div>
     <div class="spacer"></div>
     <span class="status" id="modeStatus"></span>
@@ -1801,10 +1807,13 @@ function ensureRuntime(){
 function reportPanels(){
   const L=document.getElementById('left');
   const R=document.getElementById('right');
-  // panel extent = panel width + 8px breathing gap (top/bottom have no panels)
+  // panel extent = panel width + 8px breathing gap
   const panelL=(L?L.offsetWidth:0)+8;
   const panelR=(R?R.offsetWidth:0)+8;
-  const panelT=0, panelB=0;
+  // top bar now floats too (data-float-panel="top") — measure its height + 8px gap
+  // so the host can offset the node core rect below the floated header.
+  const tb=document.getElementById('top');
+  const panelT=tb?tb.offsetHeight+8:0, panelB=0;
   const bs=document.body.style;
   bs.setProperty('--panel-l', panelL+'px');
   bs.setProperty('--panel-r', panelR+'px');

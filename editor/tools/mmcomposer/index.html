@@ -31,7 +31,10 @@
   #app{display:grid;grid-template-columns:300px 1fr 320px;height:100vh;width:100vw}
   .col{height:100vh;overflow:auto;display:flex;flex-direction:column}
   .col.left{border-right:1px solid var(--line);background:var(--panel)}
-  .col.right{border-left:1px solid var(--line);background:var(--panel)}
+  /* Explicit width so #inspector measures non-zero when floated (detached-panels.css
+     positions it absolutely OUTSIDE the grid, where it can no longer borrow the
+     grid track's 320px). Matches #app's right grid track. */
+  .col.right{border-left:1px solid var(--line);background:var(--panel);width:320px}
   .col.center{background:#000;position:relative;align-items:center;justify-content:center}
   .hd{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--panel);z-index:5}
   .hd h1{font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin:0;color:var(--ink2);font-weight:600}
@@ -44,7 +47,10 @@
   button.chip.on{background:var(--wv-accent-soft); border-color:var(--acc); color:var(--wv-accent-text)}
   button.chip.off{opacity:.8}
   .row{display:flex;gap:6px;align-items:center}
-  .layers{padding:8px;display:flex;flex-direction:column;gap:6px}
+  /* Explicit width so #layerList measures non-zero when floated (detached-panels.css
+     positions it absolutely OUTSIDE the grid; its flex-column content would otherwise
+     collapse to 0). Matches #app's left grid track. */
+  .layers{padding:8px;display:flex;flex-direction:column;gap:6px;width:300px}
   .layer{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;cursor:pointer}
   .layer.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
   .layer .top{display:flex;align-items:center;gap:6px}

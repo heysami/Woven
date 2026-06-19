@@ -48,6 +48,26 @@
   .tool.active { background: var(--accent); color: var(--wv-text-on-accent); }
   .tool svg { width: 19px; height: 19px; }
   .sep { height: 1px; background: var(--line); margin: 3px 2px; }
+  /* Detached (node selected): the shared detached-panels.css pins the LEFT float
+     panel full-height (top:0/bottom:0 + its own width) as a solid card — which
+     turns this COMPACT vertical icon strip into a tall white slab. Override it,
+     scoped to detached mode, so the toolbar floats content-sized, vertically
+     centred, and TRANSPARENT over the scene. `body.detached-panels .toolbar`
+     out-specifies the shared [data-float-panel="left"] attribute rule; the
+     layout props are !important to beat it. Mirrors spline3d's equivalent rule.
+     (The .tool buttons keep their OWN hover/active backgrounds — see .tool:hover
+     / .tool.active above — so icons stay legible once the card bg is gone.) */
+  body.detached-panels .toolbar {
+    top: 50% !important;
+    bottom: auto !important;
+    height: auto !important;
+    width: auto !important;
+    transform: translateY(-50%);
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
 
   .panel {
     position: fixed; right: 14px; top: 14px; bottom: 14px; width: 280px;

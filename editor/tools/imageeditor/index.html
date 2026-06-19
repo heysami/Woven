@@ -65,7 +65,9 @@
   #main{flex:1; display:flex; min-height:0;}
   /* tool rail */
   #toolrail{
-    flex:0 0 48px; background:var(--bg2); border-right:1px solid var(--line);
+    /* explicit width (not just flex-basis) so it still measures non-zero when
+       detached-panels.css floats it out of the #main flex row. */
+    flex:0 0 48px; width:48px; background:var(--bg2); border-right:1px solid var(--line);
     display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; overflow-y:auto;
   }
   .tool{
@@ -116,7 +118,9 @@
   #zoomHud button:hover{color:var(--ink);}
   /* right panels */
   #rightcol{
-    flex:0 0 264px; background:var(--bg2); border-left:1px solid var(--line);
+    /* explicit width (not just flex-basis) so it still measures non-zero when
+       detached-panels.css floats it out of the #main flex row. */
+    flex:0 0 264px; width:264px; background:var(--bg2); border-left:1px solid var(--line);
     display:flex; flex-direction:column; min-height:0;
   }
   .pane{border-bottom:1px solid var(--line); display:flex; flex-direction:column; min-height:0;}
@@ -241,7 +245,9 @@
 </head>
 <body>
 
-<div id="topbar">
+<!-- data-float-panel="top" lets detached-panels.css float this full-width bar
+     across the top of the node when selected (hidden when deselected). -->
+<div id="topbar" data-float-panel="top">
   <span class="brand">Woven <b>Image</b></span>
   <span class="sep"></span>
   <button class="btn" id="undoBtn" title="Undo (⌘Z)">Undo</button>
@@ -1815,7 +1821,11 @@ function reportPanels(){
   const rcol=document.getElementById('rightcol');
   const panelL=(rail?rail.offsetWidth:0)+8;
   const panelR=(rcol?rcol.offsetWidth:0)+8;
-  const panelT=0, panelB=0;   // this tool has no floating top/bottom panels
+  // Float the full-width #topbar across the top: reserve its own height (+8px gap)
+  // so the floated bar clears the node's core rect.
+  const tb = document.querySelector('#topbar');
+  const panelT = tb ? tb.offsetHeight + 8 : 0;
+  const panelB=0;   // this tool has no floating bottom panel
   const b=document.body.style;
   b.setProperty('--panel-l',panelL+'px');
   b.setProperty('--panel-r',panelR+'px');
