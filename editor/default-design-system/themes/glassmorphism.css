@@ -179,3 +179,40 @@
 [data-theme="glassmorphism"] .legend__swatch{
   box-shadow:0 0 0 1px rgba(255,255,255,.55), 0 1px 2px rgba(31,38,135,.25);
 }
+
+/* ==========================================================================
+   WebGL glass mode — active once themes/glassmorphism.js mounts the REAL
+   Material Lab dispersion-prism canvas (it adds `html.glass-gl`). The CSS
+   surfaces go transparent so the fixed WebGL canvas (z-index:-1) shows
+   through; the page background becomes the dark aurora the glass refracts;
+   text goes light. When JS / WebGL2 is unavailable, none of this applies and
+   the backdrop-filter rules above remain as a graceful fallback.
+   ========================================================================== */
+html.glass-gl [data-theme="glassmorphism"] body,
+html.glass-gl[data-theme="glassmorphism"] body{
+  color:#fff;
+  background-color:#0b0d12;
+  background-image:
+    radial-gradient(70% 60% at 20% 15%, rgba(42,76,255,.80), transparent 60%),
+    radial-gradient(60% 55% at 85% 20%, rgba(179,76,255,.72), transparent 62%),
+    radial-gradient(80% 70% at 60% 100%, rgba(22,214,180,.72), transparent 60%);
+  background-attachment:fixed;
+}
+/* containers go transparent so the fixed glass canvas reaches the cards */
+html.glass-gl [data-theme="glassmorphism"] :is(.app,.main,.content,.workflow-root,.workflow-canvas){
+  background:transparent !important;
+}
+/* glass surfaces: the canvas IS the surface — drop fill + blur, keep the lens edge */
+html.glass-gl [data-theme="glassmorphism"] :is(.card,.section-card,.stat-hero,.chart-card,.modal,.slideout,.topbar,.sidebar,.btn--primary,.btn--outline,.input,.select,.textarea,.badge,.tag,.kpi,.metric-tile,.phone__tabbar){
+  background:transparent !important;
+  -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
+  border-color:rgba(255,255,255,.40);
+  box-shadow:none;
+}
+/* light, legible text on the dark refractive glass */
+html.glass-gl [data-theme="glassmorphism"]{ color:#fff; }
+html.glass-gl [data-theme="glassmorphism"] :is(h1,h2,h3,h4,h5,h6,p,span,a,label,td,th,li,.text-muted,.text-subtle){
+  color:#fff !important; text-shadow:0 1px 4px rgba(0,0,0,.45);
+}
+html.glass-gl [data-theme="glassmorphism"] :is(.btn--primary,.btn--outline){ color:#fff !important; }
+html.glass-gl [data-theme="glassmorphism"] :is(.input,.select,.textarea)::placeholder{ color:rgba(255,255,255,.6); }

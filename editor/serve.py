@@ -17490,27 +17490,64 @@ class H(http.server.SimpleHTTPRequestHandler):
         #     meta.defaultStyle. Palette/scheme tuning above already landed in
         #     :root{}; surface-only styles layer on top, palette-defining styles
         #     (pastel/minimal/grainism) win on the tokens they redeclare.
+        #     A JS-backed style (a themes/<id>.js exists, e.g. glassmorphism's
+        #     real WebGL dispersion-prism) bakes differently: keep the overlay
+        #     SCOPED, stamp data-theme="<id>" on every page, point pages at
+        #     all.css (so the scoped overlay + components load), and ensure the
+        #     runtime script is present. Its CSS fallback still renders if WebGL
+        #     is unavailable.
         style_id = (body.get("dsStyleId") or "").strip()
         default_style = ""
         if style_id and re.match(r'^[a-z0-9_-]+$', style_id):
             theme_path = os.path.join(ds_dir, "themes", style_id + ".css")
+            theme_js = os.path.join(ds_dir, "themes", style_id + ".js")
             if os.path.isfile(theme_path):
-                try:
-                    with open(theme_path, "r", encoding="utf-8") as f:
-                        theme_css = f.read()
-                    # Unscope: ":root[data-theme=x]" -> ":root", "[data-theme=x] .c" -> ".c"
-                    theme_css = re.sub(
-                        r'\[data-theme="' + re.escape(style_id) + r'"\]\s*',
-                        "", theme_css)
-                    styles_css = styles_css.rstrip() + (
-                        "\n\n/* ===== Baked style: " + style_id
-                        + " (folded from themes/" + style_id + ".css) ===== */\n"
-                        + theme_css + "\n")
-                    with open(styles_path, "w", encoding="utf-8") as f:
-                        f.write(styles_css)
-                    default_style = style_id
-                except Exception:
-                    pass
+                default_style = style_id
+                if os.path.isfile(theme_js):
+                    # JS-backed: stamp attribute + all.css + runtime script per page.
+                    for root, _dirs, files in os.walk(ds_dir):
+                        for fn in files:
+                            if not fn.lower().endswith(".html"):
+                                continue
+                            fp = os.path.join(root, fn)
+                            try:
+                                with open(fp, "r", encoding="utf-8") as f:
+                                    t = f.read()
+                            except Exception:
+                                continue
+                            orig = t
+                            t = re.sub(r'(<link[^>]+href=")([^"]*?)styles\.css(")',
+                                       r'\1\2all.css\3', t)
+                            if "<html" in t and "data-theme" not in t:
+                                t = re.sub(r"(<html\b[^>]*)>",
+                                           r'\1 data-theme="' + style_id + '">', t, count=1)
+                            if (style_id + ".js") not in t and "</body>" in t:
+                                rel = os.path.relpath(theme_js, os.path.dirname(fp)).replace(os.sep, "/")
+                                t = t.replace("</body>",
+                                              '<script defer src="' + rel + '"></script>\n</body>', 1)
+                            if t != orig:
+                                try:
+                                    with open(fp, "w", encoding="utf-8") as f:
+                                        f.write(t)
+                                except Exception:
+                                    pass
+                else:
+                    # CSS-only: fold themes/<id>.css into styles.css UNSCOPED as
+                    # the default look ("[data-theme=x] .c" -> ".c").
+                    try:
+                        with open(theme_path, "r", encoding="utf-8") as f:
+                            theme_css = f.read()
+                        theme_css = re.sub(
+                            r'\[data-theme="' + re.escape(style_id) + r'"\]\s*',
+                            "", theme_css)
+                        styles_css = styles_css.rstrip() + (
+                            "\n\n/* ===== Baked style: " + style_id
+                            + " (folded from themes/" + style_id + ".css) ===== */\n"
+                            + theme_css + "\n")
+                        with open(styles_path, "w", encoding="utf-8") as f:
+                            f.write(styles_css)
+                    except Exception:
+                        pass
 
         # 3) meta.json — stamp a content version + label; never carry a
         #    project name. Version = sha256(styles + gallery)[:12], matching
