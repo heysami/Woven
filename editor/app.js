@@ -62354,19 +62354,36 @@ function WorkflowDsPicker({ value, onChange, label, compact, title }) {
   // Human label for a DS id — skip the "v?" version placeholder so it reads
   // as plain "main" rather than "main · v?".
   const dsText = (d) => d.id + (d.label && d.label !== "v?" ? " · " + d.label : "");
-  // ≤1 DS → nothing to choose between. A dropdown would be pure chrome, so
-  // render the single (or sole) DS as a static chip instead. The selected DS
-  // is whatever `value` already points at, falling back to the only DS.
+  // ≤1 DS → nothing to choose between, so skip the dropdown chrome. With one
+  // DS we still need an opt-out ("don't use the design system"), so render a
+  // click-to-toggle chip: ON scopes generation to the sole DS, OFF runs
+  // without a DS. With zero DS there's nothing to toggle — a static chip.
   if (list.length <= 1) {
-    const only = list.find(d => d.id === sel) || list[0] || null;
-    const tt0 = title || (only
-      ? "DS scope: " + only.id + " — generation stays within this DS's tokens + primitives."
-      : "DS scope: none — no design system built yet.");
+    const only = list[0] || null;
+    if (!only) {
+      return html`
+        <span className=${"workflow-ds-picker is-static" + (compact ? " is-compact" : "")}
+          title=${title || "DS scope: none — no design system built yet."}
+          onMouseDown=${(e) => e.stopPropagation()}>
+          ${!compact && html`<span className="workflow-ds-picker-label">${label || "DS"}</span>`}
+          <span className="workflow-ds-picker-static">DS: (none built)</span>
+        </span>
+      `;
+    }
+    const active = sel === only.id;
+    const tt0 = title || (active
+      ? "DS scope: " + only.id + " — click to generate WITHOUT a design system."
+      : "No design system — click to scope generation to " + only.id + ".");
     return html`
       <span className=${"workflow-ds-picker is-static" + (compact ? " is-compact" : "")} title=${tt0}
         onMouseDown=${(e) => e.stopPropagation()}>
         ${!compact && html`<span className="workflow-ds-picker-label">${label || "DS"}</span>`}
-        <span className="workflow-ds-picker-static">${only ? dsText(only) : "DS: (none built)"}</span>
+        <button type="button"
+          className=${"workflow-ds-picker-toggle" + (active ? " is-on" : " is-off")}
+          onClick=${(e) => { e.stopPropagation(); onChange(active ? null : only.id); }}
+          onMouseDown=${(e) => e.stopPropagation()}>
+          ${active ? dsText(only) : "no DS"}
+        </button>
       </span>
     `;
   }

@@ -22002,6 +22002,37 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
   max-width: 110px;
 }
+/* Click-to-toggle chip — shown when there's exactly 1 DS. ON = scoped to the
+   sole DS; OFF = generate without a design system. */
+.workflow-ds-picker-toggle {
+  appearance: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font: 500 11px/1.2 var(--font-mono);
+  cursor: pointer;
+  outline: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+.workflow-ds-picker-toggle.is-on {
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  color: var(--text);
+}
+.workflow-ds-picker-toggle.is-off {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-faint);
+}
+.workflow-ds-picker-toggle:hover { border-color: var(--accent); }
+.workflow-ds-picker.is-compact .workflow-ds-picker-toggle {
+  padding: 3px 6px;
+  font-size: 10.5px;
+  max-width: 110px;
+}
 .workflow-ds-picker.is-compact { gap: 0; }
 .workflow-ds-picker.is-compact .workflow-ds-picker-select {
   padding: 3px 20px 3px 6px;
