@@ -462,14 +462,14 @@ const Assets = {
   image(id){
     if(this.img[id]) return this.img[id];  // null/undefined → retry (don't cache absence)
     const m=this.meta(id); if(!m) return null;
-    const im=new Image(); im.onload=()=>{ im._ready=true; };
+    const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>{ im._ready=true; };
     im.onerror=()=>{ console.warn('[mm] img load failed:',m.url); delete this.img[id]; };
     im.src=m.url; this.img[id]=im; return im;
   },
   video(id){
     if(this.vid[id]) return this.vid[id];
     const m=this.meta(id); if(!m) return null;
-    const v=document.createElement('video'); v.loop=true; v.muted=true;
+    const v=document.createElement('video'); v.crossOrigin='anonymous'; v.loop=true; v.muted=true;
     v.playsInline=true; v.src=m.url; v.play().catch(()=>{}); this.vid[id]=v; return v;
   },
   audio(id){
