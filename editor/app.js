@@ -58384,6 +58384,27 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   const spec = node.spec || {};
   const [view, setView] = useState(node.specView || "ui");   // building blocks open in UI, not Code
   const [selCell, setSelCell] = useState(null);   // Phase-2 override editor selection
+  // Timeline preview playhead — a LOCAL visual clock so the node looks alive;
+  // the real runtime playhead is the consumer's (mm-composer / 3D tool).
+  const [tlTime, setTlTime] = useState(0);
+  const [tlPlaying, setTlPlaying] = useState(true);
+  useEffect(() => {
+    if (node.kind !== "timeline" || !tlPlaying) return;
+    const dur = Math.max(0.1, (node.spec && node.spec.duration) || 4);
+    const loopOn = !(node.spec && node.spec.loop === false);
+    let raf = 0, start = 0;
+    const step = (now) => {
+      if (!start) start = now - tlTime * 1000;
+      let t = (now - start) / 1000;
+      if (loopOn) t = t % dur; else if (t >= dur) t = dur;
+      setTlTime(t);
+      if (!loopOn && t >= dur) return;   // halt at end when not looping
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.kind, tlPlaying, node.spec && node.spec.duration, node.spec && node.spec.loop]);
   const generatedScript = useMemo(() => _specToScript(node.kind, spec), [node.kind, JSON.stringify(spec)]);
   const scriptSource = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : generatedScript);
   const [scriptText, setScriptText] = useState(scriptSource);
@@ -58646,7 +58667,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   };
   const renderTimelinePanel = () => {
     if (node.kind !== "timeline") return null;
-    const dur = (compiled.spec && compiled.spec.duration) || spec.duration || 4;
+    const dur = Math.max(0.1, (compiled.spec && compiled.spec.duration) || spec.duration || 4);
     const tracks = node.tracks || {};
     const targets = [];
     for (const e of (allEdges || [])) {
@@ -58658,38 +58679,89 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       const tn = (allNodes || []).find(n => n.id === tid);
       targets.push({ key: tid + "." + param, label: (tn && (tn.title || tn.name)) || (tn && tn.kind) || tid, param });
     }
-    if (!targets.length) return html`<div style=${{ fontSize: "11px", color: "var(--muted, #888)", marginTop: "10px" }}>
-      Wire this Timeline's out into a numeric param port — each wired param becomes a keyframed track here.</div>`;
-    const updKeys = (key, keys) => setTrack(key, { keys: keys.slice().sort((a, b) => (a.t || 0) - (b.t || 0)) });
-    return html`<div style=${{ marginTop: "10px" }}>
-      ${targets.map(tg => {
-        const tr = tracks[tg.key] || { keys: [], perInstance: false, stagger: 0 };
-        const keys = (tr.keys || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
-        return html`<div key=${tg.key} style=${{ border: "1px solid var(--line, #ddd)", borderRadius: "6px", padding: "6px", marginBottom: "6px" }}>
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", marginBottom: "4px" }}>
-            <span style=${{ fontWeight: 600 }}>${tg.label} · ${tg.param}</span>
-            <label style=${{ display: "flex", gap: "4px", alignItems: "center", color: "var(--muted,#888)" }} onMouseDown=${(e) => e.stopPropagation()}>
-              <input type="checkbox" checked=${!!tr.perInstance} onChange=${(e) => setTrack(tg.key, { perInstance: e.target.checked })}/>per-inst</label>
-          </div>
-          ${tr.perInstance && html`<label style=${{ display: "grid", gridTemplateColumns: "60px 1fr", gap: "6px", alignItems: "center", fontSize: "11px", marginBottom: "4px" }}>
-            <span style=${{ color: "var(--muted,#888)" }}>stagger s</span>
-            <input className="workflow-spec-input" type="number" step="0.05" value=${tr.stagger || 0} onInput=${(e) => setTrack(tg.key, { stagger: Number(e.target.value) || 0 })} onMouseDown=${(e) => e.stopPropagation()}/>
-          </label>`}
-          <div style=${{ position: "relative", height: "10px", background: "var(--surface-2,#eee)", borderRadius: "3px", margin: "4px 0" }}>
-            ${keys.map((k, ki) => html`<span key=${ki} style=${{ position: "absolute", top: "-2px", left: `calc(${Math.max(0, Math.min(1, (k.t || 0) / dur)) * 100}% - 3px)`, width: "6px", height: "14px", background: "var(--accent,#79f)", borderRadius: "2px" }}/>`)}
-          </div>
-          ${keys.map((k, ki) => html`<div key=${ki} style=${{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "4px", marginBottom: "3px", fontSize: "11px" }}>
-            <input className="workflow-spec-input" type="number" step="0.05" value=${k.t} title="time (s)"
-              onInput=${(e) => { const nk = keys.slice(); nk[ki] = { ...k, t: Number(e.target.value) || 0 }; updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}/>
-            <input className="workflow-spec-input" type="number" step="0.1" value=${k.value} title="value"
-              onInput=${(e) => { const nk = keys.slice(); nk[ki] = { ...k, value: Number(e.target.value) || 0 }; updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}/>
-            <button className="workflow-spec-tab" style=${{ border: "1px solid var(--line,#ddd)", borderRadius: "5px", padding: "0 6px", background: "transparent" }}
-              onClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.splice(ki, 1); updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
-          </div>`)}
-          <button className="workflow-spec-tab" style=${{ border: "1px solid var(--line,#ddd)", borderRadius: "5px", padding: "3px 8px", background: "transparent", fontSize: "11px" }}
-            onClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.push({ t: keys.length ? Math.min(dur, (keys[keys.length - 1].t || 0) + dur / 4) : 0, value: 0 }); updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}>+ keyframe</button>
-        </div>`;
-      })}
+    const phFrac = ((tlTime % dur) + dur) % dur / dur;
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ f, label: (f * dur).toFixed(f === 0 || f === 1 ? 0 : 1) + "s" }));
+    // Ruler scrub: drag along the time axis to move the preview playhead.
+    const scrub = (e) => {
+      e.stopPropagation();
+      const rect = e.currentTarget.getBoundingClientRect();
+      const setFromX = (cx) => { setTlPlaying(false); setTlTime(Math.max(0, Math.min(1, (cx - rect.left) / rect.width)) * dur); };
+      setFromX(e.clientX);
+      const mv = (ev) => setFromX(ev.clientX);
+      const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+    };
+    const lane = (tg) => {
+      const tr = tracks[tg.key] || { keys: [], perInstance: false, stagger: 0 };
+      const keys = (tr.keys || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
+      let vmin = Infinity, vmax = -Infinity;
+      for (const k of keys) { vmin = Math.min(vmin, k.value); vmax = Math.max(vmax, k.value); }
+      if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
+      if (vmax - vmin < 1e-6) { vmin -= 1; vmax += 1; }
+      const xf = (t) => Math.max(0, Math.min(1, (t || 0) / dur));
+      const yf = (v) => 1 - (v - vmin) / (vmax - vmin);
+      const pts = keys.map(k => `${(xf(k.t) * 100).toFixed(2)},${(yf(k.value) * 100).toFixed(2)}`).join(" ");
+      const H = 36;
+      const commit = (nk) => setTrack(tg.key, { keys: nk.slice().sort((a, b) => (a.t || 0) - (b.t || 0)) });
+      const dragKey = (ki) => (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const rect = e.currentTarget.parentElement.getBoundingClientRect();
+        const mv = (ev) => {
+          const fx = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+          const fy = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
+          const nk = keys.slice();
+          nk[ki] = { ...keys[ki], t: +(fx * dur).toFixed(3), value: +(vmax - fy * (vmax - vmin)).toFixed(3) };
+          commit(nk);
+        };
+        const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+        window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+      };
+      const addKey = (e) => {
+        if (e.target !== e.currentTarget) return;   // only empty-area clicks add
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        commit([...keys, { t: +(fx * dur).toFixed(3), value: +(vmax - fy * (vmax - vmin)).toFixed(3) }]);
+      };
+      return html`<div key=${tg.key} style=${{ marginBottom: "7px" }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", marginBottom: "2px", gap: "6px" }}>
+          <span style=${{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title=${tg.label + " · " + tg.param}>${tg.label} · ${tg.param}</span>
+          <label style=${{ display: "flex", gap: "3px", alignItems: "center", color: "var(--muted,#888)", whiteSpace: "nowrap" }} onMouseDown=${(e) => e.stopPropagation()}>
+            <input type="checkbox" checked=${!!tr.perInstance} onChange=${(e) => setTrack(tg.key, { perInstance: e.target.checked })}/>per-inst</label>
+        </div>
+        <div onPointerDown=${addKey} onMouseDown=${(e) => e.stopPropagation()}
+          title="Click empty space to add a keyframe; drag a diamond to move it; double-click to delete."
+          style=${{ position: "relative", height: H + "px", background: "var(--surface-2,#f4f4f4)", border: "1px solid var(--line,#e3e3e3)", borderRadius: "4px", cursor: "crosshair" }}>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style=${{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            ${keys.length > 1 && html`<polyline points=${pts} fill="none" stroke="var(--accent,#79f)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`}
+          </svg>
+          <div style=${{ position: "absolute", top: 0, bottom: 0, left: (phFrac * 100) + "%", width: "1px", background: "color-mix(in oklch, var(--accent,#79f) 55%, transparent)", pointerEvents: "none" }}/>
+          ${keys.map((k, ki) => html`<div key=${ki}
+            title=${"t=" + (k.t || 0) + "s  value=" + k.value + "  (double-click to delete)"}
+            onPointerDown=${dragKey(ki)} onMouseDown=${(e) => e.stopPropagation()}
+            onDblClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.splice(ki, 1); commit(nk); }}
+            style=${{ position: "absolute", left: `calc(${(xf(k.t) * 100).toFixed(2)}% - 5px)`, top: `calc(${(yf(k.value) * 100).toFixed(2)}% - 5px)`, width: "10px", height: "10px", background: "var(--accent,#79f)", clipPath: "polygon(50% 0,100% 50%,50% 100%,0 50%)", cursor: "grab" }}/>`)}
+        </div>
+        ${tr.perInstance && html`<label style=${{ display: "flex", gap: "6px", alignItems: "center", fontSize: "10px", marginTop: "3px", color: "var(--muted,#888)" }} onMouseDown=${(e) => e.stopPropagation()}>
+          stagger <input className="workflow-spec-input" type="number" step="0.05" value=${tr.stagger || 0} style=${{ width: "56px" }} onInput=${(e) => setTrack(tg.key, { stagger: Number(e.target.value) || 0 })}/> s / instance</label>`}
+      </div>`;
+    };
+    return html`<div style=${{ marginTop: "8px" }}>
+      <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+        <button title=${tlPlaying ? "Pause preview" : "Play preview"}
+          onClick=${(e) => { e.stopPropagation(); setTlPlaying(p => !p); }} onMouseDown=${(e) => e.stopPropagation()}
+          style=${{ border: "1px solid var(--line,#ddd)", borderRadius: "5px", padding: "1px 8px", background: "transparent", fontSize: "11px", lineHeight: 1.4, cursor: "pointer" }}>${tlPlaying ? "❚❚" : "▶"}</button>
+        <span style=${{ fontSize: "10px", color: "var(--muted,#888)", fontVariantNumeric: "tabular-nums" }}>${((tlTime % dur + dur) % dur).toFixed(2)} / ${dur}s</span>
+      </div>
+      <div onPointerDown=${scrub} onMouseDown=${(e) => e.stopPropagation()}
+        style=${{ position: "relative", height: "16px", borderBottom: "1px solid var(--line,#ddd)", cursor: "ew-resize", marginBottom: "6px" }}>
+        ${ticks.map(t => html`<span key=${t.f} style=${{ position: "absolute", left: (t.f * 100) + "%", top: 0, transform: t.f === 0 ? "none" : (t.f === 1 ? "translateX(-100%)" : "translateX(-50%)"), fontSize: "9px", color: "var(--muted,#999)", pointerEvents: "none" }}>${t.label}</span>`)}
+        <div style=${{ position: "absolute", top: 0, bottom: "-4px", left: (phFrac * 100) + "%", width: "2px", background: "var(--accent,#79f)", pointerEvents: "none" }}/>
+      </div>
+      ${targets.length
+        ? targets.map(lane)
+        : html`<div style=${{ fontSize: "11px", color: "var(--muted, #888)" }}>Wire this Timeline's out into a numeric param port — each wired param becomes a keyframed track here.</div>`}
     </div>`;
   };
 
