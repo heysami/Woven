@@ -122,13 +122,13 @@
 
   .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; line-height: 1.6; }
   .hint {
-    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
     background: var(--panel); backdrop-filter: blur(8px); border: 1px solid var(--line);
     color: var(--muted); font-size: 11px; padding: 7px 14px; border-radius: 999px; z-index: 9; display: flex; gap: 13px;
     box-shadow: var(--wv-shadow-md);
   }
   .hint b { color: var(--text); font-weight: 600; }
-  .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: var(--wv-radius); box-shadow: var(--wv-shadow-sm); }
+  .badge { position: absolute; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: var(--wv-radius); box-shadow: var(--wv-shadow-sm); }
   .badge b { color: var(--accent-2); font-family: var(--wv-font-mono); }
   #flash { transition: opacity .3s; }
   /* Wired-effect post-process overlay: a 2D canvas stacked above the WebGL
@@ -141,7 +141,15 @@
      pins THIS id to the node's core rect when body has class "detached-panels".
      (Renamed from #stage → #coreCanvas; the single JS ref + CSS rule below were
      updated to match.) -->
-<div id="coreCanvas"></div>
+<div id="coreCanvas">
+  <!-- HUD overlays inside #coreCanvas so they pin to the node viewport, not the
+       grown iframe, when the panels are detached. The renderer canvas is
+       appendChild'd here at runtime (after these), and the HUD sits above it. -->
+  <div class="badge">Voxel editor · <b id="fps">–</b></div>
+  <div class="hint">
+    <span><b>Click</b> place</span><span><b>A/X/P/B</b> add·rem·paint·box</span><span><b>Drag</b> orbit</span><span><b>1-9</b> slot</span>
+  </div>
+</div>
 <canvas id="fx-overlay"></canvas>
 
 <!-- Left FLOATING vertical toolbar — tagged as the left float panel. It's already
@@ -241,10 +249,6 @@
   </div>
 </div>
 
-<div class="badge">Voxel editor · <b id="fps">–</b></div>
-<div class="hint">
-  <span><b>Click</b> place</span><span><b>A/X/P/B</b> add·rem·paint·box</span><span><b>Drag</b> orbit</span><span><b>1-9</b> slot</span>
-</div>
 
 <script type="importmap">
 {

@@ -122,14 +122,14 @@
 
   .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; line-height: 1.6; }
   .hint {
-    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
     /* light Woven pill (was a dark glass pill) — reads on the paper chrome */
     background: var(--panel); backdrop-filter: blur(8px); border: 1px solid var(--line);
     box-shadow: var(--shadow);
     color: var(--muted); font-size: 11px; padding: 7px 14px; border-radius: 999px; z-index: 9; display: flex; gap: 13px;
   }
   .hint b { color: var(--text); font-weight: 600; }
-  .badge { position: fixed; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; }
+  .badge { position: absolute; left: 14px; top: 14px; z-index: 9; font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; }
   .badge b { color: var(--accent-2); }
   #flash { transition: opacity .3s; }
 </style>
@@ -141,6 +141,12 @@
 <div id="coreCanvas">
   <div id="stage"></div>
   <canvas id="fx-overlay"></canvas>
+  <!-- HUD overlays live INSIDE #coreCanvas so they pin to the node viewport, not
+       the grown iframe, when the panels are detached. -->
+  <div class="badge">Spline-style editor · <b id="fps">–</b></div>
+  <div class="hint">
+    <span><b>Click</b> select</span><span><b>Shift</b> multi</span><span><b>W/E/R</b> move·rot·scale</span><span><b>Drag</b> orbit</span><span><b>Del</b> remove</span>
+  </div>
 </div>
 
 <!-- data-float-panel tags: these surfaces float OUTSIDE the core canvas when the
@@ -320,11 +326,6 @@
 
     <div class="group"><div class="row"><button class="btn ghost full" id="export">Export .glb</button></div></div>
   </div>
-</div>
-
-<div class="badge">Spline-style editor · <b id="fps">–</b></div>
-<div class="hint">
-  <span><b>Click</b> select</span><span><b>Shift</b> multi</span><span><b>W/E/R</b> move·rot·scale</span><span><b>Drag</b> orbit</span><span><b>Del</b> remove</span>
 </div>
 
 <script type="importmap">
