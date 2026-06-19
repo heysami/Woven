@@ -57766,8 +57766,31 @@ function _positionSource(mode, controls, paramLines, helpers) {
   );
 }
 function _triggerSource(source, controls, paramLines, helpers, impactLines) {
-  const params = paramLines && paramLines.length ? `{\n      ${paramLines.join(",\n      ")}\n    }` : "{}";
-  const impacts = impactLines && impactLines.length ? `[
+  controls = controls || {};
+  paramLines = (paramLines || []).slice();
+  impactLines = (impactLines || []).slice();
+  // Surface EVERY numeric / boolean control into `params` so each auto-exposed
+  // `param:<key>` port has an addressable home a wired Number / Timeline can
+  // drive at runtime (symmetric to position / effect). Without this, controls
+  // like off / on / from / to live ONLY in the impact range and a binding on
+  // them has nothing to override. Explicit paramLines win on key collision.
+  const have = new Set(paramLines.map(l => String(l).split(":")[0].trim()));
+  for (const [k, d] of Object.entries(controls)) {
+    const t = (d && d.type) || "text";
+    if ((t === "number" || t === "range" || t === "boolean") && !have.has(k)) {
+      paramLines.push(`${k}: values.${k}`);
+      have.add(k);
+    }
+  }
+  // Tag the impact's range with the control keys it was authored from, so the
+  // runtime can re-resolve [lo, hi] from (possibly bound) params each frame.
+  const rangeLine = impactLines.find(l => /^\s*range\s*:/.test(l));
+  if (rangeLine && !impactLines.some(l => /^\s*rangeKeys\s*:/.test(l))) {
+    const m = rangeLine.match(/values\.(\w+)\s*,\s*values\.(\w+)/);
+    if (m) impactLines.push(`rangeKeys: ${JSON.stringify([m[1], m[2]])}`);
+  }
+  const params = paramLines.length ? `{\n      ${paramLines.join(",\n      ")}\n    }` : "{}";
+  const impacts = impactLines.length ? `[
       {
         ${impactLines.join(",\n        ")}
       }

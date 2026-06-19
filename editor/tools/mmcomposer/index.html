@@ -304,8 +304,9 @@ function buildWiredRuntimeLayers(){
     const positioning = posK
       ? composerPositioningFromSpec(posSpec)
       : {mode:'single',x:0.5,y:0.5,scale:1,rot:0};
+    const trigParams = trigK ? triggerBoundParams(trigSpec) : null;
     const trigger = trigK
-      ? Object.assign({source:trigSpec.source||'none', impacts:trigSpec.impacts||[]}, trigSpec.params||{})
+      ? Object.assign({source:trigSpec.source||'none', impacts:triggerResolvedImpacts(trigSpec, trigParams)}, trigParams)
       : {source:'none',impacts:[]};
     // shader-lab effect children pass through verbatim — same catalog + same
     // param contract the GLFx (and the WIRED top-level chain) already render.
@@ -332,6 +333,10 @@ function buildWiredRuntimeLayers(){
       effects:{stack},
     });
     L._wired=true;
+    // Keep the raw trigger spec (with _bindings + impact rangeKeys) so the hot
+    // render path can re-resolve TIME-VARYING bindings each frame — the cached
+    // build above would otherwise freeze a wired Timeline / algorithmic source.
+    L._trigSpec = trigK ? trigSpec : null;
     L._opacity = spec.opacity!=null?spec.opacity:1;
     L._blend = spec.blend||'source-over';
     return L;
@@ -404,6 +409,34 @@ function fillTrigger(t){
   }[t.source]||{};
   for(const k in d) if(t[k]===undefined) t[k]=d[k];
   t.impacts = t.impacts||[];
+}
+/* Resolve a wired trigger spec's numeric param bindings (number-generator /
+   timeline) into concrete values. A trigger is a single GLOBAL value (not
+   per-instance), so every binding — scalar OR vector — collapses to its
+   index-0 sample at the current clock. Returns a fresh params object. */
+function triggerBoundParams(spec){
+  const params=Object.assign({}, (spec&&spec.params)||{});
+  const b=spec&&spec._bindings;
+  if(b){ for(const k in b){ const src=b[k]; if(!src) continue;
+    const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+    if(typeof val==='number'&&isFinite(val)) params[k]=val;
+  }}
+  // Native timeline-trigger eval reads `dur`; the source control is `duration`.
+  if(params.dur==null&&params.duration!=null) params.dur=params.duration;
+  return params;
+}
+/* Re-resolve each impact's [lo,hi] range from (possibly bound) params using the
+   `rangeKeys` the trigger source tagged onto the impact, so a Number/Timeline
+   wired into a from/to/off/on port drives the remap range each frame. */
+function triggerResolvedImpacts(spec, params){
+  const imps=(spec&&spec.impacts)||[];
+  return imps.map(im=>{
+    if(!im||!im.rangeKeys) return im;
+    const ka=im.rangeKeys[0], kb=im.rangeKeys[1], base=im.range||[0,1];
+    const lo=(ka!=null&&params[ka]!=null)?params[ka]:base[0];
+    const hi=(kb!=null&&params[kb]!=null)?params[kb]:base[1];
+    return Object.assign({}, im, {range:[lo,hi]});
+  });
 }
 function normalizeState(s){
   s=s||defaultState();
@@ -946,10 +979,11 @@ function positionedLayer(L){
 function wiredGlobalTrigger(){
   const wt=WIRED.triggers && WIRED.triggers[0];
   if(!wt) return null;
-  const tspec=Object.assign({source:wt.source||'none', impacts:[]}, wt.params||{});
+  const params=triggerBoundParams(wt);
+  const tspec=Object.assign({source:wt.source||'none', impacts:[]}, params);
   fillTrigger(tspec);
   const r=Triggers.eval({trigger:tspec});
-  r._impacts = wt.impacts || [];
+  r._impacts = triggerResolvedImpacts(wt, params);
   return r;
 }
 
@@ -1211,6 +1245,16 @@ const Engine = {
     //   first wired position → default scheme for layers in 'single' default
     //   first wired trigger  → a global trigger value broadcast to all layers
     const globalTrig = wiredGlobalTrigger();
+    // 0) re-resolve time-varying trigger param bindings (Number/Timeline) so a
+    //    wired source ANIMATES the trigger rather than freezing at build time.
+    //    Static bindings were already baked once in buildWiredRuntimeLayers.
+    for(const L of layers){ const ts=L._trigSpec;
+      if(ts && ts._bindings && Sources.isDynamic(ts)){
+        const p=triggerBoundParams(ts);
+        Object.assign(L.trigger, p);
+        L.trigger.impacts=triggerResolvedImpacts(ts, p);
+      }
+    }
     // 1) evaluate triggers (per-layer), then fold in the global wired trigger
     const tvals={}; for(const L of layers) tvals[L.id]=Triggers.eval(L);
     if(globalTrig){ for(const L of layers){ if(!tvals[L.id]||tvals[L.id].v===0) tvals[L.id]=globalTrig; } }
