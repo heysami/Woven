@@ -59578,28 +59578,37 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
   const specsRef = useRef(specs); specsRef.current = specs;
   const stateRef = useRef(previewState); stateRef.current = previewState;
 
-  // iframe → node: on ready, push init + force preview-mode (panels hidden).
-  // We deliberately IGNORE :state (the preview is read-only here — settings
-  // drive it, so we never persist back over the captured canonical file).
+  // Push the full init payload to the preview iframe. Called BOTH on the tool's
+  // ready announcement AND on the iframe's load event — the tool HTML is usually
+  // cached (the standalone editor was already open), so it can fire its ready
+  // before our window listener attaches; we'd miss it and the tool's 1.2s
+  // "no init → defaultState()" fallback would paint the demo layers. The tool
+  // installs its message listener before it announces, so an onLoad push lands.
+  const sendInit = useCallback(() => {
+    if (!cfg) return;
+    readyRef.current = true;
+    postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
+                   content: contentRef.current, imports: importsRef.current,
+                   effects: specsRef.current.effects, positions: specsRef.current.positions,
+                   triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
+    // Keep panels collapsed: never report selected — the preview is chrome-free.
+    postToIframe({ type: cfg.prefix + ":select", selected: false });
+    postToIframe({ type: cfg.prefix + ":preview-mode", on: true });
+  }, [cfg, branch, postToIframe]);
+
+  // iframe → node: on ready, push init. We deliberately IGNORE :state (the
+  // preview is read-only here — settings drive it, so we never persist back
+  // over the captured canonical file).
   useEffect(() => {
     if (!cfg || !previewNode) return undefined;
     const onMsg = (ev) => {
       const d = ev && ev.data;
       if (!d || d.nodeId !== previewNode.id) return;
-      if (d.type === cfg.prefix + ":ready") {
-        readyRef.current = true;
-        postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
-                       content: contentRef.current, imports: importsRef.current,
-                       effects: specsRef.current.effects, positions: specsRef.current.positions,
-                       triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
-        // Keep panels collapsed: never report selected — the preview is chrome-free.
-        postToIframe({ type: cfg.prefix + ":select", selected: false });
-        postToIframe({ type: cfg.prefix + ":preview-mode", on: true });
-      }
+      if (d.type === cfg.prefix + ":ready") sendInit();
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [cfg, previewNode && previewNode.id, branch, postToIframe]);
+  }, [cfg, previewNode && previewNode.id, sendInit]);
 
   // Reactive content/imports/specs push → live preview as settings / input change.
   useEffect(() => {
@@ -59687,6 +59696,7 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
             ? html`<iframe ref=${iframeRef} src=${iframeSrc}
                 className="workflow-apptool-frame workflow-customapp-frame workflow-driven-frame"
                 title=${(cfg.label || "Preview")}
+                onLoad=${() => sendInit()}
                 onMouseDown=${(e) => e.stopPropagation()} />`
             : html`<div className="workflow-customapp-empty">No preview node configured</div>`}
         </div>
