@@ -51262,7 +51262,13 @@ function _composerTileStyle(layer, url) {
     backgroundImage: `url("${_composerCssUrl(url)}")`,
     backgroundRepeat: "repeat",
     backgroundPosition: _composerObjectPosition(layer),
-    backgroundSize: fit === "fill" ? "100% 100%" : fit === "none" ? "auto" : fit,
+    // Tiling repeats the image at its NATURAL size — the only size where
+    // "repeat" actually tiles, and the fast GPU path. (contain/cover scale a
+    // single copy to fill each box, defeating the repeat AND forcing the
+    // browser to re-rasterise a rescaled tile on every repaint — the likely
+    // cause of the slow-down when tile is switched on.) `fill` stays as an
+    // explicit single stretched copy.
+    backgroundSize: fit === "fill" ? "100% 100%" : "auto",
   };
 }
 // ── Shared, io-contract-driven upstream-input resolver ──────────────────────
@@ -51727,8 +51733,12 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const cols = Math.max(1, Math.round(p.cols || Math.ceil(Math.sqrt(count))));
     const rows = Math.max(1, Math.round(p.rows || Math.ceil(count / cols)));
     const gap = p.gap != null ? p.gap : 0;
-    const cellW = (canvasW - gap * (cols + 1)) / cols;
-    const cellH = (canvasH - gap * (rows + 1)) / rows;
+    // True inter-cell gap: N cells share N-1 gaps between them and NO outer
+    // padding, so the grid spans the canvas edge-to-edge. (Was gap*(cols+1),
+    // which also inserted a gap OUTSIDE the first/last cell — i.e. it behaved
+    // like padding around the whole grid, not a gap.)
+    const cellW = (canvasW - gap * Math.max(0, cols - 1)) / cols;
+    const cellH = (canvasH - gap * Math.max(0, rows - 1)) / rows;
     const spanCols = Math.max(1, Math.min(cols, Math.round(p.spanCols || 1)));
     const spanRows = Math.max(1, Math.min(rows, Math.round(p.spanRows || 1)));
     const shiftX = Number(p.shiftX) || 0;
@@ -51749,10 +51759,15 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       const row = Math.min(Math.floor(slot / cols) % rows, Math.max(0, rows - spanRows));
       const width = cellW * spanCols + gap * Math.max(0, spanCols - 1);
       const height = cellH * spanRows + gap * Math.max(0, spanRows - 1);
+      // shiftX/shiftY translate the whole grid freely — including off the
+      // canvas, which is the whole point of a shift. Do NOT clamp to the
+      // canvas box: the previous Math.max/Math.min clamp pinned every edge
+      // cell to 0..canvas-size, so on a full-bleed grid the shift had no
+      // visible effect at all.
       return {
         anchor: "top-left",
-        offsetX: Math.max(0, Math.min(canvasW - width, gap + col * (cellW + gap) + shiftX)),
-        offsetY: Math.max(0, Math.min(canvasH - height, gap + row * (cellH + gap) + shiftY)),
+        offsetX: col * (cellW + gap) + shiftX,
+        offsetY: row * (cellH + gap) + shiftY,
         width, height,
         ...decoration,
       };
@@ -52172,7 +52187,8 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           const isBakedHtml = (assetNode.kind === "composer" || assetNode.kind === "formatted-text") && !!assetNode.bakedPath;
           if (isImgExt && layer.tile) {
             const fit = _composerFitCss(layer.fit);
-            const bgSize = fit === "fill" ? "100% 100%" : fit === "none" ? "auto" : fit;
+            // Natural-size tiling (see _composerTileStyle): real repeat + fast path.
+            const bgSize = fit === "fill" ? "100% 100%" : "auto";
             layerCss.push(`  .layer-${i} { background-image: url("${cssUrl}"); background-repeat: repeat; background-position: ${_composerObjectPosition(layer)}; background-size: ${bgSize}; }`);
             layerTags.push(`    <div class="layer-${i}" role="img" aria-label="${safeLabel}"></div>`);
           } else if (isBakedHtml || isHtmlExt) {
@@ -57104,8 +57120,8 @@ export function buildSpec(values) {
       "tile: values.tile", "shiftX: values.shiftX", "shiftY: values.shiftY",
       "rotation: values.rotation", "rotateX: values.rotateX", "rotateY: values.rotateY", "rotateZ: values.rotateZ"
     ], `export function layout(items, bounds, values) {
-  const cellW = (bounds.width - values.gap * (values.cols + 1)) / values.cols;
-  const cellH = (bounds.height - values.gap * (values.rows + 1)) / values.rows;
+  const cellW = (bounds.width - values.gap * Math.max(0, values.cols - 1)) / values.cols;
+  const cellH = (bounds.height - values.gap * Math.max(0, values.rows - 1)) / values.rows;
   return items.map((item, index) => {
     const col = index % values.cols;
     const row = Math.floor(index / values.cols) % values.rows;
@@ -57113,8 +57129,8 @@ export function buildSpec(values) {
     const spanRows = Math.max(1, Math.min(values.rows, values.spanRows));
     return {
       ...item,
-      x: values.gap + col * (cellW + values.gap) + values.shiftX,
-      y: values.gap + row * (cellH + values.gap) + values.shiftY,
+      x: col * (cellW + values.gap) + values.shiftX,
+      y: row * (cellH + values.gap) + values.shiftY,
       width: cellW * spanCols + values.gap * (spanCols - 1),
       height: cellH * spanRows + values.gap * (spanRows - 1),
       fit: values.fit,
@@ -57203,21 +57219,27 @@ export function solveSegment(prev, next, values) {
       cols: { type: "number", value: 4, min: 1, max: 48, step: 1 },
       rows: { type: "number", value: 4, min: 1, max: 48, step: 1 },
       layers: { type: "number", value: 3, min: 1, max: 48, step: 1 },
-      spacing: { type: "number", value: 1, min: 0.01, max: 100, step: 0.01 }
-    }, ["cols: values.cols", "rows: values.rows", "layers: values.layers", "spacing: values.spacing"], `export function layout3d(items, values) {
+      spacing: { type: "number", value: 1, min: 0.01, max: 100, step: 0.01 },
+      rotateX: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateY: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateZ: { type: "number", value: 0, min: -360, max: 360, step: 1 }
+    }, ["cols: values.cols", "rows: values.rows", "layers: values.layers", "spacing: values.spacing", "rotateX: values.rotateX", "rotateY: values.rotateY", "rotateZ: values.rotateZ"], `export function layout3d(items, values) {
   return items.map((item, index) => {
     const col = index % values.cols;
     const row = Math.floor(index / values.cols) % values.rows;
     const layer = Math.floor(index / (values.cols * values.rows)) % values.layers;
-    return { ...item, x: col * values.spacing, y: row * values.spacing, z: layer * values.spacing };
+    return { ...item, x: col * values.spacing, y: row * values.spacing, z: layer * values.spacing, rotateX: values.rotateX, rotateY: values.rotateY, rotateZ: values.rotateZ };
   });
 }`),
     _positionTemplate("scatter-3d", "3D scatter", "scatter-3d", {
       count: { type: "number", value: 80, min: 1, max: 10000, step: 1 },
       boundsX: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 },
       boundsY: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 },
-      boundsZ: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 }
-    }, ["count: values.count", "bounds: [values.boundsX, values.boundsY, values.boundsZ]"], `export function scatterPoint(index, values) {
+      boundsZ: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 },
+      rotateX: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateY: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateZ: { type: "number", value: 0, min: -360, max: 360, step: 1 }
+    }, ["count: values.count", "bounds: [values.boundsX, values.boundsY, values.boundsZ]", "rotateX: values.rotateX", "rotateY: values.rotateY", "rotateZ: values.rotateZ"], `export function scatterPoint(index, values) {
   const n = Math.sin(index * 12.9898) * 43758.5453;
   const f = n - Math.floor(n);
   return {
