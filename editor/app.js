@@ -17157,6 +17157,17 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       allLink.href = apiUrl("/__default_ds/all.css");
       doc.head.appendChild(allLink);
     }
+    // Glassmorphism ships a WebGL runtime (themes/glassmorphism.js — the real
+    // Material Lab dispersion-prism). Inject it so the preview shows the actual
+    // glass, not just the CSS fallback. Self-activates on data-theme; tears down
+    // when the style changes, so it is harmless for the other styles.
+    if (settings.styleId === "glassmorphism" && doc.body && !doc.getElementById("__ds_glass_js")) {
+      const gs = doc.createElement("script");
+      gs.id = "__ds_glass_js";
+      gs.defer = true;
+      gs.src = apiUrl("/__default_ds/themes/glassmorphism.js");
+      doc.body.appendChild(gs);
+    }
     // Font webfont link
     let link = doc.getElementById("__ds_custom_font");
     if (custom.font && custom.font.googleFontsUrl) {
@@ -30173,9 +30184,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // { sectionId, inner:[{id,kind,label,isEditor,canIn,canOut}], inputNodeId,
   //   previewNodeId, outputNodeId, removeSection }
   const [convertCfg, setConvertCfg] = useState(null);
-  // Active expand-edit session (null when not editing). Shape:
-  // { appNodeId, sectionId, originalNode, newToOrig:{canvasId→subgraphId}, appSlug }
-  const [editingApp, setEditingApp] = useState(null);
 
   const copySelectedNodes = useCallback(() => {
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
@@ -30876,13 +30884,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setSelectedNodeId(newNode.id);
   }, [data, setData]);
 
-  // Expand a custom-app back into a section + its individual nodes for editing.
-  // The app node is removed from the canvas (its data preserved in editing state)
-  // so "Save existing" can rebuild it in place. Inner nodes get fresh canvas ids.
+  // Expand a custom-app into a section + its individual nodes for editing. The
+  // app node STAYS in the document — flagged with _expandedSectionId + _expandMap
+  // and rendered hidden — so a reload mid-edit is fully recoverable (the expand
+  // bar is derived from the document, not from volatile React state). The inner
+  // nodes are re-materialised with fresh canvas ids, each tagged _expandOwnerId.
   const expandCustomApp = useCallback((appNodeId) => {
-    if (editingApp) { uiAlert("Finish the current expand-edit first."); return; }
     const node = (data.nodes || []).find(n => n.id === appNodeId && n.kind === "custom-app");
     if (!node) return;
+    if ((data.nodes || []).some(n => n.kind === "custom-app" && n._expandedSectionId)) {
+      uiAlert("Finish the current expand-edit first — Save or Cancel it."); return;
+    }
     const sg = node.subgraph || {};
     const innerNodes = sg.nodes || [];
     if (!innerNodes.length) { uiAlert("This custom app has no inner nodes to expand."); return; }
@@ -30894,6 +30906,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       ...JSON.parse(JSON.stringify(n)), id: idMap.get(n.id),
       x: (n.x || 0) + dx, y: (n.y || 0) + dy,
       runStatus: undefined, runError: undefined,
+      _expandOwnerId: appNodeId,
     }));
     const placedEdges = (sg.edges || []).map(e => {
       const f = workflowParseEdgeRef(e.from || ""), t = workflowParseEdgeRef(e.to || "");
@@ -30910,50 +30923,48 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const section = {
       id: sectionId, kind: "section", title: node.title || "Custom app",
       x: minX - pad, y: minY - pad - 14, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 + 14,
+      _expandOwnerId: appNodeId,
     };
+    const newToOrig = Object.fromEntries(Array.from(idMap.entries()).map(([orig, nu]) => [nu, orig]));
     setData(d => ({
       ...d,
-      nodes: [...(d.nodes || []).filter(n => n.id !== appNodeId), section, ...placed],
+      nodes: [
+        ...(d.nodes || []).map(n => n.id === appNodeId
+          ? { ...n, _expandedSectionId: sectionId, _expandMap: newToOrig } : n),
+        section, ...placed,
+      ],
       edges: [...(d.edges || []), ...placedEdges],
     }));
-    setEditingApp({
-      appNodeId, sectionId,
-      originalNode: JSON.parse(JSON.stringify(node)),
-      newToOrig: Object.fromEntries(Array.from(idMap.entries()).map(([orig, nu]) => [nu, orig])),
-      appSlug: node._appSlug || null,
-    });
     setSelectedNodeId(sectionId);
-  }, [data, setData, editingApp]);
+  }, [data, setData]);
 
-  // Abandon an expand-edit: remove the section + its nodes, restore the original
-  // custom-app node untouched.
-  const cancelExpandCustomApp = useCallback(() => {
-    const ed = editingApp; if (!ed) return;
+  // Abandon an expand-edit: drop the section + editable copies, un-hide the app.
+  const cancelExpandCustomApp = useCallback((appId) => {
     setData(d => {
-      const sec = (d.nodes || []).find(n => n.id === ed.sectionId);
-      const inside = sec ? workflowSectionContainedNodes(sec, d.nodes) : [];
-      const removeIds = new Set([ed.sectionId, ...inside.map(n => n.id)]);
-      const keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id));
+      const app = (d.nodes || []).find(n => n.id === appId && n.kind === "custom-app");
+      if (!app) return d;
+      const removeIds = _expandCollapseRemoveIds(d.nodes, appId, app._expandedSectionId);
+      const keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id))
+        .map(n => n.id === appId ? _stripExpandFlags(n) : n);
       const keptEdges = (d.edges || []).filter(e => {
         const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
         return !removeIds.has(f) && !removeIds.has(t);
       });
-      return { ...d, nodes: [...keptNodes, ed.originalNode], edges: keptEdges };
+      return { ...d, nodes: keptNodes, edges: keptEdges };
     });
-    setEditingApp(null);
-  }, [editingApp, setData]);
+  }, [setData]);
 
-  // Re-collapse an expand-edit into a custom-app node. mode "existing" overwrites
-  // the same node + library entry; "new" creates a fresh node + library slug.
-  // Settings bindings are re-aligned to the (possibly edited) subgraph: surviving
-  // nodes keep their subgraph id, so most bindings carry over; bindings whose
-  // target node or param vanished are dropped, and settings left with none are
-  // removed.
-  const saveExpandedCustomApp = useCallback((mode) => {
-    const ed = editingApp; if (!ed) return;
+  // Re-collapse an expand-edit. "existing" overwrites the app + its library entry
+  // in place; "new" leaves the original untouched and adds a fresh node + slug.
+  // Setting bindings re-align to the (possibly edited) subgraph: surviving nodes
+  // keep their subgraph id so most carry over; bindings whose target node/param
+  // vanished are dropped, and settings left with none are removed.
+  const saveExpandedCustomApp = useCallback((appId, mode) => {
     const nodes = data.nodes || [];
-    const section = nodes.find(n => n.id === ed.sectionId && n.kind === "section");
-    if (!section) { setEditingApp(null); return; }
+    const app = nodes.find(n => n.id === appId && n.kind === "custom-app");
+    if (!app) return;
+    const section = nodes.find(n => n.id === app._expandedSectionId && n.kind === "section");
+    if (!section) { cancelExpandCustomApp(appId); return; }
     const contained = workflowSectionContainedNodes(section, nodes);
     if (!contained.length) { uiAlert("Nothing inside the section to save."); return; }
     const ids = new Set(contained.map(n => n.id));
@@ -30961,13 +30972,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
       return ids.has(f) && ids.has(t);
     });
-    // canvas id → subgraph id: surviving nodes keep their original subgraph id;
-    // freshly-added nodes get a new stable subgraph id.
+    const map = app._expandMap || {};
     const canvasToSub = new Map();
-    for (const n of contained) canvasToSub.set(n.id, ed.newToOrig[n.id] || ("n" + Math.random().toString(36).slice(2, 10)));
+    for (const n of contained) canvasToSub.set(n.id, map[n.id] || ("n" + Math.random().toString(36).slice(2, 10)));
     const minX = Math.min(...contained.map(n => (typeof n.x === "number" ? n.x : 0)));
     const minY = Math.min(...contained.map(n => (typeof n.y === "number" ? n.y : 0)));
-    const subNodes = contained.map(n => ({ ...JSON.parse(JSON.stringify(n)), id: canvasToSub.get(n.id) }));
+    const subNodes = contained.map(n => { const m = _stripExpandOwner(JSON.parse(JSON.stringify(n))); m.id = canvasToSub.get(n.id); return m; });
     const subEdges = internalEdges.map(e => {
       const f = workflowParseEdgeRef(e.from || ""), t = workflowParseEdgeRef(e.to || "");
       if (!f || !t || !canvasToSub.has(f.node) || !canvasToSub.has(t.node)) return null;
@@ -30980,58 +30990,63 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return _specParamDescriptors(n).some(d => d.key === param);
     };
     const remapIo = (origId) => (origId && subIds.has(origId)) ? origId : null;
-    const origIo = ed.originalNode.io || {};
+    const origIo = app.io || {};
     const io = {
       inputNodeId:   remapIo(origIo.inputNodeId),
       previewNodeId: remapIo(origIo.previewNodeId),
       outputNodeId:  remapIo(origIo.outputNodeId),
     };
-    const settings = (ed.originalNode.settings || []).map(s => ({
+    const settings = (app.settings || []).map(s => ({
       ...s,
       bindings: (s.bindings || []).filter(b => subIds.has(b.nodeId) && paramExists(b.nodeId, b.param)),
     })).filter(s => s.bindings.length);
     const values = {};
     for (const s of settings) {
-      const v = (ed.originalNode.values || {})[s.key];
+      const v = (app.values || {})[s.key];
       values[s.key] = v !== undefined ? v : s.default;
     }
     const isNew = mode === "new";
-    const title = (section.title || ed.originalNode.title || "Custom app").trim() || "Custom app";
-    let slug = ed.appSlug;
+    const title = (section.title || app.title || "Custom app").trim() || "Custom app";
+    let slug = app._appSlug;
     if (isNew || !slug) {
       const base = (title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 46)) || "custom-app";
       slug = base + (isNew ? "-" + Date.now().toString(36).slice(-4) : "");
     }
-    const newId = isNew ? _freshNodeId() : ed.appNodeId;
-    const finalNode = {
-      ...JSON.parse(JSON.stringify(ed.originalNode)),
-      id: newId, title,
-      x: typeof section.x === "number" ? section.x : ed.originalNode.x,
-      y: typeof section.y === "number" ? section.y : ed.originalNode.y,
-      subgraph: { nodes: subNodes, edges: subEdges, originX: Number.isFinite(minX) ? minX : 0, originY: Number.isFinite(minY) ? minY : 0 },
-      io, settings, values, _appSlug: slug,
+    const newSubgraph = { nodes: subNodes, edges: subEdges, originX: Number.isFinite(minX) ? minX : 0, originY: Number.isFinite(minY) ? minY : 0 };
+    const sx = typeof section.x === "number" ? section.x : app.x;
+    const sy = typeof section.y === "number" ? section.y : app.y;
+    // The collapsed node, built synchronously (so we can also POST it to the
+    // library). "new" → fresh id; "existing" → same id (overwrite in place).
+    const collapsed = {
+      ..._stripExpandFlags(app),
+      id: isNew ? _freshNodeId() : appId,
+      title, x: sx, y: sy, subgraph: newSubgraph, io, settings, values, _appSlug: slug,
     };
     setData(d => {
-      const removeIds = new Set([section.id, ...contained.map(n => n.id)]);
-      const keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id));
+      const cur = (d.nodes || []).find(n => n.id === appId && n.kind === "custom-app");
+      if (!cur) return d;
+      const removeIds = _expandCollapseRemoveIds(d.nodes, appId, cur._expandedSectionId);
       const keptEdges = (d.edges || []).filter(e => {
         const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
         return !removeIds.has(f) && !removeIds.has(t);
       });
-      return { ...d, nodes: [...keptNodes, finalNode], edges: keptEdges };
+      let keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id));
+      keptNodes = isNew
+        ? keptNodes.map(n => n.id === appId ? _stripExpandFlags(n) : n).concat([collapsed])
+        : keptNodes.map(n => n.id === appId ? collapsed : n);
+      return { ...d, nodes: keptNodes, edges: keptEdges };
     });
+    setSelectedNodeId(collapsed.id);
     (async () => {
       try {
         const r = await fetch(apiUrl("/__groups"), {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, title, nodes: [JSON.parse(JSON.stringify(finalNode))], edges: [], originX: finalNode.x, originY: finalNode.y }),
+          body: JSON.stringify({ slug, title, nodes: [JSON.parse(JSON.stringify(collapsed))], edges: [], originX: sx, originY: sy }),
         });
         if (r.ok) window.dispatchEvent(new CustomEvent("th:library-refresh"));
       } catch (_e) {}
     })();
-    setEditingApp(null);
-    setSelectedNodeId(newId);
-  }, [editingApp, data, setData]);
+  }, [data, setData, cancelExpandCustomApp]);
 
   // v3.4.32 — Duplicate selected nodes in-place (Cmd+D). Behaves like
   // copy-then-paste-at-+30/+30 but DOES NOT touch nodeClipboardRef, so
@@ -38832,8 +38847,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onRemove=${() => removeNode(n.id)}
                 onChange=${(patch) => updateNode(n.id, patch)}
                 onTidy=${() => tidySection(n.id)}
-                hasContents=${workflowSectionContainedNodes(n, data.nodes).length > 0}
-                hasEditorNode=${workflowSectionContainedNodes(n, data.nodes).some(c => APP_NODE_TOOLS[c.kind])}
+                hasContents=${!n._expandOwnerId && workflowSectionContainedNodes(n, data.nodes).length > 0}
+                hasEditorNode=${!n._expandOwnerId && workflowSectionContainedNodes(n, data.nodes).some(c => APP_NODE_TOOLS[c.kind])}
                 onSaveToLibrary=${() => saveSectionToLibrary(n.id)}
                 onConvertToApp=${() => openConvertSectionModal(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
@@ -38847,15 +38862,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onCancel=${() => setConvertCfg(null)}
               onConfirm=${() => convertSectionToCustomApp(convertCfg)}
             />`}
-            ${editingApp && createPortal(html`
-              <div className="workflow-expand-bar">
-                <span className="workflow-expand-bar-label">
-                  Editing <b>${editingApp.originalNode.title || "Custom app"}</b> — change the nodes, then save back into the app.
-                </span>
-                <button type="button" className="tbtn" onClick=${cancelExpandCustomApp}>Cancel</button>
-                <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp("existing")}>Save existing</button>
-                <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp("new")}>Save as new</button>
-              </div>`, document.body)}
+            ${(() => {
+              const ex = (data.nodes || []).find(n => n.kind === "custom-app" && n._expandedSectionId);
+              if (!ex) return null;
+              return createPortal(html`
+                <div className="workflow-expand-bar">
+                  <span className="workflow-expand-bar-label">
+                    Editing <b>${ex.title || "Custom app"}</b> — change the nodes, then save back into the app.
+                  </span>
+                  <button type="button" className="tbtn" onClick=${() => cancelExpandCustomApp(ex.id)}>Cancel</button>
+                  <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp(ex.id, "existing")}>Save existing</button>
+                  <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp(ex.id, "new")}>Save as new</button>
+                </div>`, document.body);
+            })()}
             <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
             <${WorkflowEdgesLayer}
               nodes=${data.nodes || []}
@@ -39780,7 +39799,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
-            ${(data.nodes || []).filter(n => n.kind === "custom-app").map(n => html`
+            ${(data.nodes || []).filter(n => n.kind === "custom-app" && !n._expandedSectionId).map(n => html`
               <${WorkflowCustomAppNode}
                 key=${n.id}
                 node=${n}
@@ -54602,7 +54621,12 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         </div>
         </div>
         <div className=${"workflow-composer-right" + (detached ? " workflow-node-float-panel" : "")}>
-        ${activeLayerIdx != null && layers[activeLayerIdx] && html`
+        ${activeLayerIdx != null && layers[activeLayerIdx] && (() => {
+          const _alNode = (allNodes || []).find(n => n.id === layers[activeLayerIdx].assetId);
+          const _alKind = _alNode ? _composerAssetKind(_alNode) : null;
+          // Single "fit mode" selector folds object-fit + tile into one control.
+          const _alFitMode = layers[activeLayerIdx].tile ? "tile" : _composerFitCss(layers[activeLayerIdx].fit);
+          return html`
           <div className="workflow-composer-section workflow-composer-layer-edit-panel">
             <div className="workflow-composer-section-head">Selected layer</div>
             <div className="workflow-composer-row">
@@ -54614,6 +54638,29 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
                 <span className="workflow-composer-field-val">${Math.round((layers[activeLayerIdx].opacity != null ? layers[activeLayerIdx].opacity : 1) * 100)}%</span>
               </label>
             </div>
+            ${(_alKind === "img" || _alKind === "video" || _alKind === "iframe") && html`
+              <div className="workflow-composer-row">
+                <label className="workflow-composer-field workflow-composer-field-wide">
+                  <span>fit</span>
+                  <select
+                    value=${_alFitMode}
+                    onMouseDown=${(e) => e.stopPropagation()}
+                    onChange=${(e) => {
+                      const v = e.target.value;
+                      if (v === "tile") updateLayer(activeLayerIdx, { tile: true });
+                      else updateLayer(activeLayerIdx, { fit: v, tile: false });
+                    }}
+                    title="How the image fills its box — contain (fit, no crop), cover (fill + crop), fill (stretch), none (natural size), tile (repeat)."
+                  >
+                    <option value="contain">Fit (contain)</option>
+                    <option value="cover">Cover (crop)</option>
+                    <option value="fill">Fill (stretch)</option>
+                    <option value="none">None (natural)</option>
+                    ${_alKind === "img" && html`<option value="tile">Tile (repeat)</option>`}
+                  </select>
+                </label>
+              </div>
+            `}
             <div className="workflow-composer-edit-grids">
               <div className="workflow-composer-edit-col">
                 <div className="workflow-composer-subhead">Anchor — pin one edge (layer stays put)</div>
@@ -54671,7 +54718,8 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
               Click a layer on the stage to select it, drag to move. Drag the corner handle to resize.
             </div>
           </div>
-        `}
+        `;
+        })()}
         <div className="workflow-composer-canvas-controls">
           ${_posSpec && html`
             <div className="workflow-composer-section">
@@ -60588,6 +60636,24 @@ function _remapCustomAppInner(node, mkId) {
     bindings: (s.bindings || []).map(b => ({ ...b, nodeId: innerMap.get(b.nodeId) || b.nodeId })),
   }));
   return { ...node, subgraph: { ...sg, nodes: newNodes, edges: newEdges }, io: newIo, settings: newSettings };
+}
+
+// Strip the transient expand-edit flags from a custom-app node (so it collapses
+// back to a clean persisted node).
+function _stripExpandFlags(n) {
+  const m = { ...n }; delete m._expandedSectionId; delete m._expandMap; return m;
+}
+// Strip the per-node expand-owner tag from a re-materialised inner node.
+function _stripExpandOwner(n) {
+  const m = { ...n }; delete m._expandOwnerId; return m;
+}
+// The set of node ids to drop when collapsing an expand-edit: the synthesised
+// section + every editable copy tagged with this app's id.
+function _expandCollapseRemoveIds(nodes, appId, sectionId) {
+  const ids = new Set();
+  if (sectionId) ids.add(sectionId);
+  for (const n of (nodes || [])) if (n && n._expandOwnerId === appId) ids.add(n.id);
+  return ids;
 }
 
 // Build the live SCOPED graph a custom-app's preview renders against: the
