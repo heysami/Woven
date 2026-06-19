@@ -15778,6 +15778,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 'catch(e){try{Object.defineProperty(Window.prototype,"localStorage",{configurable:true,get:function(){return ls;}});}catch(e2){}}'
                 'try{Object.defineProperty(window,"sessionStorage",{configurable:true,get:function(){return ss;}});}'
                 'catch(e){try{Object.defineProperty(Window.prototype,"sessionStorage",{configurable:true,get:function(){return ss;}});}catch(e2){}}'
+                # history.pushState/replaceState reject cross-origin URLs (the
+                # page thinks it is on brik.space via <base>, but the document
+                # origin is opaque/localhost) -> SecurityError crashes SPA
+                # routers. Retry without the url arg so the state still lands.
+                'try{var _ps=history.pushState,_rs=history.replaceState;'
+                'history.pushState=function(s,t,u){try{return _ps.call(history,s,t,u);}catch(e){try{return _ps.call(history,s,t);}catch(e2){}}};'
+                'history.replaceState=function(s,t,u){try{return _rs.call(history,s,t,u);}catch(e){try{return _rs.call(history,s,t);}catch(e2){}}};}catch(e){}'
                 '})();</script>')
         inject = shim + base_tag + self._WEB_PICK_OVERLAY
         m = re.search(r"(?is)<head[^>]*>", body)
