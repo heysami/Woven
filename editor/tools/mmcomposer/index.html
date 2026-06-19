@@ -30,7 +30,9 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;overflow:hidden}
   #app{display:grid;grid-template-columns:300px 1fr 320px;height:100vh;width:100vw}
   .col{height:100vh;overflow:auto;display:flex;flex-direction:column}
-  .col.left{border-right:1px solid var(--line);background:var(--panel)}
+  /* Explicit width so the whole column measures non-zero when floated out of the
+     grid (matches #app's left grid track). */
+  .col.left{border-right:1px solid var(--line);background:var(--panel);width:300px}
   /* Explicit width so #inspector measures non-zero when floated (detached-panels.css
      positions it absolutely OUTSIDE the grid, where it can no longer borrow the
      grid track's 320px). Matches #app's right grid track. */
@@ -47,10 +49,9 @@
   button.chip.on{background:var(--wv-accent-soft); border-color:var(--acc); color:var(--wv-accent-text)}
   button.chip.off{opacity:.8}
   .row{display:flex;gap:6px;align-items:center}
-  /* Explicit width so #layerList measures non-zero when floated (detached-panels.css
-     positions it absolutely OUTSIDE the grid; its flex-column content would otherwise
-     collapse to 0). Matches #app's left grid track. */
-  .layers{padding:8px;display:flex;flex-direction:column;gap:6px;width:300px}
+  /* The layer list fills the column and scrolls on its own, so the sticky header
+     and the Canvas controls below it stay put. */
+  .layers{padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0;overflow-y:auto}
   .layer{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;cursor:pointer}
   .layer.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
   .layer .top{display:flex;align-items:center;gap:6px}
@@ -105,13 +106,15 @@
 <body>
 <div id="app">
   <!-- ───────── LEFT: layers panel ───────── -->
-  <div class="col left">
+  <!-- data-float-panel on the WHOLE column (header + layer list + canvas controls)
+       so it floats out as ONE unit. Tagging only #layerList floated the list while
+       the header + Canvas section stayed in the grid, and the list overlapped them. -->
+  <div class="col left" data-float-panel="left">
     <div class="hd">
       <h1>Composer</h1><div class="sp"></div>
       <button class="sm" id="addLayer" title="Add layer">+ Layer</button>
     </div>
-    <!-- data-float-panel: floats OUTSIDE the core canvas when the node is selected. -->
-    <div class="layers" id="layerList" data-float-panel="left"></div>
+    <div class="layers" id="layerList"></div>
     <div style="padding:8px 12px;border-top:1px solid var(--line)">
       <div class="fld"><label>Canvas <span class="v" id="dimLbl"></span></label>
         <div class="grid2">
@@ -1905,7 +1908,7 @@ let _detached=false;
    positions the iframe so #coreCanvas lands exactly on the node's core rect. */
 function reportPanels(){
   if(!EMBEDDED) return;
-  const L=document.getElementById('layerList');
+  const L=document.querySelector('.col.left');
   const R=document.getElementById('inspector');
   const panelL=(L?L.getBoundingClientRect().width:0)+8;
   const panelR=(R?R.getBoundingClientRect().width:0)+8;
@@ -1921,7 +1924,7 @@ function reportPanels(){
    anchor layer ports; deselected, the ports retract to the node's main edge. */
 function reportLayerGeom(){
   if(!EMBEDDED || !_detached) return;
-  const panelEl=document.getElementById('layerList');   // the floating LEFT panel
+  const panelEl=document.querySelector('.col.left');   // the floating LEFT panel (whole column)
   if(!panelEl) return;
   const pr=panelEl.getBoundingClientRect();
   const panel={side:'left', left:pr.left, right:pr.right, top:pr.top, bottom:pr.bottom};
