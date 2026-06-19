@@ -22996,8 +22996,8 @@ function workflowPortFlavor(node, side) {
   }
   if (kind === "folder") return "folder";   // both sides — out feeds folder-read / source-read
   if (kind === "browser") return "asset";   // out is a captured page asset (html / image snapshot)
-  // Parametric value source + the numeric param ports it feeds (Phase 1).
-  if (kind === "number-generator" && side === "out") return "number";
+  // Parametric value sources + the numeric param ports they feed.
+  if ((kind === "number-generator" || kind === "timeline") && side === "out") return "number";
   if (typeof side === "string" && side.startsWith("param:")) return "number";
   return null;
 }
@@ -23518,6 +23518,7 @@ const WORKFLOW_NODE_FACTORY = {
   "trigger":  (p) => ({ kind: "trigger",  w: 260, h: 300, spec: p.spec || { v: 1, source: "hover", params: {}, impacts: [] } }),
   "layer":    (p) => ({ kind: "layer",    w: 240, h: 240, spec: p.spec || { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true } }),
   "number-generator": (p) => ({ kind: "number-generator", w: 240, h: 280, spec: p.spec || { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true } }),
+  "timeline": (p) => ({ kind: "timeline", w: 300, h: 340, spec: p.spec || { v: 1, kind: "timeline", duration: 4, loop: true }, tracks: p.tracks || {} }),
   "formatted-text": (p) => ({
     kind: "formatted-text", w: 380, h: 320,
     html: p.html || "<p>Type or wire a prompt here.</p>",
@@ -23832,6 +23833,11 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Number", tags: ["number"] } },
     accepts:  { pixmap: { label: "Pixel map", tags: ["asset"] },
                 edit:   { label: "Edit number", tags: ["text-gen", "asset-gen"] } },
+  },
+  "timeline": {
+    label: "Timeline",
+    provides: { out: { label: "Timeline", tags: ["number"] } },
+    accepts:  { edit: { label: "Edit timeline", tags: ["text-gen", "asset-gen"] } },
   },
 };
 
@@ -40382,6 +40388,13 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-label">Number</span>
             <span className="workflow-library-item-id">value source</span>
           </div>
+          <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "timeline" })); }}
+            title="Drag onto canvas — a Timeline source (live playhead). Wire its out into one or more numeric param ports; each becomes a keyframed track. Per-instance tracks stagger across instances.">
+            <span className="workflow-library-item-glyph">⧖</span>
+            <span className="workflow-library-item-label">Timeline</span>
+            <span className="workflow-library-item-id">playhead · keyframes</span>
+          </div>
         </div>
       </div>
       ` : null}
@@ -53621,12 +53634,6 @@ function WorkflowVectorEditorNode({
     const g = s.groupId && groupById[s.groupId];
     return !!(g && g.visible === false);
   }, [groupById]);
-  const isShapeLocked = useCallback((s) => {
-    if (!s) return false;
-    if (s.locked) return true;
-    const g = s.groupId && groupById[s.groupId];
-    return !!(g && g.locked);
-  }, [groupById]);
 
   // v4.0 — Phase B (node-I/O framework). The vector editor's AGENT-EDITABLE
   // canonical is a JSON sidecar (vector-<id>.json) holding the shape model
@@ -53808,10 +53815,6 @@ function WorkflowVectorEditorNode({
         setSelection([]);
         return;
       }
-      // Locked shape (or a member of a locked group) — not selectable or
-      // movable from the stage. Use the Layers panel to unlock.
-      const hitShape = shapes.find(x => x.id === id);
-      if (hitShape && isShapeLocked(hitShape)) { e.stopPropagation(); return; }
       // Double-click on an already-selected path → enter node-edit mode.
       if (e.detail >= 2 && selection.length === 1 && selection[0] === id) {
         const s = shapes.find(x => x.id === id);
@@ -54284,55 +54287,65 @@ function WorkflowVectorEditorNode({
   // Disconnecting a source detaches its group into plain shapes (src
   // cleared) so it stays fully editable.
   const _layerSyncRef = useRef({});      // { [srcId]: lastSyncedUrl }
+  // Live mirrors of shapes/groups so the sync can read the latest without
+  // putting them in the effect deps (which would cancel in-flight syncs
+  // every time the user draws or imports).
+  const _shapesRef = useRef(shapes); _shapesRef.current = shapes;
+  const _groupsRef = useRef(groups); _groupsRef.current = groups;
   useEffect(() => {
-    const wiredIds = new Set(wiredGroupSources.map(s => s.srcId));
-
-    // Detach groups whose source is no longer wired.
-    const detached = groups.some(g => g && g.src && !wiredIds.has(g.src));
-    if (detached) {
-      onChange({ groups: groups.map(g => (g && g.src && !wiredIds.has(g.src)) ? { ...g, src: null } : g) });
-      for (const k of Object.keys(_layerSyncRef.current)) if (!wiredIds.has(k)) delete _layerSyncRef.current[k];
-      return; // re-run after the groups patch lands
-    }
-
-    const pending = wiredGroupSources.find(s => s.url && _layerSyncRef.current[s.srcId] !== s.url);
-    if (!pending) return;
-    _layerSyncRef.current[pending.srcId] = pending.url;
     let cancelled = false;
     (async () => {
-      setOpState({ phase: "working", message: `Syncing ${pending.name}…` });
-      try {
-        let parsed;
-        if (pending.dataKind === "image") {
-          parsed = await _traceImageToShapes(pending.url);
-        } else {
-          const txt = await fetch(pending.url).then(r => { if (!r.ok) throw new Error("fetch " + r.status); return r.text(); });
-          parsed = _vecParseSvgText(txt, canvasW, canvasH);
-        }
-        if (cancelled) return;
-        if (!parsed.length) throw new Error("No importable shapes.");
-        // Find or create the group bound to this source.
-        let g = groups.find(x => x && x.src === pending.srcId);
-        const gid = g ? g.id : _vecId("grp");
-        for (const s of parsed) s.groupId = gid;
-        const nextGroups = g
-          ? groups.map(x => x.id === gid ? { ...x, name: pending.name || x.name, src: pending.srcId } : x)
-          : [...groups, { id: gid, name: pending.name || _vecNextGroupName(groups), visible: true, locked: false, collapsed: false, src: pending.srcId }];
-        // Replace existing members of this group; append new block at end
-        // (or in place of the old block). Then normalise contiguity.
-        const without = shapes.filter(s => s.groupId !== gid);
-        const nextShapes = _vecNormalizeGroupOrder([...without, ...parsed]);
-        commitShapes(nextShapes, { groups: nextGroups });
-        setOpState({ phase: "done", message: `synced ${pending.name} ✓` });
-        setTimeout(() => setOpState(o => o.phase === "done" ? { phase: "idle", message: "" } : o), 1200);
-      } catch (err) {
-        if (cancelled) return;
-        delete _layerSyncRef.current[pending.srcId]; // allow retry
-        setOpState({ phase: "error", message: "Layer sync failed: " + String(err && err.message || err) });
+      const wiredIds = new Set(wiredGroupSources.map(s => s.srcId));
+
+      // Detach groups whose source is no longer wired → plain shapes.
+      let curGroups = _groupsRef.current;
+      if (curGroups.some(g => g && g.src && !wiredIds.has(g.src))) {
+        curGroups = curGroups.map(g => (g && g.src && !wiredIds.has(g.src)) ? { ...g, src: null } : g);
+        for (const k of Object.keys(_layerSyncRef.current)) if (!wiredIds.has(k)) delete _layerSyncRef.current[k];
+        onChange({ groups: curGroups });
       }
+
+      // Sync every source whose URL changed since we last imported it.
+      let curShapes = _shapesRef.current;
+      const pendings = wiredGroupSources.filter(s => s.url && _layerSyncRef.current[s.srcId] !== s.url);
+      let didWork = false;
+      for (const pending of pendings) {
+        if (cancelled) return;
+        try {
+          setOpState({ phase: "working", message: `Syncing ${pending.name}…` });
+          let parsed;
+          if (pending.dataKind === "image") {
+            parsed = await _traceImageToShapes(pending.url);
+          } else {
+            const txt = await fetch(pending.url).then(r => { if (!r.ok) throw new Error("fetch " + r.status); return r.text(); });
+            parsed = _vecParseSvgText(txt, canvasW, canvasH);
+          }
+          if (cancelled) return;
+          if (!parsed.length) throw new Error("No importable shapes.");
+          _layerSyncRef.current[pending.srcId] = pending.url;   // mark only on success
+          // Find or create the group bound to this source.
+          const g = curGroups.find(x => x && x.src === pending.srcId);
+          const gid = g ? g.id : _vecId("grp");
+          for (const s of parsed) s.groupId = gid;
+          curGroups = g
+            ? curGroups.map(x => x.id === gid ? { ...x, name: pending.name || x.name, src: pending.srcId } : x)
+            : [...curGroups, { id: gid, name: pending.name || _vecNextGroupName(curGroups), visible: true, locked: false, collapsed: false, src: pending.srcId }];
+          // Replace this group's existing members, then normalise contiguity.
+          const without = curShapes.filter(s => s.groupId !== gid);
+          curShapes = _vecNormalizeGroupOrder([...without, ...parsed]);
+          commitShapes(curShapes, { groups: curGroups });
+          didWork = true;
+          setOpState({ phase: "done", message: `synced ${pending.name} ✓` });
+        } catch (err) {
+          if (cancelled) return;
+          delete _layerSyncRef.current[pending.srcId];          // allow retry
+          setOpState({ phase: "error", message: "Layer sync failed: " + String(err && err.message || err) });
+        }
+      }
+      if (didWork && !cancelled) setTimeout(() => setOpState(o => o.phase === "done" ? { phase: "idle", message: "" } : o), 1200);
     })();
     return () => { cancelled = true; };
-  }, [wiredGroupSources, groups, shapes]);
+  }, [wiredGroupSources]);
 
   // ── Glyph import ────────────────────────────────────────────────
   // Fetch a Google font, parse with opentype.js, and add the requested
@@ -54830,6 +54843,25 @@ function WorkflowVectorEditorNode({
             <input ref=${traceFileRef} type="file" accept="image/*"
               style=${{ display: "none" }}
               onChange=${onTraceFilePicked}/>
+            <div className="workflow-vector-subhead">Linked layers</div>
+            ${inPortInputs.length === 0
+              ? html`<div className="workflow-vector-hint">Nothing wired to the <b>in</b> port. Connect a Layer (or SVG / image asset) — it becomes a live group.</div>`
+              : html`<div className="workflow-vector-linked">
+                  ${inPortInputs.map((i, k) => {
+                    const sid = i.node && i.node.id;
+                    const g = wiredGroupSources.find(s => s.srcId === sid);
+                    const nm = (i.node && (i.node.title || i.node.name)) || i.label || i.type;
+                    let status, ok = false;
+                    if (g) { status = g.dataKind === "image" ? "→ group (traced)" : "→ group"; ok = true; }
+                    else if (i.type === "layer") status = "layer · no SVG/image content";
+                    else if (i.type === "unbaked") status = "unbaked — bake it first";
+                    else status = i.type;
+                    return html`<div className=${"workflow-vector-linked-row" + (ok ? " is-ok" : "")} key=${"lk-" + k}>
+                      <span className="workflow-vector-linked-name" title=${nm}>${nm}</span>
+                      <span className="workflow-vector-linked-status">${status}</span>
+                    </div>`;
+                  })}
+                </div>`}
             <div className="workflow-vector-subhead">Import glyph</div>
             <div className="workflow-vector-pos-grid">
               <label className="workflow-vector-field workflow-vector-field-stacked">
@@ -56989,10 +57021,11 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
   }, [inputs, ownImports.join("|")]);
   const importKey = importUrls.join("|");
   // Wired Effect / Position spec nodes (the spline tool reads these tolerantly).
+  // Positions carry parametric bindings + per-cell overrides for the 3D drive.
   const splineSpecs = useMemo(() => ({
-    effects:   inputs.filter(i => i.type === "effect").map(i => i.spec || {}),
-    positions: inputs.filter(i => i.type === "position").map(i => i.spec || {}),
-  }), [inputs]);
+    effects:   inputs.filter(i => i.type === "effect").map(i => _specWithBindings(i.spec || {}, i.fromId, allNodes, allEdges)),
+    positions: inputs.filter(i => i.type === "position").map(i => _specWithBindings(i.spec || {}, i.fromId, allNodes, allEdges)),
+  }), [inputs, allNodes, allEdges]);
   const splineSpecKey = JSON.stringify(splineSpecs);
 
   // Param-light iframe URL — scene + imports flow over postMessage, not the URL,
@@ -57277,18 +57310,32 @@ function _specParamBindings(specNodeId, allNodes, allEdges) {
     const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
     const src = (allNodes || []).find(n => n.id === from.node);
     if (!src || (src.kind !== "number-generator" && src.kind !== "timeline")) continue;
+    const paramKey = to.port.slice("param:".length);
+    if (src.kind === "timeline") {
+      // Each wired param is its own TRACK; attach that track (keyframes +
+      // perInstance + stagger) keyed by "<targetNode>.<param>".
+      const tr = (src.tracks || {})[specNodeId + "." + paramKey] || null;
+      out[paramKey] = { kind: "timeline", spec: { ...(src.spec || {}), _track: tr } };
+      continue;
+    }
     let spec = src.spec || {};
     if (spec.sub === "pixel-map") {
       const url = _numberPixmapUrl(src, allNodes, allEdges);
       if (url) spec = { ...spec, params: { ...(spec.params || {}), assetUrl: url } };
     }
-    out[to.port.slice("param:".length)] = { kind: src.kind, spec };
+    out[paramKey] = { kind: src.kind, spec };
   }
   return Object.keys(out).length ? out : null;
 }
 function _specWithBindings(spec, specNodeId, allNodes, allEdges) {
   const b = _specParamBindings(specNodeId, allNodes, allEdges);
-  return b ? { ...(spec || {}), _bindings: b } : (spec || {});
+  const node = (allNodes || []).find(n => n.id === specNodeId);
+  const ov = node && node.overrides && Object.keys(node.overrides).length ? node.overrides : null;
+  if (!b && !ov) return spec || {};
+  const out = { ...(spec || {}) };
+  if (b) out._bindings = b;
+  if (ov) out._overrides = ov;   // Phase-2 per-cell/instance overrides
+  return out;
 }
 
 function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, allNodes, allEdges }) {
@@ -57608,6 +57655,14 @@ const SPEC_NODE_DEFS = {
       { key: "vector", label: "Per-instance", type: "checkbox" },
     ],
   },
+  "timeline": {
+    glyph: "⧖", label: "Timeline", canonical: (b, id) => `source/${b}/timeline-${id}.json`,
+    source: (b, id) => `source/${b}/timeline-${id}.js`,
+    fields: [
+      { key: "duration", label: "Duration", type: "number" },
+      { key: "loop", label: "Loop", type: "checkbox" },
+    ],
+  },
 };
 
 function _specDefault(kind) {
@@ -57616,6 +57671,7 @@ function _specDefault(kind) {
   if (kind === "trigger")  return { v: 1, source: "hover", params: {}, impacts: [] };
   if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true };
   if (kind === "number-generator") return { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true };
+  if (kind === "timeline") return { v: 1, kind: "timeline", duration: 4, loop: true };
   return { v: 1 };
 }
 function _specInputValue(v) {
@@ -58151,6 +58207,21 @@ export function buildSpec(values) {
   return { v: 1, kind: "number", sub: "pixel-map", params: { channel: values.channel, min: values.min, max: values.max }, vector: !!values.vector };
 }`)
     }
+  ],
+  "timeline": [
+    {
+      id: "timeline",
+      label: "Timeline",
+      source: _sourceModule({
+        duration: { type: "number", value: 4, min: 0.1, max: 120, step: 0.1 },
+        loop: { type: "boolean", value: true }
+      }, `// Wire OUT into numeric param ports — each wired param is a TRACK with its
+// own keyframes (authored in the UI / stored on the node). The host playhead
+// drives time; per-instance tracks stagger instance-by-instance.
+export function buildSpec(values) {
+  return { v: 1, kind: "timeline", duration: values.duration, loop: values.loop };
+}`)
+    }
   ]
 };
 function _specTemplate(kind, id) {
@@ -58233,6 +58304,9 @@ function _sourceWithSpecValues(kind, source, spec) {
   } else if (kind === "number-generator") {
     for (const [k, v] of Object.entries(spec.params || {})) if (controls[k]) controls[k].value = v;
     if (controls.vector) controls.vector.value = spec.vector !== false;
+  } else if (kind === "timeline") {
+    if (controls.duration) controls.duration.value = spec.duration ?? controls.duration.value;
+    if (controls.loop) controls.loop.value = spec.loop !== false;
   }
   return _replaceSourceControls(source, controls);
 }
@@ -58244,6 +58318,7 @@ function _specToScript(kind, raw) {
   else if (kind === "position") tpl = _specTemplate(kind, spec.mode);
   if (kind === "trigger") tpl = _specTemplate(kind, spec.source === "hover" ? "hover-opacity" : spec.source);
   if (kind === "number-generator") tpl = _specTemplate(kind, spec.sub || "constant");
+  if (kind === "timeline") tpl = _specTemplate(kind, "timeline");
   return _sourceWithSpecValues(kind, tpl.source, spec);
 }
 function _scriptToSpec(kind, script) {
@@ -58285,6 +58360,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const spec = node.spec || {};
   const [view, setView] = useState(node.specView || "code");
+  const [selCell, setSelCell] = useState(null);   // Phase-2 override editor selection
   const generatedScript = useMemo(() => _specToScript(node.kind, spec), [node.kind, JSON.stringify(spec)]);
   const scriptSource = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : generatedScript);
   const [scriptText, setScriptText] = useState(scriptSource);
@@ -58459,6 +58535,141 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
         onMouseDown=${(e) => e.stopPropagation()}/>
     </label>`;
   };
+
+  // ── Phase-2: per-cell / per-instance override editor (position only) ───────
+  // Overrides live on the NODE (node.overrides[index] = {rotation,scale,x,y}),
+  // NOT in the strict spec — they are injected into the host payload like
+  // bindings and applied LAST at runtime (override > per-instance source > base).
+  const setOverride = (idx, field, raw) => {
+    const next = { ...(node.overrides || {}) };
+    const cell = { ...(next[String(idx)] || {}) };
+    if (raw === "" || raw == null) delete cell[field];
+    else { const n = Number(raw); cell[field] = Number.isFinite(n) ? n : 0; }
+    if (Object.keys(cell).length) next[String(idx)] = cell; else delete next[String(idx)];
+    onChange({ overrides: next });
+  };
+  const clearCell = (idx) => {
+    const next = { ...(node.overrides || {}) };
+    delete next[String(idx)];
+    onChange({ overrides: next });
+  };
+  const renderOverridePanel = () => {
+    if (node.kind !== "position" || !compiled.ok) return null;
+    const ovMode = (compiled.spec && compiled.spec.mode) || spec.mode;
+    const params = (compiled.spec && compiled.spec.params) || {};
+    let cols = 0, rows = 0, count = 0, oneD = false;
+    if (ovMode === "grid" || ovMode === "grid-3d") { cols = Math.max(1, params.cols | 0); rows = Math.max(1, params.rows | 0); count = cols * rows; }
+    else if (ovMode === "instances" || ovMode === "scatter-3d") { count = Math.max(0, params.count | 0); oneD = true; }
+    else return null;
+    if (count <= 0) return null;
+    const overrides = node.overrides || {};
+    const CAP = 256;
+    const sel = selCell;
+    const fieldRow = (field, label) => {
+      const v = sel != null && overrides[String(sel)] ? overrides[String(sel)][field] : undefined;
+      return html`<label key=${field} style=${{ display: "grid", gridTemplateColumns: "54px 1fr", gap: "6px", alignItems: "center", marginBottom: "4px", fontSize: "11px" }}>
+        <span style=${{ color: "var(--muted, #888)" }}>${label}</span>
+        <input className="workflow-spec-input" type="number" value=${v == null ? "" : v} placeholder="inherit"
+          onInput=${(e) => setOverride(sel, field, e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
+      </label>`;
+    };
+    const editor = sel == null ? null : html`<div style=${{ marginTop: "6px", padding: "6px", border: "1px solid var(--line, #ddd)", borderRadius: "6px" }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", fontSize: "11px" }}>
+        <span>Cell #${sel}${cols ? ` (${sel % cols},${Math.floor(sel / cols)})` : ""}</span>
+        <button className="workflow-spec-tab" style=${{ border: "1px solid var(--line, #ddd)", borderRadius: "5px", padding: "2px 6px", background: "transparent", fontSize: "10px" }}
+          onClick=${(e) => { e.stopPropagation(); clearCell(sel); }} onMouseDown=${(e) => e.stopPropagation()}>Clear</button>
+      </div>
+      ${fieldRow("rotation", "rotation")}
+      ${fieldRow("scale", "scale")}
+      ${fieldRow("x", "x")}
+      ${fieldRow("y", "y")}
+    </div>`;
+    const header = html`<div style=${{ fontSize: "11px", color: "var(--muted, #888)", margin: "10px 0 5px" }}>
+      Overrides · ${ovMode} · ${count} cell${count === 1 ? "" : "s"}${Object.keys(overrides).length ? ` · ${Object.keys(overrides).length} set` : ""}
+    </div>`;
+    if (count > CAP) {
+      // Too many (or dynamic) to draw a grid — pick by index.
+      return html`<div>${header}
+        <label style=${{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px", alignItems: "center", fontSize: "11px" }}>
+          <span style=${{ color: "var(--muted, #888)" }}>Index</span>
+          <input className="workflow-spec-input" type="number" min="0" max=${count - 1} value=${sel == null ? "" : sel}
+            onInput=${(e) => { const n = parseInt(e.target.value, 10); setSelCell(Number.isFinite(n) ? n : null); }} onMouseDown=${(e) => e.stopPropagation()}/>
+        </label>
+        ${editor}
+      </div>`;
+    }
+    const gridCols = oneD ? Math.min(count, 16) : cols;
+    const cells = [];
+    for (let i = 0; i < count; i++) {
+      const has = !!overrides[String(i)];
+      const isSel = sel === i;
+      cells.push(html`<button key=${"ov" + i} title=${"Cell #" + i}
+        onClick=${(e) => { e.stopPropagation(); setSelCell(isSel ? null : i); }} onMouseDown=${(e) => e.stopPropagation()}
+        style=${{ aspectRatio: "1", minWidth: "0", padding: 0, borderRadius: "3px", cursor: "pointer",
+          border: isSel ? "2px solid var(--accent, #79f)" : "1px solid var(--line, #ccc)",
+          background: has ? "var(--accent, #79f)" : "transparent" }}></button>`);
+    }
+    return html`<div>${header}
+      <div style=${{ display: "grid", gridTemplateColumns: `repeat(${gridCols}, 1fr)`, gap: "2px" }}>${cells}</div>
+      ${editor}
+    </div>`;
+  };
+
+  // ── Phase-3: timeline editor (one track per wired param) ──────────────────
+  const setTrack = (trackKey, patch) => {
+    const next = { ...(node.tracks || {}) };
+    next[trackKey] = { keys: [], ...(next[trackKey] || {}), ...patch };
+    onChange({ tracks: next });
+  };
+  const renderTimelinePanel = () => {
+    if (node.kind !== "timeline") return null;
+    const dur = (compiled.spec && compiled.spec.duration) || spec.duration || 4;
+    const tracks = node.tracks || {};
+    const targets = [];
+    for (const e of (allEdges || [])) {
+      const from = e && e.from ? String(e.from) : ""; const fd = from.lastIndexOf(".");
+      if (fd < 0 || from.slice(0, fd) !== node.id || from.slice(fd + 1) !== "out") continue;
+      const to = e && e.to ? String(e.to) : ""; const td = to.lastIndexOf(".");
+      if (td < 0) continue; const tport = to.slice(td + 1); if (!tport.startsWith("param:")) continue;
+      const tid = to.slice(0, td), param = tport.slice(6);
+      const tn = (allNodes || []).find(n => n.id === tid);
+      targets.push({ key: tid + "." + param, label: (tn && (tn.title || tn.name)) || (tn && tn.kind) || tid, param });
+    }
+    if (!targets.length) return html`<div style=${{ fontSize: "11px", color: "var(--muted, #888)", marginTop: "10px" }}>
+      Wire this Timeline's out into a numeric param port — each wired param becomes a keyframed track here.</div>`;
+    const updKeys = (key, keys) => setTrack(key, { keys: keys.slice().sort((a, b) => (a.t || 0) - (b.t || 0)) });
+    return html`<div style=${{ marginTop: "10px" }}>
+      ${targets.map(tg => {
+        const tr = tracks[tg.key] || { keys: [], perInstance: false, stagger: 0 };
+        const keys = (tr.keys || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
+        return html`<div key=${tg.key} style=${{ border: "1px solid var(--line, #ddd)", borderRadius: "6px", padding: "6px", marginBottom: "6px" }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", marginBottom: "4px" }}>
+            <span style=${{ fontWeight: 600 }}>${tg.label} · ${tg.param}</span>
+            <label style=${{ display: "flex", gap: "4px", alignItems: "center", color: "var(--muted,#888)" }} onMouseDown=${(e) => e.stopPropagation()}>
+              <input type="checkbox" checked=${!!tr.perInstance} onChange=${(e) => setTrack(tg.key, { perInstance: e.target.checked })}/>per-inst</label>
+          </div>
+          ${tr.perInstance && html`<label style=${{ display: "grid", gridTemplateColumns: "60px 1fr", gap: "6px", alignItems: "center", fontSize: "11px", marginBottom: "4px" }}>
+            <span style=${{ color: "var(--muted,#888)" }}>stagger s</span>
+            <input className="workflow-spec-input" type="number" step="0.05" value=${tr.stagger || 0} onInput=${(e) => setTrack(tg.key, { stagger: Number(e.target.value) || 0 })} onMouseDown=${(e) => e.stopPropagation()}/>
+          </label>`}
+          <div style=${{ position: "relative", height: "10px", background: "var(--surface-2,#eee)", borderRadius: "3px", margin: "4px 0" }}>
+            ${keys.map((k, ki) => html`<span key=${ki} style=${{ position: "absolute", top: "-2px", left: `calc(${Math.max(0, Math.min(1, (k.t || 0) / dur)) * 100}% - 3px)`, width: "6px", height: "14px", background: "var(--accent,#79f)", borderRadius: "2px" }}/>`)}
+          </div>
+          ${keys.map((k, ki) => html`<div key=${ki} style=${{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "4px", marginBottom: "3px", fontSize: "11px" }}>
+            <input className="workflow-spec-input" type="number" step="0.05" value=${k.t} title="time (s)"
+              onInput=${(e) => { const nk = keys.slice(); nk[ki] = { ...k, t: Number(e.target.value) || 0 }; updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}/>
+            <input className="workflow-spec-input" type="number" step="0.1" value=${k.value} title="value"
+              onInput=${(e) => { const nk = keys.slice(); nk[ki] = { ...k, value: Number(e.target.value) || 0 }; updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}/>
+            <button className="workflow-spec-tab" style=${{ border: "1px solid var(--line,#ddd)", borderRadius: "5px", padding: "0 6px", background: "transparent" }}
+              onClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.splice(ki, 1); updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
+          </div>`)}
+          <button className="workflow-spec-tab" style=${{ border: "1px solid var(--line,#ddd)", borderRadius: "5px", padding: "3px 8px", background: "transparent", fontSize: "11px" }}
+            onClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.push({ t: keys.length ? Math.min(dur, (keys[keys.length - 1].t || 0) + dur / 4) : 0, value: 0 }); updKeys(tg.key, nk); }} onMouseDown=${(e) => e.stopPropagation()}>+ keyframe</button>
+        </div>`;
+      })}
+    </div>`;
+  };
+
   const templates = SPEC_SOURCE_TEMPLATES[node.kind] || [];
   const selectedTemplateId = node.templateId || "";
 
@@ -58508,6 +58719,8 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           ${compiled.ok
             ? Object.entries(compiled.controls || {}).map(renderControl)
             : html`<div style=${{ color: "var(--danger, #d33)", fontSize: "11px" }}>Fix the source code before the UI can render controls.</div>`}
+          ${renderOverridePanel()}
+          ${renderTimelinePanel()}
         `}
       </div>
       ${hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"

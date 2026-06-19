@@ -153,9 +153,10 @@ def _r_typed(up, prov, ctx):
                        for l in (up.get("levels") or []) if isinstance(l, dict))
         head = f"### {_label(up)} (typography)\nsans={up.get('fontFamily') or ''}, mono={up.get('monoFamily') or ''}"
         return head + (f". Scale: {lv}" if lv else "")
-    # Composable source nodes (effect / position / trigger / layer): source is
-    # the human-authored payload; spec is the compiled strict host contract.
-    if flavor in ("effect", "position", "trigger", "layer"):
+    # Composable source nodes (effect / position / trigger / layer / number):
+    # source is the human-authored payload; spec is the compiled strict host
+    # contract. A `number` is a value source wired into another block's param.
+    if flavor in ("effect", "position", "trigger", "layer", "number"):
         spec = up.get("spec")
         try:
             body = json.dumps(spec, ensure_ascii=False) if spec is not None else "{}"

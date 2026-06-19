@@ -219,6 +219,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+import { Sources } from '../_shared/sources.js';
 
 const $ = s => document.querySelector(s);
 
@@ -940,6 +941,22 @@ function applyWiredEffects(tSeconds) {
 let wiredPositions = [];        // [{mode, params}]
 let _arrangeGroup = null;       // THREE.Group holding the replicated clones, or null
 let _arrangeSig = '';           // signature to skip redundant rebuilds
+let _arrangeDyn = null;         // { spec, count, dims } when a time-varying source drives the arrangement
+// Per-instance parametric drive (number-generator / timeline / overrides) on a
+// replicated clone — rotation/scale/position from vector bindings + overrides.
+function applyArrangeDyn(inst, spec, i, count, time, dims) {
+  const r = Sources.resolve3D(spec, i, count, time, dims);
+  if (!r.has) return;
+  const bp = inst.userData._basePos, br = inst.userData._baseRot, bs = inst.userData._baseScale;
+  inst.position.set(r.x != null ? r.x : bp.x, r.y != null ? r.y : bp.y, r.z != null ? r.z : bp.z);
+  inst.rotation.set(r.rx != null ? r.rx : br.x, r.ry != null ? r.ry : br.y, r.rz != null ? r.rz : br.z);
+  if (r.scale != null) inst.scale.setScalar(r.scale); else inst.scale.set(bs.x, bs.y, bs.z);
+}
+function updateArrangementDynamic(time) {
+  if (!_arrangeDyn || !_arrangeGroup) return;
+  const { spec, count, dims } = _arrangeDyn;
+  for (const inst of _arrangeGroup.children) applyArrangeDyn(inst, spec, inst.userData._wiredIdx, count, time, dims);
+}
 
 function setWiredPositions(list) {
   wiredPositions = Array.isArray(list) ? list.filter(p => p && typeof p === 'object') : [];
@@ -953,6 +970,7 @@ function activePositionSpec() {
       || null;
 }
 function clearArrangement() {
+  _arrangeDyn = null;
   if (!_arrangeGroup) return;
   _arrangeGroup.traverse(o => { if (o.isMesh && o.geometry && o.userData._cloneGeo) o.geometry.dispose(); });
   scene.remove(_arrangeGroup); _arrangeGroup = null;
@@ -983,8 +1001,20 @@ function reconcileArrangement() {
   if (!proto) return;   // nothing built yet → skip gracefully
 
   const grp = new THREE.Group();
-  const P = spec.params || {};
+  const P = Object.assign({}, spec.params || {});
+  // Scalar (non-per-instance) bindings drive the arrangement params themselves.
+  const t0 = performance.now() / 1000;
+  const sb = spec._bindings;
+  if (sb) for (const k in sb) { const s = sb[k]; if (s && !Sources.isVector(s)) P[k] = Sources.eval(s, { index: 0, time: t0, count: 1 }); }
   const modelSpan = G * VOXEL;   // footprint of one instance
+  let _idx = 0; let dims = { cols: 1, rows: 1 };
+  const tagInst = (inst) => {
+    inst.userData = Object.assign({}, inst.userData);
+    inst.userData._basePos = { x: inst.position.x, y: inst.position.y, z: inst.position.z };
+    inst.userData._baseRot = { x: inst.rotation.x, y: inst.rotation.y, z: inst.rotation.z };
+    inst.userData._baseScale = { x: inst.scale.x, y: inst.scale.y, z: inst.scale.z };
+    inst.userData._wiredIdx = _idx++;
+  };
 
   if (spec.mode === 'grid-3d') {
     const cols = Math.max(1, P.cols | 0 || 1);
@@ -995,8 +1025,9 @@ function reconcileArrangement() {
     for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) for (let k = 0; k < layers; k++) {
       const inst = (i === 0 && j === 0 && k === 0) ? proto : cloneArrangeInstance(proto);
       inst.position.set((i - cx) * spacing, (j - cy) * spacing, (k - cz) * spacing);
-      grp.add(inst);
+      tagInst(inst); grp.add(inst);
     }
+    dims = { cols, rows };
   } else if (spec.mode === 'scatter-3d') {
     const count = Math.max(1, P.count | 0 || 1);
     const b = P.bounds || {};
@@ -1009,9 +1040,14 @@ function reconcileArrangement() {
     for (let i = 0; i < count; i++) {
       const inst = (i === 0) ? proto : cloneArrangeInstance(proto);
       inst.position.set((rnd() - 0.5) * bx, (rnd() - 0.5) * by + by * 0.5, (rnd() - 0.5) * bz);
-      grp.add(inst);
+      tagInst(inst); grp.add(inst);
     }
   } else { return; }   // unknown mode → skip gracefully
+
+  // Per-instance vector bindings + overrides — applied now (static frame), and
+  // re-applied per frame if any source is time-varying.
+  for (const inst of grp.children) applyArrangeDyn(inst, spec, inst.userData._wiredIdx, _idx, t0, dims);
+  _arrangeDyn = Sources.isDynamic(spec) ? { spec, count: _idx, dims } : null;
 
   // Hide the base meshes (the arrangement now represents the model); the proto
   // clone reuses their geometry/material so the look is identical.
@@ -1128,6 +1164,7 @@ function tick(now) {
   orbit.update();
   updateFurDynamics();
   updateLiveBlob();
+  updateArrangementDynamic(now / 1000);   // time-varying number/timeline drive on replicated voxel clones
   renderer.render(scene, camera);
 }
 

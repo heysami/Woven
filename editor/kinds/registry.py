@@ -2034,6 +2034,27 @@ KINDS = {
         "completion":   {"requires": []}, "pauseAfter": False,
         "notes": "Composable NUMBER source (constant/algorithmic/random/pixel-map). Wire out into a numeric param port of a position/effect/trigger block; author source/<branch>/number-<id>.js.",
     },
+    # ── timeline ──────────────────────────────────────────────────────────
+    # A live-playhead value SOURCE. Wire its `out` into one or more numeric
+    # param ports; each wired param becomes a TRACK ("layer") on the timeline
+    # with its own keyframes. The host runtime drives ctx.time from its playhead.
+    # Per-instance tracks stagger instance-by-instance.
+    "timeline": {
+        "title":        "Timeline",
+        "category":     "container",
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+            "tracks":   {"type": "object", "userEditable": True},
+        },
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "Composable TIMELINE source — keyframes multiple bound numeric params over a live playhead. Wire out into param ports (each = a track); author source/<branch>/timeline-<id>.js + per-track keyframes on the node.",
+    },
 
     # ── formatted-text ───────────────────────────────────────────────────
     # v3.4.37 — Rich text node. The body is edited in-place via
@@ -3134,6 +3155,15 @@ _NUMBER_AUTHORING = (
     "is evaluated PER INSTANCE (each grid cell / instance gets its own value via ctx.index); constant is scalar. "
     "Wire `out` into a position/effect/trigger param port; for pixel-map, wire an image asset into the `pixmap` port."
 )
+_TIMELINE_AUTHORING = (
+    "This is a TIMELINE spec node — a live-playhead value SOURCE that keyframes numeric params over time. "
+    "Write `source/{branch}/timeline-{id}.js`, not JSON. Shape:\n"
+    "export const controls = { duration:{type:'number',value:4}, loop:{type:'boolean',value:true} };\n"
+    "export function buildSpec(values) { return {v:1,kind:'timeline',duration:values.duration,loop:values.loop}; }\n"
+    "The editor compiles buildSpec(values) into source/{branch}/timeline-{id}.json. Wire `out` into one or more "
+    "numeric param ports — EACH wired param becomes a TRACK on the timeline (keyframes authored per track, stored "
+    "on the node). A per-instance track staggers instance-by-instance. The host runtime drives the playhead."
+)
 
 # Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
 # An `asset` node carries an `assetKind` (see KINDS["asset"].inputs.assetKind enum);
@@ -3569,6 +3599,15 @@ KIND_IO = {
             {"port": "edit", "label": "Edit number", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/number-{id}.js",
               "authoring": _NUMBER_AUTHORING},
+        ],
+    },
+    "timeline": {
+        "provides": [{"port": "out", "label": "Timeline", "tags": ["number"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "number"}}],
+        "accepts":  [
+            {"port": "edit", "label": "Edit timeline", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/timeline-{id}.js",
+              "authoring": _TIMELINE_AUTHORING},
         ],
     },
     "layer": {

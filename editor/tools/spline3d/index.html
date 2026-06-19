@@ -303,6 +303,7 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshBVH } from 'three-mesh-bvh';
 import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
+import { Sources } from '../_shared/sources.js';
 
 const $ = s => document.querySelector(s);
 const clock = new THREE.Clock();
@@ -1511,21 +1512,44 @@ function wiredPosSources() {
   return out;
 }
 function num(v, d) { const n = +v; return Number.isFinite(n) ? n : d; }
+// Parametric drive (number-generator / timeline / per-cell overrides) for the
+// replicated clones. Scalar bindings overlay onto the arrangement params; vector
+// bindings + overrides drive each clone's rotation/scale/position per instance.
+// Time-varying sources (timeline / algorithmic-with-t) are re-applied per frame.
+let wiredPosDyn = null;   // { spec, count, dims } when a dynamic source is active
+function applyDyn3D(c, spec, i, count, time, dims) {
+  const r = Sources.resolve3D(spec, i, count, time, dims);
+  if (!r.has) return;
+  const bp = c.userData._basePos, br = c.userData._baseRot, bs = c.userData._baseScale;
+  c.position.set(r.x != null ? r.x : bp.x, r.y != null ? r.y : bp.y, r.z != null ? r.z : bp.z);
+  c.rotation.set(r.rx != null ? r.rx : br.x, r.ry != null ? r.ry : br.y, r.rz != null ? r.rz : br.z);
+  if (r.scale != null) c.scale.setScalar(r.scale); else c.scale.set(bs.x, bs.y, bs.z);
+}
 function applyWiredPositions() {
   clearWiredPositions();
+  wiredPosDyn = null;
   const specs = (Array.isArray(WIRED_POSITIONS) ? WIRED_POSITIONS : [])
     .filter(p => p && (p.mode === 'grid-3d' || p.mode === 'scatter-3d'));
   if (!specs.length) return;
   const sources = wiredPosSources();
   if (!sources.length) return;
   const spec = specs[0];   // one arrangement; first wins (others ignored)
-  const pr = spec.params || {};
+  const pr = Object.assign({}, spec.params || {});
+  const t0 = clock.getElapsedTime();
+  // Scalar (non-per-instance) bindings drive the arrangement params themselves.
+  const b = spec._bindings;
+  if (b) for (const k in b) { const s = b[k]; if (s && !Sources.isVector(s)) pr[k] = Sources.eval(s, { index: 0, time: t0, count: 1 }); }
   const group = new THREE.Group(); group.name = 'wired-positions'; group.userData.wiredPositions = true;
+  let total = 0, dims = { cols: 1, rows: 1 };
   const place = (x, y, z, i) => {
     const src = sources[i % sources.length];
     const c = src.clone(true);            // clone subtree; shares geometry/material (cheap, read-only)
     c.position.set(x, y, z);
     c.traverse(o => { o.userData = Object.assign({}, o.userData); });   // detach userData refs so we never mutate originals
+    c.userData._basePos = { x, y, z };
+    c.userData._baseRot = { x: c.rotation.x, y: c.rotation.y, z: c.rotation.z };
+    c.userData._baseScale = { x: c.scale.x, y: c.scale.y, z: c.scale.z };
+    c.userData._wiredIdx = i;
     group.add(c);
   };
   if (spec.mode === 'grid-3d') {
@@ -1539,18 +1563,33 @@ function applyWiredPositions() {
       // skip the origin cell so the originals aren't doubled-up at (0,0,0)-ish
       place(cc * sp - ox, ly * sp - oy, r * sp - oz, i++);
     }
+    total = i; dims = { cols, rows };
   } else if (spec.mode === 'scatter-3d') {
     const count = Math.max(0, Math.min(512, num(pr.count, 12) | 0));
-    const b = Array.isArray(pr.bounds) ? pr.bounds : [6, 6, 6];
-    const bx = num(b[0], 6), by = num(b[1], 6), bz = num(b[2], 6);
+    const b2 = Array.isArray(pr.bounds) ? pr.bounds : [6, 6, 6];
+    const bx = num(b2[0], 6), by = num(b2[1], 6), bz = num(b2[2], 6);
     // deterministic pseudo-random so the arrangement is stable across rebuilds
     let seed = 1337;
     const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
     for (let i = 0; i < count; i++) {
       place((rnd() - 0.5) * bx, num(pr.lift, 0.6) + (rnd() - 0.5) * by, (rnd() - 0.5) * bz, i);
     }
+    total = count;
   }
-  if (group.children.length) { wiredPosGroup = group; scene.add(group); }
+  // Per-instance vector bindings + overrides — applied now (static frame), and
+  // re-applied per frame if any source is time-varying.
+  for (const c of group.children) applyDyn3D(c, spec, c.userData._wiredIdx, total, t0, dims);
+  if (group.children.length) {
+    wiredPosGroup = group; scene.add(group);
+    if (Sources.isDynamic(spec)) wiredPosDyn = { spec, count: total, dims };
+  }
+}
+// Per-frame: re-apply time-varying parametric drive to the replicated clones.
+function updateWiredPositionsDynamic() {
+  if (!wiredPosDyn || !wiredPosGroup) return;
+  const t = clock.getElapsedTime();
+  const { spec, count, dims } = wiredPosDyn;
+  for (const c of wiredPosGroup.children) applyDyn3D(c, spec, c.userData._wiredIdx, count, t, dims);
 }
 // Re-replicate only when a wired arrangement is actually active (cheap no-op
 // otherwise) — used by late-arriving async imports.
@@ -1577,6 +1616,7 @@ function tick(now) {
   for (const o of objects) { if (o.userData.mixer) o.userData.mixer.update(dt); }   // animated glb playback
   driveRig(dt);   // agent-authored rig: keyframe clip playback + IK chains
   for (const s of sims) s.update(dt);
+  updateWiredPositionsDynamic();   // time-varying number/timeline drive on replicated clones
   orbit.update();
   renderer.render(scene, camera);
   applyWiredFX(now / 1000);   // ADDITIVE: wired post-process onto the overlay (no-op when none)

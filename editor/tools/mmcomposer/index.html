@@ -144,6 +144,7 @@ function loadMod(key){
    EFFECT_SPECS is plain JSON ({type:{label,frag,uniforms[]}}) so it also bakes
    into the standalone player verbatim. */
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue } from '../_shared/fx.js';
+import { Sources } from '../_shared/sources.js';
 const EFFECT_SPECS = fxProgramSpecs();
 let _fxChain=null, _fxFailed=false;
 function ensureFXChain(){
@@ -231,6 +232,8 @@ function composerPositioningFromSpec(spec){
   // Phase-1: carry parametric bindings (number-generator → param) onto the
   // runtime positioning object so Positioning.resolve can evaluate them.
   if(src._bindings) p._bindings=src._bindings;
+  // Phase-2: carry per-cell/instance overrides (node.overrides[index]).
+  if(src._overrides) p._overrides=src._overrides;
   return p;
 }
 function normalizedCoord(v,size,fallback){
@@ -630,7 +633,7 @@ const Positioning = {
     const p=normalizeRuntimePositioning(L.positioning,W,H);
     // Phase-1: scalar bindings overlay onto params BEFORE mode resolve; vector
     // (per-instance) bindings overlay onto each resolved transform AFTER.
-    Sources.applyScalar(p);
+    Sources.applyScalar(p, Input.clock);
     let out;
     switch(p.mode){
       case 'single':      out=[{x:p.x,y:p.y,scale:p.scale,rot:p.rot}]; break;
@@ -645,7 +648,8 @@ const Positioning = {
       case 'face-3d':     out=this.face3d(L,p); break;
       default:            out=[{x:.5,y:.5,scale:1,rot:0}];
     }
-    return Sources.applyVector(p, out);
+    out = Sources.applyVector(p, out, Input.clock);
+    return Sources.applyOverrides(p, out);
   },
   grid(L,p,W,H){
     const out=[], cols=Math.max(1,p.cols|0), rows=Math.max(1,p.rows|0);
@@ -839,72 +843,9 @@ function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt
 function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
-/* ===========================================================================
-   SOURCES — parametric value sources (number-generator) that DRIVE a numeric
-   param of a position/effect/trigger block. A binding is baked onto the target
-   spec by the editor as spec._bindings[param] = { kind, spec:{ kind:'number',
-   sub, params, vector } }. evalSource(src, ctx) → number;
-   ctx = { index, count, time, u, v, cols, rows }. Scalar sources broadcast one
-   value; vector sources (algorithmic / random / pixel-map / timeline-perInst)
-   are evaluated PER INSTANCE so each grid cell / instance gets its own value.
-   ===========================================================================*/
-const Sources = {
-  _fnCache:new Map(), _imgCache:new Map(),
-  isVector(src){ const s=(src&&src.spec)||src||{}; if(s.vector) return true;
-    return s.sub==='algorithmic'||s.sub==='random'||s.sub==='pixel-map'||s.kind==='timeline'; },
-  eval(src, ctx){
-    const s=(src&&src.spec)||src||{}; const p=s.params||{}; ctx=ctx||{};
-    const i=ctx.index||0, t=ctx.time||0, n=ctx.count||1, u=ctx.u||0, v=ctx.v||0, cols=ctx.cols||1, rows=ctx.rows||1;
-    if(s.kind==='timeline') return 0;  // Phase 3
-    if(s.sub==='constant') return finiteNumber(p.value,0);
-    if(s.sub==='algorithmic'){ const fn=this._fn(p.expr); try{ return finiteNumber(fn(i,t,n,u,v,cols,rows),0); }catch(e){ return 0; } }
-    if(s.sub==='random'){ const min=finiteNumber(p.min,0),max=finiteNumber(p.max,1);
-      const r=mulberry(hash(String(p.seed||'r')+':'+i)); return min+(max-min)*r(); }
-    if(s.sub==='pixel-map') return this._pixel(s,ctx);
-    return 0;
-  },
-  _fn(expr){ let f=this._fnCache.get(expr); if(!f){ try{ f=new Function('i','t','n','u','v','cols','rows','return ('+String(expr||'0')+');'); }catch(e){ f=function(){return 0;}; } this._fnCache.set(expr,f); } return f; },
-  _pixel(s,ctx){ const p=s.params||{}; const url=p.assetUrl; const min=finiteNumber(p.min,0),max=finiteNumber(p.max,1);
-    if(!url) return min;
-    let rec=this._imgCache.get(url);
-    if(!rec){ rec={ready:false,data:null,w:0,h:0}; this._imgCache.set(url,rec);
-      const im=new Image(); try{ im.crossOrigin='anonymous'; }catch(e){}
-      im.onload=()=>{ try{ const w=Math.min(im.naturalWidth||1,128), h=Math.min(im.naturalHeight||1,128);
-        const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d');
-        cx.drawImage(im,0,0,w,h); rec.data=cx.getImageData(0,0,w,h).data; rec.w=w; rec.h=h; rec.ready=true; }catch(e){ rec.ready=false; } };
-      im.src=url; }
-    if(!rec.ready||!rec.data) return min;
-    let px,py;
-    if(ctx.u!=null||ctx.v!=null){ px=Math.max(0,Math.min(rec.w-1,Math.floor((ctx.u||0)*(rec.w-1)))); py=Math.max(0,Math.min(rec.h-1,Math.floor((ctx.v||0)*(rec.h-1)))); }
-    else { const idx=(ctx.index||0)%Math.max(1,rec.w*rec.h); px=idx%rec.w; py=Math.floor(idx/rec.w); }
-    const o=(py*rec.w+px)*4, d=rec.data, ch=p.channel||'luma';
-    let val; if(ch==='r') val=d[o]/255; else if(ch==='g') val=d[o+1]/255; else if(ch==='b') val=d[o+2]/255; else if(ch==='a') val=d[o+3]/255;
-    else val=(0.299*d[o]+0.587*d[o+1]+0.114*d[o+2])/255;
-    return min+(max-min)*val;
-  },
-  // SCALAR bindings (vector=false) overlaid onto a params object before resolve.
-  applyScalar(p){ const b=p&&p._bindings; if(!b) return p;
-    for(const k in b){ const src=b[k]; if(!src||this.isVector(src)) continue;
-      p[k]=this.eval(src,{index:0,time:Input.clock,count:1});
-      if(k==='rotation'||k==='rotateZ') p.rot=(finiteNumber(p.rotation,0)+finiteNumber(p.rotateZ,0))*Math.PI/180;
-    }
-    return p; },
-  // VECTOR bindings overlaid PER INSTANCE onto resolved transforms {x,y,scale,rot}.
-  applyVector(p, out){ const b=p&&p._bindings; if(!b||!Array.isArray(out)) return out;
-    const keys=Object.keys(b).filter(k=>b[k]&&this.isVector(b[k])); if(!keys.length) return out;
-    const n=out.length, time=Input.clock;
-    for(let i=0;i<n;i++){ const inst=out[i]; if(!inst) continue;
-      const ctx={index:i,count:n,time,u:inst.x,v:inst.y};
-      for(const k of keys){ const val=this.eval(b[k],ctx);
-        if(k==='rotation'||k==='rotateZ') inst.rot=val*Math.PI/180;
-        else if(k==='scale'||k==='size') inst.scale=val;
-        else if(k==='x') inst.x=val;
-        else if(k==='y') inst.y=val;
-        else inst[k]=val;
-      }
-    }
-    return out; },
-};
+/* SOURCES — parametric value-source evaluator now lives in ../_shared/sources.js
+   (imported above), shared with the 3D tools. applyScalar/applyVector take the
+   playhead time explicitly; this tool passes Input.clock. */
 
 /* ===========================================================================
    TRIGGERS  —  evaluate a layer's trigger → scalar 0..1 (+ vec for position)
