@@ -39974,21 +39974,21 @@ function WorkflowLibrary({ tab = "nodes" }) {
           </div>
           <div className="workflow-library-item" draggable=${true}
             onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "position" })); }}
-            title="Drag onto canvas — a Position scheme (grid / instances / physics / drawn / rope / camera-feed + 3D modes). Wire into a host editor to arrange its content.">
+            title="Drag onto canvas — a Position source (single / grid / instances / physics / drawn / rope / camera-feed + 3D modes). Wire into a layer, except direct-to-pixel/spline/voxel editors with no layer concept.">
             <span className="workflow-library-item-glyph">⊞</span>
             <span className="workflow-library-item-label">Position</span>
             <span className="workflow-library-item-id">placement scheme</span>
           </div>
           <div className="workflow-library-item" draggable=${true}
             onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "trigger" })); }}
-            title="Drag onto canvas — a Trigger (mouse / hover / position / timeline / audio / camera) with cross-layer impacts. Wire into a layer or host.">
+            title="Drag onto canvas — a Trigger source (mouse / hover / position / timeline / audio / camera) with cross-layer impacts. Wire into a layer.">
             <span className="workflow-library-item-glyph">◇</span>
             <span className="workflow-library-item-label">Trigger</span>
             <span className="workflow-library-item-id">reactivity + impacts</span>
           </div>
           <div className="workflow-library-item" draggable=${true}
             onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "effect" })); }}
-            title="Drag onto canvas — a GPU/shader Effect (shader-lab taxonomy: chromatic aberration, pixelate, halftone, ascii, …). Wire into a host editor to apply it to the output.">
+            title="Drag onto canvas — a GPU/shader Effect source (chromatic aberration, pixelate, halftone, ascii, and more). Wire into a layer.">
             <span className="workflow-library-item-glyph">✲</span>
             <span className="workflow-library-item-label">Effect</span>
             <span className="workflow-library-item-id">shader post-effect</span>
@@ -56532,13 +56532,10 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
   });
 }
 
-/* ── Composable spec nodes: Layer / Position / Trigger / Effect ────────────
-   Form-based "typed" providers (like color-palette/typography): the node's
-   `spec` JSON flows into a host editor (resolveUpstreamInputs' typed branch)
-   which APPLIES it. Also agent-editable — the node mirrors `spec` into a JSON
-   sidecar source/<branch>/<kind>-<id>.json so an Agent wired to its `edit`
-   port can rewrite it; th:asset-refresh re-imports it. SPEC_NODE_DEFS gives
-   the per-kind glyph + form fields; ONE generic component renders them all. */
+/* ── Composable source nodes: Layer / Position / Trigger / Effect ──────────
+   The editable artifact is source/<branch>/<kind>-<id>.js: controls +
+   buildSpec(values). The node compiles that source into the strict JSON spec
+   host editors consume, and the UI view is projected from controls. */
 const SPEC_NODE_DEFS = {
   "effect": {
     glyph: "✲", label: "Effect", canonical: (b, id) => `source/${b}/effect-${id}.json`,
@@ -56612,31 +56609,207 @@ function _parseSpecLiteral(raw) {
   if (s.includes(",") && !/\s/.test(s)) return s.split(",").map(x => _parseSpecLiteral(x));
   return s;
 }
+function _controlsSource(controls) {
+  return JSON.stringify(controls || {}, null, 2);
+}
+function _sourceModule(controls, body) {
+  return `export const controls = ${_controlsSource(controls)};\n\n${body}`;
+}
+function _effectSource(type, controls, paramLines, helpers) {
+  const params = paramLines && paramLines.length ? `{\n      ${paramLines.join(",\n      ")}\n    }` : "{}";
+  return _sourceModule(
+    { intensity: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 }, ...(controls || {}) },
+    `${helpers ? helpers + "\n\n" : ""}export function buildSpec(values) {
+  return {
+    v: 1,
+    type: ${JSON.stringify(type)},
+    intensity: values.intensity,
+    params: ${params}
+  };
+}`
+  );
+}
+function _positionSource(mode, controls, paramLines, helpers) {
+  const params = paramLines && paramLines.length ? `{\n      ${paramLines.join(",\n      ")}\n    }` : "{}";
+  return _sourceModule(
+    controls,
+    `${helpers ? helpers + "\n\n" : ""}export function buildSpec(values) {
+  return {
+    v: 1,
+    mode: ${JSON.stringify(mode)},
+    params: ${params}
+  };
+}`
+  );
+}
+function _triggerSource(source, controls, paramLines, helpers, impactLines) {
+  const params = paramLines && paramLines.length ? `{\n      ${paramLines.join(",\n      ")}\n    }` : "{}";
+  const impacts = impactLines && impactLines.length ? `[
+      {
+        ${impactLines.join(",\n        ")}
+      }
+    ]` : "[]";
+  return _sourceModule(
+    controls,
+    `${helpers ? helpers + "\n\n" : ""}export function buildSpec(values) {
+  return {
+    v: 1,
+    source: ${JSON.stringify(source)},
+    params: ${params},
+    impacts: ${impacts}
+  };
+}`
+  );
+}
+function _effectTemplate(id, label, type, controls, params, helpers) {
+  return { id, label, source: _effectSource(type, controls, params, helpers) };
+}
+function _positionTemplate(id, label, mode, controls, params, helpers) {
+  return { id, label, source: _positionSource(mode, controls, params, helpers) };
+}
+function _triggerTemplate(id, label, source, controls, params, helpers, impacts) {
+  return { id, label, source: _triggerSource(source, controls, params, helpers, impacts) };
+}
+
 const SPEC_SOURCE_TEMPLATES = {
   "effect": [
+    _effectTemplate("chromatic-aberration", "Chromatic aberration", "chromatic-aberration", {
+      offset: { type: "number", value: 4, min: 0, max: 80, step: 0.5 },
+      angle: { type: "number", value: 0, min: -180, max: 180, step: 1 }
+    }, ["offset: values.offset", "angle: values.angle"], `export function channelOffsets(values) {
+  const radians = values.angle * Math.PI / 180;
+  return {
+    red: [Math.cos(radians) * values.offset, Math.sin(radians) * values.offset],
+    blue: [-Math.cos(radians) * values.offset, -Math.sin(radians) * values.offset]
+  };
+}`),
+    _effectTemplate("pixelate", "Pixelate", "pixelate", {
+      cellSize: { type: "number", value: 12, min: 2, max: 120, step: 1 }
+    }, ["cellSize: values.cellSize"], `export function snapUv(uv, resolution, values) {
+  const cell = values.cellSize / Math.max(resolution[0], resolution[1]);
+  return [
+    Math.floor(uv[0] / cell) * cell + cell * 0.5,
+    Math.floor(uv[1] / cell) * cell + cell * 0.5
+  ];
+}`),
+    _effectTemplate("dither", "Dither", "dither", {
+      levels: { type: "number", value: 4, min: 2, max: 16, step: 1 },
+      matrixSize: { type: "select", value: "bayer-4", options: ["bayer-2", "bayer-4", "bayer-8"] }
+    }, ["levels: values.levels", "matrixSize: values.matrixSize"], `export function quantizeChannel(channel, threshold, values) {
+  const shifted = channel + (threshold - 0.5) / values.levels;
+  return Math.round(shifted * (values.levels - 1)) / (values.levels - 1);
+}`),
+    _effectTemplate("posterize", "Posterize", "posterize", {
+      levels: { type: "number", value: 5, min: 2, max: 32, step: 1 },
+      gamma: { type: "number", value: 1, min: 0.2, max: 3, step: 0.05 }
+    }, ["levels: values.levels", "gamma: values.gamma"], `export function posterizeColor(rgb, values) {
+  return rgb.map((channel) => {
+    const corrected = Math.pow(channel, values.gamma);
+    return Math.round(corrected * (values.levels - 1)) / (values.levels - 1);
+  });
+}`),
+    _effectTemplate("pixel-sort", "Pixel sort", "pixel-sort", {
+      direction: { type: "select", value: "horizontal", options: ["horizontal", "vertical"] },
+      threshold: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
+      bandSize: { type: "number", value: 24, min: 1, max: 240, step: 1 }
+    }, ["direction: values.direction", "threshold: values.threshold", "bandSize: values.bandSize"], `export function shouldSortPixel(luma, values) {
+  return luma >= values.threshold;
+}`),
+    _effectTemplate("ascii", "ASCII", "ascii", {
+      cellSize: { type: "number", value: 10, min: 4, max: 48, step: 1 },
+      chars: { type: "text", value: " .:-=+*#%@" },
+      monochrome: { type: "boolean", value: false }
+    }, ["cellSize: values.cellSize", "chars: values.chars", "monochrome: values.monochrome"], `export function glyphForLuma(luma, values) {
+  const chars = String(values.chars || "@");
+  const index = Math.max(0, Math.min(chars.length - 1, Math.floor(luma * chars.length)));
+  return chars[index];
+}`),
+    _effectTemplate("crt", "CRT scanline", "crt", {
+      scanline: { type: "number", value: 0.35, min: 0, max: 1, step: 0.01 },
+      curvature: { type: "number", value: 0.12, min: 0, max: 0.6, step: 0.01 },
+      vignette: { type: "number", value: 0.22, min: 0, max: 1, step: 0.01 }
+    }, ["scanline: values.scanline", "curvature: values.curvature", "vignette: values.vignette"], `export function warpUv(uv, values) {
+  const centered = [uv[0] * 2 - 1, uv[1] * 2 - 1];
+  const bend = 1 + values.curvature * (centered[0] * centered[0] + centered[1] * centered[1]);
+  return [(centered[0] * bend + 1) * 0.5, (centered[1] * bend + 1) * 0.5];
+}`),
+    _effectTemplate("halftone", "Halftone", "halftone", {
+      dotSize: { type: "number", value: 8, min: 2, max: 80, step: 1 },
+      angle: { type: "number", value: 15, min: -90, max: 90, step: 1 },
+      shape: { type: "select", value: "round", options: ["round", "diamond", "line"] }
+    }, ["dotSize: values.dotSize", "angle: values.angle", "shape: values.shape"], `export function dotRadius(luma, values) {
+  return (1 - luma) * values.dotSize * 0.5;
+}`),
+    _effectTemplate("ink", "Ink wash", "ink", {
+      edge: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 },
+      wash: { type: "number", value: 0.35, min: 0, max: 1, step: 0.01 },
+      grain: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 }
+    }, ["edge: values.edge", "wash: values.wash", "grain: values.grain"], `export function inkMix(luma, edgeStrength, values) {
+  return Math.max(edgeStrength * values.edge, (1 - luma) * values.wash);
+}`),
+    _effectTemplate("edge-detect", "Edge detect", "edge-detect", {
+      threshold: { type: "number", value: 0.18, min: 0, max: 1, step: 0.01 },
+      invert: { type: "boolean", value: false }
+    }, ["threshold: values.threshold", "invert: values.invert"], `export function isEdge(gradientMagnitude, values) {
+  const edge = gradientMagnitude > values.threshold ? 1 : 0;
+  return values.invert ? 1 - edge : edge;
+}`),
+    _effectTemplate("directional-blur", "Directional blur", "directional-blur", {
+      distance: { type: "number", value: 12, min: 0, max: 180, step: 1 },
+      angle: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      samples: { type: "number", value: 9, min: 3, max: 31, step: 2 }
+    }, ["distance: values.distance", "angle: values.angle", "samples: values.samples"], `export function blurVector(values) {
+  const radians = values.angle * Math.PI / 180;
+  return [Math.cos(radians) * values.distance, Math.sin(radians) * values.distance];
+}`),
+    _effectTemplate("displacement", "Displacement", "displacement", {
+      amount: { type: "number", value: 18, min: -120, max: 120, step: 1 },
+      scale: { type: "number", value: 0.08, min: 0.001, max: 1, step: 0.001 },
+      source: { type: "select", value: "noise", options: ["noise", "luma", "mouse", "audio"] }
+    }, ["amount: values.amount", "scale: values.scale", "source: values.source"], `export function displaceUv(uv, signal, values) {
+  const offset = (signal - 0.5) * values.amount * values.scale;
+  return [uv[0] + offset, uv[1] - offset];
+}`),
+    _effectTemplate("particle-grid", "Particle grid", "particle-grid", {
+      count: { type: "number", value: 160, min: 4, max: 5000, step: 1 },
+      jitter: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+      speed: { type: "number", value: 0.35, min: 0, max: 4, step: 0.01 }
+    }, ["count: values.count", "jitter: values.jitter", "speed: values.speed"], `export function particleOffset(index, time, values) {
+  const phase = index * 12.9898 + time * values.speed;
+  return [Math.sin(phase) * values.jitter, Math.cos(phase * 1.37) * values.jitter];
+}`),
+    _effectTemplate("pattern", "Pattern overlay", "pattern", {
+      motif: { type: "select", value: "waves", options: ["waves", "checker", "rings", "stripes"] },
+      scale: { type: "number", value: 1, min: 0.05, max: 8, step: 0.05 },
+      rotation: { type: "number", value: 0, min: -180, max: 180, step: 1 }
+    }, ["motif: values.motif", "scale: values.scale", "rotation: values.rotation"], `export function patternCoord(uv, values) {
+  const radians = values.rotation * Math.PI / 180;
+  const c = Math.cos(radians), s = Math.sin(radians);
+  return [(uv[0] * c - uv[1] * s) * values.scale, (uv[0] * s + uv[1] * c) * values.scale];
+}`),
     {
       id: "custom-shader",
       label: "Custom shader effect",
-      source: `export const controls = {
-  intensity: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
-  cellSize: { type: "number", value: 9, min: 2, max: 64, step: 1 }
-};
-
-export function fragmentShader(values) {
-  return \`#version 300 es
-precision highp float;
-uniform sampler2D tex;
-uniform vec2 uRes;
-uniform float uIntensity;
-in vec2 uv;
-out vec4 outColor;
-
-void main() {
-  vec2 cell = vec2(\${values.cellSize}.0) / uRes;
-  vec2 snapped = floor(uv / cell) * cell + cell * 0.5;
-  vec4 color = texture(tex, mix(uv, snapped, uIntensity));
-  outColor = color;
-}\`;
+      source: _sourceModule({
+        intensity: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
+        cellSize: { type: "number", value: 9, min: 2, max: 64, step: 1 }
+      }, `export function fragmentShader(values) {
+  const cellSize = Number(values.cellSize || 9).toFixed(1);
+  return [
+    "#version 300 es",
+    "precision highp float;",
+    "uniform sampler2D tex;",
+    "uniform vec2 uRes;",
+    "uniform float uIntensity;",
+    "in vec2 uv;",
+    "out vec4 outColor;",
+    "void main() {",
+    "  vec2 cell = vec2(" + cellSize + ") / uRes;",
+    "  vec2 snapped = floor(uv / cell) * cell + cell * 0.5;",
+    "  vec4 color = texture(tex, mix(uv, snapped, uIntensity));",
+    "  outColor = color;",
+    "}"
+  ].join("\\n");
 }
 
 export function buildSpec(values) {
@@ -56647,21 +56820,30 @@ export function buildSpec(values) {
     params: { cellSize: values.cellSize },
     glsl: fragmentShader(values)
   };
-}`
+}`)
     }
   ],
   "position": [
-    {
-      id: "grid",
-      label: "Grid layout",
-      source: `export const controls = {
-  cols: { type: "number", value: 4, min: 1, max: 24, step: 1 },
-  rows: { type: "number", value: 4, min: 1, max: 24, step: 1 },
-  gap: { type: "number", value: 0, min: 0, max: 120, step: 1 },
-  placement: { type: "select", value: "fixed", options: ["fixed", "random"] }
-};
-
-export function layout(items, bounds, values) {
+    _positionTemplate("single", "Single placement", "single", {
+      x: { type: "number", value: 0, min: -5000, max: 5000, step: 1 },
+      y: { type: "number", value: 0, min: -5000, max: 5000, step: 1 },
+      scale: { type: "number", value: 1, min: 0.01, max: 10, step: 0.01 },
+      rotation: { type: "number", value: 0, min: -360, max: 360, step: 1 }
+    }, ["x: values.x", "y: values.y", "scale: values.scale", "rotation: values.rotation"], `export function layout(items, bounds, values) {
+  return items.map((item) => ({
+    ...item,
+    x: values.x,
+    y: values.y,
+    scale: values.scale,
+    rotation: values.rotation
+  }));
+}`),
+    _positionTemplate("grid", "Grid layout", "grid", {
+      cols: { type: "number", value: 4, min: 1, max: 24, step: 1 },
+      rows: { type: "number", value: 4, min: 1, max: 24, step: 1 },
+      gap: { type: "number", value: 0, min: 0, max: 120, step: 1 },
+      placement: { type: "select", value: "fixed", options: ["fixed", "random"] }
+    }, ["cols: values.cols", "rows: values.rows", "gap: values.gap", "placement: values.placement"], `export function layout(items, bounds, values) {
   const cellW = (bounds.width - values.gap * (values.cols + 1)) / values.cols;
   const cellH = (bounds.height - values.gap * (values.rows + 1)) / values.rows;
   return items.map((item, index) => {
@@ -56675,30 +56857,26 @@ export function layout(items, bounds, values) {
       height: cellH
     };
   });
-}
-
-export function buildSpec(values) {
-  return {
-    v: 1,
-    mode: "grid",
-    params: {
-      cols: values.cols,
-      rows: values.rows,
-      gap: values.gap,
-      placement: values.placement
-    }
-  };
-}`
-    },
-    {
-      id: "gravity",
-      label: "Gravity physics",
-      source: `export const controls = {
-  gravity: { type: "number", value: 980, min: -2000, max: 2000, step: 10 },
-  bounce: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 }
-};
-
-export function step(body, dt, values) {
+}`),
+    _positionTemplate("instances", "Instances", "instances", {
+      source: { type: "select", value: "random", options: ["mouse", "random", "interaction"] },
+      count: { type: "number", value: 24, min: 1, max: 2000, step: 1 },
+      jitter: { type: "number", value: 0.25, min: 0, max: 1, step: 0.01 },
+      physics: { type: "boolean", value: false }
+    }, ["source: values.source", "count: values.count", "jitter: values.jitter", "physics: values.physics"], `export function instantiate(seedPoint, values) {
+  return Array.from({ length: values.count }, (_, index) => {
+    const angle = index * 2.399963;
+    const radius = Math.sqrt(index / Math.max(1, values.count));
+    return {
+      x: seedPoint.x + Math.cos(angle) * radius * values.jitter,
+      y: seedPoint.y + Math.sin(angle) * radius * values.jitter
+    };
+  });
+}`),
+    _positionTemplate("gravity", "Physics / gravity", "physics", {
+      gravity: { type: "number", value: 980, min: -2000, max: 2000, step: 10 },
+      bounce: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 }
+    }, ["engine: \"matter\"", "gravity: [0, values.gravity / 980]", "bounce: values.bounce"], `export function step(body, dt, values) {
   body.velocity.y += values.gravity * dt;
   body.position.x += body.velocity.x * dt;
   body.position.y += body.velocity.y * dt;
@@ -56709,66 +56887,157 @@ export function step(body, dt, values) {
   }
 
   return body;
+}`),
+    _positionTemplate("drawn", "Drawn path", "drawn", {
+      paths: { type: "text", value: "0,0 120,40 240,0" },
+      closed: { type: "boolean", value: false }
+    }, ["paths: parsePaths(values.paths)", "closed: values.closed"], `export function parsePaths(raw) {
+  return String(raw || "")
+    .split("|")
+    .map((path) => path.trim().split(/\\s+/).filter(Boolean).map((pair) => {
+      const [x, y] = pair.split(",").map(Number);
+      return [x || 0, y || 0];
+    }));
 }
 
-export function buildSpec(values) {
+export function pointAt(progress, values) {
+  const path = parsePaths(values.paths)[0] || [[0, 0]];
+  const index = Math.max(0, Math.min(path.length - 1, Math.floor(progress * path.length)));
+  return path[index];
+}`),
+    _positionTemplate("rope", "Rope", "rope", {
+      anchors: { type: "text", value: "0,0 300,0" },
+      segments: { type: "number", value: 12, min: 2, max: 128, step: 1 },
+      stiffness: { type: "number", value: 0.72, min: 0, max: 1, step: 0.01 }
+    }, ["anchors: parseAnchors(values.anchors)", "segments: values.segments", "stiffness: values.stiffness"], `export function parseAnchors(raw) {
+  return String(raw || "0,0 300,0").split(/\\s+/).map((pair) => {
+    const [x, y] = pair.split(",").map(Number);
+    return { x: x || 0, y: y || 0 };
+  });
+}
+
+export function solveSegment(prev, next, values) {
+  const dx = next.x - prev.x;
+  const dy = next.y - prev.y;
+  return { x: prev.x + dx * values.stiffness, y: prev.y + dy * values.stiffness };
+}`),
+    _positionTemplate("camera-feed", "Camera feed", "camera-feed", {
+      detector: { type: "select", value: "hand", options: ["hand", "face", "object", "ocr"] },
+      source: { type: "text", value: "camera" },
+      confidence: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 }
+    }, ["detector: values.detector", "source: values.source", "confidence: values.confidence"], `export function detectionToPosition(detection, values) {
+  if (!detection || detection.confidence < values.confidence) return null;
+  return { x: detection.centerX, y: detection.centerY, scale: detection.scale || 1 };
+}`),
+    _positionTemplate("grid-3d", "3D grid", "grid-3d", {
+      cols: { type: "number", value: 4, min: 1, max: 48, step: 1 },
+      rows: { type: "number", value: 4, min: 1, max: 48, step: 1 },
+      layers: { type: "number", value: 3, min: 1, max: 48, step: 1 },
+      spacing: { type: "number", value: 1, min: 0.01, max: 100, step: 0.01 }
+    }, ["cols: values.cols", "rows: values.rows", "layers: values.layers", "spacing: values.spacing"], `export function layout3d(items, values) {
+  return items.map((item, index) => {
+    const col = index % values.cols;
+    const row = Math.floor(index / values.cols) % values.rows;
+    const layer = Math.floor(index / (values.cols * values.rows)) % values.layers;
+    return { ...item, x: col * values.spacing, y: row * values.spacing, z: layer * values.spacing };
+  });
+}`),
+    _positionTemplate("scatter-3d", "3D scatter", "scatter-3d", {
+      count: { type: "number", value: 80, min: 1, max: 10000, step: 1 },
+      boundsX: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 },
+      boundsY: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 },
+      boundsZ: { type: "number", value: 6, min: 0.01, max: 1000, step: 0.01 }
+    }, ["count: values.count", "bounds: [values.boundsX, values.boundsY, values.boundsZ]"], `export function scatterPoint(index, values) {
+  const n = Math.sin(index * 12.9898) * 43758.5453;
+  const f = n - Math.floor(n);
   return {
-    v: 1,
-    mode: "physics",
-    params: {
-      engine: "matter",
-      gravity: [0, values.gravity / 980],
-      bounce: values.bounce
-    }
+    x: (f - 0.5) * values.boundsX,
+    y: ((f * 1.37) % 1 - 0.5) * values.boundsY,
+    z: ((f * 2.11) % 1 - 0.5) * values.boundsZ
   };
-}`
-    }
+}`),
+    _positionTemplate("surface", "Surface", "surface", {
+      meshId: { type: "text", value: "" },
+      density: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
+      offset: { type: "number", value: 0, min: -100, max: 100, step: 0.1 }
+    }, ["meshId: values.meshId", "density: values.density", "offset: values.offset"], `export function projectToSurface(point, normal, values) {
+  return {
+    x: point.x + normal.x * values.offset,
+    y: point.y + normal.y * values.offset,
+    z: point.z + normal.z * values.offset
+  };
+}`)
   ],
   "trigger": [
-    {
-      id: "hover-opacity",
-      label: "Hover controls opacity",
-      source: `export const controls = {
-  targetLayerId: { type: "text", value: "" },
-  off: { type: "number", value: 0.25, min: 0, max: 1, step: 0.01 },
-  on: { type: "number", value: 1, min: 0, max: 1, step: 0.01 }
-};
-
-export function sample(pointer, layerBounds) {
+    _triggerTemplate("none", "No trigger", "none", {}, [], "", []),
+    _triggerTemplate("mouse-click", "Mouse click", "mouse-click", {
+      targetLayerId: { type: "text", value: "" },
+      off: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      on: { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
+      button: { type: "select", value: "primary", options: ["primary", "secondary", "middle"] }
+    }, ["button: values.button"], `export function sample(event, values) {
+  return event && event.type === "click" && (!values.button || event.buttonName === values.button) ? 1 : 0;
+}`, ["target: values.targetLayerId", "param: \"opacity\"", "map: \"threshold\"", "range: [values.off, values.on]"]),
+    _triggerTemplate("hover-opacity", "Hover controls opacity", "hover", {
+      targetLayerId: { type: "text", value: "" },
+      off: { type: "number", value: 0.25, min: 0, max: 1, step: 0.01 },
+      on: { type: "number", value: 1, min: 0, max: 1, step: 0.01 }
+    }, [], `export function sample(pointer, layerBounds) {
   return pointer.x >= layerBounds.x &&
     pointer.x <= layerBounds.x + layerBounds.width &&
     pointer.y >= layerBounds.y &&
     pointer.y <= layerBounds.y + layerBounds.height ? 1 : 0;
-}
-
-export function buildSpec(values) {
-  return {
-    v: 1,
-    source: "hover",
-    params: {},
-    impacts: [{
-      target: values.targetLayerId,
-      param: "opacity",
-      map: "linear",
-      range: [values.off, values.on]
-    }]
-  };
-}`
-    }
+}`, ["target: values.targetLayerId", "param: \"opacity\"", "map: \"linear\"", "range: [values.off, values.on]"]),
+    _triggerTemplate("position", "Position progress", "position", {
+      targetLayerId: { type: "text", value: "" },
+      axis: { type: "select", value: "x", options: ["x", "y", "z"] },
+      from: { type: "number", value: 0, min: -10000, max: 10000, step: 1 },
+      to: { type: "number", value: 1, min: -10000, max: 10000, step: 1 }
+    }, ["axis: values.axis"], `export function sample(position, values) {
+  const raw = (position && Number(position[values.axis])) || 0;
+  return Math.max(0, Math.min(1, (raw - values.from) / Math.max(0.0001, values.to - values.from)));
+}`, ["target: values.targetLayerId", "param: \"position\"", "map: \"linear\"", "range: [values.from, values.to]"]),
+    _triggerTemplate("timeline", "Timeline", "timeline", {
+      targetLayerId: { type: "text", value: "" },
+      duration: { type: "number", value: 2, min: 0.01, max: 120, step: 0.01 },
+      loop: { type: "boolean", value: true }
+    }, ["duration: values.duration", "loop: values.loop", "keys: [{ t: 0, value: 0 }, { t: values.duration, value: 1 }]"], `export function sample(time, values) {
+  const t = values.loop ? time % values.duration : Math.min(time, values.duration);
+  return t / values.duration;
+}`, ["target: values.targetLayerId", "param: \"opacity\"", "map: \"linear\"", "range: [0, 1]"]),
+    _triggerTemplate("audio", "Audio", "audio", {
+      targetLayerId: { type: "text", value: "" },
+      sourceId: { type: "text", value: "" },
+      feature: { type: "select", value: "loudness", options: ["loudness", "pitch", "band"] },
+      band: { type: "number", value: 2, min: 0, max: 32, step: 1 }
+    }, ["sourceId: values.sourceId", "feature: values.feature", "band: values.band"], `export function sample(audioFrame, values) {
+  if (!audioFrame) return 0;
+  if (values.feature === "pitch") return audioFrame.pitch || 0;
+  if (values.feature === "band") return (audioFrame.bands && audioFrame.bands[values.band]) || 0;
+  return audioFrame.loudness || 0;
+}`, ["target: values.targetLayerId", "param: \"scale\"", "map: \"linear\"", "range: [1, 1.25]"]),
+    _triggerTemplate("camera", "Camera", "camera", {
+      targetLayerId: { type: "text", value: "" },
+      detector: { type: "select", value: "face", options: ["hand", "face", "object", "ocr"] },
+      event: { type: "select", value: "present", options: ["present", "gesture", "count"] }
+    }, ["detector: values.detector", "event: values.event"], `export function sample(cameraState, values) {
+  const detections = cameraState && cameraState[values.detector] || [];
+  if (values.event === "count") return detections.length;
+  if (values.event === "gesture") return detections.some((d) => d.gesture) ? 1 : 0;
+  return detections.length ? 1 : 0;
+}`, ["target: values.targetLayerId", "param: \"opacity\"", "map: \"threshold\"", "range: [0, 1]"])
   ],
   "layer": [
     {
       id: "basic-layer",
       label: "Basic layer",
-      source: `export const controls = {
-  name: { type: "text", value: "Layer" },
-  z: { type: "number", value: 0, step: 1 },
-  opacity: { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
-  blend: { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
-  visible: { type: "boolean", value: true }
-};
-
-export function buildSpec(values) {
+      source: _sourceModule({
+        name: { type: "text", value: "Layer" },
+        z: { type: "number", value: 0, step: 1 },
+        opacity: { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
+        blend: { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
+        visible: { type: "boolean", value: true }
+      }, `export function buildSpec(values) {
   return {
     v: 1,
     name: values.name,
@@ -56777,7 +57046,7 @@ export function buildSpec(values) {
     blend: values.blend,
     visible: values.visible
   };
-}`
+}`)
     }
   ]
 };
@@ -56849,6 +57118,7 @@ function _sourceWithSpecValues(kind, source, spec) {
       else controls[k].value = v;
     }
   } else if (kind === "trigger") {
+    for (const [k, v] of Object.entries(spec.params || {})) if (controls[k]) controls[k].value = v;
     const imp = Array.isArray(spec.impacts) ? spec.impacts[0] : null;
     if (imp && controls.targetLayerId) controls.targetLayerId.value = imp.target || "";
     if (imp && Array.isArray(imp.range)) {
@@ -56863,7 +57133,10 @@ function _sourceWithSpecValues(kind, source, spec) {
 function _specToScript(kind, raw) {
   const spec = { ..._specDefault(kind), ...(raw || {}) };
   let tpl = _specTemplate(kind);
+  if (kind === "effect") tpl = _specTemplate(kind, spec.type === "custom" ? "custom-shader" : spec.type);
   if (kind === "position" && spec.mode === "physics") tpl = _specTemplate(kind, "gravity");
+  else if (kind === "position") tpl = _specTemplate(kind, spec.mode);
+  if (kind === "trigger") tpl = _specTemplate(kind, spec.source === "hover" ? "hover-opacity" : spec.source);
   return _sourceWithSpecValues(kind, tpl.source, spec);
 }
 function _scriptToSpec(kind, script) {
