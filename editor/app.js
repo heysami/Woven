@@ -8930,7 +8930,7 @@ function dockSlot(i, count) {
    ChatDrawer's wiring stays in App; tasks/comments/git render their embedded
    panels here. The left edge resizes the whole dock; the column/row dividers
    resize the panes. Only polls /__runs while a tasks tile is open. */
-function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize }) {
+function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating }) {
   const [runs, setRuns] = useState([]);
   // Drag-to-swap state: dragId = the tile being dragged by its grip; overId =
   // the tile currently under the pointer (the swap target). Tile rects are
@@ -9003,7 +9003,7 @@ function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, on
   const rowDividerStyle = count === 3 ? { left: "var(--dock-col-split, 50%)", right: "0" } : null;
 
   return html`
-    <div className="right-dock">
+    <div className=${"right-dock" + (floating ? " right-dock-floating" : "")}>
       <div className="dock-resize-edge" onMouseDown=${onResizeStart} title="Drag to resize the dock"/>
       <div className="dock-grid" data-count=${count}>
         ${windows.map((w, i) => {
@@ -21752,6 +21752,83 @@ function WorkflowCanvas() {
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
   const [chatPermissionMode, setChatPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
+
+  // ── Right tiling dock (workflow surface) ──────────────────────────────
+  // Same model as the editor App's dock, but floating (reuses the chat
+  // drawer's --workflow-chat-width slot + canvas-shrink margin). chatRun is
+  // the focused thread; a sync effect mirrors it into a thread window.
+  const [dockWindows, setDockWindows]   = useState([]);
+  const [dockColSplit, setDockColSplit] = useState(() => Number(loadDock().colSplit) || 50);
+  const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
+  const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
+  const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
+  const serializeDock = (ws) => ws.map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const openWindow = useCallback((desc) => {
+    setDockWindows(prev => {
+      let next;
+      if (desc.kind !== "thread") {
+        const idx = prev.findIndex(w => w.kind === desc.kind);
+        if (idx >= 0) next = prev.filter((_, i) => i !== idx);
+        else { const w = { id: "w_" + desc.kind, kind: desc.kind }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else {
+        const rid = desc.run?.runId;
+        const at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], run: desc.run }; }
+        else { const w = { id: "w_thread_" + rid, kind: "thread", run: desc.run }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      }
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+  }, []);
+  const closeWindow = useCallback((id, run) => {
+    setDockWindows(prev => {
+      const next = prev.filter(w => w.id !== id);
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+    if (run?.runId) setChatRun(cur => (cur?.runId === run.runId ? null : cur));
+  }, []);
+  const swapWindows = useCallback((idA, idB) => {
+    setDockWindows(prev => {
+      const a = prev.findIndex(w => w.id === idA);
+      const b = prev.findIndex(w => w.id === idB);
+      if (a < 0 || b < 0 || a === b) return prev;
+      const next = prev.slice();
+      [next[a], next[b]] = [next[b], next[a]];
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+  }, []);
+  useEffect(() => { if (chatRun) openWindow({ kind: "thread", run: chatRun }); }, [chatRun, openWindow]);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--dock-col-split", dockColSplit + "%");
+    root.style.setProperty("--dock-row-split", dockRowSplit + "%");
+  }, [dockColSplit, dockRowSplit]);
+  const openKinds = dockWindows.filter(w => w.kind !== "thread").map(w => w.kind);
+  const startDockSplit = useCallback((axis) => (e) => {
+    e.preventDefault();
+    const grid = e.currentTarget.closest(".dock-grid");
+    if (!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const horiz = axis === "col";
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    const onMove = (ev) => {
+      const pct = horiz ? ((ev.clientX - rect.left) / rect.width) * 100 : ((ev.clientY - rect.top) / rect.height) * 100;
+      const clamped = Math.max(15, Math.min(85, pct));
+      document.documentElement.style.setProperty(horiz ? "--dock-col-split" : "--dock-row-split", clamped + "%");
+      (horiz ? dockColRef : dockRowRef).current = clamped;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      if (horiz) { setDockColSplit(dockColRef.current); saveDock({ colSplit: dockColRef.current }); }
+      else { setDockRowSplit(dockRowRef.current); saveDock({ rowSplit: dockRowRef.current }); }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
   // Single-docked-chat invariant (see the node dialogs' matching effects).
   // This top-level chat shares the docked slot with the per-node dialogs, so
   // opening it must close any open node chat and vice versa. Owner = "main".
@@ -22853,8 +22930,10 @@ function WorkflowCanvas() {
       historyOpen=${historyOpen}
       onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
       onCloseHistory=${() => setHistoryOpen(false)}
-      chatActive=${!!chatRun}
+      chatActive=${dockWindows.length > 0}
       chatBusy=${!!chatRun && !chatRunFinished}
+      onOpenWindow=${openWindow}
+      openKinds=${openKinds}
       onLibResizeStart=${startLibResize}
       onOpenNewChat=${openWorkflowChat}
       onStartChatWithPrompt=${async (text) => {
@@ -22886,18 +22965,32 @@ function WorkflowCanvas() {
       selectionRef=${selectionRef}
       onSelectionCountChange=${setSelectionCount}/>
     ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
-    <${ChatDrawer}
-      run=${chatRun}
-      onClose=${() => setChatRun(null)}
-      onStop=${() => {}}
-      onRunComplete=${handleWorkflowChatComplete}
-      onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error" || status === "fail")}
-      permissionMode=${chatPermissionMode}
-      onPermissionModeChange=${onChatPermissionModeChange}
-      onStartNewChat=${spawnWorkflowChat}
-      selectionCount=${selectionCount}
+    <${RightDock}
+      floating
+      windows=${dockWindows}
+      onClose=${closeWindow}
+      onSwap=${swapWindows}
       onResizeStart=${startChatResize}
-      variant="dock"
+      onColResize=${startDockSplit("col")}
+      onRowResize=${startDockSplit("row")}
+      onStartChatWithPrompt=${spawnWorkflowChat}
+      onOpenRun=${reopenWorkflowRun}
+      renderThread=${(w) => html`<${ChatDrawer}
+        key=${w.id}
+        run=${w.run}
+        variant="tile"
+        onClose=${() => closeWindow(w.id, w.run)}
+        onStop=${() => {}}
+        onRunComplete=${handleWorkflowChatComplete}
+        onStatusChange=${({ status }) => {
+          if (chatRun && w.run?.runId === chatRun.runId)
+            setChatRunFinished(status === "done" || status === "error" || status === "fail");
+        }}
+        permissionMode=${chatPermissionMode}
+        onPermissionModeChange=${onChatPermissionModeChange}
+        onStartNewChat=${spawnWorkflowChat}
+        selectionCount=${selectionCount}
+      />`}
     />
   <//>`;
 }
@@ -27940,7 +28033,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   `;
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, onOpenNewChat, onStartChatWithPrompt, onReopenRun, selectionRef, onSelectionCountChange, onLibResizeStart }) {
+function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onLibResizeStart }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -39031,6 +39124,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
           onStartChatWithPrompt=${onStartChatWithPrompt}
+          onOpenWindow=${onOpenWindow}
+          openKinds=${openKinds}
           hidden=${fullscreen}/>
       </div>
       ${zoomTarget && html`

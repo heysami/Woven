@@ -3740,6 +3740,20 @@ button {
   display: flex;
   overflow: visible;
 }
+/* Floating variant (workflow surface): occupies the chat-drawer slot — a fixed
+   full-height panel docked left of the icon rail, sized by --workflow-chat-width
+   (same var the chat-resize handle drives). The workflow canvas reserves this
+   width via .workflow-body[data-chat-active] margin, so it shrinks to fit. */
+.right-dock-floating {
+  position: fixed;
+  top: 0;
+  right: var(--th-right-rail-w, 44px);
+  bottom: 0;
+  height: auto;
+  width: min(var(--workflow-chat-width, 644px), calc(100vw - var(--th-right-rail-w, 44px)));
+  max-width: calc(100vw - var(--th-right-rail-w, 44px));
+  z-index: 60;
+}
 /* Left-edge drag handle — resize the whole dock (canvas shrinks as it grows). */
 .dock-resize-edge {
   position: absolute;
