@@ -30127,6 +30127,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // snippet asset. Selection text (the browser node's scissors button) is
   // fetched the same way (request/reply keyed by reqId; waiters live on
   // window so WorkflowBrowserNode can register them).
+  const webClipRef = useRef(null);  // last element copied from a browser node (opaque proxy)
   const spawnWebSnippet = useCallback(async (htmlFrag, srcNodeId) => {
     const frag = (htmlFrag || "").trim();
     if (!frag) return;
@@ -30189,20 +30190,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const onMsg = (e) => {
       const d = e && e.data;
       if (!d || typeof d !== "object") return;
-      if (d.type !== "th-web-picked" && d.type !== "th-web-ready" && d.type !== "th-web-selection") return;
+      const T = d.type;
+      if (T !== "th-web-ready" && T !== "th-web-selection" && T !== "th-web-selected"
+          && T !== "th-web-copied" && T !== "th-web-paste") return;
       const ifr = findBrowserIframe(e.source);
       if (!ifr) return;
-      if (d.type === "th-web-ready") {
+      const nodeId = ifr.getAttribute("data-browser-id") || "";
+      if (T === "th-web-ready") {
         try { ifr.contentWindow.postMessage({ type: "th-pick-mode", on: !!window.__thPickModeNodeId }, "*"); } catch {}
         return;
       }
-      if (d.type === "th-web-selection") {
+      if (T === "th-web-selection") {
         const cb = waiters.get(d.reqId);
         if (cb) { waiters.delete(d.reqId); try { cb(d.text || ""); } catch {} }
         return;
       }
-      if (d.type === "th-web-picked") {
-        spawnWebSnippet(d.html || "", ifr.getAttribute("data-browser-id") || "");
+      if (T === "th-web-selected") {
+        flashPickOp("info", "Selected " + (d.tagName || "element") + " — ⌘C copy · ↑/↓ adjust box");
+        return;
+      }
+      if (T === "th-web-copied") {
+        webClipRef.current = { html: d.html || "", srcNodeId: nodeId };
+        flashPickOp("done", "Copied — ⌘V to place");
+        return;
+      }
+      if (T === "th-web-paste") {
+        const clip = webClipRef.current;
+        if (clip && clip.html) spawnWebSnippet(clip.html, clip.srcNodeId || nodeId);
+        else flashPickOp("error", "Nothing copied yet — select an element + ⌘C first");
+        return;
       }
     };
     window.addEventListener("message", onMsg);
