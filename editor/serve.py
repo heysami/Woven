@@ -15763,7 +15763,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         # pick overlay (registers its capture-phase listeners before the page's
         # own scripts run). The iframe sandbox runs this in an OPAQUE origin, so
         # the page is walled off from the editor; picks come back via postMessage.
-        inject = base_tag + self._WEB_PICK_OVERLAY
+        # Opaque-origin sandbox makes document.cookie / localStorage /
+        # sessionStorage THROW (SecurityError), which crashes SPAs at boot. A
+        # tiny shim installs in-memory stand-ins BEFORE any page script runs so
+        # the app renders. Local to the opaque iframe — never touches the editor.
+        shim = ('<script>(function(){'
+                'try{Object.defineProperty(document,"cookie",{configurable:true,get:function(){return "";},set:function(){return true;}});}'
+                'catch(e){try{Object.defineProperty(Document.prototype,"cookie",{configurable:true,get:function(){return "";},set:function(){return true;}});}catch(e2){}}'
+                'function mk(){var m={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null;},'
+                'setItem:function(k,v){m[k]=String(v);},removeItem:function(k){delete m[k];},clear:function(){m={};},'
+                'key:function(i){return Object.keys(m)[i]||null;},get length(){return Object.keys(m).length;}};}'
+                'var ls=mk(),ss=mk();'
+                'try{Object.defineProperty(window,"localStorage",{configurable:true,get:function(){return ls;}});}'
+                'catch(e){try{Object.defineProperty(Window.prototype,"localStorage",{configurable:true,get:function(){return ls;}});}catch(e2){}}'
+                'try{Object.defineProperty(window,"sessionStorage",{configurable:true,get:function(){return ss;}});}'
+                'catch(e){try{Object.defineProperty(Window.prototype,"sessionStorage",{configurable:true,get:function(){return ss;}});}catch(e2){}}'
+                '})();</script>')
+        inject = shim + base_tag + self._WEB_PICK_OVERLAY
         m = re.search(r"(?is)<head[^>]*>", body)
         if m:
             body = body[:m.end()] + inject + body[m.end():]
