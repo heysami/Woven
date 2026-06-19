@@ -4041,7 +4041,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   max-height: 320px;
   overflow: auto;
 }
-.th-tasks-agent-pre[data-error="true"] { color: var(--danger, #e5484d); }
+.th-tasks-agent-pre[data-error="true"] { color: var(--danger); }
 .th-tasks-agent-empty {
   font-size: 11px;
   font-style: italic;
@@ -6566,8 +6566,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-section:hover .workflow-node-section-tidy { opacity: 1; }
 .workflow-node-section-tidy:hover {
-  background: color-mix(in oklch, var(--accent, #2d7ff9) 14%, transparent);
-  color: var(--accent, #2d7ff9);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 /* v3.9 — Save-to-Local-library button: same chrome as tidy/close, holds an
    inline SVG icon (Library, or a Check flash after a successful save). */
@@ -6589,8 +6589,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section-savelib svg { width: 13px; height: 13px; }
 .workflow-node-section:hover .workflow-node-section-savelib { opacity: 1; }
 .workflow-node-section-savelib:hover {
-  background: color-mix(in oklch, var(--accent, #2d7ff9) 14%, transparent);
-  color: var(--accent, #2d7ff9);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 .workflow-node-section-savelib.is-saved {
   opacity: 1;
@@ -6599,16 +6599,16 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 /* ── custom-app node (packaged section → reusable mini-app) ───────────────── */
 .workflow-node-customapp {
   position: absolute;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--border, #2a2a33);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.10);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 .workflow-node-customapp[data-selected="true"] {
-  border-color: var(--accent, #2d7ff9);
+  border-color: var(--accent);
   z-index: 11;
 }
 .workflow-node-customapp-expand,
@@ -6629,8 +6629,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-customapp-expand svg { width: 13px; height: 13px; }
 .workflow-node-customapp-expand:hover {
   opacity: 1;
-  background: color-mix(in oklch, var(--accent, #2d7ff9) 14%, transparent);
-  color: var(--accent, #2d7ff9);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 .workflow-customapp-body {
   display: flex;
@@ -6663,8 +6663,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-customapp-settings {
   flex: 0 0 184px;
   width: 184px;
-  border-left: 1px solid var(--border, #2a2a33);
-  background: var(--surface-2, #1a1a22);
+  border-left: 1px solid var(--border);
+  background: var(--surface-2);
   padding: 8px 10px;
   overflow-y: auto;
   display: flex;
@@ -6684,17 +6684,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text-faint);
 }
 .workflow-customapp-setting-add {
-  border: 1px solid var(--border, #2a2a33);
-  background: var(--surface-1, #14141a);
-  color: var(--text-secondary, #c0c0cc);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
   font-size: 10px;
   padding: 2px 7px;
   border-radius: 5px;
   cursor: pointer;
 }
 .workflow-customapp-setting-add:hover {
-  border-color: var(--accent, #2d7ff9);
-  color: var(--accent, #2d7ff9);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .workflow-customapp-settings-empty {
   font-size: 11px;
@@ -6712,7 +6712,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   margin-left: 4px;
   opacity: 0.5;
 }
-.workflow-customapp-setting-del:hover { opacity: 1; color: var(--danger, #e5484d); }
+.workflow-customapp-setting-del:hover { opacity: 1; color: var(--danger); }
 
 /* add-setting modal */
 .workflow-setting-modal { width: 540px; max-width: 94vw; }
@@ -6720,10 +6720,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-setting-desc {
   width: 100%;
   padding: 7px 9px;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--border, #2a2a33);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text, #e6e6ee);
+  color: var(--text);
   font-size: 13px;
   resize: vertical;
 }
@@ -6733,7 +6733,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   flex-direction: column;
   gap: 10px;
   padding-top: 8px;
-  border-top: 1px solid var(--border, #2a2a33);
+  border-top: 1px solid var(--border);
 }
 .workflow-setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .workflow-setting-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
@@ -6741,10 +6741,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-setting-proposal select {
   height: 28px;
   padding: 0 7px;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--border, #2a2a33);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 5px;
-  color: var(--text, #e6e6ee);
+  color: var(--text);
   font-size: 12px;
 }
 .workflow-setting-rationale {
@@ -6754,7 +6754,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-setting-bindings-title {
   font-size: 11px;
-  color: var(--text-secondary, #c0c0cc);
+  color: var(--text-muted);
   margin-top: 2px;
 }
 .workflow-setting-bindings-title em { font-style: normal; color: var(--text-faint); }
@@ -6769,7 +6769,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   border: 0; background: transparent; color: var(--text-faint);
   cursor: pointer; font-size: 14px; line-height: 1;
 }
-.workflow-setting-binding-del:hover { color: var(--danger, #e5484d); }
+.workflow-setting-binding-del:hover { color: var(--danger); }
 .workflow-setting-addbind { align-self: flex-start; font-size: 11px; padding: 3px 8px; }
 .workflow-customapp-setting {
   display: flex;
@@ -6778,7 +6778,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-customapp-setting-label {
   font-size: 11px;
-  color: var(--text-secondary, #c0c0cc);
+  color: var(--text-muted);
 }
 .workflow-customapp-slider-row {
   display: flex;
@@ -6791,18 +6791,18 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: 46px;
   font-size: 11px;
   padding: 2px 4px;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--border, #2a2a33);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--text, #e6e6ee);
+  color: var(--text);
 }
 .workflow-customapp-select {
   font-size: 11px;
   padding: 3px 4px;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--border, #2a2a33);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--text, #e6e6ee);
+  color: var(--text);
 }
 
 /* expand-edit top bar (floats above canvas while editing a custom app) */
@@ -6816,14 +6816,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--accent, #2d7ff9);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0,0,0,0.35);
 }
 .workflow-expand-bar-label {
   font-size: 12px;
-  color: var(--text-secondary, #c0c0cc);
+  color: var(--text-muted);
   margin-right: 4px;
 }
 
@@ -6838,7 +6838,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-convert-field { display: flex; flex-direction: column; gap: 5px; }
 .workflow-convert-field-label {
   font-size: 12px;
-  color: var(--text-secondary, #c0c0cc);
+  color: var(--text-muted);
 }
 .workflow-convert-field-label em {
   font-style: normal;
@@ -6848,22 +6848,22 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-convert-field select {
   height: 30px;
   padding: 0 8px;
-  background: var(--surface-1, #14141a);
-  border: 1px solid var(--border, #2a2a33);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text, #e6e6ee);
+  color: var(--text);
   font-size: 13px;
 }
 .workflow-convert-warn {
   font-size: 11px;
-  color: var(--warning, #d97706);
+  color: var(--warning);
 }
 .workflow-convert-check {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--text-secondary, #c0c0cc);
+  color: var(--text-muted);
 }
 
 .workflow-node-section-resize {
@@ -10001,7 +10001,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   padding: 12px 10px; font-size: 11.5px; color: var(--text-faint);
   text-align: center;
 }
-.workflow-node-folder-err { color: var(--danger, #e5484d); text-align: left; white-space: pre-wrap; }
+.workflow-node-folder-err { color: var(--danger); text-align: left; white-space: pre-wrap; }
 
 .workflow-node-folder-row {
   display: flex; align-items: center; gap: 4px;
@@ -10040,8 +10040,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text); background: color-mix(in oklch, var(--text) 12%, transparent);
 }
 .workflow-node-folder-rowbtn-danger:hover {
-  color: var(--danger, #e5484d);
-  background: color-mix(in oklch, var(--danger, #e5484d) 14%, transparent);
+  color: var(--danger);
+  background: color-mix(in oklch, var(--danger) 14%, transparent);
 }
 
 /* Folder-picker modal — overlays the editor surface, renders a sortable
