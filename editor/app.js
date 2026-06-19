@@ -55919,6 +55919,75 @@ function WorkflowVectorEditorNode({
     setSelectedAnchor(null);
   };
 
+  // Import section — rendered in the RIGHT panel (moved from the left).
+  const vectorImportSection = html`
+    <div className="workflow-vector-section">
+      <div className="workflow-vector-section-head">Import</div>
+      <button className="workflow-vector-outline-btn"
+        title=${wiredImageInput
+          ? "Trace the wired image asset to vector paths."
+          : "Pick an image file and trace it to vector paths."}
+        disabled=${opState.phase === "working"}
+        onClick=${(e) => { e.stopPropagation(); onTraceImage(); }}
+      >▦ Trace image${wiredImageInput ? " (wired)" : ""}</button>
+      ${wiredVectorInput && html`<button className="workflow-vector-outline-btn"
+        title="Import the wired SVG / vector asset as editable shapes."
+        disabled=${opState.phase === "working"}
+        onClick=${(e) => { e.stopPropagation(); onImportSvg(); }}
+      >◈ Import SVG (wired)</button>`}
+      <input ref=${traceFileRef} type="file" accept="image/*"
+        style=${{ display: "none" }}
+        onChange=${onTraceFilePicked}/>
+      <div className="workflow-vector-subhead">Linked layers</div>
+      ${inPortInputs.length === 0
+        ? html`<div className="workflow-vector-hint">Nothing wired to the <b>in</b> port. Connect a Layer (or SVG / image asset) — it becomes a live group.</div>`
+        : html`<div className="workflow-vector-linked">
+            ${inPortInputs.map((i, k) => {
+              const sid = i.node && i.node.id;
+              const g = wiredGroupSources.find(s => s.srcId === sid);
+              const nm = (i.node && (i.node.title || i.node.name)) || i.label || i.type;
+              let status, ok = false;
+              if (g) { status = g.dataKind === "image" ? "→ group (traced)" : "→ group"; ok = true; }
+              else if (i.type === "layer") status = "layer · no SVG/image content";
+              else if (i.type === "unbaked") status = "unbaked — bake it first";
+              else status = i.type;
+              return html`<div className=${"workflow-vector-linked-row" + (ok ? " is-ok" : "")} key=${"lk-" + k}>
+                <span className="workflow-vector-linked-name" title=${nm}>${nm}</span>
+                <span className="workflow-vector-linked-status">${status}</span>
+              </div>`;
+            })}
+          </div>`}
+      <div className="workflow-vector-subhead">Import glyph</div>
+      <div className="workflow-vector-pos-grid">
+        <label className="workflow-vector-field workflow-vector-field-stacked">
+          <span>Font</span>
+          <input type="text" value=${glyphForm.family}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onInput=${(e) => setGlyphForm(f => ({ ...f, family: e.target.value }))}/>
+        </label>
+        <label className="workflow-vector-field workflow-vector-field-stacked">
+          <span>Weight</span>
+          <input type="text" value=${glyphForm.weight}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onInput=${(e) => setGlyphForm(f => ({ ...f, weight: e.target.value }))}/>
+        </label>
+      </div>
+      <div className="workflow-vector-pos-grid">
+        <label className="workflow-vector-field workflow-vector-field-stacked">
+          <span>Char</span>
+          <input type="text" value=${glyphForm.char} maxLength="8"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onInput=${(e) => setGlyphForm(f => ({ ...f, char: e.target.value }))}/>
+        </label>
+      </div>
+      <button className="workflow-vector-outline-btn"
+        title="Fetch the font, outline the character via opentype.js, and add it as a path."
+        disabled=${opState.phase === "working"}
+        onClick=${(e) => { e.stopPropagation(); importGlyph(); }}
+      >A Import glyph</button>
+    </div>
+  `;
+
   return html`
     <div
       ref=${rootRef}
@@ -56028,71 +56097,6 @@ function WorkflowVectorEditorNode({
             `}
           </div>
           `}
-          <div className="workflow-vector-section">
-            <div className="workflow-vector-section-head">Import</div>
-            <button className="workflow-vector-outline-btn"
-              title=${wiredImageInput
-                ? "Trace the wired image asset to vector paths."
-                : "Pick an image file and trace it to vector paths."}
-              disabled=${opState.phase === "working"}
-              onClick=${(e) => { e.stopPropagation(); onTraceImage(); }}
-            >▦ Trace image${wiredImageInput ? " (wired)" : ""}</button>
-            ${wiredVectorInput && html`<button className="workflow-vector-outline-btn"
-              title="Import the wired SVG / vector asset as editable shapes."
-              disabled=${opState.phase === "working"}
-              onClick=${(e) => { e.stopPropagation(); onImportSvg(); }}
-            >◈ Import SVG (wired)</button>`}
-            <input ref=${traceFileRef} type="file" accept="image/*"
-              style=${{ display: "none" }}
-              onChange=${onTraceFilePicked}/>
-            <div className="workflow-vector-subhead">Linked layers</div>
-            ${inPortInputs.length === 0
-              ? html`<div className="workflow-vector-hint">Nothing wired to the <b>in</b> port. Connect a Layer (or SVG / image asset) — it becomes a live group.</div>`
-              : html`<div className="workflow-vector-linked">
-                  ${inPortInputs.map((i, k) => {
-                    const sid = i.node && i.node.id;
-                    const g = wiredGroupSources.find(s => s.srcId === sid);
-                    const nm = (i.node && (i.node.title || i.node.name)) || i.label || i.type;
-                    let status, ok = false;
-                    if (g) { status = g.dataKind === "image" ? "→ group (traced)" : "→ group"; ok = true; }
-                    else if (i.type === "layer") status = "layer · no SVG/image content";
-                    else if (i.type === "unbaked") status = "unbaked — bake it first";
-                    else status = i.type;
-                    return html`<div className=${"workflow-vector-linked-row" + (ok ? " is-ok" : "")} key=${"lk-" + k}>
-                      <span className="workflow-vector-linked-name" title=${nm}>${nm}</span>
-                      <span className="workflow-vector-linked-status">${status}</span>
-                    </div>`;
-                  })}
-                </div>`}
-            <div className="workflow-vector-subhead">Import glyph</div>
-            <div className="workflow-vector-pos-grid">
-              <label className="workflow-vector-field workflow-vector-field-stacked">
-                <span>Font</span>
-                <input type="text" value=${glyphForm.family}
-                  onMouseDown=${(e) => e.stopPropagation()}
-                  onInput=${(e) => setGlyphForm(f => ({ ...f, family: e.target.value }))}/>
-              </label>
-              <label className="workflow-vector-field workflow-vector-field-stacked">
-                <span>Weight</span>
-                <input type="text" value=${glyphForm.weight}
-                  onMouseDown=${(e) => e.stopPropagation()}
-                  onInput=${(e) => setGlyphForm(f => ({ ...f, weight: e.target.value }))}/>
-              </label>
-            </div>
-            <div className="workflow-vector-pos-grid">
-              <label className="workflow-vector-field workflow-vector-field-stacked">
-                <span>Char</span>
-                <input type="text" value=${glyphForm.char} maxLength="8"
-                  onMouseDown=${(e) => e.stopPropagation()}
-                  onInput=${(e) => setGlyphForm(f => ({ ...f, char: e.target.value }))}/>
-              </label>
-            </div>
-            <button className="workflow-vector-outline-btn"
-              title="Fetch the font, outline the character via opentype.js, and add it as a path."
-              disabled=${opState.phase === "working"}
-              onClick=${(e) => { e.stopPropagation(); importGlyph(); }}
-            >A Import glyph</button>
-          </div>
           <div className="workflow-vector-section workflow-vector-layers-section">
             <div className="workflow-vector-section-head">
               Layers <span className="workflow-vector-count">${shapes.length}</span>
@@ -56229,6 +56233,7 @@ function WorkflowVectorEditorNode({
           </div>
         </div>
         <div className=${"workflow-vector-right" + (detached ? " workflow-node-float-panel" : "")}>
+          ${vectorImportSection}
           ${(() => {
             // Node-edit mode: surface the per-anchor panel above the
             // shape's regular properties (which still apply to the
