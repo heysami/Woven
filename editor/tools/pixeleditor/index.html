@@ -1175,7 +1175,7 @@
         tool = b.dataset.tool;
         document.querySelectorAll("#tools .tool[data-tool]").forEach(x=>x.classList.toggle("on", x===b));
       } else if(b.dataset.act==="clear"){
-        if(confirm("Clear the whole grid?")){ M.pixels=freshPixels(); switchToDraw(); render(); commitEdit(); }
+        pxConfirm("Clear the whole grid?").then(yes=>{ if(yes){ M.pixels=freshPixels(); switchToDraw(); render(); commitEdit(); } });
       } else if(b.dataset.act==="grid"){
         showGrid=!showGrid; b.classList.toggle("on", showGrid); render();
       }
@@ -1289,8 +1289,8 @@
     refreshJson(); copyText($("#json").value); toast("JSON copied");
   });
   $("#btnCopyCode").addEventListener("click", ()=>{ copyText(M.code); toast("code() copied"); });
-  $("#btnLoadJson").addEventListener("click", ()=>{
-    const raw = prompt("Paste canonical JSON:");
+  $("#btnLoadJson").addEventListener("click", async ()=>{
+    const raw = await pxPrompt("Paste canonical JSON:");
     if(!raw) return;
     try{ const st=JSON.parse(raw); applyState(st); toast("Loaded"); emitState(); }
     catch(e){ toast("Invalid JSON"); }
@@ -1420,6 +1420,37 @@
   function fallbackCopy(t){ const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} ta.remove(); }
   let toastTimer=null;
   function toast(msg){ toastEl.textContent=msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove("show"),1600); }
+
+  // ---------------- In-app dialogs (no native confirm/prompt) ----------------
+  // Native confirm/prompt trip Chrome's "prevent additional dialogs" checkbox
+  // which then silently suppresses every later one. These Promise-based modals
+  // render inline instead. pxConfirm → bool, pxPrompt → string|null.
+  function pxDialog({message, prompt: isPrompt, def, ok="OK", cancel="Cancel"}){
+    return new Promise((resolve)=>{
+      const scrim=document.createElement("div");
+      scrim.style.cssText="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)";
+      const box=document.createElement("div");
+      box.style.cssText="min-width:240px;max-width:380px;background:#1c1c1e;color:#f2f2f2;border:1px solid #3a3a3c;border-radius:10px;padding:16px 16px 12px;font:13px/1.5 system-ui,-apple-system,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.5)";
+      const msg=document.createElement("div"); msg.textContent=message; msg.style.cssText="white-space:pre-line;margin-bottom:12px";
+      box.appendChild(msg);
+      let input=null;
+      if(isPrompt){ input=document.createElement("input"); input.type="text"; input.value=def||""; input.style.cssText="width:100%;box-sizing:border-box;background:#2c2c2e;color:#fff;border:1px solid #48484a;border-radius:6px;padding:7px 9px;margin-bottom:12px;font:13px system-ui"; box.appendChild(input); }
+      const row=document.createElement("div"); row.style.cssText="display:flex;gap:8px;justify-content:flex-end";
+      const bcancel=document.createElement("button"); bcancel.textContent=cancel;
+      const bok=document.createElement("button"); bok.textContent=ok;
+      for(const b of [bcancel,bok]) b.style.cssText="padding:6px 13px;border-radius:6px;border:1px solid #48484a;background:#2c2c2e;color:#fff;cursor:pointer;font:13px system-ui";
+      bok.style.background="#0a84ff"; bok.style.borderColor="#0a84ff";
+      row.appendChild(bcancel); row.appendChild(bok); box.appendChild(row); scrim.appendChild(box); document.body.appendChild(scrim);
+      const done=(v)=>{ scrim.remove(); resolve(v); };
+      bok.addEventListener("click",()=>done(isPrompt?(input?input.value:""):true));
+      bcancel.addEventListener("click",()=>done(isPrompt?null:false));
+      scrim.addEventListener("mousedown",(e)=>{ if(e.target===scrim) done(isPrompt?null:false); });
+      box.addEventListener("keydown",(e)=>{ if(e.key==="Escape"){e.preventDefault();done(isPrompt?null:false);} else if(e.key==="Enter"){e.preventDefault();done(isPrompt?(input?input.value:""):true);} });
+      if(input){ input.focus(); input.select(); } else bok.focus();
+    });
+  }
+  const pxConfirm=(message)=>pxDialog({message});
+  const pxPrompt=(message,def)=>pxDialog({message,prompt:true,def});
 
   // ---------------- Resize ----------------
   let rsz=null;
