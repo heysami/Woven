@@ -188,6 +188,14 @@
             <option value="studio">Studio</option>
           </select>
         </div>
+        <div class="field">
+          <label>Image background</label>
+          <div style="display:flex;gap:8px">
+            <button class="tbtn" id="btnSetImg" style="flex:1">Set image…</button>
+            <button class="tbtn" id="btnClearImg" title="Remove the image background">Clear</button>
+          </div>
+          <input type="file" id="imgFile" accept="image/*" hidden>
+        </div>
         <div class="hint" id="wiredHint"></div>
       </div>
       <div class="grp" style="flex:1">
@@ -469,6 +477,9 @@ const palCount  = document.getElementById('palCount');
 const dsSwatches= document.getElementById('dsSwatches');
 const dsCardImg = document.getElementById('dsCardImg');
 const wiredHint = document.getElementById('wiredHint');
+const imgFile   = document.getElementById('imgFile');
+const btnSetImg = document.getElementById('btnSetImg');
+const btnClearImg = document.getElementById('btnClearImg');
 
 const VS_SRC  = document.getElementById('vsrc').textContent;
 const DEF_FRAG= document.getElementById('fsrc').textContent;
@@ -499,7 +510,7 @@ let bgImg = null;          // preloaded wired image for the backdrop texture
 /* ---------- default canonical material state ---------- */
 function defaultState(){
   return {
-    v:2, background:'#0b0d12', backdrop:'aurora-gradient',
+    v:2, background:'#0b0d12', backdrop:'aurora-gradient', bgImage:'',
     material:Object.assign({type:'liquid-glass'}, MATERIALS['liquid-glass']),
     palette:['#7cc7ff','#3b82f6','#22d3ee','#34d399','#a78bfa'],
     reactivity:{mouse:true},
@@ -525,6 +536,7 @@ function normState(s){
     v:2,
     background: s.background || d.background,
     backdrop: BACKDROPS.includes(s.backdrop)? s.backdrop : d.backdrop,
+    bgImage: (typeof s.bgImage==='string') ? s.bgImage : d.bgImage,
     material: normMaterial(s.material),
     palette: (Array.isArray(s.palette)&&s.palette.length)? s.palette.slice(0,8) : d.palette.slice(),
     reactivity: Object.assign({mouse:true}, s.reactivity||{}),
@@ -712,13 +724,19 @@ function glassRuntime(opts){
 /*  WIRED IMAGE -> backdrop texture                                        */
 /* ====================================================================== */
 function firstImage(){ return CONTENT.find(c=>c && c.kind==='image' && c.url) || null; }
-function syncBgImage(){
+/* the backdrop image source: an explicitly-set image wins over a wired one */
+function backdropImageUrl(){
+  if(STATE && STATE.bgImage) return STATE.bgImage;
   const wired=firstImage();
-  if(wired){
-    if(!bgImg || bgImg.dataset.src!==wired.url){
-      bgImg=new Image(); bgImg.crossOrigin='anonymous'; bgImg.dataset.src=wired.url;
+  return wired ? wired.url : null;
+}
+function syncBgImage(){
+  const url=backdropImageUrl();
+  if(url){
+    if(!bgImg || bgImg.dataset.src!==url){
+      bgImg=new Image(); bgImg.crossOrigin='anonymous'; bgImg.dataset.src=url;
       bgImg.onload=()=>{ if(RT) RT.refreshBackdrop(); };
-      bgImg.src=wired.url;
+      bgImg.src=url;
     }
   } else { bgImg=null; }
 }
@@ -735,14 +753,18 @@ const SAMPLE_IMG = (()=>{
 /* ====================================================================== */
 /*  BACKDROP DOM (shows where no glass covers; matches the shader texture) */
 /* ====================================================================== */
-function backdropDOMCSS(state){
+function backdropDOMCSS(state, imgUrl){
   const bg=state.background;
   let layers;
   if(state.backdrop==='aurora-gradient') layers=['radial-gradient(60% 80% at 20% 15%, #2a4cff66, transparent 60%)','radial-gradient(55% 70% at 85% 20%, #b34cff55, transparent 60%)','radial-gradient(70% 90% at 60% 100%, #16d6b455, transparent 60%)'];
   else if(state.backdrop==='mesh-warm')  layers=['radial-gradient(60% 70% at 15% 20%, #ff8a3d66, transparent 60%)','radial-gradient(60% 70% at 90% 30%, #ff4d7d66, transparent 60%)','radial-gradient(80% 90% at 50% 110%, #6d3bff55, transparent 60%)'];
   else if(state.backdrop==='mono-soft')  layers=['radial-gradient(70% 80% at 30% 20%, #ffffff14, transparent 60%)','radial-gradient(60% 70% at 80% 80%, #ffffff0e, transparent 60%)'];
   else                                   layers=['radial-gradient(120% 90% at 50% -10%, #2a2f3a, transparent 60%)','linear-gradient(180deg, #14171d, #0a0c10)'];
-  return { backgroundImage:layers.join(','), backgroundColor:bg };
+  // the image sits UNDER the gradient wash (last layer), cover-fit — matches drawBackdropInto
+  if(imgUrl) layers.push(`url("${imgUrl}")`);
+  const css={ backgroundImage:layers.join(','), backgroundColor:bg };
+  if(imgUrl){ css.backgroundSize=layers.map((_,i)=>i===layers.length-1?'cover':'auto').join(','); css.backgroundPosition='center'; css.backgroundRepeat='no-repeat'; }
+  return css;
 }
 
 /* ====================================================================== */
@@ -766,9 +788,12 @@ function renderContentBits(){
 /* ====================================================================== */
 function renderAll(){
   if(!STATE) return;
-  const bc=backdropDOMCSS(STATE);
+  const bc=backdropDOMCSS(STATE, backdropImageUrl());
   backdrop.style.backgroundColor=bc.backgroundColor;
   backdrop.style.backgroundImage=bc.backgroundImage;
+  backdrop.style.backgroundSize=bc.backgroundSize||'';
+  backdrop.style.backgroundPosition=bc.backgroundPosition||'';
+  backdrop.style.backgroundRepeat=bc.backgroundRepeat||'';
   applyAccents();
   renderContentBits();
   syncBgImage();
@@ -922,12 +947,46 @@ document.getElementById('addPal').onclick=()=>{ if(STATE.palette.length>=8) retu
 bgColor.oninput=()=>{ STATE.background=bgColor.value; bgVal.textContent=bgColor.value; renderAll(); emit(); };
 bgPreset.onchange=()=>{ STATE.backdrop=bgPreset.value; renderAll(); emit(); };
 
+/* ---- image background: set / clear via file picker, drag-drop, or paste ---- */
+function setBgImage(dataUrl){ STATE.bgImage=dataUrl||''; renderAll(); syncScene(); emit(); }
+function loadImageFile(file){
+  if(!file || !/^image\//.test(file.type||'')){ toast('Not an image file'); return; }
+  const r=new FileReader();
+  r.onload=()=>{ setBgImage(String(r.result)); toast('Image background set'); };
+  r.onerror=()=>toast('Could not read image');
+  r.readAsDataURL(file);
+}
+btnSetImg.onclick=()=>imgFile.click();
+imgFile.onchange=()=>{ const f=imgFile.files&&imgFile.files[0]; if(f) loadImageFile(f); imgFile.value=''; };
+btnClearImg.onclick=()=>{ if(!STATE.bgImage){ toast('No image background set'); return; } setBgImage(''); toast('Image background cleared'); };
+
+/* drag an image onto the stage */
+const centerEl=document.getElementById('center');
+centerEl.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; });
+centerEl.addEventListener('drop', e=>{
+  e.preventDefault();
+  const dt=e.dataTransfer; if(!dt) return;
+  const f=dt.files&&dt.files[0];
+  if(f){ loadImageFile(f); return; }
+  const uri=dt.getData('text/uri-list')||dt.getData('text/plain');
+  if(uri && /^(https?:|data:image\/)/.test(uri.trim())){ setBgImage(uri.trim()); toast('Image background set'); }
+});
+/* paste an image from the clipboard */
+window.addEventListener('paste', e=>{
+  const items=e.clipboardData && e.clipboardData.items; if(!items) return;
+  for(const it of items){ if(it.type && it.type.indexOf('image')===0){ const f=it.getAsFile(); if(f){ loadImageFile(f); e.preventDefault(); return; } } }
+});
+
 function syncScene(){
   bgColor.value=(STATE.background||'#0b0d12').slice(0,7);
   bgVal.textContent=STATE.background;
   bgPreset.value=STATE.backdrop;
+  btnClearImg.disabled = !STATE.bgImage;
+  btnClearImg.style.opacity = STATE.bgImage ? '1' : '.5';
   const wired=firstImage();
-  wiredHint.textContent = wired ? `Wired image "${wired.label||wired.id}" is the card image + the refracted backdrop.` : 'No image wired — using built-in sample.';
+  if(STATE.bgImage)   wiredHint.textContent='Custom image background — refracted by the glass. Drop or paste an image to replace it.';
+  else if(wired)      wiredHint.textContent=`Wired image "${wired.label||wired.id}" is the card image + the refracted backdrop.`;
+  else                wiredHint.textContent='No image set — drop or paste an image, or pick one above. Using the gradient backdrop.';
 }
 
 /* ====================================================================== */
@@ -938,6 +997,7 @@ function serializeState(){
     v:2,
     background:STATE.background,
     backdrop:STATE.backdrop,
+    bgImage:STATE.bgImage||'',
     material:Object.assign({}, STATE.material),
     palette:STATE.palette.slice(),
     reactivity:Object.assign({}, STATE.reactivity),
@@ -1032,10 +1092,12 @@ function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); cle
 function bakeHTML(){
   const st=serializeState();
   const cardImg = firstImage()? firstImage().url : SAMPLE_IMG;
+  const bgUrl = st.bgImage || (firstImage()? firstImage().url : null);
   const swatches = st.palette.slice(0,5).map(c=>`<div class="swatch" style="background:${c}"></div>`).join('');
   const acc=st.palette[0]||'#7cc7ff', acc2=st.palette[1]||acc;
   const radius=(10+st.material.thickness*0.35).toFixed(0)+'px';
-  const bc=backdropDOMCSS(st);
+  const bc=backdropDOMCSS(st, bgUrl);
+  const bcExtra = bc.backgroundSize ? `background-size:${bc.backgroundSize};background-position:${bc.backgroundPosition};background-repeat:${bc.backgroundRepeat};` : '';
   const fragSrc = st.material.shader || DEF_FRAG;
 
   const runtimeJS = [
@@ -1050,6 +1112,7 @@ function bakeHTML(){
     'const RT=glassRuntime({canvas:document.getElementById("glcanvas"),stage:document.getElementById("stage"),vsSrc:VS_SRC,panelSelector:".mat",'+
       'getFragSrc:()=>FRAG_SRC,getUniforms:()=>matToUniforms(STATE.material),drawBackdrop:(ctx,w,h)=>drawBackdropInto(ctx,w,h,STATE,bgImg),'+
       'onError:(m)=>{var w=document.getElementById("glwarn");if(w){w.style.display="flex";w.textContent="Glass shader error: "+m;}}});',
+    bgUrl ? 'if(RT){bgImg=new Image();bgImg.crossOrigin="anonymous";bgImg.onload=function(){RT.refreshBackdrop();};bgImg.src='+JSON.stringify(bgUrl)+';}' : '',
     'if(RT){var sr=null;function cr(){sr=document.getElementById("stage").getBoundingClientRect();}cr();window.addEventListener("resize",()=>{cr();RT.resize();});',
     'document.getElementById("stage").addEventListener("pointermove",e=>{RT.setLight(e.clientX-sr.left,e.clientY-sr.top);});',
     'RT.setLight(document.getElementById("stage").clientWidth*0.42,document.getElementById("stage").clientHeight*0.30);}',
@@ -1061,7 +1124,7 @@ function bakeHTML(){
   html,body{margin:0;min-height:100%;background:${st.background};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
   #wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px}
   #stage{position:relative;width:760px;max-width:100%;border-radius:20px;overflow:hidden;box-shadow:0 30px 90px #000a;background:${st.background};--m-radius:${radius};--m-accent:${acc};--m-accent2:${acc2}}
-  #backdrop{position:absolute;inset:0;z-index:0;background-image:${bc.backgroundImage.replace(/"/g,'&quot;')};background-color:${st.background}}
+  #backdrop{position:absolute;inset:0;z-index:0;background-image:${bc.backgroundImage.replace(/"/g,'&quot;')};background-color:${st.background};${bcExtra}}
   #glcanvas{position:absolute;inset:0;z-index:1;pointer-events:none;display:block}
   #glwarn{position:absolute;inset:0;z-index:1;display:none;align-items:center;justify-content:center;color:#ffb4b4;font-family:ui-monospace,Menlo,monospace;font-size:12px;text-align:center;padding:30px;background:#0008}
   #gallery{position:relative;z-index:2;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
